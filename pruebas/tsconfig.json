@@ -148,6 +148,8 @@
     "./simulador-ovalo-recta-central.test.ts",
     "./certificacion-puestos-unificados.test.ts",
     "../src/features/motores/lib/wps-incentivos.ts",
-    "./wps-incentivos-venezuela.test.ts"
+    "./wps-incentivos-venezuela.test.ts",
+    "../src/features/contabilidad/lib/plan-cuentas.ts",
+    "./plan-cuentas-partida-doble.test.ts"
   ]
 }

@@ -902,3 +902,9 @@ export function construirFichaEstadoCuentaUnificada(
   };
 }
 
+// ============================================================================
+// INTEGRACIÓN NIIF: Plan Único de Cuentas y Partida Doble
+// ============================================================================
+export * from "@/features/contabilidad/lib/plan-cuentas";
+
+

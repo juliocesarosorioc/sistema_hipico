@@ -30,6 +30,9 @@ import {
   TabCaja,
   TabIngresos,
   TabMonedas,
+  TabPlanCuentasPUC,
+  TabLibroDiarioMayor,
+  TabEstadoResultadosSemana,
 } from "@/features/contabilidad/components/ContabilidadTabs";
 import {
   listarAsientosNIIF,
@@ -53,26 +56,32 @@ import {
   type TransaccionRow,
 } from "@/features/contabilidad/lib/contabilidad";
 
-type Tab = "ingresos" | "caja" | "bancos" | "monedas" | "niif";
+type Tab =
+  | "ingresos"
+  | "caja"
+  | "bancos"
+  | "monedas"
+  | "puc"
+  | "libro_diario"
+  | "estado_resultados"
+  | "niif";
 
 /**
  * Cada pantalla tiene su propia ruta para que el menú no marque varias
  * activas.
  *
- * El Balance NIIF es la excepción: se abre como VISTA de `/contabilidad` con
- * `?vista=niif`. Motivo concreto: en este sistema TODA ruta tiene su
- * capacidad registrada en el maestro (`capacidadesDeRuta`), y una ruta sin
- * registrar queda DENEGADA — por el middleware del servidor y también por
- * `RutaProtegida` en el cliente. Agregar una ruta nueva obliga a tocar el
- * maestro de seguridad, que es de otro módulo; la query `?vista=` resuelve lo
- * mismo sin tocarlo y con el mismo patrón que ya usa `/seguridad?pestana=`.
+ * El Balance NIIF, PUC, Libro Diario y Estado de Resultados se abren como
+ * vistas de `/contabilidad` con `?vista=...`.
  */
 const RUTAS: Record<Tab, { ruta: string; txt: string; emoji: string }> = {
   ingresos: { ruta: "/contabilidad/ingresos", txt: "Ingresos / Avales", emoji: "📥" },
   caja: { ruta: "/contabilidad/caja", txt: "Caja Unificada", emoji: "💵" },
   bancos: { ruta: "/contabilidad/bancos", txt: "Bancos Reales", emoji: "🏦" },
   monedas: { ruta: "/contabilidad/monedas", txt: "Monedas y Tasas", emoji: "💱" },
-  niif: { ruta: "/contabilidad?vista=niif", txt: "Balance NIIF", emoji: "📘" },
+  puc: { ruta: "/contabilidad?vista=puc", txt: "Plan de Cuentas (PUC)", emoji: "📘" },
+  libro_diario: { ruta: "/contabilidad?vista=libro_diario", txt: "Libro Diario (Partida Doble)", emoji: "📒" },
+  estado_resultados: { ruta: "/contabilidad?vista=estado_resultados", txt: "Resultados Semanales", emoji: "📊" },
+  niif: { ruta: "/contabilidad?vista=niif", txt: "Balance NIIF", emoji: "⚖️" },
 };
 
 export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: Tab }) {
@@ -181,8 +190,18 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
   // (mismo criterio que SeguridadModule con `?pestana=`).
   useEffect(() => {
     const pedida = new URLSearchParams(window.location.search).get("vista");
-    // Se comparan contra las claves CONOCIDAS (y no con `in RUTAS`, que también
-    // encuentra "constructor" y compañía en el prototipo del objeto).
+    const mapaAlias: Record<string, Tab> = {
+      diario: "libro_diario",
+      libro_diario: "libro_diario",
+      resultados: "estado_resultados",
+      estado_resultados: "estado_resultados",
+      puc: "puc",
+      niif: "niif",
+    };
+    if (pedida && mapaAlias[pedida]) {
+      setTab(mapaAlias[pedida]);
+      return;
+    }
     if (pedida && (Object.keys(RUTAS) as string[]).includes(pedida)) {
       setTab(pedida as Tab);
       return;
@@ -302,6 +321,12 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
           referencias={referencias}
           onHecho={cargar}
         />
+      ) : tab === "puc" ? (
+        <TabPlanCuentasPUC />
+      ) : tab === "libro_diario" ? (
+        <TabLibroDiarioMayor />
+      ) : tab === "estado_resultados" ? (
+        <TabEstadoResultadosSemana />
       ) : (
         <TabBalanceNIIF
           balance={balance}

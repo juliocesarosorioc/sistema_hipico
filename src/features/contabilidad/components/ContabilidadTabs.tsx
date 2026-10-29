@@ -54,6 +54,19 @@ import {
   listarMovimientosOperadorPendientes,
   type MovimientoOperadorPendiente,
 } from "@/features/contabilidad/lib/movimientos-operador";
+import {
+  PLAN_CUENTAS_HIPICO,
+  calcularSaldosPlanCuentas,
+  calcularEstadoResultadosSemana,
+  obtenerAsientosMemoria,
+  generarAsientoPartidaDoble,
+  type AsientoContableRegistrado,
+  type CuentaContableDef,
+  type ClaseCuenta,
+  type ModuloOrigenCuenta,
+} from "@/features/contabilidad/lib/plan-cuentas";
+import { formatearMontoSinMoneda, sumarDinero, restarDinero } from "@/shared/lib/dinero";
+import { supabase } from "@/core/supabase";
 
 const inp =
   "w-full border border-line rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary-500 bg-surface";
@@ -2338,3 +2351,863 @@ export function TabBalanceNIIF({
     </div>
   );
 }
+
+// ===========================================================================
+//  📘  PESTAÑA 1: PLAN ÚNICO DE CUENTAS (PUC-NIIF HÍPICO)
+// ===========================================================================
+
+export function TabPlanCuentasPUC() {
+  const [cuentas, setCuentas] = useState<CuentaContableDef[]>([...PLAN_CUENTAS_HIPICO]);
+  const [filtroTexto, setFiltroTexto] = useState("");
+  const [filtroClase, setFiltroClase] = useState<string>("TODAS");
+  const [filtroModulo, setFiltroModulo] = useState<string>("TODOS");
+  const [modalNuevaCuenta, setModalNuevaCuenta] = useState(false);
+
+  // Formulario nueva subcuenta
+  const [nuevoCodigo, setNuevoCodigo] = useState("");
+  const [nuevoNombre, setNuevoNombre] = useState("");
+  const [nuevaClase, setNuevaClase] = useState<ClaseCuenta>("ACTIVO");
+  const [nuevaNaturaleza, setNuevaNaturaleza] = useState<"DEUDORA" | "ACREEDORA">("DEUDORA");
+  const [nuevoPadre, setNuevoPadre] = useState("1.1.02");
+  const [nuevoModulo, setNuevoModulo] = useState<ModuloOrigenCuenta>("TESORERIA");
+  const [guardando, setGuardando] = useState(false);
+
+  // Saldos en vivo
+  const saldos = useMemo(() => {
+    return calcularSaldosPlanCuentas();
+  }, []);
+
+  const cuentasFiltradas = useMemo(() => {
+    const txt = filtroTexto.trim().toUpperCase();
+    return cuentas.filter((c) => {
+      const coincideTxt =
+        !txt ||
+        c.codigo.toUpperCase().includes(txt) ||
+        c.nombre.toUpperCase().includes(txt);
+      const coincideClase = filtroClase === "TODAS" || c.clase === filtroClase;
+      const coincideModulo = filtroModulo === "TODOS" || c.modulo_origen === filtroModulo;
+      return coincideTxt && coincideClase && coincideModulo;
+    });
+  }, [cuentas, filtroTexto, filtroClase, filtroModulo]);
+
+  const guardarSubcuenta = async () => {
+    if (!nuevoCodigo.trim()) return toast("Indique el código de la cuenta (ej. 1.1.02.004).", "warning");
+    if (!nuevoNombre.trim()) return toast("Indique el nombre de la subcuenta.", "warning");
+
+    const existente = cuentas.find((c) => c.codigo === nuevoCodigo.trim());
+    if (existente) return toast("Ese código de cuenta ya existe en el PUC.", "warning");
+
+    setGuardando(true);
+    const nuevaDef: CuentaContableDef = {
+      codigo: nuevoCodigo.trim(),
+      nombre: nuevoNombre.trim().toUpperCase(),
+      clase: nuevaClase,
+      naturaleza: nuevaNaturaleza,
+      nivel: 4,
+      codigo_padre: nuevoPadre || null,
+      acepta_movimientos: true,
+      modulo_origen: nuevoModulo,
+      activa: true,
+    };
+
+    if (supabase) {
+      try {
+        await supabase.from("plan_cuentas_contables").insert({
+          codigo: nuevaDef.codigo,
+          nombre: nuevaDef.nombre,
+          clase: nuevaDef.clase,
+          naturaleza: nuevaDef.naturaleza,
+          nivel: nuevaDef.nivel,
+          codigo_padre: nuevaDef.codigo_padre,
+          acepta_movimientos: true,
+          modulo_origen: nuevaDef.modulo_origen,
+          activa: true,
+        });
+      } catch {
+        /* fallback en memoria */
+      }
+    }
+
+    setCuentas((prev) => [...prev, nuevaDef]);
+    setGuardando(false);
+    setModalNuevaCuenta(false);
+    toast(`Subcuenta ${nuevaDef.codigo} - ${nuevaDef.nombre} creada con éxito.`, "success");
+    setNuevoCodigo("");
+    setNuevoNombre("");
+  };
+
+  const CLASE_BADGE: Record<string, string> = {
+    ACTIVO: "bg-blue-100 text-blue-800 border-blue-200",
+    PASIVO: "bg-amber-100 text-amber-800 border-amber-200",
+    PATRIMONIO: "bg-purple-100 text-purple-800 border-purple-200",
+    INGRESO: "bg-emerald-100 text-emerald-800 border-emerald-200",
+    COSTO_CONTRA_INGRESO: "bg-rose-100 text-rose-800 border-rose-200",
+    GASTO: "bg-red-100 text-red-800 border-red-200",
+    ORDEN: "bg-slate-100 text-slate-800 border-slate-300",
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Barra superior de herramientas y filtros */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-white p-4 shadow-sm">
+        <div>
+          <h2 className="text-sm font-black uppercase text-slate-800">
+            <span className="mr-1.5 text-primary-600">📘</span> Plan Único de Cuentas (PUC-NIIF Hípico)
+          </h2>
+          <p className="text-xs text-slate-500">
+            Catálogo jerárquico oficial de cuentas contables. Cifras puras sin símbolos de moneda.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={filtroTexto}
+            onChange={(e) => setFiltroTexto(e.target.value)}
+            placeholder="Buscar por código o nombre…"
+            className={`${inp} w-52 py-1.5 font-bold`}
+          />
+
+          <select
+            value={filtroClase}
+            onChange={(e) => setFiltroClase(e.target.value)}
+            className={`${inp} w-40 py-1.5 font-bold`}
+          >
+            <option value="TODAS">Todas las clases</option>
+            <option value="ACTIVO">1 · Activos</option>
+            <option value="PASIVO">2 · Pasivos</option>
+            <option value="PATRIMONIO">3 · Patrimonio</option>
+            <option value="INGRESO">4 · Ingresos</option>
+            <option value="COSTO_CONTRA_INGRESO">5 · Cruces / Costos</option>
+            <option value="GASTO">6 · Gastos</option>
+            <option value="ORDEN">7 · Cuentas de Orden</option>
+          </select>
+
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => setModalNuevaCuenta(true)}
+          >
+            <span>➕</span> Nueva Subcuenta
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              exportarTabla(
+                "puc_cuentas_contables",
+                ["Codigo", "Nombre", "Clase", "Naturaleza", "Nivel", "Modulo", "Saldo"],
+                cuentasFiltradas.map((c) => {
+                  const s = saldos.get(c.codigo)?.saldo ?? 0;
+                  return [c.codigo, c.nombre, c.clase, c.naturaleza, c.nivel, c.modulo_origen ?? "", formatearMontoSinMoneda(s)];
+                })
+              )
+            }
+          >
+            <span>⬇️</span> CSV
+          </Button>
+        </div>
+      </div>
+
+      {/* Tabla del Plan de Cuentas */}
+      <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+        <div className="max-h-[38rem] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-50 border-b border-line shadow-xs z-10">
+              <tr>
+                <th className={th}>Código</th>
+                <th className={th}>Nombre de la Cuenta</th>
+                <th className={th}>Clase</th>
+                <th className={th}>Naturaleza</th>
+                <th className={th}>Nivel</th>
+                <th className={th}>Módulo</th>
+                <th className={th + " text-right"}>Saldo Acumulado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cuentasFiltradas.map((c) => {
+                const s = saldos.get(c.codigo)?.saldo ?? 0;
+                const esMayor = c.nivel <= 2;
+                return (
+                  <tr
+                    key={c.codigo}
+                    className={`border-t border-line/70 transition-colors hover:bg-slate-50/70 ${
+                      esMayor ? "bg-slate-50/40 font-bold" : ""
+                    }`}
+                  >
+                    <td className={`${td} font-mono font-bold text-slate-800`}>
+                      {c.codigo}
+                    </td>
+                    <td className={td}>
+                      <span
+                        style={{ paddingLeft: `${Math.max(0, (c.nivel - 1) * 16)}px` }}
+                        className={`inline-block ${
+                          esMayor ? "text-slate-900 font-black text-xs" : "text-slate-700 font-semibold"
+                        }`}
+                      >
+                        {c.nivel === 1 ? "📁 " : c.nivel === 2 ? "📂 " : c.nivel === 3 ? "📋 " : "🔹 "}
+                        {c.nombre}
+                      </span>
+                    </td>
+                    <td className={td}>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${
+                          CLASE_BADGE[c.clase] || "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {c.clase.replace("_", " ")}
+                      </span>
+                    </td>
+                    <td className={td}>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                          c.naturaleza === "DEUDORA"
+                            ? "bg-blue-50 text-blue-700 border border-blue-200"
+                            : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                        }`}
+                      >
+                        {c.naturaleza}
+                      </span>
+                    </td>
+                    <td className={`${td} text-slate-500 font-mono text-center`}>
+                      N{c.nivel}
+                    </td>
+                    <td className={`${td} text-slate-500 text-[10px]`}>
+                      {c.modulo_origen || "—"}
+                    </td>
+                    <td
+                      className={`${td} text-right font-mono font-black ${
+                        s < 0 ? "text-danger-600" : s > 0 ? "text-emerald-700" : "text-slate-400"
+                      }`}
+                    >
+                      {formatearMontoSinMoneda(s)}
+                    </td>
+                  </tr>
+                );
+              })}
+              {cuentasFiltradas.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                    No hay cuentas contables que coincidan con los filtros aplicados.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal para crear subcuenta auxiliar */}
+      {modalNuevaCuenta && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+        >
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-line bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-line bg-slate-900 px-4 py-3 text-white">
+              <h3 className="text-xs font-black uppercase tracking-wider">
+                ➕ Crear Subcuenta Auxiliar Imputable (Nivel 4)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModalNuevaCuenta(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 p-4">
+              <div>
+                <label className={lbl}>Código Imputable (ej. 1.1.02.004) *</label>
+                <input
+                  value={nuevoCodigo}
+                  onChange={(e) => setNuevoCodigo(e.target.value)}
+                  placeholder="1.1.02.004"
+                  className={`${inp} font-mono font-bold`}
+                />
+              </div>
+
+              <div>
+                <label className={lbl}>Nombre de la Subcuenta *</label>
+                <input
+                  value={nuevoNombre}
+                  onChange={(e) => setNuevoNombre(e.target.value.toUpperCase())}
+                  placeholder="BANCO MERCANTIL EMPRESARIAL"
+                  className={`${inp} uppercase font-bold`}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={lbl}>Clase Contable</label>
+                  <select
+                    value={nuevaClase}
+                    onChange={(e) => setNuevaClase(e.target.value as ClaseCuenta)}
+                    className={`${inp} font-bold`}
+                  >
+                    <option value="ACTIVO">ACTIVO</option>
+                    <option value="PASIVO">PASIVO</option>
+                    <option value="PATRIMONIO">PATRIMONIO</option>
+                    <option value="INGRESO">INGRESO</option>
+                    <option value="COSTO_CONTRA_INGRESO">COSTO / CRUCES</option>
+                    <option value="GASTO">GASTO</option>
+                    <option value="ORDEN">ORDEN</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className={lbl}>Naturaleza</label>
+                  <select
+                    value={nuevaNaturaleza}
+                    onChange={(e) => setNuevaNaturaleza(e.target.value as "DEUDORA" | "ACREEDORA")}
+                    className={`${inp} font-bold`}
+                  >
+                    <option value="DEUDORA">DEUDORA</option>
+                    <option value="ACREEDORA">ACREEDORA</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={lbl}>Cuenta Padre</label>
+                  <input
+                    value={nuevoPadre}
+                    onChange={(e) => setNuevoPadre(e.target.value)}
+                    placeholder="1.1.02"
+                    className={`${inp} font-mono`}
+                  />
+                </div>
+
+                <div>
+                  <label className={lbl}>Módulo Origen</label>
+                  <select
+                    value={nuevoModulo}
+                    onChange={(e) => setNuevoModulo(e.target.value as ModuloOrigenCuenta)}
+                    className={`${inp} font-bold`}
+                  >
+                    <option value="TESORERIA">TESORERÍA</option>
+                    <option value="CLIENTES">CLIENTES</option>
+                    <option value="AVALES">AVALES</option>
+                    <option value="APUESTAS_TERCIOS">APUESTAS TERCIOS</option>
+                    <option value="CRUCES">CRUCES</option>
+                    <option value="INCENTIVOS">INCENTIVOS</option>
+                    <option value="TABLAS_FIJAS">TABLAS FIJAS</option>
+                    <option value="MARCAS">MARCAS</option>
+                    <option value="REMATES">REMATES</option>
+                    <option value="POLLAS">POLLAS</option>
+                    <option value="DUPLETAS">DUPLETAS</option>
+                    <option value="TAQUILLA_WPS">TAQUILLA WPS</option>
+                    <option value="CONVENIOS">CONVENIOS</option>
+                    <option value="CIERRE_SEMANAL">CIERRE SEMANAL</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-line bg-slate-50 px-4 py-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setModalNuevaCuenta(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                disabled={guardando}
+                onClick={() => void guardarSubcuenta()}
+              >
+                {guardando ? "Guardando…" : "Guardar Subcuenta"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===========================================================================
+//  📒  PESTAÑA 2: LIBRO DIARIO Y MAYOR ANALÍTICO (PARTIDA DOBLE)
+// ===========================================================================
+
+export function TabLibroDiarioMayor() {
+  const [filtroTexto, setFiltroTexto] = useState("");
+  const [filtroEvento, setFiltroEvento] = useState("TODOS");
+  const [asientos, setAsientos] = useState<AsientoContableRegistrado[]>(() => obtenerAsientosMemoria());
+
+  const recargarAsientos = () => {
+    setAsientos(obtenerAsientosMemoria());
+  };
+
+  const asientosFiltrados = useMemo(() => {
+    const f = filtroTexto.trim().toUpperCase();
+    return asientos.filter((a) => {
+      const coincideEvt = filtroEvento === "TODOS" || a.tipo_evento === filtroEvento;
+      const coincideTxt =
+        !f ||
+        a.descripcion.toUpperCase().includes(f) ||
+        (a.referencia_id && a.referencia_id.toUpperCase().includes(f)) ||
+        a.lineas.some(
+          (l) =>
+            l.cuenta_codigo.includes(f) ||
+            (l.cliente_nombre && l.cliente_nombre.toUpperCase().includes(f)) ||
+            (l.concepto && l.concepto.toUpperCase().includes(f))
+        );
+      return coincideEvt && coincideTxt;
+    });
+  }, [asientos, filtroTexto, filtroEvento]);
+
+  const totales = useMemo(() => {
+    let d = 0;
+    let h = 0;
+    for (const a of asientosFiltrados) {
+      d = sumarDinero(d, a.total_debe);
+      h = sumarDinero(h, a.total_haber);
+    }
+    return { debe: d, haber: h, diferencia: restarDinero(d, h) };
+  }, [asientosFiltrados]);
+
+  return (
+    <div className="space-y-4">
+      {/* Indicadores de balance de partida doble */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Debe (Libro Diario)</p>
+          <p className="text-2xl font-black font-mono text-slate-800">{formatearMontoSinMoneda(totales.debe)}</p>
+          <p className="text-[10px] text-slate-400">Sumatoria debitada en centavos exactos</p>
+        </div>
+
+        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Haber (Libro Diario)</p>
+          <p className="text-2xl font-black font-mono text-slate-800">{formatearMontoSinMoneda(totales.haber)}</p>
+          <p className="text-[10px] text-slate-400">Sumatoria acreditada en centavos exactos</p>
+        </div>
+
+        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Estado de Partida Doble</p>
+          <p
+            className={`text-2xl font-black font-mono ${
+              totales.diferencia === 0 ? "text-emerald-700" : "text-danger-600"
+            }`}
+          >
+            {totales.diferencia === 0 ? "0,00" : formatearMontoSinMoneda(totales.diferencia)}
+          </p>
+          <p className="text-[10px] font-bold text-slate-500">
+            {totales.diferencia === 0
+              ? "✅ Partida doble cuadrada: Debe = Haber"
+              : "🚫 Descuadre contable detectado"}
+          </p>
+        </div>
+      </div>
+
+      {/* Barra de filtros y exportación */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-white p-4 shadow-sm">
+        <div>
+          <h2 className="text-sm font-black uppercase text-slate-800">
+            <span className="mr-1.5 text-primary-600">📒</span> Libro Diario y Mayor Analítico
+          </h2>
+          <p className="text-xs text-slate-500">
+            Registro cronológico inmutable de asientos contables en doble partida.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={filtroTexto}
+            onChange={(e) => setFiltroTexto(e.target.value)}
+            placeholder="Filtrar por cliente, ref o concepto…"
+            className={`${inp} w-60 py-1.5 font-bold`}
+          />
+
+          <select
+            value={filtroEvento}
+            onChange={(e) => setFiltroEvento(e.target.value)}
+            className={`${inp} w-48 py-1.5 font-bold`}
+          >
+            <option value="TODOS">Todos los eventos</option>
+            <option value="LIQUIDACION_APUESTAS">Liquidación de Apuestas</option>
+            <option value="REEMBOLSO_CRUCE">Reembolso por Cruce (🔀)</option>
+            <option value="DEVOLUCION_INCENTIVO">Devolución de Incentivos</option>
+            <option value="DEPOSITO_CLIENTE">Depósitos de Clientes</option>
+            <option value="RETIRO_CLIENTE">Retiros de Clientes</option>
+            <option value="TRASLADO_CLIENTES">Traslados entre Clientes</option>
+            <option value="AVAL_OTORGADO">Aval Otorgado</option>
+            <option value="AVAL_PAGADO">Aval Pagado</option>
+            <option value="REVERSION_LIQUIDACION">Reversiones / Contra-asientos</option>
+          </select>
+
+          <Button variant="outline" size="sm" onClick={recargarAsientos}>
+            <span>🔄</span> Refrescar
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const filasCsv: Array<Array<unknown>> = [];
+              asientosFiltrados.forEach((a) => {
+                a.lineas.forEach((l) => {
+                  filasCsv.push([
+                    a.fecha_contable,
+                    a.numero_asiento,
+                    a.tipo_evento,
+                    l.cuenta_codigo,
+                    l.cuenta_nombre,
+                    l.cliente_nombre || "",
+                    l.concepto,
+                    formatearMontoSinMoneda(l.debe),
+                    formatearMontoSinMoneda(l.haber),
+                  ]);
+                });
+              });
+              exportarTabla(
+                "libro_diario_analitico",
+                ["Fecha", "Asiento N°", "Evento", "Cuenta", "Nombre Cuenta", "Cliente", "Concepto", "Debe", "Haber"],
+                filasCsv
+              );
+            }}
+          >
+            <span>⬇️</span> CSV
+          </Button>
+        </div>
+      </div>
+
+      {/* Asientos Contables */}
+      <div className="space-y-3">
+        {asientosFiltrados.map((a) => (
+          <div
+            key={a.id}
+            className="overflow-hidden rounded-2xl border border-line bg-white shadow-xs"
+          >
+            <div className="flex flex-wrap items-center justify-between border-b border-line/80 bg-slate-50/70 px-4 py-2.5 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                  Asiento #{a.numero_asiento}
+                </span>
+                <span className="font-mono text-slate-500 font-bold">📅 {a.fecha_contable}</span>
+                <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-[10px] font-black uppercase text-slate-700">
+                  {a.tipo_evento.replace("_", " ")}
+                </span>
+                {a.estado === "REVERSADO" && (
+                  <span className="rounded-full bg-purple-100 text-purple-800 border border-purple-200 px-2 py-0.5 text-[10px] font-black uppercase">
+                    Reversado
+                  </span>
+                )}
+              </div>
+              <div className="font-semibold text-slate-600 truncate max-w-md">
+                {a.descripcion}
+              </div>
+            </div>
+
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50/40 text-[9px] uppercase font-bold text-slate-500 border-b border-line/60">
+                <tr>
+                  <th className="px-3 py-1.5 text-left">Cuenta</th>
+                  <th className="px-3 py-1.5 text-left">Nombre de la Cuenta</th>
+                  <th className="px-3 py-1.5 text-left">Cliente / Tercero</th>
+                  <th className="px-3 py-1.5 text-left">Concepto</th>
+                  <th className="px-3 py-1.5 text-right">Debe</th>
+                  <th className="px-3 py-1.5 text-right">Haber</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line/40">
+                {a.lineas.map((l, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/50">
+                    <td className="px-3 py-1.5 font-mono font-bold text-slate-800">{l.cuenta_codigo}</td>
+                    <td className="px-3 py-1.5 text-slate-700 font-semibold">{l.cuenta_nombre}</td>
+                    <td className="px-3 py-1.5 font-semibold text-indigo-900">{l.cliente_nombre || "—"}</td>
+                    <td className="px-3 py-1.5 text-slate-500 text-[11px]">{l.concepto}</td>
+                    <td className="px-3 py-1.5 text-right font-mono font-black text-slate-800">
+                      {l.debe > 0 ? formatearMontoSinMoneda(l.debe) : "—"}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono font-black text-slate-800">
+                      {l.haber > 0 ? formatearMontoSinMoneda(l.haber) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t border-line bg-slate-50/60 font-mono text-[11px] font-black">
+                <tr>
+                  <td colSpan={4} className="px-3 py-1.5 text-right uppercase text-slate-600">
+                    Totales del Asiento #{a.numero_asiento}:
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-slate-900">
+                    {formatearMontoSinMoneda(a.total_debe)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-slate-900">
+                    {formatearMontoSinMoneda(a.total_haber)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ))}
+
+        {asientosFiltrados.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-line bg-white p-8 text-center text-xs font-semibold text-slate-400">
+            No se han generado asientos que coincidan con los filtros seleccionados.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+//  📊  PESTAÑA 3: BALANCE DE COMPROBACIÓN Y ESTADO DE RESULTADOS DE LA SEMANA
+// ===========================================================================
+
+export function TabEstadoResultadosSemana() {
+  const [asientos] = useState<AsientoContableRegistrado[]>(() => obtenerAsientosMemoria());
+  const r = useMemo(() => {
+    return calcularEstadoResultadosSemana(asientos);
+  }, [asientos]);
+
+  return (
+    <div className="space-y-4">
+      {/* Tarjetas resumen */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-wider text-emerald-800">Ingresos Brutos</p>
+          <p className="text-2xl font-black font-mono text-emerald-700">
+            {formatearMontoSinMoneda(r.ingresos.totalIngresosBrutos)}
+          </p>
+          <p className="text-[10px] text-emerald-600">Comisiones y ventas brutas</p>
+        </div>
+
+        <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-wider text-rose-800">Rebajas, Cruces e Incentivos</p>
+          <p className="text-2xl font-black font-mono text-rose-700">
+            {formatearMontoSinMoneda(r.rebajasEIncentivos.totalRebajasEIncentivos)}
+          </p>
+          <p className="text-[10px] text-rose-600">Cruces (5.1.01) + Incentivos (5.1.02/03)</p>
+        </div>
+
+        <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-wider text-blue-800">Ingreso Neto Operacional</p>
+          <p className="text-2xl font-black font-mono text-blue-700">
+            {formatearMontoSinMoneda(r.ingresoNetoOperacional)}
+          </p>
+          <p className="text-[10px] text-blue-600">Ingresos brutos menos deducciones</p>
+        </div>
+
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-wider text-indigo-800">Utilidad Neta de la Semana</p>
+          <p
+            className={`text-2xl font-black font-mono ${
+              r.utilidadNeta < 0 ? "text-danger-600" : "text-emerald-700"
+            }`}
+          >
+            {formatearMontoSinMoneda(r.utilidadNeta)}
+          </p>
+          <p className="text-[10px] text-indigo-600">Margen neto final consolidado</p>
+        </div>
+      </div>
+
+      {/* Cascada Financiera del Estado de Resultados */}
+      <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+        <div className="border-b border-line bg-slate-900 px-4 py-3 text-white flex items-center justify-between">
+          <h2 className="text-xs font-black uppercase tracking-wider">
+            📊 Estado de Resultados de la Semana (NIIF Cascada Operacional)
+          </h2>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              exportarTabla(
+                "estado_resultados_semana",
+                ["Concepto", "Cuenta", "Monto"],
+                [
+                  ["Comisión Apuestas Tercios", "4.1.01.001", formatearMontoSinMoneda(r.ingresos.comisionTercios)],
+                  ["Comisión Remates", "4.1.02.001", formatearMontoSinMoneda(r.ingresos.comisionRemates)],
+                  ["Comisión Pollas", "4.1.03.001", formatearMontoSinMoneda(r.ingresos.comisionPollas)],
+                  ["Comisión Dupletas", "4.1.04.001", formatearMontoSinMoneda(r.ingresos.comisionDupletas)],
+                  ["Ventas Tablas Fijas", "4.2.01.001", formatearMontoSinMoneda(r.ingresos.ventasTablas)],
+                  ["Ventas Marcas", "4.2.02.001", formatearMontoSinMoneda(r.ingresos.ventasMarcas)],
+                  ["Ventas Taquilla WPS", "4.2.03.001", formatearMontoSinMoneda(r.ingresos.ventasWps)],
+                  ["Ingresos Convenios", "4.3.01.001", formatearMontoSinMoneda(r.ingresos.convenios)],
+                  ["TOTAL INGRESOS BRUTOS", "4", formatearMontoSinMoneda(r.ingresos.totalIngresosBrutos)],
+                  ["(-) Reembolso Comisión por Cruces (🔀 CRUCE)", "5.1.01.001", formatearMontoSinMoneda(r.rebajasEIncentivos.reembolsosCruces)],
+                  ["(-) Devolución de Incentivos a Clientes", "5.1.02.001", formatearMontoSinMoneda(r.rebajasEIncentivos.incentivosClientes)],
+                  ["(-) Devolución a Avaladores", "5.1.03.001", formatearMontoSinMoneda(r.rebajasEIncentivos.incentivosAvaladores)],
+                  ["(=) INGRESO NETO OPERACIONAL", "", formatearMontoSinMoneda(r.ingresoNetoOperacional)],
+                  ["(-) Costo de Premios Pagados", "5.2", formatearMontoSinMoneda(r.costosPremios.totalPremios)],
+                  ["(-) Gastos Operativos y Bancarios", "6.1", formatearMontoSinMoneda(r.gastos.totalGastos)],
+                  ["(=) UTILIDAD NETA DE LA SEMANA", "", formatearMontoSinMoneda(r.utilidadNeta)],
+                ]
+              )
+            }
+          >
+            <span>⬇️</span> CSV
+          </Button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {/* 1. Ingresos Brutos */}
+          <div>
+            <h3 className="mb-2 text-xs font-black uppercase text-emerald-800 flex items-center gap-1.5">
+              <span>➕</span> 1. Ingresos Brutos por Comisiones y Ventas (4.x)
+            </h3>
+            <div className="rounded-xl border border-line bg-slate-50/60 p-3 space-y-1.5 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-slate-700">Comisión Apuestas entre Tercios (4.1.01.001)</span>
+                <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.comisionTercios)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-slate-700">Comisión Remates Hípicos (4.1.02.001)</span>
+                <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.comisionRemates)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-slate-700">Comisión Pollas Hípicas (4.1.03.001)</span>
+                <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.comisionPollas)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-slate-700">Comisión Dupletas (4.1.04.001)</span>
+                <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.comisionDupletas)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-slate-700">Ventas Tablas Fijas (4.2.01.001)</span>
+                <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.ventasTablas)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-slate-700">Ventas Marcas (4.2.02.001)</span>
+                <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.ventasMarcas)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-slate-700">Ventas Taquilla WPS (4.2.03.001)</span>
+                <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.ventasWps)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-slate-700">Ingresos por Convenios Inter-Grupos (4.3.01.001)</span>
+                <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.convenios)}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 font-black text-emerald-800 text-sm">
+                <span>Subtotal Ingresos Brutos de la Casa:</span>
+                <span className="font-mono">{formatearMontoSinMoneda(r.ingresos.totalIngresosBrutos)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Deducciones, Cruces e Incentivos */}
+          <div>
+            <h3 className="mb-2 text-xs font-black uppercase text-rose-800 flex items-center gap-1.5">
+              <span>➖</span> 2. Rebajas sobre Ingresos: Cruces e Incentivos (5.1.x)
+            </h3>
+            <div className="rounded-xl border border-line bg-rose-50/30 p-3 space-y-1.5 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-rose-900">
+                  Reembolso Comisión por Cruces (🔀 CRUCE Modalidad CON CRUCES) (5.1.01.001)
+                </span>
+                <span className="font-mono font-bold text-rose-700">
+                  -{formatearMontoSinMoneda(r.rebajasEIncentivos.reembolsosCruces)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-rose-900">
+                  Devolución de Incentivos a Clientes (A favor del cliente) (5.1.02.001)
+                </span>
+                <span className="font-mono font-bold text-rose-700">
+                  -{formatearMontoSinMoneda(r.rebajasEIncentivos.incentivosClientes)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-rose-900">
+                  Devolución de Comisión a Avaladores / Corredores (5.1.03.001)
+                </span>
+                <span className="font-mono font-bold text-rose-700">
+                  -{formatearMontoSinMoneda(r.rebajasEIncentivos.incentivosAvaladores)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center pt-2 font-black text-rose-800 text-sm">
+                <span>Total Rebajas, Cruces e Incentivos:</span>
+                <span className="font-mono">-{formatearMontoSinMoneda(r.rebajasEIncentivos.totalRebajasEIncentivos)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Ingreso Neto Operacional */}
+          <div className="rounded-xl border-2 border-blue-400 bg-blue-50/80 p-3.5 flex justify-between items-center font-black text-blue-950">
+            <span className="text-sm uppercase tracking-wide">
+              (=) Ingreso Neto Operacional de la Casa:
+            </span>
+            <span className="text-xl font-mono text-blue-800">
+              {formatearMontoSinMoneda(r.ingresoNetoOperacional)}
+            </span>
+          </div>
+
+          {/* 4. Costos y Gastos */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-line bg-slate-50/60 p-3 space-y-1.5 text-xs">
+              <span className="font-black uppercase text-slate-700 block mb-1">
+                Costos de Premios Pagados (5.2.x)
+              </span>
+              <div className="flex justify-between items-center py-0.5">
+                <span className="text-slate-600">Tablas Fijas:</span>
+                <span className="font-mono font-bold">{formatearMontoSinMoneda(r.costosPremios.premiosTablas)}</span>
+              </div>
+              <div className="flex justify-between items-center py-0.5">
+                <span className="text-slate-600">Marcas y Dupletas:</span>
+                <span className="font-mono font-bold">{formatearMontoSinMoneda(r.costosPremios.premiosMarcasDupletas)}</span>
+              </div>
+              <div className="flex justify-between items-center py-0.5">
+                <span className="text-slate-600">Taquilla WPS:</span>
+                <span className="font-mono font-bold">{formatearMontoSinMoneda(r.costosPremios.premiosWps)}</span>
+              </div>
+              <div className="flex justify-between items-center pt-1 border-t border-line font-black text-slate-800">
+                <span>Total Premios:</span>
+                <span className="font-mono">-{formatearMontoSinMoneda(r.costosPremios.totalPremios)}</span>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-line bg-slate-50/60 p-3 space-y-1.5 text-xs">
+              <span className="font-black uppercase text-slate-700 block mb-1">
+                Gastos Operativos (6.x)
+              </span>
+              <div className="flex justify-between items-center py-0.5">
+                <span className="text-slate-600">Comisiones Bancarias (6.1.01):</span>
+                <span className="font-mono font-bold">{formatearMontoSinMoneda(r.gastos.comisionesBancarias)}</span>
+              </div>
+              <div className="flex justify-between items-center py-0.5">
+                <span className="text-slate-600">Diferencial Cambiario (6.1.02):</span>
+                <span className="font-mono font-bold">{formatearMontoSinMoneda(r.gastos.diferencialCambiario)}</span>
+              </div>
+              <div className="flex justify-between items-center py-0.5">
+                <span className="text-slate-600">Administración y Operadores (6.1.03):</span>
+                <span className="font-mono font-bold">{formatearMontoSinMoneda(r.gastos.administracionOperadores)}</span>
+              </div>
+              <div className="flex justify-between items-center pt-1 border-t border-line font-black text-slate-800">
+                <span>Total Gastos:</span>
+                <span className="font-mono">-{formatearMontoSinMoneda(r.gastos.totalGastos)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 5. Utilidad Neta Final */}
+          <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-50 p-4 flex flex-wrap justify-between items-center font-black text-emerald-950 shadow-md">
+            <div>
+              <span className="text-base uppercase tracking-wide block">
+                (=) Utilidad Neta de la Semana (Margen Final Consolidado)
+              </span>
+              <span className="text-xs font-semibold text-emerald-800">
+                Ingreso Neto Operacional menos costos de premios y gastos operativos
+              </span>
+            </div>
+            <span
+              className={`text-3xl font-mono ${
+                r.utilidadNeta < 0 ? "text-danger-600" : "text-emerald-700"
+              }`}
+            >
+              {formatearMontoSinMoneda(r.utilidadNeta)}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
