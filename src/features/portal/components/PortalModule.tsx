@@ -65,6 +65,29 @@ import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 import { ModalActualizacionObligatoriaContacto } from "@/features/portal/components/ModalActualizacionObligatoriaContacto";
 import { ModalReportarPagoCliente } from "@/features/portal/components/ModalReportarPagoCliente";
 import { MisPagosYComprobantesView } from "@/features/portal/components/MisPagosYComprobantesView";
+import {
+  parsearMensajeJugada,
+  resolverDobleJugada,
+  parsearConcrecion,
+} from "@/features/portal/lib/gramatica-concrecion-hipica";
+import {
+  crearMesa,
+  proponer,
+  concretar,
+  procesarMensajeMesa,
+  disponibleDe,
+} from "@/features/portal/lib/propuestas-puestos";
+
+export {
+  parsearMensajeJugada,
+  resolverDobleJugada,
+  parsearConcrecion,
+  crearMesa,
+  proponer,
+  concretar,
+  procesarMensajeMesa,
+  disponibleDe,
+};
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));

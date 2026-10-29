@@ -139,3 +139,7 @@ export function resumirReversion(ops: OperacionReversion[]): ResumenReversion {
   }
   return { tickets: ops.length, credito: redondearCentavos(credito), porModalidad };
 }
+
+/** Mensaje oficial al anular/reversar una pizarra por variación de llegada. */
+export const MENSAJE_PIZARRA_ANULADA =
+  "🔄 Pizarra anulada por variación. Pagos y cobros revertidos; saldos restituidos. Ingresa la nueva pizarra oficial.";

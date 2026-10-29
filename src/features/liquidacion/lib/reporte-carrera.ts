@@ -28,6 +28,11 @@ import {
 import { calcularEstadoCuentaCliente, calcularResumenContableCliente } from "@/features/saldos/lib/contabilidad-central";
 
 export { colorDiscoNumero, calcularEstadoCuentaCliente, calcularResumenContableCliente };
+export {
+  bloqueSaldos,
+  construirMensajeResultadosAgente,
+  MENSAJE_PIZARRA_ANULADA,
+} from "@/features/liquidacion/lib/agente-pizarra";
 
 /**
  * Asiento contable interno de carrera: "Bono por Cruce de jugadas".

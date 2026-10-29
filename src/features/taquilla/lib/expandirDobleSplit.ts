@@ -20,6 +20,10 @@
 
 import { validarPuesto } from "@/features/motores/lib/puestos";
 import { parsearLineaWps } from "@/features/motores/lib/wps-incentivos";
+import {
+  normalizarBloquePuestos,
+  normalizarEjemplaresCombinados,
+} from "@/features/taquilla/lib/nomenclatura";
 
 export type LineaExpandida = {
   linea: string;
@@ -174,7 +178,9 @@ export function expandirLineasDobleSplit(lineas: string[]): LineaExpandida[] {
     // Necesitamos al menos el CABALLO; el CLIENTE 2 puede faltar y el módulo
     // lo marcará como "revisar" en su propia validación.
     if (tokens.length < 1) continue;
-    const caballo = tokens[0];
+    const caballoBruto = tokens[0];
+    const ejNorm = normalizarEjemplaresCombinados(caballoBruto);
+    const caballo = ejNorm.ok ? ejNorm.caballos : caballoBruto;
     const cliente2 = tokens.slice(1).join(" ");
 
     const monto = formatearMitad(montoNum / 2);
@@ -191,4 +197,15 @@ export function expandirLineasDobleSplit(lineas: string[]): LineaExpandida[] {
 export function tieneDobleSplit(linea: string): boolean {
   const m = PATRON_DOBLE.exec(String(linea ?? ""));
   return !!m && esJugadaCoherente(m[1]) && esJugadaCoherente(m[2]);
+}
+
+/**
+ * Si una expresión con guion o 'y' corresponde a un bloque oficial de 4 tramos
+ * de TABLA_JUGADAS (ej. "1p-1/2" o "1p y 1/2" → "1PY1Y2N"), devuelve el código
+ * canónico del bloque. De lo contrario devuelve null (indicando que son dos
+ * jugadas separadas para split/confirmación).
+ */
+export function resolverCodigoBloqueOficial(expresion: string): string | null {
+  const b = normalizarBloquePuestos(expresion);
+  return b.ok ? b.codigo : null;
 }

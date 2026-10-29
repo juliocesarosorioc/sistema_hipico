@@ -22,6 +22,10 @@
  */
 
 import { validarComando } from "@/features/taquilla/lib/validar";
+import {
+  normalizarBloquePuestos,
+  normalizarEjemplaresCombinados,
+} from "@/features/taquilla/lib/nomenclatura";
 
 /** Umbral de confianza global para pre-armar sin revisión (95%). */
 export const UMBRAL_PRE_ARMAR = 0.95;
@@ -89,8 +93,12 @@ export function normalizarJugadaIA(cruda: unknown): JugadaEstructurada | null {
   const conf = (o.confianza ?? {}) as Record<string, unknown>;
 
   const monto = texto(o.monto, 40);
-  const jugada = texto(o.jugada, 40);
-  const caballo = texto(o.caballo, 8);
+  const jugadaBruta = texto(o.jugada, 40);
+  const bNorm = normalizarBloquePuestos(jugadaBruta);
+  const jugada = bNorm.ok ? bNorm.codigo : jugadaBruta;
+  const caballoBruto = texto(o.caballo, 24);
+  const cNorm = normalizarEjemplaresCombinados(caballoBruto);
+  const caballo = cNorm.ok ? cNorm.caballos : caballoBruto;
   const cliente1 = texto(o.cliente1, 120);
   const cliente2 = texto(o.cliente2, 120);
 
@@ -149,9 +157,13 @@ export function normalizarJugadasIA(crudas: unknown): JugadaEstructurada[] {
  * jugada que después revienta al cobrar.
  */
 export function esJugadaCoherente(j: JugadaEstructurada): { ok: boolean; motivo?: string } {
-  const comando = [j.monto, j.jugada].map((s) => s.trim()).filter(Boolean).join(" ");
+  const bNorm = normalizarBloquePuestos(j.jugada);
+  const jugadaNorm = bNorm.ok ? bNorm.codigo : j.jugada.trim();
+  const comando = [j.monto, jugadaNorm].map((s) => s.trim()).filter(Boolean).join(" ");
   if (!comando) return { ok: false, motivo: "La IA no devolvió monto ni jugada." };
-  const caballo = /^\d{1,2}$/.test(j.caballo) ? j.caballo : undefined;
+  const cNorm = normalizarEjemplaresCombinados(j.caballo);
+  const caballoNorm = cNorm.ok ? cNorm.caballos : j.caballo.trim();
+  const caballo = /^\d{1,2}(?:y\d{1,2})*$/i.test(caballoNorm) ? caballoNorm : undefined;
   const v = validarComando(comando, undefined, caballo);
   if (!v.ok) return { ok: false, motivo: v.motivo || "La jugada no es coherente según el motor." };
   return { ok: true };

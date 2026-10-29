@@ -97,6 +97,11 @@ import { ReporteSaldosVisual } from "@/features/saldos/components/ReporteSaldosV
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
 import { ModalWpsApuestas } from "@/features/motores/components/ModalWpsApuestas";
 import { parsearLineaWps, type ApuestaWpsParseada } from "@/features/motores/lib/wps-incentivos";
+import {
+  ejecutarComandoPizarra,
+  construirMensajeResultadosAgente,
+  MENSAJE_PIZARRA_ANULADA,
+} from "@/features/liquidacion/lib/agente-pizarra";
 
 type FilaCarga = {
   jugada: string;
@@ -479,6 +484,9 @@ export function GestionJugadasModule() {
   const [filtroSaldosWsp, setFiltroSaldosWsp] = useState<FiltroSaldosWhatsapp>("todos");
   const [separarSaldosWsp, setSepararSaldosWsp] = useState(true);
   const [acuseReciboOperador, setAcuseReciboOperador] = useState(false);
+  const [comandoPizarraInput, setComandoPizarraInput] = useState("");
+  const [respuestaAgentePizarra, setRespuestaAgentePizarra] = useState<string | null>(null);
+  const [copiadoReporteAgente, setCopiadoReporteAgente] = useState(false);
 
   /**
    * Hipódromos con carreras CARGADAS en el día elegido (se elige el día
@@ -1474,7 +1482,15 @@ const hipodromosDelDia = useMemo(() => {
 
   const generarMensajeResultados = useCallback(
     (pizarra: PizarraResultados) => {
-      const msg = mensajeResultadoDeCarrera({
+      const obsLimites = observacionesExcesoCarrera
+        .map((o) => `${o.jugador} hasta ${Math.round(o.montoAceptado * 100) / 100}`)
+        .filter(Boolean);
+      const obsCombinadas = [...obsLimites, observaciones.trim()].filter(Boolean).join("\n") || undefined;
+      const saldosFinales: Record<string, number> = {};
+      for (const c of clientes) {
+        saldosFinales[c.nombre] = saldoDeCliente(c);
+      }
+      const msg = construirMensajeResultadosAgente({
         hipodromo: nombreHipodromoParaMostrar(hipodromo),
         carrera,
         fecha,
@@ -1485,12 +1501,13 @@ const hipodromosDelDia = useMemo(() => {
         tickets: ticketsParaPreliminar,
         tasaComision: comisionNum,
         saldos: saldosAjustados,
-        observaciones: observaciones.trim() || undefined,
+        observaciones: obsCombinadas,
+        saldosFinales,
       });
       setMensajeWhatsapp(msg);
       return msg;
     },
-    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, retirados, saldosAjustados, ticketsParaPreliminar]
+    [carrera, clientes, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, observacionesExcesoCarrera, retirados, saldosAjustados, ticketsParaPreliminar]
   );
 
   const totalInvertidoSesion = useMemo(
@@ -1958,8 +1975,8 @@ const hipodromosDelDia = useMemo(() => {
    * central. Exige `gestion_jugadas:fn_reabrir_carrera`. NUNCA usa
    * `window.confirm`: pide confirmación con el modal propio.
    */
-  const ejecutarReversar = async () => {
-    if (reversando) return;
+  const ejecutarReversar = async (): Promise<{ ok: boolean; motivo: string }> => {
+    if (reversando) return { ok: false, motivo: "Ya hay una reversión en curso." };
     setReversando(true);
     try {
       const r = await reversarLiquidacionCarrera({
@@ -1992,18 +2009,24 @@ const hipodromosDelDia = useMemo(() => {
           variante: "warning",
         });
       }
+      return { ok: r.ok, motivo: r.motivo };
     } finally {
       setReversando(false);
     }
   };
 
-  const ejecutarFinalizar = async (pizarraConfirmada?: PizarraResultados | null, abrirReporte = false) => {
+  const ejecutarFinalizar = async (
+    pizarraConfirmada?: PizarraResultados | null,
+    abrirReporte = false
+  ): Promise<{ ok: boolean; motivo: string }> => {
     const piz = pizarraConfirmada ?? ultimaPizarra;
     if (!piz) {
       setModalFinalizar(false);
       setReporteAlCerrarFinalizar(false);
       void abrirResultados();
-      return setAviso("Primero cargá los resultados (Ctrl+Y o Ctrl+R) para liquidar.");
+      const motivo = "Primero cargá los resultados (Ctrl+Y o Ctrl+R) para liquidar.";
+      setAviso(motivo);
+      return { ok: false, motivo };
     }
     // ÍTEM 1 — Re-apertura: liquida SÓLO las jugadas agregadas DESPUÉS de la
     // liquidación original. A propósito NO reescribe el resultado central ni
@@ -2036,7 +2059,7 @@ const hipodromosDelDia = useMemo(() => {
       // contra el saldo REAL (si no, la RPC rechaza y la jugada no se toma).
       void recargarClientes();
       void recargarJugadasGuardadas();
-      return;
+      return { ok: s.ok, motivo: s.motivo };
     }
     // AUNQUE no haya jugadas EN SESIÓN, la carrera se registra y se liquida: las
     // jugadas vendidas en OTROS módulos (tablas fijas, marcas, dupletas,
@@ -2111,7 +2134,7 @@ const hipodromosDelDia = useMemo(() => {
         setAviso(`✅ ${r.motivo}${avisoMarcas} · ⚠️ aviso de saldos: ${s.errores[0]}`);
         void recargarJugadasGuardadas();
         if (abrirReporte) setMostrarReporteLiquidacion(true);
-        return;
+        return { ok: true, motivo: `${r.motivo} · aviso de saldos: ${s.errores[0]}` };
       }
     }
     // La liquidación dejó de decidir los tickets: el panel sigue mostrándolos
@@ -2136,6 +2159,102 @@ const hipodromosDelDia = useMemo(() => {
     // intermedio «Registrar y Finalizar» y va directo al Reporte. Antes había
     // que cerrar ese paso de más para recién ver el reporte.
     if (abrirReporte) setMostrarReporteLiquidacion(true);
+    return { ok: r.ok, motivo: r.motivo };
+  };
+
+  /**
+   * Ciclo completo de Pizarra por Agente (Regla 3):
+   *  - "Pizarra: 5 - 2 - 8 - 1 - 4" / "Llegada 5,2,8,1,4" → liquida y devuelve Reporte WhatsApp con *💰 SALDOS*.
+   *  - "Anular pizarra por variación" / "Reversar pizarra" → revierte pagos/cobros y restituye saldos.
+   *  - "Nueva pizarra: 2 - 5 - 8 - 1 - 4" → reliquida y entrega el nuevo Reporte WhatsApp rectificado.
+   */
+  const ejecutarComandoAgentePizarra = async (textoDirecto?: string) => {
+    const cmdTexto = String(textoDirecto ?? comandoPizarraInput ?? "").trim();
+    if (!cmdTexto) return;
+    if (!listoParaCargar) {
+      setAviso("⚠️ Seleccione hipódromo y carrera antes de procesar la pizarra.");
+      return;
+    }
+
+    const estadoPizarraActual = {
+      liquidada: carreraLiquidada,
+      llegada: pizarraPuestosActual.length > 0 ? pizarraPuestosActual : null,
+    };
+
+    const res = await ejecutarComandoPizarra(
+      cmdTexto,
+      {
+        liquidar: async (_llegada, piz) => {
+          const pizResultados: PizarraResultados = {
+            pizarra: piz,
+            empates: [],
+            llenas: Object.keys(piz).length,
+            dividendos: ultimaPizarra?.dividendos ?? pizarraCentral?.dividendos ?? null,
+            matrizWps: ultimaPizarra?.matrizWps ?? pizarraCentral?.matrizWps ?? null,
+          };
+          setUltimaPizarra(pizResultados);
+          await guardarPizarraCentral({
+            hipodromo,
+            carrera,
+            fecha,
+            cargado_por: "AGENTE-PIZARRA",
+            r: pizResultados,
+            liquidar: false,
+            tasaComision: comisionNum,
+          }).catch(() => null);
+          const fin = await ejecutarFinalizar(pizResultados, false);
+          return { ok: fin.ok, error: fin.ok ? undefined : fin.motivo };
+        },
+        reversar: async () => {
+          const rev = await ejecutarReversar();
+          return { ok: rev.ok, error: rev.ok ? undefined : rev.motivo };
+        },
+        mensajeResultados: async (_llegada, piz) => {
+          limpiarCacheClientesVenta();
+          const clientesFrescos = await listarClientesVenta().catch(() => clientes);
+          const obsLimites = observacionesExcesoCarrera
+            .map((o) => `${o.jugador} hasta ${Math.round(o.montoAceptado * 100) / 100}`)
+            .filter(Boolean);
+          const obsCombinadas = [...obsLimites, observaciones.trim()].filter(Boolean).join("\n") || undefined;
+          const saldosFinales: Record<string, number> = {};
+          for (const c of clientesFrescos) {
+            saldosFinales[c.nombre] = saldoDeCliente(c);
+          }
+          return construirMensajeResultadosAgente({
+            hipodromo: nombreHipodromoParaMostrar(hipodromo),
+            carrera,
+            fecha,
+            grupo: grupoCabecera,
+            retirados: retirados.trim() || undefined,
+            pizarra: piz,
+            dividendos: ultimaPizarra?.dividendos ?? pizarraCentral?.dividendos ?? null,
+            tickets: ticketsParaPreliminar,
+            tasaComision: comisionNum,
+            saldos: saldosAjustados,
+            observaciones: obsCombinadas,
+            saldosFinales,
+          });
+        },
+      },
+      estadoPizarraActual
+    );
+
+    const textoCompleto = res.mensajeWhatsapp ? `${res.respuesta}\n\n${res.mensajeWhatsapp}` : res.respuesta;
+    setRespuestaAgentePizarra(textoCompleto);
+    if (res.mensajeWhatsapp) {
+      setMensajeWhatsapp(res.mensajeWhatsapp);
+      setVisorWhatsappTipo("resultados");
+      setTextoVisorWhatsapp(res.mensajeWhatsapp);
+      setAcuseReciboOperador(true);
+    }
+    if (!textoDirecto) setComandoPizarraInput("");
+    if (res.accion === "ANULADA") {
+      emitirToast(MENSAJE_PIZARRA_ANULADA, "warning");
+    } else if (res.ok) {
+      emitirToast("🏁 Pizarra liquidada y reporte WhatsApp generado.", "success");
+    } else {
+      emitirToast(res.respuesta, "error");
+    }
   };
 
   const cerrarFinalizar = () => {
@@ -3367,6 +3486,74 @@ const hipodromosDelDia = useMemo(() => {
 
         {/* Visor Interactivo de Reportes WhatsApp (#reporteArea) + Acuse de Recibo */}
         <div id="reporteArea" className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          {/* Barra del Agente de Pizarra (Liquidación instantánea, Reversión por Variación y Re-cálculo) */}
+          <div className="mb-3 rounded-xl border border-indigo-200 bg-white p-2.5 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] font-black uppercase tracking-wide text-indigo-950">
+                🤖 Agente de Pizarra Oficial (Liquidación · Variación · Saldos)
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {carreraLiquidada && puedeReabrir && (
+                  <button
+                    type="button"
+                    onClick={() => void ejecutarComandoAgentePizarra("Anular pizarra por variación")}
+                    disabled={reversando}
+                    className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-2.5 py-1 text-[11px] font-black text-white shadow-2xs hover:bg-rose-500 disabled:opacity-50"
+                    title="Anula la pizarra actual por variación de llegada, revierte pagos/cobros y restituye saldos"
+                  >
+                    🔄 Anular Pizarra por Variación
+                  </button>
+                )}
+                {(mensajeWhatsapp || (respuestaAgentePizarra && respuestaAgentePizarra.includes("PIZARRA OFICIAL"))) && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const txt = mensajeWhatsapp || respuestaAgentePizarra || "";
+                      if (!txt) return;
+                      try {
+                        await navigator.clipboard.writeText(txt);
+                        setCopiadoReporteAgente(true);
+                        setTimeout(() => setCopiadoReporteAgente(false), 2000);
+                        emitirToast("📋 Reporte WhatsApp copiado al portapapeles.", "success");
+                      } catch {
+                        emitirToast("No se pudo copiar el reporte al portapapeles.", "error");
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-black text-white shadow-2xs hover:bg-emerald-500"
+                  >
+                    {copiadoReporteAgente ? "✅ Reporte Copiado" : "📋 Copiar Reporte WhatsApp"}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                value={comandoPizarraInput}
+                onChange={(e) => setComandoPizarraInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void ejecutarComandoAgentePizarra();
+                }}
+                placeholder='Ej: "Pizarra: 5 - 2 - 8 - 1 - 4" · "Anular pizarra por variación" · "Nueva pizarra: 2 - 5 - 8 - 1 - 4"'
+                className="min-w-[240px] flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 font-mono text-xs text-slate-800 focus:border-indigo-500 focus:bg-white focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => void ejecutarComandoAgentePizarra()}
+                disabled={!comandoPizarraInput.trim()}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-black text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ⚡ Procesar Pizarra
+              </button>
+            </div>
+            {respuestaAgentePizarra && (
+              <div className="mt-2 rounded-lg border border-slate-200 bg-slate-900 p-2.5 text-xs text-slate-100">
+                <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed">
+                  {respuestaAgentePizarra}
+                </pre>
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"

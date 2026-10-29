@@ -59,6 +59,12 @@ import {
   esPollaActivaEnPortal,
   esPuestoActivoEnPortal,
 } from "@/features/portal/lib/control-activas-portal";
+import { parsearMensajeJugada } from "@/features/portal/lib/gramatica-concrecion-hipica";
+import { crearMesa, proponer } from "@/features/portal/lib/propuestas-puestos";
+import {
+  normalizarBloquePuestos,
+  normalizarEjemplaresCombinados,
+} from "@/features/taquilla/lib/nomenclatura";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -1191,6 +1197,7 @@ function ModalidadMarcasMultiplo6({
 // ============================================================================
 
 function ModalidadPuestosPortal({
+  sesion,
   tablas,
   bloqueada,
   enviando,
@@ -1219,9 +1226,62 @@ function ModalidadPuestosPortal({
   const [modalidadPuesto, setModalidadPuesto] = useState("1P");
   const [caballos, setCaballos] = useState("");
   const [monto, setMonto] = useState("20");
+  const [textoRapidoPuesto, setTextoRapidoPuesto] = useState("");
+  const [alertaGramaticaPuesto, setAlertaGramaticaPuesto] = useState<string | null>(null);
 
-  const MODALIDADES_PUESTO = ["1P", "2P", "3P", "10/8", "10/9", "10/7", "10/6", "NINI", "1Y2N", "2Y3N"];
+  const MODALIDADES_PUESTO = [
+    "1P",
+    "2P",
+    "3P",
+    "10/8",
+    "10/9",
+    "10/7",
+    "10/6",
+    "NINI",
+    "1Y2N",
+    "2Y3N",
+    "1PY1Y2N",
+    "1Y2NY2N",
+    "2NY2Y2N",
+    "2Y2NY2P",
+    "2PY2Y3N",
+    "2Y3NY3N",
+  ];
   const carreraActivaEnPortal = esPuestoActivoEnPortal(hipo, carrera);
+
+  const interpretarTextoRapido = () => {
+    const txt = textoRapidoPuesto.trim();
+    if (!txt) return;
+    const res = parsearMensajeJugada(txt);
+    if (!res.ok) {
+      setAlertaGramaticaPuesto(res.aclaratoria);
+      return;
+    }
+    setModalidadPuesto(res.datos.jugada);
+    setCaballos(res.datos.caballos);
+    const disp = Number(sesion.resumen.disponible ?? 0);
+    const esLibre = String(sesion.cliente.modo_juego ?? "").toLowerCase().trim() === "libre";
+    const nombreJugador = sesion.cliente.nombre || "Jugador";
+    if (!esLibre) {
+      const mesa = crearMesa({ [nombreJugador]: disp });
+      const p = proponer(mesa, {
+        autor: nombreJugador,
+        rol: res.datos.rol,
+        jugada: res.datos.jugada,
+        caballos: res.datos.caballos,
+        monto: res.datos.monto,
+      });
+      if (!p.ok) {
+        setAlertaGramaticaPuesto(p.mensajes[0] ?? "Sin saldo disponible.");
+        return;
+      }
+      setMonto(String(p.monto ?? res.datos.monto));
+      setAlertaGramaticaPuesto(p.mensajes[0] ?? null);
+    } else {
+      setMonto(String(res.datos.monto));
+      setAlertaGramaticaPuesto(null);
+    }
+  };
 
   const registrarPuesto = async () => {
     if (!carreraActivaEnPortal) {
@@ -1234,20 +1294,26 @@ function ModalidadPuestosPortal({
     if (!caballos.trim() || !(m > 0)) {
       return toast("Indicá el/los ejemplar(es) y un monto mayor a cero.", "warning");
     }
+    const ejNorm = normalizarEjemplaresCombinados(caballos);
+    const caballoCan = ejNorm.ok ? ejNorm.caballos : caballos.trim().toUpperCase();
+    const bNorm = normalizarBloquePuestos(modalidadPuesto);
+    const modalidadCan = bNorm.ok ? bNorm.codigo : modalidadPuesto;
     setEnviando(true);
     const r = await realizarJugada({
       tipo: "PUESTOS",
-      modalidad: modalidadPuesto,
+      modalidad: modalidadCan,
       hipodromo: hipo,
       fecha: hoyIso(),
       carrera,
-      caballo: caballos.trim().toUpperCase(),
+      caballo: caballoCan,
       monto: m,
     });
     setEnviando(false);
     if (!r.ok) return toast(r.error ?? "No se pudo registrar la jugada.", "error");
     setCaballos("");
-    toast(`✅ Jugada ${modalidadPuesto} (#${caballos.trim()}) por $${m} registrada y cargada a tu grupo.`, "success");
+    setTextoRapidoPuesto("");
+    setAlertaGramaticaPuesto(null);
+    toast(`✅ Jugada ${modalidadCan} (#${caballoCan}) por $${m} registrada y cargada a tu grupo.`, "success");
     await onRealizada();
   };
 
@@ -1263,6 +1329,31 @@ function ModalidadPuestosPortal({
       </div>
 
       <div className="p-4 space-y-4">
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3 space-y-2">
+          <label className="block text-[10px] font-black uppercase text-indigo-900">
+            ⚡ Dictado Rápido de Jugada (Ej: &quot;juego 1p-1/2 2-5 400&quot; o &quot;consigo 1p de 2y5 con 300&quot;)
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <input
+              value={textoRapidoPuesto}
+              onChange={(e) => setTextoRapidoPuesto(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") interpretarTextoRapido();
+              }}
+              placeholder='Ej: "juego 1p y 1/2 del 5 con 300" o "consigo 1p 2-5 300"'
+              className="flex-1 min-w-[220px] rounded-lg border border-indigo-300 bg-white px-3 py-1.5 font-mono text-xs font-bold text-slate-800"
+            />
+            <Button size="sm" onClick={interpretarTextoRapido} className="bg-indigo-600 text-white font-black">
+              ✨ Estructurar
+            </Button>
+          </div>
+          {alertaGramaticaPuesto && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900">
+              {alertaGramaticaPuesto}
+            </div>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Hipódromo</label>

@@ -75,6 +75,10 @@ export type ProyeccionEnCurso<C> = {
   observacionExceso: string | null;
   /** Observación resumida con menciones @número de Usuario 1 y Usuario 2 para el chat/reporte. */
   observacionMencion?: string | null;
+  /** Frase exacta de disponible para propuesta: Atento "Nombre", disponible X | Nombre sin saldo disponible */
+  alertaProponer?: string | null;
+  /** Frase exacta de tope en concreción: Nombre hasta X | Nombre sin saldo disponible */
+  alertaConcretar?: string | null;
 };
 
 /**
@@ -246,14 +250,22 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
 
     let observacionExceso: string | null = null;
     let observacionMencion: string | null = null;
+    let alertaProponer: string | null = null;
+    let alertaConcretar: string | null = null;
     if (cliente1 && !esSinTope(cliente1) && montoSolicitado > 0) {
+      const nom1 = String(cliente1.nombre ?? f.cliente1 ?? "Jugador 1").trim();
+      const fmtN = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
       if (montoAceptado <= 0 && dispAntes <= 0) {
         observacionExceso = "Sin saldo";
+        alertaProponer = `${nom1} sin saldo disponible`;
+        alertaConcretar = `${nom1} sin saldo disponible`;
       } else if (montoExcedido > 0) {
         const excEntero = Number.isInteger(montoExcedido)
           ? String(montoExcedido)
           : montoExcedido.toFixed(2);
         observacionExceso = `Excedido ${excEntero}`;
+        alertaProponer = `Atento "${nom1}", disponible ${fmtN(dispAntes)}`;
+        alertaConcretar = `${nom1} hasta ${fmtN(montoAceptado)}`;
       }
       if (observacionExceso) {
         const limpiarTel = (c: ClienteConSaldo | null | undefined) => {
@@ -263,13 +275,11 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
           const cod = String(c.codigo_pais ?? "").replace(/\D+/g, "");
           return cod && !t.startsWith(cod) ? `${cod}${t}` : t;
         };
-        const nom1 = String(cliente1.nombre ?? f.cliente1 ?? "Jugador 1").trim();
         const nom2 = String(cliente2?.nombre ?? f.cliente2 ?? "Banca").trim() || "Banca";
         const tel1 = limpiarTel(cliente1);
         const tel2 = limpiarTel(cliente2);
         const menc1 = tel1 ? `@${tel1} (${nom1})` : `@${nom1}`;
         const menc2 = tel2 ? `@${tel2} (${nom2})` : `@${nom2}`;
-        const fmtN = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
         const jugEtiq = f.caballo.trim() ? `${f.jugada.trim().toUpperCase()} (${f.caballo.trim()})` : f.jugada.trim().toUpperCase();
         observacionMencion = `${menc1} pidió ${fmtN(montoSolicitado)} con ${menc2} en ${jugEtiq} → solo juegan ${fmtN(montoAceptado)} porque ${nom1} excede el saldo.`;
       }
@@ -288,6 +298,8 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
       quedaCliente2,
       observacionExceso,
       observacionMencion,
+      alertaProponer,
+      alertaConcretar,
     });
   }
   return out;

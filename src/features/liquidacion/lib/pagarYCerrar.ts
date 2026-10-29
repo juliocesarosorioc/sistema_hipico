@@ -923,3 +923,14 @@ export async function liquidarDupletasDeCarrera(
   }
   return { ok: errores.length === 0, liquidadas, pagado: round2(pagado), error: errores[0] };
 }
+
+export {
+  parsearComandoPizarra,
+  pizarraDeLlegada,
+  ejecutarComandoPizarra,
+  MENSAJE_PIZARRA_ANULADA,
+  type ComandoPizarra,
+  type RespuestaPizarra,
+  type PuertoPizarra,
+  type EstadoPizarraAgente,
+} from "@/features/liquidacion/lib/agente-pizarra";

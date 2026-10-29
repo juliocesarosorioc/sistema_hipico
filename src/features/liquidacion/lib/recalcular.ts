@@ -45,6 +45,12 @@ import {
 import { restarDinero, sumarDinero } from "@/shared/lib/dinero";
 
 export { sincronizarSaldosRealesClientes };
+export {
+  parsearComandoPizarra,
+  pizarraDeLlegada,
+  ejecutarComandoPizarra,
+  MENSAJE_PIZARRA_ANULADA,
+} from "@/features/liquidacion/lib/agente-pizarra";
 
 export type ResRecalcular = {
   ok: boolean;

@@ -154,6 +154,7 @@
     "../src/features/contabilidad/lib/pagos-comprobantes.ts",
     "./plan-cuentas-partida-doble.test.ts",
     "./incentivos-carrera-silenciosos.test.ts",
-    "./pagos-comprobantes-ganadores.test.ts"
+    "./pagos-comprobantes-ganadores.test.ts",
+    "./agente-bloques-limites-pizarra.test.ts"
   ]
 }

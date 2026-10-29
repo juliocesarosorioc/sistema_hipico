@@ -650,3 +650,130 @@ export function caballoPareoLegible(caballo: string): string {
   const l = ladosDePareo(caballo);
   return l ? `${l.juega} X ${l.da}` : String(caballo ?? "").trim();
 }
+
+
+// ============================================================================
+// SINTAXIS SIMPLIFICADA DEL AGENTE: ejemplares combinados y jugadas en bloque
+// ============================================================================
+
+/**
+ * Preposiciones de relleno que el jugador intercala al dictar una jugada
+ * (\"consigo 1p DE 2y5 CON 300\"). No aportan información: se eliminan para que
+ * \"1p de 2y5 con 300\" y \"1p 2-5 300\" sean 100% equivalentes.
+ */
+const RE_RELLENO_JUGADA = /\b(?:de|del|al|con|por|el|la|los|las|para|ejemplar(?:es)?|caballo(?:s)?|numero|número|nro)\b/gi;
+
+/** Quita las preposiciones opcionales y los `#` de una frase de jugada. */
+export function quitarRellenoJugada(texto: string): string {
+  return String(texto ?? "")
+    .replace(/#/g, " ")
+    .replace(RE_RELLENO_JUGADA, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export type EjemplaresNormalizados =
+  | { ok: true; caballos: string; lista: number[] }
+  | { ok: false; motivo: string };
+
+/**
+ * Normaliza ejemplares combinados a la forma canónica `2y5`:
+ *   "2y5" · "2-5" · "2,5" · "2 y 5" · "de 2y5" → "2y5"
+ *   "5" → "5"
+ * Un pareo (`2x5`) se conserva tal cual. Los números sueltos separados solo por
+ * espacio (\"2 5\") son AMBIGUOS (¿llave o ejemplar + monto?) y se rechazan.
+ */
+export function normalizarEjemplaresCombinados(entrada: string): EjemplaresNormalizados {
+  const limpio = quitarRellenoJugada(entrada).toLowerCase();
+  if (!limpio) return { ok: false, motivo: "No hay ejemplares." };
+  if (/^\d+\s*x\s*\d+$/.test(limpio)) {
+    return { ok: true, caballos: limpio.replace(/\s+/g, ""), lista: [] };
+  }
+  // y / - / , entre dígitos son el MISMO conector.
+  const unido = limpio.replace(/(\d)\s*(?:y|-|,)\s*(?=\d)/g, "$1y");
+  if (!/^\d+(?:y\d+)*$/.test(unido)) {
+    return { ok: false, motivo: `No se entiende «${entrada.trim()}» como ejemplares.` };
+  }
+  const lista: number[] = [];
+  for (const n of unido.split("y").map(Number)) {
+    if (!Number.isInteger(n) || n <= 0) return { ok: false, motivo: "Ejemplar inválido." };
+    if (!lista.includes(n)) lista.push(n);
+  }
+  return { ok: true, caballos: lista.join("y"), lista };
+}
+
+/**
+ * Escalera completa de tramos (cada elemento es medio paso de la tabla oficial).
+ * Un BLOQUE es la unión de DOS tramos ADYACENTES:
+ *
+ *   pP · p/n · nN · n/n · nP · …   (n = p+1)
+ *
+ *   pP  + p/n  → pPYpYnN       (1p y 1/2  → 1PY1Y2N)
+ *   p/n + nN   → pYnNYnN       (1/2 y 2n  → 1Y2NY2N)
+ *   nN  + n/n  → nNYnYnN       (2n y 2/2  → 2NY2Y2N)
+ *   n/n + nP   → nYnNYnP       (2/2 y 2p  → 2Y2NY2P)
+ */
+const PUESTO_MAXIMO_BLOQUE = 6;
+const ESCALERA_TRAMOS: string[] = (() => {
+  const t: string[] = ["1P"];
+  for (let p = 1; p <= PUESTO_MAXIMO_BLOQUE; p++) {
+    const n = p + 1;
+    t.push(`${p}/${n}`, `${n}N`, `${n}/${n}`, `${n}P`);
+  }
+  return t;
+})();
+
+/** Código oficial de bloque (TABLA_JUGADAS) para cada par de tramos adyacentes. */
+const BLOQUES_POR_PAR: Map<string, string> = (() => {
+  const m = new Map<string, string>();
+  for (let p = 1; p <= PUESTO_MAXIMO_BLOQUE; p++) {
+    const n = p + 1;
+    m.set(`${p}P|${p}/${n}`, `${p}PY${p}Y${n}N`);
+    m.set(`${p}/${n}|${n}N`, `${p}Y${n}NY${n}N`);
+    m.set(`${n}N|${n}/${n}`, `${n}NY${n}Y${n}N`);
+    m.set(`${n}/${n}|${n}P`, `${n}Y${n}NY${n}P`);
+  }
+  return m;
+})();
+
+/** Patrón de UN tramo suelto: `1p` · `2n` · `1/2` · `2/2`. */
+export const PATRON_TRAMO_PUESTO = String.raw`\d\s*[pPnN]|\d\s*\/\s*\d`;
+
+/** Tramo en forma canónica (`1p` → `1P`, `1 / 2` → `1/2`) o null si no es un tramo. */
+export function canonicalizarTramoPuesto(tramo: string): string | null {
+  const t = String(tramo ?? "").replace(/\s+/g, "").toUpperCase();
+  const mSlash = /^(\d)\/(\d)$/.exec(t);
+  if (mSlash) {
+    const a = Number(mSlash[1]);
+    const b = Number(mSlash[2]);
+    const canon = `${a}/${b}`;
+    return ESCALERA_TRAMOS.includes(canon) ? canon : null;
+  }
+  return ESCALERA_TRAMOS.includes(t) ? t : null;
+}
+
+export type BloqueNormalizado =
+  | { ok: true; codigo: string; tramos: [string, string] }
+  | { ok: false; motivo: "NO_ES_BLOQUE" | "TRAMOS_NO_ADYACENTES"; tramos?: [string, string] };
+
+/**
+ * Convierte dos tramos de puesto unidos con `y` o `-` al código oficial de bloque:
+ *   "1p y 1/2" · "1p-1/2" → 1PY1Y2N · "2/3 y 3n" → 2Y3NY3N · "6/7-7n" → 6Y7NY7N
+ * El orden no importa ("1/2 y 1p" → el mismo bloque). Si los tramos no son
+ * adyacentes ("1p y 3p") NO forman una clave compuesta: son dos jugadas
+ * independientes y el llamador debe repartir el monto (ver `expandirDobleSplit`).
+ */
+export function normalizarBloquePuestos(entrada: string): BloqueNormalizado {
+  const texto = String(entrada ?? "").trim();
+  const m = new RegExp(`^(${PATRON_TRAMO_PUESTO})\\s*(?:y|-)\\s*(${PATRON_TRAMO_PUESTO})$`, "i").exec(texto);
+  if (!m) return { ok: false, motivo: "NO_ES_BLOQUE" };
+  const a = canonicalizarTramoPuesto(m[1]);
+  const b = canonicalizarTramoPuesto(m[2]);
+  if (!a || !b) return { ok: false, motivo: "NO_ES_BLOQUE" };
+  const ia = ESCALERA_TRAMOS.indexOf(a);
+  const ib = ESCALERA_TRAMOS.indexOf(b);
+  const [x, y] = ia <= ib ? [a, b] : [b, a];
+  const codigo = Math.abs(ia - ib) === 1 ? BLOQUES_POR_PAR.get(`${x}|${y}`) : undefined;
+  if (!codigo) return { ok: false, motivo: "TRAMOS_NO_ADYACENTES", tramos: [x, y] };
+  return { ok: true, codigo, tramos: [x, y] };
+}
