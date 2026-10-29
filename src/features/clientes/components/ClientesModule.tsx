@@ -5,6 +5,7 @@ import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { ModalCliente } from "@/features/clientes/components/ModalCliente";
+import { ModalCreacionRapidaCliente } from "@/features/clientes/components/ModalCreacionRapidaCliente";
 import { ModalPortalCliente } from "@/features/clientes/components/ModalPortalCliente";
 import { EstadoCuentaAcordeon } from "@/features/clientes/components/EstadoCuentaAcordeon";
 import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente";
@@ -122,6 +123,7 @@ export function ClientesModule() {
   const [porPagina, setPorPagina] = useState(25);
 
   const [abrirNuevo, setAbrirNuevo] = useState(false);
+  const [abrirNuevoRapido, setAbrirNuevoRapido] = useState(false);
   const [editando, setEditando] = useState<ClienteRow | null>(null);
   const [portalDe, setPortalDe] = useState<ClienteRow | null>(null);
   const [borrando, setBorrando] = useState<ClienteRow | null>(null);
@@ -255,6 +257,15 @@ export function ClientesModule() {
           )}
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAbrirNuevoRapido(true)}
+            className="!border-indigo-400 !bg-indigo-50 !font-black !text-indigo-800 hover:!bg-indigo-100"
+            title="Registrar nuevo cliente rápido con teléfono, código de usuario y saldo autorizado"
+          >
+            <span>👤+</span> Alta Rápida
+          </Button>
           <Guard permiso="clientes:btn_crear" disabled>
             <Button variant="default" size="sm" onClick={() => setAbrirNuevo(true)}>
               <span >➕</span> Nuevo Cliente
@@ -647,6 +658,14 @@ export function ClientesModule() {
       )}
 
       {/* Modales */}
+      {abrirNuevoRapido ? (
+        <ModalCreacionRapidaCliente
+          abierto={abrirNuevoRapido}
+          grupoIdDefault={grupoConsultado}
+          onClose={() => setAbrirNuevoRapido(false)}
+          onClienteCreado={() => void recargar(grupoConsultado)}
+        />
+      ) : null}
       {abrirNuevo ? <ModalCliente grupoIdPorDefecto={grupoConsultado} onClose={() => setAbrirNuevo(false)} onGuardado={() => void recargar(grupoConsultado)} /> : null}
       {editando ? <ModalCliente cliente={editando} grupoIdPorDefecto={grupoConsultado} onClose={() => setEditando(null)} onGuardado={() => void recargar(grupoConsultado)} /> : null}
       {portalDe ? <ModalPortalCliente cliente={portalDe} onClose={() => setPortalDe(null)} onGuardado={() => void recargar()} /> : null}

@@ -72,6 +72,7 @@ import {
 } from "@/features/jugadas/lib/jugadas";
 import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
 import { ModalGestionRapidaSaldo } from "@/features/contabilidad/components/ModalGestionRapidaSaldo";
+import { ModalCreacionRapidaCliente } from "@/features/clientes/components/ModalCreacionRapidaCliente";
 import { marcarTicketsAdelantados } from "@/features/jugadas/lib/marcar-adelantadas";
 import { BarraCarrerasLiquidadas } from "@/features/gestion/components/BarraCarrerasLiquidadas";
 import {
@@ -229,6 +230,7 @@ export function GestionJugadasModule() {
   const [edicionPreview, setEdicionPreview] = useState<EdicionPreview | null>(null);
   const [ocupadoPreview, setOcupadoPreview] = useState(false);
   const [modalSaldoRapido, setModalSaldoRapido] = useState(false);
+  const [modalCreacionRapidaCliente, setModalCreacionRapidaCliente] = useState(false);
 
   const { carreras: centralCarrerasDiaAllBase, carrerasDe, recargar: recargarRegistroCentral } =
     useRegistroCentralOpts(fecha);
@@ -2222,6 +2224,15 @@ const hipodromosDelDia = useMemo(() => {
             )}
           </button>
 
+          <button
+            type="button"
+            onClick={() => setModalCreacionRapidaCliente(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-400/50 bg-indigo-600 px-3 py-1 text-xs font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-indigo-500"
+            title="Registrar nuevo cliente rápido con teléfono, código de usuario y saldo autorizado"
+          >
+            <span>👤+</span> Nuevo Cliente Rápido
+          </button>
+
           {!modoOperador && !esOperadorFijo && (
             <button
               type="button"
@@ -2281,6 +2292,17 @@ const hipodromosDelDia = useMemo(() => {
           onGuardado={() => {
             void recargarClientes();
           }}
+        />
+      )}
+
+      {modalCreacionRapidaCliente && (
+        <ModalCreacionRapidaCliente
+          abierto={modalCreacionRapidaCliente}
+          onClose={() => setModalCreacionRapidaCliente(false)}
+          onClienteCreado={() => {
+            void recargarClientes();
+          }}
+          grupoIdDefault={grupoSesion}
         />
       )}
 
@@ -2881,6 +2903,15 @@ const hipodromosDelDia = useMemo(() => {
             </Button>
           </Guard>
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setModalCreacionRapidaCliente(true)}
+            className="!border-indigo-400 !bg-indigo-50 !font-black !text-indigo-800 hover:!bg-indigo-100"
+            title="Registrar nuevo cliente rápido con teléfono, código de usuario y saldo autorizado"
+          >
+            👤+ Nuevo Cliente Rápido
+          </Button>
           <Button
             size="sm"
             variant="outline"
