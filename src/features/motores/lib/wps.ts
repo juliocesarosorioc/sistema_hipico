@@ -37,6 +37,10 @@
  */
 import { registrarProcesador, TicketMotor, ResultadoMotor, COMISION_CASA } from "@/features/betting/lib/bettingEngine";
 import { posicionesDePizarra } from "@/features/motores/lib/puestos";
+import {
+  calcularDividendoConIncentivos,
+  type ConfiguracionIncentivosWps,
+} from "@/features/motores/lib/wps-incentivos";
 
 const TASA_DEFECTO = COMISION_CASA.rate * 100;
 
@@ -124,7 +128,8 @@ export function dividendoWps(
  */
 export function liquidarWps(
   t: TicketMotor,
-  tasaComision?: number | null
+  tasaComision?: number | null,
+  configIncentivos?: Partial<ConfiguracionIncentivosWps> | null
 ): ResultadoMotor | null {
   const tipo = tipoWps(t.tipo_jugada);
   if (!tipo) return null;
@@ -214,14 +219,18 @@ export function liquidarWps(
     };
   }
 
-  const bruto = round2(t.monto * mult);
+  const calcDividendo = calcularDividendoConIncentivos(mult, configIncentivos, tipo);
+  const multFinal = calcDividendo.dividendoFinal;
+  const bruto = round2(t.monto * multFinal);
   const gananciaBruta = bruto - t.monto;
   const comision = gananciaBruta > 0 ? round2(gananciaBruta * (tasa / 100)) : 0;
   return {
     ok: true,
     motivo:
       `WPS ${tipo} GANA (${clave}, ejemplar ${ejemplar} en ${puesto}º): ` +
-      `$${t.monto} x ${mult}x = bruto $${round2(bruto)}` +
+      `$${t.monto} x ${multFinal}x` +
+      (calcDividendo.incentivoTotal > 0 ? ` (base ${mult} + inc ${calcDividendo.incentivoTotal})` : "") +
+      ` = bruto $${round2(bruto)}` +
       (comision > 0 ? ` − comision casa $${round2(comision)}` : ""),
     totalClienteNeto: round2(bruto - comision),
     balanceBanca: round2(t.monto - bruto + comision),

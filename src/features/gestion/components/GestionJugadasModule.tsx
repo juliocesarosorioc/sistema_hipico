@@ -94,6 +94,8 @@ import { agruparAdelantadasPorSeccion } from "@/features/liquidacion/lib/reporte
 import ReporteCarrera, { type ObservacionOrdenExceso } from "@/features/saldos/components/ReporteCarrera";
 import { ReporteSaldosVisual } from "@/features/saldos/components/ReporteSaldosVisual";
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
+import { ModalWpsApuestas } from "@/features/motores/components/ModalWpsApuestas";
+import type { ApuestaWpsParseada } from "@/features/motores/lib/wps-incentivos";
 
 type FilaCarga = {
   jugada: string;
@@ -307,6 +309,7 @@ export function GestionJugadasModule() {
   const setGrupoActivo = useAuthStore((s) => s.setGrupoActivo);
 
   const [modalControlCruces, setModalControlCruces] = useState(false);
+  const [modalWps, setModalWps] = useState(false);
 
   const esUsuarioOAdminPrincipal = Boolean(
     esPrincipal || veTodosLosGrupos || esUsuarioPrincipal(usuarioSesion)
@@ -345,6 +348,15 @@ export function GestionJugadasModule() {
   useEffect(() => {
     void recargarClientes();
   }, [grupoActivo, recargarClientes]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("modal") === "wps") {
+        setModalWps(true);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let vivo = true;
@@ -2179,6 +2191,15 @@ const hipodromosDelDia = useMemo(() => {
           {/* Botón para abrir el Modal de Control de Cruces */}
           <button
             type="button"
+            onClick={() => setModalWps(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-400/50 bg-indigo-600 px-3 py-1 text-xs font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-indigo-500"
+            title="Abrir modal de apuestas e incentivos W.P.S. (Win, Place, Show)"
+          >
+            <span>🏇</span> WPS (Win·Place·Show)
+          </button>
+
+          <button
+            type="button"
             onClick={() => setModalControlCruces(true)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/50 bg-amber-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-amber-300 shadow-sm transition hover:bg-amber-500/30"
             title="Abrir panel de control de cruces de esta carrera"
@@ -2429,6 +2450,36 @@ const hipodromosDelDia = useMemo(() => {
             </span>
           </span>
         </div>
+
+        {/* Modal dedicado de W.P.S. (Win, Place, Show) */}
+        <ModalWpsApuestas
+          abierto={modalWps}
+          onCerrar={() => setModalWps(false)}
+          grupoId={grupoSesion}
+          nombreGrupo={grupoCabecera}
+          hipodromo={nombreHipodromo}
+          carrera={carrera}
+          gruposDisponibles={gruposVenta.map((g) => ({ id: g.id, nombre: g.nombre }))}
+          onCargarApuestas={(apuestas: ApuestaWpsParseada[]) => {
+            const nuevasFilas: FilaCarga[] = apuestas.map((ap) => ({
+              jugada: ap.modalidad,
+              caballo: ap.ejemplar,
+              monto: String(ap.monto),
+              cliente1: ap.jugador,
+              cliente2: "",
+            }));
+            setFilas((prev) => {
+              const esSoloVacia =
+                prev.length === 1 &&
+                !prev[0].jugada &&
+                !prev[0].caballo &&
+                !prev[0].monto &&
+                !prev[0].cliente1;
+              return esSoloVacia ? nuevasFilas : [...prev, ...nuevasFilas];
+            });
+            setAviso(`🏇 Se cargaron ${nuevasFilas.length} jugadas WPS a la tabla de carga.`);
+          }}
+        />
 
         {/* Modal dedicado de Control de Cruces de esta Carrera */}
         {modalControlCruces && (

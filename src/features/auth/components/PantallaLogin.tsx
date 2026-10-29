@@ -148,10 +148,23 @@ export default function PantallaLogin() {
       return;
     }
 
-    if (!recaptchaToken) {
+    let tokenValido = recaptchaToken;
+    if (!tokenValido && typeof window !== "undefined" && window.grecaptcha) {
+      try {
+        const resp = window.grecaptcha.getResponse();
+        if (resp) {
+          tokenValido = resp;
+          setRecaptchaToken(resp);
+        }
+      } catch {
+        // Ignorar
+      }
+    }
+
+    if (!tokenValido) {
       useAuthStore.setState({
         cargando: false,
-        errorLogin: "Por favor complete la verificación de seguridad reCAPTCHA antes de iniciar sesión.",
+        errorLogin: "⚠️ Por favor complete la verificación de seguridad reCAPTCHA antes de iniciar sesión.",
       });
       return;
     }
@@ -357,7 +370,7 @@ export default function PantallaLogin() {
           </div>
           <button
             type="submit"
-            disabled={cargando || !recaptchaToken}
+            disabled={cargando}
             className="w-full rounded-lg bg-slate-800 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
           >
             {cargando ? (

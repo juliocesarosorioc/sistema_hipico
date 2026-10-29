@@ -102,10 +102,7 @@ export const CATEGORIAS: Categoria[] = [
       { href: "/remates", emoji: "🔔", txt: "Remates" },
       { href: "/dupleta", emoji: "🎯", txt: "Dupletas" },
       { href: "/pollas", emoji: "🏆", txt: "Pollas" },
-      // W.P.S. INACTIVA para todos los usuarios: sin `href` entra a la rama
-      // deshabilitada (chip 🚧 + pointer-events-none/opacity-50) y no se ofrece
-      // como pantalla operativa. El motor no se toca (features/motores/wps.ts).
-      { emoji: "🏇", txt: "W.P.S.", badge: WPS_PLANIFICACION_CORTO, titulo: WPS_PLANIFICACION },
+      { href: "/apuestas?modal=wps", emoji: "🏇", txt: "W.P.S.", badge: "⚡ Activo", titulo: "Win / Place / Show con Incentivos y Tabla Venezuela" },
     ],
   },
   {

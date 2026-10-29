@@ -47,14 +47,25 @@ export function RecaptchaWidget({ onVerificado, onExpirado, className = "" }: Pr
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<number | null>(null);
 
+  // Mantenemos los callbacks en refs para no disparar re-render ni romper closures
+  const onVerificadoRef = useRef(onVerificado);
+  const onExpiradoRef = useRef(onExpirado);
+
+  useEffect(() => {
+    onVerificadoRef.current = onVerificado;
+    onExpiradoRef.current = onExpirado;
+  });
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    let cancelado = false;
+    let montado = true;
     const scriptId = "google-recaptcha-script";
 
     const inicializarWidget = () => {
-      if (cancelado || !containerRef.current) return false;
+      if (!montado || !containerRef.current) return false;
+
+      // Si ya está renderizado
       if (widgetIdRef.current !== null || containerRef.current.childElementCount > 0) {
         setCargado(true);
         return true;
@@ -67,24 +78,23 @@ export function RecaptchaWidget({ onVerificado, onExpirado, className = "" }: Pr
             sitekey: siteKey,
             theme: "light",
             callback: (token: string) => {
-              if (cancelado) return;
-              onVerificado(token);
+              if (token) {
+                onVerificadoRef.current?.(token);
+              }
             },
             "expired-callback": () => {
-              if (cancelado) return;
-              onExpirado?.();
+              onExpiradoRef.current?.();
             },
             "error-callback": () => {
-              if (cancelado) return;
-              onExpirado?.();
+              onExpiradoRef.current?.();
             },
           });
           widgetIdRef.current = id;
-          setCargado(true);
+          if (montado) setCargado(true);
           return true;
         } catch (err) {
           console.warn("reCAPTCHA ya renderizado o en proceso:", err);
-          setCargado(true);
+          if (montado) setCargado(true);
           return true;
         }
       }
@@ -100,7 +110,7 @@ export function RecaptchaWidget({ onVerificado, onExpirado, className = "" }: Pr
       script.async = true;
       script.defer = true;
       script.onerror = () => {
-        if (!cancelado) setErrorCargaGoogle(true);
+        if (montado) setErrorCargaGoogle(true);
       };
       document.head.appendChild(script);
     }
@@ -108,7 +118,7 @@ export function RecaptchaWidget({ onVerificado, onExpirado, className = "" }: Pr
     // Verificar si grecaptcha ya está listo
     if (window.grecaptcha?.ready) {
       window.grecaptcha.ready(() => {
-        inicializarWidget();
+        if (montado) inicializarWidget();
       });
     }
 
@@ -119,17 +129,31 @@ export function RecaptchaWidget({ onVerificado, onExpirado, className = "" }: Pr
       if (inicializarWidget() || intentos >= 25) {
         clearInterval(interval);
         if (intentos >= 25 && widgetIdRef.current === null && !cargado) {
-          // Si tras 5 segundos no cargó por firewall o bloqueo de red
-          setErrorCargaGoogle(true);
+          if (montado) setErrorCargaGoogle(true);
         }
       }
     }, 200);
 
+    // Sondeo de respaldo para detectar si Google ya dio respuesta en su textarea interno
+    const checkTokenInterval = setInterval(() => {
+      if (typeof window !== "undefined" && window.grecaptcha && widgetIdRef.current !== null) {
+        try {
+          const res = window.grecaptcha.getResponse(widgetIdRef.current);
+          if (res) {
+            onVerificadoRef.current?.(res);
+          }
+        } catch {
+          // Ignorar
+        }
+      }
+    }, 600);
+
     return () => {
-      cancelado = true;
+      montado = false;
       clearInterval(interval);
+      clearInterval(checkTokenInterval);
     };
-  }, [siteKey, onVerificado, onExpirado, cargado]);
+  }, [siteKey]);
 
   // Si falló la carga del script externo de Google (ej. sin conexión a google.com)
   if (errorCargaGoogle) {
@@ -144,12 +168,12 @@ export function RecaptchaWidget({ onVerificado, onExpirado, className = "" }: Pr
                 const checked = e.target.checked;
                 setVerificadoFallback(checked);
                 if (checked) {
-                  onVerificado(`rcpt_fb_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`);
+                  onVerificadoRef.current?.(`rcpt_fb_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`);
                 } else {
-                  onExpirado?.();
+                  onExpiradoRef.current?.();
                 }
               }}
-              className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
             />
             <span className="text-xs font-semibold text-slate-800">
               No soy un robot

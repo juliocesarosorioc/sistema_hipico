@@ -590,6 +590,8 @@ const RE_JUGADA_LETRA = /^(?:\d+[y]\d*[pn]?|\d+[pn]|pp)$/;
 const RE_JUGADA_BARRA = /^\d+\/\d+(?:[.,]\d+)*/;
 /** A Premio de la casa: "10a8" / "10a6.5" (misma gramática que "10/8"). */
 const RE_A_PREMIO = /^\d+(?:[.,]\d+)?[aA]\d+(?:[.,]\d+)?$/;
+/** Jugadas americanas directas: win, place, show, wps */
+const RE_JUGADA_WPS = /^(?:win|place|show|wps)$/i;
 
 function limpiarToken(tok: string): string {
   return tok.replace(RE_PURGADO, "");
@@ -615,7 +617,7 @@ type TokenAnalizado = {
 };
 
 function esJugadaLetra(tok: string): boolean {
-  return RE_JUGADA_LETRA.test(tok) || RE_A_PREMIO.test(tok);
+  return RE_JUGADA_LETRA.test(tok) || RE_A_PREMIO.test(tok) || RE_JUGADA_WPS.test(tok);
 }
 
 /* Expresión de ejemplares DIVIDIDA entre los dos clientes, tal como la acepta

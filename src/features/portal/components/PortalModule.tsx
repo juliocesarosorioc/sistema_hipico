@@ -259,6 +259,7 @@ function LoginScreen(props: {
 }) {
   const [captchaOk, setCaptchaOk] = useState(false);
   const [ipDetectada, setIpDetectada] = useState<string>("");
+  const [errorLocal, setErrorLocal] = useState("");
 
   useEffect(() => {
     obtenerIpCliente().then((ip) => setIpDetectada(ip));
@@ -317,12 +318,34 @@ function LoginScreen(props: {
             </div>
           )}
 
+          {errorLocal && (
+            <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs font-bold text-red-600">
+              <span className="mr-1">⚠️</span> {errorLocal}
+            </p>
+          )}
+
           <Button
             variant="default"
             size="lg"
-            disabled={!props.autoEntrar && !captchaOk}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
-            onClick={props.onEntrar}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 cursor-pointer"
+            onClick={() => {
+              let ok = captchaOk;
+              if (!ok && typeof window !== "undefined" && window.grecaptcha) {
+                try {
+                  const resp = window.grecaptcha.getResponse();
+                  if (resp) {
+                    ok = true;
+                    setCaptchaOk(true);
+                  }
+                } catch {}
+              }
+              if (!props.autoEntrar && !ok) {
+                setErrorLocal("Por favor complete la verificación de seguridad reCAPTCHA antes de entrar.");
+                return;
+              }
+              setErrorLocal("");
+              props.onEntrar();
+            }}
           >
             <span className="mr-1">🔑</span> Entrar al Portal
           </Button>
