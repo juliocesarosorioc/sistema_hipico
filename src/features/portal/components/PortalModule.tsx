@@ -419,6 +419,71 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-slate-100 flex flex-col">
+      {/* Cabecera Superior del Portal de Jugadores: En el espacio superior izquierdo SIEMPRE se muestra el logo del grupo */}
+      <header className="sticky top-0 z-30 flex h-16 w-full shrink-0 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur shadow-xs">
+        {/* ESPACIO SUPERIOR IZQUIERDO: Toggle de menú + LOGO DEL GRUPO + Nombre del Grupo */}
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={() => setMenuAbierto((v) => !v)}
+            aria-label={menuAbierto ? "Ocultar menú lateral" : "Abrir menú lateral"}
+            title={menuAbierto ? "Ocultar menú lateral" : "Abrir menú lateral"}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 transition shadow-xs"
+          >
+            <span className="text-base font-bold">{menuAbierto ? "✕" : "☰"}</span>
+          </button>
+
+          <div className="flex items-center gap-2.5 min-w-0" title={`Grupo: ${nombreGrupoActivo}`}>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-1 shadow-inner">
+              {logoGrupoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={logoGrupoUrl}
+                  alt={`Logo de ${nombreGrupoActivo}`}
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <span className="text-xl leading-none">🪙</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-black uppercase tracking-tight text-slate-900 leading-tight">
+                {nombreGrupoActivo}
+              </h1>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">
+                Portal de Usuarios
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Lado derecho de la cabecera */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
+            <span className="text-xs">👤</span>
+            <span className="text-xs font-black text-slate-800">{sesion.cliente.nombre}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPerfilAbierto(true)}
+            className="hidden md:flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+            title="Mi Perfil"
+          >
+            <span>⚙️</span>
+            <span>Perfil</span>
+          </button>
+          <button
+            type="button"
+            onClick={onSalir}
+            className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-700 hover:bg-rose-100 transition"
+            title="Cerrar sesión"
+          >
+            <span>🚪</span>
+            <span className="hidden sm:inline">Salir</span>
+          </button>
+        </div>
+      </header>
+
       <div className="mx-auto flex w-full max-w-[1600px] flex-1 gap-4 px-4 py-5">
         {/* Menú ocultable a la izquierda para todas las opciones */}
         {menuAbierto ? (
@@ -529,19 +594,6 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
 
         {/* Área central de contenido */}
         <main className="min-w-0 flex-1 space-y-4">
-          {/* Botón para recuperar el menú lateral cuando está oculto (no es una barra) */}
-          {!menuAbierto ? (
-            <div>
-              <button
-                type="button"
-                onClick={() => setMenuAbierto(true)}
-                className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white shadow-md hover:bg-slate-800"
-                title="Abrir menú"
-              >
-                ☰ Menú
-              </button>
-            </div>
-          ) : null}
 
           {/* Totales: saldo, incentivo y disponible (antes vivian en la barra superior) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

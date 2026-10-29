@@ -13,6 +13,8 @@ import {
 } from "@/features/seguridad/lib/capacidades";
 import { WPS_PLANIFICACION, WPS_PLANIFICACION_CORTO } from "@/features/motores/lib/wps-planificacion";
 import { listarGruposVenta } from "@/features/grupos/lib/grupos";
+import { conCacheBust } from "@/shared/lib/logos";
+import { useVersionLogos } from "@/shared/store/useHipodromosStore";
 
 type Item = {
   href?: string;
@@ -198,6 +200,7 @@ export function Sidebar({
 
   const [nombreGrupoResuelto, setNombreGrupoResuelto] = useState<string>("");
   const [logoGrupoResuelto, setLogoGrupoResuelto] = useState<string | null>(null);
+  const versionLogos = useVersionLogos();
 
   useEffect(() => {
     let vivo = true;
@@ -225,7 +228,7 @@ export function Sidebar({
     return () => {
       vivo = false;
     };
-  }, [grupoId, grupoActivo]);
+  }, [grupoId, grupoActivo, versionLogos]);
 
   const nombreGrupoCabecera =
     (grupoNombre && grupoNombre.trim()) ||
@@ -308,9 +311,9 @@ export function Sidebar({
           {logoGrupoResuelto ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={logoGrupoResuelto}
+              src={conCacheBust(logoGrupoResuelto, versionLogos) || logoGrupoResuelto}
               alt={nombreGrupoCabecera}
-              className="h-8 w-8 shrink-0 rounded-lg border border-slate-600 bg-white object-contain p-0.5"
+              className="h-9 w-9 shrink-0 rounded-lg border border-slate-600 bg-white object-contain p-0.5 shadow-sm"
             />
           ) : (
             <span className="shrink-0 text-2xl">🪙</span>

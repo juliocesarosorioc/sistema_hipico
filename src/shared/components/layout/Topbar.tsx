@@ -9,6 +9,9 @@ import { RelojNavegador } from "@/shared/components/layout/RelojNavegador";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { rutaLoginConBasePath, limpiarAlmacenamientoSesionLocal } from "@/features/auth/lib/sesion";
 import { ModalGestionRapidaSaldo } from "@/features/contabilidad/components/ModalGestionRapidaSaldo";
+import { conCacheBust } from "@/shared/lib/logos";
+import { useVersionLogos } from "@/shared/store/useHipodromosStore";
+import { listarGruposVenta } from "@/features/grupos/lib/grupos";
 
 /**
  * Barra superior limpia de la SPA (Organismo del layout raíz).
@@ -104,6 +107,42 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const modoOperador = useAuthStore((s) => s.modoOperador);
   const setModoOperador = useAuthStore((s) => s.setModoOperador);
   const perfiles = useAuthStore((s) => s.perfiles);
+  const grupoId = useAuthStore((s) => s.grupoId);
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const grupoNombre = useAuthStore((s) => s.grupoNombre);
+  const versionLogos = useVersionLogos();
+
+  const [logoGrupo, setLogoGrupo] = useState<string | null>(null);
+  const [nombreGrupo, setNombreGrupo] = useState<string>("");
+
+  useEffect(() => {
+    let vivo = true;
+    void listarGruposVenta()
+      .then((grupos) => {
+        if (!vivo) return;
+        const idBuscado = grupoId || grupoActivo;
+        const encontrado = idBuscado
+          ? grupos.find((g) => String(g.id) === String(idBuscado))
+          : grupos[0];
+        if (encontrado) {
+          setNombreGrupo(encontrado.nombre || grupoNombre || "Club del Dinero");
+          setLogoGrupo((encontrado as { logo_url?: string | null }).logo_url ?? null);
+        } else {
+          setNombreGrupo(grupoNombre || "Club del Dinero");
+          setLogoGrupo(null);
+        }
+      })
+      .catch(() => {
+        if (vivo) {
+          setNombreGrupo(grupoNombre || "Club del Dinero");
+          setLogoGrupo(null);
+        }
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [grupoId, grupoActivo, grupoNombre, versionLogos]);
+
   const esOperadorFijo =
     perfiles.length > 0 &&
     perfiles.every((p) => p.toLowerCase().includes("operador")) &&
@@ -147,19 +186,52 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const total = novedades.length;
 
   return (
-    <header className="sticky top-0 z-40 flex h-[50px] shrink-0 items-center gap-2 border-b border-line bg-surface/90 px-4 backdrop-blur">
-      {alAlternarMenu && (
-        <button
-          type="button"
-          onClick={alAlternarMenu}
-          aria-label={menuVisible ? "Ocultar los textos del menú (dejar solo íconos)" : "Mostrar el menú completo"}
-          aria-expanded={menuVisible}
-          title={menuVisible ? "Ocultar los textos del menú" : "Mostrar el menú completo"}
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-lg leading-none text-slate-600 transition-colors hover:bg-surfaceAlt"
+    <header className="sticky top-0 z-40 flex h-[50px] shrink-0 items-center justify-between gap-2 border-b border-line bg-surface/90 px-3 sm:px-4 backdrop-blur">
+      {/* ESPACIO SUPERIOR IZQUIERDO: Menú + LOGO DEL GRUPO */}
+      <div className="flex items-center gap-2 min-w-0 shrink-0">
+        {alAlternarMenu && (
+          <button
+            type="button"
+            onClick={alAlternarMenu}
+            aria-label={menuVisible ? "Ocultar los textos del menú (dejar solo íconos)" : "Mostrar el menú completo"}
+            aria-expanded={menuVisible}
+            title={menuVisible ? "Ocultar los textos del menú" : "Mostrar el menú completo"}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-lg leading-none text-slate-600 transition-colors hover:bg-surfaceAlt"
+          >
+            <span aria-hidden="true">{menuVisible ? "✕" : "☰"}</span>
+          </button>
+        )}
+
+        {/* Logo del Grupo en el espacio superior izquierdo */}
+        <div
+          className="flex items-center gap-2 min-w-0"
+          title={`Grupo: ${nombreGrupo || "Club del Dinero"}`}
         >
-          <span aria-hidden="true">{menuVisible ? "✕" : "☰"}</span>
-        </button>
-      )}
+          <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-300 bg-white p-0.5 shadow-xs">
+            {logoGrupo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={conCacheBust(logoGrupo, versionLogos) || logoGrupo}
+                alt={`Logo de ${nombreGrupo || "Grupo"}`}
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <span className="text-base sm:text-lg leading-none">🪙</span>
+            )}
+          </div>
+          <div className="hidden lg:flex flex-col min-w-0 max-w-[140px] xl:max-w-[180px]">
+            <span className="truncate text-xs font-black tracking-tight text-slate-900 leading-tight">
+              {nombreGrupo || "Club del Dinero"}
+            </span>
+            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 leading-none">
+              {esOperadorFijo || modoOperador ? "Operador" : "Banca Activa"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Controles y módulos de la barra superior */}
+      <div className="flex items-center gap-2 min-w-0 overflow-x-auto">
 
       {/* Campana de novedades: auditoría reciente del sistema. */}
       <div className="relative" data-campana>
@@ -271,11 +343,12 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
       <button
         type="button"
         onClick={() => void cerrarSesion()}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-danger-500/40 bg-danger-500/10 px-3 py-1.5 text-xs font-bold text-danger-600 transition-colors hover:bg-danger-500 hover:text-white"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-danger-500/40 bg-danger-500/10 px-3 py-1.5 text-xs font-bold text-danger-600 transition-colors hover:bg-danger-500 hover:text-white shrink-0"
       >
         <span aria-hidden="true">⏻</span>
         <span className="hidden sm:inline">Cerrar Sesión</span>
       </button>
+      </div>
 
       <ModalGestionRapidaSaldo
         abierto={modalSaldoOperador}
