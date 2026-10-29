@@ -28,25 +28,29 @@ const NOMBRES_MESES = [
 
 const DIAS_SEMANA_CORTOS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
 
-/** Convierte YYYY-MM-DD a DD/MM/AAAA para visualización estricta. */
-export function isoToDmy(iso: string | null | undefined): string {
-  if (!iso) return "";
+/** Convierte YYYY-MM-DD a partes { dia, mes, anio } */
+function descomponerIso(iso: string | null | undefined): { dia: string; mes: string; anio: string } {
+  if (!iso) return { dia: "", mes: "", anio: "" };
   const match = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return String(iso);
+  if (!match) return { dia: "", mes: "", anio: "" };
   const [, aaaa, mm, dd] = match;
-  return `${dd}/${mm}/${aaaa}`;
+  return { dia: dd, mes: mm, anio: aaaa };
 }
 
-/** Convierte DD/MM/AAAA a YYYY-MM-DD */
-export function dmyToIso(dmy: string): string {
-  const match = dmy.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
-  if (!match) return "";
-  const [, dd, mm, aaaa] = match;
-  const d = parseInt(dd, 10);
-  const m = parseInt(mm, 10);
-  const y = parseInt(aaaa, 10);
-  if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1900 || y > 2100) return "";
-  return `${aaaa}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+/** Convierte partes a ISO YYYY-MM-DD */
+function componerIso(dia: string, mes: string, anio: string): string {
+  const d = parseInt(dia, 10);
+  const m = parseInt(mes, 10);
+  const y = parseInt(anio, 10);
+  if (
+    !d || !m || !y ||
+    d < 1 || d > 31 ||
+    m < 1 || m > 12 ||
+    y < 1900 || y > 2100
+  ) {
+    return "";
+  }
+  return `${String(y)}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
 /** Hoy en formato ISO local */
@@ -71,12 +75,14 @@ function ayerIsoLocal(): string {
 /**
  * DateInput (Modelo Centralizado de Consulta y Selección de Fecha)
  *
- *  - Formato estricto visible: DD/MM/AAAA (con escritura continua y máscara automática).
+ *  - Formato estricto visible segmentado: [ DD ] / [ MM ] / [ AAAA ]
+ *  - Al pararse en el día y teclear 2 dígitos, salta automáticamente al mes, y luego al año.
+ *  - Nunca se sale del selector ni pierde el foco.
  *  - Salida de valor hacia formularios y base de datos: YYYY-MM-DD (ISO).
- *  - Picker popup centralizado con selección directa de:
+ *  - Popup flotante con selección directa de:
  *      1. AÑO (dropdown de años)
  *      2. MES (dropdown de meses)
- *      3. DÍA (grilla interactiva)
+ *      3. DÍA (grilla interactiva de días)
  *      4. Atajos rápidos: Hoy, Ayer, Limpiar.
  */
 export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function DateInput(
@@ -98,33 +104,50 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
   const reactId = useId();
   const inputId = id ?? (label ? label.toLowerCase().replace(/[^a-z0-9]+/g, "-") : reactId);
 
-  const [textoVisible, setTextoVisible] = useState(() => isoToDmy(value));
+  // Estados de los 3 segmentos
+  const partesIniciales = descomponerIso(value);
+  const [dia, setDia] = useState(partesIniciales.dia);
+  const [mes, setMes] = useState(partesIniciales.mes);
+  const [anio, setAnio] = useState(partesIniciales.anio);
+
+  // Popup de selector Año/Mes/Día
   const [abierto, setAbierto] = useState(false);
 
-  // Fecha de referencia para el selector (Año y Mes mostrados en el popup)
-  const hoyIso = hoyIsoLocal();
-  const fechaReferencia = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : hoyIso;
-  const [partesRef] = useState(() => {
-    const [y, m, d] = fechaReferencia.split("-").map(Number);
-    return { anio: y || 2026, mes: (m || 10) - 1, dia: d || 1 };
-  });
-
-  const [anioVer, setAnioVer] = useState(partesRef.anio);
-  const [mesVer, setMesVer] = useState(partesRef.mes);
-
+  // Referencias a los inputs para salto automático de foco
+  const diaRef = useRef<HTMLInputElement>(null);
+  const mesRef = useRef<HTMLInputElement>(null);
+  const anioRef = useRef<HTMLInputElement>(null);
   const contenedorRef = useRef<HTMLDivElement>(null);
 
-  // Sincronizar texto visible si cambia `value` desde el exterior
+  // Asignar forwardedRef a diaRef si existe
   useEffect(() => {
-    setTextoVisible(isoToDmy(value));
-    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      const [y, m] = value.split("-").map(Number);
-      setAnioVer(y);
-      setMesVer(m - 1);
+    if (!forwardedRef) return;
+    if (typeof forwardedRef === "function") {
+      forwardedRef(diaRef.current);
+    } else {
+      (forwardedRef as React.MutableRefObject<HTMLInputElement | null>).current = diaRef.current;
+    }
+  }, [forwardedRef]);
+
+  // Sincronizar si cambia `value` externamente
+  useEffect(() => {
+    const p = descomponerIso(value);
+    setDia(p.dia);
+    setMes(p.mes);
+    setAnio(p.anio);
+    if (p.anio && p.mes) {
+      setAnioVer(Number(p.anio));
+      setMesVer(Number(p.mes) - 1);
     }
   }, [value]);
 
-  // Cerrar al hacer clic fuera
+  // Año y Mes mostrados en el popup
+  const hoyIso = hoyIsoLocal();
+  const fechaRefIso = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : hoyIso;
+  const [anioVer, setAnioVer] = useState(() => Number(fechaRefIso.slice(0, 4)) || 2026);
+  const [mesVer, setMesVer] = useState(() => (Number(fechaRefIso.slice(5, 7)) || 10) - 1);
+
+  // Cerrar al hacer clic fuera del componente
   useEffect(() => {
     if (!abierto) return;
     const handleClickFuera = (ev: MouseEvent) => {
@@ -145,52 +168,164 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
     }
   };
 
-  const handleTextoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let raw = e.target.value.replace(/[^\d]/g, "");
-    if (raw.length > 8) raw = raw.slice(0, 8);
-
-    let formateado = raw;
-    if (raw.length > 4) {
-      formateado = `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4)}`;
-    } else if (raw.length > 2) {
-      formateado = `${raw.slice(0, 2)}/${raw.slice(2)}`;
+  // Evalúa y emite si los tres campos están completos
+  const evaluarEmision = (d: string, m: string, a: string) => {
+    if (!d && !m && !a) {
+      emitirCambio("");
+      return;
     }
-
-    setTextoVisible(formateado);
-
-    if (raw.length === 8) {
-      const iso = dmyToIso(formateado);
+    if (d.length === 2 && m.length === 2 && a.length === 4) {
+      const iso = componerIso(d, m, a);
       if (iso) {
         emitirCambio(iso);
-        const [y, m] = iso.split("-").map(Number);
-        setAnioVer(y);
-        setMesVer(m - 1);
+        setAnioVer(Number(a));
+        setMesVer(Number(m) - 1);
       }
-    } else if (raw.length === 0) {
-      emitirCambio("");
     }
   };
 
-  const handleBlur = () => {
-    const iso = dmyToIso(textoVisible);
-    if (iso) {
-      emitirCambio(iso);
-      setTextoVisible(isoToDmy(iso));
-    } else if (!textoVisible.trim()) {
-      emitirCambio("");
-    } else if (value) {
-      setTextoVisible(isoToDmy(value));
+  // Manejo de entrada en DÍA
+  const handleDiaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, "");
+    if (raw.length > 2) return;
+
+    // Si escribe un dígito > 3 (ej: 4, 5, 6, 7, 8, 9), auto-anteponer 0 y saltar a mes
+    if (raw.length === 1 && Number(raw) >= 4) {
+      const dAuto = `0${raw}`;
+      setDia(dAuto);
+      evaluarEmision(dAuto, mes, anio);
+      mesRef.current?.focus();
+      mesRef.current?.select();
+      return;
+    }
+
+    setDia(raw);
+    evaluarEmision(raw, mes, anio);
+
+    // Al escribir 2 dígitos, salta automáticamente al mes sin salirse del selector
+    if (raw.length === 2) {
+      mesRef.current?.focus();
+      mesRef.current?.select();
     }
   };
 
-  // Seleccionar fecha desde el popup
-  const seleccionarFecha = (iso: string) => {
-    setTextoVisible(isoToDmy(iso));
+  // Manejo de entrada en MES
+  const handleMesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, "");
+    if (raw.length > 2) return;
+
+    // Si escribe un dígito >= 2 (ej: 2, 3..9), auto-anteponer 0 y saltar a año
+    if (raw.length === 1 && Number(raw) >= 2) {
+      const mAuto = `0${raw}`;
+      setMes(mAuto);
+      evaluarEmision(dia, mAuto, anio);
+      anioRef.current?.focus();
+      anioRef.current?.select();
+      return;
+    }
+
+    setMes(raw);
+    evaluarEmision(dia, raw, anio);
+
+    // Al escribir 2 dígitos, salta automáticamente al año
+    if (raw.length === 2) {
+      anioRef.current?.focus();
+      anioRef.current?.select();
+    }
+  };
+
+  // Manejo de entrada en AÑO
+  const handleAnioChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, "");
+    if (raw.length > 4) return;
+    setAnio(raw);
+    evaluarEmision(dia, mes, raw);
+  };
+
+  // Navegación por teclado (Backspace y flechas)
+  const handleDiaKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowRight" || e.key === "/") {
+      e.preventDefault();
+      mesRef.current?.focus();
+      mesRef.current?.select();
+    }
+  };
+
+  const handleMesKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !mes) {
+      e.preventDefault();
+      diaRef.current?.focus();
+      diaRef.current?.select();
+    } else if (e.key === "ArrowLeft") {
+      const target = e.currentTarget;
+      if (target.selectionStart === 0) {
+        e.preventDefault();
+        diaRef.current?.focus();
+        diaRef.current?.select();
+      }
+    } else if (e.key === "ArrowRight" || e.key === "/") {
+      e.preventDefault();
+      anioRef.current?.focus();
+      anioRef.current?.select();
+    }
+  };
+
+  const handleAnioKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !anio) {
+      e.preventDefault();
+      mesRef.current?.focus();
+      mesRef.current?.select();
+    } else if (e.key === "ArrowLeft") {
+      const target = e.currentTarget;
+      if (target.selectionStart === 0) {
+        e.preventDefault();
+        mesRef.current?.focus();
+        mesRef.current?.select();
+      }
+    }
+  };
+
+  // Pegar fecha completa en cualquiera de los campos
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const texto = e.clipboardData.getData("text").trim();
+    // DD/MM/AAAA o DD-MM-AAAA
+    let m = texto.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (m) {
+      e.preventDefault();
+      const d = m[1].padStart(2, "0");
+      const me = m[2].padStart(2, "0");
+      const a = m[3];
+      setDia(d);
+      setMes(me);
+      setAnio(a);
+      evaluarEmision(d, me, a);
+      return;
+    }
+    // YYYY-MM-DD
+    m = texto.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+      e.preventDefault();
+      const a = m[1];
+      const me = m[2];
+      const d = m[3];
+      setDia(d);
+      setMes(me);
+      setAnio(a);
+      evaluarEmision(d, me, a);
+    }
+  };
+
+  // Seleccionar fecha desde el popup modal
+  const seleccionarDesdePopup = (iso: string) => {
+    const p = descomponerIso(iso);
+    setDia(p.dia);
+    setMes(p.mes);
+    setAnio(p.anio);
     emitirCambio(iso);
     setAbierto(false);
   };
 
-  // Navegación rápida de meses
+  // Navegación rápida de meses en popup
   const mesAnterior = () => {
     if (mesVer === 0) {
       setMesVer(11);
@@ -209,13 +344,12 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
     }
   };
 
-  // Días del mes a renderizar
+  // Días del mes a renderizar en popup
   const diasEnMes = new Date(anioVer, mesVer + 1, 0).getDate();
-  const primerDiaSemana = new Date(anioVer, mesVer, 1).getDay(); // 0=Dom, 1=Lun...
-  // Ajustar a Lunes=0 ... Domingo=6
+  const primerDiaSemana = new Date(anioVer, mesVer, 1).getDay();
   const desplazamientoInicio = primerDiaSemana === 0 ? 6 : primerDiaSemana - 1;
 
-  // Generar rango de años (ej: 2020 a 2032)
+  // Rango de años
   const anioActual = new Date().getFullYear();
   const opcionesAnios: number[] = [];
   for (let a = anioActual - 5; a <= anioActual + 5; a++) {
@@ -227,49 +361,96 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
   }
 
   return (
-    <div ref={contenedorRef} className="relative flex flex-col gap-1 w-full">
+    <div ref={contenedorRef} className="relative flex flex-col gap-1 w-auto max-w-full">
       {label ? (
         <label htmlFor={inputId} className="text-[11px] font-semibold text-slate-600 block">
           {label}
         </label>
       ) : null}
 
-      <div className="relative flex items-center w-full">
+      {/* Contenedor unificado: DÍA / MES / AÑO con bordes limpios y botón calendario */}
+      <div
+        className={`relative inline-flex items-center rounded-md border border-line bg-surface px-2 py-1 text-[13px] text-slate-900 font-medium
+          focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500
+          disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-slate-400 ${className}`}
+      >
+        {/* Campo DÍA */}
         <input
           id={inputId}
-          ref={forwardedRef}
+          ref={diaRef}
           type="text"
           inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={2}
           autoComplete="off"
           disabled={disabled}
-          placeholder={placeholder}
-          value={textoVisible}
-          onChange={handleTextoChange}
-          onBlur={handleBlur}
-          className={`w-full rounded-md border border-line bg-surface px-2.5 py-1.5 pr-8 text-[13px] leading-tight text-slate-900 font-medium
-            placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500
-            disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-slate-400 ${className}`}
+          placeholder="DD"
+          value={dia}
+          onChange={handleDiaChange}
+          onKeyDown={handleDiaKeyDown}
+          onPaste={handlePaste}
+          onFocus={(e) => e.target.select()}
+          className="w-6 text-center bg-transparent outline-none font-bold text-slate-900 placeholder:text-slate-400"
           {...rest}
         />
 
-        {/* Botón para abrir consulta de fecha */}
+        <span className="text-slate-400 font-bold select-none px-0.5">/</span>
+
+        {/* Campo MES */}
+        <input
+          ref={mesRef}
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={2}
+          autoComplete="off"
+          disabled={disabled}
+          placeholder="MM"
+          value={mes}
+          onChange={handleMesChange}
+          onKeyDown={handleMesKeyDown}
+          onPaste={handlePaste}
+          onFocus={(e) => e.target.select()}
+          className="w-6 text-center bg-transparent outline-none font-bold text-slate-900 placeholder:text-slate-400"
+        />
+
+        <span className="text-slate-400 font-bold select-none px-0.5">/</span>
+
+        {/* Campo AÑO */}
+        <input
+          ref={anioRef}
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={4}
+          autoComplete="off"
+          disabled={disabled}
+          placeholder="AAAA"
+          value={anio}
+          onChange={handleAnioChange}
+          onKeyDown={handleAnioKeyDown}
+          onPaste={handlePaste}
+          onFocus={(e) => e.target.select()}
+          className="w-11 text-center bg-transparent outline-none font-bold text-slate-900 placeholder:text-slate-400"
+        />
+
+        {/* Botón calendario para abrir consulta emergente de Año, Mes y Día */}
         <button
           type="button"
           tabIndex={-1}
           disabled={disabled}
           onClick={() => {
             if (!disabled) {
-              if (!abierto && value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-                const [y, m] = value.split("-").map(Number);
-                setAnioVer(y);
-                setMesVer(m - 1);
+              if (!abierto && anio && mes) {
+                setAnioVer(Number(anio) || 2026);
+                setMesVer((Number(mes) || 10) - 1);
               }
               setAbierto((v) => !v);
             }
           }}
           aria-label="Abrir consulta de fecha (Año, Mes, Día)"
           title="Abrir selector de fecha (Año, Mes, Día)"
-          className={`absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded transition-colors disabled:opacity-40 ${
+          className={`ml-1.5 p-1 rounded transition-colors disabled:opacity-40 ${
             abierto ? "text-indigo-600 bg-indigo-50" : "text-slate-400 hover:text-indigo-600 hover:bg-slate-100"
           }`}
         >
@@ -349,12 +530,10 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
 
           {/* Grilla de Días */}
           <div className="grid grid-cols-7 gap-1">
-            {/* Espacios vacíos antes del día 1 */}
             {Array.from({ length: desplazamientoInicio }).map((_, i) => (
               <span key={`vacio-${i}`} className="h-7 w-7" />
             ))}
 
-            {/* Días del mes (1..diasEnMes) */}
             {Array.from({ length: diasEnMes }).map((_, i) => {
               const diaNum = i + 1;
               const isoDia = `${anioVer}-${String(mesVer + 1).padStart(2, "0")}-${String(diaNum).padStart(2, "0")}`;
@@ -365,7 +544,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
                 <button
                   key={isoDia}
                   type="button"
-                  onClick={() => seleccionarFecha(isoDia)}
+                  onClick={() => seleccionarDesdePopup(isoDia)}
                   className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold transition ${
                     seleccionado
                       ? "bg-indigo-600 text-white font-black shadow-md scale-105"
@@ -380,19 +559,19 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             })}
           </div>
 
-          {/* Barra inferior de atajos: Hoy, Ayer, Limpiar */}
+          {/* Barra inferior: Hoy, Ayer, Limpiar */}
           <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => seleccionarFecha(hoyIsoLocal())}
+                onClick={() => seleccionarDesdePopup(hoyIsoLocal())}
                 className="rounded px-2 py-0.5 font-black text-indigo-600 hover:bg-indigo-50 transition"
               >
                 Hoy
               </button>
               <button
                 type="button"
-                onClick={() => seleccionarFecha(ayerIsoLocal())}
+                onClick={() => seleccionarDesdePopup(ayerIsoLocal())}
                 className="rounded px-2 py-0.5 font-bold text-slate-600 hover:bg-slate-100 transition"
               >
                 Ayer
@@ -400,7 +579,9 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
               <button
                 type="button"
                 onClick={() => {
-                  setTextoVisible("");
+                  setDia("");
+                  setMes("");
+                  setAnio("");
                   emitirCambio("");
                   setAbierto(false);
                 }}
