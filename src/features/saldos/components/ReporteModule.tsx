@@ -23,6 +23,7 @@ import { etiquetaDia } from "@/features/liquidacion/lib/semana";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/components/ModalPagoAGanadorYConciliacion";
 import { etiquetaJugada, caballoPareoLegible, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 import { redondearCentavos } from "@/shared/lib/dinero";
 
@@ -148,6 +149,9 @@ export function ReporteModule() {
   const [hasta, setHasta] = useState<string>(() => hoyLocal());
   const [planilla, setPlanilla] = useState<PlanillaReporte | null>(null);
   const [cargando, setCargando] = useState(false);
+  const [modalPagoGanadorAbierto, setModalPagoGanadorAbierto] = useState(false);
+  const [clientePagoSeleccionadoId, setClientePagoSeleccionadoId] = useState<string | null>(null);
+  const [pestanaModalPagos, setPestanaModalPagos] = useState<"PAGAR_GANADORES" | "CONCILIAR_PAGOS">("PAGAR_GANADORES");
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
   // Id de la última consulta: descarta respuestas viejas que llegan tarde
   const solicitud = useRef(0);
@@ -282,12 +286,13 @@ export function ReporteModule() {
     filtroTipoJugador !== "TODOS";
 
   const mapaInfoClientes = useMemo(() => {
-    const map = new Map<string, { modo: TipoJugadorSaldo; libre: boolean; aval: number; saldoActual: number; icono: string; etiqueta: string }>();
+    const map = new Map<string, { id: string; modo: TipoJugadorSaldo; libre: boolean; aval: number; saldoActual: number; icono: string; etiqueta: string }>();
     for (const c of clientesGrupo) {
       const key = String(c.nombre ?? c.seudonimo ?? c.id).trim().toUpperCase();
       const tipo = obtenerTipoJugador(c);
       const meta = infoTipoJugador(tipo);
       map.set(key, {
+        id: String(c.id),
         modo: tipo,
         libre: Boolean(c.libre || tipo === "libre"),
         aval: Number(c.aval) || 0,
@@ -521,6 +526,7 @@ export function ReporteModule() {
       (datosTablaDinamica.filasClientes.length === 0 && clientesGrupo.length > 0);
 
     const base: Array<{
+      id?: string;
       nombre: string;
       saldo: number;
       tipo: TipoJugadorSaldo;
@@ -531,6 +537,7 @@ export function ReporteModule() {
           const tipo = obtenerTipoJugador(c);
           const meta = infoTipoJugador(tipo);
           return {
+            id: String(c.id),
             nombre: String(c.nombre ?? c.seudonimo ?? c.id).trim().toUpperCase(),
             saldo: redondearCentavos(Number(c.saldo_actual) || 0),
             tipo,
@@ -543,6 +550,7 @@ export function ReporteModule() {
           const tipo = cliMeta?.modo ?? "aval";
           const meta = infoTipoJugador(tipo);
           return {
+            id: cliMeta?.id,
             nombre: fc.cliente,
             saldo: fc.netoTotal,
             tipo,
@@ -949,6 +957,27 @@ export function ReporteModule() {
               <div className="flex items-center gap-1.5 text-xs">
                 <button
                   type="button"
+                  onClick={() => {
+                    setClientePagoSeleccionadoId(null);
+                    setPestanaModalPagos("PAGAR_GANADORES");
+                    setModalPagoGanadorAbierto(true);
+                  }}
+                  className="rounded-md bg-emerald-500 px-2.5 py-1 font-black text-slate-950 hover:bg-emerald-400 transition shadow-sm"
+                >
+                  🏆 Pagar Ganadores
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPestanaModalPagos("CONCILIAR_PAGOS");
+                    setModalPagoGanadorAbierto(true);
+                  }}
+                  className="rounded-md bg-amber-400 px-2.5 py-1 font-black text-slate-950 hover:bg-amber-300 transition shadow-sm"
+                >
+                  🔔 Conciliar Pagos
+                </button>
+                <button
+                  type="button"
                   onClick={() => setFuenteSaldos4Col("JORNADA")}
                   className={`rounded-md px-2.5 py-1 font-bold transition ${
                     !resumenCuatroColumnas.usandoCartera
@@ -1057,11 +1086,25 @@ export function ReporteModule() {
                       <tr key={idx} className="hover:bg-slate-50">
                         <td className="py-1.5 px-3 font-bold text-slate-800 border-r border-slate-200">
                           {par.pos ? (
-                            <div className="flex items-center gap-1.5">
-                              <span title={par.pos.etiqueta} className="text-sm shrink-0">
-                                {par.pos.icono}
-                              </span>
-                              <span className="truncate">{par.pos.nombre}</span>
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span title={par.pos.etiqueta} className="text-sm shrink-0">
+                                  {par.pos.icono}
+                                </span>
+                                <span className="truncate">{par.pos.nombre}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setClientePagoSeleccionadoId(par.pos?.id || null);
+                                  setPestanaModalPagos("PAGAR_GANADORES");
+                                  setModalPagoGanadorAbierto(true);
+                                }}
+                                className="shrink-0 inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-0.5 text-[10px] font-black text-white hover:bg-emerald-700 transition shadow-xs"
+                                title="Pagar ganancia con comprobante a este cliente"
+                              >
+                                💸 Pagar
+                              </button>
                             </div>
                           ) : "—"}
                         </td>
@@ -1516,6 +1559,22 @@ export function ReporteModule() {
           filtro tipo Tabla Dinámica habilitado
         </div>
       </div>
+
+      {modalPagoGanadorAbierto && (
+        <ModalPagoAGanadorYConciliacion
+          grupoId={grupoId || null}
+          abierto={modalPagoGanadorAbierto}
+          onCerrar={() => {
+            setModalPagoGanadorAbierto(false);
+            setClientePagoSeleccionadoId(null);
+          }}
+          onPagoRealizado={() => {
+            void cargar();
+          }}
+          clientePreseleccionadoId={clientePagoSeleccionadoId || undefined}
+          pestanaInicial={pestanaModalPagos}
+        />
+      )}
 
       <ToastHost />
     </div>

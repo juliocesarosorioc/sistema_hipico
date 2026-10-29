@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-export type ButtonVariant = "default" | "outline" | "success" | "danger" | "ghost";
+export type ButtonVariant = "default" | "primary" | "outline" | "success" | "danger" | "ghost";
 export type ButtonSize = "sm" | "md" | "lg";
 
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -12,6 +12,7 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
 /** Variantes del Design System (paleta semántica tailwind.config). */
 const VARIANT: Record<ButtonVariant, string> = {
   default: "bg-primary-600 text-white hover:bg-primary-500 focus-visible:ring-primary-500",
+  primary: "bg-primary-600 text-white hover:bg-primary-500 focus-visible:ring-primary-500",
   outline: "bg-transparent text-slate-700 border border-line hover:bg-surfaceAlt focus-visible:ring-primary-500",
   success: "bg-success-600 text-white hover:bg-success-500 focus-visible:ring-success-500",
   danger: "bg-danger-600 text-white hover:bg-danger-500 focus-visible:ring-danger-500",

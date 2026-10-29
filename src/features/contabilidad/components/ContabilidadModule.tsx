@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/components/ModalPagoAGanadorYConciliacion";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import {
   TabBancos,
@@ -96,6 +97,8 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
   const [balance, setBalance] = useState<FilaBalanceNIIF[]>([]);
   const [asientos, setAsientos] = useState<AsientoNIIFResumen[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [modalPagosAbierto, setModalPagosAbierto] = useState(false);
+  const [pestanaPagos, setPestanaPagos] = useState<"PAGAR_GANADORES" | "CONCILIAR_PAGOS">("PAGAR_GANADORES");
 
   /**
    * Rango de fechas del balance NIIF. Vive acá (y no en la pestaña) porque el
@@ -200,6 +203,26 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
           <span className="mr-2 text-primary-600">🪙</span> Contabilidad
         </h1>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setPestanaPagos("PAGAR_GANADORES");
+              setModalPagosAbierto(true);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-black text-white hover:bg-emerald-700 shadow-sm transition"
+          >
+            <span>🏆</span> Pagar Ganadores
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPestanaPagos("CONCILIAR_PAGOS");
+              setModalPagosAbierto(true);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-black text-slate-950 hover:bg-amber-400 shadow-sm transition"
+          >
+            <span>🔔</span> Conciliar Pagos
+          </button>
           <Button
             variant="outline"
             size="sm"
@@ -279,6 +302,21 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
           tasaVes={tasaVes}
           onRango={aplicarRango}
           onHecho={recargarBalance}
+        />
+      )}
+
+      {modalPagosAbierto && (
+        <ModalPagoAGanadorYConciliacion
+          grupoId={grupoActivo || null}
+          abierto={modalPagosAbierto}
+          onCerrar={() => setModalPagosAbierto(false)}
+          onPagoRealizado={() =>
+            void (async () => {
+              await cargar();
+              await recargarBalance();
+            })()
+          }
+          pestanaInicial={pestanaPagos}
         />
       )}
 

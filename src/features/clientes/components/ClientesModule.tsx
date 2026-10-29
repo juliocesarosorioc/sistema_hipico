@@ -10,6 +10,8 @@ import { EstadoCuentaAcordeon } from "@/features/clientes/components/EstadoCuent
 import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente";
 import { NotificacionesPortal } from "@/features/clientes/components/NotificacionesPortal";
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
+import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/components/ModalPagoAGanadorYConciliacion";
+import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import {
   aplicarDevolucionMasiva,
   cargarTicketsCliente,
@@ -131,6 +133,10 @@ export function ClientesModule() {
 
   const [clienteEstado, setClienteEstado] = useState<ClienteRow | null>(null);
   const [socioConvertir, setSocioConvertir] = useState("");
+
+  const [modalPagoGanadorAbierto, setModalPagoGanadorAbierto] = useState(false);
+  const [clientePagoGanadorId, setClientePagoGanadorId] = useState<string | null>(null);
+  const [vistaInicialPagos, setVistaInicialPagos] = useState<"pagar_ganadores" | "conciliacion">("pagar_ganadores");
 
   const recargar = async (gid?: string) => {
     setCargando(true);
@@ -309,6 +315,29 @@ export function ClientesModule() {
             <Button variant="outline" size="sm" title="Recargar cartera" onClick={() => void recargar()}>
               <span >🔄</span>
             </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setClientePagoGanadorId(null);
+                setVistaInicialPagos("pagar_ganadores");
+                setModalPagoGanadorAbierto(true);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs"
+            >
+              <span>🏆 Pagar Ganadores</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setVistaInicialPagos("conciliacion");
+                setModalPagoGanadorAbierto(true);
+              }}
+              className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold text-xs"
+            >
+              <span>🔔 Conciliar Pagos</span>
+            </Button>
             <div className="ml-auto flex gap-2 items-center">
               <Guard permiso="clientes:btn_editar" disabled>
                 <input
@@ -463,6 +492,21 @@ export function ClientesModule() {
                     </td>
                     <td className={td + " text-center"}>
                       <div className="flex items-center justify-center gap-0.5">
+                        {num(c.saldo_actual) > 0.005 ? (
+                          <button
+                            type="button"
+                            title="Pagar ganancia / liquidar saldo a favor"
+                            aria-label="Pagar ganancia"
+                            onClick={() => {
+                              setClientePagoGanadorId(String(c.id));
+                              setVistaInicialPagos("pagar_ganadores");
+                              setModalPagoGanadorAbierto(true);
+                            }}
+                            className="flex h-6 w-6 items-center justify-center rounded text-[13px] leading-none transition bg-emerald-50 hover:bg-emerald-200 text-emerald-800"
+                          >
+                            💸
+                          </button>
+                        ) : null}
                         <Guard permiso="clientes:btn_editar" disabled>
                           <button
                             type="button"
@@ -678,6 +722,20 @@ export function ClientesModule() {
           </div>
         </div>
       ) : null}
+
+      <ModalPagoAGanadorYConciliacion
+        abierto={modalPagoGanadorAbierto}
+        onCerrar={() => {
+          setModalPagoGanadorAbierto(false);
+          setClientePagoGanadorId(null);
+        }}
+        grupoId={grupoActivoVigente() || null}
+        clientePreseleccionadoId={clientePagoGanadorId}
+        vistaInicial={vistaInicialPagos}
+        onPagoCompletado={() => {
+          void recargar();
+        }}
+      />
 
       <ToastHost />
     </div>

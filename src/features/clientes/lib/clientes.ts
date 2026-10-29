@@ -790,6 +790,13 @@ export function resumenNotificacion(n: NotificacionRow): string {
     return res;
   }
 
+  if (n.tipo === "portal_pago") {
+    const met = d.metodo_pago ? String(d.metodo_pago) : "PAGO";
+    const ref = d.referencia ? ` Ref: <b>${d.referencia}</b>` : "";
+    const mto = d.monto ? ` Monto: <b>${d.monto}</b>` : "";
+    return `<span class="font-bold text-amber-600">💳 REPORTE DE PAGO:</span> ${met}${ref}${mto} — ${n.mensaje || "Pendiente de conciliación."}`;
+  }
+
   const partes: string[] = [];
   const etiqueta = (k: string): string =>
     ({ telefono: "Tlf", email: "Email", cedula_rif: "Cédula/RIF", direccion: "Dirección", metodo_pago: "Método", codigo_pais: "País" })[k] ?? k;

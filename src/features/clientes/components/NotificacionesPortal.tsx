@@ -23,6 +23,7 @@ import { resolverImagenReclamo } from "@/features/portal/lib/portal";
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
+import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/components/ModalPagoAGanadorYConciliacion";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -49,6 +50,7 @@ export function NotificacionesPortal() {
   const [respuestas, setRespuestas] = useState<Record<string, string>>({});
   /** Monto con el que se incluirá la jugada al aprobar (vacío = el pedido). */
   const [ajustes, setAjustes] = useState<Record<string, string>>({});
+  const [modalConciliacionAbierto, setModalConciliacionAbierto] = useState(false);
 
   const recargar = useCallback(async () => {
     setCargando(true);
@@ -180,9 +182,15 @@ export function NotificacionesPortal() {
                     {!n.estado || n.estado === "Pendiente" ? (
                       <Guard permiso="clientes:modal_reclamos" disabled>
                         <div className="flex gap-1">
-                          <Button variant="success" size="sm" onClick={() => void aplicar(n)}>
-                            <span >✅</span> Aplicar
-                          </Button>
+                          {n.tipo === "portal_pago" ? (
+                            <Button variant="primary" size="sm" onClick={() => setModalConciliacionAbierto(true)}>
+                              <span>🔔</span> Conciliar
+                            </Button>
+                          ) : (
+                            <Button variant="success" size="sm" onClick={() => void aplicar(n)}>
+                              <span>✅</span> Aplicar
+                            </Button>
+                          )}
                           <Button variant="outline" size="sm" onClick={() => void ignorar(n)}>
                             Ignorar
                           </Button>
@@ -341,6 +349,16 @@ export function NotificacionesPortal() {
             </div>
           ) : null}
         </div>
+      )}
+
+      {modalConciliacionAbierto && (
+        <ModalPagoAGanadorYConciliacion
+          grupoId={grupoActivoVigente() || null}
+          abierto={modalConciliacionAbierto}
+          onCerrar={() => setModalConciliacionAbierto(false)}
+          onPagoRealizado={() => void recargar()}
+          pestanaInicial="CONCILIAR_PAGOS"
+        />
       )}
     </div>
   );

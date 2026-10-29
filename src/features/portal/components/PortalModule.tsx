@@ -63,6 +63,8 @@ import {
 } from "@/features/portal/lib/portal";
 import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 import { ModalActualizacionObligatoriaContacto } from "@/features/portal/components/ModalActualizacionObligatoriaContacto";
+import { ModalReportarPagoCliente } from "@/features/portal/components/ModalReportarPagoCliente";
+import { MisPagosYComprobantesView } from "@/features/portal/components/MisPagosYComprobantesView";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -78,7 +80,7 @@ function isoLocal(d: Date): string {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 }
 
-type TabPortal = "resumen" | "jugadas" | "reporte" | "reportar" | "tickets" | "comprar" | "datos" | "externos";
+type TabPortal = "resumen" | "jugadas" | "reporte" | "reportar" | "tickets" | "pagos" | "comprar" | "datos" | "externos";
 
 const BADGE: Record<string, string> = {
   Ganador: "bg-emerald-100 text-emerald-700",
@@ -370,6 +372,7 @@ function LoginScreen(props: {
 const OPCIONES_MENU_PORTAL: { key: TabPortal; icono: string; label: string; badge?: string }[] = [
   { key: "reporte", icono: "📊", label: "Reporte del Día" },
   { key: "resumen", icono: "🗒️", label: "Resumen y movimientos" },
+  { key: "pagos", icono: "💳", label: "Mis Pagos y Comprobantes" },
   { key: "externos", icono: "📓", label: "Mi Control en Otros Grupos" },
   { key: "jugadas", icono: "⚔️", label: "Jugadas" },
   { key: "tickets", icono: "🛟", label: "Mis tickets" },
@@ -420,6 +423,8 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
   // 🐎 Realizar Jugada + ➕ Jugada No Relacionada (PROMPT #6).
   const [jugadaAbierta, setJugadaAbierta] = useState(false);
   const [noRelAbierta, setNoRelAbierta] = useState(false);
+  // 💳 Reportar Pago / Subir Comprobante
+  const [modalReportarPagoAbierto, setModalReportarPagoAbierto] = useState(false);
 
   // Verificación obligatoria de teléfono y correo para la primera vez o jugadores sin datos mínimos
   const [contactoActualizadoLocal, setContactoActualizadoLocal] = useState<boolean>(() => {
@@ -506,6 +511,15 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
 
         {/* Lado derecho de la cabecera */}
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setModalReportarPagoAbierto(true)}
+            className="flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-800 hover:bg-emerald-100 transition shadow-sm"
+            title="Reportar Pago / Subir Comprobante"
+          >
+            <span>💳</span>
+            <span className="hidden sm:inline">Reportar Pago</span>
+          </button>
           <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
             <span className="text-xs">👤</span>
             <span className="text-xs font-black text-slate-800">{sesion.cliente.nombre}</span>
@@ -688,6 +702,12 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
           <div className="min-w-0 space-y-4">
             {tab === "reporte" ? <ReporteDiarioView sesion={sesion} semana={verTodoHistorico ? null : semanaSeleccionada} /> : null}
             {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} semana={verTodoHistorico ? null : semanaSeleccionada} /> : null}
+            {tab === "pagos" ? (
+              <MisPagosYComprobantesView
+                cliente={sesion.cliente}
+                onAbrirReportarPago={() => setModalReportarPagoAbierto(true)}
+              />
+            ) : null}
             {tab === "externos" ? <BitacoraExternaView cliente={sesion.cliente} /> : null}
             {tab === "jugadas" || tab === "comprar" ? (
               <SeccionJugadasPortal
@@ -714,6 +734,20 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
           }}
         />
       ) : null}
+
+      {/* 💳 Reportar Pago / Subir Comprobante */}
+      <ModalReportarPagoCliente
+        abierto={modalReportarPagoAbierto}
+        onCerrar={() => setModalReportarPagoAbierto(false)}
+        clienteId={String(sesion.cliente.id)}
+        clienteNombre={sesion.cliente.nombre || sesion.cliente.seudonimo || "Cliente"}
+        grupoId={sesion.grupo?.id ? String(sesion.grupo.id) : (sesion.cliente as unknown as { grupo_id?: string }).grupo_id ? String((sesion.cliente as unknown as { grupo_id?: string }).grupo_id) : null}
+        tasaCambioDefault={num(sesion.cliente.tasa_cuadre) || 1}
+        saldoActual={num(sesion.resumen.disponible ?? (sesion.cliente as unknown as { saldo_actual?: number }).saldo_actual)}
+        onPagoReportado={() => {
+          onActualizar(sesion);
+        }}
+      />
 
       {/* 🐎 Realizar Jugada (PROMPT #6): vende directo contra el grupo del
           jugador; al terminar se recarga la sesión para ver el saldo y las
