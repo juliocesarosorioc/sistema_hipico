@@ -140,6 +140,18 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
             {cliente.nombre}
           </p>
 
+          
+          {/* Banner de Seguridad: Única Sesión y Restricción por IP */}
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-3 text-xs space-y-1">
+            <div className="flex items-center gap-1.5 font-black text-indigo-950">
+              <span>🛡️</span>
+              <span>Seguridad de Acceso: Única Sesión y Restricción de IP</span>
+            </div>
+            <p className="text-[11px] text-indigo-900 leading-relaxed">
+              Al guardar o regenerar este código, <b>se expulsará automáticamente cualquier sesión abierta anterior</b>. El cliente solo podrá trabajar desde una única conexión vinculada a su dirección IP.
+            </p>
+          </div>
+
           <label className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
             <input type="checkbox" checked={habilitado} onChange={(e) => setHabilitado(e.target.checked)} className="h-4 w-4 accent-cyan-600" />
             <span className="text-xs font-black text-slate-700 uppercase">Habilitar acceso al portal</span>
@@ -159,7 +171,7 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
                   type="button"
                   title="Regenerar código"
                   className="px-2 rounded-lg bg-slate-200 hover:bg-cyan-100 text-slate-600"
-                  onClick={() => setToken(generarCodigo(6))}
+                  onClick={() => { setToken(generarCodigo(6)); toast("Nuevo código generado. Al guardar, se expulsará la sesión anterior.", "warning"); }}
                 >
                   <span >🔄</span>
                 </button>

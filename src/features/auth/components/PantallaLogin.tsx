@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { mensajeSinAcceso, useAuthStore } from "@/shared/store/useAuthStore";
 import { pedirRecuperacion, resolverCorreo } from "@/features/auth/lib/sesion";
 import { RateLimiterCliente, sanitizarIdentificador } from "@/shared/lib/security";
+import { RecaptchaWidget } from "@/shared/components/ui/RecaptchaWidget";
+import { activarProteccionAntiClonacion } from "@/shared/lib/anti-clonacion";
 
 /**
  * Módulo de inicio de sesión.
@@ -44,6 +46,11 @@ export default function PantallaLogin() {
   const [usuario, setUsuario] = useState("");
   const [clave, setClave] = useState("");
   const [verClave, setVerClave] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    activarProteccionAntiClonacion();
+  }, []);
   const rateLimiterRef = useRef(new RateLimiterCliente(5, 5 * 60 * 1000, 15 * 60 * 1000));
   const honeypotRef = useRef<HTMLInputElement>(null);
 
@@ -347,9 +354,17 @@ export default function PantallaLogin() {
             </p>
           ) : null}
 
+          
+          {/* Verificación reCAPTCHA Anti-Bot */}
+          <div className="flex justify-center my-3">
+            <RecaptchaWidget
+              onVerificado={(t) => setRecaptchaToken(t)}
+              onExpirado={() => setRecaptchaToken(null)}
+            />
+          </div>
           <button
             type="submit"
-            disabled={cargando}
+            disabled={cargando || !recaptchaToken}
             className="w-full rounded-lg bg-slate-800 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
           >
             {cargando ? (

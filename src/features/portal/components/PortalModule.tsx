@@ -53,6 +53,14 @@ import {
   type OpcionSemanaPortal,
 } from "@/features/portal/lib/semanas-portal";
 import { BarraConsultaSemanaPortal } from "@/features/portal/components/BarraConsultaSemanaPortal";
+import { RecaptchaWidget } from "@/shared/components/ui/RecaptchaWidget";
+import { activarProteccionAntiClonacion } from "@/shared/lib/anti-clonacion";
+import { obtenerIpCliente } from "@/shared/lib/ip-detector";
+import {
+  verificarSesionActiva,
+  tokenSesionGuardada,
+  ipSesionGuardada,
+} from "@/features/portal/lib/portal";
 import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
@@ -93,6 +101,10 @@ const BADGE: Record<string, string> = {
 export function PortalModule() {
   const [sesion, setSesion] = useState<SesionPortal | null>(null);
   const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    activarProteccionAntiClonacion();
+  }, []);
 
   const [autoId, setAutoId] = useState("");
   const [autoToken, setAutoToken] = useState("");
@@ -244,6 +256,13 @@ function LoginScreen(props: {
   onEntrar: () => void;
   autoEntrar: boolean;
 }) {
+  const [captchaOk, setCaptchaOk] = useState(false);
+  const [ipDetectada, setIpDetectada] = useState<string>("");
+
+  useEffect(() => {
+    obtenerIpCliente().then((ip) => setIpDetectada(ip));
+  }, []);
+
   const inp = "w-full border border-indigo-200 rounded-xl bg-white px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 font-mono";
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4">
@@ -280,7 +299,30 @@ function LoginScreen(props: {
             </p>
           ) : null}
 
-          <Button variant="default" size="lg" className="w-full bg-indigo-600 hover:bg-indigo-500" onClick={props.onEntrar}>
+          
+          {/* Verificación reCAPTCHA Anti-Bot */}
+          {!props.autoEntrar && (
+            <div className="flex justify-center my-2">
+              <RecaptchaWidget
+                onVerificado={() => setCaptchaOk(true)}
+                onExpirado={() => setCaptchaOk(false)}
+              />
+            </div>
+          )}
+
+          {ipDetectada && (
+            <div className="rounded-lg bg-slate-100 px-2.5 py-1 text-center text-[10px] font-mono text-slate-500">
+              🔒 Conexión Segura · Tu IP: <b className="text-slate-800">{ipDetectada}</b>
+            </div>
+          )}
+
+          <Button
+            variant="default"
+            size="lg"
+            disabled={!props.autoEntrar && !captchaOk}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
+            onClick={props.onEntrar}
+          >
             <span className="mr-1">🔑</span> Entrar al Portal
           </Button>
 

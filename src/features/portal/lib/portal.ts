@@ -35,6 +35,7 @@ import {
   type FichaEstadoCuentaUnificada,
 } from "@/features/saldos/lib/contabilidad-central";
 import { redondearCentavos } from "@/shared/lib/dinero";
+import { obtenerIpCliente, validarIpSesion } from "@/shared/lib/ip-detector";
 import {
   normalizarEstadoJugada,
   validarGrupoExterno,
@@ -176,7 +177,15 @@ function de<T>(data: Record<string, unknown> | undefined, clave: string): T | un
  * después de un refresh. Es el mismo compromiso que cualquier token de SPA
  * (un XSS lo lee), pero es un token de un cliente, no las claves de todos.
  */
-type Cache = { cliente: ClienteRow; token: string; id: string | number };
+type Cache = { cliente: ClienteRow; token: string; id: string | number; ip?: string };
+
+export function tokenSesionGuardada(): string {
+  return cacheGuardada()?.token ?? "";
+}
+
+export function ipSesionGuardada(): string {
+  return cacheGuardada()?.ip ?? "";
+}
 
 export function sesionGuardada(): ClienteRow | null {
   if (typeof window === "undefined") return null;
@@ -297,6 +306,68 @@ async function resolverClientePortalFallback(opts: {
   }
 }
 
+
+/**
+ * Verifica si la sesión activa sigue siendo válida en la base de datos:
+ *  1. Comprueba que el portal_token en BD no haya cambiado (expulsión si se creó nuevo código).
+ *  2. Comprueba que la dirección IP del cliente no haya cambiado (restricción por IP).
+ *  3. Comprueba que el portal siga habilitado.
+ */
+export async function verificarSesionActiva(
+  clienteId: string | number,
+  tokenSesion: string,
+  ipSesion?: string
+): Promise<{ valida: boolean; motivo?: string }> {
+  // Comprobación de IP si viene especificada
+  if (ipSesion && ipSesion !== "IP_LOCAL") {
+    try {
+      const ipActual = await obtenerIpCliente();
+      if (ipActual && ipActual !== "IP_LOCAL" && ipActual !== ipSesion) {
+        return {
+          valida: false,
+          motivo: `Sesión terminada por seguridad: Tu dirección IP cambió a ${ipActual} y no coincide con la IP autorizada (${ipSesion}). Solo se puede operar desde una única dirección IP.`,
+        };
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  if (!supabase) return { valida: true };
+  try {
+    const idStr = String(clienteId ?? "").trim();
+    const { data, error } = await supabase
+      .from("clientes")
+      .select("id, portal_token, portal_habilitado, direccion")
+      .eq("id", idStr)
+      .maybeSingle();
+
+    if (error || !data) return { valida: true };
+
+    if (data.portal_habilitado === false) {
+      return {
+        valida: false,
+        motivo: "El acceso al portal ha sido deshabilitado para tu cuenta.",
+      };
+    }
+
+    const tkBd = String(data.portal_token ?? "").trim().toUpperCase();
+    const tkLocal = String(tokenSesion ?? "").trim().toUpperCase();
+
+    // Si el token en la BD cambió, significa que se generó un nuevo código de acceso
+    if (tkBd && tkLocal && tkBd !== tkLocal) {
+      return {
+        valida: false,
+        motivo: "Tu sesión ha sido cerrada porque se generó un nuevo código de acceso o se inició sesión desde otro dispositivo. Solo se permite una conexión activa por usuario.",
+      };
+    }
+
+    return { valida: true };
+  } catch {
+    return { valida: true };
+  }
+}
+
 export async function entrarPortal(opts: {
   linkId?: string;
   linkToken?: string;
@@ -324,6 +395,27 @@ export async function entrarPortal(opts: {
   }
   if (!cliente) return { ok: false, error: r.error ?? ERROR };
 
+  // DETECCIÓN Y VALIDACIÓN DE DIRECCIÓN IP
+  const ipActual = await obtenerIpCliente();
+  const clienteRaw = cliente as Record<string, unknown>;
+  const ipAutorizada = String(clienteRaw.portal_ip_autorizada ?? clienteRaw.portal_ip_sesion ?? "").trim();
+
+  if (ipAutorizada && ipActual && ipActual !== "IP_LOCAL") {
+    const valIp = validarIpSesion(ipActual, ipAutorizada);
+    if (!valIp.ok) {
+      return {
+        ok: false,
+        error: `Acceso restringido por IP: Este enlace está autorizado exclusivamente para la dirección IP ${ipAutorizada}. Tu IP actual detectada es ${ipActual}. Solo puedes trabajar desde la dirección IP vinculada.`,
+      };
+    }
+  } else if (!ipAutorizada && ipActual && ipActual !== "IP_LOCAL" && supabase) {
+    try {
+      await supabase.from("clientes").update({ portal_ip_autorizada: ipActual } as Record<string, unknown>).eq("id", cliente.id);
+    } catch {
+      /* columna opcional */
+    }
+  }
+
   // La caché se escribe ANTES de `construirSesion`, porque esa función pide los
   // tickets con `accionPortal("datos")`, y `accionPortal` lee el token de la
   // caché. Si se guardara después, la primera carga pediría datos sin token,
@@ -334,7 +426,7 @@ export async function entrarPortal(opts: {
     // necesita para resolver la sesión en los llamados siguientes.
     const creds = credencialesPortalPorDefecto(cliente);
     const token = opts.linkToken ?? opts.token ?? creds.portal_token;
-    window.localStorage.setItem(CACHE_KEY, JSON.stringify({ cliente, token, id: cliente.id }));
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify({ cliente, token, id: cliente.id, ip: ipActual }));
   }
 
   const sesion = await construirSesion(cliente);
