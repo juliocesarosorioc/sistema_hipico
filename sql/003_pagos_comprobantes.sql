@@ -5,8 +5,8 @@
 
 CREATE TABLE IF NOT EXISTS public.pagos_comprobantes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    grupo_id UUID NULL REFERENCES public.grupos(id) ON DELETE SET NULL,
-    cliente_id UUID NULL REFERENCES public.clientes(id) ON DELETE SET NULL,
+    grupo_id UUID NULL,
+    cliente_id UUID NULL,
     cliente_nombre TEXT NOT NULL,
     direccion_flujo TEXT NOT NULL CHECK (direccion_flujo IN ('PAGO_DE_CLIENTE', 'PAGO_A_GANADOR')),
     metodo_pago TEXT NOT NULL, -- PAGO_MOVIL | TRANSFERENCIA | ZELLE | BINANCE | EFECTIVO | OTRO
@@ -36,6 +36,43 @@ CREATE TABLE IF NOT EXISTS public.pagos_comprobantes (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Foreign keys seguras e idempotentes (detecta grupos_venta o grupos según la base de datos)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'clientes') THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints 
+            WHERE constraint_schema = 'public' AND constraint_name = 'fk_pagos_comprobantes_cliente'
+        ) THEN
+            ALTER TABLE public.pagos_comprobantes 
+            ADD CONSTRAINT fk_pagos_comprobantes_cliente 
+            FOREIGN KEY (cliente_id) REFERENCES public.clientes(id) ON DELETE SET NULL;
+        END IF;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'grupos_venta') THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints 
+            WHERE constraint_schema = 'public' AND constraint_name = 'fk_pagos_comprobantes_grupo_venta'
+        ) THEN
+            ALTER TABLE public.pagos_comprobantes 
+            ADD CONSTRAINT fk_pagos_comprobantes_grupo_venta 
+            FOREIGN KEY (grupo_id) REFERENCES public.grupos_venta(id) ON DELETE SET NULL;
+        END IF;
+    ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'grupos') THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints 
+            WHERE constraint_schema = 'public' AND constraint_name = 'fk_pagos_comprobantes_grupos'
+        ) THEN
+            ALTER TABLE public.pagos_comprobantes 
+            ADD CONSTRAINT fk_pagos_comprobantes_grupos 
+            FOREIGN KEY (grupo_id) REFERENCES public.grupos(id) ON DELETE SET NULL;
+        END IF;
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
+
 -- Compatibilidad idempotente para tablas creadas previamente
 ALTER TABLE public.pagos_comprobantes ADD COLUMN IF NOT EXISTS aplicado_en_saldo BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE public.pagos_comprobantes ADD COLUMN IF NOT EXISTS nota_admin TEXT NULL;
@@ -63,19 +100,24 @@ CREATE POLICY "pagos_comprobantes_delete" ON public.pagos_comprobantes FOR DELET
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.pagos_comprobantes TO anon, authenticated;
 
--- Registro del Bucket en Storage de Supabase para Comprobantes
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-    'comprobantes-pagos',
-    'comprobantes-pagos',
-    true,
-    10485760, -- 10 MB límite
-    ARRAY['image/png', 'image/jpeg', 'image/webp', 'application/pdf']
-)
-ON CONFLICT (id) DO UPDATE
-SET public = true,
-    file_size_limit = 10485760,
-    allowed_mime_types = ARRAY['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
+-- Registro del Bucket en Storage de Supabase para Comprobantes (protegido contra restricciones de entorno)
+DO $$
+BEGIN
+    INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    VALUES (
+        'comprobantes-pagos',
+        'comprobantes-pagos',
+        true,
+        10485760, -- 10 MB límite
+        ARRAY['image/png', 'image/jpeg', 'image/webp', 'application/pdf']
+    )
+    ON CONFLICT (id) DO UPDATE
+    SET public = true,
+        file_size_limit = 10485760,
+        allowed_mime_types = ARRAY['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
 
 -- ============================================================================
 -- PROCEDIMIENTO ALMACENADO (RPC): procesar_pago_comprobante

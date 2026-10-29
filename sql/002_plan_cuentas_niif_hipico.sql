@@ -11,7 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- 2. TABLA: plan_cuentas_contables
 CREATE TABLE IF NOT EXISTS public.plan_cuentas_contables (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    grupo_id UUID NULL REFERENCES public.grupos(id) ON DELETE CASCADE,
+    grupo_id UUID NULL,
     codigo TEXT NOT NULL,
     nombre TEXT NOT NULL,
     clase TEXT NOT NULL CHECK (clase IN ('ACTIVO', 'PASIVO', 'PATRIMONIO', 'INGRESO', 'COSTO_CONTRA_INGRESO', 'GASTO', 'ORDEN')),
@@ -35,7 +35,7 @@ CREATE INDEX IF NOT EXISTS idx_plan_cuentas_padre ON public.plan_cuentas_contabl
 -- 3. TABLA: asientos_contables (Cabecera del libro diario)
 CREATE TABLE IF NOT EXISTS public.asientos_contables (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    grupo_id UUID NULL REFERENCES public.grupos(id) ON DELETE SET NULL,
+    grupo_id UUID NULL,
     numero_asiento BIGSERIAL,
     fecha_contable DATE NOT NULL DEFAULT CURRENT_DATE,
     tipo_evento TEXT NOT NULL,
@@ -77,6 +77,28 @@ CREATE TABLE IF NOT EXISTS public.asientos_contables_lineas (
 CREATE INDEX IF NOT EXISTS idx_lineas_asiento ON public.asientos_contables_lineas (asiento_id);
 CREATE INDEX IF NOT EXISTS idx_lineas_cuenta ON public.asientos_contables_lineas (cuenta_codigo);
 CREATE INDEX IF NOT EXISTS idx_lineas_cliente ON public.asientos_contables_lineas (cliente_id);
+
+-- Foreign keys seguras e idempotentes para grupos
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'grupos_venta') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_schema = 'public' AND constraint_name = 'fk_plan_cuentas_grupo_venta') THEN
+            ALTER TABLE public.plan_cuentas_contables ADD CONSTRAINT fk_plan_cuentas_grupo_venta FOREIGN KEY (grupo_id) REFERENCES public.grupos_venta(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_schema = 'public' AND constraint_name = 'fk_asientos_grupo_venta') THEN
+            ALTER TABLE public.asientos_contables ADD CONSTRAINT fk_asientos_grupo_venta FOREIGN KEY (grupo_id) REFERENCES public.grupos_venta(id) ON DELETE SET NULL;
+        END IF;
+    ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'grupos') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_schema = 'public' AND constraint_name = 'fk_plan_cuentas_grupos') THEN
+            ALTER TABLE public.plan_cuentas_contables ADD CONSTRAINT fk_plan_cuentas_grupos FOREIGN KEY (grupo_id) REFERENCES public.grupos(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_schema = 'public' AND constraint_name = 'fk_asientos_grupos') THEN
+            ALTER TABLE public.asientos_contables ADD CONSTRAINT fk_asientos_grupos FOREIGN KEY (grupo_id) REFERENCES public.grupos(id) ON DELETE SET NULL;
+        END IF;
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
 
 -- 5. SEMILLA OFICIAL DEL PLAN DE CUENTAS NIIF HÍPICO (INSERT ... ON CONFLICT DO UPDATE)
 INSERT INTO public.plan_cuentas_contables 
