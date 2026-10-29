@@ -14,6 +14,7 @@ import {
   useRegistroCentralOpts,
 } from "@/shared/store/useRegistroCentral";
 import { MonitorHipodromos } from "@/shared/components/ui/MonitorHipodromos";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { agruparPorHipodromo, diaDeCarrera, type EjeFecha } from "@/features/carreras/lib/agruparHipodromos";
 import { asegurarHipodromo } from "@/features/tablas/lib/rpc";
 import { resumenProblemasCarga, validarFechasDeCarga } from "@/features/tablas/lib/validar-carga";
@@ -712,18 +713,18 @@ export function TablasModule(props: Props) {
         >
           🔄 <span className="hidden sm:inline">Refrescar</span>
         </button>
-        <label
-          className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-xs font-black uppercase text-slate-600"
+        <div
+          className="flex items-center gap-1.5 rounded-full border border-line bg-white px-2.5 py-0.5 text-xs font-black uppercase text-slate-600"
           title="Filtro Universal por fecha: las tarjetas manuales y carreras vacías se publican bajo ESTA fecha (YYYY-MM-DD). Vacío = todos los días."
         >
-          📅
-          <input
-            type="date"
+          <span className="text-sm">📅</span>
+          <DateInput
             value={fechaPrograma}
-            onChange={(e) => setFechaPrograma(e.target.value)}
-            className="bg-transparent text-xs font-bold text-slate-700 outline-none"
+            onFechaChange={(val) => setFechaPrograma(val)}
+            placeholder="DD/MM/AAAA"
+            className="border-0 bg-transparent py-0.5 px-1 text-xs font-bold text-slate-700 shadow-none focus:ring-0 w-32"
           />
-        </label>
+        </div>
         {fechaPrograma ? (
           <button
             type="button"

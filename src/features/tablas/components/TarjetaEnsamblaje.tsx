@@ -5,6 +5,7 @@ import { colorDeNumero, textoDeNumero, parseNum, OPCIONES_NACIONALIDAD, SUPERFIC
 import { Flag } from "@/shared/components/ui/BanderaPais"; // Inyectamos la bandera
 import { EditorCaballos } from "@/features/tablas/components/EditorCaballos";
 import { esFechaIso } from "@/core/utils/fechas";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 
 type Props = {
@@ -267,10 +268,10 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
                       Postgres, que la leía como MM-DD y la guardaba en
                       2026-04-10: eso partió la jornada del 04-10-2026 (C10-C12
                       desaparecieron de Tablas Fijas y Gestión de Jugadas). */}
-                  <input
-                    type="date"
+                  <DateInput
                     value={esFechaIso(corrigiendo.fecha) ? String(corrigiendo.fecha).slice(0, 10) : ""}
-                    onChange={(e) => aplicarCorreccion({ ...corrigiendo, fecha: e.target.value || null })}
+                    onFechaChange={(val) => aplicarCorreccion({ ...corrigiendo, fecha: val || null })}
+                    placeholder="DD/MM/AAAA"
                     className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 focus:outline-none"
                   />
                 </label>

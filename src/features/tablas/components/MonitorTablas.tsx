@@ -23,6 +23,7 @@ import { useCarrerasCentrales } from "@/features/carreras/lib/useCarrerasCentral
 import { aplicarRetirosCarrera } from "@/features/carreras/lib/retiros";
 import { guardarCarreraCentral } from "@/features/carreras/lib/central";
 import { esFechaIso } from "@/core/utils/fechas";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { diaDeCarrera, type EjeFecha } from "@/features/carreras/lib/agruparHipodromos";
 import {
@@ -1515,10 +1516,10 @@ export function MonitorTablas({
                       que Postgres lo guardara como 2026-04-10 (lo leía MM-DD).
                       Mover una tabla de día parte la jornada: la carrera queda
                       con ventas en un día y la oferta en otro. */}
-                  <input
-                    type="date"
+                  <DateInput
                     value={esFechaIso(String(patchEdicion.fecha ?? editando.fecha ?? "").slice(0, 10)) ? String(patchEdicion.fecha ?? editando.fecha ?? "").slice(0, 10) : ""}
-                    onChange={(e) => setPatchEdicion((p) => ({ ...p, fecha: e.target.value }))}
+                    onFechaChange={(val) => setPatchEdicion((p) => ({ ...p, fecha: val }))}
+                    placeholder="DD/MM/AAAA"
                     className="w-full rounded border border-line bg-white px-2 py-1 text-sm font-bold text-slate-900 focus:outline-none"
                   />
                 </label>
