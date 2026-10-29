@@ -1,4 +1,5 @@
 "use client";
+import { DateInput } from "@/shared/components/ui/DateInput";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -531,11 +532,10 @@ export function DashboardGrupos() {
                       <span className="mb-0.5 block text-[9px] font-black uppercase tracking-wider text-slate-600">
                         Semana que empieza el
                       </span>
-                      <input
-                        type="date"
+                      <DateInput
                         value={inicioVigente}
-                        onChange={(e) => setInicioVigente(e.target.value)}
-                        className="rounded-lg border border-line bg-white px-2 py-1 text-xs font-bold outline-none"
+                        onFechaChange={(val) => setInicioVigente(val)}
+                        className="w-36 text-xs font-bold"
                       />
                     </label>
                     <Button size="sm" onClick={() => void aplicarVigente(inicioVigente || null)} disabled={guardando}>

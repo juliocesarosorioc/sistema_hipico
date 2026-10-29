@@ -834,23 +834,28 @@ export function MonitorTablas({
             </select>
           </label>
 
-          {/* Filtro Fecha (según el eje elegido arriba) */}
-          <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
+                    {/* Filtro Fecha (según el eje elegido arriba) */}
+          <div className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
               {ejeFecha === "venta" ? "🧾 Venta" : "📅 Carrera"}
             </span>
-            <select
+            <DateInput
               value={fechaFiltro}
-              onChange={(e) => setFechaFiltro(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none"
-            >
-              {/* "TODAS" = sin filtro de día: el reporte muestra TODAS las
-                  fechas publicadas (fecha de venta y de carrera), y solo se
-                  acota al elegir un día. Antes arrancaba clavado en hoy. */}
-              <option value="">TODAS</option>
-              {fechasDisponibles.map(f => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </label>
+              onFechaChange={(val) => setFechaFiltro(val)}
+              placeholder="TODAS"
+              className="border-0 bg-transparent py-0 px-1 text-xs font-bold text-slate-900 shadow-none focus:ring-0 w-28"
+            />
+            {fechaFiltro ? (
+              <button
+                type="button"
+                onClick={() => setFechaFiltro("")}
+                title="Ver todas las fechas"
+                className="text-[10px] font-bold text-slate-400 hover:text-slate-700 px-1"
+              >
+                ✕
+              </button>
+            ) : null}
+          </div>
 
           {/* Filtro Carrera */}
           <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">

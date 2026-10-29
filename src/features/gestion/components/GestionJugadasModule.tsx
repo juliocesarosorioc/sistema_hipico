@@ -1,4 +1,5 @@
 "use client";
+import { DateInput } from "@/shared/components/ui/DateInput";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { proyectarFila } from "@/features/taquilla/lib/validar";
@@ -2192,11 +2193,10 @@ const hipodromosDelDia = useMemo(() => {
       <div className="grid gap-1.5 rounded-xl border border-line bg-surface p-2 lg:grid-cols-7">
         <div>
           <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">1 · Fecha 📅</label>
-          <input
-            type="date"
+          <DateInput
             value={fecha}
-            onChange={(e) => setFecha(e.target.value || hoyLocal())}
-            className="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            onFechaChange={(val) => setFecha(val || hoyLocal())}
+            className="w-full text-xs font-bold"
           />
         </div>
         <div>

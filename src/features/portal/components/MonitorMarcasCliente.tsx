@@ -1,4 +1,5 @@
 "use client";
+import { DateInput } from "@/shared/components/ui/DateInput";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { getHorseColor } from "@/shared/lib/horseColors";
@@ -156,12 +157,11 @@ export function MonitorMarcasCliente({
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Fecha:</label>
-            <input
-              type="date"
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Fecha:</span>
+            <DateInput
               value={fecha}
-              onChange={(e) => setFecha(e.target.value)}
-              className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              onFechaChange={(val) => setFecha(val)}
+              className="w-32 text-xs font-bold"
             />
           </div>
         </div>

@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import {
   aUsd,
   crearMoneda,
@@ -266,12 +267,7 @@ function BandejaMovimientosOperadorPendientes({
             </div>
             <div>
               <label className={lbl}>Día del Movimiento *</label>
-              <input
-                type="date"
-                value={fechaMov}
-                onChange={(e) => setFechaMov(e.target.value)}
-                className={inp}
-              />
+              <DateInput value={fechaMov} onFechaChange={(val) => setFechaMov(val)} className={inp} />
             </div>
             <div>
               <label className={lbl}>Modalidad / Concepto</label>
@@ -1557,7 +1553,7 @@ export function TabMonedas({
               </div>
               <div>
                 <label className={lbl}>A partir de *</label>
-                <input type="date" value={refFecha} onChange={(e) => setRefFecha(e.target.value || new Date().toISOString().slice(0, 10))} className={inp} />
+                <DateInput value={refFecha} onFechaChange={(val) => setRefFecha(val || new Date().toISOString().slice(0, 10))} className={inp} />
               </div>
             </div>
             <Button variant="default" size="sm" className="w-full" onClick={guardarReferencia}>
@@ -1971,11 +1967,11 @@ export function TabBalanceNIIF({
           </div>
           <div>
             <label className={lbl}>Desde</label>
-            <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className={inp} />
+            <DateInput value={desde} onFechaChange={(val) => setDesde(val)} className={inp} />
           </div>
           <div>
             <label className={lbl}>Hasta</label>
-            <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className={inp} />
+            <DateInput value={hasta} onFechaChange={(val) => setHasta(val)} className={inp} />
           </div>
           <Button variant="default" size="sm" onClick={() => void aplicarRango()}>
             <span>🔎</span> Aplicar rango
@@ -2072,7 +2068,7 @@ export function TabBalanceNIIF({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className={lbl}>Fecha *</label>
-                <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={inp} />
+                <DateInput value={fecha} onFechaChange={(val) => setFecha(val)} className={inp} />
               </div>
               <div>
                 <label className={lbl}>Clave de idempotencia *</label>

@@ -1,4 +1,5 @@
 "use client";
+import { DateInput } from "@/shared/components/ui/DateInput";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
@@ -1476,7 +1477,7 @@ export function DupletaModule() {
             <div className="mb-3 flex flex-wrap items-end gap-3">
               <label className="block">
                 <span className={inputLbl}>Filtrar por día</span>
-                <input type="date" value={fgDia} onChange={(e) => setFgDia(e.target.value)} className={inputSel} />
+                <DateInput value={fgDia} onFechaChange={(val) => setFgDia(val)} className={inputSel} />
               </label>
               <label className="block min-w-[220px] flex-1">
                 <span className={inputLbl}>Buscar hipódromo / carrera</span>

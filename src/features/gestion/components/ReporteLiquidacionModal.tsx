@@ -21,6 +21,7 @@ import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
 import { EmptyState } from "@/shared/components/ui/EmptyState";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import ReporteCarrera, { type ReporteCarreraDatos } from "@/features/saldos/components/ReporteCarrera";
 import ManualLiquidacion from "@/features/gestion/components/ManualLiquidacion";
 import WhatsappReporteCarrera from "@/features/liquidacion/components/WhatsappReporteCarrera";
@@ -382,15 +383,14 @@ export default function ReporteLiquidacionModal({
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="font-black text-white">🧾 Reporte de Liquidación</span>
 
-            <label className="ml-1 flex items-center gap-1 font-bold text-slate-300">
-              Fecha
-              <input
-                type="date"
+            <div className="ml-1 flex items-center gap-1.5 font-bold text-slate-300">
+              <span>Fecha</span>
+              <DateInput
                 value={fecha}
-                onChange={(e) => setFecha(e.target.value || hoyLocal())}
-                className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] font-bold text-white"
+                onFechaChange={(val) => setFecha(val || hoyLocal())}
+                className="w-32 py-1 px-2 text-[11px] font-bold bg-slate-800 text-white border-slate-600"
               />
-            </label>
+            </div>
             <button
               type="button"
               onClick={() => setFecha(hoyLocal())}

@@ -18,6 +18,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { Guard } from "@/shared/components/ui/Guard";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
@@ -275,7 +276,7 @@ export function CuadernoCliente({ clientes, clienteEstado, onActivo }: Props) {
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <label className="block">
                   <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Fecha</span>
-                  <input type="date" value={draft.fecha} onChange={(e) => setDraft({ ...draft, fecha: e.target.value })} className={inp} />
+                  <DateInput value={draft.fecha} onFechaChange={(val) => setDraft({ ...draft, fecha: val })} className={inp} />
                 </label>
                 <label className="block sm:col-span-1">
                   <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Grupo</span>

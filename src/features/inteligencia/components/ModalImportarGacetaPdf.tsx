@@ -1,4 +1,5 @@
 "use client";
+import { DateInput } from "@/shared/components/ui/DateInput";
 
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/shared/components/ui/Button";
@@ -316,11 +317,10 @@ export function ModalImportarGacetaPdf({
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
                   Fecha de la Jornada
                 </label>
-                <input
-                  type="date"
+                <DateInput
                   value={fecha}
-                  onChange={(e) => setFecha(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-bold"
+                  onFechaChange={(val) => setFecha(val)}
+                  className="w-full bg-slate-900 border-slate-700 text-xs text-white font-bold py-1.5"
                 />
               </div>
 

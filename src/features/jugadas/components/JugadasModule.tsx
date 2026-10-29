@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/shared/components/ui/Button";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { useAuthStore } from "@/shared/store/useAuthStore";
@@ -343,15 +344,14 @@ export function JugadasModule() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="text-[10px] font-bold uppercase text-slate-400">
-            Jornada
-            <input
-              type="date"
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold uppercase text-slate-400">Jornada</span>
+            <DateInput
               value={fecha}
-              onChange={(e) => setFecha(e.target.value || hoyLocal())}
-              className="mt-0.5 rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none"
+              onFechaChange={(val) => setFecha(val || hoyLocal())}
+              className="mt-0.5 w-36 text-xs font-bold bg-white border-line text-slate-800"
             />
-          </label>
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -838,7 +838,11 @@ function ModalEditar({
           <input value={hipodromo} onChange={(e) => setHipodromo(e.target.value.toUpperCase())} className={inputClase} />
         </Campo>
         <Campo label="Fecha Carrera">
-          <input type="date" value={fechaCarrera} onChange={(e) => setFechaCarrera(e.target.value)} className={inputClase} />
+          <DateInput
+            value={fechaCarrera}
+            onFechaChange={(val) => setFechaCarrera(val)}
+            className={inputClase}
+          />
         </Campo>
         <Campo label="Modalidad">
           <select value={esAdelantada ? "adelantada" : "envivo"} onChange={(e) => setEsAdelantada(e.target.value === "adelantada")} className={inputClase}>

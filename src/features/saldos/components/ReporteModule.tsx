@@ -1,4 +1,5 @@
 "use client";
+import { DateInput } from "@/shared/components/ui/DateInput";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listarGruposAdmin, type GrupoRow } from "@/features/grupos/lib/grupos";
@@ -508,20 +509,18 @@ export function ReporteModule() {
                 </option>
               ))}
             </select>
-            <input
-              type="date"
+            <DateInput
               value={desde}
-              onChange={(e) => setDesde(e.target.value)}
-              className="rounded border border-blue-700 bg-blue-900 px-2 py-1 text-sm text-white"
-              title="Desde (vacío = inicio de la semana fiscal)"
+              onFechaChange={(val) => setDesde(val)}
+              placeholder="Desde"
+              className="w-32 py-1 text-sm text-white bg-blue-900 border-blue-700"
             />
             <span className="text-blue-200">→</span>
-            <input
-              type="date"
+            <DateInput
               value={hasta}
-              onChange={(e) => setHasta(e.target.value)}
-              className="rounded border border-blue-700 bg-blue-900 px-2 py-1 text-sm text-white"
-              title="Hasta (vacío = fin de la semana fiscal)"
+              onFechaChange={(val) => setHasta(val)}
+              placeholder="Hasta"
+              className="w-32 py-1 text-sm text-white bg-blue-900 border-blue-700"
             />
             <button
               onClick={cargar}

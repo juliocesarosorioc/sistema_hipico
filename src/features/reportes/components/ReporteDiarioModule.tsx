@@ -1,4 +1,5 @@
 "use client";
+import { DateInput } from "@/shared/components/ui/DateInput";
 
 /**
  * Reporte Diario y por Carrera — módulo del personal (`/reporte-diario`).
@@ -142,23 +143,19 @@ export function ReporteDiarioModule() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <label className="flex flex-col gap-1">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Desde</span>
-            <input
-              type="date"
+            <DateInput
               value={desde}
-              max={hasta}
-              onChange={(e) => setDesde(e.target.value)}
-              className="rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-200"
+              onFechaChange={(val) => setDesde(val)}
+              className="text-sm font-bold"
             />
           </label>
 
           <label className="flex flex-col gap-1">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Hasta</span>
-            <input
-              type="date"
+            <DateInput
               value={hasta}
-              min={desde}
-              onChange={(e) => setHasta(e.target.value)}
-              className="rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-200"
+              onFechaChange={(val) => setHasta(val)}
+              className="text-sm font-bold"
             />
           </label>
 

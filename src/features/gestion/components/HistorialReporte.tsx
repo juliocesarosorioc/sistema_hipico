@@ -1,4 +1,5 @@
 "use client";
+import { DateInput } from "@/shared/components/ui/DateInput";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { getHorseColor } from "@/shared/lib/horseColors";
@@ -259,11 +260,10 @@ export default function HistorialReporte() {
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-[11px] font-bold text-gray-300">
             Fecha
-            <input
-              type="date"
+            <DateInput
               value={fecha}
-              onChange={(e) => setFecha(e.target.value || hoyLocal())}
-              className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-[11px] font-bold text-white"
+              onFechaChange={(val) => setFecha(val || hoyLocal())}
+              className="w-32 py-1 px-2 text-[11px] font-bold bg-gray-800 text-white border-gray-600"
             />
           </label>
           <button

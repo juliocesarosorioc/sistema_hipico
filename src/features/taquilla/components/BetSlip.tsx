@@ -5,6 +5,7 @@ import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { validarComando, detectarModalidad } from "@/features/taquilla/lib/validar";
 import { venderJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
 import { Input } from "@/shared/components/ui/Input";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { Button } from "@/shared/components/ui/Button";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { DesgloseProyectado } from "@/features/taquilla/components/DesgloseProyectado";
@@ -267,12 +268,14 @@ export function BetSlip() {
           La venta se guarda en <b>tickets_apuestas</b> (descuenta el saldo del CLIENTE 1).
         </p>
         <div className="grid grid-cols-2 gap-2">
-          <Input
-            label="Fecha"
-            type="date"
-            value={fecha}
-            onChange={(e) => setFecha(e.target.value || hoyLocal())}
-          />
+          <div className="space-y-1">
+            <span className="block text-[11px] font-black uppercase tracking-wider text-slate-500">Fecha</span>
+            <DateInput
+              value={fecha}
+              onFechaChange={(val) => setFecha(val || hoyLocal())}
+              className="w-full text-xs font-bold"
+            />
+          </div>
           <Input
             label="Carrera"
             value={String(carrera)}

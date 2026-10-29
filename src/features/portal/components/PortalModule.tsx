@@ -47,6 +47,12 @@ import { ModalRealizarJugadaUsuario } from "@/features/portal/components/ModalRe
 import { SeccionJugadasPortal } from "@/features/portal/components/SeccionJugadasPortal";
 import { ModalJugadaNoRelacionada } from "@/features/portal/components/ModalJugadaNoRelacionada";
 import { dentroDeVentana, type CicloGrupo } from "@/features/portal/lib/ventana-reclamos";
+import { DateInput } from "@/shared/components/ui/DateInput";
+import {
+  generarOpcionesSemanasPortal,
+  type OpcionSemanaPortal,
+} from "@/features/portal/lib/semanas-portal";
+import { BarraConsultaSemanaPortal } from "@/features/portal/components/BarraConsultaSemanaPortal";
 import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
@@ -306,6 +312,41 @@ const OPCIONES_MENU_PORTAL: { key: TabPortal; icono: string; label: string; badg
 function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; onActualizar: (s: SesionPortal) => void; onSalir: () => void }) {
   // 1ra pestaña por defecto: Reporte del Día
   const [tab, setTab] = useState<TabPortal>("reporte");
+  // Ciclo y opciones de semanas para el portal (Semana actual por defecto + semanas anteriores)
+  const hoy = isoLocal(new Date());
+  const { semanaActual, semanas: opcionesSemanas } = useMemo(
+    () => generarOpcionesSemanasPortal(hoy, sesion.grupo),
+    [hoy, sesion.grupo]
+  );
+  // Por defecto, consulta la semana actual (en curso).
+  const [semanaSeleccionada, setSemanaSeleccionada] = useState<OpcionSemanaPortal>(semanaActual);
+  const [verTodoHistorico, setVerTodoHistorico] = useState(false);
+
+  const idxActual = opcionesSemanas.findIndex((s) => s.key === semanaSeleccionada.key);
+  const tieneSiguiente = idxActual > 0;
+  const anterior = () => {
+    if (verTodoHistorico) {
+      setVerTodoHistorico(false);
+      setSemanaSeleccionada(opcionesSemanas[0] || semanaActual);
+      return;
+    }
+    const sigIdx = Math.min(opcionesSemanas.length - 1, idxActual + 1);
+    setSemanaSeleccionada(opcionesSemanas[sigIdx]);
+  };
+  const siguiente = () => {
+    if (verTodoHistorico) {
+      setVerTodoHistorico(false);
+      return;
+    }
+    if (tieneSiguiente) {
+      setSemanaSeleccionada(opcionesSemanas[idxActual - 1]);
+    }
+  };
+  const irSemanaActual = () => {
+    setVerTodoHistorico(false);
+    setSemanaSeleccionada(semanaActual);
+  };
+
   // Menú ocultable a la izquierda para todas las opciones
   const [menuAbierto, setMenuAbierto] = useState(true);
   // 👤 Mi Perfil (PROMPT #7): autogestión de datos personales en un modal.
@@ -484,12 +525,28 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
               bg="bg-white"
             />
           </div>
+          {/* Barra de Consulta Semanal: Semana Actual por defecto + Semanas Anteriores */}
+          <BarraConsultaSemanaPortal
+            semanaSeleccionada={semanaSeleccionada}
+            semanaActual={semanaActual}
+            opciones={opcionesSemanas}
+            verTodoHistorico={verTodoHistorico}
+            onSeleccionarSemana={(sem) => {
+              setVerTodoHistorico(false);
+              setSemanaSeleccionada(sem);
+            }}
+            onToggleTodoHistorico={() => setVerTodoHistorico((v) => !v)}
+            onIrSemanaActual={irSemanaActual}
+            onAnterior={anterior}
+            onSiguiente={siguiente}
+            tieneSiguiente={tieneSiguiente}
+          />
 
           {/* Vista principal a todo el ancho. Los QR se eliminaron: en el reporte
               su columna la ocupan los gráficos. */}
           <div className="min-w-0 space-y-4">
-            {tab === "reporte" ? <ReporteDiarioView sesion={sesion} /> : null}
-            {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} /> : null}
+            {tab === "reporte" ? <ReporteDiarioView sesion={sesion} semana={verTodoHistorico ? null : semanaSeleccionada} /> : null}
+            {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} semana={verTodoHistorico ? null : semanaSeleccionada} /> : null}
             {tab === "externos" ? <BitacoraExternaView cliente={sesion.cliente} /> : null}
             {tab === "jugadas" || tab === "comprar" ? (
               <SeccionJugadasPortal
@@ -649,7 +706,13 @@ function CapsulaUsuarioConTorta({
  * La fecha se toma de la carrera (`fechaCarrera`) con respaldo del registro:
  * si el portal todavía no devuelve `fecha_carrera`, cae a la fecha de venta.
  */
-function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
+function ReporteDiarioView({
+  sesion,
+  semana,
+}: {
+  sesion: SesionPortal;
+  semana: OpcionSemanaPortal | null;
+}) {
   // Igual que en el menú lateral: el logo y el nombre salen de la data del grupo.
   const logoGrupoUrl = String(sesion.grupo?.logo_url ?? "").trim();
   const nombreGrupo =
@@ -657,7 +720,7 @@ function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
     String((sesion.cliente as unknown as { grupo?: string }).grupo ?? "").trim() ||
     "Club del Dinero";
 
-  const fechasDisponibles = useMemo(() => {
+  const todasLasFechas = useMemo(() => {
     const set = new Set<string>();
     for (const j of sesion.arbolTickets.jugadas) {
       const f = String(j.fechaCarrera ?? j.fecha ?? "").slice(0, 10);
@@ -666,12 +729,28 @@ function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
     return [...set].sort((a, b) => b.localeCompare(a));
   }, [sesion.arbolTickets.jugadas]);
 
-  const [fecha, setFecha] = useState(() => fechasDisponibles[0] || isoLocal(new Date()));
+  const fechasDisponibles = useMemo(() => {
+    if (!semana) return todasLasFechas;
+    return todasLasFechas.filter((f) => f >= semana.inicio && f <= semana.fin);
+  }, [todasLasFechas, semana]);
+
+  const [fecha, setFecha] = useState(() => fechasDisponibles[0] || (semana ? semana.fin : isoLocal(new Date())));
+
+  useEffect(() => {
+    if (fechasDisponibles.length > 0 && !fechasDisponibles.includes(fecha)) {
+      setFecha(fechasDisponibles[0]);
+    }
+  }, [fechasDisponibles, fecha]);
   const [verTodasFechas, setVerTodasFechas] = useState(false);
 
   const datos = useMemo(() => {
     const filtradas = verTodasFechas
-      ? sesion.arbolTickets.jugadas
+      ? (semana
+          ? sesion.arbolTickets.jugadas.filter((j) => {
+              const f = String(j.fechaCarrera ?? j.fecha ?? "").slice(0, 10);
+              return f >= semana.inicio && f <= semana.fin;
+            })
+          : sesion.arbolTickets.jugadas)
       : sesion.arbolTickets.jugadas.filter(
           (j) => (j.fechaCarrera ?? j.fecha ?? "").slice(0, 10) === fecha
         );
@@ -697,7 +776,7 @@ function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
       };
     });
     return armarReporteDiario(jugadas);
-  }, [sesion, fecha, verTodasFechas]);
+  }, [sesion, fecha, verTodasFechas, semana]);
 
   return (
     <div className="space-y-3">
@@ -706,15 +785,14 @@ function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
             Fecha del reporte
           </span>
-          <input
-            type="date"
+          <DateInput
             value={fecha}
             disabled={verTodasFechas}
-            onChange={(e) => {
+            onFechaChange={(val) => {
               setVerTodasFechas(false);
-              setFecha(e.target.value);
+              setFecha(val);
             }}
-            className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
+            className="w-36 text-xs font-bold"
           />
           <button
             type="button"
@@ -725,7 +803,7 @@ function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
                 : "bg-slate-100 text-slate-700 hover:bg-slate-200"
             }`}
           >
-            {verTodasFechas ? "📅 Viendo todas mis jornadas" : "📊 Ver todas mis jornadas"}
+            {semana ? (verTodasFechas ? "📅 Viendo toda la semana" : "📊 Ver toda la semana") : (verTodasFechas ? "📅 Viendo todas mis jornadas" : "📊 Ver todas mis jornadas")}
           </button>
           {fechasDisponibles.slice(0, 4).map((f) => (
             <button
@@ -778,11 +856,22 @@ function ReporteDiarioView({ sesion }: { sesion: SesionPortal }) {
 // Resumen y movimientos (con Reclamar)
 // ---------------------------------------------------------------------------
 
-function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s: SesionPortal) => void }) {
-  const jugadas = useMemo(
-    () => sesion.arbolTickets.jugadas.slice(0, 60),
-    [sesion.arbolTickets.jugadas]
-  );
+function ResumenView({
+  sesion,
+  onCambio,
+  semana,
+}: {
+  sesion: SesionPortal;
+  onCambio: (s: SesionPortal) => void;
+  semana: OpcionSemanaPortal | null;
+}) {
+  const jugadas = useMemo(() => {
+    if (!semana) return sesion.arbolTickets.jugadas.slice(0, 100);
+    return sesion.arbolTickets.jugadas.filter((j) => {
+      const f = String(j.fechaCarrera ?? j.fecha ?? "").slice(0, 10);
+      return f >= semana.inicio && f <= semana.fin;
+    });
+  }, [sesion.arbolTickets.jugadas, semana]);
   const [disputa, setDisputa] = useState<(typeof jugadas)[number] | null>(null);
   const [noRelAbierta, setNoRelAbierta] = useState(false);
 
@@ -898,7 +987,14 @@ function ResumenView({ sesion, onCambio }: { sesion: SesionPortal; onCambio: (s:
 
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
         <div className="bg-slate-900 px-4 py-3 text-xs font-black uppercase tracking-wider text-white border-b border-slate-800">
-          <span className="mr-1 text-amber-400">🗒️</span> Últimos movimientos
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="mr-1 text-amber-400">🗒️</span> Movimientos {semana ? `· ${semana.label}` : "· Histórico Completo"}
+            </div>
+            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-mono font-bold text-slate-300">
+              {jugadas.length} {jugadas.length === 1 ? "jugada" : "jugadas"}
+            </span>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -2470,7 +2566,7 @@ function BitacoraExternaView({ cliente }: { cliente: SesionPortal["cliente"] }) 
         <div className="flex flex-wrap items-end gap-2">
           <div className="w-36">
             <label className={lbl}>Fecha</label>
-            <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} className={inp} data-testid="bitacora-fecha" />
+            <DateInput value={form.fecha} onFechaChange={(val) => setForm({ ...form, fecha: val })} className={inp} />
           </div>
           <div className="w-40">
             <label className={lbl}>Hipódromo</label>

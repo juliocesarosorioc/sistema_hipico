@@ -21,6 +21,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { Mensaje } from "@/shared/components/ui/Mensaje";
 import { emitirToast } from "@/shared/lib/mensajeria";
 import {
@@ -216,11 +217,11 @@ export function ReporteComisionesConvenioModal({ grupos, onCerrar, grupoFijoId }
             </div>
             <div>
               <label className={lbl}>Desde</label>
-              <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className={inp} />
+              <DateInput value={desde} onFechaChange={(val) => setDesde(val)} className={inp} />
             </div>
             <div>
               <label className={lbl}>Hasta</label>
-              <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className={inp} />
+              <DateInput value={hasta} onFechaChange={(val) => setHasta(val)} className={inp} />
             </div>
             <div>
               <label className={lbl}>Hipódromo</label>

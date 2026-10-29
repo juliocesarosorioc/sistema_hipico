@@ -10,6 +10,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { opcionesHipodromo } from "@/features/hipodromos/lib/nombre";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
@@ -205,13 +206,10 @@ export function ModalJugadaNoRelacionada({
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <label className={lbl}>1 · Fecha (Día)</label>
-              <input
-                type="date"
-                className="modal-campo"
+              <DateInput
                 value={fecha}
-                min={piso}
-                max={tope}
-                onChange={(e) => setFecha(e.target.value)}
+                onFechaChange={(val) => setFecha(val)}
+                className="modal-campo text-xs font-bold"
               />
             </div>
             <div>
