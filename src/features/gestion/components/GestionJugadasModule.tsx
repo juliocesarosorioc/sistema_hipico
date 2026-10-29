@@ -2284,6 +2284,188 @@ const hipodromosDelDia = useMemo(() => {
         />
       )}
 
+      {/* Modal dedicado de Control de Cruces de esta Carrera */}
+      {modalControlCruces && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+            onClick={(e) => { if (e.target === e.currentTarget) setModalControlCruces(false); }}
+        >
+          <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-amber-300/40 bg-slate-900 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950 px-5 py-3.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">⚡</span>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-amber-300">
+                    Control de Cruces de esta Carrera
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Las excepciones quedan aisladas a <b>{nombreHipodromo} · Carrera {carrera}</b>.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalControlCruces(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+                aria-label="Cerrar modal de control de cruces"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="max-h-[80vh] overflow-y-auto p-5 text-slate-100 space-y-4">
+              {/* Con Cruces (otros productos) incorporado al modal de control de cruces */}
+              <div className="rounded-xl border border-amber-400/50 bg-slate-800/95 p-4 shadow-lg space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/60 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🔀</span>
+                    <div>
+                      <h4 className="text-xs font-black text-amber-300 uppercase tracking-wide">
+                        Modalidad Con Cruces (Otros Productos)
+                      </h4>
+                      <p className="text-[11px] text-slate-300">
+                        Reembolsa la comisión sobre el monto cruzado en el saldo del jugador al liquidar.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConCruces(!conCruces)}
+                    className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-1.5 text-xs font-black uppercase tracking-wider transition ${
+                      conCruces
+                        ? "border-emerald-400 bg-emerald-600 text-white shadow-md shadow-emerald-900/30"
+                        : "border-slate-600 bg-slate-700 text-slate-300 hover:bg-slate-600"
+                    }`}
+                  >
+                    <span className={`h-2.5 w-2.5 rounded-full ${conCruces ? "bg-white animate-pulse" : "bg-slate-400"}`} />
+                    <span>{conCruces ? "CON CRUCES (ACTIVO)" : "SIN CRUCES (INACTIVO)"}</span>
+                  </button>
+                </div>
+                <div className="text-[11px] text-slate-400 space-y-1">
+                  <p>
+                    • <b className="text-slate-200">CON CRUCES:</b> Si un cliente gana y pierde en la misma carrera con productos combinados o cruzados, la comisión se calcula sobre la ganancia neta o se reembolsa el monto cruzado (Cuenta PUC: <code className="text-amber-300 font-mono">5.1.01.001</code>).
+                  </p>
+                  <p>
+                    • <b className="text-slate-200">SIN CRUCES:</b> Cada jugada ganadora aporta su comisión individual a la casa sin deducción por cruce.
+                  </p>
+                </div>
+              </div>
+              {Object.values(crucesOverrideCarrera.todos ?? {}).some((value) => typeof value === "boolean") && (
+                <div className="rounded-lg bg-amber-400/15 border border-amber-400/30 px-3 py-2 text-xs font-black text-amber-300 flex items-center gap-2">
+                  <span>⚠️</span>
+                  <span>Excepción activa solo en Carrera {carrera} para todos</span>
+                </div>
+              )}
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="rounded-xl border border-slate-700 bg-slate-800/80 p-3.5">
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Cruces en esta carrera (todos) · Grupo: {grupoReglasCruce.mismoEjemplar ? "Mismo sí" : "Mismo no"} / {grupoReglasCruce.diferenteEjemplar ? "Diferente sí" : "Diferente no"}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      ["mismoEjemplar", "⚡ Mismo Ejemplar"],
+                      ["diferenteEjemplar", "⚡ Dif. Ejemplar"],
+                    ] as const).map(([modalidad, texto]) => {
+                      const activo = crucesOverrideCarrera.todos?.[modalidad] ?? grupoReglasCruce[modalidad];
+                      return (
+                        <button
+                          key={modalidad}
+                          type="button"
+                          disabled={!grupoSesion || cargandoCrucesCarrera}
+                          aria-pressed={activo}
+                          onClick={() => void guardarOverrideActual({
+                            ...crucesOverrideCarrera,
+                            todos: { ...crucesOverrideCarrera.todos, [modalidad]: !activo },
+                          })}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-black transition disabled:opacity-50 ${
+                            activo ? "border-amber-300 bg-amber-400 text-slate-950 shadow-md" : "border-slate-600 bg-slate-800 text-slate-300 hover:border-amber-300"
+                          }`}
+                        >
+                          {texto} (Solo esta carrera)
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-700 bg-slate-800/80 p-3.5">
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Cruzar a un jugador en esta carrera o guardar permanente
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={jugadorCruce}
+                      onChange={(e) => setJugadorCruce(e.target.value)}
+                      className="min-w-40 flex-1 rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white outline-none focus:border-amber-400"
+                      aria-label="Jugador para configurar cruces"
+                    >
+                      <option value="">Buscar jugador…</option>
+                      {clientes.map((cliente) => (
+                        <option key={cliente.id} value={cliente.nombre}>{cliente.nombre}</option>
+                      ))}
+                    </select>
+                    <label className="flex items-center gap-1 text-[10px] font-bold text-slate-300 cursor-pointer">
+                      <input type="radio" name="alcance-cruce" checked={alcanceCruce === "carrera"} onChange={() => setAlcanceCruce("carrera")} className="accent-amber-400" />
+                      Solo Carrera {carrera}
+                    </label>
+                    <label className="flex items-center gap-1 text-[10px] font-bold text-slate-300 cursor-pointer">
+                      <input type="radio" name="alcance-cruce" checked={alcanceCruce === "permanente"} onChange={() => setAlcanceCruce("permanente")} className="accent-amber-400" />
+                      Ficha permanente
+                    </label>
+                  </div>
+                  {jugadorCruce && (
+                    <div className="mt-3 space-y-2 border-t border-slate-700/60 pt-3">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                        {([
+                          ["mismoEjemplar", "Cruzar Mismo Ejemplar"],
+                          ["diferenteEjemplar", "Cruzar Diferentes Ejemplares"],
+                        ] as const).map(([modalidad, texto]) => (
+                          <label key={modalidad} className="flex items-center gap-1.5 text-xs font-bold text-slate-200 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={borradorCruceJugador[modalidad]}
+                              onChange={(e) => setBorradorCruceJugador((v) => ({ ...v, [modalidad]: e.target.checked }))}
+                              className="accent-amber-400 h-4 w-4 rounded"
+                            />
+                            {texto}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={() => void guardarReglasJugador()}
+                          disabled={!grupoSesion && alcanceCruce === "carrera"}
+                          className="rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-black text-slate-950 hover:bg-amber-300 shadow-sm disabled:opacity-50"
+                        >
+                          Guardar {alcanceCruce === "carrera" ? `solo Carrera ${carrera}` : "en ficha"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-slate-800 bg-slate-950 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setModalControlCruces(false)}
+                className="rounded-lg bg-slate-800 hover:bg-slate-700 px-4 py-1.5 text-xs font-bold text-slate-200 transition"
+              >
+                Listo / Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Control de bloqueo/desbloqueo de modalidades en el Portal de Clientes */}
       <PanelBloqueoJugadasAdmin compacto />
 
@@ -2459,186 +2641,6 @@ const hipodromosDelDia = useMemo(() => {
           }}
         />
 
-        {/* Modal dedicado de Control de Cruces de esta Carrera */}
-        {modalControlCruces && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
-          >
-            <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-amber-300/40 bg-slate-900 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950 px-5 py-3.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">⚡</span>
-                  <div>
-                    <h3 className="text-sm font-black uppercase tracking-wider text-amber-300">
-                      Control de Cruces de esta Carrera
-                    </h3>
-                    <p className="text-[11px] text-slate-400">
-                      Las excepciones quedan aisladas a <b>{nombreHipodromo} · Carrera {carrera}</b>.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setModalControlCruces(false)}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition"
-                  aria-label="Cerrar modal de control de cruces"
-                >
-                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="max-h-[80vh] overflow-y-auto p-5 text-slate-100 space-y-4">
-                {/* Con Cruces (otros productos) incorporado al modal de control de cruces */}
-                <div className="rounded-xl border border-amber-400/50 bg-slate-800/95 p-4 shadow-lg space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/60 pb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">🔀</span>
-                      <div>
-                        <h4 className="text-xs font-black text-amber-300 uppercase tracking-wide">
-                          Modalidad Con Cruces (Otros Productos)
-                        </h4>
-                        <p className="text-[11px] text-slate-300">
-                          Reembolsa la comisión sobre el monto cruzado en el saldo del jugador al liquidar.
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setConCruces(!conCruces)}
-                      className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-1.5 text-xs font-black uppercase tracking-wider transition ${
-                        conCruces
-                          ? "border-emerald-400 bg-emerald-600 text-white shadow-md shadow-emerald-900/30"
-                          : "border-slate-600 bg-slate-700 text-slate-300 hover:bg-slate-600"
-                      }`}
-                    >
-                      <span className={`h-2.5 w-2.5 rounded-full ${conCruces ? "bg-white animate-pulse" : "bg-slate-400"}`} />
-                      <span>{conCruces ? "CON CRUCES (ACTIVO)" : "SIN CRUCES (INACTIVO)"}</span>
-                    </button>
-                  </div>
-                  <div className="text-[11px] text-slate-400 space-y-1">
-                    <p>
-                      • <b className="text-slate-200">CON CRUCES:</b> Si un cliente gana y pierde en la misma carrera con productos combinados o cruzados, la comisión se calcula sobre la ganancia neta o se reembolsa el monto cruzado (Cuenta PUC: <code className="text-amber-300 font-mono">5.1.01.001</code>).
-                    </p>
-                    <p>
-                      • <b className="text-slate-200">SIN CRUCES:</b> Cada jugada ganadora aporta su comisión individual a la casa sin deducción por cruce.
-                    </p>
-                  </div>
-                </div>
-                {Object.values(crucesOverrideCarrera.todos ?? {}).some((value) => typeof value === "boolean") && (
-                  <div className="rounded-lg bg-amber-400/15 border border-amber-400/30 px-3 py-2 text-xs font-black text-amber-300 flex items-center gap-2">
-                    <span>⚠️</span>
-                    <span>Excepción activa solo en Carrera {carrera} para todos</span>
-                  </div>
-                )}
-
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-xl border border-slate-700 bg-slate-800/80 p-3.5">
-                    <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                      Cruces en esta carrera (todos) · Grupo: {grupoReglasCruce.mismoEjemplar ? "Mismo sí" : "Mismo no"} / {grupoReglasCruce.diferenteEjemplar ? "Diferente sí" : "Diferente no"}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {([
-                        ["mismoEjemplar", "⚡ Mismo Ejemplar"],
-                        ["diferenteEjemplar", "⚡ Dif. Ejemplar"],
-                      ] as const).map(([modalidad, texto]) => {
-                        const activo = crucesOverrideCarrera.todos?.[modalidad] ?? grupoReglasCruce[modalidad];
-                        return (
-                          <button
-                            key={modalidad}
-                            type="button"
-                            disabled={!grupoSesion || cargandoCrucesCarrera}
-                            aria-pressed={activo}
-                            onClick={() => void guardarOverrideActual({
-                              ...crucesOverrideCarrera,
-                              todos: { ...crucesOverrideCarrera.todos, [modalidad]: !activo },
-                            })}
-                            className={`rounded-full border px-3 py-1.5 text-xs font-black transition disabled:opacity-50 ${
-                              activo ? "border-amber-300 bg-amber-400 text-slate-950 shadow-md" : "border-slate-600 bg-slate-800 text-slate-300 hover:border-amber-300"
-                            }`}
-                          >
-                            {texto} (Solo esta carrera)
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-700 bg-slate-800/80 p-3.5">
-                    <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                      Cruzar a un jugador en esta carrera o guardar permanente
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        value={jugadorCruce}
-                        onChange={(e) => setJugadorCruce(e.target.value)}
-                        className="min-w-40 flex-1 rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white outline-none focus:border-amber-400"
-                        aria-label="Jugador para configurar cruces"
-                      >
-                        <option value="">Buscar jugador…</option>
-                        {clientes.map((cliente) => (
-                          <option key={cliente.id} value={cliente.nombre}>{cliente.nombre}</option>
-                        ))}
-                      </select>
-                      <label className="flex items-center gap-1 text-[10px] font-bold text-slate-300 cursor-pointer">
-                        <input type="radio" name="alcance-cruce" checked={alcanceCruce === "carrera"} onChange={() => setAlcanceCruce("carrera")} className="accent-amber-400" />
-                        Solo Carrera {carrera}
-                      </label>
-                      <label className="flex items-center gap-1 text-[10px] font-bold text-slate-300 cursor-pointer">
-                        <input type="radio" name="alcance-cruce" checked={alcanceCruce === "permanente"} onChange={() => setAlcanceCruce("permanente")} className="accent-amber-400" />
-                        Ficha permanente
-                      </label>
-                    </div>
-                    {jugadorCruce && (
-                      <div className="mt-3 space-y-2 border-t border-slate-700/60 pt-3">
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                          {([
-                            ["mismoEjemplar", "Cruzar Mismo Ejemplar"],
-                            ["diferenteEjemplar", "Cruzar Diferentes Ejemplares"],
-                          ] as const).map(([modalidad, texto]) => (
-                            <label key={modalidad} className="flex items-center gap-1.5 text-xs font-bold text-slate-200 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={borradorCruceJugador[modalidad]}
-                                onChange={(e) => setBorradorCruceJugador((v) => ({ ...v, [modalidad]: e.target.checked }))}
-                                className="accent-amber-400 h-4 w-4 rounded"
-                              />
-                              {texto}
-                            </label>
-                          ))}
-                        </div>
-                        <div className="flex justify-end pt-1">
-                          <button
-                            type="button"
-                            onClick={() => void guardarReglasJugador()}
-                            disabled={!grupoSesion && alcanceCruce === "carrera"}
-                            className="rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-black text-slate-950 hover:bg-amber-300 shadow-sm disabled:opacity-50"
-                          >
-                            Guardar {alcanceCruce === "carrera" ? `solo Carrera ${carrera}` : "en ficha"}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end border-t border-slate-800 bg-slate-950 px-5 py-3">
-                <button
-                  type="button"
-                  onClick={() => setModalControlCruces(false)}
-                  className="rounded-lg bg-slate-800 hover:bg-slate-700 px-4 py-1.5 text-xs font-bold text-slate-200 transition"
-                >
-                  Listo / Cerrar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Panel lateral de ejemplares (tabla fija publicada o Carreras del Día) */}
         <div className={caballosDeCarrera.length ? "flex flex-col gap-2 lg:flex-row" : ""}>
