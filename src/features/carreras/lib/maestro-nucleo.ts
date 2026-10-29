@@ -207,6 +207,8 @@ export function fusionarCargaGaceta(
     };
     completar("nombre", raw.nombre, true);
     completar("nacionalidad", raw.nacionalidad);
+    completar("pp", raw.pp);
+    completar("puestoPista", raw.puestoPista ?? raw.pp);
     completar("jockey", raw.jockey);
     completar("entrenador", raw.entrenador);
     completar("peso", raw.peso);

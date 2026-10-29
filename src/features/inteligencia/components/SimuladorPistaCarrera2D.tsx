@@ -195,18 +195,23 @@ export function SimuladorPistaCarrera2D({
   const posicionesCalculadas = useMemo(() => {
     const u = Math.max(0, Math.min(1, progreso / 100));
 
-    // Dinámica sincronizada en tiempo real para todos los participantes
-    const estadosDinamicos = calcularDinamicaSincronizadaCarrera(
-      progreso,
-      distanciaCarrera,
-      ranking.map((r) => ({
+    // Dinámica sincronizada en tiempo real para todos los participantes con cuerpos acumulados respecto al ganador:
+    let acumuladoCuerpos = 0;
+    const participantesDinamicos = ranking.map((r, index) => {
+      const cuerposDesdeGanador = index === 0 ? 0 : (acumuladoCuerpos += ranking[index - 1].cuerposVentaja);
+      return {
         numero: r.ejemplar.numero,
         estilo: r.ejemplar.estilo,
         ordenLlegadaProyectado: r.ordenLlegadaProyectado,
-        cuerposVentaja: r.cuerposVentaja,
-      }))
-    );
+        cuerposVentaja: cuerposDesdeGanador,
+      };
+    });
 
+    const estadosDinamicos = calcularDinamicaSincronizadaCarrera(
+      progreso,
+      distanciaCarrera,
+      participantesDinamicos
+    );
     const mapaEstados = new Map(estadosDinamicos.map((e) => [e.numero, e]));
 
     return ranking.map((item, index) => {
@@ -417,107 +422,6 @@ export function SimuladorPistaCarrera2D({
           )}
         </div>
       </div>
-
-      {/* 1.1 PANEL DE CRONOMETRAJE Y PARCIALES OFICIALES INH (CADA 400M + REMATE) */}
-      {mostrarPista && (
-        <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-white shadow-md">
-          <div className="flex flex-wrap items-center justify-between gap-2.5">
-            {/* Reloj Principal / Cronómetro Digital en Vivo */}
-            <div className="flex items-center gap-2.5 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800 shadow-inner">
-              <span className="text-base">⏱️</span>
-              <div>
-                <div className="text-[9px] uppercase tracking-wider font-bold text-slate-400">
-                  Cronómetro en Vivo
-                </div>
-                <div className="font-mono text-base font-black text-amber-400 tracking-wider flex items-baseline gap-1">
-                  <span>{cronometrajeINH.cronometroDigital}</span>
-                  <span className="text-xs text-amber-300 font-bold">
-                    ({cronometrajeINH.tiempoTranscurridoQuintos})
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Badges de Parciales cada 400 Metros */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              {cronometrajeINH.parciales400m.map((parcial, idx) => (
-                <div
-                  key={parcial.id}
-                  className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border font-mono transition-all ${
-                    parcial.alcanzado
-                      ? "bg-emerald-950/70 border-emerald-500/60 text-emerald-300 shadow-xs ring-1 ring-emerald-500/30"
-                      : "bg-slate-900/60 border-slate-800 text-slate-500"
-                  }`}
-                >
-                  <span className="text-[8.5px] uppercase font-bold text-slate-400">
-                    {idx + 1}° P. ({parcial.etiquetaCorta})
-                  </span>
-                  <span className={`text-xs font-black ${parcial.alcanzado ? "text-emerald-300" : "text-slate-600"}`}>
-                    {parcial.tiempoActualVisible}
-                  </span>
-                  <span className="text-[8px] text-slate-500">
-                    {parcial.alcanzado ? parcial.tiempoDecimal : `${parcial.distanciaMetros}m`}
-                  </span>
-                </div>
-              ))}
-
-              {/* Remate de los últimos metros (Diferencia de metros) */}
-              {cronometrajeINH.remateFinal && (
-                <div
-                  className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border font-mono transition-all ${
-                    cronometrajeINH.remateFinal.alcanzado
-                      ? "bg-amber-950/70 border-amber-500/70 text-amber-300 shadow-xs ring-1 ring-amber-500/30"
-                      : "bg-slate-900/60 border-slate-800 text-slate-500"
-                  }`}
-                >
-                  <span className="text-[8.5px] uppercase font-bold text-amber-400/90">
-                    ⚡ Remate ({cronometrajeINH.remateFinal.metrosRemate}m)
-                  </span>
-                  <span
-                    className={`text-xs font-black ${
-                      cronometrajeINH.remateFinal.alcanzado ? "text-amber-300" : "text-slate-600"
-                    }`}
-                  >
-                    {cronometrajeINH.remateFinal.alcanzado
-                      ? cronometrajeINH.remateFinal.tiempoRemateQuintos
-                      : '--"--'}
-                  </span>
-                  <span className="text-[8px] text-slate-500">
-                    {cronometrajeINH.remateFinal.alcanzado
-                      ? cronometrajeINH.remateFinal.tiempoRemateDecimal
-                      : `Últimos ${cronometrajeINH.remateFinal.metrosRemate}m`}
-                  </span>
-                </div>
-              )}
-
-              {/* Tiempo Final Total (Meta) */}
-              <div
-                className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border font-mono transition-all ${
-                  cronometrajeINH.carreraFinalizada
-                    ? "bg-rose-950/70 border-rose-500/70 text-rose-200 shadow-xs ring-1 ring-rose-500/30"
-                    : "bg-slate-900/60 border-slate-800 text-slate-500"
-                }`}
-              >
-                <span className="text-[8.5px] uppercase font-bold text-rose-400">
-                  🏁 Final ({distanciaCarrera}m)
-                </span>
-                <span
-                  className={`text-xs font-black ${
-                    cronometrajeINH.carreraFinalizada ? "text-rose-200" : "text-slate-600"
-                  }`}
-                >
-                  {cronometrajeINH.carreraFinalizada ? cronometrajeINH.tiempoFinalTotalQuintos : '--"--'}
-                </span>
-                <span className="text-[8px] text-slate-500">
-                  {cronometrajeINH.carreraFinalizada
-                    ? `${cronometrajeINH.tiempoFinalTotalSegundos.toFixed(1)}s`
-                    : "Oficial"}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 2. PISTA DE CARRERAS: ÓVALO + CHUTES RECORTADOS (+50M) + PISTA RECTA CENTRAL PERFECTAMENTE EN EL CENTRO */}
       {mostrarPista && (
@@ -1036,6 +940,114 @@ export function SimuladorPistaCarrera2D({
                     </g>
                   );
                 })}
+              </g>
+              {/* ============================================================== */}
+              {/* CUADRO DE CRONÓMETRO Y PARCIALES DENTRO DEL ÁREA VERDE (INFIELLD DERECHA) */}
+              {/* Ubicado en el área inferior derecha del césped: X = 860, Y = 360 */}
+              {/* ============================================================== */}
+              <g transform="translate(860, 355)" className="filter drop-shadow-2xl">
+                {/* Marco contenedor del cronómetro */}
+                <rect
+                  x="0"
+                  y="0"
+                  width="220"
+                  height="80"
+                  rx="10"
+                  fill="#022c22"
+                  stroke="#059669"
+                  strokeWidth="2"
+                  opacity="0.96"
+                />
+                {/* Barra superior con título */}
+                <rect x="0" y="0" width="220" height="20" rx="10" fill="#064e3b" />
+                <text x="10" y="14" fill="#A7F3D0" fontSize="8.5" fontWeight="900" letterSpacing="0.05em">
+                  ⏱️ CRONÓMETRO INH
+                </text>
+                <text x="210" y="14" textAnchor="end" fill="#FDE047" fontSize="8" fontWeight="bold">
+                  {cronometrajeINH.carreraFinalizada ? "OFICIAL" : "EN VIVO"}
+                </text>
+
+                {/* Tiempo Digital en Vivo */}
+                <text x="12" y="38" fill="#FACC15" fontSize="16" fontWeight="900" fontFamily="monospace">
+                  {cronometrajeINH.cronometroDigital}
+                </text>
+                <text x="110" y="37" fill="#6EE7B7" fontSize="11" fontWeight="bold" fontFamily="monospace">
+                  ({cronometrajeINH.tiempoTranscurridoQuintos})
+                </text>
+
+                {/* Micro-pizarra de parciales cada 400m y remate */}
+                <g transform="translate(10, 46)">
+                  {cronometrajeINH.parciales400m.map((p, pIdx) => {
+                    const colW = 46;
+                    const xCol = pIdx * (colW + 4);
+                    return (
+                      <g key={p.id} transform={`translate(${xCol}, 0)`}>
+                        <rect
+                          x="0"
+                          y="0"
+                          width={colW}
+                          height="26"
+                          rx="4"
+                          fill={p.alcanzado ? "#065f46" : "#0f172a"}
+                          stroke={p.alcanzado ? "#10B981" : "#1e293b"}
+                          strokeWidth="1"
+                        />
+                        <text x={colW / 2} y="8" textAnchor="middle" fill="#94A3B8" fontSize="6" fontWeight="bold">
+                          {p.distanciaMetros}m
+                        </text>
+                        <text
+                          x={colW / 2}
+                          y="18"
+                          textAnchor="middle"
+                          fill={p.alcanzado ? "#34D399" : "#64748B"}
+                          fontSize="8.5"
+                          fontWeight="900"
+                          fontFamily="monospace"
+                        >
+                          {p.tiempoActualVisible}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Remate final / Sentencia */}
+                  {cronometrajeINH.remateFinal && (() => {
+                    const pIdx = cronometrajeINH.parciales400m.length;
+                    const colW = 46;
+                    const xCol = pIdx * (colW + 4);
+                    if (xCol + colW > 205) return null;
+                    return (
+                      <g key="remate-box" transform={`translate(${xCol}, 0)`}>
+                        <rect
+                          x="0"
+                          y="0"
+                          width={colW}
+                          height="26"
+                          rx="4"
+                          fill={cronometrajeINH.remateFinal.alcanzado ? "#78350F" : "#0f172a"}
+                          stroke={cronometrajeINH.remateFinal.alcanzado ? "#F59E0B" : "#1e293b"}
+                          strokeWidth="1"
+                        />
+                        <text x={colW / 2} y="8" textAnchor="middle" fill="#FDE68A" fontSize="6" fontWeight="900">
+                          R{cronometrajeINH.remateFinal.metrosRemate}m
+                        </text>
+                        <text
+                          x={colW / 2}
+                          y="18"
+                          textAnchor="middle"
+                          fill={cronometrajeINH.remateFinal.alcanzado ? "#FDE047" : "#64748B"}
+                          fontSize="8.5"
+                          fontWeight="900"
+                          fontFamily="monospace"
+                        >
+                          {cronometrajeINH.remateFinal.alcanzado
+                            ? cronometrajeINH.remateFinal.tiempoRemateQuintos
+                            : '--"--'}
+                        </text>
+                      </g>
+                    );
+                  })()}
+                </g>
               </g>
 
               {/* ------------------------------------------------------------- */}

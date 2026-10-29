@@ -220,28 +220,32 @@ export function calcularDinamicaSincronizadaCarrera(
     const orden = p.ordenLlegadaProyectado;
     const desfaseFinal = p.cuerposVentaja * 2.4; // 1 cuerpo ≈ 2.4m
 
-    // Variación dinámica según estilo táctico:
+    // Variación dinámica según estilo táctico (Puntero E1, Colocado E2, Atropellador E3):
     let deltaEstilo = 0;
     if (estilo === "E1") {
-      // Puntero: acelera y saca ventaja inicial (pico en u ≈ 0.35)
-      deltaEstilo = 4.5 * Math.sin(Math.PI * u) * Math.max(0, 1 - u * 0.75);
+      // Puntero: acelera con violencia al inicio (+16m) y sostiene la punta hasta la recta
+      deltaEstilo = 16.0 * Math.sin(Math.PI * u) * Math.max(0, 1 - u * 0.75);
     } else if (estilo === "E3") {
-      // Atropellador: corre contenido al inicio (-4m) y remata al final
+      // Atropellador: corre contenido al inicio (-10m) y remata al entrar a la recta final
       if (u < 0.6) {
-        deltaEstilo = -4.0 * Math.sin(Math.PI * (u / 0.6));
+        deltaEstilo = -10.0 * Math.sin(Math.PI * (u / 0.6));
       } else {
         const tRemate = (u - 0.6) / 0.4;
-        const bonoGanador = orden === 1 ? 5.5 : 2.5;
-        deltaEstilo = -4.0 * (1 - tRemate) + bonoGanador * Math.sin(Math.PI * tRemate * 0.5);
+        const bonoGanador = orden === 1 ? 4.5 : 0;
+        deltaEstilo = -10.0 * Math.cos((Math.PI / 2) * tRemate) + bonoGanador * Math.sin(Math.PI * tRemate);
       }
     } else {
-      // E2 Colocado: ritmo sostenido
-      deltaEstilo = 1.0 * Math.sin(Math.PI * u);
+      // E2 Colocado: ritmo sostenido detrás de la velocidad (+4m)
+      deltaEstilo = 4.0 * Math.sin(Math.PI * u);
     }
 
-    const margenProgresivo = desfaseFinal * Math.pow(u, 1.25);
+    const margenProgresivo = desfaseFinal * Math.pow(u, 1.4);
     let dRecorrida = u * D + deltaEstilo - margenProgresivo;
-    dRecorrida = Math.max(0, Math.min(D - (u >= 1 ? desfaseFinal : 0), dRecorrida));
+    if (u >= 1.0) {
+      dRecorrida = D - desfaseFinal;
+    } else {
+      dRecorrida = Math.max(0, Math.min(D - 0.1, dRecorrida));
+    }
 
     const dRestante = Math.max(0, D - dRecorrida);
     const pctCentral = Math.max(0, Math.min(100, ((D - dRestante) / D) * 100));

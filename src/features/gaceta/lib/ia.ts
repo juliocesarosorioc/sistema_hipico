@@ -87,7 +87,7 @@ Para cada carrera devuelve:
   - premio: número si se lee (ej: 15000), si no 0
   - ejemplares: lista con:
     - numero (número oficial / de gualdrapa del ejemplar)
-    - pp (número del puesto de pista / puerta de partida impreso en la columna "PP" o "P.P.", entero del 1 al 14 si se lee; si no aparece, null o el mismo número)
+    - pp (PUESTO DE PARTIDA: En Venezuela el puesto de pista PP es el número de partidor vertical en la columna PP, ej: en 1400m o 1500m el caballo con gualdrapa 1 puede partir por el PP 6. Extrae exactamente el entero del 1 al 14 del puesto de partida si aparece; si no, null o el mismo número de gualdrapa)
     - nombre (MAYÚSCULAS, EXACTO como aparece)
     - nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si NO se indica: USA si el hipódromo es de Estados Unidos, si no VE)
     - valor (monta del ejemplar: SOLO número si aparece, si no 0)
