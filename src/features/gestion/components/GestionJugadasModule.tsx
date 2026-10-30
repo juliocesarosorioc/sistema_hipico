@@ -3057,26 +3057,41 @@ const hipodromosDelDia = useMemo(() => {
               void seleccionarCarreraConConfirmacion(n, info);
             }}
             accionDerecha={
-              <>
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => void solicitarLiquidarCarrera()}
                   disabled={!listoParaCargar || bloqueoLiquidacionActivo}
-                  title={listoParaCargar ? "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para liquidar"}
-                  className={`${BTN_BARRA} bg-gradient-to-r from-success-600 to-emerald-500 text-white shadow-sm hover:brightness-110 disabled:opacity-40`}
+                  title={
+                    listoParaCargar
+                      ? "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)"
+                      : "Elija hipódromo y carrera para liquidar"
+                  }
+                  className={`group relative inline-flex h-9 sm:h-10 items-center justify-center gap-2 rounded-xl px-4 sm:px-5 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all shadow-md ${
+                    !listoParaCargar || bloqueoLiquidacionActivo
+                      ? "cursor-not-allowed bg-slate-300 text-slate-500 opacity-60 shadow-none ring-0"
+                      : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 shadow-emerald-600/35 ring-2 ring-emerald-400/60 hover:ring-emerald-300 hover:scale-[1.03] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]"
+                  }`}
                 >
-                  🏆 Liquidar Carrera
+                  <span className="text-base sm:text-lg transition-transform duration-200 group-hover:scale-110 drop-shadow">
+                    🏆
+                  </span>
+                  <span>{carreraLiquidada ? "Ver / Liquidar Carrera" : "Liquidar Carrera"}</span>
+                  <span className="hidden sm:inline-flex items-center rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-extrabold tracking-normal text-emerald-100 opacity-90 shadow-2xs">
+                    Ctrl+Y
+                  </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setModalAgentePizarra(true)}
                   disabled={bloqueoLiquidacionActivo}
                   title="🤖 Agente de Pizarra Oficial (Cambio de Pizarra · Liquidación · Variación · Saldos)"
-                  className={`${BTN_BARRA} bg-indigo-600 text-white shadow-sm hover:bg-indigo-500 disabled:opacity-40`}
+                  className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs transition-all hover:bg-indigo-50 hover:border-indigo-300 disabled:opacity-40"
                 >
-                  🤖 Cambio de Pizarra
+                  <span className="text-sm">🤖</span>
+                  <span>Pizarra</span>
                 </button>
-              </>
+              </div>
             }
           />
         </>
@@ -4622,6 +4637,15 @@ const hipodromosDelDia = useMemo(() => {
             className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-40`}
           >
             📊 Historial
+          </button>
+          <button
+            type="button"
+            disabled={!listoParaCargar || bloqueoLiquidacionActivo}
+            onClick={() => void solicitarLiquidarCarrera()}
+            title={listoParaCargar ? "Carga/edita los resultados y liquida (Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para liquidar"}
+            className={`${BTN_BARRA} bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-sm ring-1 ring-emerald-400/50 hover:brightness-110 disabled:opacity-40`}
+          >
+            🏆 Liquidar Carrera
           </button>
           <button
             type="button"

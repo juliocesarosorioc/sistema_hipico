@@ -785,37 +785,69 @@ export function CargaResultadosModal({
             raya primero; el premio de la tabla se calcula automáticamente (lo que paga × cantidad, con ajuste proporcional por
             retiros).
           </p>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2.5 rounded-xl border-t border-slate-200 bg-slate-50/90 p-3 shadow-inner">
-            <button
-              type="button"
-              onClick={onCerrar}
-              className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 shadow-2xs"
-            >
-              Cancelar (Esc)
-            </button>
-            <button
-              type="button"
-              onClick={confirmar}
-              disabled={faltaMotivo || !validacionPizarra.ok || llenas === 0}
-              className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs sm:text-sm font-black tracking-wide text-white transition-all shadow-md ${
-                !validacionPizarra.ok || llenas === 0 || faltaMotivo
-                  ? "pointer-events-none opacity-40 bg-slate-400 shadow-none ring-0"
-                  : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 hover:scale-[1.02] active:scale-[0.98] shadow-emerald-600/30 ring-4 ring-emerald-400/40"
-              }`}
-              title={
-                !validacionPizarra.ok
-                  ? validacionPizarra.mensaje ?? "Hay ejemplares duplicados en la pizarra"
-                  : faltaMotivo
-                    ? "Escribí el motivo del cambio para poder recalcular la liquidación"
-                    : "Liquidar y pagar todas las jugadas de esta carrera según los resultados cargados"
-              }
-            >
-              <span className="text-base leading-none">{cambioEnLiquidada ? "🔄" : "🏆"}</span>
-              <span>{cambioEnLiquidada ? "Guardar y Recalcular" : "Liquidar Carrera"}</span>
-              <span className="rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-bold tracking-normal opacity-90">
-                ↵ Enter
-              </span>
-            </button>
+          <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 rounded-2xl border border-slate-200/90 bg-gradient-to-r from-slate-50 via-white to-emerald-50/40 p-3 sm:p-3.5 shadow-xs">
+            {/* Estado / validación contextual de la liquidación */}
+            <div className="flex items-center gap-2 text-xs">
+              {!validacionPizarra.ok ? (
+                <div className="inline-flex items-center gap-1.5 rounded-lg bg-rose-50 px-2.5 py-1 font-bold text-rose-700 border border-rose-200 text-[11px]">
+                  <span>⚠️</span>
+                  <span>{validacionPizarra.mensaje ?? "Ejemplares duplicados en la pizarra"}</span>
+                </div>
+              ) : faltaMotivo ? (
+                <div className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 font-bold text-amber-700 border border-amber-200 text-[11px]">
+                  <span>✏️</span>
+                  <span>Indica el motivo del cambio arriba para liquidar</span>
+                </div>
+              ) : llenas === 0 ? (
+                <div className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1 font-semibold text-slate-500 border border-slate-200 text-[11px]">
+                  <span>ℹ️</span>
+                  <span>Carga al menos el 1° lugar para liquidar</span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 font-bold text-emerald-800 border border-emerald-200/80 text-[11px]">
+                  <span>✅</span>
+                  <span>Pizarra lista ({llenas} {llenas === 1 ? "lugar cargado" : "lugares cargados"})</span>
+                </div>
+              )}
+            </div>
+
+            {/* Acciones principales */}
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={onCerrar}
+                className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 shadow-2xs"
+              >
+                Cancelar (Esc)
+              </button>
+              <button
+                type="button"
+                onClick={confirmar}
+                disabled={faltaMotivo || !validacionPizarra.ok || llenas === 0}
+                className={`group relative inline-flex items-center justify-center gap-2.5 rounded-2xl px-6 sm:px-7 py-2.5 sm:py-3 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all ${
+                  !validacionPizarra.ok || llenas === 0 || faltaMotivo
+                    ? "cursor-not-allowed bg-slate-300 text-slate-500 shadow-none ring-0 opacity-60"
+                    : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 shadow-lg shadow-emerald-600/35 ring-4 ring-emerald-400/40 hover:ring-emerald-400/70 hover:scale-[1.02] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)]"
+                }`}
+                title={
+                  !validacionPizarra.ok
+                    ? validacionPizarra.mensaje ?? "Hay ejemplares duplicados en la pizarra"
+                    : faltaMotivo
+                      ? "Escribí el motivo del cambio para poder recalcular la liquidación"
+                      : "Liquidar y pagar todas las jugadas de esta carrera según los resultados cargados"
+                }
+              >
+                <span className="text-base sm:text-lg leading-none transition-transform duration-200 group-hover:scale-125 drop-shadow">
+                  {cambioEnLiquidada ? "🔄" : "🏆"}
+                </span>
+                <span className="drop-shadow-xs">
+                  {cambioEnLiquidada ? "Guardar y Recalcular" : "Liquidar Carrera"}
+                </span>
+                <span className="rounded-lg bg-black/25 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-emerald-100 shadow-inner">
+                  ↵ Enter
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
