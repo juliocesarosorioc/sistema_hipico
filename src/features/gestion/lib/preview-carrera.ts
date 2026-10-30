@@ -150,6 +150,8 @@ export type FilaPreviewCarrera = {
   categoriaAdelantada?: CategoriaJugadaAdelantada;
   /** true cuando una Marca no se decide en la pizarra oficial (ninguno entró en pizarra / empate sin decisión). */
   sinDecision?: boolean;
+  /** true cuando el estado Retirado proviene de un empate NINI (2N..5N) y no de un ejemplar retirado. */
+  esEmpateNini?: boolean;
 };
 
 const NUM = (v: unknown): number => {
@@ -431,6 +433,7 @@ function filaDesdePersistida(
   }
   // Si hay pizarra oficial (o si el ticket quedó con estado "Perdedor" pero premio_pagar === monto),
   // en el empate NINI ni gana ni pierde nadie (0 / 0 = Retirado/Empate).
+  let esEmpateNini = false;
   if (!anulada && (estado === "Ganador" || estado === "Perdedor") && esJugadaDeTaquilla(nombreJug)) {
     if (pizarraPuestos && pizarraPuestos.length > 0 && caballo) {
       const idx = pizarraPuestos.findIndex((p) => String(p).trim() === caballo);
@@ -443,6 +446,7 @@ function filaDesdePersistida(
       );
       if (r && !r.ok && Math.abs(r.totalClienteNeto - monto) < 0.01) {
         estado = "Retirado";
+        esEmpateNini = true;
       }
     } else if (
       estado === "Perdedor" &&
@@ -451,6 +455,7 @@ function filaDesdePersistida(
       /\b[2345]N\b/i.test(nombreJug)
     ) {
       estado = "Retirado";
+      esEmpateNini = true;
     }
   }
 
@@ -527,6 +532,7 @@ function filaDesdePersistida(
     esAdelantada: esAdel,
     categoriaAdelantada: esAdel ? categoriaJugadaAdelantada(nombreJug) : undefined,
     ...(sinDecision ? { sinDecision: true } : {}),
+    ...(esEmpateNini ? { esEmpateNini: true } : {}),
   };
 }
 

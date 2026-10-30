@@ -8,6 +8,8 @@ import { Input } from "@/shared/components/ui/Input";
 import { DateInput } from "@/shared/components/ui/DateInput";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { BotonDictadoAudio } from "@/shared/components/ui/BotonDictadoAudio";
+import { interpretarAudioCarrera } from "@/features/carreras/lib/audio-carrera";
 import { BuscadorPadron, type OpcionPadron } from "@/features/ejemplares/components/BuscadorPadron";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
@@ -395,14 +397,24 @@ export function CargaPrograma() {
             /* ⚡ CARGA RÁPIDA                                                     */
             /* ------------------------------------------------------------------ */
             <Card className="w-full overflow-hidden">
-              <div className="border-b border-line bg-surfaceAlt/60 px-4 py-2.5">
-                <h3 className="text-xs font-black uppercase tracking-wider text-primary-700">⚡ Pegado masivo</h3>
-                <p className="mt-0.5 text-[11px] text-slate-500">
-                  Una línea por ejemplar, mismo formato del legacy: <b>Nº NOMBRE [NAC] [VALOR]</b>. Ej.{" "}
-                  <code className="rounded bg-slate-100 px-1 py-0.5 text-[10px]">7 DUKE (USA) 120</code> ·{" "}
-                  <code className="rounded bg-slate-100 px-1 py-0.5 text-[10px]">3 VICTORIA nº 1</code> … El número se
-                  autocompleta si lo omite.
-                </p>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surfaceAlt/60 px-4 py-2.5">
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-primary-700">⚡ Pegado masivo o Dictado por Audio</h3>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    Una línea por ejemplar (<b>Nº NOMBRE [NAC] [VALOR]</b>) o dicta por micrófono: <i>&ldquo;1 Duque de Alba 150, 2 Gato Negro 120&rdquo;</i>.
+                  </p>
+                </div>
+                <BotonDictadoAudio
+                  compacto
+                  etiqueta="🎙️ Dictar Ejemplares"
+                  modo="carrera"
+                  onTextoReconocido={(txt) => {
+                    const info = interpretarAudioCarrera(txt);
+                    const bloque = info.ejemplaresTexto || info.textoNormalizado;
+                    setTextoRapida((prev) => (prev.trim() ? `${prev.trim()}\n${bloque}` : bloque));
+                    toast(`🎙️ Audio agregado al bloque (${info.ejemplaresLista.length || 1} línea(s)).`, "info");
+                  }}
+                />
               </div>
 
               <div className="flex flex-col gap-4 p-4">
@@ -525,6 +537,38 @@ export function CargaPrograma() {
                       {(c.caballos || []).filter((cb) => cb.nombre).length} ejemplares
                     </span>
                     <div className="ml-auto flex flex-wrap items-center gap-2">
+                      <BotonDictadoAudio
+                        compacto
+                        etiqueta="🎙️ Dictar"
+                        modo="carrera"
+                        onTextoReconocido={(txt) => {
+                          const info = interpretarAudioCarrera(txt);
+                          const nuevos = parseLineas(info.ejemplaresTexto || info.textoNormalizado, hipodromo);
+                          if (nuevos.length > 0) {
+                            setCarreras((prev) =>
+                              prev.map((car, idx) => {
+                                if (idx !== i) return car;
+                                const limpios = (car.caballos || []).filter((cb) => cb.nombre.trim().length > 0);
+                                return {
+                                  ...car,
+                                  distancia: info.distancia ? Number(info.distancia) : car.distancia,
+                                  superficie: info.superficie || car.superficie,
+                                  premio: info.premio ? Number(info.premio) : car.premio,
+                                  caballos: [...limpios, ...nuevos],
+                                };
+                              })
+                            );
+                            toast(`🎙️ ${nuevos.length} ejemplar(es) agregados por voz a Carrera ${c.carrera ?? i + 1}ª.`, "success");
+                          } else if (info.distancia || info.superficie || info.premio) {
+                            setCarrera(i, {
+                              distancia: info.distancia ? Number(info.distancia) : c.distancia,
+                              superficie: info.superficie || c.superficie,
+                              premio: info.premio ? Number(info.premio) : c.premio,
+                            });
+                            toast(`🎙️ Datos de Carrera ${c.carrera ?? i + 1}ª actualizados por voz.`, "info");
+                          }
+                        }}
+                      />
                       <Input label="" hint="" aria-label="Distancia"
                         type="number" placeholder="Dist. m" value={c.distancia || ""}
                         onChange={(e) => setCarrera(i, { distancia: Number(e.target.value) || 0 })}
@@ -554,59 +598,137 @@ export function CargaPrograma() {
                     {(c.caballos || []).length === 0 ? (
                       <p className="py-2 text-center text-[11px] italic text-slate-400">Esta carrera no tiene ejemplares todavía.</p>
                     ) : (
-                      <div className="-mx-1 overflow-x-auto px-1 pb-1">
-                        <div className="min-w-[660px]">
-                          <div className="grid grid-cols-[3rem_minmax(0,1fr)_5rem_6rem_4rem_1.6rem] gap-2 px-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                            <span>Chaleco</span>
-                            <span>Ejemplar (padrón)</span>
-                            <span>Valor</span>
-                            <span>Jockey</span>
-                            <span>Peso kg</span>
-                            <span />
-                          </div>
+                      <>
+                        {/* Vista Móvil (Tarjetas compactas por ejemplar sin scroll horizontal forzado) */}
+                        <div className="space-y-2 sm:hidden">
                           {(c.caballos || []).map((cb, j) => {
                             const vinc = cb.ejemplar_id != null && cb.nombre.length > 0;
                             return (
-                              <div key={`${i}-${j}`} className="grid grid-cols-[3rem_minmax(0,1fr)_5rem_6rem_4rem_1.6rem] items-center gap-2 py-0.5">
-                                <Input label="" hint="" aria-label="Número de chaleco"
-                                  type="number" min={1} value={cb.numero}
-                                  onChange={(e) => setCaballo(i, j, { numero: Number(e.target.value) || 0 })}
-                                  className="!py-1.5 !px-2 !text-xs text-center" />
-                                <BuscadorPadron
-                                  opciones={opcionesPadron.opciones}
-                                  valor={typeof cb.nombre === "string" ? cb.nombre : String(cb.nombre)}
-                                  vinculado={vinc}
-                                  onChange={(r) => setCaballo(i, j, { nombre: r.nombre, nacionalidad: r.nacionalidad, ejemplar_id: r.ejemplar_id })}
-                                />
-                                <Input label="" hint="" aria-label="Valor del ejemplar"
-                                  type="number" min={0} step="0.01" placeholder="0"
-                                  value={cb.valor ?? ""}
-                                  onChange={(e) => setCaballo(i, j, { valor: Number(e.target.value) || 0 })}
-                                  className="!py-1.5 !px-2 !text-xs text-right" />
-                                <Input label="" hint="" aria-label="Jockey del ejemplar"
-                                  type="text" placeholder="Jinete"
-                                  value={typeof cb.jockey === "string" ? cb.jockey : String(cb.jockey ?? "")}
-                                  onChange={(e) => setCaballo(i, j, { jockey: e.target.value })}
-                                  className="!py-1.5 !px-2 !text-xs" />
-                                <Input label="" hint="" aria-label="Peso del ejemplar"
-                                  type="number" min={0} step="0.5" placeholder="Kg"
-                                  value={cb.peso ?? ""}
-                                  onChange={(e) => setCaballo(i, j, { peso: e.target.value })}
-                                  className="!py-1.5 !px-2 !text-xs text-right" />
-                                <button
-                                  type="button"
-                                  onClick={() => quitarCaballo(i, j)}
-                                  className="rounded-md border border-red-300 p-1.5 text-[10px] text-red-500 transition-colors hover:bg-red-50"
-                                  title="Quitar ejemplar"
-                                  aria-label="Quitar ejemplar"
-                                >
-                                  ✕
-                                </button>
+                              <div key={`mob-${i}-${j}`} className="rounded-xl border border-line bg-slate-50/70 p-2 space-y-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <Input
+                                    label=""
+                                    hint=""
+                                    aria-label="Número de chaleco"
+                                    type="number"
+                                    min={1}
+                                    value={cb.numero}
+                                    onChange={(e) => setCaballo(i, j, { numero: Number(e.target.value) || 0 })}
+                                    className="!py-1.5 !px-2 !text-xs text-center w-14 shrink-0 font-black"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <BuscadorPadron
+                                      opciones={opcionesPadron.opciones}
+                                      valor={typeof cb.nombre === "string" ? cb.nombre : String(cb.nombre)}
+                                      vinculado={vinc}
+                                      onChange={(r) => setCaballo(i, j, { nombre: r.nombre, nacionalidad: r.nacionalidad, ejemplar_id: r.ejemplar_id })}
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => quitarCaballo(i, j)}
+                                    className="rounded-md border border-red-300 bg-white px-2 py-1.5 text-xs text-red-500"
+                                    aria-label="Quitar ejemplar"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-3 gap-1.5">
+                                  <Input
+                                    label=""
+                                    hint=""
+                                    aria-label="Valor del ejemplar"
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    placeholder="Valor $"
+                                    value={cb.valor ?? ""}
+                                    onChange={(e) => setCaballo(i, j, { valor: Number(e.target.value) || 0 })}
+                                    className="!py-1 !px-2 !text-xs text-right"
+                                  />
+                                  <Input
+                                    label=""
+                                    hint=""
+                                    aria-label="Jockey del ejemplar"
+                                    type="text"
+                                    placeholder="Jinete"
+                                    value={typeof cb.jockey === "string" ? cb.jockey : String(cb.jockey ?? "")}
+                                    onChange={(e) => setCaballo(i, j, { jockey: e.target.value })}
+                                    className="!py-1 !px-2 !text-xs"
+                                  />
+                                  <Input
+                                    label=""
+                                    hint=""
+                                    aria-label="Peso del ejemplar"
+                                    type="number"
+                                    min={0}
+                                    step="0.5"
+                                    placeholder="Peso kg"
+                                    value={cb.peso ?? ""}
+                                    onChange={(e) => setCaballo(i, j, { peso: e.target.value })}
+                                    className="!py-1 !px-2 !text-xs text-right"
+                                  />
+                                </div>
                               </div>
                             );
                           })}
                         </div>
-                      </div>
+
+                        {/* Vista Escritorio */}
+                        <div className="hidden -mx-1 overflow-x-auto px-1 pb-1 sm:block">
+                          <div className="min-w-[660px]">
+                            <div className="grid grid-cols-[3rem_minmax(0,1fr)_5rem_6rem_4rem_1.6rem] gap-2 px-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                              <span>Chaleco</span>
+                              <span>Ejemplar (padrón)</span>
+                              <span>Valor</span>
+                              <span>Jockey</span>
+                              <span>Peso kg</span>
+                              <span />
+                            </div>
+                            {(c.caballos || []).map((cb, j) => {
+                              const vinc = cb.ejemplar_id != null && cb.nombre.length > 0;
+                              return (
+                                <div key={`${i}-${j}`} className="grid grid-cols-[3rem_minmax(0,1fr)_5rem_6rem_4rem_1.6rem] items-center gap-2 py-0.5">
+                                  <Input label="" hint="" aria-label="Número de chaleco"
+                                    type="number" min={1} value={cb.numero}
+                                    onChange={(e) => setCaballo(i, j, { numero: Number(e.target.value) || 0 })}
+                                    className="!py-1.5 !px-2 !text-xs text-center" />
+                                  <BuscadorPadron
+                                    opciones={opcionesPadron.opciones}
+                                    valor={typeof cb.nombre === "string" ? cb.nombre : String(cb.nombre)}
+                                    vinculado={vinc}
+                                    onChange={(r) => setCaballo(i, j, { nombre: r.nombre, nacionalidad: r.nacionalidad, ejemplar_id: r.ejemplar_id })}
+                                  />
+                                  <Input label="" hint="" aria-label="Valor del ejemplar"
+                                    type="number" min={0} step="0.01" placeholder="0"
+                                    value={cb.valor ?? ""}
+                                    onChange={(e) => setCaballo(i, j, { valor: Number(e.target.value) || 0 })}
+                                    className="!py-1.5 !px-2 !text-xs text-right" />
+                                  <Input label="" hint="" aria-label="Jockey del ejemplar"
+                                    type="text" placeholder="Jinete"
+                                    value={typeof cb.jockey === "string" ? cb.jockey : String(cb.jockey ?? "")}
+                                    onChange={(e) => setCaballo(i, j, { jockey: e.target.value })}
+                                    className="!py-1.5 !px-2 !text-xs" />
+                                  <Input label="" hint="" aria-label="Peso del ejemplar"
+                                    type="number" min={0} step="0.5" placeholder="Kg"
+                                    value={cb.peso ?? ""}
+                                    onChange={(e) => setCaballo(i, j, { peso: e.target.value })}
+                                    className="!py-1.5 !px-2 !text-xs text-right" />
+                                  <button
+                                    type="button"
+                                    onClick={() => quitarCaballo(i, j)}
+                                    className="rounded-md border border-red-300 p-1.5 text-[10px] text-red-500 transition-colors hover:bg-red-50"
+                                    title="Quitar ejemplar"
+                                    aria-label="Quitar ejemplar"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
                     )}
                     <Button variant="ghost" size="sm" className="mt-2" onClick={() => agregarEjemplar(i)}>
                       ＋ Agregar ejemplar

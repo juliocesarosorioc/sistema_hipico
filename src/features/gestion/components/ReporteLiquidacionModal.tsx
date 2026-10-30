@@ -5,7 +5,7 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { cargarCarrerasDelDia } from "@/features/carreras/lib/carreras-dia";
 import type { CarreraDelDia } from "@/shared/store/useCarrerasDiaStore";
 import {
-  carreraReporteDetalle,
+  carreraReporteDetalle, reportesCarrerasLote,
   type CarreraReporte,
 } from "@/features/liquidacion/lib/reportes";
 import { armarReporteCarrera } from "@/features/liquidacion/lib/reporte-carrera";
@@ -192,7 +192,7 @@ export default function ReporteLiquidacionModal({
     let vivo = true;
     setCargandoDia(true);
     cargarCarrerasDelDia(fecha)
-      .then((cs) => {
+      .then(async (cs) => {
         if (!vivo) return;
         const delDia = cs.filter((c) => c.fecha === fecha);
         if (
@@ -214,6 +214,21 @@ export default function ReporteLiquidacionModal({
             ventas: [],
             ganadores: [],
           });
+        }
+        // Filtrar estrictamente: las carreras que NO tengan jugadas no deben aparecer en los reportes.
+        if (delDia.length > 0) {
+          const reps = await reportesCarrerasLote(
+            delDia.map((c) => ({ fecha: c.fecha, hipodromo: c.hipodromo, carrera: c.carrera }))
+          ).catch(() => null);
+          if (!vivo) return;
+          if (reps) {
+            const conJugadas = delDia.filter((_, idx) => {
+              const r = reps[idx];
+              return Boolean(r && r.filas.some((f) => f.rol !== "CRUCE"));
+            });
+            setCarrerasDia(conJugadas);
+            return;
+          }
         }
         setCarrerasDia(delDia);
       })

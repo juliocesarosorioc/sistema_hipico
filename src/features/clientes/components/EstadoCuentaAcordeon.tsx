@@ -131,15 +131,18 @@ function JugadasDesplegables({ nivel, devPct, nivelProf }: { nivel: NivelAcordeo
                         <td className="px-2 py-1 text-right font-mono">{formatoMoneda(j.moneda, j.montoJugado)}</td>
                         <td
                           className={`px-2 py-1 text-right font-mono font-black ${
-                            resJugadaConDev > 0
-                              ? "text-emerald-700"
-                              : resJugadaConDev < 0
-                                ? "text-rose-700"
-                                : "text-slate-600"
+                            String(j.estado ?? "").toUpperCase().startsWith("RETIR")
+                              ? "text-rose-700"
+                              : resJugadaConDev > 0
+                                ? "text-emerald-700"
+                                : resJugadaConDev < 0
+                                  ? "text-rose-700"
+                                  : "text-slate-600"
                           }`}
                         >
-                          {resJugadaConDev > 0 ? "+" : ""}
-                          {formatoMoneda(j.moneda, resJugadaConDev)}
+                          {String(j.estado ?? "").toUpperCase().startsWith("RETIR")
+                            ? "RETIRADO"
+                            : `${resJugadaConDev > 0 ? "+" : ""}${formatoMoneda(j.moneda, resJugadaConDev)}`}
                         </td>
                         <td className="px-2 py-1 text-right font-mono font-bold text-purple-600">{formatoMoneda(j.moneda, j.devolucion)}</td>
                         <td className="px-2 py-1 text-right font-mono">{formatoMoneda(j.moneda, j.premio)}</td>

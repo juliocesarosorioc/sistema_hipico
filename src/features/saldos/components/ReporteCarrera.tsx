@@ -43,6 +43,8 @@ export type JugadaVivo = {
   resultado: number | null;
   resultadoDa?: number | null;
   esAdelantada?: boolean;
+  /** true cuando el ejemplar de la jugada fue retirado oficialmente. */
+  esRetirado?: boolean;
   /** true cuando una Marca no se decidió en la pizarra oficial. */
   sinDecision?: boolean;
   /** Hora de carga de la jugada (HH:mm). */
@@ -218,7 +220,8 @@ function TablaJugadas({
           const aposto1Num = typeof j.aposto === 'number' ? j.aposto : parseFloat(String(j.aposto ?? '').replace(',', '.')) || 0;
           const jugoStr = String(j.jugo ?? "").trim();
           const involucraRetirado = Boolean(
-            retirados && retirados.length > 0 && jugadaInvolucraRetirado(j.caballo, null, jugoStr, retirados)
+            j.esRetirado ||
+              (retirados && retirados.length > 0 && jugadaInvolucraRetirado(j.caballo, null, jugoStr, retirados))
           );
           const res1 = involucraRetirado
             ? 0
@@ -240,7 +243,7 @@ function TablaJugadas({
             mostrarResultado &&
             !involucraRetirado &&
             (Boolean(j.sinDecision) || (esMarca(jugoStr) && res1 === 0));
-          const esEmpateNoDecidido = involucraRetirado || (mostrarResultado && res1 === 0 && !esMarcaSinDecision);
+          const esEmpateNoDecidido = mostrarResultado && !involucraRetirado && res1 === 0 && !esMarcaSinDecision;
           return (
             <tr key={i} className="border-b border-slate-100 bg-white h-[26px]">
               <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap truncate align-middle">
@@ -251,6 +254,10 @@ function TablaJugadas({
                 {esMarcaSinDecision ? (
                   <span className="inline-block rounded bg-slate-200 px-1 py-0.5 text-[8.5px] font-black uppercase text-slate-700">
                     SIN DECISIÓN
+                  </span>
+                ) : involucraRetirado ? (
+                  <span className="inline-block rounded bg-rose-100 px-1.5 py-0.5 text-[8.5px] font-black uppercase text-rose-700">
+                    RETIRADO
                   </span>
                 ) : esEmpateNoDecidido ? (
                   <span className="font-bold tabular-nums text-slate-600">0,00 (Empate)</span>
@@ -299,6 +306,10 @@ function TablaJugadas({
                 {esMarcaSinDecision ? (
                   <span className="inline-block rounded bg-slate-200 px-1 py-0.5 text-[8.5px] font-black uppercase text-slate-700">
                     SIN DECISIÓN
+                  </span>
+                ) : involucraRetirado && j.da ? (
+                  <span className="inline-block rounded bg-rose-100 px-1.5 py-0.5 text-[8.5px] font-black uppercase text-rose-700">
+                    RETIRADO
                   </span>
                 ) : esEmpateNoDecidido && j.da ? (
                   <span className="font-bold tabular-nums text-slate-600">0,00 (Empate)</span>

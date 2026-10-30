@@ -75,6 +75,8 @@ export type FilaReporte = {
    * filtro segmentado del Reporte de Liquidación.
    */
   esAdelantada?: boolean;
+  /** true cuando el ejemplar de la jugada fue retirado oficialmente. */
+  esRetirado?: boolean;
   /** Hora de carga de la jugada en formato HH:mm (extraída de fecha_registro). */
   horaCarga?: string | null;
 };
@@ -1492,14 +1494,8 @@ async function carreraReporte(
 ): Promise<CarreraReporte | null> {
   const pizarra = datos ? datos.pizarra : await leerPizarra(fecha, hipodromo, numero);
   const tickets = datos ? datos.tickets : await leerTickets(fecha, hipodromo, numero);
-  const enTablas = datos ? datos.enTablas : await carreraExisteEnTablas(fecha, hipodromo, numero);
-  if (!tickets.length && !enTablas && !datos) {
-    const carrerasMaestro = await listarCarrerasPorDia(fecha, hipodromo);
-    if (!carrerasMaestro.includes(Number(numero))) return null;
-  }
-  // La carrera aparece si tiene jugadas, resultados de una carrera registrada en
-  // la jornada o sus tablas publicadas (cargadas por el operador aunque aún no tengan tickets).
-  if (!tickets.length && !enTablas && !pizarra?.puestos.length) return null;
+  // REGLA ESTRICTA DE REPORTES: Las carreras que NO tengan jugadas no deben aparecer en los reportes.
+  if (!tickets.length) return null;
 
   const filas: FilaReporte[] = [];
   const neteoItems: NeteoCruceItem[] = [];
@@ -1570,6 +1566,7 @@ async function carreraReporte(
       ejemplar: desglose.ejemplar,
       tipoJugada: desglose.tipo,
       esAdelantada: adelantada,
+      ...(esRetiro ? { esRetirado: true } : {}),
       horaCarga,
     });
 
@@ -1588,6 +1585,7 @@ async function carreraReporte(
         ejemplar: desglose.ejemplar,
         tipoJugada: desglose.tipo,
         esAdelantada: adelantada,
+        ...(esRetiro ? { esRetirado: true } : {}),
         horaCarga,
       });
     }
@@ -1653,6 +1651,9 @@ async function carreraReporte(
       });
     }
   }
+
+  // Si todos los tickets de la carrera estaban anulados administrativamente y no quedó ninguna jugada real, no aparece en reportes.
+  if (!filas.some((f) => f.rol !== "CRUCE")) return null;
 
   const subtotal = Math.round(filas.reduce((a, f) => a + (f.resultado ?? 0), 0) * 100) / 100;
   const puestos = pizarra?.puestos ?? [];
@@ -1731,24 +1732,17 @@ export async function reportesCarrerasLote(
 
 async function hipodromoReporte(fecha: string, hipodromo: string, tasaComision?: number | null): Promise<HipodromoReporte> {
   const carreras: CarreraReporte[] = [];
-  const [numerosMaestro, ticketsPorCarrera, pizarrasPorCarrera, tablasPorCarrera] = await Promise.all([
-    listarCarrerasPorDia(fecha, hipodromo),
+  const [ticketsPorCarrera, pizarrasPorCarrera, tablasPorCarrera] = await Promise.all([
     leerTicketsHipodromo(fecha, hipodromo),
     leerPizarrasHipodromo(fecha, hipodromo),
     leerTablasHipodromo(fecha, hipodromo),
   ]);
-  const setNumeros = new Set<number>(numerosMaestro);
-  for (const k of ticketsPorCarrera.keys()) {
+  const setNumeros = new Set<number>();
+  for (const [k, tks] of ticketsPorCarrera.entries()) {
     const n = Number(k);
-    if (Number.isFinite(n) && n > 0) setNumeros.add(n);
+    if (Number.isFinite(n) && n > 0 && tks.length > 0) setNumeros.add(n);
   }
-  for (const k of tablasPorCarrera) {
-    const n = Number(k);
-    if (Number.isFinite(n) && n > 0) setNumeros.add(n);
-  }
-  // NUNCA inventar carreras desde filas huérfanas de `resultados_carreras`
-  // si la carrera no existe en el catálogo maestro (`carreras`), en `tablas_fijas`
-  // ni tiene jugadas reales (`ticketsPorCarrera`) en esa fecha.
+  // Solo se incluyen en los reportes las carreras que tengan jugadas reales (`ticketsPorCarrera`).
   const numeros = [...setNumeros].sort((a, b) => a - b);
   for (const numero of numeros) {
     const k = claveCarrera(numero);

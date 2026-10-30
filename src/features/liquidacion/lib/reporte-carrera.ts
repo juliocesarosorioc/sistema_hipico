@@ -348,6 +348,7 @@ export function armarReporteCarrera(
         resultado,
         resultadoDa,
         ...(f.esAdelantada ? { esAdelantada: true } : {}),
+        ...(f.esRetirado ? { esRetirado: true } : {}),
         ...(f.horaCarga ? { horaCarga: f.horaCarga } : {}),
       };
 

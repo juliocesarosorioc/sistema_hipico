@@ -68,6 +68,11 @@ export interface ConsultaIaRespuesta {
   sugerenciaEscalamiento: boolean;
   categoriaDetectada?: CategoriaTicket;
   prioridadDetectada?: PrioridadTicket;
+  rutaNavegacion?: string;
+  eventoAccion?: {
+    accion: string;
+    [k: string]: unknown;
+  };
   accionesSugeridas?: {
     titulo: string;
     accion: () => void | string;

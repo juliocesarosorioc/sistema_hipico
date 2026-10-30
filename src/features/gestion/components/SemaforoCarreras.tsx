@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase } from "@/core/supabase";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
@@ -19,11 +19,13 @@ type Props = {
   carreras: number[];
   /** Carrera resaltada. `null` = ninguna elegida aún (no se resalta sola). */
   activa: number | null;
-  onSeleccionar: (carrera: number) => void;
+  onSeleccionar: (carrera: number, info?: { abierta: boolean; estado: EstadoCarrera }) => void;
   /** Modo Manual (bypass Gaceta): habilita elegir carreras no registradas. */
   manual?: boolean;
   /** Números de carrera que tienen jugadas cargadas (sesión o BD del módulo padre). */
   carrerasConJugadas?: number[];
+  /** Acción adicional alineada a la derecha en la fila de carreras (p. ej. Liquidar Carrera). */
+  accionDerecha?: ReactNode;
 };
 
 export type EstadoCarrera = "inactiva" | "abierta" | "con_jugadas" | "cerrada";
@@ -78,7 +80,7 @@ const MANUAL_TOTAL = 12;
  * pestaña, así que una carrera liquidada desde otra sesión/dispositivo se veía
  * verde. El central también aporta `aplicado_a_tablas` y los ganadores.
  */
-export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSeleccionar, manual, carrerasConJugadas }: Props) {
+export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSeleccionar, manual, carrerasConJugadas, accionDerecha }: Props) {
   const tablas = useTablasFijasStore((s) => s.tablas);
   const tickets = useTaquillaStore((s) => s.tickets);
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
@@ -215,30 +217,37 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
           </span>
         )}
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
-          const { estado, tieneVentas } = porCarrera(n);
-          const existe = manual || carreras.includes(n) || tieneVentas;
-          const c = COLORES[estado];
-          const activaEsta = activa !== null && n === activa;
-          const manualSinRegistro = manual && !carreras.includes(n) && estado === "inactiva";
-          return (
-            <button
-              key={n}
-              type="button"
-              onClick={() => existe && onSeleccionar(n)}
-              disabled={!existe}
-              title={existe ? (manualSinRegistro ? `C${n} (sin carrera registrada)` : c.label) : `C${n} · No hay carrera registrada para ${fecha}`}
-              className={`grid h-9 w-9 place-items-center rounded-lg border-2 text-xs font-black transition-transform ${
-                !existe
-                  ? `cursor-not-allowed ${COLORES.inactiva.chip} opacity-90`
-                  : `hover:scale-105 ${c.chip}`
-              } ${activaEsta ? "ring-4 ring-indigo-600 ring-offset-2 scale-105" : ""}`}
-            >
-              {n}
-            </button>
-          );
-        })}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
+            const { estado, tieneVentas } = porCarrera(n);
+            const existe = manual || carreras.includes(n) || tieneVentas;
+            const c = COLORES[estado];
+            const activaEsta = activa !== null && n === activa;
+            const manualSinRegistro = manual && !carreras.includes(n) && estado === "inactiva";
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => existe && onSeleccionar(n, { abierta: estado !== "inactiva", estado })}
+                disabled={!existe}
+                title={existe ? (manualSinRegistro ? `C${n} (sin carrera registrada)` : c.label) : `C${n} · No hay carrera registrada para ${fecha}`}
+                className={`grid h-9 w-9 place-items-center rounded-lg border-2 text-xs font-black transition-transform ${
+                  !existe
+                    ? `cursor-not-allowed ${COLORES.inactiva.chip} opacity-90`
+                    : `hover:scale-105 ${c.chip}`
+                } ${activaEsta ? "ring-4 ring-indigo-600 ring-offset-2 scale-105" : ""}`}
+              >
+                {n}
+              </button>
+            );
+          })}
+        </div>
+        {accionDerecha ? (
+          <div className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
+            {accionDerecha}
+          </div>
+        ) : null}
       </div>
     </div>
   );

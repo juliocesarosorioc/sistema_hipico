@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
+import { BotonDictadoAudio } from "@/shared/components/ui/BotonDictadoAudio";
+import { interpretarAudioCarrera } from "@/features/carreras/lib/audio-carrera";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
@@ -14,7 +16,6 @@ import {
   nombrePropioHipodromo,
   opcionesHipodromo,
 } from "@/features/hipodromos/lib/nombre";
-import { hoyLocal } from "@/features/gaceta/lib/programa";
 import {
   eliminarCarreraCentral,
   guardarCarreraCentral,
@@ -56,10 +57,11 @@ const vacioModal = (): ModalForm => ({
   retirados: "",
 });
 
-/** Parsea un textarea de ejemplares: cada línea "numero nombre" (o solo numero). */
+/** Parsea un textarea o línea de ejemplares: cada línea o coma "numero nombre" (o solo numero). */
 function parsearEjemplares(txt: string): EjemplarCarreraCentral[] {
   const salida: EjemplarCarreraCentral[] = [];
-  for (const lineaRaw of txt.split("\n")) {
+  const normalizado = txt.includes("\n") ? txt : txt.replace(/[,;]+/g, "\n");
+  for (const lineaRaw of normalizado.split("\n")) {
     const linea = lineaRaw.trim();
     if (!linea) continue;
     const trozos = linea.split(/\s+/);
@@ -78,17 +80,14 @@ function ejemplaresATexto(caballos: EjemplarCarreraCentral[] | undefined): strin
     .join("\n");
 }
 
+const CHIPS_EJEMPLARES_RAPIDOS = [6, 8, 9, 10, 11, 12, 14, 16];
+
 /**
  * Carreras del Día — editor CENTRAL de la jornada (data única).
- * Registra las carreras que se van a jugar — incluso con ejemplares SOLO por
- * número (sin nombres) para apostar por número y resolver con la pizarra.
- * `resultados_carreras` es la fuente de verdad que ya alimenta el semáforo de
- * Gestión de Jugadas, Tablas Fijas y Dupletas.
+ * Optimizado para carga táctil rápida desde el celular y dictado por voz / audio.
  */
 export function CarrerasDiaModule() {
   const [catalogo, setCatalogo] = useState<Hipodromo[]>([]);
-  // Opciones para el buscador: bandera del país + logo, en la MISMA forma
-  // (`value`/`label`) que ya consumía `nombrePropioHipodromo`.
   const hipodromos = useMemo(() => opcionesHipodromo(catalogo), [catalogo]);
   const versionLogos = useVersionLogos();
   const [hipodromo, setHipodromo] = useState("");
@@ -102,18 +101,15 @@ export function CarrerasDiaModule() {
   const [guardando, setGuardando] = useState(false);
   const [modal, setModal] = useState<ModalForm>(() => vacioModal());
   const [confirmarEliminar, setConfirmarEliminar] = useState<CarreraCentral | null>(null);
-  // El módulo de Marcas vive dentro del módulo hípico: se abre sobre la carrera
-  // que se está mirando, sin salir de la tabla de carreras del día.
   const [editorMarcas, setEditorMarcas] = useState<{ hipodromo: string; carrera: number; fecha: string } | null>(null);
-  /** Muestra las carreras del filtro que llegaron sin ejemplares (ocultas por defecto). */
   const [verSinEjemplares, setVerSinEjemplares] = useState(false);
+  const [ultimoDictado, setUltimoDictado] = useState<{ texto: string; resumen: string[] } | null>(null);
+  const [rangoLote, setRangoLote] = useState<{ desde: number; hasta: number; ejemplares: number } | null>(null);
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
   }, []);
 
-  // El día arranca en hoy y el filtro en "todos los hipódromos": no se
-  // preselecciona ningún hipódromo, así la jornada completa se ve de entrada.
   useEffect(() => {
     let v = true;
     void listarHipodromos().then((r) => {
@@ -123,14 +119,8 @@ export function CarrerasDiaModule() {
     return () => {
       v = false;
     };
-    // `versionLogos` fuerza recarga cuando cambia un logo (local o realtime).
   }, [versionLogos]);
 
-  /**
-   * Una sola carga por día: TODAS las carreras de la fecha, sin filtrar. El
-   * editor y el monitor beben del mismo array, así el filtro por hipódromo es
-   * instantáneo y ambos paneles siempre muestran la misma data.
-   */
   const refrescar = useCallback(async () => {
     if (!fecha) {
       setTodas([]);
@@ -151,24 +141,11 @@ export function CarrerasDiaModule() {
     void refrescar();
   }, [fecha, refrescar]);
 
-  /** Vista del editor: sin hipódromo seleccionado, todas las de la fecha. */
   const carreras = useMemo(() => {
-    // Comparación por clave normalizada, no por texto: el hipódromo llega del
-    // selector en una forma ("LARINCONADA") y la fila lo trae como lo escribió
-    // el operador ("LA RINCONADA"). Con `===` el editor se quedaba vacío
-    // mientras el monitor, que normaliza, sí mostraba la jornada.
     const h = claveHipodromo(hipodromo);
     return h ? todas.filter((c) => claveHipodromo(c.hipodromo) === h) : todas;
   }, [todas, hipodromo]);
 
-  /**
-   * Una carrera sin ejemplares no se puede jugar ni rematar: la fila solo
-   * mostraba "Sin ejemplares registrados" y ocupaba el mismo lugar que una
-   * carrera real (con 13 del día, varias filas eran puro ruido). Se ocultan,
-   * pero NO se borran ni se pierden: el contador de arriba las deja a un clic,
-   * porque a la carrera que quedó sin ejemplares hay que poder abrirla y
-   * cargárselos.
-   */
   const conEjemplares = useMemo(() => carreras.filter((c) => (c.caballos?.length ?? 0) > 0), [carreras]);
   const sinEjemplares = useMemo(() => carreras.filter((c) => (c.caballos?.length ?? 0) === 0), [carreras]);
   const carrerasVisibles = verSinEjemplares ? carreras : conEjemplares;
@@ -188,6 +165,12 @@ export function CarrerasDiaModule() {
   );
   const hipodromosDelDia = useMemo(() => todas.map((c) => c.hipodromo), [todas]);
 
+  const previstos = useMemo(
+    () => [...new Set(carreras.map((c) => Number(c.carrera) || 0))].sort((a, b) => a - b),
+    [carreras]
+  );
+  const masAlto = previstos.length ? previstos[previstos.length - 1] : 0;
+
   const abrirEditar = (c: CarreraCentral) => {
     setModal({
       abierta: true,
@@ -202,24 +185,100 @@ export function CarrerasDiaModule() {
     });
   };
 
+  /**
+   * Procesa el dictado por voz / audio y rellena los campos del formulario
+   * (o del modal de edición si está abierto).
+   */
+  const aplicarDictadoAudio = useCallback(
+    (texto: string) => {
+      const info = interpretarAudioCarrera(texto);
+      setUltimoDictado({ texto: info.textoOriginal, resumen: info.resumen });
+
+      if (info.rangoCarreras) {
+        setRangoLote({
+          desde: info.rangoCarreras.desde,
+          hasta: info.rangoCarreras.hasta,
+          ejemplares: info.cantidadEjemplares ?? 12,
+        });
+      }
+
+      setModal((prev) => {
+        const carreraSugerida = info.carrera ?? (prev.carrera || String(masAlto + 1));
+        let ejemplaresNuevos = prev.ejemplares;
+        if (info.ejemplaresLista.length > 0) {
+          const bloque = info.ejemplaresLista.map((e) => `${e.numero} ${e.nombre}`).join("\n");
+          ejemplaresNuevos = prev.editar && prev.ejemplares.trim() ? `${prev.ejemplares.trim()}\n${bloque}` : bloque;
+        } else if (info.ejemplaresTexto) {
+          ejemplaresNuevos = info.ejemplaresTexto;
+        }
+        return {
+          ...prev,
+          abierta: true,
+          carrera: carreraSugerida,
+          ejemplares: ejemplaresNuevos,
+          distancia: info.distancia ?? prev.distancia,
+          superficie: info.superficie ?? prev.superficie,
+          premio: info.premio ?? prev.premio,
+          hora: info.hora ?? prev.hora,
+          retirados: info.retirados ?? prev.retirados,
+        };
+      });
+
+      toast(
+        info.resumen.length > 0
+          ? `🎙️ Interpretado: ${info.resumen.join(" · ")}`
+          : `🎙️ Dictado recibido: "${texto}"`,
+        "info"
+      );
+    },
+    [masAlto, toast]
+  );
+
+  const guardarLoteCarreras = async (desde: number, hasta: number, cantEjemplares: number) => {
+    if (!fecha) return toast("Seleccione primero una fecha en el buscador.", "warning");
+    if (!hipodromo) return toast("Elija un hipódromo arriba antes de crear el lote.", "warning");
+    setGuardando(true);
+    let creadas = 0;
+    const caballos = numerosEjemplares(Math.max(1, cantEjemplares));
+    for (let n = desde; n <= hasta; n++) {
+      const r = await guardarCarreraCentral({
+        fecha,
+        hipodromo,
+        carrera: n,
+        caballos,
+        distancia: modal.distancia.trim() || null,
+        superficie: modal.superficie.trim().toUpperCase() || "ARENA",
+        premio: modal.premio.trim() ? Number(modal.premio) : null,
+        hora: null,
+      });
+      if (r.ok) creadas++;
+    }
+    setGuardando(false);
+    setRangoLote(null);
+    toast(`✅ ${creadas} carrera(s) registradas en lote (C${desde}–C${hasta} con ${cantEjemplares} ejemplares).`, "success");
+    void refrescar();
+  };
+
   const guardar = async () => {
     const num = Number(modal.carrera) || 0;
-    // El filtro arranca en "todos", pero para guardar hay que elegir uno.
-    if (!fecha)
-      return toast("Seleccione primero una fecha en el buscador.", "warning");
-    if (!hipodromo)
-      return toast("Elija un hipódromo para registrar la carrera (arriba, en el filtro).", "warning");
+    if (!fecha) return toast("Seleccione primero una fecha en el buscador.", "warning");
+    if (!hipodromo) return toast("Elija un hipódromo para registrar la carrera (arriba, en el filtro).", "warning");
     if (!num) return toast("Nº de carrera requerido.", "warning");
-    const ejemplares = modal.editar ? parsearEjemplares(modal.ejemplares) : [];
-    // Registro rápido: si solo escribió un número en el campo ejemplares, se
-    // interpreta como CANTIDAD de ejemplares (genera 1..n).
-    const rapido = Number(modal.ejemplares.trim());
+
+    const textoEj = modal.ejemplares.trim();
+    const esSoloNumero = /^\d{1,2}$/.test(textoEj);
+    const rapido = esSoloNumero ? Number(textoEj) : 0;
+    const ejemplaresConNombre = !esSoloNumero ? parsearEjemplares(textoEj) : [];
+
     const caballos =
-      ejemplares.length > 0 || modal.editar
-        ? ejemplares
-        : Number.isFinite(rapido) && rapido > 0
+      ejemplaresConNombre.length > 0
+        ? ejemplaresConNombre
+        : rapido > 0
           ? numerosEjemplares(rapido)
-          : [];
+          : modal.editar
+            ? parsearEjemplares(textoEj)
+            : [];
+
     setGuardando(true);
     const r = await guardarCarreraCentral({
       fecha,
@@ -234,9 +293,6 @@ export function CarrerasDiaModule() {
     setGuardando(false);
     if (!r.ok) return toast("Error al guardar: " + (r.error ?? "desconocido"), "error");
 
-    // RETIROS: lista canónica de la carrera. Se escribe por el servicio único,
-    // que propaga a Tablas Fijas, Dupletas y Taquilla, reembolsa lo
-    // pendiente y recalcula premios.
     const ret = await aplicarRetirosCarrera({
       fecha,
       hipodromo,
@@ -253,7 +309,9 @@ export function CarrerasDiaModule() {
         (ret.reembolsos ? ` · ${ret.reembolsos} ticket(s) reembolsado(s)` : "")
       : "";
     toast(base + detalle, "success");
-    setModal(vacioModal());
+    // Al registrar desde celular, avanzamos automáticamente el número sugerido a la siguiente carrera
+    const siguienteNum = !modal.editar ? String(num + 1) : "";
+    setModal({ ...vacioModal(), abierta: !modal.editar, carrera: siguienteNum, ejemplares: esSoloNumero ? textoEj : "" });
     void refrescar();
   };
 
@@ -286,31 +344,35 @@ export function CarrerasDiaModule() {
   };
 
   const eliminar = async (c: CarreraCentral) => {
-    const r = await eliminarCarreraCentral(fecha, hipodromo, c.carrera);
+    const r = await eliminarCarreraCentral(fecha, hipodromo || c.hipodromo, c.carrera);
     if (!r.ok) return toast("Error al eliminar: " + (r.error ?? "desconocido"), "error");
     toast(`🗑️ Carrera C${c.carrera} quitada del día (no se borran tablas ni jugadas).`, "success");
     setConfirmarEliminar(null);
     void refrescar();
   };
 
-  const previstos = useMemo(
-    () => [...new Set(carreras.map((c) => Number(c.carrera) || 0))].sort((a, b) => a - b),
-    [carreras]
-  );
-  const masAlto = previstos.length ? previstos[previstos.length - 1] : 0;
-
   return (
     <div className="space-y-3">
       <ToastHost />
 
       {/* Cabecera */}
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-cyan-200 bg-cyan-700 px-4 py-2.5 text-white shadow-sm">
-        <span className="text-2xl">🏁</span>
-        <div>
-          <h2 className="text-lg font-extrabold uppercase tracking-wide">Carreras del Día</h2>
-          <p className="text-xs font-medium text-cyan-100">Data central de la jornada — alimenta Gestión, Tablas y Dupletas.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-cyan-200 bg-cyan-700 px-4 py-2.5 text-white shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <span className="text-2xl">🏁</span>
+          <div>
+            <h2 className="text-base font-extrabold uppercase tracking-wide sm:text-lg">Carreras del Día</h2>
+            <p className="text-[11px] font-medium text-cyan-100">
+              Carga móvil rápida, manual y por voz — alimenta Apuestas, Tablas y Dupletas.
+            </p>
+          </div>
         </div>
+        <BotonDictadoAudio
+          etiqueta="🎙️ Dictar Carrera / Ejemplares"
+          modo="carrera"
+          onTextoReconocido={aplicarDictadoAudio}
+        />
       </div>
+
       <BuscadorJornada
         fecha={fecha}
         onFecha={(valor) => setFecha(valor || "")}
@@ -322,14 +384,7 @@ export function CarrerasDiaModule() {
         placeholderHipodromo="Todos los hipódromos"
       />
 
-      {/* Ayuda de uso */}
-      <div className="rounded-lg border border-cyan-200 bg-cyan-50/60 px-3 py-1.5 text-[10px] font-semibold leading-relaxed text-cyan-900">
-        📌 Registre hoy las carreras que se van a jugar. Puede cargar una carrera <b>solo con el Nº de ejemplares</b>{" "}
-        (ej. <b>15</b>) cuando no se tiene la información completa (caso carrera extranjera): se generan los números 1..15
-        sin nombres y la pizarra decide el ganador. Si ya tiene nombres, escríbalos como <b>1 NOMBRE DEL CABALLO</b> (uno por línea).
-      </div>
-
-      {/* Monitor de Hipódromos del Día — mismo panel y mismo CSS que Tablas Fijas */}
+      {/* Monitor de Hipódromos del Día */}
       <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <MonitorHipodromos
           grupos={gruposMonitor}
@@ -337,30 +392,215 @@ export function CarrerasDiaModule() {
           onFiltro={(h) => setHipodromo(h)}
           fecha={fecha}
           onFecha={(f) => setFecha(f || "")}
-          vacio={!fecha ? "Selecciona una fecha en el buscador de arriba para consultar el monitor." : `Sin carreras registradas en la fecha ${fecha}. Regístralas con el formulario de abajo o desde Ejemplares y Gaceta.`}
+          vacio={
+            !fecha
+              ? "Selecciona una fecha en el buscador de arriba para consultar el monitor."
+              : `Sin carreras registradas en la fecha ${fecha}. Regístralas abajo con un toque o dictando por audio.`
+          }
         />
       </div>
 
-      {/* Registro rápido */}
-      <div className="rounded-2xl border border-cyan-200 bg-white p-3 shadow-sm">
-        <div className="grid grid-cols-1 gap-x-3 gap-y-1.5 md:grid-cols-4 xl:grid-cols-6">
+      {/* Panel de Registro Manual Optimizado para Celular + Dictado por Voz */}
+      <div className="rounded-2xl border border-cyan-200 bg-white p-3 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-cyan-800">
+              📱 Carga Manual Rápida (Celular / Audio)
+            </h3>
+            <p className="text-[10px] font-semibold text-slate-500">
+              Toca el Nº de carrera y la cantidad de ejemplares, o dicta: <i>&ldquo;Carrera 3 con 12 ejemplares 1600 metros arena&rdquo;</i>
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <BotonDictadoAudio
+              compacto
+              etiqueta="🎙️ Dictar"
+              modo="carrera"
+              onTextoReconocido={aplicarDictadoAudio}
+            />
+            <button
+              type="button"
+              onClick={() =>
+                setRangoLote((prev) =>
+                  prev ? null : { desde: 1, hasta: 10, ejemplares: 12 }
+                )
+              }
+              className="rounded-lg border border-cyan-300 bg-cyan-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-cyan-800 hover:bg-cyan-100 active:scale-95"
+            >
+              ⚡ Crear Lote (C1–C10)
+            </button>
+          </div>
+        </div>
+
+        {ultimoDictado && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50/70 px-3 py-1.5 text-[11px]">
+            <div className="min-w-0">
+              <span className="font-black text-rose-700">🎙️ Audio interpretado:</span>{" "}
+              <span className="italic text-slate-700">&ldquo;{ultimoDictado.texto}&rdquo;</span>
+              {ultimoDictado.resumen.length > 0 && (
+                <span className="ml-2 rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-black text-white">
+                  {ultimoDictado.resumen.join(" · ")}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setUltimoDictado(null)}
+              className="text-xs font-bold text-slate-400 hover:text-slate-600"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Generador de lote de carreras en 1 toque (ideal para celular) */}
+        {rangoLote && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50/80 p-2.5 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-black uppercase text-emerald-900">⚡ Lote de Carreras:</span>
+              <label className="inline-flex items-center gap-1 font-bold text-slate-700">
+                Desde C
+                <input
+                  type="number"
+                  min={1}
+                  max={25}
+                  value={rangoLote.desde}
+                  onChange={(e) => setRangoLote((r) => (r ? { ...r, desde: Number(e.target.value) || 1 } : null))}
+                  className="w-14 rounded border border-emerald-400 bg-white px-2 py-1 text-center font-black"
+                />
+              </label>
+              <label className="inline-flex items-center gap-1 font-bold text-slate-700">
+                Hasta C
+                <input
+                  type="number"
+                  min={1}
+                  max={25}
+                  value={rangoLote.hasta}
+                  onChange={(e) => setRangoLote((r) => (r ? { ...r, hasta: Number(e.target.value) || 10 } : null))}
+                  className="w-14 rounded border border-emerald-400 bg-white px-2 py-1 text-center font-black"
+                />
+              </label>
+              <label className="inline-flex items-center gap-1 font-bold text-slate-700">
+                Ejemplares c/u:
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={rangoLote.ejemplares}
+                  onChange={(e) => setRangoLote((r) => (r ? { ...r, ejemplares: Number(e.target.value) || 12 } : null))}
+                  className="w-16 rounded border border-emerald-400 bg-white px-2 py-1 text-center font-black"
+                />
+              </label>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="success"
+                size="sm"
+                disabled={guardando || !hipodromo || !fecha}
+                onClick={() => void guardarLoteCarreras(rangoLote.desde, rangoLote.hasta, rangoLote.ejemplares)}
+              >
+                {guardando ? "Creando…" : `💾 Crear C${rangoLote.desde} a C${rangoLote.hasta}`}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setRangoLote(null)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Botonera táctil para celular: Selección de Carrera y Cantidad de Ejemplares en 1 toque */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                1. Toca Nº Carrera
+              </span>
+              <button
+                type="button"
+                onClick={() => setModal((m) => ({ ...m, abierta: true, carrera: String(masAlto + 1) }))}
+                className="rounded bg-cyan-600 px-2 py-0.5 text-[10px] font-black text-white hover:bg-cyan-500"
+              >
+                Siguiente: C{masAlto + 1}
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {Array.from({ length: 12 }, (_, idx) => idx + 1).map((n) => {
+                const activa = modal.abierta && Number(modal.carrera) === n;
+                const yaExiste = previstos.includes(n);
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setModal((m) => ({ ...m, abierta: true, carrera: String(n) }))}
+                    className={`h-8 min-w-[2.1rem] rounded-lg border px-1.5 text-xs font-black transition active:scale-95 ${
+                      activa
+                        ? "border-cyan-700 bg-cyan-600 text-white ring-2 ring-cyan-300"
+                        : yaExiste
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    C{n}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                2. Toca Cantidad de Ejemplares
+              </span>
+              <span className="text-[10px] font-bold text-slate-400">o escribe nombres abajo</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {CHIPS_EJEMPLARES_RAPIDOS.map((cant) => {
+                const activo = modal.abierta && modal.ejemplares.trim() === String(cant);
+                return (
+                  <button
+                    key={cant}
+                    type="button"
+                    onClick={() =>
+                      setModal((m) => ({
+                        ...m,
+                        abierta: true,
+                        carrera: m.carrera || String(masAlto + 1),
+                        ejemplares: String(cant),
+                      }))
+                    }
+                    className={`h-8 min-w-[2.4rem] rounded-lg border px-2 text-xs font-black transition active:scale-95 ${
+                      activo
+                        ? "border-indigo-700 bg-indigo-600 text-white ring-2 ring-indigo-300"
+                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    {cant} ej.
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Campos detallados */}
+        <div className="grid grid-cols-2 gap-x-2.5 gap-y-2 sm:grid-cols-3 xl:grid-cols-6">
           <label className="block">
             <span className={inputLbl}>Nº Carrera</span>
             <input
               value={modal.abierta ? modal.carrera : ""}
               onChange={(e) => setModal((m) => ({ ...m, abierta: true, carrera: e.target.value }))}
-              placeholder="1"
+              placeholder={String(masAlto + 1)}
               inputMode="numeric"
               className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-black text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
             />
           </label>
-          <label className="block">
-            <span className={inputLbl}>Ejemplares (Nº o cantidad)</span>
+          <label className="block col-span-1 sm:col-span-2 xl:col-span-1">
+            <span className={inputLbl}>Ejemplares (Cant. o 1 NOMBRE)</span>
             <input
               value={modal.abierta ? modal.ejemplares : ""}
               onChange={(e) => setModal((m) => ({ ...m, abierta: true, ejemplares: e.target.value }))}
-              placeholder="15"
-              inputMode="numeric"
+              placeholder="12 ó 1 RAYO, 2 SOL"
               className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
             />
           </label>
@@ -370,6 +610,7 @@ export function CarrerasDiaModule() {
               value={modal.abierta ? modal.distancia : ""}
               onChange={(e) => setModal((m) => ({ ...m, abierta: true, distancia: e.target.value }))}
               placeholder="1600"
+              inputMode="numeric"
               className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
             />
           </label>
@@ -386,30 +627,29 @@ export function CarrerasDiaModule() {
             </select>
           </label>
           <label className="block">
-            <span className={inputLbl}>Premio</span>
+            <span className={inputLbl}>Retirados (opc.)</span>
             <input
-              value={modal.abierta ? modal.premio : ""}
-              onChange={(e) => setModal((m) => ({ ...m, abierta: true, premio: e.target.value }))}
-              placeholder="0.00"
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              value={modal.abierta ? modal.retirados : ""}
+              onChange={(e) => setModal((m) => ({ ...m, abierta: true, retirados: e.target.value }))}
+              placeholder="ej. 2,5"
+              className="w-full rounded-lg border border-red-200 bg-red-50/40 px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
             />
           </label>
-          <label className="block">
-            <span className={inputLbl}>Hora</span>
-            <input
-              value={modal.abierta ? modal.hora : ""}
-              onChange={(e) => setModal((m) => ({ ...m, abierta: true, hora: e.target.value }))}
-              placeholder="14:30"
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-            />
-            <Button variant="success" size="sm" className="mt-1 w-full" onClick={() => void guardar()} disabled={guardando || !hipodromo || !fecha}>
+          <div className="col-span-2 flex items-end gap-2 sm:col-span-3 xl:col-span-1">
+            <Button
+              variant="success"
+              size="md"
+              className="w-full py-2.5 font-black"
+              onClick={() => void guardar()}
+              disabled={guardando || !hipodromo || !fecha}
+            >
               {guardando ? "Guardando…" : "💾 Registrar Carrera"}
             </Button>
-          </label>
+          </div>
         </div>
       </div>
 
-      {/* Listado del día */}
+      {/* Listado del día (Tarjetas táctiles en Celular + Tabla en Escritorio) */}
       <div className="overflow-hidden rounded-lg border border-cyan-200 bg-white shadow-sm">
         {sinEjemplares.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-semibold text-amber-800">
@@ -426,7 +666,115 @@ export function CarrerasDiaModule() {
             </button>
           </div>
         )}
-        <div className="overflow-x-auto">
+
+        {/* Vista Móvil (Tarjetas ergonómicas para celular) */}
+        <div className="divide-y divide-cyan-100 md:hidden">
+          {cargando && (
+            <div className="px-3 py-4 text-center text-xs font-semibold text-slate-500">
+              Cargando carreras del día…
+            </div>
+          )}
+          {!cargando && carrerasVisibles.length === 0 && (
+            <div className="px-3 py-5 text-center text-xs font-semibold text-amber-600">
+              {sinEjemplares.length > 0 && !verSinEjemplares ? (
+                <>⚠️ Las {carreras.length} carreras del filtro no tienen ejemplares: tócalas arriba en &ldquo;Mostrarlas&rdquo; para cargárselos.</>
+              ) : !fecha ? (
+                <>📅 Selecciona una fecha en el buscador de arriba para consultar o registrar carreras.</>
+              ) : (
+                <>⚠️ No hay carreras registradas para {nombreHipodromoParaMostrar(hipodromo) || "este hipódromo"} · {fecha}.</>
+              )}
+            </div>
+          )}
+          {carrerasVisibles.map((c) => {
+            const n = c.caballos?.length ?? 0;
+            return (
+              <div key={claveCarrera(c.hipodromo, c.carrera, fecha)} className="p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-700 text-xs font-black text-white">
+                      C{c.carrera}
+                    </span>
+                    <div>
+                      <div className="text-xs font-black text-slate-800">
+                        {nombreHipodromoParaMostrar(c.hipodromo)} · {n} ejemplar(es)
+                      </div>
+                      <div className="text-[10px] font-semibold text-slate-500">
+                        {c.distancia ? `${c.distancia}m` : "—"} · {c.superficie ?? "ARENA"}
+                        {c.hora ? ` · 🕒 ${c.hora}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void alternarVerificada(c)}
+                      className={`rounded-lg px-2.5 py-1.5 text-xs font-black ${
+                        c.verificado
+                          ? "bg-emerald-600 text-white"
+                          : "bg-slate-200 text-slate-600"
+                      }`}
+                    >
+                      ✓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => abrirEditar(c)}
+                      className="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-black text-white"
+                    >
+                      ✏️ Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditorMarcas({ hipodromo: c.hipodromo, carrera: c.carrera, fecha })}
+                      className="rounded-lg bg-cyan-600 px-2 py-1.5 text-xs font-black text-white"
+                    >
+                      🏷️
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmarEliminar(c)}
+                      className="rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-600"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+                {n > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {(c.caballos ?? []).map((cb) => {
+                      const nombre = cb.nombre?.trim();
+                      const ret = Boolean(cb.retirado) || (c.retirados ?? []).includes(String(cb.numero));
+                      const guald = getHorseColor(cb.numero);
+                      const inv = (c.invalidados ?? []).includes(String(cb.numero));
+                      return (
+                        <button
+                          key={cb.numero}
+                          type="button"
+                          disabled={ret}
+                          onClick={() => !ret && void alternarInvalitado(c, String(cb.numero))}
+                          className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-1 text-[11px] font-bold leading-none ${
+                            ret
+                              ? "border-red-300 bg-red-50 text-red-600 line-through"
+                              : inv
+                                ? "border-amber-400 bg-amber-50 text-amber-900"
+                                : `${guald.border} ${guald.bg} ${guald.text}`
+                          }`}
+                        >
+                          <span className="font-black">{cb.numero}</span>
+                          {nombre && <span className="max-w-[7rem] truncate">· {nombre}</span>}
+                          {inv && !ret && <span className="rounded bg-amber-200 px-1 text-[9px] font-black">INV</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Vista Escritorio (Tabla completa) */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="bg-cyan-700 text-cyan-50">
@@ -452,12 +800,10 @@ export function CarrerasDiaModule() {
                   <td colSpan={7} className="px-2 py-4 text-center text-xs font-semibold text-amber-600">
                     {sinEjemplares.length > 0 && !verSinEjemplares ? (
                       <>⚠️ Las {carreras.length} carreras del filtro no tienen ejemplares: mostralas para cargárselos.</>
+                    ) : !fecha ? (
+                      <>📅 Selecciona una fecha en el buscador de arriba para consultar o registrar carreras.</>
                     ) : (
-                      !fecha ? (
-                        <>📅 Selecciona una fecha en el buscador de arriba para consultar o registrar carreras.</>
-                      ) : (
-                        <>⚠️ No hay carreras registradas para {nombreHipodromoParaMostrar(hipodromo) || "este hipódromo"} · {fecha}.</>
-                      )
+                      <>⚠️ No hay carreras registradas para {nombreHipodromoParaMostrar(hipodromo) || "este hipódromo"} · {fecha}.</>
                     )}
                   </td>
                 </tr>
@@ -487,10 +833,6 @@ export function CarrerasDiaModule() {
                               const ret = Boolean(cb.retirado) || (c.retirados ?? []).includes(String(cb.numero));
                               const guald = getHorseColor(cb.numero);
                               const inv = (c.invalidados ?? []).includes(String(cb.numero));
-                              // El chip entero alterna INV: si el badge solo aparecia
-                              // cuando ya estaba invalidado, no habia forma de
-                              // invalidar desde aca. Retirado manda sobre INV (un
-                              // ejemplar fuera no puja igual), asi que ahi no aplica.
                               const alternaInv = !ret;
                               const etiqueta = ret
                                 ? `${nombre || `Nº ${cb.numero}`} — retirado en esta carrera`
@@ -571,46 +913,46 @@ export function CarrerasDiaModule() {
                     <td className="border border-cyan-100 px-1 py-1 align-middle">
                       <div className="flex flex-col items-start gap-1">
                         <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => alternarVerificada(c)}
-                          title={
-                            c.verificado
-                              ? `Verificada por ${c.verificado_por ?? "—"} · volver a marcar como pendiente`
-                              : "Marcar esta carrera como verificada"
-                          }
-                          className={`rounded px-1.5 py-0.5 text-[11px] transition-colors ${
-                            c.verificado
-                              ? "bg-emerald-600 text-white hover:bg-emerald-500"
-                              : "bg-slate-200 text-slate-500 hover:bg-emerald-100 hover:text-emerald-700"
-                          }`}
-                        >
-                          ✓
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => abrirEditar(c)}
-                          title="Editar carrera"
-                          className="rounded bg-indigo-600 px-1.5 py-0.5 text-[11px] text-white transition-colors hover:bg-indigo-500"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditorMarcas({ hipodromo: c.hipodromo, carrera: c.carrera, fecha })}
-                          title="Marcas: configurar NV y debutantes de esta carrera"
-                          className="rounded bg-cyan-600 px-1.5 py-0.5 text-[11px] text-white transition-colors hover:bg-cyan-500"
-                        >
-                          🏷️
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmarEliminar(c)}
-                          title="Quitar del día (no borra tablas ni jugadas)"
-                          className="rounded px-1 py-0.5 text-[11px] text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
-                        >
-                          🗑️
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => void alternarVerificada(c)}
+                            title={
+                              c.verificado
+                                ? `Verificada por ${c.verificado_por ?? "—"} · volver a marcar como pendiente`
+                                : "Marcar esta carrera como verificada"
+                            }
+                            className={`rounded px-1.5 py-0.5 text-[11px] transition-colors ${
+                              c.verificado
+                                ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                                : "bg-slate-200 text-slate-500 hover:bg-emerald-100 hover:text-emerald-700"
+                            }`}
+                          >
+                            ✓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => abrirEditar(c)}
+                            title="Editar carrera"
+                            className="rounded bg-indigo-600 px-1.5 py-0.5 text-[11px] text-white transition-colors hover:bg-indigo-500"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditorMarcas({ hipodromo: c.hipodromo, carrera: c.carrera, fecha })}
+                            title="Marcas: configurar NV y debutantes de esta carrera"
+                            className="rounded bg-cyan-600 px-1.5 py-0.5 text-[11px] text-white transition-colors hover:bg-cyan-500"
+                          >
+                            🏷️
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmarEliminar(c)}
+                            title="Quitar del día (no borra tablas ni jugadas)"
+                            className="rounded px-1 py-0.5 text-[11px] text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                          >
+                            🗑️
+                          </button>
                         </div>
                         <div className="max-w-[16rem] text-[9px] leading-tight text-slate-500">
                           {c.verificado ? (
@@ -653,6 +995,17 @@ export function CarrerasDiaModule() {
               </button>
             </div>
             <div className="space-y-3 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50/60 px-3 py-2">
+                <span className="text-[11px] font-bold text-rose-800">
+                  🎙️ Dicta ejemplares o cambios por voz:
+                </span>
+                <BotonDictadoAudio
+                  compacto
+                  etiqueta="🎙️ Dictar Ejemplares"
+                  modo="carrera"
+                  onTextoReconocido={aplicarDictadoAudio}
+                />
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
                   <span className={inputLbl}>Distancia (m)</span>
@@ -685,7 +1038,26 @@ export function CarrerasDiaModule() {
                 />
               </label>
               <label className="block">
-                <span className={inputLbl}>Ejemplares (1 NOMBRE por línea · solo número si no se conoce)</span>
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
+                  <span className={inputLbl}>Ejemplares (1 NOMBRE por línea · o toca cantidad rápida)</span>
+                  <div className="flex gap-1">
+                    {[6, 8, 10, 12, 14].map((cant) => (
+                      <button
+                        key={cant}
+                        type="button"
+                        onClick={() =>
+                          setModal((m) => ({
+                            ...m,
+                            ejemplares: Array.from({ length: cant }, (_, idx) => String(idx + 1)).join("\n"),
+                          }))
+                        }
+                        className="rounded border border-cyan-300 bg-cyan-50 px-1.5 py-0.5 text-[10px] font-black text-cyan-800 hover:bg-cyan-100"
+                      >
+                        1..{cant}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <textarea
                   value={modal.ejemplares}
                   onChange={(e) => setModal((m) => ({ ...m, ejemplares: e.target.value }))}
@@ -717,7 +1089,7 @@ export function CarrerasDiaModule() {
             </div>
             <div className="space-y-2 p-4">
               <p className="text-sm font-bold text-slate-800">
-                ¿Quitar la carrera C{confirmarEliminar.carrera} de la jornada de {nombreHipoFiltro} · {fecha}?
+                ¿Quitar la carrera C{confirmarEliminar.carrera} de la jornada de {nombreHipoFiltro || confirmarEliminar.hipodromo} · {fecha}?
               </p>
               <p className="text-[11px] font-semibold text-slate-500">
                 No se borran las tablas fijas publicadas ni las jugadas ya registradas: solo sale de la lista central del día.
@@ -731,9 +1103,6 @@ export function CarrerasDiaModule() {
         </div>
       )}
 
-      {/* Editor de marcas (NV + debutantes) de la carrera elegida. La ventana de
-          ventas y resultados vive en el panel de Marcas, que es donde se lleva
-          el seguimiento de la jornada. */}
       {editorMarcas && (
         <ModalMarcasEditor
           hipodromoInicial={editorMarcas.hipodromo}

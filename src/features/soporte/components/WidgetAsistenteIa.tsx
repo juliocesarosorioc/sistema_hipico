@@ -1,13 +1,24 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   consultarAgenteIaEnVivo,
   normalizarDictadoVoz,
   consultarCopilotoTransaccional,
   obtenerSesionCopilotoGlobal,
   detectarIntencionContableInicial,
+  CATALOGO_ACCIONES_PLATAFORMA,
+  CATALOGO_RUTAS_PLATAFORMA,
+  emitirEventoAccionAgente,
+  type AccionOperativaPlataforma,
 } from "../lib/asistenteIa";
+import {
+  guardarBloqueosJugadas,
+  leerBloqueosJugadas,
+  MODALIDADES_PORTAL_META,
+  type ModalidadPortalJugada,
+} from "@/features/portal/lib/bloqueo-jugadas";
 import {
   crearTicketIncidencia,
   obtenerTodosLosTickets,
@@ -27,6 +38,7 @@ interface MensajeChat {
 }
 
 export function WidgetAsistenteIa() {
+  const router = useRouter();
   const usuario = useAuthStore((s) => s.usuario);
   const perfiles = useAuthStore((s) => s.perfiles);
   const grupoId = useAuthStore((s) => s.grupoId);
@@ -35,14 +47,16 @@ export function WidgetAsistenteIa() {
   const modoOperador = useAuthStore((s) => s.modoOperador);
 
   const [abierto, setAbierto] = useState(false);
-  const [pestana, setPestana] = useState<"chat" | "mis_tickets">("chat");
+  const [pestana, setPestana] = useState<"chat" | "acciones" | "mis_tickets">("chat");
+  const [bloqueosPortal, setBloqueosPortal] = useState<Record<ModalidadPortalJugada, boolean> | null>(null);
+  const [guardandoBloqueoIa, setGuardandoBloqueoIa] = useState(false);
 
   // Mensajes del chat interactivo
   const [mensajes, setMensajes] = useState<MensajeChat[]>([
     {
       id: "bienvenida",
       remitente: "ia",
-      texto: `👋 ¡Hola! Soy tu **🤖 Agente de IA del Sistema Hípico**.\nSuministro toda la información del sistema en vivo (saldos, clientes, carreras, jugadas, contabilidad y liquidación) y también puedes **dictarme por voz (🎙️)** para que interprete tu solicitud o jugada.`,
+      texto: `👋 ¡Hola! Soy tu **🤖 Agente de IA del Sistema Hípico**.\nTengo **todas las acciones de la plataforma activadas**: suministro información en vivo, ejecuto operaciones (liquidación, **🤖 Cambio de Pizarra**, cruces, saldos, clientes, bloqueos del portal y navegación a los 24 módulos) y puedes **dictarme por voz (🎙️)** o usar la pestaña **⚡ Acciones**.`,
       fecha: new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
@@ -87,6 +101,94 @@ export function WidgetAsistenteIa() {
     window.addEventListener(EVENTO_TICKETS_ACTUALIZADOS, cargarMisTickets);
     return () => window.removeEventListener(EVENTO_TICKETS_ACTUALIZADOS, cargarMisTickets);
   }, [usuario]);
+
+  useEffect(() => {
+    if (!abierto || pestana !== "acciones") return;
+    let vivo = true;
+    leerBloqueosJugadas()
+      .then((cfg) => {
+        if (vivo) setBloqueosPortal(cfg);
+      })
+      .catch(() => {
+        /* noop */
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [abierto, pestana]);
+
+  const dispararAccionConRuta = (
+    ruta?: string,
+    evento?: { accion: string; [k: string]: unknown }
+  ) => {
+    if (typeof window === "undefined") return;
+    const pathActual = window.location.pathname;
+    const yaEnApuestas = pathActual === "/apuestas" || pathActual === "/gestion-jugadas";
+    if (ruta && !(ruta === "/apuestas" && yaEnApuestas) && pathActual !== ruta) {
+      router.push(ruta);
+      if (evento) {
+        setTimeout(() => emitirEventoAccionAgente(evento), 380);
+      }
+      return;
+    }
+    if (evento) {
+      emitirEventoAccionAgente(evento);
+    }
+  };
+
+  const ejecutarAccionDirecta = (acc: AccionOperativaPlataforma) => {
+    if (acc.evento || acc.rutaRequerida) {
+      dispararAccionConRuta(acc.rutaRequerida, acc.evento);
+      setMensajes((prev) => [
+        ...prev,
+        {
+          id: `ia-acc-${Date.now()}`,
+          remitente: "ia",
+          texto: `⚡ **Acción Ejecutada**: **${acc.icono} ${acc.etiqueta}** — ${acc.descripcion}.`,
+          fecha: new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+      setPestana("chat");
+      return;
+    }
+    setPestana("chat");
+    handleEnviarMensaje(acc.comandoChat);
+  };
+
+  const alternarModalidadPortalEnVivo = async (idMod: ModalidadPortalJugada) => {
+    if (guardandoBloqueoIa) return;
+    setGuardandoBloqueoIa(true);
+    try {
+      const base = bloqueosPortal ?? (await leerBloqueosJugadas());
+      const proximo = {
+        ...base,
+        [idMod]: !base[idMod],
+      };
+      await guardarBloqueosJugadas(proximo);
+      setBloqueosPortal(proximo);
+    } finally {
+      setGuardandoBloqueoIa(false);
+    }
+  };
+
+  const cambiarTodasModalidadesPortal = async (bloquear: boolean) => {
+    if (guardandoBloqueoIa) return;
+    setGuardandoBloqueoIa(true);
+    try {
+      const proximo: Record<ModalidadPortalJugada, boolean> = {
+        marcas: bloquear,
+        tablas_fijas: bloquear,
+        puestos: bloquear,
+        remates: bloquear,
+        dupletas: bloquear,
+        pollas: bloquear,
+      };
+      await guardarBloqueosJugadas(proximo);
+      setBloqueosPortal(proximo);
+    } finally {
+      setGuardandoBloqueoIa(false);
+    }
+  };
 
   const rolActual =
     perfiles.find((p) => p.toLowerCase().includes("dueno"))
@@ -134,6 +236,10 @@ export function WidgetAsistenteIa() {
       }
 
       const res = await consultarAgenteIaEnVivo(mensajeAEnviar, rolActual, fueDictado);
+
+      if (res.rutaNavegacion || res.eventoAccion) {
+        dispararAccionConRuta(res.rutaNavegacion, res.eventoAccion);
+      }
 
       const nuevoMsgIa: MensajeChat = {
         id: `ia-${Date.now()}`,
@@ -329,8 +435,8 @@ export function WidgetAsistenteIa() {
             </div>
           </div>
 
-          {/* SELECTOR DE PESTAÑAS (CHAT VS MIS TICKETS) */}
-          <div className="flex border-b border-slate-800 bg-slate-950/80 text-xs font-bold">
+          {/* SELECTOR DE PESTAÑAS (CHAT VS ACCIONES VS MIS TICKETS) */}
+          <div className="flex border-b border-slate-800 bg-slate-950/80 text-[11px] font-bold">
             <button
               onClick={() => setPestana("chat")}
               className={`flex-1 py-2 text-center transition border-b-2 ${
@@ -339,7 +445,17 @@ export function WidgetAsistenteIa() {
                   : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
-              💬 Consulta Inteligente
+              💬 Agente IA
+            </button>
+            <button
+              onClick={() => setPestana("acciones")}
+              className={`flex-1 py-2 text-center transition border-b-2 ${
+                pestana === "acciones"
+                  ? "border-indigo-500 text-indigo-300 bg-indigo-950/25"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              ⚡ Acciones
             </button>
             <button
               onClick={() => setPestana("mis_tickets")}
@@ -349,9 +465,133 @@ export function WidgetAsistenteIa() {
                   : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
-              🎫 Mis Tickets ({misTickets.length})
+              🎫 Tickets ({misTickets.length})
             </button>
           </div>
+
+          {/* CONTENIDO PESTAÑA ACCIONES DE LA PLATAFORMA */}
+          {pestana === "acciones" && (
+            <div className="flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden p-3 space-y-3">
+              {/* 1. Apuestas, Pizarra y Liquidación */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-2.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                    🐎🎲 Apuestas, Pizarra y Liquidación
+                  </span>
+                  <span className="text-[9px] font-semibold text-slate-400">1 clic</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {CATALOGO_ACCIONES_PLATAFORMA.filter((a) => a.categoria === "apuestas").map((acc) => (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => ejecutarAccionDirecta(acc)}
+                      title={acc.descripcion}
+                      className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-left text-[11px] font-bold text-slate-200 transition hover:border-emerald-500/60 hover:bg-emerald-950/30 hover:text-white"
+                    >
+                      <span className="shrink-0">{acc.icono}</span>
+                      <span className="truncate">{acc.etiqueta}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 2. Clientes, Saldos y Contabilidad */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-2.5 space-y-2">
+                <span className="block text-[10px] font-black uppercase tracking-wider text-amber-400">
+                  👥 Clientes, Saldos y Contabilidad
+                </span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {CATALOGO_ACCIONES_PLATAFORMA.filter((a) => a.categoria === "clientes_contabilidad").map((acc) => (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => ejecutarAccionDirecta(acc)}
+                      title={acc.descripcion}
+                      className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-left text-[11px] font-bold text-slate-200 transition hover:border-amber-500/60 hover:bg-amber-950/30 hover:text-white"
+                    >
+                      <span className="shrink-0">{acc.icono}</span>
+                      <span className="truncate">{acc.etiqueta}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Control en Vivo del Portal de Clientes */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-2.5 space-y-2">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-indigo-300">
+                    🛡️ Control de Venta (Portal de Clientes)
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={guardandoBloqueoIa}
+                      onClick={() => void cambiarTodasModalidadesPortal(false)}
+                      className="rounded bg-emerald-600 px-2 py-0.5 text-[9px] font-black uppercase text-white hover:bg-emerald-500 disabled:opacity-50"
+                    >
+                      🔓 Abrir Todo
+                    </button>
+                    <button
+                      type="button"
+                      disabled={guardandoBloqueoIa}
+                      onClick={() => void cambiarTodasModalidadesPortal(true)}
+                      className="rounded bg-rose-600 px-2 py-0.5 text-[9px] font-black uppercase text-white hover:bg-rose-500 disabled:opacity-50"
+                    >
+                      🔒 Bloquear Todo
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {MODALIDADES_PORTAL_META.map((mod) => {
+                    const bloqueada = Boolean(bloqueosPortal?.[mod.id]);
+                    return (
+                      <button
+                        key={mod.id}
+                        type="button"
+                        disabled={guardandoBloqueoIa}
+                        onClick={() => void alternarModalidadPortalEnVivo(mod.id)}
+                        className={`flex items-center justify-between rounded-lg border px-2 py-1.5 text-[10px] font-bold transition ${
+                          bloqueada
+                            ? "border-rose-500/50 bg-rose-950/40 text-rose-200"
+                            : "border-emerald-500/40 bg-emerald-950/30 text-emerald-200"
+                        }`}
+                      >
+                        <span className="truncate">
+                          {mod.icono} {mod.etiqueta}
+                        </span>
+                        <span className="ml-1 shrink-0 text-[9px] font-black uppercase">
+                          {bloqueada ? "🔒 Bloq" : "🔓 Act"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 4. Navegación Directa a todos los Módulos de la Plataforma */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-2.5 space-y-2">
+                <span className="block text-[10px] font-black uppercase tracking-wider text-cyan-300">
+                  🧭 Ir a Módulos de la Plataforma ({CATALOGO_RUTAS_PLATAFORMA.length})
+                </span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {CATALOGO_RUTAS_PLATAFORMA.map((mod) => (
+                    <button
+                      key={mod.id}
+                      type="button"
+                      onClick={() => {
+                        router.push(mod.ruta);
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-left text-[10px] font-bold text-slate-300 transition hover:border-cyan-400/60 hover:bg-cyan-950/30 hover:text-white"
+                    >
+                      <span className="shrink-0">{mod.icono}</span>
+                      <span className="truncate">{mod.etiqueta}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* CONTENIDO PESTAÑA CHAT */}
           {pestana === "chat" && (

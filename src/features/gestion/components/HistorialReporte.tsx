@@ -182,7 +182,7 @@ export default function HistorialReporte() {
         if (cmpH !== 0) return cmpH;
         return Number(a.carrera) - Number(b.carrera);
       });
-      setCarreras(detalle);
+      setCarreras(detalle.filter((c) => c.detalle !== null && c.detalle.filas.some((f) => f.rol !== "CRUCE")));
       // Ítem 4: PENDIENTES de la jornada = carreras con jugadas y sin resultado.
       // Fuente única: la misma vista del Monitor de Jugadas (v_jugadas_monitor).
       try {
