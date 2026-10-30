@@ -680,27 +680,48 @@ export const useAuthStore = create<EstadoAuth>()(
               let opEncontrado: { id: string; nombre: string; grupoId: string; grupoNombre?: string } | null = null;
 
               if (supabase) {
-                let q = supabase
-                  .from("usuario_sistema")
-                  .select("id, nombre, activo, grupo_id, clave_acceso, telefono");
-                if (digitos.length >= 7) {
-                  q = q.or(`id.eq.${idLimpio},telefono.ilike.%${digitos}%`);
-                } else {
-                  q = q.eq("id", idLimpio);
+                let uFila: Record<string, unknown> | null = null;
+                try {
+                  let q = supabase
+                    .from("usuario_sistema")
+                    .select("id, nombre, activo, grupo_id, clave_acceso, telefono");
+                  if (digitos.length >= 7) {
+                    q = q.or(`id.eq.${idLimpio},telefono.ilike.%${digitos}%`);
+                  } else {
+                    q = q.eq("id", idLimpio);
+                  }
+                  const res = await q.maybeSingle();
+                  if (!res.error && res.data) {
+                    uFila = res.data as Record<string, unknown>;
+                  }
+                } catch {
+                  /* Si columnas clave_acceso o telefono no existen aún */
                 }
-                const { data: uFila } = await q.maybeSingle();
+
+                if (!uFila) {
+                  try {
+                    const resBase = await supabase
+                      .from("usuario_sistema")
+                      .select("id, nombre, activo, grupo_id")
+                      .eq("id", idLimpio)
+                      .maybeSingle();
+                    if (!resBase.error && resBase.data) {
+                      uFila = resBase.data as Record<string, unknown>;
+                    }
+                  } catch {
+                    /* fallback */
+                  }
+                }
 
                 if (uFila && uFila.activo !== false) {
-                  const claveBD = (uFila as Record<string, unknown>).clave_acceso
-                    ? String((uFila as Record<string, unknown>).clave_acceso)
-                    : null;
+                  const claveBD = uFila.clave_acceso ? String(uFila.clave_acceso) : null;
                   if (claveBD && claveBD === clave) coincide = true;
 
                   if (coincide && uFila.grupo_id) {
                     const { data: gFila } = await supabase
                       .from("grupos_venta")
                       .select("nombre")
-                      .eq("id", uFila.grupo_id)
+                      .eq("id", String(uFila.grupo_id))
                       .maybeSingle();
 
                     opEncontrado = {
