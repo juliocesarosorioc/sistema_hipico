@@ -54,10 +54,11 @@ export const CLAVE_GEMINI_KEY = "club_gemini_key";
 
 // Modelos Flash de respaldo estables (con cuota oficial y alta disponibilidad).
 export const MODELOS_GEMINI = [
+  "gemini-2.5-flash",
   "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
   "gemini-1.5-flash",
   "gemini-1.5-flash-8b",
-  "gemini-2.0-flash-lite",
 ];
 
 // Modelos experimentales, inestables o que devuelven 503/429/404 al invocar generateContent
@@ -136,7 +137,32 @@ function coaccionarCarreras(v: unknown): CarreraExtraida[] {
   return [];
 }
 
-/** Parser tolerante de la respuesta de Gemini (markdown, JSON suelto, arrays). */
+/**
+ * Intenta recuperar objetos de carrera completos de un JSON truncado al final
+ * (cuando el LLM cortó la salida por límite de tokens).
+ */
+function recuperarJsonTruncado(t: string): unknown | null {
+  const idxCarreras = t.indexOf('"carreras"');
+  const base = idxCarreras >= 0 ? t.slice(idxCarreras) : t;
+  const iniArr = base.indexOf("[");
+  if (iniArr < 0) return null;
+  const cuerpo = base.slice(iniArr + 1);
+
+  // Buscar cierres posibles de objetos de carrera `}]}` o `]}` de derecha a izquierda
+  for (let pos = cuerpo.length - 1; pos > 10; pos--) {
+    if (cuerpo[pos] === "}") {
+      const candidato = `{"carreras":[${cuerpo.slice(0, pos + 1)}]}`;
+      try {
+        return JSON.parse(candidato);
+      } catch {
+        // Seguir buscando el cierre anterior
+      }
+    }
+  }
+  return null;
+}
+
+/** Parser tolerante de la respuesta de Gemini (markdown, JSON suelto, arrays y JSON truncado). */
 function parsearJSON(texto: string): CarreraExtraida[] {
   let t = (texto || "").trim();
   const cercos = t.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -164,6 +190,10 @@ function parsearJSON(texto: string): CarreraExtraida[] {
     } catch {
       /* sigue */
     }
+  }
+  if (intentos.length === 0) {
+    const recuperado = recuperarJsonTruncado(t);
+    if (recuperado) intentos.push(recuperado);
   }
   for (const obj of intentos) {
     if (Array.isArray(obj)) return obj as CarreraExtraida[];
@@ -315,7 +345,7 @@ function armarBody(contenido: ContenidoLote, estricto: boolean): Record<string, 
   };
 }
 
-async function postIA(url: string, body: Record<string, unknown>, clave: string, ms = 120000): Promise<Response> {
+async function postIA(url: string, body: Record<string, unknown>, clave: string, ms = 45000): Promise<Response> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
   try {
@@ -357,13 +387,20 @@ async function llamarModelo(
     return {
       ok: false,
       tipo: "salto",
-      msg: `Sin conexión al probar ${model} (${e.name === "AbortError" ? "tiempo agotado (120s)" : e.message || "red"}).`,
+      msg: `Sin conexión al probar ${model} (${e.name === "AbortError" ? "tiempo agotado (45s)" : e.message || "red"}).`,
     };
   }
   if (resp.status === 429) {
     const txt429 = await resp.text().catch(() => "");
-    const esDiaria = /RESOURCE_EXHAUSTED|quota|per day|daily|rpd/i.test(txt429);
-    return { ok: false, tipo: esDiaria ? "cuotaDia" : "cuotaRpm", msg: `${esDiaria ? "CUOTA DIARIA" : "LÍMITE POR MINUTO"} en ${model} (HTTP 429).` };
+    // IMPORTANTE: todas las respuestas 429 de Gemini traen "RESOURCE_EXHAUSTED" y "quota".
+    // Solo es cuota diaria si explícitamente menciona "PerDay" / "per day" / "daily" y NO "PerMinute" / "per minute".
+    const esPorMinuto = /per minute|PerMinute|rpm|tpm|TokensPerMinute|RequestsPerMinute/i.test(txt429);
+    const esDiaria = !esPorMinuto && /per day|PerDay|daily|rpd|RequestsPerDay/i.test(txt429);
+    return {
+      ok: false,
+      tipo: esDiaria ? "cuotaDia" : "cuotaRpm",
+      msg: `${esDiaria ? "CUOTA DIARIA" : "LÍMITE POR MINUTO"} en ${model} (HTTP 429).`,
+    };
   }
   if (resp.status === 503) return { ok: false, tipo: "salto503", msg: `Modelo ${model} saturado (HTTP 503, alta demanda temporal).` };
   if (resp.status === 404) return { ok: false, tipo: "salto", msg: `Modelo ${model} no disponible (HTTP 404).` };
@@ -462,71 +499,66 @@ async function extraerParte(
   diag: { respondio: string; ultimoError: string },
   onEstado?: (s: string) => void
 ): Promise<CarreraExtraida[]> {
-  let reintentos503 = 0;
-  let reintentosRpm = 0;
-  for (let i = 0; i < modelos.length; i++) {
-    const model = modelos[i];
-    if (i > 0) await esperar(1200);
-    let r = await llamarModelo(clave, model, parte.contenido, false);
-    if (r.ok) {
-      let lotesCarreras = parsearJSON(r.texto);
-      if (lotesCarreras.length === 0) {
-        if (onEstado) onEstado(`${parte.etiqueta}: sin carreras, segundo intento (JSON estricto)…`);
-        const r2 = await llamarModelo(clave, model, parte.contenido, true);
-        if (r2.ok) {
-          r = r2;
-          lotesCarreras = parsearJSON(r2.texto);
-        } else {
-          r = r2;
+  let huboTransitorio = false;
+  for (let ronda = 0; ronda < 2; ronda++) {
+    if (ronda > 0) {
+      if (!huboTransitorio) break;
+      if (onEstado) onEstado(`${parte.etiqueta}: reintentando lote tras pausa breve (3s)…`);
+      await esperar(3000);
+    }
+    for (let i = 0; i < modelos.length; i++) {
+      const model = modelos[i];
+      if (i > 0) await esperar(400);
+      let r = await llamarModelo(clave, model, parte.contenido, false);
+      if (r.ok) {
+        let lotesCarreras = parsearJSON(r.texto);
+        if (lotesCarreras.length === 0) {
+          if (onEstado) onEstado(`${parte.etiqueta}: reintento en JSON estricto con ${model}…`);
+          const r2 = await llamarModelo(clave, model, parte.contenido, true);
+          if (r2.ok) {
+            r = r2;
+            lotesCarreras = parsearJSON(r2.texto);
+          } else {
+            r = r2;
+          }
+        }
+        if (r.ok && lotesCarreras.length > 0) {
+          diag.respondio = model;
+          return lotesCarreras;
+        }
+        if (r.ok) {
+          diag.ultimoError = `${parte.etiqueta}: ${model} devolvió 0 carreras.`;
+          continue;
         }
       }
-      if (r.ok && lotesCarreras.length > 0) {
-        diag.respondio = model;
-        return lotesCarreras;
+      if (r.tipo === "clave") {
+        throw new Error(r.msg + " Revisa la clave en aistudio.google.com/apikey y guárdala de nuevo.");
       }
-      if (r.ok) {
-        diag.ultimoError = `${parte.etiqueta}: ${model} devolvió 0 carreras.`;
+      if (r.tipo === "cuotaDia") {
+        // Cuota diaria de este modelo agotada: saltar de inmediato al siguiente modelo Flash.
+        diag.ultimoError = `${parte.etiqueta}: ${r.msg}`;
         continue;
       }
-    }
-    if (r.tipo === "clave") throw new Error(r.msg + " Revisa la clave en aistudio.google.com/apikey y guárdala de nuevo.");
-    if (r.tipo === "cuotaDia") {
-      // Cuota DIARIA de esta familia agotada: NUNCA se espera en vano.
-      diag.ultimoError = `${parte.etiqueta}: ${r.msg}`;
-      continue;
-    }
-    if (r.tipo === "cuotaRpm") {
-      // Límite por MINUTO (transitorio): hasta 2 esperas y se reintenta.
-      if (reintentosRpm < 2) {
-        reintentosRpm++;
-        const espera = reintentosRpm === 1 ? 45000 : 90000;
-        if (onEstado) onEstado(`${parte.etiqueta}: límite por minuto de ${model}, esperando ${Math.round(espera / 1000)}s y reintentando…`);
-        await esperar(espera);
-        i--;
+      if (r.tipo === "cuotaRpm" || r.tipo === "salto503") {
+        // Rotar de inmediato al siguiente modelo disponible sin congelar la interfaz.
+        huboTransitorio = true;
+        diag.ultimoError = `${parte.etiqueta}: ${r.msg}`;
+        if (onEstado && i + 1 < modelos.length) {
+          onEstado(`${parte.etiqueta}: ${model} ocupado, cambiando a ${modelos[i + 1]}…`);
+        }
         continue;
       }
-      diag.ultimoError = `${parte.etiqueta}: ${r.msg}`;
-      continue;
-    }
-    if (r.tipo === "salto503" && reintentos503 < 2) {
-      // Pico temporal de demanda: se espera y se reintenta el MISMO modelo
-      // hasta 2 veces (los 503 son transitorios; el último 3.x responde).
-      reintentos503++;
-      if (onEstado) onEstado(`${parte.etiqueta}: ${model} saturado (503), esperando 20s y reintentando… (${reintentos503}/2)`);
-      await esperar(20000);
-      i--;
-      continue;
-    }
-    if (r.tipo === "grande") {
-      const mitad = parte.partir();
-      if (mitad) {
-        if (onEstado) onEstado(`${parte.etiqueta}: lote muy pesado, dividiendo en 2…`);
-        const a = await extraerParte(clave, modelos, mitad[0], diag, onEstado);
-        const b = await extraerParte(clave, modelos, mitad[1], diag, onEstado);
-        return a.concat(b);
+      if (r.tipo === "grande") {
+        const mitad = parte.partir();
+        if (mitad) {
+          if (onEstado) onEstado(`${parte.etiqueta}: lote muy pesado, dividiendo en 2…`);
+          const a = await extraerParte(clave, modelos, mitad[0], diag, onEstado);
+          const b = await extraerParte(clave, modelos, mitad[1], diag, onEstado);
+          return a.concat(b);
+        }
       }
+      diag.ultimoError = `${parte.etiqueta}: ${r.msg}`;
     }
-    diag.ultimoError = `${parte.etiqueta}: ${r.msg}`;
   }
   throw new Error(diag.ultimoError + " Se probaron los modelos Flash disponibles para este lote.");
 }
@@ -783,11 +815,11 @@ export async function transformarGaceta(
       if (carreras.length > 0) break;
       // Cuota diaria agotada en TODAS las familias: esperar es inútil.
       if (cuotaTotal) break;
-      // Sin resultados por fallo/saturación: se rehace el ciclo (máx 5).
-      if (ciclo >= 5 || !diag.ultimoError) break;
+      // Sin resultados por fallo/saturación: se rehace el ciclo (máx 2).
+      if (ciclo >= 2 || !diag.ultimoError) break;
       ciclo++;
-      onEstado?.(`Sin carreras aún: ${diag.ultimoError}. Reintentando el ciclo completo (${ciclo}/5) en 25 seg…`);
-      await esperar(25000);
+      onEstado?.(`Sin carreras aún: ${diag.ultimoError}. Reintentando en 4 seg…`);
+      await esperar(4000);
       loteN = 0;
     }
 

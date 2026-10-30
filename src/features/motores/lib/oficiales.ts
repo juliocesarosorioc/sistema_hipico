@@ -33,6 +33,7 @@ import { registrarProcesador, TicketMotor, ResultadoMotor, COMISION_CASA, parsea
 import { liquidarPuestos } from "@/features/motores/lib/puestos";
 import { liquidarWps } from "@/features/motores/lib/wps";
 import { parsearNomenclatura } from "@/features/taquilla/lib/nomenclatura";
+import { jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros-nucleo";
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -191,6 +192,20 @@ export function liquidarOficial(
     Number.isFinite(Number(tasaComision)) && Number(tasaComision) >= 0
       ? Number(tasaComision)
       : TASA_DEFECTO;
+
+  const pizarraObj = t.pizarra as Record<string, unknown> | undefined;
+  const retiradosRaw = (t as Record<string, unknown>).retirados ?? pizarraObj?.retirados;
+  const listaRetirados = Array.isArray(retiradosRaw) ? (retiradosRaw as Array<string | number>) : [];
+  if (listaRetirados.length > 0 && jugadaInvolucraRetirado(t.caballo, null, t.tipo_jugada, listaRetirados)) {
+    return {
+      ok: false,
+      motivo: "ANULADA / RETIRADO: Uno o más ejemplares apostados figuran como retirados. Se devuelve el capital íntegro.",
+      totalClienteNeto: t.monto,
+      balanceBanca: 0,
+      gananciaCasa: 0,
+      totalRival: 0,
+    };
+  }
 
   // TABLAS FIJAS: resolución explícita (no pasa por el motor de puestos).
   const tabla = liquidarTabla(t, t.premio_por_tabla, tasa);

@@ -2,7 +2,7 @@ import { liquidarOficial } from "@/features/motores/lib/oficiales";
 import { exigirPermiso } from "@/features/seguridad/lib/vigente";
 import { cerrarTablaFija } from "@/features/tablas/lib/tablas-fijas";
 import { upsertResultadoCentral } from "@/features/carreras/lib/carreras-dia";
-import { leerRetirosCarrera } from "@/features/carreras/lib/retiros";
+import { leerRetirosCarrera, jugadaInvolucraRetirado, normalizarRetirados } from "@/features/carreras/lib/retiros";
 import { ordenLlegadaDePizarra, posicionesDePizarra } from "@/features/liquidacion/lib/posiciones";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem, esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
@@ -149,7 +149,16 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   // equivocado y el semáforo (que filtra por la fecha elegida) no cambiaba de
   // color al finalizar.
   const fecha = opts.fecha || hoyLocal();
-  const dividendos = opts.dividendos ?? (await dividendosDe(hipodromo, carrera, fecha));
+  const retPizarra = Array.isArray((pizarra as Record<string, unknown>)?.retirados)
+    ? normalizarRetirados((pizarra as { retirados?: Array<string | number> }).retirados)
+    : null;
+  const [dividendos, retiradosActuales] = await Promise.all([
+    opts.dividendos !== undefined ? Promise.resolve(opts.dividendos) : dividendosDe(hipodromo, carrera, fecha),
+    retPizarra && retPizarra.length > 0 ? Promise.resolve(retPizarra) : leerRetirosCarrera(fecha, hipodromo, carrera),
+  ]);
+  const pizarraConRetirados: PizarraCarrera = retiradosActuales.length
+    ? ({ ...pizarra, retirados: retiradosActuales } as PizarraCarrera)
+    : pizarra;
 
   const procesados: ResLiquidarCarrera["procesados"] = [];
   const metadatos: Array<{ cliente1?: string; caballo: string; monto: number; tipo: string }> = [];
@@ -185,7 +194,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
       tipo_jugada: tipo,
       monto,
       puesto_final: typeof pizarra.primero === "number" ? pizarra.primero : firstOrdinal(pizarra.primero),
-      pizarra,
+      pizarra: pizarraConRetirados,
       dividendos: dividendos ?? null,
     };
 
@@ -335,10 +344,6 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   // volver atrás sería peor que un resultado sin centralizar.
   const posiciones = posicionesDePizarra(pizarra);
 
-  // `retirados` es obligatorio en el upsert y se escribe TAL CUAL, asi que hay
-  // que releer el actual: mandar un "NO HUBO RETIROS" fijo borraria los retiros
-  // ya registrados por la via de retiros al central.
-  const retiradosActuales = await leerRetirosCarrera(fecha, hipodromo, carrera);
   const central = await upsertResultadoCentral({
     fecha,
     hipodromo,
@@ -346,10 +351,6 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     ganadores: posiciones,
     retirados: retiradosActuales.length ? retiradosActuales.join(" ") : "NO HUBO RETIROS",
     cargado_por: "GESTION-JUGADAS",
-    // El orden estructurado y los dividendos NO se pueden quedar en el camino:
-    // sin ellos la fila central queda con `orden_llegada`/`dividendos` en NULL
-    // (era el caso de las 131 filas de producción) y la liquidación de puestos
-    // no tiene con qué pagar. Taquilla ya los guardaba; esto lo alinea.
     orden_llegada: ordenLlegadaDePizarra(pizarra),
     dividendos: dividendos ?? null,
     ...(opts.crucesPuestos ? {
@@ -358,36 +359,22 @@ export async function liquidarCarreraYCerrarTabla(opts: {
         porJugador: opts.crucesPuestos.carreraPorJugadorOverride ?? {},
       },
     } : {}),
-    // El premio de la tabla NO viaja en el pedido, pero si se omite el upsert lo
-    // deja en NULL. Se propaga desde el objeto de la tabla cuando el caller lo
-    // conoce (taquilla / gestión), para no borrar el premio ya registrado.
     premio_oficial: opts.premio_oficial ?? undefined,
     premio_recalculado: opts.premio_recalculado ?? undefined,
   });
 
-  // ── LIQUIDACIÓN ÚNICA DE JUGADAS ──────────────────────────────────────────
-  // Un solo camino paga TODO lo que depende del resultado: tablas fijas
-  // (`cantidad × premio` con ajuste por retiros), marcas (`club_liquidar_marca`)
-  // y dupletas de la jornada (`club_liquidar_dupleta`). Antes eran bloques
-  // separados por acá; centralizarlos garantiza que registrar el resultado una
-  // vez pague todas las jugadas, sin importar desde qué módulo se registre.
-  //
-  // Los totales de tabla fija van SEPARADOS del resumen de la sesión (que solo
-  // cuenta los tickets cargados en esta pantalla): mezclarlos dejaría el
-  // "Balance de la banca" sin su contrapartida de inversión. La venta de tabla
-  // fija se cobró en el módulo de Tablas, así que su capital no está en
-  // `totalInvertido`; el resumen los muestra en su propia línea.
-  const jugadas = await liquidarJugadasDeCarrera({
-    hipodromo,
-    carrera,
-    fecha,
-    pizarra,
-  });
+  // ── LIQUIDACIÓN ÚNICA DE JUGADAS + AUTO-CIERRE EN PARALELO ──────────────────
+  const [jugadas, cierre] = await Promise.all([
+    liquidarJugadasDeCarrera({
+      hipodromo,
+      carrera,
+      fecha,
+      pizarra: pizarraConRetirados,
+    }),
+    cerrarTablaFija(hipodromo, carrera),
+  ]);
   const tablasFijas = jugadas.tablasFijas;
   const marcas = jugadas.marcas;
-
-  // AUTO-CIERRE: tras pagar con éxito, cierra la Tabla Fija de la carrera.
-  const cierre = await cerrarTablaFija(hipodromo, carrera);
   if (cierre.ok) {
     useTablasFijasStore.getState().marcarCerrada(hipodromo, carrera);
   }
@@ -696,40 +683,32 @@ export async function liquidarJugadasDeCarrera(opts: {
   const fecha = opts.fecha || hoyLocal();
   const carrera = Number(opts.carrera) || 0;
 
-  let tablasFijas: ResumenJugadas["tablasFijas"];
-  try {
-    tablasFijas = await liquidarTablasFijasDeCarrera(opts.hipodromo, carrera, opts.pizarra, fecha, opts.usuario);
-  } catch (e) {
-    tablasFijas = { ok: false, tablas: 0, pagado: 0, comision: 0, error: (e as Error).message };
-  }
-
-  let marcas: ResumenJugadas["marcas"];
-  try {
-    const rm = await liquidarMarcas(opts.hipodromo, carrera, fecha);
-    marcas = {
-      ok: rm.ok,
-      liquidados: rm.liquidados,
-      ganadores: rm.ganadores,
-      perdedores: rm.perdedores,
-      reintegrados: rm.reintegrados,
-      error: rm.error,
-    };
-  } catch (e) {
-    marcas = { ok: false, error: (e as Error).message };
-  }
-
-  let dupletas: ResumenJugadas["dupletas"];
-  try {
-    dupletas = await liquidarDupletasDeCarrera(opts.hipodromo, carrera, fecha);
-  } catch (e) {
-    dupletas = { ok: false, liquidadas: 0, pagado: 0, error: (e as Error).message };
-  }
-
-  try {
-    await liquidarRematesDeCarrera(opts.hipodromo, carrera, opts.pizarra, fecha);
-  } catch {
-    /* best-effort */
-  }
+  const [tablasFijas, marcas, dupletas] = await Promise.all([
+    liquidarTablasFijasDeCarrera(opts.hipodromo, carrera, opts.pizarra, fecha, opts.usuario).catch((e) => ({
+      ok: false,
+      tablas: 0,
+      pagado: 0,
+      comision: 0,
+      error: (e as Error).message,
+    })),
+    liquidarMarcas(opts.hipodromo, carrera, fecha)
+      .then((rm) => ({
+        ok: rm.ok,
+        liquidados: rm.liquidados,
+        ganadores: rm.ganadores,
+        perdedores: rm.perdedores,
+        reintegrados: rm.reintegrados,
+        error: rm.error,
+      }))
+      .catch((e) => ({ ok: false, error: (e as Error).message })),
+    liquidarDupletasDeCarrera(opts.hipodromo, carrera, fecha).catch((e) => ({
+      ok: false,
+      liquidadas: 0,
+      pagado: 0,
+      error: (e as Error).message,
+    })),
+    liquidarRematesDeCarrera(opts.hipodromo, carrera, opts.pizarra, fecha).catch(() => null),
+  ]);
 
   return { tablasFijas, marcas, dupletas };
 }
@@ -793,52 +772,72 @@ export async function liquidarRematesDeCarrera(
       .like("nombre_jugada", "REMATE%")
       .or(filtroDiaJornada(dia));
 
+    const retiradosRem = Array.isArray((pizarra as Record<string, unknown>)?.retirados)
+      ? ((pizarra as { retirados?: Array<string | number> }).retirados ?? [])
+      : [];
+
     let liquidados = 0;
     let pagado = 0;
-    for (const tk of (ticketsData ?? []) as Array<Record<string, unknown>>) {
-      const est = String(tk.estado ?? "").trim().toUpperCase();
-      if (est === "RETIRADO" || est === "ANULADO" || est === "ANULADA") continue;
-      const ej = String(tk.ejemplar_numero ?? tk.caballo ?? "").trim();
-      const esGanadorRaya = ej !== "" && ej === ganadorRaya;
-      let remIdNota = "";
-      try {
-        const notaObj = typeof tk.nota_auditoria === "string" ? JSON.parse(tk.nota_auditoria) : tk.nota_auditoria;
-        if (notaObj && typeof notaObj === "object") {
-          remIdNota = String((notaObj as Record<string, unknown>).remate_id ?? "");
+    await Promise.all(
+      ((ticketsData ?? []) as Array<Record<string, unknown>>).map(async (tk) => {
+        const est = String(tk.estado ?? "").trim().toUpperCase();
+        if (est === "RETIRADO" || est === "ANULADO" || est === "ANULADA") return;
+        const ej = String(tk.ejemplar_numero ?? tk.caballo ?? "").trim();
+        if (retiradosRem.length > 0 && jugadaInvolucraRetirado(tk.caballo, tk.ejemplar_numero, tk.nombre_jugada, retiradosRem)) {
+          await supabase!
+            .from("tickets_apuestas")
+            .update({
+              anulada: true,
+              estado: "Retirado",
+              premio_pagar: 0,
+              monto_decidido: 0,
+              comision_pagada: 0,
+            })
+            .eq("id", tk.id);
+          liquidados += 1;
+          return;
         }
-      } catch {
-        /* ignore */
-      }
-      const premio = (remIdNota && premioPorRemate.get(remIdNota)) || premioDefault || Number(tk.premio_pagar) || 0;
-      if (esGanadorRaya && premio > 0) {
-        await supabase
-          .from("tickets_apuestas")
-          .update({
-            estado: "Ganador",
-            premio_pagar: premio,
-            monto_decidido: premio,
-            cliente_consigue_nombre: "REMATES",
-            banquero_nombre: "REMATES",
-            cliente_consigue_id: null,
-            banquero_cliente_id: null,
-          })
-          .eq("id", tk.id);
-        pagado += premio;
-      } else {
-        await supabase
-          .from("tickets_apuestas")
-          .update({
-            estado: "Perdedor",
-            premio_pagar: 0,
-            cliente_consigue_nombre: "REMATES",
-            banquero_nombre: "REMATES",
-            cliente_consigue_id: null,
-            banquero_cliente_id: null,
-          })
-          .eq("id", tk.id);
-      }
-      liquidados += 1;
-    }
+        const esGanadorRaya = ej !== "" && ej === ganadorRaya;
+        let remIdNota = "";
+        try {
+          const notaObj = typeof tk.nota_auditoria === "string" ? JSON.parse(tk.nota_auditoria) : tk.nota_auditoria;
+          if (notaObj && typeof notaObj === "object") {
+            remIdNota = String((notaObj as Record<string, unknown>).remate_id ?? "");
+          }
+        } catch {
+          /* ignore */
+        }
+        const premio = (remIdNota && premioPorRemate.get(remIdNota)) || premioDefault || Number(tk.premio_pagar) || 0;
+        if (esGanadorRaya && premio > 0) {
+          await supabase!
+            .from("tickets_apuestas")
+            .update({
+              estado: "Ganador",
+              premio_pagar: premio,
+              monto_decidido: premio,
+              cliente_consigue_nombre: "REMATES",
+              banquero_nombre: "REMATES",
+              cliente_consigue_id: null,
+              banquero_cliente_id: null,
+            })
+            .eq("id", tk.id);
+          pagado += premio;
+        } else {
+          await supabase!
+            .from("tickets_apuestas")
+            .update({
+              estado: "Perdedor",
+              premio_pagar: 0,
+              cliente_consigue_nombre: "REMATES",
+              banquero_nombre: "REMATES",
+              cliente_consigue_id: null,
+              banquero_cliente_id: null,
+            })
+            .eq("id", tk.id);
+        }
+        liquidados += 1;
+      })
+    );
     return { ok: true, liquidados, pagado: round2(pagado) };
   } catch {
     return { ok: false, liquidados: 0, pagado: 0 };

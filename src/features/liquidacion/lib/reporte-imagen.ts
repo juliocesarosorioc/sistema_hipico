@@ -93,17 +93,63 @@ export function construirFilas7Columnas(
   });
 }
 
-export type FiltroSaldosWhatsapp = "todos" | "min1" | "min1_libres" | "min001_libres";
+export type FiltroSaldosWhatsapp =
+  | "sin_ceros"
+  | "positivos"
+  | "negativos"
+  | "todos"
+  | "min1"
+  | "min1_libres"
+  | "min001_libres";
 
 export type ItemSaldoWhatsapp = {
   nombre: string;
   saldoContable: number;
   aval: number;
-  riesgoEnCurso: number;
+  riesgoEnCurso?: number;
   disponible: number;
   libre?: boolean;
+  modoJuego?: "aval" | "libre" | "pozo" | string;
   tuvoMovimiento?: boolean;
 };
+
+export function obtenerModalidadWhatsapp(c: ItemSaldoWhatsapp): "aval" | "libre" | "pozo" {
+  const modo = String(c.modoJuego ?? "").toLowerCase().trim();
+  if (modo === "pozo") return "pozo";
+  if (modo === "libre" || Boolean(c.libre)) return "libre";
+  if (modo === "aval" || Number(c.aval) > 0) return "aval";
+  return "pozo";
+}
+
+export function iconoModalidadWhatsapp(c: ItemSaldoWhatsapp): string {
+  const mod = obtenerModalidadWhatsapp(c);
+  if (mod === "pozo") return "💰";
+  if (mod === "libre") return "🔓";
+  return "🛡️";
+}
+
+/**
+ * Determina si un jugador avalado está próximo a agotar su aval:
+ * - Tiene aval asignado (`aval > 0`)
+ * - Ya ha consumido parte de su aval (`saldoContable < 0` o `riesgoEnCurso > 0`)
+ * - El disponible restante sobre su aval es <= 30% del aval o <= 200.
+ */
+export function estaProximoAAgotarAvalWhatsapp(c: ItemSaldoWhatsapp): boolean {
+  if (obtenerModalidadWhatsapp(c) !== "aval") return false;
+  const aval = redondearCentavos(Math.max(0, Number(c.aval) || 0));
+  if (aval <= 0) return false;
+  const saldo = redondearCentavos(Number(c.saldoContable) || 0);
+  const riesgo = redondearCentavos(Math.max(0, Number(c.riesgoEnCurso) || 0));
+  // Disponible real del avalado: saldoContable + aval - riesgoEnCurso
+  const dispCalculado = redondearCentavos(saldo + aval - riesgo);
+  const disp = Number.isFinite(c.disponible)
+    ? redondearCentavos(c.disponible)
+    : dispCalculado;
+  const haUsadoAval = saldo < -0.004 || riesgo > 0.004 || disp < aval - 0.004;
+  if (!haUsadoAval) return false;
+  const umbralAlerta = Math.max(200, redondearCentavos(aval * 0.3));
+  return disp <= umbralAlerta;
+}
 
 /**
  * Genera el texto para WhatsApp del Reporte de Prejugadas (Preliminar) separando
@@ -224,8 +270,16 @@ export function generarTextoPrejugadasWhatsapp(params: {
 }
 
 /**
- * Genera el texto para WhatsApp del Reporte de Saldos Actualizados con soporte de filtros
- * (`todos`, `min1`, `min1_libres`, `min001_libres`) y separación de positivos/negativos.
+ * Genera el texto para WhatsApp del Reporte de Saldos Actualizados:
+ * - Ícono por modalidad: 🛡️ Avalado, 🔓 Libre, 💰 Con Pozo.
+ * - Oculta siempre los saldos en 0 (`|saldoContable| < 0.01`).
+ * - Opciones de filtro:
+ *   - `sin_ceros` / `todos`: mayores a 0 y menores a 0 (ocultando los 0).
+ *   - `positivos`: solo quienes tengan saldo > 0 (ocultando 0 y < 0).
+ *   - `negativos`: solo quienes tengan saldo < 0 (ocultando 0 y > 0).
+ * - Regla de Avalados (🛡️): no se expone el cupo de aval como saldo; se muestra
+ *   únicamente el ícono 🛡️ y su saldo real (+ o -). Cuando se aproxime a agotar
+ *   su aval, se agrega `Disp. XXXX`.
  */
 export function generarTextoSaldosWhatsapp(params: {
   grupo: string;
@@ -236,16 +290,40 @@ export function generarTextoSaldosWhatsapp(params: {
   filtro?: FiltroSaldosWhatsapp;
   separarPositivosNegativos?: boolean;
 }): string {
-  const filtro = params.filtro ?? "todos";
+  const filtro = params.filtro ?? "sin_ceros";
   const separar = params.separarPositivosNegativos !== false;
 
+  const obtenerSaldoReal = (c: ItemSaldoWhatsapp): number =>
+    redondearCentavos(Number(c.saldoContable) || 0);
+
+  const obtenerDisponibleAval = (c: ItemSaldoWhatsapp): number => {
+    const saldo = obtenerSaldoReal(c);
+    const aval = redondearCentavos(Math.max(0, Number(c.aval) || 0));
+    const riesgo = redondearCentavos(Math.max(0, Number(c.riesgoEnCurso) || 0));
+    if (Number.isFinite(c.disponible)) {
+      return Math.max(0, redondearCentavos(c.disponible));
+    }
+    return Math.max(0, redondearCentavos(saldo + aval - riesgo));
+  };
+
   const filtrados = params.clientes.filter((c) => {
-    const absSaldo = Math.abs(redondearCentavos(c.disponible));
-    if (filtro === "todos") return true;
-    if (filtro === "min1") return absSaldo >= 1;
-    if (filtro === "min1_libres") return absSaldo >= 1 || (Boolean(c.libre) && Boolean(c.tuvoMovimiento));
-    if (filtro === "min001_libres") return absSaldo >= 0.01 || (Boolean(c.libre) && Boolean(c.tuvoMovimiento));
-    return true;
+    const saldo = obtenerSaldoReal(c);
+    const absSaldo = Math.abs(saldo);
+    const proximoAgotarAval = estaProximoAAgotarAvalWhatsapp(c);
+
+    // Ocultar siempre los 0 (salvo avalado con riesgo en curso próximo a agotar su aval en vista general)
+    if (absSaldo < 0.01 && !proximoAgotarAval) return false;
+
+    if (filtro === "positivos") return saldo >= 0.01;
+    if (filtro === "negativos") return saldo <= -0.01 || (absSaldo < 0.01 && proximoAgotarAval);
+    if (filtro === "sin_ceros" || filtro === "todos" || filtro === "min001_libres") {
+      return absSaldo >= 0.01 || proximoAgotarAval;
+    }
+    if (filtro === "min1") return absSaldo >= 1 || proximoAgotarAval;
+    if (filtro === "min1_libres") {
+      return absSaldo >= 1 || proximoAgotarAval || (Boolean(c.libre) && Boolean(c.tuvoMovimiento) && absSaldo >= 0.01);
+    }
+    return absSaldo >= 0.01;
   });
 
   const lineas: string[] = [];
@@ -253,29 +331,63 @@ export function generarTextoSaldosWhatsapp(params: {
   if (params.hipodromo && params.carrera) {
     lineas.push(`${params.hipodromo} · Carrera ${params.carrera}${params.fecha ? ` · ${params.fecha}` : ""}`);
   }
+  lineas.push("🛡️ Avalado · 🔓 Libre · 💰 Pozo");
   lineas.push("------------------------------");
 
   const fmtCliente = (c: ItemSaldoWhatsapp, idx: number) => {
-    const disp = redondearCentavos(c.disponible);
-    const signo = disp > 0 ? "+" : "";
-    const riesgoTxt = c.riesgoEnCurso > 0 ? ` (En riesgo: ${formatearMontoSinMoneda(c.riesgoEnCurso)})` : "";
-    return `${idx + 1}) ${c.nombre}: *${signo}${formatearMontoSinMoneda(disp)}*${riesgoTxt}`;
+    const icono = iconoModalidadWhatsapp(c);
+    const modalidad = obtenerModalidadWhatsapp(c);
+    const saldo = obtenerSaldoReal(c);
+    const signo = saldo > 0 ? "+" : "";
+    const tieneSaldo = Math.abs(saldo) >= 0.01;
+    const saldoTxt = tieneSaldo ? `*${signo}${formatearMontoSinMoneda(saldo)}*` : "";
+
+    let extraAvalTxt = "";
+    if (modalidad === "aval" && estaProximoAAgotarAvalWhatsapp(c)) {
+      const disp = obtenerDisponibleAval(c);
+      extraAvalTxt = tieneSaldo
+        ? ` · Disp. ${formatearMontoSinMoneda(disp)}`
+        : `*Disp. ${formatearMontoSinMoneda(disp)}*`;
+    }
+
+    const riesgoNum = Number(c.riesgoEnCurso) || 0;
+    const riesgoTxt =
+      riesgoNum > 0 && !extraAvalTxt
+        ? ` (En riesgo: ${formatearMontoSinMoneda(riesgoNum)})`
+        : "";
+
+    const cuerpoMonto = [saldoTxt, extraAvalTxt].filter(Boolean).join("");
+    return `${idx + 1}) ${icono} ${c.nombre}: ${cuerpoMonto}${riesgoTxt}`;
   };
 
-  if (separar) {
+  if (filtro === "positivos") {
+    const positivos = [...filtrados].sort(
+      (a, b) => obtenerSaldoReal(b) - obtenerSaldoReal(a) || a.nombre.localeCompare(b.nombre, "es")
+    );
+    lineas.push("🟢 SALDOS POSITIVOS (+)");
+    if (positivos.length === 0) lineas.push("—");
+    else positivos.forEach((c, i) => lineas.push(fmtCliente(c, i)));
+  } else if (filtro === "negativos") {
+    const negativos = [...filtrados].sort(
+      (a, b) => obtenerSaldoReal(a) - obtenerSaldoReal(b) || a.nombre.localeCompare(b.nombre, "es")
+    );
+    lineas.push("🔴 SALDOS NEGATIVOS (-)");
+    if (negativos.length === 0) lineas.push("—");
+    else negativos.forEach((c, i) => lineas.push(fmtCliente(c, i)));
+  } else if (separar) {
     const positivos = filtrados
-      .filter((c) => redondearCentavos(c.disponible) >= 0)
-      .sort((a, b) => b.disponible - a.disponible || a.nombre.localeCompare(b.nombre, "es"));
+      .filter((c) => obtenerSaldoReal(c) >= 0.01)
+      .sort((a, b) => obtenerSaldoReal(b) - obtenerSaldoReal(a) || a.nombre.localeCompare(b.nombre, "es"));
     const negativos = filtrados
-      .filter((c) => redondearCentavos(c.disponible) < 0)
-      .sort((a, b) => a.disponible - b.disponible || a.nombre.localeCompare(b.nombre, "es"));
+      .filter((c) => obtenerSaldoReal(c) < 0.01)
+      .sort((a, b) => obtenerSaldoReal(a) - obtenerSaldoReal(b) || a.nombre.localeCompare(b.nombre, "es"));
 
-    lineas.push("🟢 POSITIVOS / DISPONIBLES (+)");
+    lineas.push("🟢 SALDOS POSITIVOS (+)");
     if (positivos.length === 0) lineas.push("—");
     else positivos.forEach((c, i) => lineas.push(fmtCliente(c, i)));
 
     lineas.push("");
-    lineas.push("🔴 NEGATIVOS / EN DEUDA (-)");
+    lineas.push("🔴 SALDOS NEGATIVOS (-)");
     if (negativos.length === 0) lineas.push("—");
     else negativos.forEach((c, i) => lineas.push(fmtCliente(c, i)));
   } else {

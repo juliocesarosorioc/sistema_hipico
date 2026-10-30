@@ -32,6 +32,7 @@ import {
   type TicketContableRaw,
 } from "@/features/saldos/lib/contabilidad-central";
 import { generarAsientoDevolucionIncentivo } from "@/features/contabilidad/lib/plan-cuentas";
+import { jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros-nucleo";
 
 export { calcularEstadoCuentaCliente, calcularResumenContableCliente, calcularIncentivoCarreraCliente };
 
@@ -82,7 +83,13 @@ export function motorDesdeFila(
 ): TicketMotor {
   const tipo = String(fila.nombre_jugada ?? "JUGADA").trim().toUpperCase();
   const monto = NUM(fila.monto_jugado);
-  const numero = String(fila.caballo ?? "").trim();
+  const rawCab = String(fila.caballo ?? "").trim();
+  const numero =
+    /\d/.test(rawCab)
+      ? rawCab
+      : fila.ejemplar_numero != null && String(fila.ejemplar_numero).trim() !== ""
+        ? String(fila.ejemplar_numero).trim()
+        : rawCab;
   const nini = parsearNini(tipo);
   return {
     hipodromo: ctx.hipodromo,
@@ -374,17 +381,17 @@ export async function aplicarLiquidacionSaldos(
     return { ok: false, motivo: "No se pudieron leer los tickets pendientes.", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [(e as Error).message] };
   }
 
-  // Seguridad idempotente: si no hay Pendiente pero sí decididos → ya aplicado.
-  const { data: decididos } = await sdb
-    .from("tickets_apuestas")
-    .select("id")
-    .or(filtroDiaJornada(dia))
-    .eq("hipodromo", input.hipodromo.trim().toUpperCase())
-    .eq("carrera", Number(input.carrera))
-    .in("estado", ["Ganador", "Perdedor", "Retirado"])
-    .not("nombre_jugada", "like", "MARCA %")
-    .limit(1);
   if (filas.length === 0) {
+    // Seguridad idempotente: si no hay Pendiente pero sí decididos → ya aplicado.
+    const { data: decididos } = await sdb
+      .from("tickets_apuestas")
+      .select("id")
+      .or(filtroDiaJornada(dia))
+      .eq("hipodromo", input.hipodromo.trim().toUpperCase())
+      .eq("carrera", Number(input.carrera))
+      .in("estado", ["Ganador", "Perdedor", "Retirado"])
+      .not("nombre_jugada", "like", "MARCA %")
+      .limit(1);
     if ((decididos ?? []).length > 0) {
       return { ok: true, motivo: "Carrera ya liquidada (tickets decididos). Sin cambios.", aplicados: 0, yaAplicado: true, reembolsos: 0, abonoTotal: 0, errores: [] };
     }
@@ -478,6 +485,13 @@ export async function aplicarLiquidacionSaldos(
     // perdía su dinero en una jugada que la casa anuló.
     const esAnulada = !res.ok && res.totalClienteNeto > 0;
     const estado = esAnulada ? "Retirado" : res.ok ? "Ganador" : "Perdedor";
+    const retiradosPizarra = Array.isArray((input.pizarra as Record<string, unknown>)?.retirados)
+      ? ((input.pizarra as { retirados?: Array<string | number> }).retirados ?? [])
+      : [];
+    const esPorRetirado =
+      esAnulada &&
+      retiradosPizarra.length > 0 &&
+      jugadaInvolucraRetirado(fila.caballo, fila.ejemplar_numero, fila.nombre_jugada, retiradosPizarra);
     // premio_pagar / monto_decidido = PREMIO BRUTO (capital + ganancia ANTES de
     // comisión), que es la convención de TODO el sistema:
     //   · la liquidación legacy (marcas_venta.sql: premio_pagar = v_bruto;
@@ -523,7 +537,12 @@ export async function aplicarLiquidacionSaldos(
     return Promise.all([
       sdb
         .from("tickets_apuestas")
-        .update({ estado, premio_pagar: premioPagar, monto_decidido: montDecidido })
+        .update({
+          estado,
+          premio_pagar: premioPagar,
+          monto_decidido: montDecidido,
+          ...(esPorRetirado ? { anulada: true } : {}),
+        })
         .eq("id", fila.id as never),
       clientePromise,
     ]).catch((e) => {

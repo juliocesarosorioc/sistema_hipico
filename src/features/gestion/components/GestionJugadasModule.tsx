@@ -48,7 +48,7 @@ import { tieneCapacidad, usuarioVigente } from "@/features/seguridad/lib/vigente
 import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/features/tablas/lib/rpc";
 import { registrarCarreraProgramada, leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
-import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados } from "@/features/carreras/lib/retiros";
+import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados, jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros";
 import { claveHipodromo, numerosDeCarrera } from "@/features/carreras/lib/claves";
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
@@ -93,7 +93,7 @@ import {
 } from "@/features/gestion/lib/preview-carrera";
 import { agruparAdelantadasPorSeccion } from "@/features/liquidacion/lib/reporte-carrera";
 import ReporteCarrera, { type ObservacionOrdenExceso } from "@/features/saldos/components/ReporteCarrera";
-import { ReporteSaldosVisual } from "@/features/saldos/components/ReporteSaldosVisual";
+import { BotonIconoReporteSaldosVisual } from "@/features/saldos/components/ReporteSaldosVisual";
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
 import { ModalWpsApuestas } from "@/features/motores/components/ModalWpsApuestas";
 import { parsearLineaWps, type ApuestaWpsParseada } from "@/features/motores/lib/wps-incentivos";
@@ -1376,8 +1376,8 @@ const hipodromosDelDia = useMemo(() => {
 
   /** Filas del panel: persistidas (✅) + ventas de la sesión sin duplicar. */
   const filasPreview = useMemo(
-    () => armarFilasPreview(jugadasGuardadas, ticketsDeCarrera, pizarraPuestosActual),
-    [jugadasGuardadas, ticketsDeCarrera, pizarraPuestosActual]
+    () => armarFilasPreview(jugadasGuardadas, ticketsDeCarrera, pizarraPuestosActual, retiradosPizarraActual),
+    [jugadasGuardadas, ticketsDeCarrera, pizarraPuestosActual, retiradosPizarraActual]
   );
   const totalesPreview = useMemo(() => resumenPreview(filasPreview), [filasPreview]);
   const filasPreviewEnVivo = useMemo(() => filasPreview.filter((f) => !f.anulada && !f.esAdelantada), [filasPreview]);
@@ -1563,14 +1563,22 @@ const hipodromosDelDia = useMemo(() => {
       return;
     }
     setRetirados(lista.join(","));
-    // La lista de retiros se centralizó: se invalida el registro central para
-    // que chipset, semáforo y padrón de ejemplares se re lean de la matriz. No
-    // hay una segunda copia local que refrescar.
+    if (r.retirados.length > 0) {
+      for (const t of ticketsDeCarrera) {
+        if (jugadaInvolucraRetirado(t.caballo, null, t.comando, r.retirados)) {
+          eliminarTicket(t.id);
+        }
+      }
+    }
+    // La lista de retiros se centralizó: se invalida el registro central y se
+    // refrescan jugadas/clientes para reflejar anulaciones y reembolsos.
     recargarRegistroCentral();
+    void recargarJugadasGuardadas();
+    if (r.reembolsos > 0) void recargarClientes();
     setAviso(
       lista.length
         ? `⛔ Retirados C${carrera}: ${r.retirados.join(", ")} · ${r.tablasAfectadas} tabla(s) sincronizada(s)` +
-            (r.reembolsos ? ` · ${r.reembolsos} ticket(s) reembolsado(s)` : "") +
+            (r.reembolsos ? ` · ${r.reembolsos} jugada(s) anulada(s)/reembolsada(s)` : "") +
             (r.premios.length ? ` · premios recalculados: ${r.premios.length}` : "")
         : `✔ C${carrera}: ${r.texto}`
     );
@@ -1584,22 +1592,40 @@ const hipodromosDelDia = useMemo(() => {
    */
   const alternarRetiroEjemplar = async (c: EjemplarTabla) => {
     const retirado = !c.retirado;
+    const prevRetirados = retirados;
+    const actuales = retiradosPizarraActual;
+    const optimista = retirado
+      ? parsearRetirados([...actuales, String(c.numero)].join(","))
+      : actuales.filter((n) => n !== String(c.numero).trim());
+    setRetirados(optimista.join(","));
     const r = await alternarRetiroCarrera({
       fecha,
       hipodromo,
       carrera,
       numero: c.numero,
       retirado,
+      actuales,
     });
     if (!r.ok) {
+      setRetirados(prevRetirados);
       setAviso(`⚠️ No se pudo centralizar el retiro de N°${c.numero}: ${r.error ?? "sin conexión"}`);
       return;
     }
+    setRetirados(r.retirados.join(","));
+    if (retirado && r.retirados.length > 0) {
+      for (const t of ticketsDeCarrera) {
+        if (jugadaInvolucraRetirado(t.caballo, null, t.comando, r.retirados)) {
+          eliminarTicket(t.id);
+        }
+      }
+    }
     recargarRegistroCentral();
+    void recargarJugadasGuardadas();
+    if (r.reembolsos > 0) void recargarClientes();
     setAviso(
       retirado
         ? `⛔ N°${c.numero} RETIRADO de C${carrera} · ${r.tablasAfectadas} tabla(s) sincronizada(s)` +
-            (r.reembolsos ? ` · ${r.reembolsos} ticket(s) reembolsado(s)` : "")
+            (r.reembolsos ? ` · ${r.reembolsos} jugada(s) anulada(s)/reembolsada(s)` : "")
         : `↩ N°${c.numero} rehabilitado en C${carrera}.`
     );
   };
@@ -2017,7 +2043,7 @@ const hipodromosDelDia = useMemo(() => {
 
   const ejecutarFinalizar = async (
     pizarraConfirmada?: PizarraResultados | null,
-    abrirReporte = false
+    abrirReporte = true
   ): Promise<{ ok: boolean; motivo: string }> => {
     const piz = pizarraConfirmada ?? ultimaPizarra;
     if (!piz) {
@@ -2028,6 +2054,13 @@ const hipodromosDelDia = useMemo(() => {
       setAviso(motivo);
       return { ok: false, motivo };
     }
+    const pizarraConRet = {
+      ...piz.pizarra,
+      retirados:
+        piz.pizarra.retirados && piz.pizarra.retirados.length > 0
+          ? piz.pizarra.retirados
+          : retiradosPizarraActual,
+    };
     // ÍTEM 1 — Re-apertura: liquida SÓLO las jugadas agregadas DESPUÉS de la
     // liquidación original. A propósito NO reescribe el resultado central ni
     // vuelve a cerrar la tabla, y los tickets ya decididos no se tocan
@@ -2037,7 +2070,7 @@ const hipodromosDelDia = useMemo(() => {
       const s = await liquidarPendientesDeCarrera({
         hipodromo,
         carrera,
-        pizarra: piz.pizarra,
+        pizarra: pizarraConRet,
         dividendos: dividendosDePizarra(piz),
         tasaComision: comisionNum,
         fecha,
@@ -2070,7 +2103,7 @@ const hipodromosDelDia = useMemo(() => {
     const r = await liquidarCarreraYCerrarTabla({
       hipodromo,
       carrera,
-      pizarra: piz.pizarra,
+      pizarra: pizarraConRet,
       // La jornada seleccionada, no "hoy": el resultado central se escribe en
       // esa fecha y el semáforo (que filtra por fecha) pasa a rojo al finalizar.
       fecha,
@@ -2108,11 +2141,12 @@ const hipodromosDelDia = useMemo(() => {
       const s = await aplicarLiquidacionSaldos({
         hipodromo,
         carrera,
-        pizarra: piz.pizarra,
+        pizarra: pizarraConRet,
         dividendos: dividendosDePizarra(piz),
         premio_por_tabla:
           piz.premio_por_tabla ?? tablaDeCarrera?.premio_recalculado ?? tablaDeCarrera?.premio_original ?? null,
         tasaComision: comisionNum,
+        crucesPuestos: opcionesCrucesPuestos,
         // La JORNADA seleccionada, no "hoy": los tickets viven en fecha_registro.
         fecha,
       });
@@ -2125,6 +2159,7 @@ const hipodromosDelDia = useMemo(() => {
       setUltimaPizarra(null);
       setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
       setResumen(r);
+      setModalFinalizar(false);
       // La liquidación acreditó/debitó saldos: refrescar el catálogo local para
       // que las próximas jugadas topen contra el saldo REAL (bug: cargar más
       // jugadas tras pagar y que la RPC las rechace porque el navegador tenía el
@@ -2133,6 +2168,7 @@ const hipodromosDelDia = useMemo(() => {
       if (s.errores.length) {
         setAviso(`✅ ${r.motivo}${avisoMarcas} · ⚠️ aviso de saldos: ${s.errores[0]}`);
         void recargarJugadasGuardadas();
+        recargarRegistroCentral();
         if (abrirReporte) setMostrarReporteLiquidacion(true);
         return { ok: true, motivo: `${r.motivo} · aviso de saldos: ${s.errores[0]}` };
       }
@@ -2156,9 +2192,8 @@ const hipodromosDelDia = useMemo(() => {
     }
     // Flujo unificado (Liquidar Carrera): el operador confirmó la pizarra y la
     // carrera YA quedó registrada y cerrada acá, así que se salta el modal
-    // intermedio «Registrar y Finalizar» y va directo al Reporte. Antes había
-    // que cerrar ese paso de más para recién ver el reporte.
-    if (abrirReporte) setMostrarReporteLiquidacion(true);
+    // intermedio «Registrar y Finalizar» y va directo al Reporte.
+    if (r.ok && abrirReporte) setMostrarReporteLiquidacion(true);
     return { ok: r.ok, motivo: r.motivo };
   };
 
@@ -2193,16 +2228,7 @@ const hipodromosDelDia = useMemo(() => {
             matrizWps: ultimaPizarra?.matrizWps ?? pizarraCentral?.matrizWps ?? null,
           };
           setUltimaPizarra(pizResultados);
-          await guardarPizarraCentral({
-            hipodromo,
-            carrera,
-            fecha,
-            cargado_por: "AGENTE-PIZARRA",
-            r: pizResultados,
-            liquidar: false,
-            tasaComision: comisionNum,
-          }).catch(() => null);
-          const fin = await ejecutarFinalizar(pizResultados, false);
+          const fin = await ejecutarFinalizar(pizResultados, true);
           return { ok: fin.ok, error: fin.ok ? undefined : fin.motivo };
         },
         reversar: async () => {
@@ -3644,6 +3670,7 @@ const hipodromosDelDia = useMemo(() => {
                     riesgoEnCurso: 0,
                     disponible: limiteDeJugar(c),
                     libre: esClienteLibre(c),
+                    modoJuego: (c as { modo_juego?: string }).modo_juego || (esClienteLibre(c) ? "libre" : "aval"),
                     tuvoMovimiento: true,
                   })),
                   filtro: filtroSaldosWsp,
@@ -3657,6 +3684,25 @@ const hipodromosDelDia = useMemo(() => {
             >
               💰 Ver Reporte de Saldos Actualizados WhatsApp
             </button>
+            <BotonIconoReporteSaldosVisual
+              etiqueta="Reporte Visual de Disponibilidad y Alerta de Saldos"
+              grupo={grupoCabecera}
+              logoGrupo={(gruposVenta.find((g) => String(g.id) === String(grupoSesion)) as { logo_url?: string | null } | undefined)?.logo_url ?? null}
+              hipodromo={nombreHipodromo}
+              carrera={carrera}
+              fecha={fecha}
+              clientes={clientes.map((c) => ({
+                id: c.id,
+                nombre: c.nombre,
+                telefono: telefonoMencionCliente(c) || null,
+                saldoContable: saldoDeCliente(c),
+                aval: avalDeCliente(c),
+                riesgoEnCurso: 0,
+                disponible: limiteDeJugar(c),
+                libre: esClienteLibre(c),
+                modoJuego: (c as { modo_juego?: string }).modo_juego || (esClienteLibre(c) ? "libre" : "aval"),
+              }))}
+            />
           </div>
 
           {visorWhatsappTipo && (
@@ -3683,6 +3729,7 @@ const hipodromosDelDia = useMemo(() => {
                               riesgoEnCurso: 0,
                               disponible: limiteDeJugar(c),
                               libre: esClienteLibre(c),
+                              modoJuego: (c as { modo_juego?: string }).modo_juego || (esClienteLibre(c) ? "libre" : "aval"),
                               tuvoMovimiento: true,
                             })),
                             filtro: nuevo,
@@ -3692,8 +3739,10 @@ const hipodromosDelDia = useMemo(() => {
                       }}
                       className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold"
                     >
-                      <option value="todos">Todos los clientes</option>
-                      <option value="min1">Saldos ≥ 1</option>
+                      <option value="todos">Mayores a 0 y menores a 0 (Ocultar los 0)</option>
+                      <option value="positivos">Solo saldos &gt; 0 (Positivos · Ocultar 0)</option>
+                      <option value="negativos">Solo saldos &lt; 0 (Negativos · Ocultar 0)</option>
+                      <option value="min1">Saldos ≥ 1 (Ocultar 0)</option>
                       <option value="min1_libres">Saldos ≥ 1 + libres con movimiento</option>
                       <option value="min001_libres">Saldos ≥ 0,01 + libres con movimiento</option>
                     </select>
@@ -3718,6 +3767,7 @@ const hipodromosDelDia = useMemo(() => {
                               riesgoEnCurso: 0,
                               disponible: limiteDeJugar(c),
                               libre: esClienteLibre(c),
+                              modoJuego: (c as { modo_juego?: string }).modo_juego || (esClienteLibre(c) ? "libre" : "aval"),
                               tuvoMovimiento: true,
                             })),
                             filtro: filtroSaldosWsp,
@@ -3728,6 +3778,27 @@ const hipodromosDelDia = useMemo(() => {
                     />
                     Separar 🟢 positivos / 🔴 negativos
                   </label>
+                  <div className="ml-auto">
+                    <BotonIconoReporteSaldosVisual
+                      soloIcono
+                      grupo={grupoCabecera}
+                      logoGrupo={(gruposVenta.find((g) => String(g.id) === String(grupoSesion)) as { logo_url?: string | null } | undefined)?.logo_url ?? null}
+                      hipodromo={nombreHipodromo}
+                      carrera={carrera}
+                      fecha={fecha}
+                      clientes={clientes.map((c) => ({
+                        id: c.id,
+                        nombre: c.nombre,
+                        telefono: telefonoMencionCliente(c) || null,
+                        saldoContable: saldoDeCliente(c),
+                        aval: avalDeCliente(c),
+                        riesgoEnCurso: 0,
+                        disponible: limiteDeJugar(c),
+                        libre: esClienteLibre(c),
+                        modoJuego: (c as { modo_juego?: string }).modo_juego || (esClienteLibre(c) ? "libre" : "aval"),
+                      }))}
+                    />
+                  </div>
                 </div>
               )}
               <textarea
@@ -3877,30 +3948,6 @@ const hipodromosDelDia = useMemo(() => {
                           .filter((x): x is ObservacionOrdenExceso => x !== null),
                       ],
                     }}
-                  />
-                </div>
-              )}
-
-              {/* Vista Gráfica de Saldos con Simbología de Alerta y @teléfono visible solo en la imagen */}
-              {visorWhatsappTipo === "saldos" && (
-                <div className="mt-4 border-t border-slate-200 pt-3">
-                  <ReporteSaldosVisual
-                    grupo={grupoCabecera}
-                    logoGrupo={(gruposVenta.find((g) => String(g.id) === String(grupoSesion)) as { logo_url?: string | null } | undefined)?.logo_url ?? null}
-                    hipodromo={nombreHipodromo}
-                    carrera={carrera}
-                    fecha={fecha}
-                    clientes={clientes.map((c) => ({
-                      id: c.id,
-                      nombre: c.nombre,
-                      telefono: telefonoMencionCliente(c) || null,
-                      saldoContable: saldoDeCliente(c),
-                      aval: avalDeCliente(c),
-                      riesgoEnCurso: 0,
-                      disponible: limiteDeJugar(c),
-                      libre: esClienteLibre(c),
-                      modoJuego: (c as { modo_juego?: string }).modo_juego || (esClienteLibre(c) ? "libre" : "aval"),
-                    }))}
                   />
                 </div>
               )}
@@ -4330,55 +4377,34 @@ const hipodromosDelDia = useMemo(() => {
             setPizarraCentral(r);
             void recargarClientes();
             void recargarJugadasGuardadas();
+            recargarRegistroCentral();
+            if (rec.ok) setMostrarReporteLiquidacion(true);
             return;
           }
 
           // ── PRIMERA LIQUIDACIÓN DE LA CARRERA ───────────────────────────────
           setUltimaPizarra(r);
           setAviso(`🏁 Resultados C${carrera} cargados (${r.llenas} posiciones${r.empates.length ? ` · ${r.empates.length} empate(s)` : ""}).`);
-          // Centraliza en resultados_carreras con la MISMA pizarra: así lo que
-          // se carga acá aplica también a Tablas Fijas, Carreras del Día y
-          // cualquier módulo que lea el resultado central.
-          //
-          // Se ESPERA acá y no en paralelo con la finalización: los dos upserts
-          // competían por la MISMA fila y el último en llegar pisaba lo que
-          // acababa de escribir la liquidación (`aplicado_a_tablas`/estado),
-          // dejando la carrera "abierta" pese a tener resultados guardados.
-          try {
-            const cen = await guardarPizarraCentral({
-              hipodromo,
-              carrera,
-              fecha,
-              cargado_por: "GESTION-JUGADAS",
-              r,
-              // La liquidación (tablas fijas, marcas, dupletas y saldos) la corre
-              // `ejecutarFinalizar` en el mismo paso; acá se evita liquidar dos
-              // veces para que el resumen no muestre el segundo pago en cero.
-              liquidar: false,
-              tasaComision: comisionNum,
-            });
-            if (!cen.ok) setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó: ${cen.error ?? "sin conexión"}`);
-          } catch {
-            setAviso(`⚠️ Resultado C${carrera} local, pero no se centralizó.`);
-          }
-          // (2) CONFIRMAR RESULTADOS = REGISTRAR Y FINALIZAR: la carrera se
-          // registra y se cierra en ESTE mismo paso. Antes el operador tenía que
-          // volver a apretar Ctrl+R y recién ahí liquidar, así que una carrera
-          // "confirmada" podía quedar abierta sin que nadie lo notara.
-          // `r` viaja como argumento porque `setUltimaPizarra` todavía no se
-          // re-renderizó y `ejecutarFinalizar` la leería en null.
-          //
-          // NO se abre el modal intermedio «Registrar y Finalizar»: la
-          // liquidación ya corre acá y el resultado se muestra en el Reporte.
-          // Ese paso de más obligaba a cerrar una pantalla que no aportaba nada
-          // antes de llegar al reporte (las "vueltas innecesarias").
+          // CONFIRMAR RESULTADOS = REGISTRAR Y FINALIZAR: la carrera se
+          // registra (upsertResultadoCentral incluido dentro de
+          // `liquidarCarreraYCerrarTabla`) y se cierra en ESTE mismo paso,
+          // abriendo directamente el Reporte de la carrera liquidada sin
+          // doble escritura ni pantallas intermedias.
           setReporteAlCerrarFinalizar(false);
           try {
-            await ejecutarFinalizar(r, true);
+            const resFin = await ejecutarFinalizar(r, true);
+            if (!resFin.ok) {
+              await guardarPizarraCentral({
+                hipodromo,
+                carrera,
+                fecha,
+                cargado_por: "GESTION-JUGADAS",
+                r,
+                liquidar: false,
+                tasaComision: comisionNum,
+              }).catch(() => {});
+            }
           } catch (e) {
-            // Un fallo de cierre no puede quedar silenciado en un `void`: se
-            // avisa, para no dar por hecha una apertura que en realidad no se
-            // completó.
             setAviso(
               `❌ No se pudo cerrar la carrera ${nombreHipodromo} C${carrera}: ${e instanceof Error ? e.message : String(e)}`
             );

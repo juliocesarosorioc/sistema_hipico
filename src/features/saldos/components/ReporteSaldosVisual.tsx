@@ -485,4 +485,106 @@ export function ReporteSaldosVisual({
   );
 }
 
+export type ModalReporteSaldosVisualProps = ReporteSaldosVisualProps & {
+  abierto: boolean;
+  onCerrar: () => void;
+};
+
+/**
+ * Modal flotante del Reporte Visual de Disponibilidad y Alerta de Saldos.
+ */
+export function ModalReporteSaldosVisual({
+  abierto,
+  onCerrar,
+  ...propsReporte
+}: ModalReporteSaldosVisualProps) {
+  if (!abierto) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-2 sm:p-4 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCerrar();
+      }}
+    >
+      <div className="relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-indigo-100 bg-gradient-to-r from-indigo-950 via-blue-900 to-indigo-800 px-4 py-3 text-white">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400/20 border border-amber-300/40 text-lg">
+              📊
+            </span>
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-black uppercase tracking-wider text-amber-300">
+                Reporte Visual de Disponibilidad y Alerta de Saldos
+              </h2>
+              <p className="truncate text-[11px] font-medium text-indigo-200">
+                {propsReporte.grupo || "Grupo Activo"}
+                {propsReporte.hipodromo ? ` · ${propsReporte.hipodromo}` : ""}
+                {propsReporte.carrera ? ` · Carrera ${propsReporte.carrera}` : ""}
+                {propsReporte.fecha ? ` · ${propsReporte.fecha}` : ""}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-sm font-black text-white transition hover:bg-rose-600 hover:border-rose-500"
+            title="Cerrar modal (Esc)"
+            aria-label="Cerrar Reporte Visual de Disponibilidad y Alerta de Saldos"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 bg-slate-100/80">
+          <ReporteSaldosVisual {...propsReporte} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export type BotonIconoReporteSaldosVisualProps = ReporteSaldosVisualProps & {
+  etiqueta?: string;
+  soloIcono?: boolean;
+  className?: string;
+};
+
+/**
+ * Botón con ícono que activa el Modal del Reporte Visual de Disponibilidad y Alerta de Saldos.
+ */
+export function BotonIconoReporteSaldosVisual({
+  etiqueta = "Reporte Visual de Disponibilidad y Alerta de Saldos",
+  soloIcono = false,
+  className,
+  ...propsReporte
+}: BotonIconoReporteSaldosVisualProps) {
+  const [abierto, setAbierto] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setAbierto(true)}
+        title="Abrir Reporte Visual de Disponibilidad y Alerta de Saldos"
+        aria-label="Abrir Reporte Visual de Disponibilidad y Alerta de Saldos"
+        className={
+          className ||
+          (soloIcono
+            ? "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-300 bg-indigo-50 text-base text-indigo-900 shadow-sm transition hover:bg-indigo-100"
+            : "inline-flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-[11px] font-black text-indigo-900 shadow-sm transition hover:bg-indigo-100")
+        }
+      >
+        <span className="text-sm leading-none">📊</span>
+        {!soloIcono && <span>{etiqueta}</span>}
+      </button>
+      <ModalReporteSaldosVisual
+        abierto={abierto}
+        onCerrar={() => setAbierto(false)}
+        {...propsReporte}
+      />
+    </>
+  );
+}
+
 export default ReporteSaldosVisual;

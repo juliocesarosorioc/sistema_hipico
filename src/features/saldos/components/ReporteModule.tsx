@@ -24,6 +24,7 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/components/ModalPagoAGanadorYConciliacion";
+import { BotonIconoReporteSaldosVisual } from "@/features/saldos/components/ReporteSaldosVisual";
 import { etiquetaJugada, caballoPareoLegible, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 import { redondearCentavos } from "@/shared/lib/dinero";
 
@@ -653,6 +654,29 @@ export function ReporteModule() {
             >
               Generar
             </button>
+            <BotonIconoReporteSaldosVisual
+              etiqueta="Disponibilidad y Alerta"
+              className="inline-flex items-center gap-1.5 rounded border border-amber-300/60 bg-amber-400/20 px-2.5 py-1 text-xs font-black text-amber-200 hover:bg-amber-400/30"
+              grupo={grupos.find((g) => String(g.id) === String(grupoId))?.nombre ?? "Grupo Activo"}
+              logoGrupo={(grupos.find((g) => String(g.id) === String(grupoId)) as { logo_url?: string | null } | undefined)?.logo_url ?? null}
+              fecha={hasta || desde}
+              clientes={clientesGrupo.map((c) => {
+                const saldo = redondearCentavos(Number(c.saldo_actual) || 0);
+                const aval = redondearCentavos(Math.max(0, Number(c.aval) || 0));
+                const libre = Boolean(c.libre) || String(c.modo_juego || "").toLowerCase().trim() === "libre";
+                return {
+                  id: c.id,
+                  nombre: String(c.nombre ?? c.seudonimo ?? c.id),
+                  telefono: c.telefono ?? null,
+                  saldoContable: saldo,
+                  aval,
+                  riesgoEnCurso: 0,
+                  disponible: libre ? 999999 : redondearCentavos(saldo + aval),
+                  libre,
+                  modoJuego: obtenerTipoJugador(c),
+                };
+              })}
+            />
           </div>
         </div>
         {planilla && (

@@ -64,10 +64,14 @@ export type BloqueCarrera = {
  * carrera, no un encabezado.
  */
 const RE_ENCABEZADO =
-  /^[ \t]*(?:(?:(?:RACE|CARRERA|CAR\.?)[ \t]*(?:N[º°.]?[ \t]*)?#?[ \t]*([A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]{1,14})\b)|(?:([A-Za-z0-9ÁÉÍÓÚÑáéíóúñºª.]{1,20})[ \t]+(?:CARRERA|RACE)\b)|(?:([0-9]{1,2}(?:[ª°aA]|ra|da|ta|ma)?\.?|PRIMERA|SEGUNDA|TERCERA|CUARTA|QUINTA|SEXTA)[ \t]+(?:V[AÁ]LIDA|VALIDA)\b))/gim;
+  /^[ \t]*(?:(?:[-•*|\d\w.,/(): \t]{0,45}?(?:[-·|:][ \t]*))?(?:(?:(?:RACE|CARRERA|CAR\.?)[ \t]*(?:N[º°.]?[ \t]*)?#?[ \t]*([A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]{1,14})\b)|(?:([A-Za-z0-9ÁÉÍÓÚÑáéíóúñºª.]{1,20})[ \t]+(?:CARRERA|RACE)\b)|(?:([0-9]{1,2}(?:[ª°aA]|ra|da|ta|ma)?\.?|PRIMERA|SEGUNDA|TERCERA|CUARTA|QUINTA|SEXTA)[ \t]+(?:V[AÁ]LIDA|VALIDA)\b)))/gim;
 
-/** Tope de caracteres de un encabezado: suficiente para líneas con hora/distancia. */
-const MAX_ENCABEZADO = 120;
+/** Tope de caracteres de un encabezado: suficiente para líneas con hipódromo/hora/distancia. */
+const MAX_ENCABEZADO = 240;
+
+/** Tope seguro de caracteres por bloque enviado al LLM para evitar truncamiento o cuelgues. */
+const MAX_CHARS_POR_BLOQUE = 9000;
+const CHUNK_CHARS_FALLBACK = 6500;
 
 /**
  * Parte el texto en segmentos, uno por carrera.
@@ -147,6 +151,30 @@ export function segmentarPorCarreras(texto: string): SegmentoCarrera[] {
  * mitad cortaría la carrera a la mitad, que es exactamente el defecto que
  * estamos corrigiendo.
  */
+function partirTextoLargo(texto: string, maxChunk = CHUNK_CHARS_FALLBACK): string[] {
+  const limpio = String(texto ?? "").trim();
+  if (limpio.length <= MAX_CHARS_POR_BLOQUE) return [limpio];
+
+  const partes: string[] = [];
+  let cursor = 0;
+  while (cursor < limpio.length) {
+    let fin = Math.min(cursor + maxChunk, limpio.length);
+    if (fin < limpio.length) {
+      const saltoLinea = limpio.lastIndexOf("\n", fin);
+      const espacio = limpio.lastIndexOf(" ", fin);
+      if (saltoLinea > cursor + Math.floor(maxChunk * 0.5)) {
+        fin = saltoLinea;
+      } else if (espacio > cursor + Math.floor(maxChunk * 0.5)) {
+        fin = espacio;
+      }
+    }
+    const trozo = limpio.slice(cursor, fin).trim();
+    if (trozo) partes.push(trozo);
+    cursor = fin;
+  }
+  return partes.length ? partes : [limpio];
+}
+
 export function armarBloques(
   segmentos: SegmentoCarrera[],
   carrerasPorBloque = 3
@@ -158,27 +186,75 @@ export function armarBloques(
   const sinNumero = segmentos.filter((s) => s.numero == null);
 
   const bloques: BloqueCarrera[] = [];
-  for (let i = 0; i < conNumero.length; i += porBloque) {
-    const grupo = conNumero.slice(i, i + porBloque);
-    const numeros = grupo.map((s) => s.numero).filter((n): n is number => n != null);
-    bloques.push({
-      indice: bloques.length + 1,
-      numeros,
-      texto: grupo.map((s) => s.texto).join("\n\n"),
-    });
-  }
+  let grupoActual: SegmentoCarrera[] = [];
+  let largoActual = 0;
 
-  // Sin ningún encabezado reconocible: el documento entero es un bloque.
+  const cerrarGrupo = () => {
+    if (!grupoActual.length) return;
+    const numeros = grupoActual.map((s) => s.numero).filter((n): n is number => n != null);
+    const textoGrupo = grupoActual.map((s) => s.texto).join("\n\n");
+    if (textoGrupo.length > MAX_CHARS_POR_BLOQUE && grupoActual.length === 1) {
+      const subPartes = partirTextoLargo(textoGrupo);
+      for (const sp of subPartes) {
+        bloques.push({
+          indice: bloques.length + 1,
+          numeros,
+          texto: sp,
+        });
+      }
+    } else {
+      bloques.push({
+        indice: bloques.length + 1,
+        numeros,
+        texto: textoGrupo,
+      });
+    }
+    grupoActual = [];
+    largoActual = 0;
+  };
+
+  for (const seg of conNumero) {
+    const largoSeg = seg.texto.length;
+    if (
+      grupoActual.length >= porBloque ||
+      (grupoActual.length > 0 && largoActual + largoSeg > MAX_CHARS_POR_BLOQUE)
+    ) {
+      cerrarGrupo();
+    }
+    grupoActual.push(seg);
+    largoActual += largoSeg;
+  }
+  cerrarGrupo();
+
+  // Sin ningún encabezado reconocible: partir el documento en bloques seguros
+  // en lugar de enviarlo entero en una sola llamada que se trunca o se cuelga.
   if (!bloques.length) {
     if (!segmentos.length) return [];
-    return [{ indice: 1, numeros: [], texto: segmentos.map((s) => s.texto).join("\n\n") }];
+    const textoCompleto = segmentos.map((s) => s.texto).join("\n\n");
+    const trozos = partirTextoLargo(textoCompleto);
+    return trozos.map((t, idx) => ({
+      indice: idx + 1,
+      numeros: [],
+      texto: t,
+    }));
   }
 
-  // El encabezado del documento viaja con el primer bloque: el modelo lo
-  // necesita para saber el hipódromo y la fecha cuando la carrera no los
-  // repite.
   if (sinNumero.length && bloques.length) {
-    bloques[0].texto = `${sinNumero.map((s) => s.texto).join("\n\n")}\n\n${bloques[0].texto}`;
+    const textoEncabezadoCompleto = sinNumero.map((s) => s.texto).join("\n\n");
+    if (textoEncabezadoCompleto.length <= MAX_CHARS_POR_BLOQUE) {
+      bloques[0].texto = `${textoEncabezadoCompleto}\n\n${bloques[0].texto}`;
+    } else {
+      const trozosEnc = partirTextoLargo(textoEncabezadoCompleto);
+      const bloquesEnc: BloqueCarrera[] = trozosEnc.map((t, i) => ({
+        indice: i + 1,
+        numeros: [],
+        texto: t,
+      }));
+      return [...bloquesEnc, ...bloques].map((b, idx) => ({
+        ...b,
+        indice: idx + 1,
+      }));
+    }
   }
 
   return bloques;
@@ -260,6 +336,19 @@ export function consolidarPorNumero<T extends { ejemplares?: unknown[]; caballos
     const previa = porNumero.get(n);
     if (!previa) {
       porNumero.set(n, c);
+      continue;
+    }
+    const hipoA = String((previa as { hipodromo?: unknown })?.hipodromo ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+    const hipoB = String((c as { hipodromo?: unknown })?.hipodromo ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+    const distintoHipodromo = hipoA.length > 0 && hipoB.length > 0 && hipoA !== hipoB;
+    if (distintoHipodromo) {
+      colisiones.push(c);
       continue;
     }
     const A = nombresDe(previa);

@@ -40,6 +40,7 @@ import {
 } from "@/features/betting/lib/bettingEngine";
 import { esPrincipalVigente, grupoActivoVigente, veTodosLosGruposVigente } from "@/features/seguridad/lib/vigente";
 import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
+import { jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros-nucleo";
 
 export type FilaReporte = {
   id: string;
@@ -208,9 +209,10 @@ function ticketMotorDe(
   hipodromo: string,
   carrera: string | number,
   puestos: string[],
-  dividendos: Record<string, number> | null
+  dividendos: Record<string, number> | null,
+  retirados?: string[]
 ): TicketMotor {
-  const pizarra = pizarraDesdeNums(puestos);
+  const pizarra = { ...pizarraDesdeNums(puestos), ...(retirados?.length ? { retirados } : {}) };
   const tipo = txt(f.nombre_jugada).toUpperCase();
   const monto = cifra(f.monto_jugado);
   const rawCab = txt(f.caballo);
@@ -293,6 +295,12 @@ function evaluar(
   // jugada vigente e inflaba el subtotal y el resumen de la carrera.
   if (f.anulada === true || estado === "ANULADO" || estado === "ANULADA") {
     return { ok: false, bruto: 0, comision: 0, tasa: 0, resultadoJuega: 0, resultadoDa: 0 };
+  }
+  if (
+    pizarra?.retirados?.length &&
+    jugadaInvolucraRetirado(f.caballo, f.ejemplar_numero, f.nombre_jugada, pizarra.retirados)
+  ) {
+    return { ok: false, bruto: monto, comision: 0, tasa: 0, resultadoJuega: 0, resultadoDa: 0 };
   }
   const nombreJugada = txt(f.nombre_jugada).toUpperCase();
   const esTablaFija = nombreJugada.startsWith("TABLA FIJA");
@@ -507,6 +515,12 @@ function evaluar(
       }
     }
   }
+  if (estado === "RETIRADO" || estado === "EMPATE") {
+    // Un ticket en estado RETIRADO / EMPATE (ej. Nini que llegó exactamente en
+    // el puesto N, o ejemplar retirado con devolución de capital) recupera el
+    // 100% del monto apostado: ni gana ni pierde ninguno de los dos lados (0/0).
+    return { ok: false, bruto: monto, comision: 0, tasa: tasaEfectiva, resultadoJuega: 0, resultadoDa: 0 };
+  }
   const puestosAnticipados = pizarra?.puestos ?? [];
   if (
     estado !== "SOLUCIONADO" &&
@@ -517,7 +531,7 @@ function evaluar(
   ) {
     try {
       const r = liquidarOficial(
-        ticketMotorDe(f, hipodromo, carrera, puestosAnticipados, pizarra?.dividendos ?? null),
+        ticketMotorDe(f, hipodromo, carrera, puestosAnticipados, pizarra?.dividendos ?? null, pizarra?.retirados),
         tasaEfectiva
       );
       if (!r.indeterminado) {
@@ -539,12 +553,6 @@ function evaluar(
       ? { ok: true, bruto: d.neto, comision: d.comision, tasa: tasaEfectiva }
       : { ok: null, bruto: 0, comision: 0, tasa: tasaEfectiva };
   }
-  if (estado === "RETIRADO" || estado === "EMPATE") {
-    // Un ticket en estado RETIRADO / EMPATE (ej. Nini que llegó exactamente en
-    // el puesto N, o ejemplar retirado con devolución de capital) recupera el
-    // 100% del monto apostado: ni gana ni pierde ninguno de los dos lados (0/0).
-    return { ok: false, bruto: monto, comision: 0, tasa: tasaEfectiva };
-  }
   if (estado === "PERDEDOR" || estado === "PERDIO" || estado === "RECHAZADO" || estado === "ANULADO") {
     return { ok: false, bruto: 0, comision: 0, tasa: tasaEfectiva };
   }
@@ -552,7 +560,7 @@ function evaluar(
   if (puestos.length && monto > 0) {
     try {
       const r = liquidarOficial(
-        ticketMotorDe(f, hipodromo, carrera, puestos, pizarra?.dividendos ?? null),
+        ticketMotorDe(f, hipodromo, carrera, puestos, pizarra?.dividendos ?? null, pizarra?.retirados),
         tasaEfectiva
       );
       if (r.indeterminado) return { ok: null, bruto: 0, comision: 0, tasa: tasaEfectiva };

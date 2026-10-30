@@ -18,6 +18,7 @@ import { conCacheBust } from "@/shared/lib/logos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
+import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
 import { EmptyState } from "@/shared/components/ui/EmptyState";
@@ -90,7 +91,7 @@ export default function ReporteLiquidacionModal({
    * abrir para que cada apertura arranque con el reporte completo.
    */
   const [filtroModalidad, setFiltroModalidad] = useState<FiltroModalidadTiempo>("TODAS");
-  const [, setCargandoDia] = useState(false);
+  const [cargandoDia, setCargandoDia] = useState(false);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [manualAbierto, setManualAbierto] = useState(false);
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
@@ -140,8 +141,8 @@ export default function ReporteLiquidacionModal({
   useEffect(() => {
     if (!abierto) return;
     setFecha(fechaInicial || hoyLocal());
-    setHipodromo(hipodromoInicial || "");
-    setCarrera(carreraInicial ?? 0);
+    setHipodromo(hipodromoInicial ? hipodromoInicial.trim().toUpperCase() : "");
+    setCarrera(carreraInicial ? Number(carreraInicial) : 0);
     setFiltroModalidad("TODAS");
     setDatos(null);
   }, [abierto, fechaInicial, hipodromoInicial, carreraInicial]);
@@ -182,16 +183,15 @@ export default function ReporteLiquidacionModal({
           (!fechaInicial || fecha === fechaInicial) &&
           !delDia.some(
             (c) =>
-              String(c.hipodromo || "").trim().toUpperCase() ===
-                hipodromoInicial.trim().toUpperCase() &&
+              claveHipodromo(c.hipodromo) === claveHipodromo(hipodromoInicial) &&
               Number(c.carrera) === Number(carreraInicial)
           )
         ) {
           delDia.push({
             fecha,
             hipodromo: hipodromoInicial.trim().toUpperCase(),
-            carrera: carreraInicial,
-            estado: "Programada",
+            carrera: Number(carreraInicial),
+            estado: "Liquidada",
             ventas: [],
             ganadores: [],
           });
@@ -203,7 +203,7 @@ export default function ReporteLiquidacionModal({
     return () => {
       vivo = false;
     };
-  }, [abierto, fecha, hipodromoInicial, carreraInicial]);
+  }, [abierto, fecha, hipodromoInicial, carreraInicial, fechaInicial]);
 
   const hipodromosDisp = useMemo(() => {
     const set = new Set<string>();
@@ -217,19 +217,29 @@ export default function ReporteLiquidacionModal({
   // Cascada fecha → hipódromo.
   useEffect(() => {
     if (!hipodromosDisp.length) {
-      setHipodromo("");
-      setCarrera(0);
-      setDetalle(null);
-      setDatos(null);
+      if (!cargandoDia && !hipodromoInicial) {
+        setHipodromo("");
+        setCarrera(0);
+        setDetalle(null);
+        setDatos(null);
+      }
       return;
     }
-    setHipodromo((prev) => (prev && hipodromosDisp.includes(prev) ? prev : hipodromosDisp[0]));
-  }, [hipodromosDisp]);
+    setHipodromo((prev) => {
+      const objetivo = prev || (hipodromoInicial ? hipodromoInicial.trim().toUpperCase() : "");
+      if (objetivo) {
+        if (hipodromosDisp.includes(objetivo)) return objetivo;
+        const porClave = hipodromosDisp.find((h) => claveHipodromo(h) === claveHipodromo(objetivo));
+        if (porClave) return porClave;
+      }
+      return hipodromosDisp[0];
+    });
+  }, [hipodromosDisp, cargandoDia, hipodromoInicial]);
 
   const carrerasDisp = useMemo(
     () =>
       carrerasDia
-        .filter((c) => String(c.hipodromo || "").trim().toUpperCase() === hipodromo)
+        .filter((c) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo))
         .map((c) => Number(c.carrera))
         .filter((n) => n > 0)
         .sort((a, b) => a - b),
@@ -239,13 +249,25 @@ export default function ReporteLiquidacionModal({
   // Cascada hipódromo → carrera.
   useEffect(() => {
     if (!carrerasDisp.length) {
-      setCarrera(0);
-      setDetalle(null);
-      setDatos(null);
+      if (!cargandoDia && !carreraInicial) {
+        setCarrera(0);
+        setDetalle(null);
+        setDatos(null);
+      }
       return;
     }
-    setCarrera((prev) => (prev && carrerasDisp.includes(prev) ? prev : carrerasDisp[0]));
-  }, [carrerasDisp]);
+    setCarrera((prev) => {
+      const inicialMismoHipo =
+        carreraInicial &&
+        hipodromoInicial &&
+        claveHipodromo(hipodromo) === claveHipodromo(hipodromoInicial)
+          ? Number(carreraInicial)
+          : 0;
+      if (prev && carrerasDisp.includes(prev)) return prev;
+      if (inicialMismoHipo && carrerasDisp.includes(inicialMismoHipo)) return inicialMismoHipo;
+      return carrerasDisp[0];
+    });
+  }, [carrerasDisp, cargandoDia, carreraInicial, hipodromoInicial, hipodromo]);
 
   const nombreGrupo = useMemo(
     () => grupos.find((g) => String(g.id) === grupoId)?.nombre ?? "Grupo Hípico",
@@ -303,12 +325,13 @@ export default function ReporteLiquidacionModal({
     // catálogo cargado al abrir ya tenga el logo recién incorporado. Se
     // resuelven contra la base en paralelo con el detalle de la carrera.
     const logoGrupoId = grupoId || grupoActivoVigente() || undefined;
-    carreraReporteDetalle(fecha, hipodromo, carrera)
-      .then(async (c: CarreraReporte | null) => {
+    Promise.all([
+      carreraReporteDetalle(fecha, hipodromo, carrera),
+      logosFrescosDeCarrera({ hipodromo, grupoId: logoGrupoId }),
+    ])
+      .then(([c, frescos]) => {
         if (!vivo) return;
         if (!c) return setDetalle(null);
-        const frescos = await logosFrescosDeCarrera({ hipodromo, grupoId: logoGrupoId });
-        if (!vivo) return;
         setDetalle({ reporte: c, frescos });
       })
       .catch(() => vivo && setDetalle(null))

@@ -66,3 +66,82 @@ export function parsearRetirados(texto: string): string[] {
   for (const m of limpio.matchAll(/\d+/g)) salida.add(String(num(m[0])));
   return normalizarRetirados([...salida]);
 }
+
+/**
+ * Extrae todos los números de ejemplar involucrados en una jugada (a partir de
+ * `caballo`, `ejemplarNumero` y `nombreJugada`), normalizados sin ceros a la izquierda.
+ */
+export function extraerNumerosCaballoJugada(
+  caballo?: unknown,
+  ejemplarNumero?: unknown,
+  nombreJugada?: unknown
+): string[] {
+  const numeros = new Set<string>();
+  const agregar = (raw: unknown) => {
+    const limpio = String(raw ?? "")
+      .trim()
+      .replace(/^#/, "")
+      .replace(/^0+(?=\d)/, "");
+    if (/^\d+$/.test(limpio) && Number(limpio) > 0) {
+      numeros.add(limpio);
+    }
+  };
+
+  if (ejemplarNumero != null && String(ejemplarNumero).trim() !== "") {
+    agregar(ejemplarNumero);
+  }
+
+  const cabStr = String(caballo ?? "").trim();
+  const nomStr = String(nombreJugada ?? "").trim().toUpperCase();
+
+  if (cabStr && cabStr.toUpperCase() !== "TABLA COMPLETA") {
+    if (/^DUPLETA\b/.test(nomStr) && cabStr.includes("*")) {
+      // En tickets_apuestas de Dupleta, `carrera` corresponde a la 1ª pata (antes del '*').
+      const primeraPata = cabStr.split("*")[0];
+      for (const m of String(primeraPata ?? "").matchAll(/\d+/g)) {
+        agregar(m[0]);
+      }
+    } else {
+      for (const m of cabStr.matchAll(/\d+/g)) {
+        agregar(m[0]);
+      }
+    }
+  }
+
+  // Respaldo cuando el ejemplar solo viene codificado en `nombreJugada`
+  if (numeros.size === 0 && nomStr) {
+    const mGanador = /^(\d+)G$/i.exec(nomStr);
+    if (mGanador) agregar(mGanador[1]);
+    const mTablaN = /\bN(\d+)\b/i.exec(nomStr);
+    if (mTablaN) agregar(mTablaN[1]);
+    for (const mHash of nomStr.matchAll(/#(\d+)/g)) {
+      agregar(mHash[1]);
+    }
+  }
+
+  return [...numeros];
+}
+
+/**
+ * Determina si una jugada involucra al menos un ejemplar retirado en la carrera.
+ * Si devuelve `true`, la jugada queda ANULADA / RETIRADO en todos los módulos.
+ */
+export function jugadaInvolucraRetirado(
+  caballo: unknown,
+  ejemplarNumero: unknown,
+  nombreJugada: unknown,
+  retirados: Iterable<string | number> | null | undefined
+): boolean {
+  if (!retirados) return false;
+  const setRet = new Set<string>();
+  for (const r of retirados) {
+    const limpio = String(r ?? "")
+      .trim()
+      .replace(/^#/, "")
+      .replace(/^0+(?=\d)/, "");
+    if (limpio) setRet.add(limpio);
+  }
+  if (setRet.size === 0) return false;
+  const ejemplares = extraerNumerosCaballoJugada(caballo, ejemplarNumero, nombreJugada);
+  return ejemplares.some((e) => setRet.has(e));
+}

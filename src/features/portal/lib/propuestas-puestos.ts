@@ -34,6 +34,7 @@ import {
   esCarreraCerradaOEnPartida,
   type EstadoOperativoCarrera,
 } from "@/features/portal/lib/bloqueo-jugadas";
+import { jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros-nucleo";
 
 export { MENSAJE_CARRERA_CERRADA };
 
@@ -421,4 +422,47 @@ export function procesarMensajeMesa(
 /** Observaciones del reporte de WhatsApp con los límites alcanzados ("Juan hasta 300"). */
 export function observacionesDeLimites(estado: EstadoMesa): string {
   return [...new Set(estado.limites)].join("\n");
+}
+
+/**
+ * Anula en la mesa todas las propuestas abiertas y concreciones que involucren
+ * algún ejemplar retirado, restituyendo el saldo comprometido a cada jugador.
+ */
+export function anularJugadasMesaPorRetiro(
+  estado: EstadoMesa,
+  retirados: Array<string | number>
+): { estado: EstadoMesa; propuestasAnuladas: number; concrecionesAnuladas: number } {
+  const nuevo = copiar(estado);
+  let propuestasAnuladas = 0;
+  let concrecionesAnuladas = 0;
+
+  const restablecerSaldo = (nombre: string, monto: number) => {
+    if (monto <= 0) return;
+    const k = Object.keys(nuevo.disponibles).find((x) => x.toUpperCase() === nombre.trim().toUpperCase()) ?? nombre.trim();
+    nuevo.disponibles[k] = redondear((nuevo.disponibles[k] ?? 0) + monto);
+  };
+
+  nuevo.propuestas = nuevo.propuestas.filter((p) => {
+    if (jugadaInvolucraRetirado(p.caballos, null, p.jugada, retirados)) {
+      // Restituir la porción aún abierta (las concreciones se restituyen abajo)
+      if (p.montoAbierto > 0) {
+        restablecerSaldo(p.autor, p.montoAbierto);
+      }
+      propuestasAnuladas += 1;
+      return false;
+    }
+    return true;
+  });
+
+  nuevo.concreciones = nuevo.concreciones.filter((c) => {
+    if (jugadaInvolucraRetirado(c.caballos, null, c.jugada, retirados)) {
+      restablecerSaldo(c.autor, c.monto);
+      restablecerSaldo(c.jugador, c.monto);
+      concrecionesAnuladas += 1;
+      return false;
+    }
+    return true;
+  });
+
+  return { estado: nuevo, propuestasAnuladas, concrecionesAnuladas };
 }

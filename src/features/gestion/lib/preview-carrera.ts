@@ -41,6 +41,7 @@ import {
 import { pagoPotencialTablaFija } from "@/features/liquidacion/lib/reportes";
 import { evaluarPuestoPorPosicion } from "@/features/motores/lib/puestos";
 import { esJugadaAnuladaOExcluida } from "@/features/saldos/lib/contabilidad-central";
+import { jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros-nucleo";
 
 export { esJugadaAnuladaOExcluida };
 
@@ -358,12 +359,10 @@ function ladosDeLaJugada(
 function filaDesdePersistida(
   j: JugadaPersistida,
   sesion?: TicketSesion,
-  pizarraPuestos?: string[]
+  pizarraPuestos?: string[],
+  retirados?: Array<string | number>
 ): FilaPreviewCarrera {
   const monto = NUM(j.monto_jugado);
-  const anulada = Boolean(j.anulada);
-  let estado = estadoDeFila(j.estado, anulada);
-  const ticketId = String(j.id ?? "").trim() || null;
   const nombreJug = TXT(j.nombre_jugada);
   const jRec = j as unknown as Record<string, unknown>;
   const esJugMarca = esMarca(nombreJug);
@@ -373,6 +372,13 @@ function filaDesdePersistida(
     : esJugTabla
       ? extraerNumeroTablaFija(jRec)
       : TXT(j.caballo) || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : "");
+  const involucraRetirado =
+    Array.isArray(retirados) &&
+    retirados.length > 0 &&
+    jugadaInvolucraRetirado(caballo || j.caballo, j.ejemplar_numero, nombreJug, retirados);
+  const anulada = Boolean(j.anulada) || involucraRetirado;
+  let estado = involucraRetirado ? "Retirado" : estadoDeFila(j.estado, Boolean(j.anulada));
+  const ticketId = String(j.id ?? "").trim() || null;
   const precioTabla = esJugTabla ? extraerPrecioUnitarioTabla(jRec) : undefined;
   const cantidadTablas = esJugTabla
     ? Math.max(1, NUM(j.cantidad_tablas) || (precioTabla && precioTabla > 0 ? Math.round(monto / precioTabla) : 1))
@@ -495,9 +501,9 @@ function filaDesdePersistida(
     cliente1: TXT(j.cliente_juega_nombre),
     cliente2: resolverContraparteModalidad(nombreJug, j.cliente_consigue_nombre),
     estado,
-    estadoLiquidacion: estadoLiquidacionDe(estado),
+    estadoLiquidacion: involucraRetirado ? "Anulada" : estadoLiquidacionDe(estado),
     validada: true,
-    anulada: estado === "Anulada",
+    anulada: estado === "Anulada" || involucraRetirado,
     soloSesion: false,
     premioSaldo,
     esPremio,
@@ -510,31 +516,40 @@ function filaDesdePersistida(
   };
 }
 
-function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
+function filaDesdeSesion(
+  t: TicketSesion,
+  retirados?: Array<string | number>
+): FilaPreviewCarrera {
   const monto = NUM(t.monto);
   const mejor = mejorCobreDe(t);
   const esPremio = mejor > monto;
   const ticketId = t.ticketId != null && String(t.ticketId).trim() !== "" ? String(t.ticketId) : null;
   const nombreJug = jugadaSinMonto(t.comando);
-  const { lado1, lado2, aposto1, aposto2 } = ladosDeLaJugada(monto, "Pendiente", 0, 0, nombreJug);
+  const caballo = TXT(t.caballo);
+  const involucraRetirado =
+    Array.isArray(retirados) &&
+    retirados.length > 0 &&
+    jugadaInvolucraRetirado(caballo, null, nombreJug, retirados);
+  const estado = involucraRetirado ? "Retirado" : "Pendiente";
+  const { lado1, lado2, aposto1, aposto2 } = ladosDeLaJugada(monto, estado, 0, 0, nombreJug);
   const esAdel = Boolean(t.esAdelantada) || esNombreModalidadAdelantada(nombreJug);
   return {
     clave: `ses-${t.id ?? ticketId ?? nombreJug}`,
     ticketId,
     jugada: nombreJug,
-    caballo: TXT(t.caballo),
+    caballo,
     monto,
     aposto1,
     aposto2,
     cliente1: TXT(t.cliente1),
     cliente2: resolverContraparteModalidad(nombreJug, t.cliente2),
-    estado: "Pendiente",
-    estadoLiquidacion: "Pendiente",
+    estado,
+    estadoLiquidacion: involucraRetirado ? "Anulada" : "Pendiente",
     validada: ticketId !== null,
-    anulada: false,
+    anulada: involucraRetirado,
     soloSesion: true,
-    premioSaldo: esPremio ? mejor - monto : -monto,
-    esPremio,
+    premioSaldo: involucraRetirado ? 0 : esPremio ? mejor - monto : -monto,
+    esPremio: involucraRetirado ? false : esPremio,
     tieneProyeccion: true,
     lado1,
     lado2,
@@ -553,7 +568,8 @@ function filaDesdeSesion(t: TicketSesion): FilaPreviewCarrera {
 export function armarFilasPreview(
   persistidas: JugadaPersistida[],
   sesion: TicketSesion[],
-  pizarraPuestos?: string[]
+  pizarraPuestos?: string[],
+  retirados?: Array<string | number>
 ): FilaPreviewCarrera[] {
   const ticketsSesion = sesion.filter((t) => TXT(t.comando) !== "");
   const porTicketId = new Map<string, TicketSesion>();
@@ -570,13 +586,13 @@ export function armarFilasPreview(
     const id = String(j.id ?? "").trim();
     const sesionDeFila = id ? porTicketId.get(id) : undefined;
     if (id) idsUsados.add(id);
-    filas.push(filaDesdePersistida(j, sesionDeFila, pizarraPuestos));
+    filas.push(filaDesdePersistida(j, sesionDeFila, pizarraPuestos, retirados));
   }
 
   for (const t of ticketsSesion) {
     const id = t.ticketId != null ? String(t.ticketId) : "";
     if (id && idsUsados.has(id)) continue;
-    filas.push(filaDesdeSesion(t));
+    filas.push(filaDesdeSesion(t, retirados));
   }
 
   return filas;

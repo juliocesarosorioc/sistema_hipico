@@ -19,8 +19,14 @@ import {
   type JugadaPersistida,
   type TicketSesion,
 } from "../src/features/gestion/lib/preview-carrera";
-import { generarTextoPrejugadasWhatsapp } from "../src/features/liquidacion/lib/reporte-imagen";
+import {
+  generarTextoPrejugadasWhatsapp,
+  generarTextoSaldosWhatsapp,
+} from "../src/features/liquidacion/lib/reporte-imagen";
 import { relacionResultados } from "../src/features/impresion/lib/reportGenerator";
+import { jugadaInvolucraRetirado } from "../src/features/carreras/lib/retiros-nucleo";
+import { anularJugadasMesaPorRetiro, crearMesa, proponer } from "../src/features/portal/lib/propuestas-puestos";
+import { liquidarOficial } from "../src/features/motores/lib/oficiales";
 
 let pasan = 0;
 let fallan = 0;
@@ -461,6 +467,78 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
     txtResWsp.includes("JUGADAS ADELANTADAS\n1) TABLA FIJA DEL 5 A 38\nJuega SHAFLAN $ -114,00\nDa TF $ +108,30\n2) MARCA 8 X 2 con 60,00\nJuega NADAL $ -60,00\nDa MARCAS $ +60,00"),
     "WhatsApp Resultados agrupa JUGADAS ADELANTADAS al final con formato resumido exacto"
   );
+}
+
+// ── 10. Retiros de ejemplar (anulación transversal) y Reporte Saldos WhatsApp ──
+{
+  si(jugadaInvolucraRetirado("7", null, "2P", ["7"]), "jugada simple del ejemplar 7 detecta retiro del 7");
+  si(jugadaInvolucraRetirado("8x2", null, "MARCA", ["2"]), "pareo 8x2 detecta retiro del 2");
+  si(!jugadaInvolucraRetirado("8x2", null, "MARCA", ["5"]), "pareo 8x2 NO se anula si se retira el 5");
+
+  const filasConRetirado = armarFilasPreview(
+    [
+      persistida({ id: "r1", nombre_jugada: "2P", caballo: "7", monto_jugado: 100, estado: "Pendiente" }),
+      persistida({ id: "r2", nombre_jugada: "2P", caballo: "4", monto_jugado: 100, estado: "Pendiente" }),
+    ],
+    [ticketSesion({ id: "s-ret", ticketId: undefined, caballo: "7", monto: 50 })],
+    [],
+    ["7"]
+  );
+  igual(filasConRetirado[0].estado, "Retirado", "persistida con ejemplar retirado pasa a estado Retirado");
+  si(filasConRetirado[0].anulada, "persistida con ejemplar retirado queda anulada en el preview");
+  igual(filasConRetirado[0].estadoLiquidacion, "Anulada", "persistida con ejemplar retirado muestra Anulada");
+  igual(filasConRetirado[1].estado, "Pendiente", "persistida de otro ejemplar (4) permanece Pendiente");
+  si(filasConRetirado[2].anulada, "ticket en sesión con ejemplar retirado también queda anulado");
+
+  const resMotorRet = liquidarOficial({
+    id: "t1",
+    hipodromo: "La Rinconada",
+    carrera: "1",
+    fechas: ["2026-10-25"],
+    tipo_jugada: "100 2P",
+    monto: 100,
+    cruces: 1,
+    cuota: null,
+    total: 100,
+    addedAt: 0,
+    caballo: "7",
+    puesto_final: 99,
+    dividendos: null,
+    pizarra: { primero: "1", segundo: "2", tercero: "3", retirados: ["7"] },
+  });
+  si(!resMotorRet.ok && Boolean(resMotorRet.motivo?.includes("RETIRADO")), "liquidarOficial anula jugada cuando el ejemplar está en retirados");
+  igual(resMotorRet.totalClienteNeto, 100, "liquidarOficial devuelve el capital al cliente cuando se retira el ejemplar");
+
+  const mesa0 = crearMesa({ PEDRO: 500 });
+  const prop1 = proponer(mesa0, {
+    autor: "PEDRO",
+    rol: "JUEGA",
+    jugada: "2P",
+    caballos: "7",
+    monto: 100,
+  });
+  const resMesa = anularJugadasMesaPorRetiro(prop1.estado, ["7"]);
+  igual(resMesa.propuestasAnuladas, 1, "anularJugadasMesaPorRetiro cancela propuestas abiertas del ejemplar retirado");
+  igual(resMesa.estado.propuestas.length, 0, "la propuesta del ejemplar retirado se elimina de la mesa");
+  igual(resMesa.estado.disponibles.PEDRO, 500, "anularJugadasMesaPorRetiro restituye el saldo comprometido a PEDRO");
+
+  // WhatsApp Saldos con íconos de modalidad (🛡️ Avalado, 🔓 Libre, 💰 Pozo), ocultando 0 y mostrando Disp. XXXX
+  const wspSaldos = generarTextoSaldosWhatsapp({
+    grupo: "PRINCIPAL",
+    filtro: "sin_ceros",
+    clientes: [
+      { nombre: "CERO", saldoContable: 0, aval: 0, disponible: 0, libre: false },
+      { nombre: "POZO_POS", saldoContable: 250, aval: 0, disponible: 250, libre: false },
+      { nombre: "LIBRE_NEG", saldoContable: -80, aval: 0, disponible: 999999, libre: true },
+      { nombre: "AVAL_HOLGADO", saldoContable: -100, aval: 1000, disponible: 900, libre: false },
+      { nombre: "AVAL_POR_AGOTAR", saldoContable: -850, aval: 1000, disponible: 150, libre: false },
+    ],
+  });
+  si(!wspSaldos.includes("CERO"), "WhatsApp Saldos oculta clientes con saldo 0");
+  si(wspSaldos.includes("💰 POZO_POS: *+250,00*"), "WhatsApp Saldos muestra ícono 💰 y saldo positivo");
+  si(wspSaldos.includes("🔓 LIBRE_NEG: *-80,00*"), "WhatsApp Saldos muestra ícono 🔓 para cliente libre");
+  si(wspSaldos.includes("🛡️ AVAL_HOLGADO: *-100,00*") && !wspSaldos.includes("AVAL_HOLGADO: *-100,00* · Disp."), "WhatsApp Saldos muestra ícono 🛡️ y saldo del avalado sin Disp. cuando no está próximo a agotarse");
+  si(wspSaldos.includes("🛡️ AVAL_POR_AGOTAR: *-850,00* · Disp. 150,00"), "WhatsApp Saldos agrega Disp. XXXX cuando el avalado se aproxima a agotar su aval");
 }
 
 console.log(`\n${pasan} ok / ${fallan} fallaron`);

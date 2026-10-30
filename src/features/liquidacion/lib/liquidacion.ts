@@ -28,6 +28,8 @@ export type PizarraCarrera = {
   /** Orden de llegada completo en raya (1º, 2º, 3º…) cuando hubo distanciamiento
    *  y difiere de la pizarra oficial. Por defecto es igual al orden oficial. */
   orden_llegada_raya?: string[];
+  /** Ejemplares retirados oficialmente en la carrera (anulan jugadas que los involucren). */
+  retirados?: string[];
 };
 
 export type PayloadPagar = {

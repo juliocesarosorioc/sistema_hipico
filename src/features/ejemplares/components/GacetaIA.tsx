@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CLAVE_GEMINI_KEY, transformarGaceta, transformarGacetaTexto } from "@/features/gaceta/lib/ia";
+import {
+  CLAVE_GEMINI_KEY,
+  transformarGaceta,
+  transformarGacetaTexto,
+  type CarreraExtraida,
+} from "@/features/gaceta/lib/ia";
 import { guardarHistorialGaceta, registrarEjemplares, registrarGacetaEHistorial } from "@/features/gaceta/lib/padron";
 import { sincronizarCarrerasAlCentral, type ResultadoCargaCarrera } from "@/features/carreras/lib/sincronizar";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
@@ -34,7 +39,14 @@ import {
   type ResumenPadron,
 } from "@/features/gaceta/lib/ui";
 
-type PaginaGaceta = { id: string; dataUrl: string; num: number; orden: number };
+type PaginaGaceta = {
+  id: string;
+  dataUrl: string;
+  num: number;
+  orden: number;
+  conTexto?: boolean;
+  archivo?: string;
+};
 
 function leerArchivoComoDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -105,6 +117,7 @@ async function renderPdfAPaginas(
   try {
     for (let i = 1; i <= total; i++) {
       onProgreso(i, total);
+      await new Promise((r) => setTimeout(r, 0));
       const page = await doc.getPage(i);
       const vp = page.getViewport({ scale: 1.5 });
       const canvas = document.createElement("canvas");
@@ -158,6 +171,7 @@ async function extraerPdfComoTexto(file: File, tope?: number): Promise<string> {
   const paginas: string[] = [];
   try {
     for (let i = 1; i <= total; i++) {
+      await new Promise((r) => setTimeout(r, 0));
       const page = await doc.getPage(i);
       try {
         const contenido = await page.getTextContent();
@@ -264,6 +278,7 @@ export function GacetaIA() {
    * Cuando no existe (PDF escaneado), se manda la página como imagen.
    */
   const [textoDocumento, setTextoDocumento] = useState("");
+  const [textosDocumentos, setTextosDocumentos] = useState<Array<{ nombre: string; texto: string }>>([]);
   /** Fecha de la jornada que se está cargando. Por defecto HOY, pero admite días
    *  FUTUROS: las carreras del documento que no traigan fecha propia se sellan
    *  con esta fecha, para poder cargar/registrar/publicar jornadas posteriores. */
@@ -462,9 +477,16 @@ export function GacetaIA() {
         const conteo = (estado: ResultadoCargaCarrera["estado"]) =>
           sincronizacion.resultados.filter((r) => r.estado === estado).length;
 
+        const hipodromosUnicos = [
+          ...new Set(
+            lote
+              .map((c) => String(c.hipodromo ?? "").trim().toUpperCase())
+              .filter(Boolean)
+          ),
+        ];
         // Disparar mensaje y reporte detallado de resultado para informar
         const info: ResultadoInformeCarga = {
-          hipodromo: lote[0]?.hipodromo ? String(lote[0].hipodromo).toUpperCase() : "HIPÓDROMO",
+          hipodromo: hipodromosUnicos.length ? hipodromosUnicos.join(" · ") : "HIPÓDROMO",
           fecha,
           totalCarreras: lote.length,
           creadas: conteo("CREADA"),
@@ -602,6 +624,15 @@ export function GacetaIA() {
     setSeleccionadas(new Set());
   }, []);
 
+  const limpiarArchivosCargados = useCallback(() => {
+    setPaginas([]);
+    setSeleccionadas(new Set());
+    setTextoDocumento("");
+    setTextosDocumentos([]);
+    setDiag("");
+    setEstado("Archivos vaciados. Puede cargar nuevas gacetas.");
+  }, []);
+
   const aplicarRango = useCallback(() => {
     const set = parsearRangoPaginas(rango);
     if (!set.size) {
@@ -622,51 +653,63 @@ export function GacetaIA() {
       setEstado("Leyendo archivos...");
       setDiag("");
       try {
+        const baseOrden = paginas.length;
         const nuevas: PaginaGaceta[] = [];
-        const textos: string[] = [];
-        const generar = (dataUrl: string) => ({
-          id: `${dataUrl.slice(0, 24)}-${nuevas.length}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        const nuevosTextos: Array<{ nombre: string; texto: string }> = [];
+        const generar = (dataUrl: string, conTexto: boolean, archivo: string): PaginaGaceta => ({
+          id: `${dataUrl.slice(0, 24)}-${baseOrden + nuevas.length}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           dataUrl,
-          num: nuevas.length + 1,
-          orden: nuevas.length,
+          num: baseOrden + nuevas.length + 1,
+          orden: baseOrden + nuevas.length,
+          conTexto,
+          archivo,
         });
         for (const f of arr) {
           try {
             const esPdf = /\.pdf$/i.test(f.name) || f.type === "application/pdf";
             if (esPdf) {
               const tope = parseInt(topePaginas, 10);
-              // Capa de texto primero: si el PDF la tiene, se transcribe por
-              // BLOQUES (2-3 carreras por llamada) y no se trunca. Si no la
-              // tiene (PDF escaneado), se sigue con las páginas como imágenes.
               setEstado(`Leyendo el texto de ${f.name}...`);
+              let textoExtraido = "";
               try {
-                const texto = await extraerPdfComoTexto(f, tope > 0 ? tope : undefined);
-                if (texto.trim().length >= 400) textos.push(texto);
+                textoExtraido = await extraerPdfComoTexto(f, tope > 0 ? tope : undefined);
               } catch {
                 /* sin capa de texto: se usa la vía de imágenes */
               }
               setEstado(`Renderizando ${f.name}...`);
               const pag = await renderPdfAPaginas(
                 f,
-                (pag, total) => setEstado(`Renderizando ${f.name} · página ${pag} de ${total}...`),
+                (pagN, total) => setEstado(`Renderizando ${f.name} · página ${pagN} de ${total}...`),
                 tope > 0 ? tope : undefined
               );
-              for (const d of pag) nuevas.push(generar(d));
+              const umbralMinTexto = Math.max(400, Math.min(pag.length, 6) * 160);
+              const tieneTexto = textoExtraido.trim().length >= umbralMinTexto;
+              if (tieneTexto) {
+                nuevosTextos.push({ nombre: f.name, texto: textoExtraido });
+              }
+              for (const d of pag) nuevas.push(generar(d, tieneTexto, f.name));
             } else {
               const dataUrl = await leerArchivoComoDataUrl(f);
-              nuevas.push(generar(dataUrl));
+              nuevas.push(generar(dataUrl, false, f.name));
             }
           } catch (e) {
             setEstado("Error leyendo " + f.name + ": " + (e instanceof Error ? e.message : String(e)));
           }
         }
-        if (textos.length) {
-          setTextoDocumento(textos.join("\n\n"));
+        if (nuevosTextos.length) {
+          setTextosDocumentos((prev) => {
+            const map = new Map<string, { nombre: string; texto: string }>();
+            for (const item of prev) map.set(item.nombre, item);
+            for (const item of nuevosTextos) map.set(item.nombre, item);
+            const lista = [...map.values()];
+            setTextoDocumento(lista.map((x) => x.texto).join("\n\n"));
+            return lista;
+          });
           setEstado(
-            `${nuevas.length} página(s) listas · documento con capa de texto: se transcribirá por bloques (2-3 carreras por llamada) para que no se trunque.`
+            `${nuevas.length} página(s) nuevas listas (${arr.length} archivo(s)) · se transcribirán todas las gacetas cargadas por bloques para que no se trunquen.`
           );
         } else if (nuevas.length) {
-          setEstado(`${nuevas.length} página(s) listas (sin capa de texto: se envía como imágenes).`);
+          setEstado(`${nuevas.length} página(s) nuevas listas (se enviarán como imágenes a la IA).`);
         }
         if (nuevas.length) {
           setPaginas((prev) => [...prev, ...nuevas]);
@@ -680,7 +723,7 @@ export function GacetaIA() {
         setLeyendo(false);
       }
     },
-    [topePaginas, toast]
+    [topePaginas, paginas.length]
   );
 
   const guardarClave = useCallback(() => {
@@ -721,8 +764,14 @@ export function GacetaIA() {
       toast("Primero guarda tu clave de Gemini.", "warning");
       return;
     }
-    const imgs = paginas.filter((p) => seleccionadas.has(p.id)).map((p) => p.dataUrl);
-    const hayTexto = textoDocumento.trim().length >= 400;
+    const paginasSel = paginas.filter((p) => seleccionadas.has(p.id));
+    const imgs = paginasSel.map((p) => p.dataUrl);
+    const docsConTextoActivos = textosDocumentos.filter(
+      (doc) =>
+        doc.texto.trim().length >= 400 &&
+        (paginas.length === 0 || paginasSel.some((p) => p.archivo === doc.nombre))
+    );
+    const hayTexto = docsConTextoActivos.length > 0 || textoDocumento.trim().length >= 400;
     if (!imgs.length && !hayTexto) {
       setEstado("Selecciona al menos una página.");
       toast("Selecciona al menos una página.", "warning");
@@ -733,22 +782,76 @@ export function GacetaIA() {
     setFaseRegistro("extrayendo");
     setEstado(
       hayTexto
-        ? "🤖 Extrayendo ejemplares y carreras con IA..."
+        ? `🤖 Extrayendo ejemplares y carreras con IA (${Math.max(1, docsConTextoActivos.length)} gaceta(s))...`
         : `🤖 Extrayendo ejemplares y carreras con IA... · ${imgs.length} página(s) (${pesoSel})`
     );
     setDiag("");
     try {
-      // VÍA DE TEXTO (preferida): el documento se parte en bloques de 2-3
-      // carreras, así ninguna respuesta se trunca. Solo si el PDF no traía
-      // capa de texto se cae a la vía de imágenes.
-      const res = hayTexto
-        ? await transformarGacetaTexto(
-            clave.trim(),
-            textoDocumento,
-            (hecho, total) => setProgreso({ hecho, total }),
-            (s) => setEstado(s)
-          )
-        : await transformarGaceta(clave.trim(), imgs, (hecho, total) => setProgreso({ hecho, total }), (s) => setEstado(s));
+      const carrerasAcumuladas: CarreraExtraida[] = [];
+      const diags: string[] = [];
+      const avisosNum: string[] = [];
+      let huboCuotaTotal = false;
+      let ultimoError = "";
+      const archivosTextoExitosos = new Set<string>();
+
+      const listaTextos =
+        docsConTextoActivos.length > 0
+          ? docsConTextoActivos
+          : hayTexto
+            ? [{ nombre: "documento", texto: textoDocumento }]
+            : [];
+
+      for (let idxDoc = 0; idxDoc < listaTextos.length; idxDoc++) {
+        const doc = listaTextos[idxDoc];
+        const prefijo = listaTextos.length > 1 ? `[${idxDoc + 1}/${listaTextos.length} · ${doc.nombre}] ` : "";
+        const resDoc = await transformarGacetaTexto(
+          clave.trim(),
+          doc.texto,
+          (hecho, total) => setProgreso({ hecho, total }),
+          (s) => setEstado(`${prefijo}${s}`)
+        );
+        if (resDoc.diag) diags.push(prefijo ? `${prefijo}\n${resDoc.diag}` : resDoc.diag);
+        if (resDoc.cuotaTotal) huboCuotaTotal = true;
+        if (resDoc.avisoNumeracion) avisosNum.push(`${prefijo}${resDoc.avisoNumeracion}`);
+        if (resDoc.ok && resDoc.carreras.length > 0) {
+          carrerasAcumuladas.push(...resDoc.carreras);
+          archivosTextoExitosos.add(doc.nombre);
+        } else if (resDoc.error) {
+          ultimoError = resDoc.error;
+        }
+      }
+
+      // Páginas seleccionadas de gacetas escaneadas (sin capa de texto) o cuyo
+      // texto embebido no produjo carreras (fuentes corruptas): se procesan por visión.
+      const imgsParaVision = paginasSel
+        .filter((p) => !p.conTexto || !p.archivo || !archivosTextoExitosos.has(p.archivo))
+        .map((p) => p.dataUrl);
+
+      if (imgsParaVision.length > 0 && !huboCuotaTotal) {
+        const resImg = await transformarGaceta(
+          clave.trim(),
+          imgsParaVision,
+          (hecho, total) => setProgreso({ hecho, total }),
+          (s) => setEstado(s)
+        );
+        if (resImg.diag) diags.push(resImg.diag);
+        if (resImg.cuotaTotal) huboCuotaTotal = true;
+        if (resImg.avisoNumeracion) avisosNum.push(resImg.avisoNumeracion);
+        if (resImg.ok && resImg.carreras.length > 0) {
+          carrerasAcumuladas.push(...resImg.carreras);
+        } else if (resImg.error) {
+          ultimoError = resImg.error;
+        }
+      }
+
+      const res = {
+        ok: carrerasAcumuladas.length > 0,
+        carreras: carrerasAcumuladas,
+        diag: diags.join("\n---\n"),
+        cuotaTotal: huboCuotaTotal,
+        avisoNumeracion: avisosNum.join(" | ") || undefined,
+        error: ultimoError || undefined,
+      };
       setDiag(res.diag ?? "");
       if (!res.ok) {
         setEstado(res.cuotaTotal ? "Cuota DIARIA gratuita de Gemini agotada. Prueba otra vez mañana o consigue otra clave gratis (aistudio.google.com/apikey)." : res.error ?? "Error transformando.");
@@ -854,7 +957,7 @@ export function GacetaIA() {
       setTrabajando(false);
       setProgreso(null);
     }
-  }, [clave, paginas, seleccionadas, textoDocumento, toast, refrescarContadores, registrarCarrerasEnElDia]);
+  }, [clave, paginas, seleccionadas, textoDocumento, textosDocumentos, toast, refrescarContadores, registrarCarrerasEnElDia, verificarGacetaExistente]);
 
   const registrarEnPadron = useCallback(async () => {
     if (registrando || carreras.length === 0) return;
@@ -1174,6 +1277,9 @@ export function GacetaIA() {
                 </Button>
                 <Button variant="ghost" size="sm" onClick={limpiarSeleccion}>
                   Ninguna
+                </Button>
+                <Button variant="ghost" size="sm" onClick={limpiarArchivosCargados}>
+                  🗑️ Vaciar archivos
                 </Button>
               </div>
             </div>
