@@ -21,6 +21,7 @@ import {
   errorClientes,
   etiquetaModoJuego,
   formasPagoDe,
+  limpiarCacheClientes,
   listarClientes,
   resumenFormaPago,
   type ClienteRow,
@@ -151,6 +152,21 @@ export function ClientesModule() {
 
   useEffect(() => {
     void recargar(grupoConsultado);
+
+    const handleActualizar = () => {
+      limpiarCacheClientes();
+      void recargar(grupoConsultado);
+    };
+
+    window.addEventListener("hipico:saldos-actualizados", handleActualizar);
+    window.addEventListener("hipico_tickets_actualizados", handleActualizar);
+    window.addEventListener("focus", handleActualizar);
+
+    return () => {
+      window.removeEventListener("hipico:saldos-actualizados", handleActualizar);
+      window.removeEventListener("hipico_tickets_actualizados", handleActualizar);
+      window.removeEventListener("focus", handleActualizar);
+    };
   }, [grupoConsultado]);
 
   const visibles = useMemo(() => {
@@ -442,19 +458,26 @@ export function ClientesModule() {
                       </span>
                     </td>
                     <td className={td + " text-right"}>
-                      <span className={`font-mono font-black tabular-nums ${
-                        num(c.saldo_actual) > 0
-                          ? "text-emerald-700"
-                          : num(c.saldo_actual) < 0
-                            ? "text-danger-600"
-                            : "text-slate-400"
-                      }`}>
+                      <span
+                        className={`font-mono font-black tabular-nums ${
+                          num(c.saldo_actual) > 0
+                            ? "text-emerald-700"
+                            : num(c.saldo_actual) < 0
+                              ? "text-danger-600"
+                              : "text-slate-400"
+                        }`}
+                        title={
+                          c.disponible != null
+                            ? `Saldo: ${formatoMoneda("USD", num(c.saldo_actual))} | Disponible con aval: ${formatoMoneda("USD", num(c.disponible))}`
+                            : undefined
+                        }
+                      >
                         {formatoMoneda("USD", num(c.saldo_actual))}
                       </span>
                     </td>
                     <td className={td + " text-right"}>
                       {(() => {
-                        const resTotal = num(c.saldo_actual);
+                        const resTotal = num(c.resultado ?? c.resultado_acumulado ?? 0);
                         return (
                           <span
                             className={`font-mono font-black tabular-nums ${
@@ -464,7 +487,7 @@ export function ClientesModule() {
                                   ? "text-danger-600"
                                   : "text-slate-400"
                             }`}
-                            title="Resultado acumulado ganador/perdedor con devolución incluida"
+                            title="Resultado neto de jugadas en carrera con devolución/incentivo incluida"
                           >
                             {resTotal > 0 ? "+" : ""}
                             {formatoMoneda("USD", resTotal)}

@@ -33,6 +33,8 @@ import {
 } from "@/features/saldos/lib/contabilidad-central";
 import { generarAsientoDevolucionIncentivo } from "@/features/contabilidad/lib/plan-cuentas";
 import { jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros-nucleo";
+import { limpiarCacheClientes } from "@/features/clientes/lib/clientes";
+import { limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
 
 export { calcularEstadoCuentaCliente, calcularResumenContableCliente, calcularIncentivoCarreraCliente };
 
@@ -625,6 +627,13 @@ export async function aplicarLiquidacionSaldos(
       base +
       ` ${pendientes.length} ticket(s) quedaron PENDIENTES porque falta el dividendo ` +
       `que los cuantifica (cargue los dividendos de la carrera y liquide de nuevo).`;
+  }
+
+  limpiarCacheClientes();
+  limpiarCacheClientesVenta();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hipico:saldos-actualizados"));
+    window.dispatchEvent(new CustomEvent("hipico_tickets_actualizados"));
   }
 
   return {

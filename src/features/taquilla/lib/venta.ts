@@ -14,6 +14,7 @@
 import { supabase } from "@/core/supabase";
 import { resolverContraparteModalidad, USUARIOS_SISTEMA_MODALIDADES } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { grupoDeVentaVigente, limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
+import { limpiarCacheClientes } from "@/features/clientes/lib/clientes";
 import { veTodosLosGruposVigente } from "@/features/seguridad/lib/vigente";
 import {
   generarAsientoCompromisoJugada,
@@ -134,7 +135,12 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
       /* best-effort si la columna fecha_carrera aún no existe */
     }
   }
+  limpiarCacheClientes();
   limpiarCacheClientesVenta();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hipico:saldos-actualizados"));
+    window.dispatchEvent(new CustomEvent("hipico_tickets_actualizados"));
+  }
   const montoNum = Number(v.monto) || 0;
   const dadorFinal = String(dadorResuelto || v.clienteDador || "").trim();
   const esDadorSistema = (USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(dadorFinal.toUpperCase());
@@ -180,7 +186,12 @@ export async function anularJugada(
     return { ok: false, error: /club_anular_jugada|not found|404/i.test(texto) ? MENSAJE_SIN_RPC : texto };
   }
   const r = (data ?? {}) as Record<string, unknown>;
+  limpiarCacheClientes();
   limpiarCacheClientesVenta();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hipico:saldos-actualizados"));
+    window.dispatchEvent(new CustomEvent("hipico_tickets_actualizados"));
+  }
   const devueltoNum = Number(r.devuelto) || 0;
   if (devueltoNum > 0) {
     void generarAsientoLiberacionCompromisoJugada({

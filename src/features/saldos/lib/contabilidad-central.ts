@@ -631,6 +631,9 @@ export async function sincronizarSaldosRealesClientes<
     grupo_id?: string | number | null;
     telefono?: string | null;
     codigo_pais?: string | null;
+    resultado?: number | string | null;
+    resultado_acumulado?: number | string | null;
+    disponible?: number | string | null;
   }
 >(clientes: T[], _grupoId?: string | number | null): Promise<T[]> {
   if (!clientes) return [];
@@ -662,7 +665,8 @@ export async function sincronizarSaldosRealesClientes<
         .select(
           "id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, caballo, monto_jugado, premio_pagar, monto_decidido, comision_porcentaje, comision_pagada, estado, anulada, es_adelantada"
         )
-        .limit(3000);
+        .order("id", { ascending: false })
+        .limit(5000);
       if (error) {
         if (!esTablaInexistente42P01(error)) {
           // Si falla por columna opcional inexistente, reintenta con columnas mínimas
@@ -671,7 +675,8 @@ export async function sincronizarSaldosRealesClientes<
             .select(
               "id, cliente_juega_id, cliente_juega_nombre, monto_jugado, premio_pagar, estado, anulada"
             )
-            .limit(3000);
+            .order("id", { ascending: false })
+            .limit(5000);
           if (!rMin.error && rMin.data) {
             tickets = rMin.data as TicketContableRaw[];
           }
@@ -876,18 +881,17 @@ export async function sincronizarSaldosRealesClientes<
     const saldoEfectivoEnMemoria =
       riesgoDadorPendiente > 0 ? restarDinero(saldoNum, riesgoDadorPendiente) : saldoNum;
 
-    if (riesgoDadorPendiente > 0 || (telInfo && (!c.telefono || !c.codigo_pais))) {
-      const copiaConCompromiso: Record<string, unknown> = {
-        ...c,
-        saldo_actual: saldoEfectivoEnMemoria,
-        telefono: c.telefono ?? telInfo?.telefono ?? null,
-        codigo_pais: c.codigo_pais ?? telInfo?.codigo_pais ?? null,
-      };
-      if ("saldo" in c) copiaConCompromiso.saldo = saldoEfectivoEnMemoria;
-      return copiaConCompromiso as T;
-    }
-
-    return c;
+    const copiaCliente: Record<string, unknown> = {
+      ...c,
+      saldo_actual: saldoEfectivoEnMemoria,
+      resultado: resumen.impactoSaldoTotalCarrera,
+      resultado_acumulado: resumen.impactoSaldoTotalCarrera,
+      disponible: resumen.disponibleParaJugar,
+      telefono: c.telefono ?? telInfo?.telefono ?? null,
+      codigo_pais: c.codigo_pais ?? telInfo?.codigo_pais ?? null,
+    };
+    if ("saldo" in c) copiaCliente.saldo = saldoEfectivoEnMemoria;
+    return copiaCliente as T;
   });
 
   if (promesasCuracion.length > 0) {

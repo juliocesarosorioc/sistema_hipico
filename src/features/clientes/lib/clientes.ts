@@ -65,6 +65,11 @@ export type ClienteRow = {
   es_socio?: boolean | null;
   aval?: number | string | null;
   saldo_actual?: number | string | null;
+  /** Resultado neto acumulado de jugadas en carrera con devolución incluida */
+  resultado?: number | string | null;
+  resultado_acumulado?: number | string | null;
+  /** Saldo disponible total para jugar considerando aval */
+  disponible?: number | string | null;
   devolucion?: number | string | null;
   socio_asignado?: string | null;
   mostrar_saldo_socio?: boolean | null;

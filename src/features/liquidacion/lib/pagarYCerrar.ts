@@ -18,6 +18,8 @@ import { calcularFinanzasRemate } from "@/features/remates/lib/core";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { redondearCentavos } from "@/shared/lib/dinero";
+import { limpiarCacheClientes } from "@/features/clientes/lib/clientes";
+import { limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
 import {
   calcularLiquidacionPuestosCarrera,
   type EntradaCrucePuestos,
@@ -384,6 +386,13 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     fecha,
     estado: "LIQUIDADA",
   });
+
+  limpiarCacheClientes();
+  limpiarCacheClientesVenta();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hipico:saldos-actualizados"));
+    window.dispatchEvent(new CustomEvent("hipico_tickets_actualizados"));
+  }
 
   return {
     ok: true,
