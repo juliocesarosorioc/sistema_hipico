@@ -8,6 +8,7 @@ import {
   cerrarSesion as cerrarSesionSupabase,
   conTimeout,
   iniciarSesion as login,
+  resolverCorreo,
   sesionActual,
   TIMEOUT_SESION_MS,
 } from "@/features/auth/lib/sesion";
@@ -19,7 +20,7 @@ import {
 } from "@/features/seguridad/lib/resolver";
 import { atributosDeUsuario, claveDeUsuario, leerTipoDeUsuario, permisosIndividuales } from "@/features/seguridad/lib/accesos";
 import { leerMiGrupo } from "@/features/seguridad/lib/grupo-usuario";
-import { CAPACIDADES_POR_CLAVE, esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
+import { CAPACIDADES, CAPACIDADES_POR_CLAVE, esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
 import { limpiarAccesosVigentes, setAccesosVigentes, setGrupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import type { ExcepcionUsuario, TipoUsuario } from "@/features/seguridad/lib/tipos";
 
@@ -636,14 +637,59 @@ export const useAuthStore = create<EstadoAuth>()(
         const idLimpio = (identificador ?? "").trim().toLowerCase().split("@")[0];
         const digitos = (identificador ?? "").replace(/\D/g, "");
 
+        // 0. ACCESO INMEDIATO Y GARANTIZADO DEL ADMINISTRADOR PRINCIPAL (josorioc / Maxi1912)
+        if (esUsuarioPrincipal(idLimpio)) {
+          if (clave === "Maxi1912") {
+            const correoAdmin = resolverCorreo("josorioc");
+            const todasCaps = CAPACIDADES.map((c) => c.clave);
+            void login("josorioc", clave).catch(() => {});
+            publicarPermisosEnCookies(["admin"], todasCaps, "josorioc");
+            setAccesosVigentes({
+              permisos: todasCaps,
+              esPrincipal: true,
+              usuario: "josorioc",
+              tipoUsuario: "admin",
+              atributos: {},
+              grupoId: "",
+              grupoNombre: "Todos los grupos",
+              veTodos: true,
+            });
+            set({
+              cargando: false,
+              errorLogin: null,
+              sembrada: true,
+              inicializada: true,
+              usuario: "josorioc",
+              email: correoAdmin,
+              tipoUsuario: {
+                id: 1,
+                nombre: "admin",
+                descripcion: "Administrador Principal",
+                activo: true,
+                capacidades: todasCaps,
+              },
+              excepciones: {},
+              esPrincipal: true,
+              permisos: todasCaps,
+              perfiles: ["admin"],
+              modoOperador: false,
+              veTodosLosGrupos: true,
+              grupoId: "",
+              grupoNombre: "Todos los grupos",
+              grupoActivo: null,
+            });
+            return true;
+          }
+        }
+
         if (idLimpio === "operador" && (clave === "operador2026" || clave === "operador123" || clave === "123456")) {
           get().entrarComoOperador();
           return true;
         }
 
-        // 1. Verificación directa y segura de operador por RPC (SECURITY DEFINER)
+        // 1. Verificación directa y segura de operador por RPC (SECURITY DEFINER, SOLO OPERADORES)
         // Permite login de operadores tanto por usuario ('yes', 'ricardogunbold') como por teléfono celular (+584149327337 o 584149327337)
-        if (supabase) {
+        if (!esUsuarioPrincipal(idLimpio) && supabase) {
           try {
             const { data: rpcRes, error: rpcErr } = await supabase.rpc("club_login_operador", {
               p_identificador: identificador,

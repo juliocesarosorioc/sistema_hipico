@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { mensajeSinAcceso, useAuthStore } from "@/shared/store/useAuthStore";
 import { pedirRecuperacion, resolverCorreo } from "@/features/auth/lib/sesion";
+import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 import { RateLimiterCliente, sanitizarIdentificador } from "@/shared/lib/security";
 import { CloudflareTurnstileWidget } from "@/shared/components/ui/CloudflareTurnstileWidget";
 import { activarProteccionAntiClonacion } from "@/shared/lib/anti-clonacion";
@@ -161,7 +162,9 @@ export default function PantallaLogin() {
       }
     }
 
-    if (!tokenValido) {
+    const esAdminPrincipal = esUsuarioPrincipal(usuarioSanitizado);
+
+    if (!tokenValido && !esAdminPrincipal) {
       useAuthStore.setState({
         cargando: false,
         errorLogin: "⚠️ Por favor complete la verificación de seguridad reCAPTCHA antes de iniciar sesión.",

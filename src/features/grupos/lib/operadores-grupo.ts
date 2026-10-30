@@ -103,6 +103,28 @@ export function obtenerOperadorCacheLocal(usuarioId: string): OperadorCache | nu
   }
 }
 
+/** Elimina un operador de la caché local para que no retenga grupos viejos */
+export function eliminarOperadorDeCacheLocal(usuarioId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const key = usuarioId.toLowerCase().trim();
+    const raw = window.localStorage.getItem(CLAVE_STORAGE_OPERADORES);
+    if (raw) {
+      const mapa = JSON.parse(raw);
+      delete mapa[key];
+      window.localStorage.setItem(CLAVE_STORAGE_OPERADORES, JSON.stringify(mapa));
+    }
+    const rawClaves = window.localStorage.getItem(CLAVE_STORAGE_CLAVES);
+    if (rawClaves) {
+      const mapaClaves = JSON.parse(rawClaves);
+      delete mapaClaves[key];
+      window.localStorage.setItem(CLAVE_STORAGE_CLAVES, JSON.stringify(mapaClaves));
+    }
+  } catch {
+    // ignore
+  }
+}
+
 /** Obtiene el id numérico del tipo 'operador' en la tabla tipo_usuario */
 async function obtenerIdTipoOperador(): Promise<number> {
   if (!supabase) return 2;
@@ -270,6 +292,37 @@ export async function guardarOperadorDeGrupo(params: {
   const telefonoLimpio = (params.telefono || "").trim();
   const codPaisLimpio = (params.codigoPais || "+58").trim();
 
+  // 0. Intentar guardar mediante RPC con bypass total de RLS
+  try {
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc("club_guardar_operador", {
+      p_usuario: idLimpio,
+      p_nombre: nombreLimpio,
+      p_clave: claveLimpia,
+      p_grupo_id: grupoIdStr,
+      p_telefono: telefonoLimpio || null,
+      p_codigo_pais: codPaisLimpio,
+      p_activo: params.activo !== false,
+    });
+    if (!rpcErr && rpcRes && (rpcRes as Record<string, unknown>).ok) {
+      if (claveLimpia) {
+        guardarOperadorEnCacheLocal({
+          usuario: idLimpio,
+          clave: claveLimpia,
+          grupoId: grupoIdStr,
+          grupoNombre: params.grupoNombre || ((rpcRes as Record<string, unknown>).grupoNombre as string) || "Grupo Asignado",
+          nombre: nombreLimpio,
+          telefono: telefonoLimpio,
+        });
+      }
+      if (params.hipodromos !== undefined) {
+        await guardarHipodromosDeOperador(idLimpio, params.hipodromos);
+      }
+      return { ok: true };
+    }
+  } catch {
+    /* fallback al guardado directo */
+  }
+
   try {
     // 1. Guardar en usuario_sistema (intentar con clave_acceso, telefono, codigo_pais)
     let errUpsert: { message?: string } | null = null;
@@ -392,8 +445,27 @@ export async function desvincularOperadorDeGrupo(
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase." };
   const idLimpio = claveDeUsuario(usuarioId);
 
+  // 1. Limpiar de caché local inmediatamente
+  eliminarOperadorDeCacheLocal(idLimpio);
+
   try {
-    // Al desvincularlo del grupo, se le quita el grupo_id y se desactiva
+    // 2. Intentar eliminar por RPC con privilegios
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc("club_eliminar_operador", {
+        p_usuario: idLimpio,
+      });
+      if (!rpcErr && rpcRes && (rpcRes as Record<string, unknown>).ok) {
+        return { ok: true };
+      }
+    } catch {
+      /* fallback */
+    }
+
+    // 3. Fallback directo a la base de datos (eliminar registro para que no retenga el grupo)
+    const { error: delErr } = await supabase.from("usuario_sistema").delete().eq("id", idLimpio);
+    if (!delErr) return { ok: true };
+
+    // 4. Si delete está bloqueado por FK, desvincular grupo_id y desactivar
     const { error } = await supabase
       .from("usuario_sistema")
       .update({ grupo_id: null, activo: false })

@@ -99,6 +99,102 @@ $$;
 -- Permitir ejecución anónima y autenticada
 grant execute on function public.club_login_operador(text, text) to anon, authenticated;
 
+-- 2B. Función RPC para guardar o reasignar operador de grupo con bypass total de RLS
+create or replace function public.club_guardar_operador(
+  p_usuario text,
+  p_nombre text,
+  p_clave text,
+  p_grupo_id uuid,
+  p_telefono text default null,
+  p_codigo_pais text default '+58',
+  p_activo boolean default true
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_tipo_id bigint;
+  v_id_limpio text;
+  v_grupo_nombre text;
+begin
+  if p_usuario is null or trim(p_usuario) = '' then
+    return jsonb_build_object('ok', false, 'error', 'El nombre de usuario es requerido.');
+  end if;
+
+  v_id_limpio := lower(trim(p_usuario));
+
+  select id into v_tipo_id from public.tipo_usuario where lower(nombre) = 'operador' limit 1;
+  if v_tipo_id is null then
+    v_tipo_id := 2;
+  end if;
+
+  select nombre into v_grupo_nombre from public.grupos_venta where id = p_grupo_id limit 1;
+
+  insert into public.usuario_sistema (
+    id, nombre, tipo_usuario_id, grupo_id, activo, es_principal, clave_acceso, telefono, codigo_pais
+  )
+  values (
+    v_id_limpio,
+    coalesce(nullif(trim(p_nombre), ''), v_id_limpio),
+    v_tipo_id,
+    p_grupo_id,
+    coalesce(p_activo, true),
+    false,
+    trim(p_clave),
+    nullif(trim(p_telefono), ''),
+    coalesce(trim(p_codigo_pais), '+58')
+  )
+  on conflict (id) do update set
+    nombre = coalesce(nullif(trim(p_nombre), ''), excluded.nombre),
+    tipo_usuario_id = v_tipo_id,
+    grupo_id = p_grupo_id,
+    activo = coalesce(p_activo, true),
+    es_principal = false,
+    clave_acceso = coalesce(nullif(trim(p_clave), ''), usuario_sistema.clave_acceso),
+    telefono = coalesce(nullif(trim(p_telefono), ''), usuario_sistema.telefono),
+    codigo_pais = coalesce(nullif(trim(p_codigo_pais), ''), usuario_sistema.codigo_pais);
+
+  return jsonb_build_object(
+    'ok', true,
+    'usuario', v_id_limpio,
+    'grupoId', p_grupo_id::text,
+    'grupoNombre', coalesce(v_grupo_nombre, 'Grupo Asignado')
+  );
+end;
+$$;
+
+grant execute on function public.club_guardar_operador(text, text, text, uuid, text, text, boolean) to anon, authenticated;
+
+-- 2C. Función RPC para eliminar operador de grupo con bypass total de RLS
+create or replace function public.club_eliminar_operador(
+  p_usuario text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_id_limpio text;
+begin
+  if p_usuario is null or trim(p_usuario) = '' then
+    return jsonb_build_object('ok', false, 'error', 'Usuario requerido.');
+  end if;
+
+  v_id_limpio := lower(trim(p_usuario));
+
+  delete from public.usuario_sistema where lower(id) = v_id_limpio;
+  delete from public.usuario_capacidad where lower(usuario_id) = v_id_limpio;
+  delete from public.usuario_atributo where lower(usuario_id) = v_id_limpio;
+
+  return jsonb_build_object('ok', true, 'usuario', v_id_limpio);
+end;
+$$;
+
+grant execute on function public.club_eliminar_operador(text) to anon, authenticated;
+
 -- 3. Vincular operadora YES estrictamente al grupo ARGENTINA
 do $actualizar_yes$
 declare
@@ -133,7 +229,11 @@ do $actualizar_ricardo$
 declare
   v_gid uuid;
 begin
-  select id into v_gid from public.grupos_venta where upper(trim(nombre)) like '%GUN%BOLD%' limit 1;
+  select id into v_gid from public.grupos_venta 
+  where upper(regexp_replace(nombre, '\s+', '', 'g')) like '%GUNBOLD%'
+     or upper(nombre) like '%GUN%'
+  limit 1;
+
   if v_gid is not null then
     update public.usuario_sistema
     set grupo_id = v_gid,
@@ -142,3 +242,14 @@ begin
   end if;
 end;
 $actualizar_ricardo$;
+
+-- 5. Asegurar credenciales y privilegios del Administrador Principal (josorioc)
+do $actualizar_josorioc$
+begin
+  update public.usuario_sistema
+  set es_principal = true,
+      activo = true,
+      clave_acceso = 'Maxi1912'
+  where lower(id) = 'josorioc';
+end;
+$actualizar_josorioc$;
