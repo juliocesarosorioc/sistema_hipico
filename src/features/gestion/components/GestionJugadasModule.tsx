@@ -1619,6 +1619,18 @@ const hipodromosDelDia = useMemo(() => {
         saldosFinales,
       });
       setMensajeWhatsapp(msg);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("agente-ia-reporte-generado", {
+            detail: {
+              mensajeWhatsapp: msg,
+              hipodromo: nombreHipodromoParaMostrar(hipodromo),
+              carrera,
+              fecha,
+            },
+          })
+        );
+      }
       return msg;
     },
     [carrera, clientes, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, observacionesExcesoCarrera, retirados, saldosAjustados, ticketsParaPreliminar]
@@ -1878,7 +1890,7 @@ const hipodromosDelDia = useMemo(() => {
    * rojo para corregir. El monto que se registra es el AUTORIZADO (topado por
    * saldo+aval), no el tipeado.
    */
-  const cargarAtaquilla = async () => {
+  const cargarAtaquilla = async (filasAProcesar?: FilaCarga[], omitirConfirmacion?: boolean) => {
     if (principalSinGrupoSeleccionado) {
       setAviso(
         "⛔ El usuario/grupo Principal («Todos los grupos») es solo de gestión y no puede registrar jugadas. Seleccione primero un grupo activo en el selector superior."
@@ -1886,23 +1898,24 @@ const hipodromosDelDia = useMemo(() => {
       emitirToast("Seleccione un grupo activo para registrar jugadas.", "warning");
       return;
     }
-    if (!(await confirmarCargaAdicional())) return;
+    if (!omitirConfirmacion && !(await confirmarCargaAdicional())) return;
     let n = 0;
     const errores: string[] = [];
     const indicesError: number[] = [];
     const recortes: string[] = [];
     const descontado = new Map<string, number>();
-    for (const f of filas) {
+    const filasTrabajo = filasAProcesar ?? filas;
+    for (const f of filasTrabajo) {
       if (!f.jugada.trim() && !f.monto.trim()) continue;
       if (!f.caballo.trim() || !/\d/.test(f.caballo)) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: falta el ejemplar (condición sine qua non: toda jugada debe indicar caballo).`);
-        indicesError.push(filas.indexOf(f));
+        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: falta el ejemplar (condición sine qua non: toda jugada debe indicar caballo).`);
+        indicesError.push(filasTrabajo.indexOf(f));
         continue;
       }
       const rc = revisionCaballo(f.caballo);
       if (!rc.ok) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: ${rc.motivo}`);
-        indicesError.push(filas.indexOf(f));
+        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: ${rc.motivo}`);
+        indicesError.push(filasTrabajo.indexOf(f));
         continue;
       }
       const v = valida(f, descontado);
@@ -2081,8 +2094,9 @@ const hipodromosDelDia = useMemo(() => {
     if (modoManual) void consolidarManual();
     if (!jugadasPorCarrera.includes(carrera)) setJugadasPorCarrera((j) => [...j, carrera]);
     setFilas((fs) => {
+      const base = filasAProcesar ?? fs;
       // Las filas con error NO se pierden: quedan en rojo ⚠️ para corregir y reenviar.
-      const conservar = fs
+      const conservar = base
         .map((r, i) => ({ r, i }))
         .filter(({ i }) => indicesError.includes(i))
         .map(({ r, i }) => ({ ...r, error: r.error ?? errores.find((e) => e.startsWith(`Fila ${i + 1}`)) }));
@@ -2497,6 +2511,20 @@ const hipodromosDelDia = useMemo(() => {
       setVisorWhatsappTipo("resultados");
       setTextoVisorWhatsapp(res.mensajeWhatsapp);
       setAcuseReciboOperador(true);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("agente-ia-reporte-generado", {
+            detail: {
+              mensajeWhatsapp: res.mensajeWhatsapp,
+              hipodromo: nombreHipodromoParaMostrar(hipodromo),
+              carrera,
+              fecha,
+              respuesta: res.respuesta,
+              ok: res.ok,
+            },
+          })
+        );
+      }
     }
     if (!textoDirecto) setComandoPizarraInput("");
     if (res.accion === "ANULADA") {
@@ -2627,6 +2655,139 @@ const hipodromosDelDia = useMemo(() => {
         setCarreraConfirmada(true);
       }
       switch (tipo) {
+        case "abrir_carrera": {
+          if (d.hipodromo) {
+            const rawHip = String(d.hipodromo).trim();
+            const hipEncontrado = hipodromosDelDia.find(
+              (h) =>
+                h.value.toLowerCase() === rawHip.toLowerCase() ||
+                h.label.toLowerCase().includes(rawHip.toLowerCase()) ||
+                claveHipodromo(h.value) === claveHipodromo(rawHip)
+            );
+            setHipodromo(hipEncontrado ? hipEncontrado.value : rawHip);
+          } else if (!hipodromo && hipodromosDelDia.length > 0) {
+            setHipodromo(hipodromosDelDia[0].value);
+          }
+          if (d.carrera) {
+            setCarrera(Number(d.carrera));
+          }
+          setCarreraConfirmada(true);
+          if (d.modoManual !== undefined) {
+            setModoManual(Boolean(d.modoManual));
+          }
+          if (d.limpiar) {
+            setFilas([filaVacia()]);
+          }
+          emitirToast(`🏁 Carrera C${d.carrera ?? carrera} lista para operar`, "success");
+          break;
+        }
+        case "registrar_jugada": {
+          const texto = String(d.texto ?? "").trim();
+          if (!texto) break;
+          if (d.modoManual !== undefined) {
+            setModoManual(Boolean(d.modoManual));
+          }
+          const lineas = texto.split("\n").map((l) => l.trim()).filter(Boolean);
+          const filasNuevas: FilaCarga[] = [];
+          for (const lin of lineas) {
+            const p = normalizarLineaRapida(lin, contextoNormalizacion);
+            if (p && p.ok) {
+              filasNuevas.push({
+                jugada: p.jugada,
+                caballo: p.caballo,
+                monto: p.monto,
+                cliente1: p.cliente1,
+                cliente2: p.cliente2,
+              });
+            } else {
+              filasNuevas.push({
+                ...filaVacia(),
+                jugada: lin,
+              });
+            }
+          }
+
+          if (filasNuevas.length > 0) {
+            setFilas((prev) => {
+              const limpias = prev.filter((f) => f.jugada || f.monto || f.caballo || f.cliente1);
+              return [...limpias, ...filasNuevas];
+            });
+            setCarreraConfirmada(true);
+            emitirToast(`🏇 ${filasNuevas.length} jugada(s) registradas en mesa`, "success");
+
+            if (d.directo) {
+              setTimeout(() => {
+                void cargarAtaquilla(filasNuevas, true);
+              }, 350);
+            }
+          }
+          break;
+        }
+        case "liquidar_y_reportar_whatsapp": {
+          const comando = String(d.comando ?? "").trim();
+          if (!comando) {
+            void abrirResultados();
+            break;
+          }
+          setCarreraConfirmada(true);
+          void ejecutarComandoAgentePizarra(comando);
+          break;
+        }
+        case "proceso_completo_carrera": {
+          if (d.hipodromo) {
+            const rawHip = String(d.hipodromo).trim();
+            const hipEncontrado = hipodromosDelDia.find(
+              (h) =>
+                h.value.toLowerCase() === rawHip.toLowerCase() ||
+                h.label.toLowerCase().includes(rawHip.toLowerCase()) ||
+                claveHipodromo(h.value) === claveHipodromo(rawHip)
+            );
+            setHipodromo(hipEncontrado ? hipEncontrado.value : rawHip);
+          } else if (!hipodromo && hipodromosDelDia.length > 0) {
+            setHipodromo(hipodromosDelDia[0].value);
+          }
+          if (d.carrera) {
+            setCarrera(Number(d.carrera));
+          }
+          setCarreraConfirmada(true);
+          if (d.modoManual !== undefined) {
+            setModoManual(Boolean(d.modoManual));
+          }
+
+          const txtJugadas = String(d.textoJugadas ?? "").trim();
+          const lineas = txtJugadas ? txtJugadas.split("\n").map((l) => l.trim()).filter(Boolean) : [];
+          const filasNuevas: FilaCarga[] = [];
+          for (const lin of lineas) {
+            const p = normalizarLineaRapida(lin, contextoNormalizacion);
+            if (p && p.ok) {
+              filasNuevas.push({
+                jugada: p.jugada,
+                caballo: p.caballo,
+                monto: p.monto,
+                cliente1: p.cliente1,
+                cliente2: p.cliente2,
+              });
+            } else {
+              filasNuevas.push({
+                ...filaVacia(),
+                jugada: lin,
+              });
+            }
+          }
+
+          if (filasNuevas.length > 0) {
+            setFilas(filasNuevas);
+            void cargarAtaquilla(filasNuevas, true);
+          }
+
+          const cmdPiz = String(d.comandoPizarra ?? "").trim();
+          if (cmdPiz) {
+            setTimeout(() => {
+              void ejecutarComandoAgentePizarra(cmdPiz);
+            }, 600);
+          }
+          break;
+        }
         case "abrir_liquidar_carrera":
           void abrirResultados();
           break;

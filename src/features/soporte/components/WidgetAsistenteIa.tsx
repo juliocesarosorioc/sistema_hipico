@@ -35,6 +35,7 @@ interface MensajeChat {
   requiereEscalamiento?: boolean;
   categoriaSugerida?: CategoriaTicket;
   prioridadSugerida?: PrioridadTicket;
+  reporteWhatsapp?: string;
 }
 
 export function WidgetAsistenteIa() {
@@ -76,8 +77,41 @@ export function WidgetAsistenteIa() {
 
   // Mis tickets
   const [misTickets, setMisTickets] = useState<TicketIncidencia[]>([]);
+  const [copiadoId, setCopiadoId] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Escucha de reportes oficiales de liquidación para WhatsApp generados en el sistema
+  useEffect(() => {
+    const onReporteGenerado = (ev: Event) => {
+      const d = ((ev as CustomEvent).detail ?? {}) as {
+        mensajeWhatsapp?: string;
+        hipodromo?: string;
+        carrera?: string | number;
+        fecha?: string;
+      };
+      if (!d.mensajeWhatsapp) return;
+
+      const textoReporte = d.mensajeWhatsapp;
+      const titulo = `🏁 **Reporte Oficial de Carrera — Resultados WhatsApp (${d.hipodromo ?? ""} C${d.carrera ?? ""})**`;
+
+      setMensajes((prev) => [
+        ...prev,
+        {
+          id: `rep-${Date.now()}`,
+          remitente: "ia",
+          texto: `${titulo}\n\n${textoReporte}`,
+          fecha: new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
+          reporteWhatsapp: textoReporte,
+        },
+      ]);
+      setAbierto(true);
+      setPestana("chat");
+    };
+
+    window.addEventListener("agente-ia-reporte-generado", onReporteGenerado);
+    return () => window.removeEventListener("agente-ia-reporte-generado", onReporteGenerado);
+  }, []);
 
   // Auto scroll al último mensaje
   useEffect(() => {
@@ -628,6 +662,33 @@ export function WidgetAsistenteIa() {
                           }`}
                         >
                           <p className="whitespace-pre-line break-words">{m.texto}</p>
+
+                          {/* Acciones directas si incluye reporte oficial para WhatsApp */}
+                          {m.reporteWhatsapp && (
+                            <div className="mt-3 pt-2.5 border-t border-slate-700/60 flex flex-wrap items-center gap-2">
+                              <a
+                                href={`https://wa.me/?text=${encodeURIComponent(m.reporteWhatsapp)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md transition active:scale-95"
+                              >
+                                <span>📲 Enviar por WhatsApp</span>
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (typeof navigator !== "undefined" && navigator.clipboard) {
+                                    void navigator.clipboard.writeText(m.reporteWhatsapp!);
+                                    setCopiadoId(m.id);
+                                    setTimeout(() => setCopiadoId(null), 2000);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-semibold text-xs transition active:scale-95"
+                              >
+                                <span>{copiadoId === m.id ? "✅ ¡Copiado!" : "📋 Copiar Reporte"}</span>
+                              </button>
+                            </div>
+                          )}
 
                           {/* Si la IA sugiere escalar */}
                           {m.requiereEscalamiento && !mostrarFormEscalar && (

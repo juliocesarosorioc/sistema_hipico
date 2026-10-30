@@ -85,6 +85,45 @@ export interface AccionOperativaPlataforma {
 export const CATALOGO_ACCIONES_PLATAFORMA: ReadonlyArray<AccionOperativaPlataforma> = [
   // 1. Apuestas y Liquidación
   {
+    id: "abrir_carrera_nueva",
+    categoria: "apuestas",
+    icono: "🏁",
+    etiqueta: "Abrir Carrera / Modo Manual",
+    descripcion: "Prepara la mesa para una nueva carrera en modo estándar o manual",
+    comandoChat: "Abrir nueva carrera modo manual",
+    evento: { accion: "abrir_carrera", modoManual: true, limpiar: true },
+    rutaRequerida: "/apuestas",
+  },
+  {
+    id: "registrar_jugada_ia",
+    categoria: "apuestas",
+    icono: "🏇",
+    etiqueta: "Cargar Jugadas por Agente",
+    descripcion: "Transfiere y registra jugadas dictadas o escritas a la taquilla",
+    comandoChat: "Registrar jugada",
+    evento: { accion: "abrir_carga_rapida" },
+    rutaRequerida: "/apuestas",
+  },
+  {
+    id: "liquidar_y_reporte_whatsapp",
+    categoria: "apuestas",
+    icono: "📲",
+    etiqueta: "Liquidar y Reporte WhatsApp",
+    descripcion: "Liquida la carrera y emite el reporte oficial listo para WhatsApp",
+    comandoChat: "Liquidar carrera y emitir reporte whatsapp",
+    evento: { accion: "abrir_agente_pizarra" },
+    rutaRequerida: "/apuestas",
+  },
+  {
+    id: "proceso_completo",
+    categoria: "apuestas",
+    icono: "🚀",
+    etiqueta: "Ciclo Completo Carrera",
+    descripcion: "Abre carrera, registra jugadas, liquida y genera reporte de WhatsApp en un solo paso",
+    comandoChat: "Proceso completo carrera",
+    rutaRequerida: "/apuestas",
+  },
+  {
     id: "liquidar_carrera",
     categoria: "apuestas",
     icono: "🏆",
@@ -542,6 +581,142 @@ export async function consultarAgenteIaEnVivo(
   const textoLimpio = mensaje.toLowerCase();
 
   try {
+    // 0A. Proceso Completo Automatizado (Abrir + Registrar Jugadas + Liquidar + Reporte WhatsApp)
+    const esProcesoCompleto = /\b(proceso\s+completo|todo\s+el\s+proceso|ciclo\s+completo|flujo\s+completo)\b/i.test(textoLimpio);
+    if (esProcesoCompleto) {
+      const matchCar = mensaje.match(/(?:carrera|c)\s*#?\s*(\d+)/i);
+      const matchHip = mensaje.match(/(?:en|de|hip[oó]dromo)\s+([a-záéíóúñ\s]+?)(?:,|\.|\s+carrera|\s+jugadas?|\s+liquidar|$)/i);
+      const esManual = /\b(manual|modo\s+manual|carga\s+manual)\b/i.test(mensaje);
+      const matchJugadas = mensaje.match(/(?:jugadas?|apuestas?)[:\s]+([\s\S]+?)(?:liquidar|llegada|pizarra|$)/i);
+      const matchLlegada = mensaje.match(/(?:liquidar|llegada|pizarra|orden)[:\s]+(\d+(?:\s*[-,\s]\s*\d+){1,6})/i);
+
+      const numCar = matchCar ? Number(matchCar[1]) : 1;
+      const hip = matchHip ? matchHip[1].trim() : undefined;
+      const txtJugadas = matchJugadas ? matchJugadas[1].trim() : "";
+      const numsLlegada = matchLlegada
+        ? matchLlegada[1].split(/[-,\s]+/).map((s) => s.trim()).filter(Boolean)
+        : [];
+      const cmdPizarra = numsLlegada.length > 0 ? `Pizarra: ${numsLlegada.join(" - ")}` : undefined;
+
+      return {
+        respuesta:
+          `🚀 **Proceso Completo Automatizado Activado**:\n` +
+          `• 🏁 **Apertura de carrera**: C${numCar}${hip ? ` en ${hip.toUpperCase()}` : ""}${esManual ? " (✍️ Modo Manual)" : ""}\n` +
+          (txtJugadas ? `• 🏇 **Jugadas a registrar**:\n\`${txtJugadas}\`\n` : `• 🏇 **Jugadas**: Sin jugadas registradas\n`) +
+          (numsLlegada.length > 0 ? `• 🏆 **Liquidación oficial**: Pizarra ${numsLlegada.join(" - ")}\n` : "") +
+          `• 📲 **Reporte WhatsApp**: Se generará y emitirá automáticamente en este chat con opciones de envío directo por WhatsApp y copia.`,
+        resuelto: true,
+        sugerenciaEscalamiento: false,
+        categoriaDetectada: "carrera_liquidacion",
+        prioridadDetectada: "baja",
+        rutaNavegacion: "/apuestas",
+        eventoAccion: {
+          accion: "proceso_completo_carrera",
+          carrera: numCar,
+          hipodromo: hip,
+          modoManual: esManual,
+          textoJugadas: txtJugadas,
+          comandoPizarra: cmdPizarra,
+        },
+      };
+    }
+
+    // 0B. Apertura de Nueva Carrera / Activación de Modo Manual
+    const esAperturaCarrera =
+      /\b(abrir\s+(?:nueva\s+)?carrera|crear\s+carrera|iniciar\s+carrera|preparar\s+carrera|carrera\s+nueva|nueva\s+carrera|modo\s+manual|abrir\s+modo\s+manual)\b/i.test(
+        textoLimpio
+      );
+    if (esAperturaCarrera) {
+      const matchCar = mensaje.match(/(?:carrera|c)\s*#?\s*(\d+)/i);
+      const matchHip = mensaje.match(/(?:en|de|hip[oó]dromo)\s+([a-záéíóúñ\s]+?)(?:,|\.|\s+modo|\s+manual|$)/i);
+      const esManual = /\b(manual|modo\s+manual|carga\s+manual)\b/i.test(mensaje);
+      const numCar = matchCar ? Number(matchCar[1]) : 1;
+      const hip = matchHip ? matchHip[1].trim() : undefined;
+
+      return {
+        respuesta:
+          `🏁 **Acción Ejecutada — Apertura de Carrera**:\n` +
+          `• **Carrera**: C${numCar}\n` +
+          (hip ? `• **Hipódromo**: ${hip.toUpperCase()}\n` : "") +
+          `• **Modalidad**: ${esManual ? "✍️ Modo Manual" : "⚡ Modo Estándar"}\n` +
+          `• **Estado**: Mesa de trabajo preparada y confirmada para registrar jugadas.`,
+        resuelto: true,
+        sugerenciaEscalamiento: false,
+        categoriaDetectada: "carrera_liquidacion",
+        prioridadDetectada: "baja",
+        rutaNavegacion: "/apuestas",
+        eventoAccion: {
+          accion: "abrir_carrera",
+          carrera: numCar,
+          hipodromo: hip,
+          modoManual: esManual,
+          limpiar: true,
+        },
+      };
+    }
+
+    // 0C. Registro de Jugadas (Manual o Directo a Taquilla)
+    const matchRegistroJugada =
+      mensaje.match(
+        /(?:registrar|cargar|meter|ingresar)\s+(?:las?\s+)?(?:jugadas?|apuestas?)(?:\s+(?:manual(?:es)?|direct[ao]s?))?[:\s]+([\s\S]+)/i
+      ) ||
+      mensaje.match(
+        /(?:jugadas?|apuestas?)(?:\s+(?:manual(?:es)?|direct[ao]s?))?[:\s]+([\s\S]+)/i
+      );
+    if (matchRegistroJugada && !textoLimpio.startsWith("bloquear") && !textoLimpio.includes("reglas")) {
+      const txt = matchRegistroJugada[1].trim();
+      const esDirecto = /\b(direct[ao]s?|autom[aá]tic[ao]s?)\b/i.test(textoLimpio);
+      const esManual = /\b(manual(?:es)?)\b/i.test(textoLimpio);
+
+      return {
+        respuesta:
+          `🏇 **Acción Ejecutada — Registro de Jugadas**:\n` +
+          `• **Jugadas a procesar**:\n\`${txt}\`\n` +
+          `• **Modalidad**: ${esManual ? "✍️ Carga Manual" : "⚡ Estándar"} · ${esDirecto ? "🚀 Directo a Taquilla" : "📋 Mesa de Carga"}\n` +
+          `Se han transferido las filas a la carrera activa para su validación contra saldo y catálogo de clientes.`,
+        resuelto: true,
+        sugerenciaEscalamiento: false,
+        categoriaDetectada: "carrera_liquidacion",
+        prioridadDetectada: "baja",
+        rutaNavegacion: "/apuestas",
+        eventoAccion: {
+          accion: "registrar_jugada",
+          texto: txt,
+          directo: esDirecto,
+          modoManual: esManual,
+        },
+      };
+    }
+
+    // 0D. Liquidar Carrera con Pizarra Oficial y Reporte WhatsApp Directo
+    const matchLiquidarPizarra = mensaje.match(
+      /(?:liquidar|finalizar|cerrar)\s+carrera.*?(?:pizarra|llegada|orden)?[:\s]*(\d+(?:\s*[-,\s]\s*\d+){1,6})/i
+    );
+    if (matchLiquidarPizarra) {
+      const nums = matchLiquidarPizarra[1]
+        .split(/[-,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const cmdPizarra = `Pizarra: ${nums.join(" - ")}`;
+      return {
+        respuesta:
+          `🏆 **Acción Ejecutada — Liquidar Carrera y Reporte WhatsApp**:\n` +
+          `• **Orden de llegada oficial**: ${nums.map((n, i) => `${i + 1}º: #${n}`).join(" · ")}\n` +
+          `• **Liquidando**: Ejecutando cálculo oficial de premios, cobros y dividendos.\n` +
+          `• **Reporte WhatsApp**: El reporte oficial se emitirá a continuación en este chat con los botones para enviarlo directamente a WhatsApp o copiarlo.`,
+        resuelto: true,
+        sugerenciaEscalamiento: false,
+        categoriaDetectada: "carrera_liquidacion",
+        prioridadDetectada: "baja",
+        rutaNavegacion: "/apuestas",
+        eventoAccion: {
+          accion: "liquidar_y_reportar_whatsapp",
+          comando: cmdPizarra,
+          llegada: nums,
+        },
+      };
+    }
+
     // 1. Interpretación de dictado de pizarra o comando de Cambio de Pizarra
     const matchPizarra = mensaje.match(/(?:pizarra|llegada|orden)[:\s]+(\d+(?:\s*[-,\s]\s*\d+){1,6})/i);
     if (matchPizarra) {
