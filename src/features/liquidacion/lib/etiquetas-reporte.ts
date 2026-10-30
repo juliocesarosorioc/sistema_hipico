@@ -170,7 +170,10 @@ export function extraerNumeroTablaFija(f: Record<string, unknown>): string {
   const cab = txt(f.caballo);
   if (cab && /^\d+$/.test(cab)) return cab;
   const nom = txt(f.nombre_jugada ?? f.jugada ?? f.jugo);
-  const mDel = /\bDEL\s+#?(\d{1,2})\b/i.exec(nom) ?? /\b#(\d{1,2})\b/.exec(nom);
+  const mDel =
+    /\bDEL\s+#?(\d{1,2})\b/i.exec(nom) ??
+    /\bN(\d{1,2})\b/i.exec(nom) ??
+    /\b#(\d{1,2})\b/.exec(nom);
   if (mDel) return mDel[1];
   const mCab = /^#?(\d{1,2})\b/.exec(cab);
   if (mCab) return mCab[1];
@@ -294,7 +297,7 @@ export function resolverContraparteModalidad(
   if (/^MARCAS?\b/i.test(jug) || orig === "MARCAS" || orig === "MARCA") {
     return "MARCAS";
   }
-  if (/^(?:TABLA\s*FIJA|TABLAS?\s*FIJAS?|TF)\b/i.test(jug) || orig === "TABLA" || orig === "TABLAS" || orig === "TABLA_FIJA") {
+  if (/^(?:TABLA\s*FIJA|TABLAS?\s*FIJAS?|TABLA|TF)\b/i.test(jug) || orig === "TABLA" || orig === "TABLAS" || orig === "TABLA_FIJA" || orig === "TABLAS_FIJAS") {
     return "TF";
   }
   if (/^DUPLETAS?\b/i.test(jug) || orig === "DUPLETAS" || orig === "DUPLETA") {

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { colorDiscoNumero, numerosDeCaballo } from '@/features/saldos/lib/discos';
-import { ladosDePareo } from '@/features/taquilla/lib/nomenclatura';
+import { etiquetaJugada, ladosDePareo } from '@/features/taquilla/lib/nomenclatura';
+import { jugadaInvolucraRetirado } from '@/features/carreras/lib/retiros-nucleo';
 import {
   esMarca,
   esTablaFija,
@@ -181,7 +182,15 @@ function tieneDatos(d: ReporteCarreraDatos | null | undefined): d is ReporteCarr
 
 const TH = "text-left pb-1 font-semibold text-[9px] uppercase tracking-wide text-slate-400 h-[20px] align-middle";
 
-function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostrarResultado: boolean }) {
+function TablaJugadas({
+  filas,
+  mostrarResultado,
+  retirados,
+}: {
+  filas: JugadaVivo[];
+  mostrarResultado: boolean;
+  retirados?: (number | string)[];
+}) {
   return (
     <table className="w-full table-fixed text-[10px] leading-tight">
       <colgroup>
@@ -207,22 +216,31 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
       <tbody>
         {filas.map((j, i) => {
           const aposto1Num = typeof j.aposto === 'number' ? j.aposto : parseFloat(String(j.aposto ?? '').replace(',', '.')) || 0;
-          const res1 = mostrarResultado
-            ? j.resultado
-            : aposto1Num > 0
-              ? -Math.abs(aposto1Num)
-              : null;
+          const jugoStr = String(j.jugo ?? "").trim();
+          const involucraRetirado = Boolean(
+            retirados && retirados.length > 0 && jugadaInvolucraRetirado(j.caballo, null, jugoStr, retirados)
+          );
+          const res1 = involucraRetirado
+            ? 0
+            : mostrarResultado
+              ? j.resultado
+              : aposto1Num > 0
+                ? -Math.abs(aposto1Num)
+                : null;
           const res2 = !j.da
             ? null
-            : mostrarResultado
-              ? (j.resultadoDa !== undefined ? j.resultadoDa : (j.resultado !== null ? -j.resultado : null))
-              : j.apostoDa != null && j.apostoDa > 0
-                ? -Math.abs(j.apostoDa)
-                : null;
-          const jugoStr = String(j.jugo ?? "").trim();
+            : involucraRetirado
+              ? 0
+              : mostrarResultado
+                ? (j.resultadoDa !== undefined ? j.resultadoDa : (j.resultado !== null ? -j.resultado : null))
+                : j.apostoDa != null && j.apostoDa > 0
+                  ? -Math.abs(j.apostoDa)
+                  : null;
           const esMarcaSinDecision =
             mostrarResultado &&
+            !involucraRetirado &&
             (Boolean(j.sinDecision) || (esMarca(jugoStr) && res1 === 0));
+          const esEmpateNoDecidido = involucraRetirado || (mostrarResultado && res1 === 0 && !esMarcaSinDecision);
           return (
             <tr key={i} className="border-b border-slate-100 bg-white h-[26px]">
               <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap truncate align-middle">
@@ -234,6 +252,8 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
                   <span className="inline-block rounded bg-slate-200 px-1 py-0.5 text-[8.5px] font-black uppercase text-slate-700">
                     SIN DECISIÓN
                   </span>
+                ) : esEmpateNoDecidido ? (
+                  <span className="font-bold tabular-nums text-slate-600">0,00 (Empate)</span>
                 ) : res1 !== null ? (
                   <FormatoDinero monto={res1} />
                 ) : (
@@ -266,7 +286,7 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
                   }
                   return (
                     <>
-                      <span className="font-semibold">{j.jugo}</span> <Discos caballo={j.caballo} />
+                      <span className="font-semibold">{etiquetaJugada(j.jugo)}</span> <Discos caballo={j.caballo} />
                     </>
                   );
                 })()}
@@ -280,6 +300,8 @@ function TablaJugadas({ filas, mostrarResultado }: { filas: JugadaVivo[]; mostra
                   <span className="inline-block rounded bg-slate-200 px-1 py-0.5 text-[8.5px] font-black uppercase text-slate-700">
                     SIN DECISIÓN
                   </span>
+                ) : esEmpateNoDecidido && j.da ? (
+                  <span className="font-bold tabular-nums text-slate-600">0,00 (Empate)</span>
                 ) : res2 !== null ? (
                   <FormatoDinero monto={res2} />
                 ) : (
@@ -415,6 +437,8 @@ function NotaExcedidos({
 }
 
 export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos | null }) {
+  const [adelantadasAbierto, setAdelantadasAbierto] = useState(false);
+
   if (!tieneDatos(datos)) {
     return (
       <div className="max-w-5xl mx-auto" id="reporte-imprimible">
@@ -613,40 +637,54 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
             <span className="text-[8px] font-semibold text-slate-300">{jugadasEnVivoFiltradas.length} jugada(s)</span>
           </div>
           <div className="bg-slate-50 px-2 py-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 border border-t-0 border-slate-200 rounded-b">
-            <TablaJugadas filas={jugadasCol1} mostrarResultado={liquidada} />
-            {jugadasCol2.length > 0 ? <TablaJugadas filas={jugadasCol2} mostrarResultado={liquidada} /> : null}
+            <TablaJugadas filas={jugadasCol1} mostrarResultado={liquidada} retirados={encabezado.retirados} />
+            {jugadasCol2.length > 0 ? <TablaJugadas filas={jugadasCol2} mostrarResultado={liquidada} retirados={encabezado.retirados} /> : null}
           </div>
         </div>
       )}
 
-      {/* 4. SECCIÓN DE JUGADAS ADELANTADAS (SEGMENTADA POR TIPO EN 5 SECCIONES CON MISMO ANCHO/ALTO DE 7 COLUMNAS) */}
+      {/* 4. SECCIÓN DE JUGADAS ADELANTADAS (ACORDEÓN OCULTO POR DEFECTO) */}
       {totalAdelantadas > 0 && (
         <div className="px-4 pb-2 pt-1">
-          <div className="bg-blue-800 text-white text-[9px] font-bold tracking-widest px-2 py-1 uppercase rounded-t flex items-center justify-between">
-            <span>⏳ Jugadas Adelantadas</span>
-            <span className="text-[8px] font-semibold text-blue-200">{totalAdelantadas} jugada(s)</span>
-          </div>
-          <div className="bg-amber-50/30 border border-t-0 border-slate-200 rounded-b divide-y divide-slate-200">
-            {seccionesAdelantadas.map((sec) => {
-              const mitadAdelIndex = Math.ceil(sec.filas.length / 2);
-              const adelantadasCol1 = sec.filas.slice(0, mitadAdelIndex);
-              const adelantadasCol2 = sec.filas.slice(mitadAdelIndex);
-              return (
-                <div key={sec.categoria} className="px-2 py-2">
-                  <div className="mb-1.5 flex items-center justify-between rounded bg-slate-100 px-2 py-0.5 border border-slate-200">
-                    <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-700">
-                      {sec.titulo}
-                    </span>
-                    <span className="text-[8px] font-bold text-slate-500">{sec.filas.length} jugada(s)</span>
+          <button
+            type="button"
+            onClick={() => setAdelantadasAbierto((v) => !v)}
+            aria-expanded={adelantadasAbierto}
+            className={`w-full bg-blue-800 hover:bg-blue-700 transition-colors text-white text-[9px] font-bold tracking-widest px-2.5 py-1.5 uppercase flex items-center justify-between cursor-pointer ${
+              adelantadasAbierto ? "rounded-t" : "rounded"
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              <span>{adelantadasAbierto ? "▾" : "▸"}</span>
+              <span>⏳ Jugadas Adelantadas</span>
+            </span>
+            <span className="text-[8px] font-semibold text-blue-200">
+              {totalAdelantadas} jugada(s) · {adelantadasAbierto ? "Ocultar ▲" : "Mostrar ▼"}
+            </span>
+          </button>
+          {adelantadasAbierto && (
+            <div className="bg-amber-50/30 border border-t-0 border-slate-200 rounded-b divide-y divide-slate-200">
+              {seccionesAdelantadas.map((sec) => {
+                const mitadAdelIndex = Math.ceil(sec.filas.length / 2);
+                const adelantadasCol1 = sec.filas.slice(0, mitadAdelIndex);
+                const adelantadasCol2 = sec.filas.slice(mitadAdelIndex);
+                return (
+                  <div key={sec.categoria} className="px-2 py-2">
+                    <div className="mb-1.5 flex items-center justify-between rounded bg-slate-100 px-2 py-0.5 border border-slate-200">
+                      <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-700">
+                        {sec.titulo}
+                      </span>
+                      <span className="text-[8px] font-bold text-slate-500">{sec.filas.length} jugada(s)</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+                      <TablaJugadas filas={adelantadasCol1} mostrarResultado={liquidada} retirados={encabezado.retirados} />
+                      {adelantadasCol2.length > 0 ? <TablaJugadas filas={adelantadasCol2} mostrarResultado={liquidada} retirados={encabezado.retirados} /> : null}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
-                    <TablaJugadas filas={adelantadasCol1} mostrarResultado={liquidada} />
-                    {adelantadasCol2.length > 0 ? <TablaJugadas filas={adelantadasCol2} mostrarResultado={liquidada} /> : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

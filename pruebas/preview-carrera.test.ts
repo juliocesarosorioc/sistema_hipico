@@ -484,11 +484,13 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
     [],
     ["7"]
   );
-  igual(filasConRetirado[0].estado, "Retirado", "persistida con ejemplar retirado pasa a estado Retirado");
-  si(filasConRetirado[0].anulada, "persistida con ejemplar retirado queda anulada en el preview");
-  igual(filasConRetirado[0].estadoLiquidacion, "Anulada", "persistida con ejemplar retirado muestra Anulada");
+  igual(filasConRetirado[0].estado, "Retirado", "persistida con ejemplar retirado pasa a estado Retirado (Empate)");
+  si(!filasConRetirado[0].anulada, "persistida con ejemplar retirado queda visible como Empate (no se oculta como anulada)");
+  igual(filasConRetirado[0].lado1.estado, "RETIRADO", "persistida con ejemplar retirado muestra RETIRADO / Empate en lado 1");
+  igual(filasConRetirado[0].estadoLiquidacion, "Liquidada", "persistida con ejemplar retirado queda resuelta como Empate");
   igual(filasConRetirado[1].estado, "Pendiente", "persistida de otro ejemplar (4) permanece Pendiente");
-  si(filasConRetirado[2].anulada, "ticket en sesión con ejemplar retirado también queda anulado");
+  igual(filasConRetirado[2].estado, "Retirado", "ticket en sesión con ejemplar retirado también queda como Retirado (Empate)");
+  si(!filasConRetirado[2].anulada, "ticket en sesión con ejemplar retirado permanece visible como Empate");
 
   const resMotorRet = liquidarOficial({
     id: "t1",

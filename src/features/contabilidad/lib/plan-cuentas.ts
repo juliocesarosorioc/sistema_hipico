@@ -83,6 +83,7 @@ export const PLAN_CUENTAS_HIPICO: readonly CuentaContableDef[] = [
   { codigo: "2.1.02", nombre: "Bolsa de Apuestas en Tránsito", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 3, codigo_padre: "2.1", acepta_movimientos: false, modulo_origen: "APUESTAS_TERCIOS", activa: true },
   { codigo: "2.1.02.001", nombre: "Bolsa en Tránsito — Jugadas en Vivo", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.02", acepta_movimientos: true, modulo_origen: "APUESTAS_TERCIOS", activa: true },
   { codigo: "2.1.02.002", nombre: "Bolsa en Tránsito — Jugadas Adelantadas", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.02", acepta_movimientos: true, modulo_origen: "APUESTAS_TERCIOS", activa: true },
+  { codigo: "2.1.02.003", nombre: "Saldos Comprometidos por Jugadas en Curso (Retención Transitoria)", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.02", acepta_movimientos: true, modulo_origen: "APUESTAS_TERCIOS", activa: true },
   { codigo: "2.1.03", nombre: "Premios y Pozos Pendientes de Liquidar", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 3, codigo_padre: "2.1", acepta_movimientos: false, modulo_origen: "TABLAS_FIJAS", activa: true },
   { codigo: "2.1.03.001", nombre: "Premios y Pozos por Pagar (Pollas, Remates, Tablas, Dupletas)", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.03", acepta_movimientos: true, modulo_origen: "TABLAS_FIJAS", activa: true },
   { codigo: "2.1.04", nombre: "Incentivos y Devoluciones por Acreditar", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 3, codigo_padre: "2.1", acepta_movimientos: false, modulo_origen: "INCENTIVOS", activa: true },
@@ -181,6 +182,8 @@ export type TipoEventoContable =
   | "AVAL_OTORGADO"
   | "AVAL_PAGADO"
   | "AVAL_RETIRADO"
+  | "COMPROMISO_JUGADA"
+  | "LIBERACION_COMPROMISO_JUGADA"
   | "LIQUIDACION_APUESTAS"
   | "REEMBOLSO_CRUCE"
   | "DEVOLUCION_INCENTIVO"
@@ -761,6 +764,171 @@ export async function generarContraAsientoSimetrico(asientoOriginal: AsientoCont
   }
 
   return res;
+}
+
+/**
+ * 7. ASIENTO DE SALDOS COMPROMETIDOS POR JUGADA EN CURSO (RETENCIÓN TRANSITORIA)
+ *
+ * Al momento exacto en que un cliente realiza una jugada en cualquier modal/módulo:
+ *   - DEBE: 2.1.01.001 (Depósitos y Saldos Acreedores de Clientes / Cuentas de Jugadores)
+ *           -> Descuenta de inmediato el monto jugado del saldo del cliente, dejándolo
+ *              en negativo si no tenía saldo previo hasta que se liquide o se anule.
+ *   - HABER: 2.1.02.003 (Saldos Comprometidos por Jugadas en Curso - Retención Transitoria)
+ *   - CUENTAS DE ORDEN: 7.1.01.001 (Debe) / 7.1.01.002 (Haber) para control de exposición.
+ */
+export async function generarAsientoCompromisoJugada(params: {
+  ticketId?: string | number | null;
+  clienteId?: string | number | null;
+  clienteNombre: string;
+  contraparteId?: string | number | null;
+  contraparteNombre?: string | null;
+  montoJugador: number;
+  montoContraparte?: number;
+  hipodromo: string;
+  carrera: number | string;
+  fecha: string;
+  jugada: string;
+  caballo: string;
+  esAdelantada?: boolean;
+  grupoId?: string | null;
+  usuario?: string | null;
+}) {
+  const monto1 = deCentavos(Math.max(0, aCentavos(params.montoJugador)));
+  const monto2 = deCentavos(Math.max(0, aCentavos(params.montoContraparte ?? 0)));
+  const cuentaBolsa = params.esAdelantada ? "2.1.02.002" : "2.1.02.003";
+  const lineas: LineaAsientoContable[] = [];
+
+  if (monto1 > 0) {
+    lineas.push(
+      {
+        cuenta_codigo: "2.1.01.001",
+        cliente_id: params.clienteId != null ? String(params.clienteId) : null,
+        cliente_nombre: params.clienteNombre,
+        debe: monto1,
+        haber: 0,
+        concepto: `Descuento inmediato por jugada en curso: ${params.jugada} (#${params.caballo}) · ${params.hipodromo} C${params.carrera}`,
+      },
+      {
+        cuenta_codigo: cuentaBolsa,
+        cliente_id: params.clienteId != null ? String(params.clienteId) : null,
+        cliente_nombre: params.clienteNombre,
+        debe: 0,
+        haber: monto1,
+        concepto: `Saldo comprometido en tránsito: ${params.jugada} (#${params.caballo}) · ${params.hipodromo} C${params.carrera}`,
+      },
+      {
+        cuenta_codigo: "7.1.01.001",
+        cliente_id: params.clienteId != null ? String(params.clienteId) : null,
+        cliente_nombre: params.clienteNombre,
+        debe: monto1,
+        haber: 0,
+        concepto: `Exposición en curso Jugador 1 (${params.clienteNombre})`,
+      },
+      {
+        cuenta_codigo: "7.1.01.002",
+        cliente_id: params.clienteId != null ? String(params.clienteId) : null,
+        cliente_nombre: params.clienteNombre,
+        debe: 0,
+        haber: monto1,
+        concepto: `Contra-cuenta exposición en curso Jugador 1 (${params.clienteNombre})`,
+      }
+    );
+  }
+
+  if (monto2 > 0 && params.contraparteNombre) {
+    lineas.push(
+      {
+        cuenta_codigo: "2.1.01.001",
+        cliente_id: params.contraparteId != null ? String(params.contraparteId) : null,
+        cliente_nombre: params.contraparteNombre,
+        debe: monto2,
+        haber: 0,
+        concepto: `Descuento inmediato por compromiso (Da): ${params.jugada} (#${params.caballo}) · ${params.hipodromo} C${params.carrera}`,
+      },
+      {
+        cuenta_codigo: cuentaBolsa,
+        cliente_id: params.contraparteId != null ? String(params.contraparteId) : null,
+        cliente_nombre: params.contraparteNombre,
+        debe: 0,
+        haber: monto2,
+        concepto: `Saldo comprometido en tránsito (Da): ${params.jugada} (#${params.caballo}) · ${params.hipodromo} C${params.carrera}`,
+      }
+    );
+  }
+
+  return generarAsientoPartidaDoble({
+    grupo_id: params.grupoId ?? null,
+    fecha_contable: params.fecha,
+    tipo_evento: "COMPROMISO_JUGADA",
+    referencia_id: params.ticketId != null ? String(params.ticketId) : `${params.hipodromo}-C${params.carrera}-${params.clienteNombre}`,
+    clave_idempotencia: params.ticketId != null ? `COMPROMISO:${params.ticketId}` : undefined,
+    descripcion: `Compromiso inmediato de saldo por jugada ${params.jugada} (#${params.caballo}) en ${params.hipodromo} C${params.carrera} (${params.fecha})`,
+    creado_por: params.usuario ?? "sistema",
+    lineas,
+  });
+}
+
+/**
+ * 8. LIBERACIÓN DE SALDO COMPROMETIDO (POR ANULACIÓN, RETIRO O LIQUIDACIÓN)
+ */
+export async function generarAsientoLiberacionCompromisoJugada(params: {
+  ticketId?: string | number | null;
+  clienteId?: string | number | null;
+  clienteNombre: string;
+  montoLiberado: number;
+  motivo: "ANULACION" | "RETIRO" | "LIQUIDACION";
+  hipodromo?: string;
+  carrera?: number | string;
+  fecha?: string;
+  esAdelantada?: boolean;
+  grupoId?: string | null;
+  usuario?: string | null;
+}) {
+  const monto = deCentavos(Math.max(0, aCentavos(params.montoLiberado)));
+  const cuentaBolsa = params.esAdelantada ? "2.1.02.002" : "2.1.02.003";
+  return generarAsientoPartidaDoble({
+    grupo_id: params.grupoId ?? null,
+    fecha_contable: params.fecha,
+    tipo_evento: "LIBERACION_COMPROMISO_JUGADA",
+    referencia_id: params.ticketId != null ? String(params.ticketId) : undefined,
+    clave_idempotencia: params.ticketId != null ? `LIBERACION:${params.motivo}:${params.ticketId}` : undefined,
+    descripcion: `Liberación de saldo comprometido (${params.motivo}) · ${params.clienteNombre}`,
+    creado_por: params.usuario ?? "sistema",
+    lineas: [
+      {
+        cuenta_codigo: cuentaBolsa,
+        cliente_id: params.clienteId != null ? String(params.clienteId) : null,
+        cliente_nombre: params.clienteNombre,
+        debe: monto,
+        haber: 0,
+        concepto: `Liberación de retención transitoria (${params.motivo})`,
+      },
+      {
+        cuenta_codigo: "2.1.01.001",
+        cliente_id: params.clienteId != null ? String(params.clienteId) : null,
+        cliente_nombre: params.clienteNombre,
+        debe: 0,
+        haber: monto,
+        concepto: `Restitución de saldo comprometido (${params.motivo})`,
+      },
+      {
+        cuenta_codigo: "7.1.01.002",
+        cliente_id: params.clienteId != null ? String(params.clienteId) : null,
+        cliente_nombre: params.clienteNombre,
+        debe: monto,
+        haber: 0,
+        concepto: `Cierre de contra-cuenta de exposición (${params.motivo})`,
+      },
+      {
+        cuenta_codigo: "7.1.01.001",
+        cliente_id: params.clienteId != null ? String(params.clienteId) : null,
+        cliente_nombre: params.clienteNombre,
+        debe: 0,
+        haber: monto,
+        concepto: `Cierre de exposición en curso (${params.motivo})`,
+      },
+    ],
+  });
 }
 
 // ============================================================================

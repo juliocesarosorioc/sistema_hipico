@@ -1224,6 +1224,8 @@ export function construirEstadoCuenta(
 
     for (const fila of lados) {
       const idJugada = lados.length > 1 ? `${t.id}-${fila.rol === "Consigue" ? "c" : "j"}` : String(t.id);
+      const decFila = fila.rol === "Juega" ? dec : 0;
+      const resultadoNetoFila = fila.resultado ?? 0;
       const jugada: JugadaItem = {
         id: idJugada,
         fecha: t.fecha_registro ?? isoCarrera ?? null,
@@ -1241,10 +1243,10 @@ export function construirEstadoCuenta(
         montoJugado: fila.monto,
         montoDecidido: baseVigente,
         premio: fila.premio,
-        resultadoNeto: fila.resultado ?? 0,
+        resultadoNeto: resultadoNetoFila,
         moneda,
         estado: fila.estado,
-        devolucion: dec,
+        devolucion: decFila,
       };
 
       const g = get(construir.grupos, grupo, grupo);
@@ -1263,13 +1265,13 @@ export function construirEstadoCuenta(
       if (!d.hijos.some((x) => x.titulo === h.titulo && !x.subtitulo)) d.hijos.push(h);
       if (!h.hijos.some((x) => x.titulo === c.titulo)) h.hijos.push(c);
 
-      acumular(g, baseVigente, dec, jugada);
-      acumular(s, baseVigente, dec, jugada);
-      acumular(d, baseVigente, dec, jugada);
-      acumular(h, baseVigente, dec, jugada);
-      acumular(c, baseVigente, dec, jugada);
-      raiz.monto += baseVigente;
-      raiz.dec += dec;
+      acumular(g, resultadoNetoFila, decFila, jugada);
+      acumular(s, resultadoNetoFila, decFila, jugada);
+      acumular(d, resultadoNetoFila, decFila, jugada);
+      acumular(h, resultadoNetoFila, decFila, jugada);
+      acumular(c, resultadoNetoFila, decFila, jugada);
+      raiz.monto += resultadoNetoFila;
+      raiz.dec += decFila;
       raiz.jugadas.push(jugada);
     }
   }

@@ -1,4 +1,4 @@
-﻿import { supabase } from "@/core/supabase";
+import { supabase } from "@/core/supabase";
 import { exigirCapacidad } from "@/features/seguridad/lib/vigente";
 import { ganadoresEfectivos, type TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
 import { parseNum, type EjemplarTabla } from "@/features/tablas/lib/tipos";
@@ -7,6 +7,7 @@ import { sincronizarCentralDesdeTabla } from "@/features/carreras/lib/carreras-d
 import { normalizarFilas } from "@/features/tablas/lib/normalizar";
 import { ordenarPorNumero } from "@/features/carreras/lib/maestro-nucleo";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
+import { limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
 
 // Se reexporta para no romper a quien ya importaba la normalizacion desde aca.
 export { normalizarFilas };
@@ -633,6 +634,7 @@ export async function venderTablaFija(params: {
     return { ok: false, error: esRpcAusente(error) ? MENSAJE_SIN_RPC : error.message };
   }
   const d = (data ?? {}) as Record<string, unknown>;
+  limpiarCacheClientesVenta();
   return {
     ok: true,
     tickets: Number(d.tickets ?? 0),

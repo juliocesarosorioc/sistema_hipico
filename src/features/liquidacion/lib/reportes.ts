@@ -293,13 +293,16 @@ function evaluar(
   // porque al anular el Monitor NO reescribe `estado` (sigue en
   // Ganador/Perdedor/Retirado): sin este corte, la anulada se evaluaba como
   // jugada vigente e inflaba el subtotal y el resumen de la carrera.
-  if (f.anulada === true || estado === "ANULADO" || estado === "ANULADA") {
+  const esRetiradoNoDecidido =
+    estado === "RETIRADO" ||
+    Boolean(
+      pizarra?.retirados?.length &&
+        jugadaInvolucraRetirado(f.caballo, f.ejemplar_numero, f.nombre_jugada, pizarra.retirados)
+    );
+  if ((f.anulada === true || estado === "ANULADO" || estado === "ANULADA") && !esRetiradoNoDecidido) {
     return { ok: false, bruto: 0, comision: 0, tasa: 0, resultadoJuega: 0, resultadoDa: 0 };
   }
-  if (
-    pizarra?.retirados?.length &&
-    jugadaInvolucraRetirado(f.caballo, f.ejemplar_numero, f.nombre_jugada, pizarra.retirados)
-  ) {
+  if (esRetiradoNoDecidido) {
     return { ok: false, bruto: monto, comision: 0, tasa: 0, resultadoJuega: 0, resultadoDa: 0 };
   }
   const nombreJugada = txt(f.nombre_jugada).toUpperCase();
@@ -1317,7 +1320,13 @@ export function desglosarTicketEnFilasUnificadas(
   const horaCarga = formatearHoraCarga(f);
   const adelantada = esAdelantadaDe(f);
   const estadoRaw = txt(f.estado).toUpperCase();
-  const anulada = f.anulada === true || estadoRaw === "ANULADO" || estadoRaw === "ANULADA";
+  const tieneRetiradoTicket =
+    estadoRaw === "RETIRADO" ||
+    Boolean(
+      pizarra?.retirados?.length &&
+        jugadaInvolucraRetirado(f.caballo, f.ejemplar_numero, f.nombre_jugada, pizarra.retirados)
+    );
+  const anulada = (f.anulada === true || estadoRaw === "ANULADO" || estadoRaw === "ANULADA") && !tieneRetiradoTicket;
   const monto = cifra(f.monto_jugado);
   const desglose = desgloseJugada(f);
   const ev = evaluar(f, hipodromo, carrera, pizarra, tasaComision);
@@ -1497,10 +1506,16 @@ async function carreraReporte(
   const meta: Array<{ cliente: string; clienteNombre: string; caballo: string }> = [];
 
   tickets.forEach((f, i) => {
-    // Una jugada ANULADA no entra al reporte de liquidación: se devolvió el
-    // capital y no se liquidó. Excluirla evita que reste el monto (como
-    // "perdedora") o que infle el cruce y el resumen de la carrera.
-    if (f.anulada === true) return;
+    const estadoTicketUpper = txt(f.estado).toUpperCase();
+    const esRetiro =
+      estadoTicketUpper === "RETIRADO" ||
+      Boolean(
+        pizarra?.retirados?.length &&
+          jugadaInvolucraRetirado(f.caballo, f.ejemplar_numero, f.nombre_jugada, pizarra.retirados)
+      );
+    // Una jugada ANULADA administrativamente no entra al reporte de liquidación;
+    // pero si fue por ejemplar RETIRADO sí permanece visible como Empate (0,00 / no se decide).
+    if (f.anulada === true && !esRetiro) return;
     const monto = cifra(f.monto_jugado);
     // El cruce financiero agrupa por (cliente, caballo): ese agrupamiento y el
     // neteo usan el número TAL COMO está en el ticket, nunca el rotulado.

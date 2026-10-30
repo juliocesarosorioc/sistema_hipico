@@ -617,16 +617,30 @@ export function etiquetaJugada(jugada: string): string {
   const t = String(jugada ?? "").trim();
   if (!t) return "";
   // Fracción declarada ("10/8", "10/2.5", "10A2.5", "10a6"): si es 10/10 (pelo a pelo)
-  // se rotula "PP"; cualquier otra proporción se canoniza con barra y punto ("10/2.5").
+  // nunca se muestra "10/10": si hay otra jugada (ej. "2P 10/10", "PP (10/10)") se muestra
+  // solo la jugada; si era solo "10/10" o un pareo "2x3 10/10", se rotula "PP".
   if (/\d+(?:[.,]\d+)?\s*[\/aA]\s*\d+(?:[.,]\d+)?/.test(t)) {
     const prop = proporcionDeclarada(t);
-    if (prop === "10/10") return "PP";
-    return t.replace(
-      /(\d+(?:[.,]\d+)?)\s*[\/aA]\s*(\d+(?:[.,]\d+)?)/g,
-      (_m, p, q) => `${String(p).replace(",", ".")}/${String(q).replace(",", ".")}`
-    );
+    if (prop === "10/10") {
+      const sinDiez = t
+        .replace(/\(?\b10\s*[\/aA]\s*10\b\)?/gi, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const sinPp = sinDiez.replace(/^\bPP\b\s*|\s*\bPP\b$/gi, "").trim();
+      if (sinPp && !/^\d+(?:[-,]\d+)*\s*[xX*]\s*\d+(?:[-,]\d+)*$/.test(sinPp)) {
+        return sinPp;
+      }
+      return "PP";
+    }
+    return t;
   }
-  if (/^\s*pp\b/i.test(t)) return "PP"; // ya es PP
+  if (/^\s*pp\b/i.test(t)) {
+    const sinPp = t.replace(/^\s*pp\b/i, "").trim();
+    if (sinPp && !/^\d+(?:[-,]\d+)*\s*[xX*]\s*\d+(?:[-,]\d+)*$/.test(sinPp)) {
+      return sinPp;
+    }
+    return "PP"; // ya es PP
+  }
   if (/\d\s*[X*]\s*\d/i.test(t)) return "PP"; // pareo/MATCH sin fracción ("4X7")
   return t;
 }

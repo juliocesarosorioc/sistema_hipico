@@ -12,9 +12,14 @@
  * activo e idempotencia por clave.
  */
 import { supabase } from "@/core/supabase";
-import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
-import { grupoDeVentaVigente } from "@/features/grupos/lib/grupos";
+import { resolverContraparteModalidad, USUARIOS_SISTEMA_MODALIDADES } from "@/features/liquidacion/lib/etiquetas-reporte";
+import { grupoDeVentaVigente, limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
 import { veTodosLosGruposVigente } from "@/features/seguridad/lib/vigente";
+import {
+  generarAsientoCompromisoJugada,
+  generarAsientoLiberacionCompromisoJugada,
+} from "@/features/contabilidad/lib/plan-cuentas";
+import { calcularRiesgoCliente2 } from "@/features/liquidacion/lib/puestos";
 
 const MENSAJE_SIN_RPC =
   "La venta de Taquilla no está activa: ejecutá sql/taquilla_venta.sql en el SQL Editor de Supabase.";
@@ -129,6 +134,27 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
       /* best-effort si la columna fecha_carrera aún no existe */
     }
   }
+  limpiarCacheClientesVenta();
+  const montoNum = Number(v.monto) || 0;
+  const dadorFinal = String(dadorResuelto || v.clienteDador || "").trim();
+  const esDadorSistema = (USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(dadorFinal.toUpperCase());
+  const riesgoDador =
+    dadorFinal && !esDadorSistema ? calcularRiesgoCliente2(montoNum, String(v.jugada ?? "")) : 0;
+  void generarAsientoCompromisoJugada({
+    ticketId: r.ticket_id as string | number | undefined,
+    fecha: fechaCarrera || v.fecha,
+    hipodromo: v.hipodromo,
+    carrera: v.carrera,
+    jugada: v.jugada,
+    caballo: caballoLimpio,
+    clienteId: v.clienteId,
+    clienteNombre: String(v.clienteId),
+    montoJugador: montoNum,
+    contraparteNombre: dadorFinal || null,
+    montoContraparte: riesgoDador,
+    grupoId: grupoEfectivo,
+    usuario: v.usuario ?? null,
+  }).catch(() => {});
   return {
     ok: true,
     ticketId: r.ticket_id as number | undefined,
@@ -154,5 +180,16 @@ export async function anularJugada(
     return { ok: false, error: /club_anular_jugada|not found|404/i.test(texto) ? MENSAJE_SIN_RPC : texto };
   }
   const r = (data ?? {}) as Record<string, unknown>;
+  limpiarCacheClientesVenta();
+  const devueltoNum = Number(r.devuelto) || 0;
+  if (devueltoNum > 0) {
+    void generarAsientoLiberacionCompromisoJugada({
+      ticketId,
+      clienteNombre: `TICKET #${ticketId}`,
+      montoLiberado: devueltoNum,
+      motivo: "ANULACION",
+      usuario: usuario ?? null,
+    }).catch(() => {});
+  }
   return { ok: true, devuelto: r.devuelto as number | undefined };
 }

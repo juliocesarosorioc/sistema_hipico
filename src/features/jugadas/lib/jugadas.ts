@@ -199,6 +199,8 @@ export function origenDeJugada(j: JugadaAdmin): string {
 }
 
 export function fechaCarreraDeJugada(j: JugadaAdmin): string | null {
+  const directa = texto(j.fecha_carrera).slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(directa)) return directa;
   const f = texto(leerNotaAuditoria(j.nota_auditoria).fecha_carrera).slice(0, 10);
   if (f) return f;
   // Respaldo duro: una jugada nunca debe quedar sin fecha. Si el JSON no trae
@@ -373,13 +375,14 @@ export async function listarJugadasDeCarrera(
     }
     if (error) throw error;
     let jugadas = (data ?? []) as unknown as JugadaAdmin[];
-    if (fecha) jugadas = jugadas.filter((j) => (fechaCarreraDeJugada(j) ?? "") === String(fecha).slice(0, 10));
     if (jugadas.length > 0) {
       try {
         const ids = jugadas.map((j) => j.id).filter(Boolean);
         const { data: extras } = await sb
           .from("tickets_apuestas")
-          .select("id, es_adelantada, cliente_juega_id, anulada, cantidad_tablas, premio_por_tabla, pts_ejemplar")
+          .select(
+            "id, hipodromo, carrera, fecha_carrera, es_adelantada, cliente_juega_id, cliente_juega_nombre, cliente_consigue_nombre, anulada, cantidad_tablas, premio_por_tabla, pts_ejemplar, nota_auditoria"
+          )
           .in("id", ids as never[]);
         if (Array.isArray(extras) && extras.length > 0) {
           const mapaExtras = new Map<string, Record<string, unknown>>();
@@ -389,13 +392,23 @@ export async function listarJugadasDeCarrera(
           }
           jugadas = jugadas.map((j) => {
             const ex = mapaExtras.get(String(j.id));
+            const notaJ = leerNotaAuditoria(ex?.nota_auditoria ?? j.nota_auditoria);
+            const nombreJuegaDirecto =
+              texto(ex?.cliente_juega_nombre) ||
+              texto(j.cliente_juega_nombre) ||
+              texto(notaJ.cliente_nombre) ||
+              texto(notaJ.jugador);
             const contraparteCanonica = resolverContraparteModalidad(
               j.nombre_jugada,
-              j.cliente_consigue_nombre,
-              origenDeJugada(j)
+              texto(ex?.cliente_consigue_nombre) || j.cliente_consigue_nombre,
+              origenDeJugada(j) || texto(notaJ.origen)
             );
             const base = {
               ...j,
+              hipodromo: texto(ex?.hipodromo) || j.hipodromo,
+              carrera: ex?.carrera != null ? num(ex.carrera) : num(j.carrera),
+              fecha_carrera: texto(ex?.fecha_carrera).slice(0, 10) || j.fecha_carrera || null,
+              cliente_juega_nombre: nombreJuegaDirecto || j.cliente_juega_nombre,
               cliente_consigue_nombre: contraparteCanonica || j.cliente_consigue_nombre,
             };
             if (!ex) return base;
@@ -404,7 +417,7 @@ export async function listarJugadasDeCarrera(
               es_adelantada:
                 typeof ex.es_adelantada === "boolean"
                   ? ex.es_adelantada
-                  : j.es_adelantada ?? Boolean(leerNotaAuditoria(j.nota_auditoria).es_adelantada),
+                  : j.es_adelantada ?? Boolean(notaJ.es_adelantada),
               cliente_juega_id: (ex.cliente_juega_id as string | number | null | undefined) ?? j.cliente_juega_id ?? null,
               anulada: typeof ex.anulada === "boolean" ? ex.anulada : Boolean(j.anulada),
               cantidad_tablas: ex.cantidad_tablas != null ? num(ex.cantidad_tablas) : j.cantidad_tablas ?? null,
@@ -415,6 +428,39 @@ export async function listarJugadasDeCarrera(
         }
       } catch {
         // Si la tabla no tiene `es_adelantada`, se conserva el respaldo por `nota_auditoria`.
+      }
+      // Si algún ticket tiene cliente_juega_id pero le falta cliente_juega_nombre, resolver desde clientes
+      const idsSinNombre = [
+        ...new Set(
+          jugadas
+            .filter((j) => !texto(j.cliente_juega_nombre) && j.cliente_juega_id != null)
+            .map((j) => String(j.cliente_juega_id))
+        ),
+      ];
+      if (idsSinNombre.length > 0) {
+        try {
+          const { data: cliRows } = await sb
+            .from("clientes")
+            .select("id, nombre")
+            .in("id", idsSinNombre as never[]);
+          if (Array.isArray(cliRows) && cliRows.length > 0) {
+            const mapaCli = new Map<string, string>();
+            for (const c of cliRows as Array<{ id?: unknown; nombre?: unknown }>) {
+              if (c.id != null && texto(c.nombre)) {
+                mapaCli.set(String(c.id), texto(c.nombre));
+              }
+            }
+            jugadas = jugadas.map((j) => {
+              if (!texto(j.cliente_juega_nombre) && j.cliente_juega_id != null) {
+                const resuelto = mapaCli.get(String(j.cliente_juega_id));
+                if (resuelto) return { ...j, cliente_juega_nombre: resuelto };
+              }
+              return j;
+            });
+          }
+        } catch {
+          /* best-effort */
+        }
       }
       // Normalizar contraparte para modalidades del sistema (MARCAS, TF, REMATES, DUPLETA, POLLAS)
       // y corregir en segundo plano cualquier fila heredada en BD que tuviera otro nombre (ej. SAM).
@@ -452,6 +498,18 @@ export async function listarJugadasDeCarrera(
         ).catch(() => {});
       }
     }
+    const carreraNum = num(carrera);
+    const hipoBuscado = texto(hipodromo).toUpperCase().replace(/\s+/g, "");
+    jugadas = jugadas.filter((j) => {
+      if (num(j.carrera) !== carreraNum) return false;
+      const hipoFila = texto(j.hipodromo).toUpperCase().replace(/\s+/g, "");
+      if (hipoBuscado && hipoFila && hipoFila !== hipoBuscado) return false;
+      // Si el nombre de la jugada tiene explícitamente otra carrera (ej. "TABLA FIJA (LA RINCONADA C3)" en C1), excluirla
+      const mCarreraNombre = /\bC(\d{1,2})\b/i.exec(texto(j.nombre_jugada));
+      if (mCarreraNombre && Number(mCarreraNombre[1]) !== carreraNum) return false;
+      if (fecha && (fechaCarreraDeJugada(j) ?? "") !== String(fecha).slice(0, 10)) return false;
+      return true;
+    });
     return { ok: true, jugadas, aviso };
   } catch (e) {
     return { ok: false, jugadas: [], error: e instanceof Error ? e.message : String(e) };

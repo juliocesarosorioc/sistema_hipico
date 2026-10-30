@@ -541,7 +541,7 @@ export async function aplicarLiquidacionSaldos(
           estado,
           premio_pagar: premioPagar,
           monto_decidido: montDecidido,
-          ...(esPorRetirado ? { anulada: true } : {}),
+          ...(esPorRetirado ? { anulada: false } : {}),
         })
         .eq("id", fila.id as never),
       clientePromise,

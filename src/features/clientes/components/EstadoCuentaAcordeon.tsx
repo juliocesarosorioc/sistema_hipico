@@ -41,7 +41,23 @@ function Nodo({ nivel, devPct, nivelProf }: { nivel: NivelAcordeon; devPct: numb
           {nivel.subtitulo ? <div className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{nivel.subtitulo}</div> : null}
         </div>
         <div className="text-right text-[11px]">
-          <div className="font-mono font-black text-slate-700">{formatoMoneda("USD", nivel.monto)}</div>
+          {(() => {
+            const resTotalNivel = Math.round(((nivel.monto ?? 0) + (dec ?? 0)) * 100) / 100;
+            return (
+              <div
+                className={`font-mono font-black ${
+                  resTotalNivel > 0
+                    ? "text-emerald-700"
+                    : resTotalNivel < 0
+                      ? "text-rose-700"
+                      : "text-slate-700"
+                }`}
+              >
+                {resTotalNivel > 0 ? "+" : ""}
+                {formatoMoneda("USD", resTotalNivel)}
+              </div>
+            );
+          })()}
           <div className="font-mono font-bold text-purple-600">{formatoMoneda("USD", dec)} <span className="text-[9px]">({dec > 0 ? `+${devPct}%` : devPct}%)</span></div>
         </div>
       </div>
@@ -66,73 +82,132 @@ function Nodo({ nivel, devPct, nivelProf }: { nivel: NivelAcordeon; devPct: numb
 function JugadasDesplegables({ nivel, devPct, nivelProf }: { nivel: NivelAcordeon; devPct: number; nivelProf: number }) {
   return (
     <div className="mt-1 space-y-1">
-      {nivel.hijos.map((c, i) => (
-        <div key={`${nivelProf}-${i}-${c.titulo}`} className="rounded-xl border border-line px-3 py-2 bg-slate-50" style={{ marginLeft: (nivelProf + 1) * 12 }}>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold text-slate-700">
-              <span className="mr-1 text-indigo-500">🏁</span>
-              {c.titulo} <span className="font-medium text-slate-400">· {c.subtitulo}</span>
-            </span>
-            <span className="text-[10px] font-mono font-black text-slate-700">{formatoMoneda("USD", c.monto)}</span>
-          </div>
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full text-[10px]">
-              <thead>
-                <tr className="text-slate-400 uppercase tracking-wider">
-                  <th className="text-left font-black px-2 py-1">Caballo</th>
-                  <th className="text-left font-black px-2 py-1">Jugada</th>
-                  <th className="text-right font-black px-2 py-1">Jugado</th>
-                  <th className="text-right font-black px-2 py-1">Decidido</th>
-                  <th className="text-right font-black px-2 py-1 text-purple-600">Devolución</th>
-                  <th className="text-right font-black px-2 py-1">Premio</th>
-                  <th className="text-left font-black px-2 py-1">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {c.jugadas.map((j) => (
-                  <tr key={j.id} className="border-t border-line">
-                    <td className="px-2 py-1 font-bold text-slate-700">{j.caballo}</td>
-                    <td className="px-2 py-1">{j.jugada}</td>
-                    <td className="px-2 py-1 text-right font-mono">{formatoMoneda(j.moneda, j.montoJugado)}</td>
-                    <td className="px-2 py-1 text-right font-mono font-bold">{formatoMoneda(j.moneda, j.montoDecidido)}</td>
-                    <td className="px-2 py-1 text-right font-mono font-bold text-purple-600">{formatoMoneda(j.moneda, j.devolucion)}</td>
-                    <td className="px-2 py-1 text-right font-mono">{formatoMoneda(j.moneda, j.premio)}</td>
-                    <td className="px-2 py-1">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
-                          j.estado === "Ganador"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : j.estado === "Perdedor"
-                              ? "bg-red-100 text-red-700"
-                              : j.estado === "Pendiente"
-                                ? "bg-amber-100 text-amber-700"
-                                : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {j.estado}
-                      </span>
-                    </td>
+      {nivel.hijos.map((c, i) => {
+        const resultadoTotalCarrera =
+          Math.round(
+            c.jugadas.reduce((acc, item) => acc + (item.resultadoNeto ?? 0) + (item.devolucion ?? 0), 0) * 100
+          ) / 100;
+        return (
+          <div key={`${nivelProf}-${i}-${c.titulo}`} className="rounded-xl border border-line px-3 py-2 bg-slate-50" style={{ marginLeft: (nivelProf + 1) * 12 }}>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-700">
+                <span className="mr-1 text-indigo-500">🏁</span>
+                {c.titulo} <span className="font-medium text-slate-400">· {c.subtitulo}</span>
+              </span>
+              <span
+                className={`text-[10px] font-mono font-black ${
+                  resultadoTotalCarrera > 0
+                    ? "text-emerald-700"
+                    : resultadoTotalCarrera < 0
+                      ? "text-rose-700"
+                      : "text-slate-700"
+                }`}
+                title="Resultado total ganador o perdedor en la carrera (con devolución incluida)"
+              >
+                Resultado: {resultadoTotalCarrera > 0 ? "+" : ""}
+                {formatoMoneda("USD", resultadoTotalCarrera)}
+              </span>
+            </div>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-[10px]">
+                <thead>
+                  <tr className="text-slate-400 uppercase tracking-wider">
+                    <th className="text-left font-black px-2 py-1">Caballo</th>
+                    <th className="text-left font-black px-2 py-1">Jugada</th>
+                    <th className="text-right font-black px-2 py-1">Jugado</th>
+                    <th className="text-right font-black px-2 py-1" title="Monto total ganador o perdedor en la carrera con la devolución incluida a quien aplique">Resultado</th>
+                    <th className="text-right font-black px-2 py-1 text-purple-600">Devolución</th>
+                    <th className="text-right font-black px-2 py-1">Premio</th>
+                    <th className="text-left font-black px-2 py-1">Estado</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {c.jugadas.map((j) => {
+                    const resJugadaConDev = Math.round(((j.resultadoNeto ?? 0) + (j.devolucion ?? 0)) * 100) / 100;
+                    return (
+                      <tr key={j.id} className="border-t border-line">
+                        <td className="px-2 py-1 font-bold text-slate-700">{j.caballo}</td>
+                        <td className="px-2 py-1">{j.jugada}</td>
+                        <td className="px-2 py-1 text-right font-mono">{formatoMoneda(j.moneda, j.montoJugado)}</td>
+                        <td
+                          className={`px-2 py-1 text-right font-mono font-black ${
+                            resJugadaConDev > 0
+                              ? "text-emerald-700"
+                              : resJugadaConDev < 0
+                                ? "text-rose-700"
+                                : "text-slate-600"
+                          }`}
+                        >
+                          {resJugadaConDev > 0 ? "+" : ""}
+                          {formatoMoneda(j.moneda, resJugadaConDev)}
+                        </td>
+                        <td className="px-2 py-1 text-right font-mono font-bold text-purple-600">{formatoMoneda(j.moneda, j.devolucion)}</td>
+                        <td className="px-2 py-1 text-right font-mono">{formatoMoneda(j.moneda, j.premio)}</td>
+                        <td className="px-2 py-1">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
+                              j.estado === "Ganador"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : j.estado === "Perdedor"
+                                  ? "bg-red-100 text-red-700"
+                                  : j.estado === "Pendiente"
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {j.estado}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-[10px] font-mono font-bold">
+              <span className="text-purple-600">
+                Devolución / Incentivo en carrera: {formatoMoneda("USD", c.dec ?? 0, 2)}
+              </span>
+              <span
+                className={
+                  resultadoTotalCarrera > 0
+                    ? "text-emerald-700 font-black"
+                    : resultadoTotalCarrera < 0
+                      ? "text-rose-700 font-black"
+                      : "text-slate-600 font-black"
+                }
+              >
+                Total Carrera (c/ Devolución): {resultadoTotalCarrera > 0 ? "+" : ""}
+                {formatoMoneda("USD", resultadoTotalCarrera, 2)}
+              </span>
+            </div>
           </div>
-          <div className="mt-1 text-[10px] text-slate-400 text-right font-mono font-bold text-purple-600">
-            Devolución / Incentivo del día: {formatoMoneda("USD", c.dec ?? 0, 2)}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
 function ResumenNivel({ nivel, devPct }: { nivel: NivelAcordeon; devPct: number }) {
+  const resultadoTotalConDev = Math.round(((nivel.monto ?? 0) + (nivel.dec ?? 0)) * 100) / 100;
   return (
     <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2" style={{ marginLeft: 12 }}>
       {[
-        { lbl: "Total decidido", val: nivel.monto, icon: "🪙", color: "text-slate-800", prefijo: "" },
+        {
+          lbl: "Resultado Neto Carreras",
+          val: nivel.monto,
+          icon: "🏇",
+          color: nivel.monto > 0 ? "text-emerald-700" : nivel.monto < 0 ? "text-rose-700" : "text-slate-800",
+          prefijo: nivel.monto > 0 ? "+" : "",
+        },
         { lbl: `🎁 Devolución / Incentivo a favor (${devPct}%)`, val: nivel.dec, icon: "🎁", color: "text-emerald-600", prefijo: "+" },
-        { lbl: "Saldo Final Cliente (+ Incentivo)", val: nivel.monto + nivel.dec, icon: "🤲", color: "text-emerald-700", prefijo: "" },
+        {
+          lbl: "Resultado Total (+ Devolución)",
+          val: resultadoTotalConDev,
+          icon: "🤲",
+          color: resultadoTotalConDev > 0 ? "text-emerald-700" : resultadoTotalConDev < 0 ? "text-rose-700" : "text-slate-800",
+          prefijo: resultadoTotalConDev > 0 ? "+" : "",
+        },
       ].map((k) => (
         <div key={k.lbl} className="rounded-xl border border-line bg-white px-4 py-3 flex items-center gap-3">
           <span className={`${k.color} text-lg`}>{k.icon}</span>

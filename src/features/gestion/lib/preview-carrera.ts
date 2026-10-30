@@ -376,8 +376,9 @@ function filaDesdePersistida(
     Array.isArray(retirados) &&
     retirados.length > 0 &&
     jugadaInvolucraRetirado(caballo || j.caballo, j.ejemplar_numero, nombreJug, retirados);
-  const anulada = Boolean(j.anulada) || involucraRetirado;
-  let estado = involucraRetirado ? "Retirado" : estadoDeFila(j.estado, Boolean(j.anulada));
+  const eraRetirado = TXT(j.estado).toLowerCase().startsWith("retir") || involucraRetirado;
+  const anulada = Boolean(j.anulada) && !eraRetirado;
+  let estado = involucraRetirado ? "Retirado" : estadoDeFila(j.estado, anulada);
   const ticketId = String(j.id ?? "").trim() || null;
   const precioTabla = esJugTabla ? extraerPrecioUnitarioTabla(jRec) : undefined;
   const cantidadTablas = esJugTabla
@@ -488,6 +489,19 @@ function filaDesdePersistida(
     Boolean(sesion?.esAdelantada) ||
     esNombreModalidadAdelantada(nombreJug);
 
+  let cliente1Resuelto = TXT(j.cliente_juega_nombre) || TXT(sesion?.cliente1);
+  if (!cliente1Resuelto && j.nota_auditoria) {
+    try {
+      const notaObj = typeof j.nota_auditoria === "string" ? JSON.parse(j.nota_auditoria) : j.nota_auditoria;
+      if (notaObj && typeof notaObj === "object") {
+        const nr = notaObj as Record<string, unknown>;
+        cliente1Resuelto = TXT(nr.cliente_nombre ?? nr.jugador ?? nr.cliente_juega_nombre ?? nr.cliente);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   return {
     clave: `db-${ticketId ?? nombreJug}-${caballo}`,
     ticketId,
@@ -498,12 +512,12 @@ function filaDesdePersistida(
     ...(cantidadTablas !== undefined ? { cantidadTablas } : {}),
     aposto1,
     aposto2,
-    cliente1: TXT(j.cliente_juega_nombre),
-    cliente2: resolverContraparteModalidad(nombreJug, j.cliente_consigue_nombre),
+    cliente1: cliente1Resuelto,
+    cliente2: resolverContraparteModalidad(nombreJug, j.cliente_consigue_nombre || sesion?.cliente2),
     estado,
-    estadoLiquidacion: involucraRetirado ? "Anulada" : estadoLiquidacionDe(estado),
+    estadoLiquidacion: estadoLiquidacionDe(estado),
     validada: true,
-    anulada: estado === "Anulada" || involucraRetirado,
+    anulada: estado === "Anulada",
     soloSesion: false,
     premioSaldo,
     esPremio,
@@ -544,9 +558,9 @@ function filaDesdeSesion(
     cliente1: TXT(t.cliente1),
     cliente2: resolverContraparteModalidad(nombreJug, t.cliente2),
     estado,
-    estadoLiquidacion: involucraRetirado ? "Anulada" : "Pendiente",
+    estadoLiquidacion: involucraRetirado ? "Liquidada" : "Pendiente",
     validada: ticketId !== null,
-    anulada: involucraRetirado,
+    anulada: false,
     soloSesion: true,
     premioSaldo: involucraRetirado ? 0 : esPremio ? mejor - monto : -monto,
     esPremio: involucraRetirado ? false : esPremio,
@@ -571,7 +585,14 @@ export function armarFilasPreview(
   pizarraPuestos?: string[],
   retirados?: Array<string | number>
 ): FilaPreviewCarrera[] {
-  const ticketsSesion = sesion.filter((t) => TXT(t.comando) !== "");
+  const ticketsSesion = sesion.filter((t) => {
+    const cmd = TXT(t.comando);
+    if (!cmd) return false;
+    if (/^TABLA\b/i.test(jugadaSinMonto(cmd)) && !TXT(t.cliente1) && t.ticketId == null) {
+      return false;
+    }
+    return true;
+  });
   const porTicketId = new Map<string, TicketSesion>();
   for (const t of ticketsSesion) {
     if (t.ticketId == null) continue;

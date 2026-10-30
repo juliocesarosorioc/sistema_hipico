@@ -1223,7 +1223,7 @@ function ResumenView({
                 <th className="px-3 py-2.5">Jugada</th>
                 <th className="px-3 py-2.5">Caballo</th>
                 <th className="px-3 py-2.5 text-right">Jugado</th>
-                <th className="px-3 py-2.5 text-right">Decidido</th>
+                <th className="px-3 py-2.5 text-right" title="Monto total ganador o perdedor en la carrera con devolución incluida">Resultado</th>
                 {mostrarIncentivo ? (
                   <th className="px-3 py-2.5 text-right text-purple-800">Incentivo</th>
                 ) : null}
@@ -1234,6 +1234,7 @@ function ResumenView({
             <tbody>
               {jugadas.map((j) => {
                 const reclamable = dentroDeVentana(j.fechaCarrera ?? j.fecha, hoy, ventana, ciclo);
+                const resConDev = Math.round(((j.resultadoNeto ?? 0) + (j.devolucion ?? 0)) * 100) / 100;
                 return (
                   <tr key={j.id} className="border-t border-slate-200 hover:bg-slate-50">
                     <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-700">{j.fechaTexto}</td>
@@ -1243,7 +1244,18 @@ function ResumenView({
                     <td className="px-3 py-2 font-bold text-slate-800">{j.jugada}</td>
                     <td className="px-3 py-2 font-bold text-slate-900">{j.caballo}</td>
                     <td className="px-3 py-2 text-right font-mono font-bold text-slate-900">{formatoMoneda(j.moneda, j.montoJugado)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-black text-slate-950">{formatoMoneda(j.moneda, j.montoDecidido)}</td>
+                    <td
+                      className={`px-3 py-2 text-right font-mono font-black ${
+                        resConDev > 0
+                          ? "text-emerald-700"
+                          : resConDev < 0
+                            ? "text-rose-700"
+                            : "text-slate-950"
+                      }`}
+                    >
+                      {resConDev > 0 ? "+" : ""}
+                      {formatoMoneda(j.moneda, resConDev)}
+                    </td>
                     {mostrarIncentivo ? (
                       <td className="px-3 py-2 text-right font-mono font-black text-purple-800">{formatoMoneda(j.moneda, j.devolucion)}</td>
                     ) : null}

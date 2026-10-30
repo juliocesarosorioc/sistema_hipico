@@ -71,6 +71,7 @@ let cacheGruposAdmin: GrupoRow[] | null = null;
 let cacheClientes: ClienteVenta[] | null = null;
 /** Grupo con el que se llenó `cacheClientes` (para invalidarla al cambiarlo). */
 let cacheClientesGrupo: string | null | undefined = undefined;
+let cacheClientesTs = 0;
 let ultimoErrorGrupos: string | null = null;
 
 /** Ultimo error de carga de grupos (null si el ultimo intento tuvo exito).
@@ -83,6 +84,7 @@ export function errorCargaGrupos(): string | null {
 export function limpiarCacheClientesVenta(): void {
   cacheClientes = null;
   cacheClientesGrupo = undefined;
+  cacheClientesTs = 0;
 }
 
 function invalidarCacheGrupos(): void {
@@ -189,9 +191,11 @@ export function porcentajeDeEntrada(
 }
 
 /** Lista clientes con sus saldos y grupos (clientes + clientes_grupos). */
-export async function listarClientesVenta(): Promise<ClienteVenta[]> {
+export async function listarClientesVenta(force = false): Promise<ClienteVenta[]> {
   const activo = grupoActivoVigente();
-  if (cacheClientes && cacheClientesGrupo === activo) return cacheClientes;
+  if (!force && cacheClientes && cacheClientesGrupo === activo && Date.now() - cacheClientesTs < 1500) {
+    return cacheClientes;
+  }
   if (!supabase) return [];
   try {
     let q = supabase
@@ -237,6 +241,7 @@ export async function listarClientesVenta(): Promise<ClienteVenta[]> {
       activo
     );
     cacheClientesGrupo = activo;
+    cacheClientesTs = Date.now();
     return cacheClientes;
   } catch {
     // No se cachea un fallo (RLS/red): devolver vacio y permitir reintento.

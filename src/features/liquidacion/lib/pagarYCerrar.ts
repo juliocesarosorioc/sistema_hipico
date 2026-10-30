@@ -787,7 +787,7 @@ export async function liquidarRematesDeCarrera(
           await supabase!
             .from("tickets_apuestas")
             .update({
-              anulada: true,
+              anulada: false,
               estado: "Retirado",
               premio_pagar: 0,
               monto_decidido: 0,

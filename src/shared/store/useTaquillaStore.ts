@@ -70,6 +70,19 @@ function uid(): string {
 }
 
 /**
+ * Filtra tickets huérfanos heredados en localStorage (ej. ventas antiguas de Tablas Fijas
+ * que se guardaron sin fecha, hipódromo, carrera ni cliente1 y aparecían en todas las carreras).
+ */
+function esTicketSesionValido(t: Partial<TicketTaquilla> | null | undefined): t is TicketTaquilla {
+  if (!t || typeof t !== "object") return false;
+  const cmd = String(t.comando ?? "").trim();
+  if (!cmd) return false;
+  if (!t.fecha || !t.hipodromo || t.carrera === undefined || t.carrera === null) return false;
+  if (/^TABLA\b/i.test(cmd) && !t.cliente1) return false;
+  return true;
+}
+
+/**
  * Store de la Taquilla — tickets vendidos en la sesión actual.
  * Persiste en localStorage vía zustand/persist (mismo patrón que bet-slip).
  */
@@ -82,18 +95,31 @@ export const useTaquillaStore = create<TaquillaState>()(
       setModalidadTiempo: (m) => set({ modalidadTiempo: m }),
 
       agregarTicket: (t) =>
-        set((s) => ({
-          tickets: [...s.tickets, { ...t, id: uid(), addedAt: Date.now() }],
-        })),
+        set((s) => {
+          const nuevo: TicketTaquilla = { ...t, id: uid(), addedAt: Date.now() };
+          if (!esTicketSesionValido(nuevo)) return s;
+          return {
+            tickets: [...s.tickets.filter(esTicketSesionValido), nuevo],
+          };
+        }),
 
       eliminarTicket: (id) =>
-        set((s) => ({ tickets: s.tickets.filter((x) => x.id !== id) })),
+        set((s) => ({ tickets: s.tickets.filter((x) => x.id !== id && esTicketSesionValido(x)) })),
 
       limpiarTickets: () => set({ tickets: [] }),
     }),
     {
       name: "sistema-hipico:taquilla",
-      partialize: (s) => ({ tickets: s.tickets }),
+      partialize: (s) => ({ tickets: s.tickets.filter(esTicketSesionValido) }),
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState as Partial<TaquillaState> | undefined) ?? {};
+        const rawTickets = Array.isArray(persisted.tickets) ? persisted.tickets : [];
+        return {
+          ...currentState,
+          ...persisted,
+          tickets: rawTickets.filter(esTicketSesionValido),
+        };
+      },
     }
   )
 );

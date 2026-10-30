@@ -14,6 +14,11 @@ import {
   type RespuestaTurnoAgente,
 } from "@/features/ia-copiloto/lib/agente-transaccional";
 import type { EstadoOperativoCarrera } from "@/features/portal/lib/bloqueo-jugadas";
+import { listarClientes } from "@/features/clientes/lib/clientes";
+import { listarGruposAdmin } from "@/features/grupos/lib/grupos";
+import { cargarCarrerasDelDia } from "@/features/carreras/lib/carreras-dia";
+import { hoyLocal } from "@/features/gaceta/lib/programa";
+import { formatoMoneda } from "@/shared/lib/vzla";
 
 let sesionCopilotoGlobal: EstadoAgenteTransaccional = crearSesionAgente();
 
@@ -218,18 +223,229 @@ Te recomiendo **abrir un Ticket de Incidencia** para que el Administrador Princi
   }
 
   return {
-    respuesta: `Hola 👋 Soy tu **Asistente Inteligente del Sistema Hípico**.
-Puedo guiarte en:
-1. 🐎 **Carga de Puestos y Premios**: Sintaxis de \`1P\`..\`6Y7N\`, \`10a7\`, \`10A3.5\`, \`PP\`.
-2. 🏇 **Módulo WPS**: Formatos \`win\`, \`place\`, \`show\`, \`WPS\` e incentivos por grupo.
-3. 💵 **Saldos**: Diferencia entre Saldo Libre, Avalado y Pozo.
-4. ⚡ **Cruces y Bloqueos**: Uso del control de cruces y selección de grupo activo.
-5. 🏁 **Liquidación**: Pizarra, empates y retirados.
-
-Si tu duda es sobre un caso particular o requieres intervención técnica, puedes indicarme *"Hablar con administrador"* o presionar el botón de **Escalar a Ticket**.`,
+    respuesta: `Hola 👋 Soy tu **🤖 Agente de IA del Sistema Hípico**.
+Suministro toda la información del sistema en tiempo real y también puedes **dictarme por voz (🎙️)** para que interprete consultas, saldos, carreras o jugadas:
+1. 📊 **Resumen e Información del Sistema**: Pídeme *"Resumen del sistema"*, *"Saldos de clientes"*, *"Carreras de hoy"* o *"Saldo de [nombre]"*.
+2. 🎙️ **Dictado e Interpretación de Jugadas**: Díctame por ejemplo *"Carlos juega 1P al 4 por 100 con Pedro"* o *"10 a 8 caballo 3 por 50"*.
+3. 🐎 **Reglas de Puestos, PP y Premios**: Sintaxis de \`1P\`..\`6Y7N\`, \`10a7\`, \`PP\` (nunca se muestra 10/10 en el reporte) y ejemplares retirados (\`0,00 Empate\`).
+4. 💵 **Contabilidad y Saldos Comprometidos**: Descuento inmediato en cuenta puente \`2.1.02.003\` al cargar jugadas en cualquier modal.
+5. 🏁 **Liquidación y Reportes**: Pizarra oficial, resultados exclusivos de la carrera liquidada y devoluciones.`,
     resuelto: true,
     sugerenciaEscalamiento: false,
     categoriaDetectada: "duda_plataforma",
     prioridadDetectada: "baja",
   };
+}
+
+const MAPA_NUMEROS_VOZ: Record<string, string> = {
+  uno: "1",
+  primero: "1",
+  dos: "2",
+  segundo: "2",
+  tres: "3",
+  tercero: "3",
+  cuatro: "4",
+  cuarto: "4",
+  cinco: "5",
+  quinto: "5",
+  seis: "6",
+  sexto: "6",
+  siete: "7",
+  septimo: "7",
+  séptimo: "7",
+  ocho: "8",
+  octavo: "8",
+  nueve: "9",
+  noveno: "9",
+  diez: "10",
+  once: "11",
+  doce: "12",
+  trece: "13",
+  catorce: "14",
+  quince: "15",
+  veinte: "20",
+  treinta: "30",
+  cuarenta: "40",
+  cincuenta: "50",
+  cien: "100",
+  ciento: "100",
+  doscientos: "200",
+  quinientos: "500",
+  mil: "1000",
+};
+
+/**
+ * Normaliza transcripciones de dictado por voz a nomenclatura oficial del sistema hípico.
+ */
+export function normalizarDictadoVoz(texto: string): string {
+  let out = String(texto ?? "").trim();
+  if (!out) return "";
+
+  out = out.replace(
+    /\b(uno|primero|dos|segundo|tres|tercero|cuatro|cuarto|cinco|quinto|seis|sexto|siete|septimo|séptimo|ocho|octavo|nueve|noveno|diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cincuenta|cien|doscientos|quinientos|mil)\b/gi,
+    (m) => MAPA_NUMEROS_VOZ[m.toLowerCase()] ?? m
+  );
+
+  out = out
+    .replace(/\bpara\s+para\b/gi, "PP")
+    .replace(/\b10\s*(\/|a|de)\s*10\b/gi, "PP")
+    .replace(/\b([1-6])\s*puestos?\b/gi, "$1P")
+    .replace(/\b([1-6])\s*p\b/gi, "$1P")
+    .replace(/\b([1-6])\s*y\s*([2-7])\s*n\b/gi, "$1Y$2N")
+    .replace(/\b10\s*a\s*(\d+(?:[.,]\d+)?)\b/gi, "10A$1");
+
+  return out;
+}
+
+/**
+ * Motor en vivo del Agente de IA: suministra toda la información del sistema
+ * (clientes, saldos comprometidos, grupos, carreras del día, pizarras) e interpreta dictados.
+ */
+export async function consultarAgenteIaEnVivo(
+  mensajeOriginal: string,
+  rolUsuario: string = "operador",
+  fueDictado = false
+): Promise<ConsultaIaRespuesta> {
+  const mensaje = normalizarDictadoVoz(mensajeOriginal);
+  const textoLimpio = mensaje.toLowerCase();
+
+  try {
+    // 1. Interpretación de dictado de jugada o pizarra si el usuario dicta una apuesta o llegada
+    const matchPizarra = mensaje.match(/(?:pizarra|llegada|orden)[:\s]+(\d+(?:\s*[-,\s]\s*\d+){1,6})/i);
+    if (matchPizarra) {
+      const nums = matchPizarra[1]
+        .split(/[-,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      return {
+        respuesta:
+          `🎙️ **Interpretación del Agente de IA (Pizarra Oficial)**:\n` +
+          `• **Orden de llegada detectado**: ${nums.map((n, i) => `${i + 1}º: #${n}`).join(" · ")}\n` +
+          `• **Comando listo para el Agente de Pizarra**: \`Pizarra: ${nums.join(" - ")}\`\n` +
+          `Puedes ejecutarlo directamente en el botón **🤖 Agente Pizarra** al lado de **🏆 Liquidar Carrera**.`,
+        resuelto: true,
+        sugerenciaEscalamiento: false,
+        categoriaDetectada: "carrera_liquidacion",
+        prioridadDetectada: "baja",
+      };
+    }
+
+    // 2. Consulta general o resumen total del sistema ("toda la información del sistema", "resumen", "estado del sistema")
+    if (
+      /toda la informaci[oó]n|informaci[oó]n del sistema|resumen del sistema|estado del sistema|resumen general|estad[ií]sticas|cu[aá]ntos clientes|carreras de hoy/i.test(
+        textoLimpio
+      )
+    ) {
+      const fechaHoy = hoyLocal();
+      const [clientes, grupos, carreras] = await Promise.all([
+        listarClientes(true).catch(() => []),
+        listarGruposAdmin(true).catch(() => []),
+        cargarCarrerasDelDia(fechaHoy).catch(() => []),
+      ]);
+
+      const totalClientes = clientes.length;
+      const conSaldoPositivo = clientes.filter((c) => Number(c.saldo_actual ?? 0) > 0.005);
+      const conSaldoNegativo = clientes.filter((c) => Number(c.saldo_actual ?? 0) < -0.005);
+      const sumaFavor = conSaldoPositivo.reduce((a, c) => a + Number(c.saldo_actual ?? 0), 0);
+      const sumaContra = conSaldoNegativo.reduce((a, c) => a + Math.abs(Number(c.saldo_actual ?? 0)), 0);
+      const sumaAvales = clientes.reduce((a, c) => a + Number(c.aval ?? 0), 0);
+
+      const carrerasHoy = carreras.filter((c) => c.fecha === fechaHoy);
+      const liquidadasHoy = carrerasHoy.filter(
+        (c) => c.aplicado_a_tablas === true || String(c.estado ?? "").toLowerCase() === "liquidada"
+      );
+      const hipodromosHoy = [...new Set(carrerasHoy.map((c) => String(c.hipodromo ?? "").toUpperCase()).filter(Boolean))];
+
+      return {
+        respuesta:
+          `🤖 **Informe Integral del Sistema Hípico (${fechaHoy})**:\n\n` +
+          `👥 **Cartera y Contabilidad de Clientes**:\n` +
+          `• **Clientes registrados**: ${totalClientes} (${grupos.length} grupo(s) activo(s))\n` +
+          `• **Saldos a favor (Ganadores)**: ${conSaldoPositivo.length} cliente(s) por **+${formatoMoneda("USD", sumaFavor)}**\n` +
+          `• **Saldos en contra / Comprometidos**: ${conSaldoNegativo.length} cliente(s) por **-${formatoMoneda("USD", sumaContra)}**\n` +
+          `• **Avales totales autorizados**: **${formatoMoneda("USD", sumaAvales)}**\n` +
+          `• **Regla Contable Activa**: Descuento inmediato en cuenta \`2.1.02.003\` (*Saldos Comprometidos por Jugadas en Curso*) al cargar cualquier jugada.\n\n` +
+          `🏇 **Jornada Hípica de Hoy (${fechaHoy})**:\n` +
+          `• **Hipódromos activos (${hipodromosHoy.length})**: ${hipodromosHoy.length ? hipodromosHoy.join(", ") : "Sin carreras cargadas hoy"}\n` +
+          `• **Carreras registradas**: ${carrerasHoy.length} (${liquidadasHoy.length} liquidada(s) · ${carrerasHoy.length - liquidadasHoy.length} abierta(s))`,
+        resuelto: true,
+        sugerenciaEscalamiento: false,
+        categoriaDetectada: "duda_plataforma",
+        prioridadDetectada: "baja",
+      };
+    }
+
+    // 3. Consulta de saldo o datos de un cliente específico
+    const matchCliente = textoLimpio.match(
+      /(?:saldo de|cu[aá]nto tiene|estado de|buscar cliente|cliente|informaci[oó]n de)\s+([a-záéíóúñ0-9_\-\s]{2,35})/i
+    );
+    if (matchCliente) {
+      const buscado = matchCliente[1]
+        .replace(/\b(por favor|en el sistema|actual|hoy)\b/gi, "")
+        .trim()
+        .toUpperCase();
+      if (buscado.length >= 2) {
+        const clientes = await listarClientes(true).catch(() => []);
+        const coincidencias = clientes.filter((c) => {
+          const nom = String(c.nombre ?? "").toUpperCase();
+          const seu = String(c.seudonimo ?? "").toUpperCase();
+          return nom.includes(buscado) || seu.includes(buscado);
+        });
+        if (coincidencias.length > 0) {
+          const detalle = coincidencias
+            .slice(0, 5)
+            .map((c) => {
+              const saldo = Number(c.saldo_actual ?? 0);
+              const aval = Number(c.aval ?? 0);
+              const disp = saldo + aval;
+              const dev = Number(c.devolucion ?? 0);
+              return (
+                `• **${c.seudonimo || c.nombre}** (${String(c.modo_juego ?? "aval").toUpperCase()}):\n` +
+                `  Resultado / Saldo Actual: **${saldo > 0 ? "+" : ""}${formatoMoneda("USD", saldo)}** · Aval: **${formatoMoneda("USD", aval)}** · Disponible: **${formatoMoneda("USD", disp)}**${dev > 0 ? ` · Devolución: **${dev}%**` : ""}`
+              );
+            })
+            .join("\n");
+          return {
+            respuesta: `🤖 **Información en Vivo de Cliente(s) («${buscado}»)**:\n${detalle}`,
+            resuelto: true,
+            sugerenciaEscalamiento: false,
+            categoriaDetectada: "ajuste_saldo",
+            prioridadDetectada: "baja",
+          };
+        }
+      }
+    }
+
+    // 4. Si fue dictado por voz y contiene estructura de jugada, interpretarla claramente
+    const matchJugadaDictada = mensaje.match(
+      /\b(1P|2P|3P|4P|5P|6P|[1-6]Y[2-7]N|PP|10A\d+(?:[.,]\d+)?|WIN|PLACE|SHOW|WPS)\b/i
+    );
+    if (matchJugadaDictada) {
+      const tipoJugada = matchJugadaDictada[1].toUpperCase();
+      const nums = mensaje.match(/\b\d+(?:[.,]\d+)?\b/g) ?? [];
+      return {
+        respuesta:
+          `🎙️ **Jugada Interpretada por el Agente de IA**:\n` +
+          `• **Texto recibido**: "${mensajeOriginal}"\n` +
+          `• **Normalización Hípica**: \`${mensaje.toUpperCase()}\`\n` +
+          `• **Modalidad detectada**: **${tipoJugada}**${nums.length ? ` · Valores numéricos: ${nums.join(", ")}` : ""}\n` +
+          `• Puedes pegarla directamente en **⚡ Carga Rápida (TEXTO)** dentro del módulo **🐎🎲 Apuestas**.`,
+        resuelto: true,
+        sugerenciaEscalamiento: false,
+        categoriaDetectada: "duda_plataforma",
+        prioridadDetectada: "baja",
+      };
+    }
+  } catch {
+    // Fallback limpio al motor base si hay error de red
+  }
+
+  const base = consultarAsistenteIa(mensaje, rolUsuario);
+  if (fueDictado && mensaje !== mensajeOriginal) {
+    return {
+      ...base,
+      respuesta: `🎙️ *Interpretado: "${mensaje}"*\n\n${base.respuesta}`,
+    };
+  }
+  return base;
 }

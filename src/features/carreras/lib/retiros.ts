@@ -218,16 +218,18 @@ async function reembolsarTickets(
       (tk) =>
         claveHipodromo(String(tk.hipodromo ?? "")) === claveHipo &&
         jugadaInvolucraRetirado(tk.caballo, tk.ejemplar_numero, tk.nombre_jugada, numeros) &&
-        (tk.anulada !== true || String(tk.estado ?? "") !== "Retirado")
+        (tk.anulada === true || String(tk.estado ?? "") !== "Retirado")
     );
 
     if (afectados.length > 0) {
       const idsAfectados = afectados.map((tk) => tk.id).filter((id) => id != null);
       if (idsAfectados.length > 0) {
+        // Si un ejemplar es retirado luego de cargar una jugada, la jugada queda
+        // visible como Empate (no se decide: estado = "Retirado", anulada = false).
         await supabase
           .from("tickets_apuestas")
           .update({
-            anulada: true,
+            anulada: false,
             estado: "Retirado",
             premio_pagar: 0,
             monto_decidido: 0,
@@ -236,16 +238,15 @@ async function reembolsarTickets(
           .in("id", idsAfectados);
       }
 
-      // Para modalidades que debitan saldo_actual al vender (TABLA FIJA, MARCA, DUPLETA)
-      // y que aún estaban 'Pendiente' (no reembolsadas por la RPC por tener ejemplar_numero nulo o rival retirado):
+      // Reembolsar el monto descontado al cargar la jugada si aún estaba 'Pendiente'
+      // y no fue reembolsada por la RPC (p. ej. pareos o jugadas con ejemplar en `caballo`):
       const abonosPorCliente = new Map<string, number>();
       for (const tk of afectados) {
         const estPrevio = String(tk.estado ?? "").trim();
-        const nom = String(tk.nombre_jugada ?? "").trim().toUpperCase();
-        const debitaAlVender = /^(TABLA FIJA|MARCA|DUPLETA)\b/.test(nom);
         const monto = num(tk.monto_jugado);
         const cid = String(tk.cliente_juega_id ?? "").trim();
-        if (estPrevio === "Pendiente" && debitaAlVender && monto > 0 && cid) {
+        const yaReembolsoRpc = tk.ejemplar_numero != null && numeros.includes(String(tk.ejemplar_numero).trim());
+        if (estPrevio === "Pendiente" && !yaReembolsoRpc && monto > 0 && cid) {
           abonosPorCliente.set(cid, (abonosPorCliente.get(cid) ?? 0) + monto);
         }
       }

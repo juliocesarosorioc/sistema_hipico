@@ -382,15 +382,16 @@ export function ClientesModule() {
                       aria-label="Seleccionar la página"
                     />
                   </th>
-                  <th className={th}>Jugador</th>
-                  <th className={th}>Contacto</th>
-                  <th className={th + " text-center"} title="Modo de juego">Modo</th>
-                  <th className={th + " text-right"} title="Saldo actual en USD">Saldo</th>
-                  <th className={th + " text-right text-amber-600"} title="Aval / límite de pérdida en USD">Aval</th>
-                  <th className={th + " text-right text-purple-600"} title="Devolución / incentivo %">Dev.</th>
-                  <th className={th + " text-emerald-600"} title="Día y tasa de cuadre">Cuadre</th>
-                  <th className={th + " text-amber-600"} title="Socio asignado">Socio</th>
-                  <th className={th + " text-center"} title="Puerto y saldo visible al socio">Flags</th>
+                  <th className={th + " w-[26%] min-w-[14rem]"}>Jugador</th>
+                  <th className={th + " w-[11%]"}>Contacto</th>
+                  <th className={th + " w-16 text-center"} title="Modo de juego">Modo</th>
+                  <th className={th + " w-24 text-right"} title="Saldo actual en USD">Saldo</th>
+                  <th className={th + " w-28 text-right"} title="Monto total ganador o perdedor en carrera con devolución incluida">Resultado</th>
+                  <th className={th + " w-20 text-right text-amber-600"} title="Aval / límite de pérdida en USD">Aval</th>
+                  <th className={th + " w-14 text-right text-purple-600"} title="Devolución / incentivo %">Dev.</th>
+                  <th className={th + " w-24 text-emerald-600"} title="Día y tasa de cuadre">Cuadre</th>
+                  <th className={th + " w-24 text-amber-600"} title="Socio asignado">Socio</th>
+                  <th className={th + " w-14 text-center"} title="Puerto y saldo visible al socio">Flags</th>
                   <th className={th + " w-[9.5rem] text-center"}>Acciones</th>
                 </tr>
               </thead>
@@ -407,11 +408,13 @@ export function ClientesModule() {
                       />
                     </td>
                     <td className={td}>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5">
                         {c.es_socio ? (
                           <span className="shrink-0 text-[9px] text-amber-500" title="Es socio">👑</span>
                         ) : null}
-                        <span className="truncate font-bold text-slate-800">{c.seudonimo || c.nombre || "—"}</span>
+                        <span className="font-bold text-slate-800 break-words leading-snug" title={c.nombre || c.seudonimo || ""}>
+                          {c.seudonimo || c.nombre || "—"}
+                        </span>
                         {c.grupo_id ? (
                           <span className="shrink-0 text-[9px] text-indigo-400" title="Pertenece a un grupo">🗃️</span>
                         ) : null}
@@ -448,6 +451,26 @@ export function ClientesModule() {
                       }`}>
                         {formatoMoneda("USD", num(c.saldo_actual))}
                       </span>
+                    </td>
+                    <td className={td + " text-right"}>
+                      {(() => {
+                        const resTotal = num(c.saldo_actual);
+                        return (
+                          <span
+                            className={`font-mono font-black tabular-nums ${
+                              resTotal > 0
+                                ? "text-emerald-700"
+                                : resTotal < 0
+                                  ? "text-danger-600"
+                                  : "text-slate-400"
+                            }`}
+                            title="Resultado acumulado ganador/perdedor con devolución incluida"
+                          >
+                            {resTotal > 0 ? "+" : ""}
+                            {formatoMoneda("USD", resTotal)}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className={td + " text-right"}>
                       <span className="font-mono font-black tabular-nums text-amber-700">
@@ -579,7 +602,7 @@ export function ClientesModule() {
                 ))}
                 {paginado.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-3 py-10 text-center text-slate-400">
+                    <td colSpan={12} className="px-3 py-10 text-center text-slate-400">
                       {cargando ? (
                         <>
                           <span className="mr-2">⏳</span>Cargando cartera…

@@ -606,19 +606,24 @@ export function TablasModule(props: Props) {
       jugador: v.jugador,
     };
     const base = (tabla.premio_recalculado ?? 0) * item.monto;
-    agregarTicket({
-      comando:
-        item.nombre === "TABLA COMPLETA"
-          ? `TABLA ${nombreHipodromoParaMostrar(item.hipodromo)} C${item.carrera} TABLA COMPLETA`
-          : `TABLA ${nombreHipodromoParaMostrar(item.hipodromo)} C${item.carrera} N${item.numero} ${item.nombre}`,
-      monto: item.monto,
-      gananciaProyectada: base,
-      // La tabla fija NO cobra comision al jugador: lo que juega es lo que se
-      // le descuenta. La comision es del grupo y se calcula sobre el monto
-      // decidido, al liquidar. Antes aqui se ponia 5% fijo, que cobraba de
-      // mas al jugador y no coincidia con ningun convenio.
-      comision: 0,
-    });
+    if (!persistirVenta) {
+      agregarTicket({
+        comando:
+          item.nombre === "TABLA COMPLETA"
+            ? `TABLA FIJA (${String(item.hipodromo).toUpperCase()} C${item.carrera})`
+            : `TABLA FIJA (${String(item.hipodromo).toUpperCase()} C${item.carrera}) DEL ${item.numero}`,
+        caballo: String(item.numero ?? ""),
+        monto: item.monto,
+        gananciaProyectada: base,
+        comision: 0,
+        cliente1: item.jugador?.nombre ? String(item.jugador.nombre) : undefined,
+        cliente2: "TF",
+        fecha: String(tabla.fecha || tabla.fecha_creacion || hoyLocal()).slice(0, 10),
+        hipodromo: item.hipodromo,
+        carrera: item.carrera != null ? Number(item.carrera) : undefined,
+        es_adelantada: true,
+      });
+    }
     // Centralización: registra la venta en el ledger "Carreras del Día".
     useCarrerasDiaStore.getState().agregarVenta(item.hipodromo, item.carrera ?? 0, {
       numero: item.numero,

@@ -68,6 +68,7 @@ export type ResumenContableCliente = {
   saldoContable: number;
   avalVigente: number;
   riesgoEnCurso: number;
+  riesgoDadorEnCurso?: number;
   disponibleParaJugar: number;
   jugadasEnVivoCount?: number;
   jugadasAdelantadasCount?: number;
@@ -424,12 +425,21 @@ export function calcularResumenContableCliente(params: {
 
   // Cálculo de riesgo en curso usando `_comprometidoSimuladoCli` por cada carrera abierta
   let riesgoCentavos = 0;
+  let riesgoSoloDadorCentavos = 0;
   for (const [raceKey, jugadasAbiertas] of abiertasPorCarrera) {
     const retirados = params.caballosRetiradosPorCarrera?.get(raceKey) ?? new Set<string>();
     const comp = _comprometidoSimuladoCli(params.nombre, jugadasAbiertas, comDefault, retirados);
     riesgoCentavos += aCentavos(comp);
+    const soloComoDador = jugadasAbiertas.filter(
+      (ja) => normalizarNombreCliente(ja.tercio) === nombreNorm && normalizarNombreCliente(ja.jugador) !== nombreNorm
+    );
+    if (soloComoDador.length > 0) {
+      const compDador = _comprometidoSimuladoCli(params.nombre, soloComoDador, comDefault, retirados);
+      riesgoSoloDadorCentavos += aCentavos(compDador);
+    }
   }
   const riesgoEnCurso = deCentavos(riesgoCentavos);
+  const riesgoDadorEnCurso = deCentavos(riesgoSoloDadorCentavos);
 
   // Devolución de Incentivos a favor del cliente (+):
   // Si se pasa monto explícito `devolucionIncentivo`, se usa; si se pasa `devolucionPct`, se calcula sobre el monto decidido/jugado.
@@ -448,10 +458,13 @@ export function calcularResumenContableCliente(params: {
   const impactoSaldoTotalCarrera = sumarDinero(netoJugadasCarrera, incentivoCarrera);
 
   // Fórmula contable única auditable:
-  // saldoContable = saldoInicial + depositos - retiros + impactoSaldoTotalCarrera (netoJugadasCarrera + incentivoCarrera)
-  let saldoContable = sumarDinero(
-    sumarDinero(saldoInicial, restarDinero(depositos, retiros)),
-    impactoSaldoTotalCarrera
+  // saldoContable = saldoInicial + depositos - retiros + impactoSaldoTotalCarrera - riesgoEnCurso (saldos comprometidos en jugadas en curso)
+  let saldoContable = restarDinero(
+    sumarDinero(
+      sumarDinero(saldoInicial, restarDinero(depositos, retiros)),
+      impactoSaldoTotalCarrera
+    ),
+    riesgoEnCurso
   );
 
   let reparadoAutomaticamente = false;
@@ -483,11 +496,13 @@ export function calcularResumenContableCliente(params: {
       saldoContable = devolucionIncentivo;
       reparadoAutomaticamente = true;
     } else {
-      saldoContable = sumarDinero(saldoBaseNum, devolucionIncentivo);
+      saldoContable = restarDinero(sumarDinero(saldoBaseNum, devolucionIncentivo), riesgoEnCurso);
     }
   }
 
-  const disponibleParaJugar = restarDinero(sumarDinero(saldoContable, avalVigente), riesgoEnCurso);
+  // Como `saldoContable` ya tiene descontado `riesgoEnCurso` (saldos comprometidos),
+  // el disponible para jugar es `saldoContable + avalVigente` (sin restar dos veces `riesgoEnCurso`).
+  const disponibleParaJugar = sumarDinero(saldoContable, avalVigente);
 
   return {
     clienteId: idStr,
@@ -508,6 +523,7 @@ export function calcularResumenContableCliente(params: {
     saldoContable,
     avalVigente,
     riesgoEnCurso,
+    riesgoDadorEnCurso,
     disponibleParaJugar,
     jugadasEnVivoCount,
     jugadasAdelantadasCount,
@@ -856,12 +872,19 @@ export async function sincronizarSaldosRealesClientes<
     }
 
     const telInfo = telefonosMap.get(String(c.id));
-    if (telInfo && (!c.telefono || !c.codigo_pais)) {
-      return {
+    const riesgoDadorPendiente = !esUsuarioModalidad ? (resumen.riesgoDadorEnCurso ?? 0) : 0;
+    const saldoEfectivoEnMemoria =
+      riesgoDadorPendiente > 0 ? restarDinero(saldoNum, riesgoDadorPendiente) : saldoNum;
+
+    if (riesgoDadorPendiente > 0 || (telInfo && (!c.telefono || !c.codigo_pais))) {
+      const copiaConCompromiso: Record<string, unknown> = {
         ...c,
-        telefono: c.telefono ?? telInfo.telefono,
-        codigo_pais: c.codigo_pais ?? telInfo.codigo_pais,
+        saldo_actual: saldoEfectivoEnMemoria,
+        telefono: c.telefono ?? telInfo?.telefono ?? null,
+        codigo_pais: c.codigo_pais ?? telInfo?.codigo_pais ?? null,
       };
+      if ("saldo" in c) copiaConCompromiso.saldo = saldoEfectivoEnMemoria;
+      return copiaConCompromiso as T;
     }
 
     return c;

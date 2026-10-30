@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import {
-  consultarAsistenteIa,
+  consultarAgenteIaEnVivo,
+  normalizarDictadoVoz,
   consultarCopilotoTransaccional,
   obtenerSesionCopilotoGlobal,
   detectarIntencionContableInicial,
@@ -41,13 +42,15 @@ export function WidgetAsistenteIa() {
     {
       id: "bienvenida",
       remitente: "ia",
-      texto: `👋 ¡Hola! Soy tu **Asistente Inteligente del Sistema Hípico**.\n¿En qué puedo ayudarte hoy?\n\nPuedes consultarme sobre carga de jugadas (\`Puestos\`, \`Premios\`, \`PP\`, \`WPS\`), gestión de saldos (\`Libre\`, \`Aval\`, \`Pozo\`), cruces o liquidación.`,
+      texto: `👋 ¡Hola! Soy tu **🤖 Agente de IA del Sistema Hípico**.\nSuministro toda la información del sistema en vivo (saldos, clientes, carreras, jugadas, contabilidad y liquidación) y también puedes **dictarme por voz (🎙️)** para que interprete tu solicitud o jugada.`,
       fecha: new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
 
   const [textoInput, setTextoInput] = useState("");
   const [escribiendoIa, setEscribiendoIa] = useState(false);
+  const [escuchandoVoz, setEscuchandoVoz] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   // Estado para el modal o tarjeta de escalamiento a Ticket
   const [mostrarFormEscalar, setMostrarFormEscalar] = useState(false);
@@ -92,8 +95,8 @@ export function WidgetAsistenteIa() {
       ? "operador"
       : "operador";
 
-  // Enviar mensaje al bot IA
-  const handleEnviarMensaje = (textoPersonalizado?: string) => {
+  // Enviar mensaje al Agente de IA
+  const handleEnviarMensaje = (textoPersonalizado?: string, fueDictado = false) => {
     const mensajeAEnviar = (textoPersonalizado || textoInput).trim();
     if (!mensajeAEnviar) return;
 
@@ -102,7 +105,7 @@ export function WidgetAsistenteIa() {
     const nuevoMsgUsuario: MensajeChat = {
       id: `usr-${Date.now()}`,
       remitente: "usuario",
-      texto: mensajeAEnviar,
+      texto: fueDictado ? `🎙️ ${mensajeAEnviar}` : mensajeAEnviar,
       fecha: ahoraFmt,
     };
 
@@ -110,12 +113,13 @@ export function WidgetAsistenteIa() {
     setTextoInput("");
     setEscribiendoIa(true);
 
-    // Simula procesamiento inteligente de la IA con la base de conocimiento y FSM contable
+    // Procesamiento inteligente del Agente de IA con acceso a toda la información del sistema y FSM contable
     setTimeout(async () => {
+      const textoNormalizado = normalizarDictadoVoz(mensajeAEnviar);
       const sesionActual = obtenerSesionCopilotoGlobal();
-      const intencionContable = detectarIntencionContableInicial(mensajeAEnviar);
+      const intencionContable = detectarIntencionContableInicial(textoNormalizado);
       if (sesionActual.flujoContable || intencionContable.esContable) {
-        const resCopiloto = await consultarCopilotoTransaccional(mensajeAEnviar, {
+        const resCopiloto = await consultarCopilotoTransaccional(textoNormalizado, {
           operador: usuario || "Operador",
         });
         const nuevoMsgIa: MensajeChat = {
@@ -129,7 +133,7 @@ export function WidgetAsistenteIa() {
         return;
       }
 
-      const res = consultarAsistenteIa(mensajeAEnviar, rolActual);
+      const res = await consultarAgenteIaEnVivo(mensajeAEnviar, rolActual, fueDictado);
 
       const nuevoMsgIa: MensajeChat = {
         id: `ia-${Date.now()}`,
@@ -150,7 +154,77 @@ export function WidgetAsistenteIa() {
         if (res.categoriaDetectada) setCategoriaTicket(res.categoriaDetectada);
         if (res.prioridadDetectada) setPrioridadTicket(res.prioridadDetectada);
       }
-    }, 450);
+    }, 300);
+  };
+
+  const alternarDictadoVoz = () => {
+    if (escuchandoVoz && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        /* noop */
+      }
+      setEscuchandoVoz(false);
+      return;
+    }
+
+    const w = typeof window !== "undefined" ? (window as any) : null;
+    const SpeechRec = w?.SpeechRecognition || w?.webkitSpeechRecognition;
+    if (!SpeechRec) {
+      setMensajes((prev) => [
+        ...prev,
+        {
+          id: `sys-${Date.now()}`,
+          remitente: "sistema",
+          texto: "⚠️ Tu navegador no soporta dictado por voz directo (Web Speech API). Usa Chrome o Edge, o escribe tu comando en el cuadro inferior.",
+          fecha: new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+      return;
+    }
+
+    const rec = new SpeechRec();
+    rec.lang = "es-VE";
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+    let transcripcionFinal = "";
+
+    rec.onstart = () => {
+      setEscuchandoVoz(true);
+    };
+
+    rec.onresult = (event: any) => {
+      let parcial = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const pieza = event.results[i][0]?.transcript ?? "";
+        if (event.results[i].isFinal) {
+          transcripcionFinal += pieza + " ";
+        } else {
+          parcial += pieza;
+        }
+      }
+      const combinado = (transcripcionFinal + parcial).trim();
+      if (combinado) setTextoInput(combinado);
+    };
+
+    rec.onerror = () => {
+      setEscuchandoVoz(false);
+    };
+
+    rec.onend = () => {
+      setEscuchandoVoz(false);
+      const finalLimpio = transcripcionFinal.trim();
+      if (finalLimpio) {
+        handleEnviarMensaje(finalLimpio, true);
+      }
+    };
+
+    recognitionRef.current = rec;
+    try {
+      rec.start();
+    } catch {
+      setEscuchandoVoz(false);
+    }
   };
 
   // Crear Ticket formal
@@ -206,7 +280,7 @@ export function WidgetAsistenteIa() {
         <button
           onClick={() => setAbierto(true)}
           className="group relative flex items-center gap-2.5 rounded-full border-2 border-emerald-400 bg-slate-900 px-4 py-2.5 text-white shadow-2xl shadow-emerald-500/30 transition-all hover:scale-105 hover:bg-slate-800"
-          title="Abrir Asistente IA y Soporte Inteligente"
+          title="Abrir Agente de IA · Información del Sistema y Dictado por Voz"
         >
           <span className="relative flex h-3 w-3">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -215,10 +289,10 @@ export function WidgetAsistenteIa() {
           <span className="text-xl">🤖</span>
           <div className="flex flex-col text-left">
             <span className="text-xs font-black tracking-tight text-emerald-400">
-              Asistente IA & Soporte
+              🤖 Agente de IA
             </span>
             <span className="text-[10px] font-bold text-slate-300">
-              ¿Dudas o incidencias? Clic aquí
+              Info del Sistema · 🎙️ Dictado por Voz
             </span>
           </div>
         </button>
@@ -226,7 +300,7 @@ export function WidgetAsistenteIa() {
 
       {/* VENTANA FLOTANTE DEL CHAT */}
       {abierto && (
-        <div className="flex h-[560px] w-[360px] sm:w-[420px] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 text-slate-100 shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex h-[560px] w-[360px] sm:w-[420px] flex-col overflow-hidden overflow-x-hidden rounded-2xl border border-slate-700 bg-slate-950 text-slate-100 shadow-2xl animate-in zoom-in-95 duration-200">
           {/* HEADER DEL WIDGET */}
           <div className="flex shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3">
             <div className="flex items-center gap-2.5">
@@ -235,11 +309,11 @@ export function WidgetAsistenteIa() {
               </div>
               <div>
                 <h4 className="text-xs font-black tracking-tight text-white flex items-center gap-1.5">
-                  <span>Asistente Inteligente 24/7</span>
+                  <span>🤖 Agente de IA del Sistema</span>
                   <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                 </h4>
                 <p className="text-[10px] text-slate-400">
-                  Resolución inmediata y tickets al Administrador
+                  Información total en vivo · 🎙️ Dictado e Interpretación
                 </p>
               </div>
             </div>
@@ -281,9 +355,9 @@ export function WidgetAsistenteIa() {
 
           {/* CONTENIDO PESTAÑA CHAT */}
           {pestana === "chat" && (
-            <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex flex-1 flex-col overflow-hidden overflow-x-hidden">
               {/* ÁREA DE MENSAJES */}
-              <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden p-3.5 space-y-3">
                 {mensajes.map((m) => (
                   <div
                     key={m.id}
@@ -296,24 +370,24 @@ export function WidgetAsistenteIa() {
                     }`}
                   >
                     {m.remitente === "sistema" ? (
-                      <div className="my-1 rounded-xl border border-amber-500/40 bg-amber-950/40 p-3 text-center text-xs text-amber-200">
-                        <p className="whitespace-pre-line">{m.texto}</p>
+                      <div className="my-1 rounded-xl border border-amber-500/40 bg-amber-950/40 p-3 text-center text-xs text-amber-200 break-words">
+                        <p className="whitespace-pre-line break-words">{m.texto}</p>
                       </div>
                     ) : (
                       <>
                         <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400">
-                          <span>{m.remitente === "usuario" ? "Tú" : "🤖 Asistente IA"}</span>
+                          <span>{m.remitente === "usuario" ? "Tú" : "🤖 Agente de IA"}</span>
                           <span>•</span>
                           <span>{m.fecha}</span>
                         </div>
                         <div
-                          className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed shadow-sm ${
+                          className={`max-w-[90%] overflow-x-hidden break-words rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed shadow-sm ${
                             m.remitente === "usuario"
                               ? "bg-emerald-600 text-white rounded-br-xs"
                               : "bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-xs"
                           }`}
                         >
-                          <p className="whitespace-pre-line">{m.texto}</p>
+                          <p className="whitespace-pre-line break-words">{m.texto}</p>
 
                           {/* Si la IA sugiere escalar */}
                           {m.requiereEscalamiento && !mostrarFormEscalar && (
@@ -336,7 +410,7 @@ export function WidgetAsistenteIa() {
                 {escribiendoIa && (
                   <div className="flex items-center gap-2 text-xs text-slate-400 italic">
                     <span className="h-2 w-2 rounded-full bg-emerald-500 animate-bounce" />
-                    <span>El asistente está procesando tu consulta...</span>
+                    <span>El Agente de IA está procesando la información del sistema...</span>
                   </div>
                 )}
 
@@ -407,44 +481,71 @@ export function WidgetAsistenteIa() {
                 </div>
               )}
 
-              {/* CHIPS RÁPIDOS DE PREGUNTAS FRECUENTES */}
+              {/* CHIPS RÁPIDOS DE INFORMACIÓN DEL SISTEMA (SIN SCROLL HORIZONTAL) */}
               {!mostrarFormEscalar && (
-                <div className="border-t border-slate-800/80 bg-slate-950/60 px-3 py-1.5 overflow-x-auto flex gap-1.5 text-[10px]">
+                <div className="border-t border-slate-800/80 bg-slate-950/60 px-3 py-1.5 overflow-x-hidden flex flex-wrap gap-1.5 text-[10px]">
                   <button
                     type="button"
-                    onClick={() => handleEnviarMensaje("¿Cómo se calculan los puestos con varios ejemplares como 1y2 o 3y4?")}
-                    className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-slate-300 hover:border-emerald-500 hover:text-white"
+                    onClick={() => handleEnviarMensaje("Resumen del sistema")}
+                    className="rounded-full border border-emerald-500/40 bg-emerald-950/40 px-2.5 py-1 font-bold text-emerald-300 hover:border-emerald-400 hover:text-white"
                   >
-                    🐎 Puestos con varios caballos
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleEnviarMensaje("¿Cómo cargo apuestas WPS e incentivos de Venezuela?")}
-                    className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-slate-300 hover:border-emerald-500 hover:text-white"
-                  >
-                    🏇 Módulo WPS
+                    📊 Resumen del Sistema
                   </button>
                   <button
                     type="button"
                     onClick={() => handleEnviarMensaje("¿Qué diferencia hay entre saldo Libre, Avalado y Pozo?")}
-                    className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-slate-300 hover:border-emerald-500 hover:text-white"
+                    className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-slate-300 hover:border-emerald-500 hover:text-white"
                   >
                     💵 Saldos
                   </button>
                   <button
                     type="button"
+                    onClick={() => handleEnviarMensaje("¿Cómo se calculan los puestos con varios ejemplares como 1y2 o 3y4?")}
+                    className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-slate-300 hover:border-emerald-500 hover:text-white"
+                  >
+                    🐎 Puestos
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleEnviarMensaje("¿Cómo funciona el Control de Cruces?")}
-                    className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-slate-300 hover:border-emerald-500 hover:text-white"
+                    className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-slate-300 hover:border-emerald-500 hover:text-white"
                   >
                     ⚡ Cruces
                   </button>
                 </div>
               )}
 
-              {/* CAMPO DE TEXTO INPUT */}
+              {/* CAMPO DE TEXTO INPUT + DICTADO POR VOZ */}
               {!mostrarFormEscalar && (
                 <div className="border-t border-slate-800 bg-slate-900 p-2.5">
-                  <div className="flex gap-2">
+                  {escuchandoVoz && (
+                    <div className="mb-1.5 flex items-center justify-between rounded-lg border border-rose-500/50 bg-rose-950/40 px-2.5 py-1 text-[10px] font-bold text-rose-200">
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
+                        🎙️ Escuchando dictado… habla ahora y el Agente interpretará
+                      </span>
+                      <button
+                        type="button"
+                        onClick={alternarDictadoVoz}
+                        className="text-rose-300 underline hover:text-white"
+                      >
+                        Detener
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={alternarDictadoVoz}
+                      title={escuchandoVoz ? "Detener dictado por voz" : "Dictar por voz (el Agente de IA interpreta tu voz)"}
+                      className={`shrink-0 rounded-xl border px-2.5 py-2 text-xs font-black transition ${
+                        escuchandoVoz
+                          ? "border-rose-400 bg-rose-600 text-white animate-pulse"
+                          : "border-slate-700 bg-slate-800 text-amber-300 hover:border-amber-400 hover:bg-slate-700"
+                      }`}
+                    >
+                      {escuchandoVoz ? "⏹️" : "🎙️"}
+                    </button>
                     <input
                       type="text"
                       value={textoInput}
@@ -452,14 +553,14 @@ export function WidgetAsistenteIa() {
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleEnviarMensaje();
                       }}
-                      placeholder="Escribe tu consulta o duda aquí…"
-                      className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-hidden"
+                      placeholder="Escribe o dicta (🎙️) cualquier consulta o jugada…"
+                      className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-hidden"
                     />
                     <button
                       type="button"
                       onClick={() => handleEnviarMensaje()}
                       disabled={!textoInput.trim() || escribiendoIa}
-                      className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-500 disabled:opacity-50 transition"
+                      className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-500 disabled:opacity-50 transition"
                     >
                       Enviar
                     </button>
@@ -471,7 +572,7 @@ export function WidgetAsistenteIa() {
 
           {/* CONTENIDO PESTAÑA MIS TICKETS */}
           {pestana === "mis_tickets" && (
-            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden p-3 space-y-3">
               {misTickets.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center p-6 text-slate-400">
                   <span className="text-3xl mb-2">📋</span>

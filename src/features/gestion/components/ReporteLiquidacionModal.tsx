@@ -47,6 +47,8 @@ type Props = {
   carreraInicial?: number;
   /** Fecha de la jornada en curso. */
   fechaInicial?: string;
+  /** Cuando viene directo de liquidar una carrera, muestra exclusivamente esa carrera liquidada. */
+  modoExclusivoLiquidacion?: boolean;
 };
 
 /** Fecha de ayer (ISO local) para el atajo «Ayer». */
@@ -75,12 +77,13 @@ export default function ReporteLiquidacionModal({
   hipodromoInicial,
   carreraInicial,
   fechaInicial,
+  modoExclusivoLiquidacion = false,
 }: Props) {
   const [fecha, setFecha] = useState(fechaInicial || hoyLocal());
   const [grupos, setGrupos] = useState<GrupoRow[]>([]);
-  const [grupoId, setGrupoId] = useState("");
+  const [grupoId, setGrupoId] = useState(() => String(grupoActivoVigente() || ""));
   const [carrerasDia, setCarrerasDia] = useState<CarreraDelDia[]>([]);
-  const [hipodromo, setHipodromo] = useState(hipodromoInicial || "");
+  const [hipodromo, setHipodromo] = useState(hipodromoInicial ? hipodromoInicial.trim().toUpperCase() : "");
   const [carrera, setCarrera] = useState<number>(carreraInicial ?? 0);
   const [datos, setDatos] = useState<ReporteCarreraDatos | null>(null);
   /**
@@ -171,6 +174,21 @@ export default function ReporteLiquidacionModal({
   // Carreras de la fecha (liquidadas o en curso con pre-jugadas).
   useEffect(() => {
     if (!abierto) return;
+    if (modoExclusivoLiquidacion && hipodromoInicial && carreraInicial) {
+      setCarrerasDia([
+        {
+          fecha: fechaInicial || fecha,
+          hipodromo: hipodromoInicial.trim().toUpperCase(),
+          carrera: Number(carreraInicial),
+          estado: "Liquidada",
+          aplicado_a_tablas: true,
+          ventas: [],
+          ganadores: [],
+        },
+      ]);
+      setCargandoDia(false);
+      return;
+    }
     let vivo = true;
     setCargandoDia(true);
     cargarCarrerasDelDia(fecha)
@@ -192,6 +210,7 @@ export default function ReporteLiquidacionModal({
             hipodromo: hipodromoInicial.trim().toUpperCase(),
             carrera: Number(carreraInicial),
             estado: "Liquidada",
+            aplicado_a_tablas: true,
             ventas: [],
             ganadores: [],
           });
@@ -203,7 +222,7 @@ export default function ReporteLiquidacionModal({
     return () => {
       vivo = false;
     };
-  }, [abierto, fecha, hipodromoInicial, carreraInicial, fechaInicial]);
+  }, [abierto, fecha, hipodromoInicial, carreraInicial, fechaInicial, modoExclusivoLiquidacion]);
 
   const hipodromosDisp = useMemo(() => {
     const set = new Set<string>();
@@ -216,6 +235,10 @@ export default function ReporteLiquidacionModal({
 
   // Cascada fecha → hipódromo.
   useEffect(() => {
+    if (modoExclusivoLiquidacion && hipodromoInicial) {
+      setHipodromo(hipodromoInicial.trim().toUpperCase());
+      return;
+    }
     if (!hipodromosDisp.length) {
       if (!cargandoDia && !hipodromoInicial) {
         setHipodromo("");
@@ -234,7 +257,7 @@ export default function ReporteLiquidacionModal({
       }
       return hipodromosDisp[0];
     });
-  }, [hipodromosDisp, cargandoDia, hipodromoInicial]);
+  }, [hipodromosDisp, cargandoDia, hipodromoInicial, modoExclusivoLiquidacion]);
 
   const carrerasDisp = useMemo(
     () =>
@@ -248,6 +271,10 @@ export default function ReporteLiquidacionModal({
 
   // Cascada hipódromo → carrera.
   useEffect(() => {
+    if (modoExclusivoLiquidacion && carreraInicial) {
+      setCarrera(Number(carreraInicial));
+      return;
+    }
     if (!carrerasDisp.length) {
       if (!cargandoDia && !carreraInicial) {
         setCarrera(0);
@@ -263,11 +290,11 @@ export default function ReporteLiquidacionModal({
         claveHipodromo(hipodromo) === claveHipodromo(hipodromoInicial)
           ? Number(carreraInicial)
           : 0;
-      if (prev && carrerasDisp.includes(prev)) return prev;
       if (inicialMismoHipo && carrerasDisp.includes(inicialMismoHipo)) return inicialMismoHipo;
+      if (prev && carrerasDisp.includes(prev)) return prev;
       return carrerasDisp[0];
     });
-  }, [carrerasDisp, cargandoDia, carreraInicial, hipodromoInicial, hipodromo]);
+  }, [carrerasDisp, cargandoDia, carreraInicial, hipodromoInicial, hipodromo, modoExclusivoLiquidacion]);
 
   const nombreGrupo = useMemo(
     () => grupos.find((g) => String(g.id) === grupoId)?.nombre ?? "Grupo Hípico",
@@ -292,6 +319,7 @@ export default function ReporteLiquidacionModal({
    * En `carrerasDia` el estado central (`aplicado_a_tablas`) es la verdad.
    */
   const liquidada = useMemo(() => {
+    if (modoExclusivoLiquidacion) return true;
     const c = carrerasDia.find(
       (x) =>
         String(x.hipodromo || "").trim().toUpperCase() === hipodromo &&
@@ -303,7 +331,7 @@ export default function ReporteLiquidacionModal({
       String(c.estado ?? "").toLowerCase() === "liquidada" ||
       (Array.isArray(c.ganadores) && c.ganadores.length > 0)
     );
-  }, [carrerasDia, hipodromo, carrera]);
+  }, [carrerasDia, hipodromo, carrera, modoExclusivoLiquidacion]);
 
   // Motor: trae la carrera liquidada y los logos FRESCOS en paralelo con el
   // detalle. Se hace UNA sola vez por carrera elegida: el filtro de modalidad de
@@ -315,7 +343,15 @@ export default function ReporteLiquidacionModal({
   } | null>(null);
 
   useEffect(() => {
-    if (!abierto || !hipodromo || !carrera) {
+    const fechaActiva = modoExclusivoLiquidacion && fechaInicial ? fechaInicial : fecha;
+    const hipoActivo =
+      modoExclusivoLiquidacion && hipodromoInicial
+        ? hipodromoInicial.trim().toUpperCase()
+        : hipodromo;
+    const carrActiva =
+      modoExclusivoLiquidacion && carreraInicial ? Number(carreraInicial) : carrera;
+
+    if (!abierto || !hipoActivo || !carrActiva) {
       setDetalle(null);
       return;
     }
@@ -326,8 +362,8 @@ export default function ReporteLiquidacionModal({
     // resuelven contra la base en paralelo con el detalle de la carrera.
     const logoGrupoId = grupoId || grupoActivoVigente() || undefined;
     Promise.all([
-      carreraReporteDetalle(fecha, hipodromo, carrera),
-      logosFrescosDeCarrera({ hipodromo, grupoId: logoGrupoId }),
+      carreraReporteDetalle(fechaActiva, hipoActivo, carrActiva),
+      logosFrescosDeCarrera({ hipodromo: hipoActivo, grupoId: logoGrupoId }),
     ])
       .then(([c, frescos]) => {
         if (!vivo) return;
@@ -339,7 +375,8 @@ export default function ReporteLiquidacionModal({
     return () => {
       vivo = false;
     };
-  }, [abierto, fecha, hipodromo, carrera, grupoId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto, fecha, hipodromo, carrera, modoExclusivoLiquidacion, fechaInicial, hipodromoInicial, carreraInicial]);
 
   // Armado de la plantilla: corre por cada detalle nuevo Y por cada cambio del
   // filtro segmentado de modalidad de tiempo (recalcula filas y subtotales).
@@ -406,76 +443,87 @@ export default function ReporteLiquidacionModal({
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="font-black text-white">🧾 Reporte de Liquidación</span>
 
-            <div className="ml-1 flex items-center gap-1.5 font-bold text-slate-300">
-              <span>Fecha</span>
-              <DateInput
-                value={fecha}
-                onFechaChange={(val) => setFecha(val || hoyLocal())}
-                className="w-32 py-1 px-2 text-[11px] font-bold bg-slate-800 text-white border-slate-600"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => setFecha(hoyLocal())}
-              className="rounded border border-slate-600 px-2 py-1 font-bold text-slate-200 hover:bg-slate-700"
-            >
-              Hoy
-            </button>
-            <button
-              type="button"
-              onClick={() => setFecha((f) => ayer(f))}
-              className="rounded border border-slate-600 px-2 py-1 font-bold text-slate-200 hover:bg-slate-700"
-            >
-              Ayer
-            </button>
+            {modoExclusivoLiquidacion ? (
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/50 bg-amber-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-amber-300">
+                <span>🏆</span>
+                <span>
+                  {nombreHipodromoParaMostrar(hipodromo)} · Carrera #{carrera} · 📅 {fecha}
+                </span>
+              </span>
+            ) : (
+              <>
+                <div className="ml-1 flex items-center gap-1.5 font-bold text-slate-300">
+                  <span>Fecha</span>
+                  <DateInput
+                    value={fecha}
+                    onFechaChange={(val) => setFecha(val || hoyLocal())}
+                    className="w-32 py-1 px-2 text-[11px] font-bold !bg-white !text-black border-slate-300"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFecha(hoyLocal())}
+                  className="rounded border border-slate-600 px-2 py-1 font-bold text-slate-200 hover:bg-slate-700"
+                >
+                  Hoy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFecha((f) => ayer(f))}
+                  className="rounded border border-slate-600 px-2 py-1 font-bold text-slate-200 hover:bg-slate-700"
+                >
+                  Ayer
+                </button>
 
-            <label className="flex items-center gap-1 font-bold text-slate-300">
-              Grupo
-              <select
-                value={grupoId}
-                onChange={(e) => setGrupoId(e.target.value)}
-                className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] font-bold text-white"
-              >
-                {grupos.length === 0 && <option value="">— sin grupos —</option>}
-                {grupos.map((g) => (
-                  <option key={String(g.id)} value={String(g.id)}>
-                    {g.nombre}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <label className="flex items-center gap-1 font-bold text-slate-300">
+                  Grupo
+                  <select
+                    value={grupoId}
+                    onChange={(e) => setGrupoId(e.target.value)}
+                    className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] font-bold text-white"
+                  >
+                    {grupos.length === 0 && <option value="">— sin grupos —</option>}
+                    {grupos.map((g) => (
+                      <option key={String(g.id)} value={String(g.id)}>
+                        {g.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-            <label className="flex items-center gap-1 font-bold text-slate-300">
-              Hipódromo
-              <select
-                value={hipodromo}
-                onChange={(e) => setHipodromo(e.target.value)}
-                className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] font-bold text-white"
-              >
-                {hipodromosDisp.length === 0 && <option value="">—</option>}
-                {hipodromosDisp.map((h) => (
-                  <option key={h} value={h}>
-                    {nombreHipodromoParaMostrar(h)}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <label className="flex items-center gap-1 font-bold text-slate-300">
+                  Hipódromo
+                  <select
+                    value={hipodromo}
+                    onChange={(e) => setHipodromo(e.target.value)}
+                    className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] font-bold text-white"
+                  >
+                    {hipodromosDisp.length === 0 && <option value="">—</option>}
+                    {hipodromosDisp.map((h) => (
+                      <option key={h} value={h}>
+                        {nombreHipodromoParaMostrar(h)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-            <label className="flex items-center gap-1 font-bold text-slate-300">
-              Carrera
-              <select
-                value={String(carrera)}
-                onChange={(e) => setCarrera(Number(e.target.value))}
-                className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] font-bold text-white"
-              >
-                {carrerasDisp.length === 0 && <option value="">—</option>}
-                {carrerasDisp.map((n) => (
-                  <option key={n} value={String(n)}>
-                    C{n}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <label className="flex items-center gap-1 font-bold text-slate-300">
+                  Carrera
+                  <select
+                    value={String(carrera)}
+                    onChange={(e) => setCarrera(Number(e.target.value))}
+                    className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] font-bold text-white"
+                  >
+                    {carrerasDisp.length === 0 && <option value="">—</option>}
+                    {carrerasDisp.map((n) => (
+                      <option key={n} value={String(n)}>
+                        C{n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
 
             {/* FILTRO SEGMENTADO DE MODALIDAD DE TIEMPO (PROMPT #4)
                 Toca el MOTOR (armarReporteCarrera), no el render: al elegir una
@@ -558,20 +606,22 @@ export default function ReporteLiquidacionModal({
           </div>
         </div>
 
-        {/* Menú lateral derecho de carreras liquidadas (eliminada la sección superior) */}
-        <BarraCarrerasLiquidadas
-          fecha={fecha}
-          hipodromo={hipodromo}
-          nombreHipodromo={hipodromo ? nombreHipodromoParaMostrar(hipodromo) : undefined}
-          carreraActiva={carrera}
-          itemsExtra={itemsLiquidadasExtra}
-          onSeleccionarCarrera={(n) => setCarrera(n)}
-          onVerReporteCarrera={(n) => setCarrera(n)}
-          onSeleccionarItem={(it) => {
-            if (it.hipodromo) setHipodromo(String(it.hipodromo).trim().toUpperCase());
-            setCarrera(it.carrera);
-          }}
-        />
+        {/* Menú lateral derecho de carreras liquidadas (oculto en modo exclusivo tras liquidar) */}
+        {!modoExclusivoLiquidacion && (
+          <BarraCarrerasLiquidadas
+            fecha={fecha}
+            hipodromo={hipodromo}
+            nombreHipodromo={hipodromo ? nombreHipodromoParaMostrar(hipodromo) : undefined}
+            carreraActiva={carrera}
+            itemsExtra={itemsLiquidadasExtra}
+            onSeleccionarCarrera={(n) => setCarrera(n)}
+            onVerReporteCarrera={(n) => setCarrera(n)}
+            onSeleccionarItem={(it) => {
+              if (it.hipodromo) setHipodromo(String(it.hipodromo).trim().toUpperCase());
+              setCarrera(it.carrera);
+            }}
+          />
+        )}
 
         {/* Cuerpo del reporte */}
         <div className="p-4">

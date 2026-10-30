@@ -2,10 +2,10 @@
 import { DateInput } from "@/shared/components/ui/DateInput";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { proyectarFila } from "@/features/taquilla/lib/validar";
+import { calcularRiesgoCliente2, proyectarFila } from "@/features/taquilla/lib/validar";
 import { clienteConSaldoDescontado, proyectarFilasEnOrden } from "@/features/taquilla/lib/saldosEnCurso";
 import { normalizarLineaRapida, type ConfianzaCampo } from "@/features/taquilla/lib/normalizar";
-import { ladosDePareo, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
+import { etiquetaJugada, ladosDePareo, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import {
   esMarca,
@@ -607,9 +607,16 @@ const hipodromosDelDia = useMemo(() => {
     setModalResultados(true);
   }, [listoParaCargar, modalResultados, ultimaPizarra, carreraLiquidada, hipodromo, carrera, fecha]);
 
+  const [liquidandoCarrera, setLiquidandoCarrera] = useState(false);
+  const [modoExclusivoReporte, setModoExclusivoReporte] = useState(false);
+  const [adelantadasAbierto, setAdelantadasAbierto] = useState(false);
+  const [modalAgentePizarra, setModalAgentePizarra] = useState(false);
+  const bloqueoLiquidacionActivo = liquidandoCarrera || (mostrarReporteLiquidacion && modoExclusivoReporte);
+
   // Atajos de la Barra de Comandos (real keyboard events)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (bloqueoLiquidacionActivo) return;
       if (!e.ctrlKey) return;
       const k = e.key.toLowerCase();
       if (k === "q") {
@@ -625,6 +632,7 @@ const hipodromosDelDia = useMemo(() => {
         setMostrarHistorial((v) => !v);
       } else if (k === "g") {
         e.preventDefault();
+        setModoExclusivoReporte(false);
         setMostrarReporteLiquidacion(true);
       } else if (k === "k" && e.shiftKey) {
         e.preventDefault();
@@ -633,7 +641,7 @@ const hipodromosDelDia = useMemo(() => {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [abrirResultados]);
+  }, [abrirResultados, bloqueoLiquidacionActivo]);
 
   const comisionNum = useMemo(() => {
     const n = parseFloat(comision.replace(",", "."));
@@ -1300,9 +1308,9 @@ const hipodromosDelDia = useMemo(() => {
   const ticketsDeCarrera = useMemo(
     () =>
       tickets.filter((t) => {
-        if (t.carrera !== undefined && t.carrera !== carrera) return false;
-        if (t.fecha !== undefined && t.fecha !== fecha) return false;
-        if (t.hipodromo !== undefined && hipoKey(t.hipodromo) !== hipoKey(hipodromo)) return false;
+        if (t.carrera === undefined || Number(t.carrera) !== Number(carrera)) return false;
+        if (!t.fecha || t.fecha !== fecha) return false;
+        if (!t.hipodromo || hipoKey(t.hipodromo) !== hipoKey(hipodromo)) return false;
         return true;
       }),
     [tickets, carrera, fecha, hipodromo]
@@ -1563,13 +1571,8 @@ const hipodromosDelDia = useMemo(() => {
       return;
     }
     setRetirados(lista.join(","));
-    if (r.retirados.length > 0) {
-      for (const t of ticketsDeCarrera) {
-        if (jugadaInvolucraRetirado(t.caballo, null, t.comando, r.retirados)) {
-          eliminarTicket(t.id);
-        }
-      }
-    }
+    // Las jugadas sobre ejemplares retirados luego de cargarse NO se ocultan ni se eliminan de la sesión:
+    // permanecen visibles como Empate (no se deciden) con resultado 0,00.
     // La lista de retiros se centralizó: se invalida el registro central y se
     // refrescan jugadas/clientes para reflejar anulaciones y reembolsos.
     recargarRegistroCentral();
@@ -1612,13 +1615,7 @@ const hipodromosDelDia = useMemo(() => {
       return;
     }
     setRetirados(r.retirados.join(","));
-    if (retirado && r.retirados.length > 0) {
-      for (const t of ticketsDeCarrera) {
-        if (jugadaInvolucraRetirado(t.caballo, null, t.comando, r.retirados)) {
-          eliminarTicket(t.id);
-        }
-      }
-    }
+    // Las jugadas sobre ejemplares retirados luego de cargarse permanecen visibles como Empate (no se deciden).
     recargarRegistroCentral();
     void recargarJugadasGuardadas();
     if (r.reembolsos > 0) void recargarClientes();
@@ -1806,9 +1803,25 @@ const hipodromosDelDia = useMemo(() => {
         v.cliente1 && v.cliente2 && (v.cliente2?.cobroNeto ?? 0) > (v.cliente1?.cobroNeto ?? 0)
           ? v.cliente2.comision
           : (v.cliente1?.comision ?? 0);
-      /* La venta se cobró: lo autorizado baja el saldo del cliente 1 para topar
-         las próximas filas de esta carga (igual que la RPC, que ya lo debitó). */
+      /* La venta se cobró: lo autorizado baja de inmediato el saldo de los clientes
+         tanto en esta tanda como en el estado reactivo local y caché global. */
+      const riesgoC2 = calcularRiesgoCliente2(v.monto, v.tipo);
       descontado.set(String(c1.id), (descontado.get(String(c1.id)) ?? 0) + v.monto);
+      if (c2 && riesgoC2 > 0) {
+        descontado.set(String(c2.id), (descontado.get(String(c2.id)) ?? 0) + riesgoC2);
+      }
+      setClientes((prev) =>
+        prev.map((cli) => {
+          if (String(cli.id) === String(c1.id)) {
+            return { ...cli, saldo_actual: round2(saldoDeCliente(cli) - v.monto) };
+          }
+          if (c2 && riesgoC2 > 0 && String(cli.id) === String(c2.id)) {
+            return { ...cli, saldo_actual: round2(saldoDeCliente(cli) - riesgoC2) };
+          }
+          return cli;
+        })
+      );
+      limpiarCacheClientesVenta();
       agregarTicket({
         comando: `${v.monto} ${v.tipo}`,
         monto: v.monto,
@@ -2100,101 +2113,87 @@ const hipodromosDelDia = useMemo(() => {
     // `return` temprano dejaba la tabla fija SIN liquidar cuando la carrera se
     // finalizaba desde acá sin tickets en pantalla — el pago no aparecía en el
     // reporte.
-    const r = await liquidarCarreraYCerrarTabla({
-      hipodromo,
-      carrera,
-      pizarra: pizarraConRet,
-      // La jornada seleccionada, no "hoy": el resultado central se escribe en
-      // esa fecha y el semáforo (que filtra por fecha) pasa a rojo al finalizar.
-      fecha,
-      // Los dividendos cargados en Ctrl+Y viajan al motor y al central: sin
-      // esto la liquidación de puestos quedaba PENDIENTE por dividendo
-      // faltante y `resultados_carreras.dividendos` se guardaba en NULL.
-      dividendos: dividendosDePizarra(piz),
-      premio_oficial: tablaDeCarrera?.premio_original ?? null,
-      premio_recalculado: tablaDeCarrera?.premio_recalculado ?? null,
-      tickets: ticketsDeCarrera.map((t) => ({
-        comando: t.comando,
-        monto: t.monto,
-        caballo: t.caballo,
-        cliente1: t.cliente1,
-        cliente2: t.cliente2,
-        permiteCruces: conCruces ? permiteCrucesDe(t.cliente1 ?? "") : false,
-      })),
-      crucesPuestos: opcionesCrucesPuestos,
-      tasaComision: comisionNum,
-    });
-    setResumen(r);
-    // Resultado de la liquidación de MARCAS que ahora viaja con la liquidación
-    // centralizada (antes vivía en la pestaña "Resultado" del modal de Marcas).
-    const avisoMarcas = !r.marcas
-      ? ""
-      : r.marcas.ok
-        ? (r.marcas.liquidados ?? 0) > 0
-          ? ` · 🏷️ Marcas: ${r.marcas.liquidados} jugada(s) liquidada(s)`
-          : ""
-        : ` · ⚠️ Marcas: ${r.marcas.error ?? "no se pudo liquidar"}`;
-    if (r.ok) {
-      // Bloque 3 · Saldos: la venta ya descontó el saldo al cargar la jugada;
-      // aquí se acredita a los ganadores leyendo los tickets REALES de la
-      // carrera (transaccional e idempotente sobre los Pendientes).
-      const s = await aplicarLiquidacionSaldos({
-        hipodromo,
-        carrera,
-        pizarra: pizarraConRet,
-        dividendos: dividendosDePizarra(piz),
-        premio_por_tabla:
-          piz.premio_por_tabla ?? tablaDeCarrera?.premio_recalculado ?? tablaDeCarrera?.premio_original ?? null,
-        tasaComision: comisionNum,
-        crucesPuestos: opcionesCrucesPuestos,
-        // La JORNADA seleccionada, no "hoy": los tickets viven en fecha_registro.
-        fecha,
-      });
-      for (const t of ticketsDeCarrera) eliminarTicket(t.id);
-      // Deja la pizarra PAGADA para poder EDITAR los resultados después de
-      // pagar (botón «✏️ Editar resultados» del modal de Finalizar). A
-      // diferencia de «Registrar y Finalizar», ahí SÍ se precarga: es la
-      // pizarra que acaba de pagar el operador en ESTA sesión.
-      setPizarraCentral(piz);
-      setUltimaPizarra(null);
-      setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
+    setLiquidandoCarrera(true);
+    try {
+      // Ejecución en paralelo de cierre de carrera/tablas/marcas y liquidación de saldos
+      // para máxima velocidad de respuesta y apertura inmediata del reporte exclusivo.
+      const [r, s] = await Promise.all([
+        liquidarCarreraYCerrarTabla({
+          hipodromo,
+          carrera,
+          pizarra: pizarraConRet,
+          fecha,
+          dividendos: dividendosDePizarra(piz),
+          premio_oficial: tablaDeCarrera?.premio_original ?? null,
+          premio_recalculado: tablaDeCarrera?.premio_recalculado ?? null,
+          tickets: ticketsDeCarrera.map((t) => ({
+            comando: t.comando,
+            monto: t.monto,
+            caballo: t.caballo,
+            cliente1: t.cliente1,
+            cliente2: t.cliente2,
+            permiteCruces: conCruces ? permiteCrucesDe(t.cliente1 ?? "") : false,
+          })),
+          crucesPuestos: opcionesCrucesPuestos,
+          tasaComision: comisionNum,
+        }),
+        aplicarLiquidacionSaldos({
+          hipodromo,
+          carrera,
+          pizarra: pizarraConRet,
+          dividendos: dividendosDePizarra(piz),
+          premio_por_tabla:
+            piz.premio_por_tabla ?? tablaDeCarrera?.premio_recalculado ?? tablaDeCarrera?.premio_original ?? null,
+          tasaComision: comisionNum,
+          crucesPuestos: opcionesCrucesPuestos,
+          fecha,
+        }),
+      ]);
       setResumen(r);
-      setModalFinalizar(false);
-      // La liquidación acreditó/debitó saldos: refrescar el catálogo local para
-      // que las próximas jugadas topen contra el saldo REAL (bug: cargar más
-      // jugadas tras pagar y que la RPC las rechace porque el navegador tenía el
-      // saldo viejo).
-      void recargarClientes();
-      if (s.errores.length) {
-        setAviso(`✅ ${r.motivo}${avisoMarcas} · ⚠️ aviso de saldos: ${s.errores[0]}`);
+      const avisoMarcas = !r.marcas
+        ? ""
+        : r.marcas.ok
+          ? (r.marcas.liquidados ?? 0) > 0
+            ? ` · 🏷️ Marcas: ${r.marcas.liquidados} jugada(s) liquidada(s)`
+            : ""
+          : ` · ⚠️ Marcas: ${r.marcas.error ?? "no se pudo liquidar"}`;
+      if (r.ok) {
+        for (const t of ticketsDeCarrera) eliminarTicket(t.id);
+        setPizarraCentral(piz);
+        setUltimaPizarra(null);
+        setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
+        setResumen(r);
+        setModalFinalizar(false);
+        if (abrirReporte) {
+          setModoExclusivoReporte(true);
+          setMostrarReporteLiquidacion(true);
+        }
+        void recargarClientes();
         void recargarJugadasGuardadas();
         recargarRegistroCentral();
-        if (abrirReporte) setMostrarReporteLiquidacion(true);
-        return { ok: true, motivo: `${r.motivo} · aviso de saldos: ${s.errores[0]}` };
+        if (s.errores.length) {
+          setAviso(`✅ ${r.motivo}${avisoMarcas} · ⚠️ aviso de saldos: ${s.errores[0]}`);
+          return { ok: true, motivo: `${r.motivo} · aviso de saldos: ${s.errores[0]}` };
+        }
+        const pizarraTxt =
+          [piz.pizarra.primero, piz.pizarra.segundo, piz.pizarra.tercero, piz.pizarra.cuarto, piz.pizarra.quinto]
+            .filter(Boolean)
+            .join("-") || "Oficial";
+        void notificarTareaEjecutadaOperador({
+          titulo: `Carrera C${carrera} Liquidada`,
+          mensaje: `${nombreHipodromo} · Carrera ${carrera} (${fecha}) ha sido liquidada y movida a la barra de Carreras Liquidadas.`,
+          detalles: [`Pizarra oficial: ${pizarraTxt}`, r.motivo],
+          variante: "success",
+        });
+      } else {
+        void recargarJugadasGuardadas();
+        recargarRegistroCentral();
       }
+      setAviso(r.ok ? `✅ ${r.motivo}${avisoMarcas}` : `❌ ${r.motivo}`);
+      return { ok: r.ok, motivo: r.motivo };
+    } finally {
+      setLiquidandoCarrera(false);
     }
-    // La liquidación dejó de decidir los tickets: el panel sigue mostrándolos
-    // (ahora con ✅ Ganador/Perdedor) desde la base, no desde la sesión.
-    void recargarJugadasGuardadas();
-    recargarRegistroCentral();
-    setAviso(r.ok ? `✅ ${r.motivo}${avisoMarcas}` : `❌ ${r.motivo}`);
-    if (r.ok) {
-      const pizarraTxt =
-        [piz.pizarra.primero, piz.pizarra.segundo, piz.pizarra.tercero, piz.pizarra.cuarto, piz.pizarra.quinto]
-          .filter(Boolean)
-          .join("-") || "Oficial";
-      void notificarTareaEjecutadaOperador({
-        titulo: `Carrera C${carrera} Liquidada`,
-        mensaje: `${nombreHipodromo} · Carrera ${carrera} (${fecha}) ha sido liquidada y movida a la barra de Carreras Liquidadas.`,
-        detalles: [`Pizarra oficial: ${pizarraTxt}`, r.motivo],
-        variante: "success",
-      });
-    }
-    // Flujo unificado (Liquidar Carrera): el operador confirmó la pizarra y la
-    // carrera YA quedó registrada y cerrada acá, así que se salta el modal
-    // intermedio «Registrar y Finalizar» y va directo al Reporte.
-    if (r.ok && abrirReporte) setMostrarReporteLiquidacion(true);
-    return { ok: r.ok, motivo: r.motivo };
   };
 
   /**
@@ -2313,91 +2312,22 @@ const hipodromosDelDia = useMemo(() => {
 
   return (
     <div className="w-full max-w-full overflow-x-hidden space-y-2 pb-14">
-      {/* Cabecera unificada del módulo 🐎🎲 Apuestas */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-white shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">🐎🎲</span>
-          <div>
-            <h1 className="text-sm font-black uppercase tracking-wider text-amber-400">
-              🐎🎲 Apuestas
-            </h1>
-            <p className="text-[10px] font-semibold text-slate-300">
-              Carga en vivo y adelantada · Motor de Cruces y Tapas · Liquidación transaccional
+      {bloqueoLiquidacionActivo && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/60 backdrop-blur-[1px]">
+          <div className="rounded-2xl border border-amber-400/50 bg-slate-900 px-6 py-4 text-center text-white shadow-2xl">
+            <div className="text-lg font-black text-amber-400">
+              {liquidandoCarrera
+                ? `⏳ Liquidando ${nombreHipodromo} · C${carrera}…`
+                : `🔒 Reporte de Liquidación Abierto (${nombreHipodromo} · C${carrera})`}
+            </div>
+            <p className="mt-1 text-xs font-semibold text-slate-300">
+              {liquidandoCarrera
+                ? "Procesando pizarra oficial y saldos en paralelo. Acciones bloqueadas temporalmente."
+                : "Todas las acciones permanecen bloqueadas hasta cerrar el reporte de la carrera liquidada."}
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-          {/* Selector de grupo para Principal / Gestión */}
-          {esUsuarioOAdminPrincipal && (
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/90 px-2.5 py-1 shadow-inner">
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-300">Grupo:</span>
-              <select
-                value={grupoActivoValido ?? ""}
-                onChange={(e) => {
-                  const val = e.target.value.trim();
-                  setGrupoActivo(val ? val : null);
-                }}
-                className="rounded border border-slate-600 bg-slate-900 px-2 py-0.5 text-xs font-bold text-slate-100 outline-none focus:border-amber-400"
-                aria-label="Seleccionar grupo de trabajo"
-              >
-                <option value="">🌐 Principal («Todos los grupos»)</option>
-                {gruposVenta.map((g) => (
-                  <option key={String(g.id)} value={String(g.id)}>
-                    {g.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Botón para abrir el Modal de Control de Cruces */}
-
-          <button
-            type="button"
-            onClick={() => setModalControlCruces(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/50 bg-amber-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-amber-300 shadow-sm transition hover:bg-amber-500/30"
-            title="Abrir panel de control de cruces de esta carrera"
-          >
-            <span>⚡</span> Control de Cruces
-            {conCruces && (
-              <span className="rounded-full bg-emerald-500/30 px-1.5 py-0.2 text-[9px] font-black text-emerald-300 border border-emerald-400/40">
-                🔀 CON CRUCES
-              </span>
-            )}
-            {Object.values(crucesOverrideCarrera.todos ?? {}).some((v) => typeof v === "boolean") && (
-              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" title="Excepción activa para esta carrera" />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setModalCreacionRapidaCliente(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-400/50 bg-indigo-600 px-3 py-1 text-xs font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-indigo-500"
-            title="Registrar nuevo cliente rápido con teléfono, código de usuario y saldo autorizado"
-          >
-            <span>👤+</span> Nuevo Cliente Rápido
-          </button>
-
-          {!modoOperador && !esOperadorFijo && (
-            <button
-              type="button"
-              onClick={() => setModalSaldoRapido(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-emerald-600 px-3 py-1 text-xs font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-emerald-500"
-              title="Incrementar o disminuir saldo de un cliente adjuntando capture de comprobante"
-            >
-              <span>💵</span> Gestión Rápida de Saldos
-            </button>
-          )}
-          <span className="rounded-md bg-slate-800 px-2 py-1 font-bold text-slate-200">
-            📅 {fecha}
-          </span>
-          {hipodromoElegido && (
-            <span className="rounded-md bg-indigo-600/30 border border-indigo-400/40 px-2 py-1 font-black text-indigo-200">
-              🏇 {nombreHipodromo} · C{carrera}
-            </span>
-          )}
-        </div>
-      </div>
+      )}
 
       {principalSinGrupoSeleccionado && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-amber-400 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-950 shadow-md">
@@ -2633,9 +2563,6 @@ const hipodromosDelDia = useMemo(() => {
         </div>
       )}
 
-      {/* Control de bloqueo/desbloqueo de modalidades en el Portal de Clientes */}
-      <PanelBloqueoJugadasAdmin compacto />
-
       {/* Inputs superiores */}
       <div className="grid gap-1.5 rounded-xl border border-line bg-surface p-2 lg:grid-cols-7">
         <div>
@@ -2705,17 +2632,24 @@ const hipodromosDelDia = useMemo(() => {
             className="w-20 rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
-        <div className="flex items-end gap-2 pb-1">
-          
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50/60 px-2 py-1 text-[10px] font-black uppercase text-cyan-700" title="Permite cargar jugadas y registrar carreras aunque la Gaceta IA no haya extraído nada (sin bloquear).">
+        <div className="flex flex-wrap items-end gap-1.5 pb-1">
+          <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-cyan-200 bg-cyan-50/60 px-2 py-1 text-[10px] font-black uppercase text-cyan-700" title="Permite cargar jugadas y registrar carreras aunque la Gaceta IA no haya extraído nada (sin bloquear).">
             <input
               type="checkbox"
               checked={modoManual}
               onChange={(e) => setModoManual(e.target.checked)}
-              className="h-4 w-4 accent-cyan-600"
+              className="h-3.5 w-3.5 accent-cyan-600"
             />
             ✍️ Modo Manual
           </label>
+          <button
+            type="button"
+            onClick={() => setModalCreacionRapidaCliente(true)}
+            className="inline-flex items-center gap-1 rounded-lg border border-indigo-400/70 bg-indigo-600 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-white shadow-2xs transition hover:bg-indigo-500"
+            title="Registrar nuevo cliente rápido con teléfono, código de usuario y saldo autorizado"
+          >
+            <span>👤+</span> Nuevo Cliente
+          </button>
         </div>
       </div>
 
@@ -3051,15 +2985,6 @@ const hipodromosDelDia = useMemo(() => {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setModalCreacionRapidaCliente(true)}
-            className="!border-indigo-400 !bg-indigo-50 !font-black !text-indigo-800 hover:!bg-indigo-100"
-            title="Registrar nuevo cliente rápido con teléfono, código de usuario y saldo autorizado"
-          >
-            👤+ Nuevo Cliente Rápido
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
             onClick={() => setModalSaldoRapido(true)}
             className="!border-emerald-400 !bg-emerald-50 !font-black !text-emerald-800 hover:!bg-emerald-100"
           >
@@ -3287,7 +3212,7 @@ const hipodromosDelDia = useMemo(() => {
 
                             return (
                               <>
-                                {f.jugada} {f.caballo ? `· #${f.caballo.toUpperCase()}` : ""}
+                                {etiquetaJugada(f.jugada)} {f.caballo ? `· #${f.caballo.toUpperCase()}` : ""}
                               </>
                             );
                           })()}
@@ -3368,16 +3293,38 @@ const hipodromosDelDia = useMemo(() => {
 
             return (
               <div className={`mt-3 rounded-xl border ${borderTheme} p-2.5 shadow-xs`}>
-                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
-                  <p className="text-[11px] font-black uppercase tracking-wide text-slate-800">
-                    {tituloSeccion} ({listaFilas.length}) ·{" "}
-                    <span className="normal-case font-semibold text-slate-600">{subtituloSeccion}</span>
+                <div
+                  className={`mb-1.5 flex flex-wrap items-center justify-between gap-2 px-1 ${
+                    esTablaAdelantada ? "cursor-pointer select-none rounded-lg py-1 hover:bg-amber-100/50" : ""
+                  }`}
+                  onClick={esTablaAdelantada ? () => setAdelantadasAbierto((v) => !v) : undefined}
+                >
+                  <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-slate-800">
+                    {esTablaAdelantada && (
+                      <span
+                        className={`inline-block text-[10px] text-amber-800 transition-transform ${
+                          adelantadasAbierto ? "rotate-90" : ""
+                        }`}
+                      >
+                        ▶
+                      </span>
+                    )}
+                    <span>
+                      {tituloSeccion} ({listaFilas.length}) ·{" "}
+                      <span className="normal-case font-semibold text-slate-600">{subtituloSeccion}</span>
+                    </span>
                   </p>
                   <span className="text-[10px] font-semibold text-slate-500">
-                    7 Columnas Oficiales · ✏️ editar · 🗑️ anular
+                    {esTablaAdelantada
+                      ? adelantadasAbierto
+                        ? "▲ Ocultar acordeón · 7 Columnas Oficiales"
+                        : "▼ Desplegar acordeón · 7 Columnas Oficiales"
+                      : "7 Columnas Oficiales · ✏️ editar · 🗑️ anular"}
                   </span>
                 </div>
 
+                {(!esTablaAdelantada || adelantadasAbierto) && (
+                  <>
                 {mostrarPizarraEnVivo && (
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-3 py-2 shadow-2xs">
                     <div className="flex flex-wrap items-center gap-4">
@@ -3488,6 +3435,8 @@ const hipodromosDelDia = useMemo(() => {
                 ) : (
                   renderBloqueFilas7Columnas(listaFilas, headerTheme)
                 )}
+                  </>
+                )}
               </div>
             );
           };
@@ -3512,74 +3461,6 @@ const hipodromosDelDia = useMemo(() => {
 
         {/* Visor Interactivo de Reportes WhatsApp (#reporteArea) + Acuse de Recibo */}
         <div id="reporteArea" className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          {/* Barra del Agente de Pizarra (Liquidación instantánea, Reversión por Variación y Re-cálculo) */}
-          <div className="mb-3 rounded-xl border border-indigo-200 bg-white p-2.5 shadow-2xs">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-[11px] font-black uppercase tracking-wide text-indigo-950">
-                🤖 Agente de Pizarra Oficial (Liquidación · Variación · Saldos)
-              </span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {carreraLiquidada && puedeReabrir && (
-                  <button
-                    type="button"
-                    onClick={() => void ejecutarComandoAgentePizarra("Anular pizarra por variación")}
-                    disabled={reversando}
-                    className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-2.5 py-1 text-[11px] font-black text-white shadow-2xs hover:bg-rose-500 disabled:opacity-50"
-                    title="Anula la pizarra actual por variación de llegada, revierte pagos/cobros y restituye saldos"
-                  >
-                    🔄 Anular Pizarra por Variación
-                  </button>
-                )}
-                {(mensajeWhatsapp || (respuestaAgentePizarra && respuestaAgentePizarra.includes("PIZARRA OFICIAL"))) && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const txt = mensajeWhatsapp || respuestaAgentePizarra || "";
-                      if (!txt) return;
-                      try {
-                        await navigator.clipboard.writeText(txt);
-                        setCopiadoReporteAgente(true);
-                        setTimeout(() => setCopiadoReporteAgente(false), 2000);
-                        emitirToast("📋 Reporte WhatsApp copiado al portapapeles.", "success");
-                      } catch {
-                        emitirToast("No se pudo copiar el reporte al portapapeles.", "error");
-                      }
-                    }}
-                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-black text-white shadow-2xs hover:bg-emerald-500"
-                  >
-                    {copiadoReporteAgente ? "✅ Reporte Copiado" : "📋 Copiar Reporte WhatsApp"}
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <input
-                value={comandoPizarraInput}
-                onChange={(e) => setComandoPizarraInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void ejecutarComandoAgentePizarra();
-                }}
-                placeholder='Ej: "Pizarra: 5 - 2 - 8 - 1 - 4" · "Anular pizarra por variación" · "Nueva pizarra: 2 - 5 - 8 - 1 - 4"'
-                className="min-w-[240px] flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 font-mono text-xs text-slate-800 focus:border-indigo-500 focus:bg-white focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => void ejecutarComandoAgentePizarra()}
-                disabled={!comandoPizarraInput.trim()}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-black text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                ⚡ Procesar Pizarra
-              </button>
-            </div>
-            {respuestaAgentePizarra && (
-              <div className="mt-2 rounded-lg border border-slate-200 bg-slate-900 p-2.5 text-xs text-slate-100">
-                <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed">
-                  {respuestaAgentePizarra}
-                </pre>
-              </div>
-            )}
-          </div>
-
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -4134,6 +4015,87 @@ const hipodromosDelDia = useMemo(() => {
       )}
       {aviso && <p className="mt-2 text-xs font-semibold text-slate-600">{aviso}</p>}
 
+      {/* Sección inferior: Cabecera unificada de Apuestas + Control de Venta de Jugadas (Portal de Clientes) */}
+      <div className="mt-3 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-white shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🐎🎲</span>
+            <div>
+              <h1 className="text-sm font-black uppercase tracking-wider text-amber-400">
+                🐎🎲 Apuestas
+              </h1>
+              <p className="text-[10px] font-semibold text-slate-300">
+                Carga en vivo y adelantada · Motor de Cruces y Tapas · Liquidación transaccional
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+            {esUsuarioOAdminPrincipal && (
+              <div className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/90 px-2.5 py-1 shadow-inner">
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-300">Grupo:</span>
+                <select
+                  value={grupoActivoValido ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value.trim();
+                    setGrupoActivo(val ? val : null);
+                  }}
+                  className="rounded border border-slate-600 bg-slate-900 px-2 py-0.5 text-xs font-bold text-slate-100 outline-none focus:border-amber-400"
+                  aria-label="Seleccionar grupo de trabajo"
+                >
+                  <option value="">🌐 Principal («Todos los grupos»)</option>
+                  {gruposVenta.map((g) => (
+                    <option key={String(g.id)} value={String(g.id)}>
+                      {g.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setModalControlCruces(true)}
+              disabled={bloqueoLiquidacionActivo}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/50 bg-amber-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-amber-300 shadow-sm transition hover:bg-amber-500/30 disabled:opacity-40"
+              title="Abrir panel de control de cruces de esta carrera"
+            >
+              <span>⚡</span> Control de Cruces
+              {conCruces && (
+                <span className="rounded-full bg-emerald-500/30 px-1.5 py-0.2 text-[9px] font-black text-emerald-300 border border-emerald-400/40">
+                  🔀 CON CRUCES
+                </span>
+              )}
+              {Object.values(crucesOverrideCarrera.todos ?? {}).some((v) => typeof v === "boolean") && (
+                <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" title="Excepción activa para esta carrera" />
+              )}
+            </button>
+
+            {!modoOperador && !esOperadorFijo && (
+              <button
+                type="button"
+                onClick={() => setModalSaldoRapido(true)}
+                disabled={bloqueoLiquidacionActivo}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-emerald-600 px-3 py-1 text-xs font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-40"
+                title="Incrementar o disminuir saldo de un cliente adjuntando capture de comprobante"
+              >
+                <span>💵</span> Gestión Rápida de Saldos
+              </button>
+            )}
+            <span className="rounded-md bg-slate-800 px-2 py-1 font-bold text-slate-200">
+              📅 {fecha}
+            </span>
+            {hipodromoElegido && (
+              <span className="rounded-md bg-indigo-600/30 border border-indigo-400/40 px-2 py-1 font-black text-indigo-200">
+                🏇 {nombreHipodromo} · C{carrera}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Control de bloqueo/desbloqueo de modalidades en el Portal de Clientes */}
+        <PanelBloqueoJugadasAdmin compacto />
+      </div>
+
       {/* Barra de comandos flotante (sticky bottom) */}
       <div className="no-print sticky bottom-0 z-30 rounded-xl border border-line bg-slate-900 px-3 py-2 shadow-[0_-8px_24px_rgba(0,0,0,0.18)]">
         {/* La re-apertura es un ESTADO, no un botón más: va en su propia franja
@@ -4154,40 +4116,45 @@ const hipodromosDelDia = useMemo(() => {
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
+            disabled={bloqueoLiquidacionActivo}
             onClick={() => {
               void recargarClientes().then(() => {
                 setAviso("🔄 Saldos y aval del catálogo recargados contra la base.");
               });
             }}
             title="Relee los saldos y aval de los clientes desde la base (útil si la carga no se toma)"
-            className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700`}
+            className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-40`}
           >
             🔄 Saldos
           </button>
           <button
             type="button"
+            disabled={bloqueoLiquidacionActivo}
             onClick={() => setMostrarHistorial(true)}
             title="Historial de resultados y liquidaciones (Ctrl+H)"
-            className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700`}
+            className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-40`}
           >
             📊 Historial
           </button>
           <button
             type="button"
+            disabled={bloqueoLiquidacionActivo}
             onClick={() => {
+              setModoExclusivoReporte(false);
               setMostrarReporteLiquidacion(true);
             }}
             title="Reporte de jugadas / liquidación de la carrera (Ctrl+G)"
-            className={`${BTN_BARRA} bg-emerald-800 text-emerald-50 hover:bg-emerald-700`}
+            className={`${BTN_BARRA} bg-emerald-800 text-emerald-50 hover:bg-emerald-700 disabled:opacity-40`}
           >
             🧾 Reporte Final
           </button>
           {(carreraLiquidada || pizarraCentral) && !reapertura && (
             <button
               type="button"
+              disabled={bloqueoLiquidacionActivo}
               onClick={abrirReapertura}
               title="Reabrir esta carrera liquidada para agregar jugadas nuevas"
-              className={`${BTN_BARRA} bg-amber-600 text-white hover:bg-amber-500`}
+              className={`${BTN_BARRA} bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40`}
             >
               ➕ Agregar jugada
             </button>
@@ -4196,13 +4163,13 @@ const hipodromosDelDia = useMemo(() => {
             <button
               type="button"
               onClick={() => setModalEditarJugadas(true)}
-              disabled={!listoParaCargar}
+              disabled={!listoParaCargar || bloqueoLiquidacionActivo}
               title={
                 listoParaCargar
                   ? "Corregir o anular las jugadas ya guardadas de esta carrera (aunque esté cerrada)"
                   : "Elija hipódromo y carrera para editar sus jugadas"
               }
-              className={`${BTN_BARRA} bg-slate-700 text-white hover:bg-slate-600`}
+              className={`${BTN_BARRA} bg-slate-700 text-white hover:bg-slate-600 disabled:opacity-40`}
             >
               ✏️ Editar jugadas
             </button>
@@ -4211,9 +4178,9 @@ const hipodromosDelDia = useMemo(() => {
             <button
               type="button"
               onClick={() => setModalReversar(true)}
-              disabled={!listoParaCargar}
+              disabled={!listoParaCargar || bloqueoLiquidacionActivo}
               title={listoParaCargar ? "🔄 Reversa la liquidación de esta carrera: devuelve a los clientes el dinero acreditado y la deja ABIERTA para volver a cargar y liquidar" : "Elija hipódromo y carrera para reversar su liquidación"}
-              className={`${BTN_BARRA} bg-gradient-to-r from-rose-600 to-red-500 text-white hover:brightness-110`}
+              className={`${BTN_BARRA} bg-gradient-to-r from-rose-600 to-red-500 text-white hover:brightness-110 disabled:opacity-40`}
             >
               🔄 Reversar Liquidación
             </button>
@@ -4221,32 +4188,143 @@ const hipodromosDelDia = useMemo(() => {
             <button
               type="button"
               onClick={() => void abrirResultados()}
-              disabled={!listoParaCargar}
+              disabled={!listoParaCargar || bloqueoLiquidacionActivo}
               title={listoParaCargar ? "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para liquidar"}
-              className={`${BTN_BARRA} bg-gradient-to-r from-success-600 to-emerald-500 text-white hover:brightness-110`}
+              className={`${BTN_BARRA} bg-gradient-to-r from-success-600 to-emerald-500 text-white hover:brightness-110 disabled:opacity-40`}
             >
               🏆 Liquidar Carrera
             </button>
           )}
           <button
             type="button"
+            onClick={() => setModalAgentePizarra(true)}
+            disabled={bloqueoLiquidacionActivo}
+            title="🤖 Agente de Pizarra Oficial (Liquidación · Variación · Saldos)"
+            className={`${BTN_BARRA} bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40`}
+          >
+            🤖 Agente Pizarra
+          </button>
+          <button
+            type="button"
             onClick={() => void recalcularCompleta()}
-            disabled={!listoParaCargar}
+            disabled={!listoParaCargar || bloqueoLiquidacionActivo}
             title={listoParaCargar ? "🔄 Rehace toda la carrera contra el resultado vigente (revertir + re-liquidar tablas fijas, marcas, dupletas, remates y taquilla). Idempotente: no duplica cobros ni premios." : "Elija hipódromo y carrera para recalcular"}
-            className={`${BTN_BARRA} bg-warning-600 text-white hover:bg-warning-500`}
+            className={`${BTN_BARRA} bg-warning-600 text-white hover:bg-warning-500 disabled:opacity-40`}
           >
             🔄 Recalcular
           </button>
           <button
             type="button"
+            disabled={bloqueoLiquidacionActivo}
             onClick={() => setModalComandos(true)}
             title="Ver los atajos de teclado de la taquilla (Ctrl+Shift+K)"
-            className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700`}
+            className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-40`}
           >
             ❓ Comando
           </button>
         </div>
       </div>
+
+      {/* Modal 🤖 Agente de Pizarra Oficial (Liquidación · Variación · Saldos) */}
+      {modalAgentePizarra && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setModalAgentePizarra(false);
+          }}
+        >
+          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-indigo-200 bg-white text-black shadow-2xl">
+            <div className="flex items-center justify-between border-b border-indigo-200 bg-gradient-to-r from-indigo-900 to-slate-900 px-4 py-3 text-white">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🤖</span>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-amber-300">
+                    🤖 Agente de Pizarra Oficial (Liquidación · Variación · Saldos)
+                  </h3>
+                  <p className="text-[10px] font-semibold text-slate-300">
+                    {hipodromoElegido ? `${nombreHipodromo} · Carrera #${carrera} (${fecha})` : "Seleccione hipódromo y carrera"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalAgentePizarra(false)}
+                className="rounded-lg border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-bold text-white hover:bg-white/20"
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+            <div className="space-y-3 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-slate-700">
+                  Comandos rápidos: &quot;Pizarra: 5 - 2 - 8 - 1 - 4&quot; · &quot;Anular pizarra por variación&quot; · &quot;Nueva pizarra: 2 - 5 - 8 - 1 - 4&quot;
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {carreraLiquidada && puedeReabrir && (
+                    <button
+                      type="button"
+                      onClick={() => void ejecutarComandoAgentePizarra("Anular pizarra por variación")}
+                      disabled={reversando}
+                      className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-2.5 py-1 text-[11px] font-black text-white shadow-2xs hover:bg-rose-500 disabled:opacity-50"
+                      title="Anula la pizarra actual por variación de llegada, revierte pagos/cobros y restituye saldos"
+                    >
+                      🔄 Anular Pizarra por Variación
+                    </button>
+                  )}
+                  {(mensajeWhatsapp || (respuestaAgentePizarra && respuestaAgentePizarra.includes("PIZARRA OFICIAL"))) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const txt = mensajeWhatsapp || respuestaAgentePizarra || "";
+                        if (!txt) return;
+                        try {
+                          await navigator.clipboard.writeText(txt);
+                          setCopiadoReporteAgente(true);
+                          setTimeout(() => setCopiadoReporteAgente(false), 2000);
+                          emitirToast("📋 Reporte WhatsApp copiado al portapapeles.", "success");
+                        } catch {
+                          emitirToast("No se pudo copiar el reporte al portapapeles.", "error");
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-black text-white shadow-2xs hover:bg-emerald-500"
+                    >
+                      {copiadoReporteAgente ? "✅ Reporte Copiado" : "📋 Copiar Reporte WhatsApp"}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={comandoPizarraInput}
+                  onChange={(e) => setComandoPizarraInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void ejecutarComandoAgentePizarra();
+                  }}
+                  placeholder='Ej: "Pizarra: 5 - 2 - 8 - 1 - 4" · "Anular pizarra por variación"'
+                  className="min-w-[240px] flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-black focus:border-indigo-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => void ejecutarComandoAgentePizarra()}
+                  disabled={!comandoPizarraInput.trim()}
+                  className="rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-black text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  ⚡ Procesar Pizarra
+                </button>
+              </div>
+              {respuestaAgentePizarra && (
+                <div className="rounded-lg border border-slate-200 bg-slate-900 p-3 text-xs text-slate-100 overflow-x-hidden">
+                  <pre className="max-h-64 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+                    {respuestaAgentePizarra}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Preliminar de Carrera (Ctrl+Q) */}
       {mostrarPlanoPreliminar && (
@@ -4304,10 +4382,14 @@ const hipodromosDelDia = useMemo(() => {
       {/* Reporte de Liquidación (Ctrl+G) — motor de reporte filtrable + imagen */}
       <ReporteLiquidacionModal
         abierto={mostrarReporteLiquidacion}
-        onCerrar={() => setMostrarReporteLiquidacion(false)}
+        onCerrar={() => {
+          setMostrarReporteLiquidacion(false);
+          setModoExclusivoReporte(false);
+        }}
         hipodromoInicial={hipodromo}
         carreraInicial={carrera}
         fechaInicial={fecha}
+        modoExclusivoLiquidacion={modoExclusivoReporte}
       />
 
       {/* Carga de Resultados (Ctrl+Y) — posiciones dinámicas (5 + añadir hasta 8) + Dead Heat */}
@@ -4378,7 +4460,10 @@ const hipodromosDelDia = useMemo(() => {
             void recargarClientes();
             void recargarJugadasGuardadas();
             recargarRegistroCentral();
-            if (rec.ok) setMostrarReporteLiquidacion(true);
+            if (rec.ok) {
+              setModoExclusivoReporte(true);
+              setMostrarReporteLiquidacion(true);
+            }
             return;
           }
 
