@@ -125,5 +125,19 @@ ok("ofrece el botón de recálculo", gestion.includes("🔄 Recalcular"));
 ok("el recálculo deja rastro en la auditoría", /"RECALCULAR_CARRERA"/.test(gestion));
 ok("refresca los saldos tras recalcular", /void recargarClientes\(\)/.test(gestion));
 
+console.log("\n[8] Botón Liquidar Carrera inhabilitado cuando ya está liquidada + liquidación automática al cargar jugadas");
+ok(
+  "el botón Liquidar Carrera queda disabled cuando carreraLiquidada es true",
+  /disabled=\{!listoParaCargar \|\| bloqueoLiquidacionActivo \|\| carreraLiquidada\}/.test(gestion)
+);
+ok(
+  "solicitarLiquidarCarrera bloquea si carreraLiquidada es true",
+  /const solicitarLiquidarCarrera = async \(\) => \{[\s\S]*?if \(carreraLiquidada\)/.test(gestion)
+);
+ok(
+  "cargarAtaquilla ejecuta autoReliquidarSiLiquidada al cargar jugadas luego de liquidar",
+  /const cargarAtaquilla = async[\s\S]*?await autoReliquidarSiLiquidada\(/.test(gestion)
+);
+
 console.log(`\n${pasan} pasaron, ${fallan} fallaron`);
 process.exit(fallan > 0 ? 1 : 0);

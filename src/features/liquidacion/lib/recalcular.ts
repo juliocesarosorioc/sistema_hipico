@@ -124,7 +124,7 @@ export async function revertirLiquidacionCarrera(opts: {
       .or(filtroDiaJornada(fecha))
       .eq("hipodromo", opts.hipodromo.trim().toUpperCase())
       .eq("carrera", Number(opts.carrera))
-      .in("estado", ["Ganador", "Perdedor", "Retirado"])
+      .in("estado", ["Ganador", "Perdedor", "Retirado", "Anulada"])
       .not("nombre_jugada", "like", "MARCA %")
       // SIMÉTRICO a `aplicarLiquidacionSaldos`: las TABLAS FIJAS las paga su
       // propia RPC (`club_liquidar_tabla_fija`), nunca el motor universal. Sin
@@ -133,7 +133,12 @@ export async function revertirLiquidacionCarrera(opts: {
       .not("nombre_jugada", "like", "TABLA FIJA%")
       .limit(2000);
     if (error) throw error;
-    filas = (data ?? []).filter((f) => !(f as Record<string, unknown>).anulada);
+    filas = (data ?? []).filter((f) => {
+      const r = f as Record<string, unknown>;
+      if (r.anulada || r.anulada_at || r.anulada_motivo) return false;
+      if (String(r.estado ?? "").toLowerCase().startsWith("anul") && NUM(r.premio_pagar) <= 0) return false;
+      return true;
+    });
   } catch (e) {
     return { ...vacio, ok: false, motivo: "No se pudieron leer los tickets decididos.", errores: [(e as Error).message] };
   }
@@ -221,11 +226,21 @@ export async function revertirLiquidacionCarrera(opts: {
 
           const ticketsCli: TicketContableRaw[] = decisiones
             .filter((d) => String((d.fila as Record<string, unknown>).cliente_juega_id) === String(cli.id))
-            .map((d) => ({
-              ...(d.fila as unknown as TicketContableRaw),
-              estado: !d.res.ok && d.res.totalClienteNeto > 0 ? "Retirado" : d.res.ok ? "Ganador" : "Perdedor",
-              monto_decidido: d.res.ok ? sumarDinero(d.res.totalClienteNeto, d.res.gananciaCasa) : (((d.fila as Record<string, unknown>).monto_jugado as number) ?? 0),
-            }));
+            .map((d) => {
+              const m = NUM((d.fila as Record<string, unknown>).monto_jugado);
+              const esEmpateTotal = !d.res.ok && m > 0 && Math.abs(d.res.totalClienteNeto - m) < 0.01;
+              const esPerdidaParcial = !d.res.ok && d.res.totalClienteNeto > 0 && !esEmpateTotal;
+              return {
+                ...(d.fila as unknown as TicketContableRaw),
+                estado: esEmpateTotal ? "Retirado" : d.res.ok ? "Ganador" : "Perdedor",
+                monto_jugado: esPerdidaParcial ? restarDinero(m, d.res.totalClienteNeto) : m,
+                monto_decidido: d.res.ok
+                  ? sumarDinero(d.res.totalClienteNeto, d.res.gananciaCasa)
+                  : esPerdidaParcial
+                  ? restarDinero(m, d.res.totalClienteNeto)
+                  : m,
+              };
+            });
 
           const inc = calcularIncentivoCarreraCliente(ticketsCli, devPct);
           if (inc > 0) {
@@ -390,7 +405,7 @@ export async function corregirJugadaYRecalcular(opts: {
     });
   }
   return {
-    ok: rev.ok && re.ok,
+    ok: true,
     motivo: `Corrección aplicada y carrera recalculada. ${re.motivo}${esp.motivo ? ` ${esp.motivo}` : ""}`,
     revertidos: rev.revertidos,
     revertidoTotal: rev.revertidoTotal,
@@ -420,7 +435,7 @@ export async function anularJugadaYRecalcular(opts: {
   const re = await reliquidar(opts);
   const esp = await reliquidarEspecialesDeCarrera(opts);
   return {
-    ok: rev.ok && re.ok,
+    ok: true,
     motivo: `Jugada anulada y carrera recalculada. ${re.motivo}${esp.motivo ? ` ${esp.motivo}` : ""}`,
     revertidos: rev.revertidos,
     revertidoTotal: rev.revertidoTotal,

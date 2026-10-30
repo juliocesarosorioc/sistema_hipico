@@ -375,25 +375,6 @@ export function CargaResultadosModal({
 
   const setNumero = (i: number, v: string) => {
     const limpio = v.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
-    if (!limpio) {
-      setAlertaDuplicado(null);
-      setFilas((f) => f.map((r, j) => (j === i ? { ...r, numero: "" } : r)));
-      return;
-    }
-    const yaOcupadoEn = filas.findIndex(
-      (r, j) => j !== i && r.numero.trim().replace(/^0+(?=\d)/, "") === limpio
-    );
-    if (yaOcupadoEn !== -1) {
-      setAlertaDuplicado(`⚠️ El ejemplar #${limpio} ya está asignado en otra posición de la pizarra (${yaOcupadoEn + 1}°)`);
-      // Bloquea la entrada duplicada y limpia la casilla repetida inmediatamente
-      setFilas((f) => f.map((r, j) => (j === i ? { ...r, numero: "" } : r)));
-      return;
-    }
-    if (retiradosSet.has(limpio)) {
-      setAlertaDuplicado(`⚠️ El ejemplar #${limpio} está RETIRADO y no puede asignarse en la pizarra`);
-      setFilas((f) => f.map((r, j) => (j === i ? { ...r, numero: "" } : r)));
-      return;
-    }
     setAlertaDuplicado(null);
     setFilas((f) => f.map((r, j) => (j === i ? { ...r, numero: limpio } : r)));
   };

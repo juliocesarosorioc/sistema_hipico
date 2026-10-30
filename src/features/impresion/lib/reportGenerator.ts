@@ -290,6 +290,9 @@ export type BalanceJugada = {
    *  (matriz W/P/S sin cargar): NO es una derrota. Se lista con aviso y no se
    *  acumula en el cierre. */
   indeterminado?: boolean;
+  /** Cuando la jugada pierde parcialmente (ej. 2Y3N en 3° lugar donde pierde mitad y empata mitad),
+   *  indica la pérdida efectiva del que juega (y la ganancia bruta del que da). */
+  perdidaEfectiva?: number;
 };
 
 /**
@@ -302,12 +305,14 @@ export type BalanceJugada = {
  */
 export function balanceJugada(j: JugadaRelacion): BalanceJugada {
   const esGanador = j.ganador === true;
+  const montoJug = num(j.monto);
+  const premPot = num(j.premioPotencial);
   if (
     j.anulada ||
     (!esGanador &&
-      num(j.monto) > 0 &&
-      Math.abs(num(j.premioPotencial) - num(j.monto)) < 0.01 &&
-      /\b[2345]N\b/i.test(String(j.jugada ?? "")))
+      montoJug > 0 &&
+      Math.abs(premPot - montoJug) < 0.01 &&
+      /\b[1-8]N\b|\b[1-8][PN]?\s*[Y/]\s*[1-8][PN]?/i.test(String(j.jugada ?? "")))
   ) {
     return {
       jugada: j,
@@ -316,6 +321,16 @@ export function balanceJugada(j: JugadaRelacion): BalanceJugada {
       comision: 0,
       gananciaNeta: 0,
       anulada: true,
+    };
+  }
+  if (!esGanador && montoJug > 0 && premPot > 0 && premPot < montoJug - 0.01) {
+    return {
+      jugada: j,
+      premioPotencial: 0,
+      gananciaBruta: 0,
+      comision: 0,
+      gananciaNeta: 0,
+      perdidaEfectiva: round2(montoJug - premPot),
     };
   }
   let premioPotencial = esGanador
@@ -420,13 +435,22 @@ function balanceDesdePizarra(
   if (r.indeterminado) {
     return { jugada: j, premioPotencial: 0, gananciaBruta: 0, comision: 0, gananciaNeta: 0, indeterminado: true };
   }
-  // ANULADA (empate oficial, o NINI que termina JUSTO en el puesto N): el motor
-  // devuelve el capital — `totalClienteNeto` = monto — pero con ok:false. No es
-  // una pérdida: el "Juega" recupera su capital y el "da" no entrega nada (0/0).
-  // Sin este caso, `relacionResultados` la contaba como PERDIDA y le cobraba el
-  // monto completo al que jugaba (y le abonaba la paridad al "da").
-  if (!r.ok && r.totalClienteNeto > 0) {
+  // ANULADA / EMPATE 100% (empate oficial, o NINI que termina JUSTO en el puesto N): el motor
+  // devuelve el 100% del capital — `totalClienteNeto === monto` — con ok:false.
+  if (!r.ok && monto > 0 && Math.abs(r.totalClienteNeto - monto) < 0.01) {
     return { jugada: j, premioPotencial: 0, gananciaBruta: 0, comision: 0, gananciaNeta: 0, anulada: true };
+  }
+  // PÉRDIDA PARCIAL (ej. 2Y3N en 3° lugar: la mitad 2P pierde y la mitad 3N empata y devuelve capital):
+  // El jugador pierde `monto - r.totalClienteNeto` y el dador gana esa misma fracción menos comisión.
+  if (!r.ok && r.totalClienteNeto > 0 && r.totalClienteNeto < monto - 0.01) {
+    return {
+      jugada: j,
+      premioPotencial: 0,
+      gananciaBruta: 0,
+      comision: 0,
+      gananciaNeta: 0,
+      perdidaEfectiva: round2(monto - r.totalClienteNeto),
+    };
   }
   // El BRUTO REAL de la jugada sale del motor (no de un ×2 fijo): las jugadas
   // que el motor resuelve como COMBINADA/COMPUESTA de un solo NINI, como
@@ -583,9 +607,9 @@ export function relacionResultados(
         ? balanceJugada(j)
         : balanceDesdePizarra(j, meta.pizarraPuestos ?? [], meta.dividendos ?? null) ??
           balanceJugada(j));
-    // Leg "Juega": arriesga lo financiado. Leg "Da": cobra la
-    // ganancia neta cuando el que juega NO acierta.
-    const perdida = num(j.monto);
+    // Leg "Juega": arriesga lo financiado (o la fracción perdida en jugadas escalera como 2Y3N en 3°).
+    // Leg "Da": cobra la ganancia neta cuando el que juega NO acierta.
+    const perdida = b.perdidaEfectiva !== undefined ? b.perdidaEfectiva : num(j.monto);
     const beneficiario = resolverContraparteModalidad(j.jugada, j.clienteConsigue);
     destino.push(encabezadoJugada());
     // ANULADA: el motor devolvió el capital, así que ni el que JUEGA gana/pierde
@@ -699,10 +723,10 @@ export function relacionResultados(
       if (beneficiario) {
         const porUno = Number(meta.dividendos?.nini);
         const mult = Number.isFinite(porUno) && porUno >= 1 ? porUno : 2;
-        const premioNini = num(j.monto) * mult;
+        const premioNini = perdida * mult;
         const tasa = tasaDeJugada(j.comisionPct);
-        const com2 = round2((premioNini - num(j.monto)) * (tasa / 100));
-        const netoC2 = round2(premioNini - com2 - num(j.monto));
+        const com2 = round2((premioNini - perdida) * (tasa / 100));
+        const netoC2 = round2(premioNini - com2 - perdida);
         destino.push(`Da ${beneficiario} $ +${fmtMonto(netoC2)}`);
         acumular(beneficiario, netoC2);
       }
@@ -831,8 +855,14 @@ function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
       : String(r.caballo ?? "").trim();
   const precioPorTablaUnitario = esJugTabla ? extraerPrecioUnitarioTabla(rRec) : undefined;
   const estadoStr = String(r.estado ?? "").trim().toUpperCase();
-  const esAnuladaEstado = estadoStr === "ANULADA" || estadoStr === "ANULADO" || r.anulada === true;
+  const esFalsaAnuladaMotor =
+    r.anulada !== true &&
+    estadoStr === "ANULADA" &&
+    num(r.premio_pagar) > 0 &&
+    num(r.premio_pagar) < num(r.monto_jugado);
+  const esAnuladaEstado = !esFalsaAnuladaMotor && (estadoStr === "ANULADA" || estadoStr === "ANULADO" || r.anulada === true);
   const ganoPorEstado = !esAnuladaEstado && (estadoStr === "GANADOR" || estadoStr === "GANO" || estadoStr === "SOLUCIONADO");
+  const ganoPorPremio = esJugTabla ? num(r.premio_pagar) > 0 && ganoPorEstado : num(r.premio_pagar) > num(r.monto_jugado);
   return {
     clienteJuega: String(r.cliente_juega_nombre ?? "—"),
     jugada: esJugMarca ? "MARCA" : esJugTabla ? "TABLA FIJA" : esNini ? normalizarNini(jugadaCruda) : jugadaCruda,
@@ -851,7 +881,7 @@ function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
     comisionPct: r.comision_porcentaje != null ? num(r.comision_porcentaje) : undefined,
     esAdelantada: esAdelantadaDe(rRec) || esJugMarca || esJugTabla,
     anulada: esAnuladaEstado,
-    ganador: esAnuladaEstado ? false : num(r.premio_pagar) > 0 || ganoPorEstado,
+    ganador: esAnuladaEstado ? false : ganoPorPremio || ganoPorEstado,
   };
 }
 
@@ -887,11 +917,16 @@ export async function cargarJugadasDeCarrera(
       error = r2.error;
     }
     if (error) throw error;
-    // VENTAS DE REMATE y ANULADAS fuera: no son apuestas vigentes de la carrera.
+    // VENTAS DE REMATE y ANULADAS administrativamente fuera: no son apuestas vigentes de la carrera.
     const filas = ((data ?? []) as unknown as Array<Record<string, unknown>>).filter((rec) => {
       if (rec.anulada === true) return false;
       const est = String(rec.estado ?? "").trim().toUpperCase();
-      if (est === "ANULADA" || est === "ANULADO") return false;
+      if (est === "ANULADO") return false;
+      if (est === "ANULADA") {
+        const esFalsaAnulada =
+          num(rec.premio_pagar) > 0 || /\b[1-5]N\b|\d+Y\d+N/i.test(String(rec.nombre_jugada ?? ""));
+        if (!esFalsaAnulada) return false;
+      }
       return !esVentaDeRemate(rec.nombre_jugada);
     });
 

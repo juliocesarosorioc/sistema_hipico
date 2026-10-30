@@ -94,9 +94,9 @@ function norm(entrada: unknown): string {
     .replace(/\s+/g, " ");
   // "1p de 2-3", "1p del 2 y 3" -> quitar "de/del"
   s = s.replace(/\bdel\b/g, " ").replace(/\bde\b/g, " ").replace(/\s+/g, " ").trim();
-  // Expandir formas compactas de bloque pegadas sin espacios: ej. "1py1y2n" -> "1p y 1y2n", "1y2ny2n" -> "1y2n y 2n"
-  s = s.replace(/^([1-8][pn])y([1-8][y/][1-8][pn]?)$/i, "$1 y $2");
-  s = s.replace(/^([1-8][y/][1-8][pn]?)y([1-8][pn])$/i, "$1 y $2");
+  // Expandir formas compactas de bloque pegadas sin espacios o con guion: ej. "1py1y2n" -> "1p y 1y2n", "2p-2/3n" -> "2p y 2/3n"
+  s = s.replace(/^([1-8][pn])\s*(?:y|-)\s*([1-8][pn]?[y/][1-8][pn]?)$/i, "$1 y $2");
+  s = s.replace(/^([1-8][pn]?[y/][1-8][pn]?)\s*(?:y|-)\s*([1-8][pn])$/i, "$1 y $2");
   return s;
 }
 
@@ -173,13 +173,28 @@ function validarYAjustarBloqueEscalera(
   const p1 = c1.puesto as number;
   const p2 = c2.puesto as number;
 
-  // Escalón 1: XP con X/(X+1)N (ej. 1P Y 1/2N, 1P Y 1Y2N, o shorthand 1P Y 1/2)
+  // Escalón 1: XP con X/(X+1)N (ej. 1P Y 1/2N, 1P Y 1Y2N, 2P Y 2/3N, o shorthand 1P Y 1/2, 2P Y 2/3 -> 75% XP + 25% (X+1)N)
   if (!niniHoja && p1 === pHoja && p2 === pHoja + 1 && !c1.esNini) {
+    if (/p$/i.test(comb.fuente)) return null;
+    if (!c2.esNini) {
+      const c2Ajustado: Nomenclatura = {
+        ...c2,
+        modalidad: "NINI",
+        esNini: true,
+        fuente: p2 + "n",
+      };
+      const combAjustado: Nomenclatura = {
+        ...comb,
+        bloques: [c1, c2Ajustado],
+      };
+      return aEsComb ? [combAjustado, b] : [a, combAjustado];
+    }
     return [a, b];
   }
 
-  // Escalón 2: X/(X+1)N con (X+1)N (ej. 1/2N Y 2N, 1Y2N Y 2N, o shorthand 1/2 Y 2N)
+  // Escalón 2: X/(X+1)N con (X+1)N (ej. 1/2N Y 2N, 1Y2N Y 2N, 2/3N Y 3N, o shorthand 1/2 Y 2N -> 25% XP + 75% (X+1)N)
   if (niniHoja && pHoja >= 2 && p1 === pHoja - 1 && p2 === pHoja && !c1.esNini) {
+    if (/p$/i.test(comb.fuente)) return null;
     if (!c2.esNini) {
       const c2Ajustado: Nomenclatura = {
         ...c2,

@@ -301,7 +301,12 @@ function evaluar(
       pizarra?.retirados?.length &&
         jugadaInvolucraRetirado(f.caballo, f.ejemplar_numero, f.nombre_jugada, pizarra.retirados)
     );
-  if ((f.anulada === true || estado === "ANULADO" || estado === "ANULADA") && !esRetiradoNoDecidido) {
+  const esFalsaAnuladaMotor =
+    f.anulada !== true &&
+    estado === "ANULADA" &&
+    cifra(f.premio_pagar) > 0 &&
+    cifra(f.premio_pagar) < monto;
+  if (f.anulada === true || estado === "ANULADO" || (estado === "ANULADA" && !esFalsaAnuladaMotor)) {
     return { ok: false, bruto: 0, comision: 0, tasa: 0, resultadoJuega: 0, resultadoDa: 0 };
   }
   if (esRetiradoNoDecidido) {
@@ -558,8 +563,10 @@ function evaluar(
       ? { ok: true, bruto: d.neto, comision: d.comision, tasa: tasaEfectiva }
       : { ok: null, bruto: 0, comision: 0, tasa: tasaEfectiva };
   }
-  if (estado === "PERDEDOR" || estado === "PERDIO" || estado === "RECHAZADO" || estado === "ANULADO") {
-    return { ok: false, bruto: 0, comision: 0, tasa: tasaEfectiva };
+  if (estado === "PERDEDOR" || estado === "PERDIO" || estado === "RECHAZADO" || estado === "ANULADO" || (estado === "ANULADA" && esFalsaAnuladaMotor)) {
+    const premDevuelto = cifra(f.premio_pagar);
+    const brutoDevuelto = premDevuelto > 0 && premDevuelto <= monto ? premDevuelto : 0;
+    return { ok: false, bruto: brutoDevuelto, comision: 0, tasa: tasaEfectiva };
   }
   const puestos = pizarra?.puestos ?? [];
   if (puestos.length && monto > 0) {
@@ -1328,7 +1335,13 @@ export function desglosarTicketEnFilasUnificadas(
       pizarra?.retirados?.length &&
         jugadaInvolucraRetirado(f.caballo, f.ejemplar_numero, f.nombre_jugada, pizarra.retirados)
     );
-  const anulada = (f.anulada === true || estadoRaw === "ANULADO" || estadoRaw === "ANULADA") && !tieneRetiradoTicket;
+  const esFalsaAnuladaFila =
+    f.anulada !== true &&
+    estadoRaw === "ANULADA" &&
+    (cifra(f.premio_pagar) > 0 || /\b[1-5]N\b|\d+Y\d+N/i.test(txt(f.nombre_jugada)));
+  const anulada =
+    (f.anulada === true || estadoRaw === "ANULADO" || (estadoRaw === "ANULADA" && !esFalsaAnuladaFila)) &&
+    !tieneRetiradoTicket;
   const monto = cifra(f.monto_jugado);
   const desglose = desgloseJugada(f);
   const ev = evaluar(f, hipodromo, carrera, pizarra, tasaComision);
@@ -1595,11 +1608,15 @@ async function carreraReporte(
     // cuenten como pérdidas en el neteo de cruces.
     const esEmpateNini = ev.ok === false && Math.abs(ev.bruto + ev.comision - monto) < 0.01;
     if (!esEmpateNini) {
+      const montoEfectivo =
+        ev.ok === false && ev.bruto > 0 && ev.bruto < monto
+          ? Math.round((monto - ev.bruto) * 100) / 100
+          : monto;
       neteoItems.push({
         cliente: clienteJuega,
         caballo,
-        monto,
-        bruto: ev.ok ? Math.round((ev.bruto + ev.comision) * 100) / 100 : Math.round((ev.bruto + ev.comision) * 100) / 100,
+        monto: montoEfectivo,
+        bruto: ev.ok ? Math.round((ev.bruto + ev.comision) * 100) / 100 : 0,
         ok: ev.ok === true,
       });
       meta.push({ cliente: clienteJuega, clienteNombre: clienteJuegaNombre, caballo });

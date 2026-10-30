@@ -153,6 +153,13 @@ export function esJugadaAnuladaOExcluida(t: TicketContableRaw): boolean {
   if (!t) return true;
   if (t.anulada === true) return true;
   const est = String(t.estado ?? "").trim().toUpperCase();
+  if (est === "ANULADA") {
+    const premio = Number(t.premio_pagar ?? 0);
+    const monto = Number(t.monto_jugado ?? t.monto ?? 0);
+    if (premio > 0 && (monto <= 0 || premio < monto)) {
+      return false;
+    }
+  }
   return ["ANULADA", "ANULADO", "CANCELADA", "CANCELADO", "ELIMINADA", "ELIMINADO", "RETIRADO", "RECHAZADO"].includes(
     est
   );
@@ -266,19 +273,36 @@ export function calcularResumenContableCliente(params: {
       jugadasEnVivoCount++;
     }
 
-    const est = String(t.estado ?? "PENDIENTE").trim().toUpperCase();
+    const estRaw = String(t.estado ?? "PENDIENTE").trim().toUpperCase();
+    const est = estRaw === "ANULADA" && t.anulada !== true ? "PERDEDOR" : estRaw;
     const monto = redondearCentavos(t.monto_jugado ?? t.monto ?? 0);
-    const baseDecidida = monto > 0 ? monto : redondearCentavos(t.monto_decidido ?? 0);
+    const premioDevueltoTicket = redondearCentavos(t.premio_pagar ?? 0);
+    const esEmpateTotalNini =
+      (est === "PERDEDOR" || est === "PERDIO") &&
+      monto > 0 &&
+      Math.abs(premioDevueltoTicket - monto) < 0.01 &&
+      /\b[1-8]N\b|\b[1-8][PN]?\s*[Y/]\s*[1-8][PN]?/i.test(String(t.nombre_jugada ?? t.jugada ?? ""));
+    const esPerdidaParcialTicket =
+      (est === "PERDEDOR" || est === "PERDIO") &&
+      monto > 0 &&
+      premioDevueltoTicket > 0 &&
+      premioDevueltoTicket < monto - 0.01;
+    const baseDecidida = esPerdidaParcialTicket
+      ? restarDinero(monto, premioDevueltoTicket)
+      : monto > 0
+        ? monto
+        : redondearCentavos(t.monto_decidido ?? 0);
     const nombreJugRaw = String(t.nombre_jugada ?? t.jugada ?? "").trim().toUpperCase();
 
     // Regla de Negocio: La devolución/incentivo se calcula en base al monto decidido gane o pierda.
     // SOLO aplica a jugadas de puestos. NO aplica a tablas, marcas, dupletas, remates, tablas fijas ni WPS.
     const esDecidida =
-      est === "GANADOR" ||
-      est === "GANO" ||
-      est === "SOLUCIONADO" ||
-      est === "PERDEDOR" ||
-      est === "PERDIO";
+      !esEmpateTotalNini &&
+      (est === "GANADOR" ||
+        est === "GANO" ||
+        est === "SOLUCIONADO" ||
+        est === "PERDEDOR" ||
+        est === "PERDIO");
     if (
       esDecidida &&
       esJugadaPuestosParaIncentivo(
@@ -367,22 +391,23 @@ export function calcularResumenContableCliente(params: {
     } else if (est === "PERDEDOR" || est === "PERDIO") {
       // Corrección de causa raíz: Empate NINI (2N en 2°, 3N en 3°, 4N en 4°, 5N en 5°)
       // devuelve el capital (`premio_pagar === monto`) → es empate 0/0, no pérdida.
-      if (
-        monto > 0 &&
-        Math.abs(redondearCentavos(t.premio_pagar ?? 0) - monto) < 0.01 &&
-        /\b[2345]N\b/i.test(nombreJugRaw)
-      ) {
+      if (esEmpateTotalNini) {
         continue;
       }
+      // Pérdida parcial (ej. 2Y3N en 3° lugar donde la mitad 2P pierde y la mitad 3N empata y devuelve capital):
+      // El jugador pierde `monto - premio_pagar` y el dador gana esa misma fracción menos comisión.
+      const perdidaEfectiva = esPerdidaParcialTicket
+        ? restarDinero(monto, premioDevueltoTicket)
+        : monto;
       // Perdió el lado Juega (ganó el lado Da/Consigue)
       if (esJugador) {
-        perdidasCentavos += aCentavos(monto);
+        perdidasCentavos += aCentavos(perdidaEfectiva);
         const arr = lineasPorCarrera.get(raceKey) ?? [];
-        arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: monto });
+        arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaEfectiva });
         lineasPorCarrera.set(raceKey, arr);
       }
       if (esDador) {
-        const gananciaBrutaDador = monto;
+        const gananciaBrutaDador = perdidaEfectiva;
         const comisionDador = calcularComisionExacta(gananciaBrutaDador, comPct);
         ganadasBrutoCentavos += aCentavos(gananciaBrutaDador);
         comisionesBrutasCentavos += aCentavos(comisionDador);
@@ -693,7 +718,16 @@ export async function sincronizarSaldosRealesClientes<
 
   if (supabase && tickets.length > 0) {
     const idsPorModalidad = new Map<string, Array<string | number>>();
+    const idsEstadoMalAnulada: Array<string | number> = [];
     for (const t of tickets) {
+      if (
+        t.anulada !== true &&
+        String(t.estado ?? "").trim().toUpperCase() === "ANULADA" &&
+        (Number(t.premio_pagar ?? 0) > 0 || /\b[1-5]N\b|\d+Y\d+N/i.test(String(t.nombre_jugada ?? t.jugada ?? "")))
+      ) {
+        t.estado = "Perdedor";
+        if (t.id != null) idsEstadoMalAnulada.push(t.id);
+      }
       const contraparteResuelta = resolverContraparteModalidad(
         t.nombre_jugada ?? t.jugada,
         t.cliente_consigue_nombre ?? t.tercio ?? t.contraparte
@@ -708,6 +742,16 @@ export async function sincronizarSaldosRealesClientes<
         t.cliente_consigue_nombre = contraparteResuelta;
         t.cliente_consigue_id = null;
       }
+    }
+    if (idsEstadoMalAnulada.length > 0) {
+      promesasCuracion.push(
+        Promise.resolve(
+          supabase
+            .from("tickets_apuestas")
+            .update({ estado: "Perdedor" })
+            .in("id", idsEstadoMalAnulada)
+        ).catch(() => {})
+      );
     }
     for (const [nombreSistema, ids] of idsPorModalidad.entries()) {
       promesasCuracion.push(

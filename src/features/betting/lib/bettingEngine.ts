@@ -50,7 +50,7 @@ export function parsearNini(tipoJugada: string): NiniInfo | null {
     .split(/[Yy]/)
     .map((x) => parseInt(x, 10))
     .filter((n) => Number.isFinite(n) && n >= 1 && n <= 8);
-  if (nums.length === 0) return null;
+  if (nums.length === 0 || nums.length > 2) return null;
   // Regla 1: NO EXISTE la jugada 1N (Primer Nini)
   if (nums[nums.length - 1] === 1) return null;
   if (nums.length === 2 && nums[1] !== nums[0] && nums[1] !== nums[0] + 1) return null;

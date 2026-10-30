@@ -414,10 +414,13 @@ export function veredictoDeJugada(
   const { res } = resultadoDeJugada(t, pizarra, dividendos, tasaComision);
   if (res.indeterminado) return "PENDIENTE";
   if (res.ok) return "GANA";
-  // El motor devuelve el capital (`totalClienteNeto` = monto) con ok:false en
-  // los empates oficiales y los NINI que caen justo en el puesto N: no es una
-  // pérdida, es una anulación (el "Juega" recupera su dinero).
-  if (res.totalClienteNeto > 0) return "ANULADA";
+  // El motor devuelve el 100% del capital (`totalClienteNeto === monto`) con ok:false en
+  // los empates oficiales y los NINI simples que caen justo en el puesto N: no es una
+  // pérdida, es una anulación/empate (el "Juega" recupera todo su dinero).
+  // En cambio, en jugadas combinadas como 2Y3N en 3° lugar (`0 < totalClienteNeto < monto`),
+  // el jugador pierde la mitad y su veredicto es PIERDE (con desglose de bloques).
+  const m = Number(t.monto ?? 0);
+  if (res.totalClienteNeto > 0 && (m <= 0 || Math.abs(res.totalClienteNeto - m) < 0.01)) return "ANULADA";
   return "PIERDE";
 }
 
@@ -435,10 +438,14 @@ function textoBloque(b: BloqueDetalleResultado): string {
   return String(b.fuente).toUpperCase() + "→" + emoji + hijos;
 }
 
-/** Estimación POR BLOQUE de una COMBINADA/COMPUESTA, si el motor la desglosa. */
+/** Desglose de una COMBINADA (2 jugadas en 1: 50%/50%) o COMPUESTA / BLOQUE (75%/25% o 25%/75%). */
 function sufijoBloques(res: ResultadoMotor): string {
   if (!res.bloquesDetalle || res.bloquesDetalle.length === 0) return "";
-  return " · BLOQUES: " + res.bloquesDetalle.map(textoBloque).join(" · ");
+  const esBloqueCompuesto =
+    res.bloquesDetalle.some((b) => (b.bloques?.length ?? 0) > 0) ||
+    /^COMPUESTA\b/i.test(res.motivo ?? "");
+  const prefijo = esBloqueCompuesto ? "BLOQUES" : "COMBINADA (2 en 1)";
+  return ` · ${prefijo}: ` + res.bloquesDetalle.map(textoBloque).join(" · ");
 }
 
 /** Línea TERCIOS de una jugada con su veredicto: "1) Juega X 2Y2N (3) con 6.000,00 da Y → ✅ GANA". */

@@ -336,13 +336,20 @@ function ladosDeLaJugada(
     const gananciaBruta = gano ? Math.max(0, round2(premioPagar - monto)) : 0;
     const comision = round2(gananciaBruta * (comisionPct / 100));
     const netoJuega = round2(gananciaBruta - comision); // ganancia NETA del que juega
+    // Pérdida parcial (ej. 2Y3N en 3° lugar: la mitad 2P pierde y la mitad 3N empata y devuelve capital):
+    // `premioPagar` contiene el capital devuelto (`0 < premioPagar < monto`), por lo que la pérdida
+    // efectiva de quien juega (y la ganancia bruta de quien da) es `monto - premioPagar`.
+    const perdidaEfectiva =
+      !gano && premioPagar > 0 && premioPagar < monto
+        ? round2(monto - premioPagar)
+        : monto;
     const ladoJuegaGano: LadoResultado = { estado: "GANO", liquidada: true, signo: 1, monto: Math.max(0, netoJuega) };
-    const ladoJuegaPerdio: LadoResultado = { estado: "PERDIO", liquidada: true, signo: -1, monto };
+    const ladoJuegaPerdio: LadoResultado = { estado: "PERDIO", liquidada: true, signo: -1, monto: perdidaEfectiva };
     const ladoDaGano: LadoResultado = {
       estado: "GANO",
       liquidada: true,
       signo: 1,
-      monto: round2(Math.max(0, monto - monto * (comisionPct / 100))),
+      monto: round2(Math.max(0, perdidaEfectiva - perdidaEfectiva * (comisionPct / 100))),
     };
     const ladoDaPerdio: LadoResultado = {
       estado: "PERDIO",
@@ -378,9 +385,25 @@ function filaDesdePersistida(
     Array.isArray(retirados) &&
     retirados.length > 0 &&
     jugadaInvolucraRetirado(caballo || j.caballo, j.ejemplar_numero, nombreJug, retirados);
-  const eraRetirado = TXT(j.estado).toLowerCase().startsWith("retir") || involucraRetirado;
-  const anulada = Boolean(j.anulada) && !eraRetirado;
-  let estado = involucraRetirado ? "Retirado" : estadoDeFila(j.estado, anulada);
+  const anuladaAdmin =
+    Boolean(j.anulada) ||
+    Boolean(jRec.anulada_at) ||
+    Boolean(jRec.anulada_motivo);
+  const esFalsaAnuladaMotor =
+    !anuladaAdmin &&
+    TXT(j.estado).toLowerCase() === "anulada" &&
+    NUM(j.premio_pagar) > 0 &&
+    NUM(j.premio_pagar) < monto;
+  const anulada =
+    anuladaAdmin ||
+    (!esFalsaAnuladaMotor && TXT(j.estado).toLowerCase().startsWith("anul"));
+  let estado = anulada
+    ? "Anulada"
+    : involucraRetirado
+      ? "Retirado"
+      : esFalsaAnuladaMotor
+        ? "Perdedor"
+        : estadoDeFila(j.estado, false);
   const ticketId = String(j.id ?? "").trim() || null;
   const precioTabla = esJugTabla ? extraerPrecioUnitarioTabla(jRec) : undefined;
   const cantidadTablas = esJugTabla
@@ -431,11 +454,18 @@ function filaDesdePersistida(
   } else if (!anulada && /^MARCAS?\b/i.test(nombreJug) && estado === "Retirado") {
     sinDecision = true;
   }
-  // Si hay pizarra oficial (o si el ticket quedó con estado "Perdedor" pero premio_pagar === monto),
-  // en el empate NINI ni gana ni pierde nadie (0 / 0 = Empate/Devolución de Capital).
-  // NUNCA debe marcarse como "Retirado" porque el ejemplar SÍ corrió.
+  // Evaluación de jugadas de puestos / NINI / combinadas (ej. 2Y3N):
+  // - Si `totalClienteNeto === monto` (empate NINI 0/0, ej. 2N en 2°): estado = "Retirado" con `esEmpateNini = true` (0 / 0 Empate).
+  // - Si `0 < totalClienteNeto < monto` (pérdida parcial, ej. 2Y3N en 3°): estado = "Perdedor" con `premioPagarEfectivo = totalClienteNeto`
+  //   para que quien juega pierda la mitad y quien da gane la mitad menos comisión.
   let esEmpateNini = false;
-  if (!anulada && (estado === "Ganador" || estado === "Perdedor" || estado === "Retirado" || estado === "Pendiente") && esJugadaDeTaquilla(nombreJug)) {
+  let premioPagarEfectivo = NUM(j.premio_pagar);
+  if (
+    !anulada &&
+    !involucraRetirado &&
+    (estado === "Ganador" || estado === "Perdedor" || estado === "Retirado" || estado === "Pendiente") &&
+    esJugadaDeTaquilla(nombreJug)
+  ) {
     if (pizarraPuestos && pizarraPuestos.length > 0 && caballo) {
       const idx = pizarraPuestos.findIndex((p) => String(p).trim() === caballo);
       const pos = idx >= 0 ? idx + 1 : 99;
@@ -445,17 +475,25 @@ function filaDesdePersistida(
         monto,
         comisionPct > 0 ? comisionPct : 5
       );
-      if (r && !r.ok && Math.abs(r.totalClienteNeto - monto) < 0.01) {
-        estado = "Anulada";
-        esEmpateNini = true;
+      if (r) {
+        if (r.ok && (estado === "Perdedor" || estado === "Retirado" || premioPagarEfectivo <= monto)) {
+          estado = "Ganador";
+          premioPagarEfectivo = Math.round((r.totalClienteNeto + r.gananciaCasa) * 100) / 100;
+        } else if (!r.ok && monto > 0 && Math.abs(r.totalClienteNeto - monto) < 0.01) {
+          estado = "Retirado";
+          esEmpateNini = true;
+        } else if (!r.ok && r.totalClienteNeto > 0 && r.totalClienteNeto < monto - 0.01) {
+          estado = "Perdedor";
+          premioPagarEfectivo = r.totalClienteNeto;
+        }
       }
     } else if (
       (estado === "Perdedor" || estado === "Retirado") &&
       monto > 0 &&
-      Math.abs(NUM(j.premio_pagar) - monto) < 0.01 &&
-      /\b[2345]N\b/i.test(nombreJug)
+      Math.abs(premioPagarEfectivo - monto) < 0.01 &&
+      /\b[1-8]N\b|\b[1-8][PN]?\s*[Y/]\s*[1-8][PN]?/i.test(nombreJug)
     ) {
-      estado = "Anulada";
+      estado = "Retirado";
       esEmpateNini = true;
     }
   }
@@ -465,10 +503,14 @@ function filaDesdePersistida(
   let tieneProyeccion = true;
 
   if (estado === "Ganador") {
-    premioSaldo = NUM(j.premio_pagar);
+    premioSaldo = premioPagarEfectivo;
     esPremio = premioSaldo > 0;
   } else if (estado === "Perdedor") {
-    premioSaldo = -monto;
+    const perdidaFila =
+      premioPagarEfectivo > 0 && premioPagarEfectivo < monto
+        ? Math.round((monto - premioPagarEfectivo) * 100) / 100
+        : monto;
+    premioSaldo = -perdidaFila;
   } else if (estado === "Retirado" || estado === "Anulada") {
     premioSaldo = 0;
   } else {
@@ -485,7 +527,7 @@ function filaDesdePersistida(
   const { lado1, lado2, aposto1, aposto2 } = ladosDeLaJugada(
     monto,
     estado,
-    esJugTabla ? pagoPotencialTablaFija(jRec) : NUM(j.premio_pagar),
+    esJugTabla ? pagoPotencialTablaFija(jRec) : premioPagarEfectivo,
     comisionPct,
     nombreJug
   );

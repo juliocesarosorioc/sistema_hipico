@@ -174,14 +174,21 @@ export function decidirTickets(
       // Empate NINI (devuelve capital: !ok && totalClienteNeto === monto) no es pérdida para el cruce
       return !(m > 0 && !res.ok && Math.abs(res.totalClienteNeto - m) < 0.01);
     })
-    .map(({ fila, res }) => ({
-    cliente: String(fila.cliente_juega_id ?? "").trim(),
-    caballo: String(fila.caballo ?? "").trim(),
-    monto: NUM(fila.monto_jugado),
-    bruto: res.ok ? res.totalClienteNeto + res.gananciaCasa : 0,
-    ok: res.ok,
-    tasa: tasaComisionDeFila(fila, input.tasaComision),
-    }));
+    .map(({ fila, res }) => {
+      const m = NUM(fila.monto_jugado);
+      const perdidaEfectiva =
+        !res.ok && res.totalClienteNeto > 0 && res.totalClienteNeto < m
+          ? restarDinero(m, res.totalClienteNeto)
+          : m;
+      return {
+        cliente: String(fila.cliente_juega_id ?? "").trim(),
+        caballo: String(fila.caballo ?? "").trim(),
+        monto: perdidaEfectiva,
+        bruto: res.ok ? res.totalClienteNeto + res.gananciaCasa : 0,
+        ok: res.ok,
+        tasa: tasaComisionDeFila(fila, input.tasaComision),
+      };
+    });
   const gruposNeteo = netearComisionCruce(items, input.carrera, input.tasaComision, {
     agruparPorCliente: input.agruparPorClientePuestos === true || input.permiteCruces !== false,
     permiteCruces: input.permiteCruces !== false,
@@ -239,15 +246,21 @@ export function decidirTickets(
           const r = decisiones[i].res;
           return !(m > 0 && !r.ok && Math.abs(r.totalClienteNeto - m) < 0.01);
         })
-        .map((i) => ({
-          cliente: jugador,
-          caballo: String(decisiones[i].fila.caballo ?? "").trim(),
-          ok: decisiones[i].res.ok,
-          bruto: decisiones[i].res.ok
-            ? decisiones[i].res.totalClienteNeto + decisiones[i].res.gananciaCasa
-            : 0,
-          monto: NUM(decisiones[i].fila.monto_jugado),
-        }));
+        .map((i) => {
+          const m = NUM(decisiones[i].fila.monto_jugado);
+          const r = decisiones[i].res;
+          const perdidaEfectiva =
+            !r.ok && r.totalClienteNeto > 0 && r.totalClienteNeto < m
+              ? restarDinero(m, r.totalClienteNeto)
+              : m;
+          return {
+            cliente: jugador,
+            caballo: String(decisiones[i].fila.caballo ?? "").trim(),
+            ok: r.ok,
+            bruto: r.ok ? r.totalClienteNeto + r.gananciaCasa : 0,
+            monto: perdidaEfectiva,
+          };
+        });
       const tasa = tasaComisionDeFila(decisiones[idxs[0]].fila, input.tasaComision);
       const liquidacion = calcularLiquidacionPuestosCarrera(entradas, {
         ...input.crucesPuestos,
@@ -318,13 +331,17 @@ async function jornadasConJugadasDeOtraFecha(
   try {
     const { data, error } = await sdb
       .from("tickets_apuestas")
-      .select("fecha_carrera")
+      .select("fecha_carrera, fecha_registro, anulada, estado")
       .eq("hipodromo", input.hipodromo.trim().toUpperCase())
       .eq("carrera", Number(input.carrera))
+      .eq("estado", "Pendiente")
+      .or("anulada.is.null,anulada.eq.false")
       .limit(2000);
     if (error) return [];
-    const fechas = (data ?? []) as Array<{ fecha_carrera: string | null }>;
-    return jornadasDesalineadas(dia, fechas.map((r) => r.fecha_carrera));
+    const filas = ((data ?? []) as Array<{ fecha_carrera?: string | null; fecha_registro?: string | null; anulada?: boolean | null }> ).filter(
+      (r) => !r.anulada && (!r.fecha_registro || String(r.fecha_registro).slice(0, 10) === dia)
+    );
+    return jornadasDesalineadas(dia, filas.map((r) => r.fecha_carrera ?? null));
   } catch {
     return [];
   }
@@ -384,17 +401,31 @@ export async function aplicarLiquidacionSaldos(
   }
 
   if (filas.length === 0) {
-    // Seguridad idempotente: si no hay Pendiente pero sí decididos → ya aplicado.
+    // Seguridad idempotente: si no hay Pendiente pero sí decididos o anulados en esta jornada → ya aplicado / sin pendientes.
     const { data: decididos } = await sdb
       .from("tickets_apuestas")
-      .select("id")
+      .select("id, estado, anulada, premio_pagar, monto_jugado")
       .or(filtroDiaJornada(dia))
       .eq("hipodromo", input.hipodromo.trim().toUpperCase())
       .eq("carrera", Number(input.carrera))
-      .in("estado", ["Ganador", "Perdedor", "Retirado"])
-      .not("nombre_jugada", "like", "MARCA %")
-      .limit(1);
+      .limit(500);
     if ((decididos ?? []).length > 0) {
+      const idsMalAnuladas = ((decididos ?? []) as Array<Record<string, unknown>>)
+        .filter(
+          (d) =>
+            !d.anulada &&
+            String(d.estado ?? "") === "Anulada" &&
+            NUM(d.premio_pagar) > 0 &&
+            NUM(d.premio_pagar) < NUM(d.monto_jugado) &&
+            d.id != null
+        )
+        .map((d) => d.id);
+      if (idsMalAnuladas.length > 0) {
+        await sdb
+          .from("tickets_apuestas")
+          .update({ estado: "Perdedor" })
+          .in("id", idsMalAnuladas as never[]);
+      }
       return { ok: true, motivo: "Carrera ya liquidada (tickets decididos). Sin cambios.", aplicados: 0, yaAplicado: true, reembolsos: 0, abonoTotal: 0, errores: [] };
     }
 
@@ -454,14 +485,17 @@ export async function aplicarLiquidacionSaldos(
 
   let abonoTotal = 0;
   let reembolsos = 0;
-  for (const { res } of decisiones) {
+  for (const { fila, res } of decisiones) {
+    const m = NUM(fila.monto_jugado);
     if (res.ok) {
       abonoTotal += res.totalClienteNeto;
     } else if (res.totalClienteNeto > 0) {
-      // ANULADA: el motor devolvió el capital (ok:false pero con capital). La
-      // venta ya lo descontó, así que entra en el abono como reembolso.
+      // El motor devolvió capital total (empate NINI / retirado) o parcial (ej. 2Y3N en 3° lugar).
+      // La venta ya descontó `monto_jugado`, así que se acredita la porción devuelta.
       abonoTotal += res.totalClienteNeto;
-      reembolsos += 1;
+      if (m > 0 && Math.abs(res.totalClienteNeto - m) < 0.01) {
+        reembolsos += 1;
+      }
     }
   }
 
@@ -481,36 +515,37 @@ export async function aplicarLiquidacionSaldos(
 
   const decidibles = decisiones.filter((d) => !d.res.indeterminado);
   const updates: Promise<unknown>[] = decidibles.map(({ fila, res }) => {
-    // ANULADA / EMPATE: el motor devolvió el capital (ok:false con totalClienteNeto > 0
-    // = monto). Se marca "Retirado" ÚNICAMENTE si el ejemplar fue retirado en la pizarra.
-    // Si corrió y quedó en puesto nulo (empate NINI / devolución), se marca "Anulada"
-    // con premio_pagar = totalClienteNeto para reflejar el reembolso del capital sin falso retiro.
-    const esAnulada = !res.ok && res.totalClienteNeto > 0;
+    const montoFila = NUM(fila.monto_jugado);
+    const esEmpateTotal =
+      !res.ok && montoFila > 0 && Math.abs(res.totalClienteNeto - montoFila) < 0.01;
+    const esPerdidaParcial =
+      !res.ok && res.totalClienteNeto > 0 && !esEmpateTotal;
     const retiradosPizarra = Array.isArray((input.pizarra as Record<string, unknown>)?.retirados)
       ? ((input.pizarra as { retirados?: Array<string | number> }).retirados ?? [])
       : [];
     const esPorRetirado =
-      esAnulada &&
+      (esEmpateTotal || esPerdidaParcial) &&
       retiradosPizarra.length > 0 &&
       jugadaInvolucraRetirado(fila.caballo, fila.ejemplar_numero, fila.nombre_jugada, retiradosPizarra);
-    const estado = esPorRetirado ? "Retirado" : esAnulada ? "Anulada" : res.ok ? "Ganador" : "Perdedor";
-    // premio_pagar / monto_decidido = PREMIO BRUTO (capital + ganancia ANTES de
-    // comisión), que es la convención de TODO el sistema:
-    //   · la liquidación legacy (marcas_venta.sql: premio_pagar = v_bruto;
-    //     dupleta_liquidacion.sql: premio_pagar = v_premio),
-    //   · el trigger del banquero (banqueros.sql: "v_mov := -premio_pagar
-    //     (paga capital + ganancia)"),
-    //   · el reporte de liquidación (reportes.ts: lee premio_pagar como bruto),
-    //   · el mensaje de resultados del grupo (reportGenerator.mapearJugada →
-    //     balanceJugada trata premio_pagar como el premio bruto).
-    // Para jugadas anuladas/empate, premio_pagar = totalClienteNeto (devolución del capital).
+    // NUNCA escribir estado = "Anulada" en jugadas activas decididas por pizarra:
+    //   · Si el ejemplar fue retirado -> "Retirado"
+    //   · Si acertó con ganancia -> "Ganador"
+    //   · Si perdió (total o parcialmente, ej. 2Y3N en 3° lugar donde pierde mitad y empata mitad)
+    //     o empató NINI (premio_pagar = monto) -> "Perdedor" con `premio_pagar = totalClienteNeto`.
+    const estado = esPorRetirado ? "Retirado" : res.ok ? "Ganador" : "Perdedor";
     const premioPagar = res.ok
       ? sumarDinero(res.totalClienteNeto, res.gananciaCasa)
-      : esAnulada
+      : esEmpateTotal || esPerdidaParcial
       ? res.totalClienteNeto
       : 0;
-    const montDecidido = premioPagar;
-    const credito = res.ok || esAnulada ? res.totalClienteNeto : 0;
+    const montDecidido = res.ok
+      ? premioPagar
+      : esPerdidaParcial
+      ? restarDinero(montoFila, res.totalClienteNeto)
+      : esEmpateTotal
+      ? 0
+      : montoFila;
+    const credito = res.ok || esEmpateTotal || esPerdidaParcial ? res.totalClienteNeto : 0;
 
     const clientePromise = credito > 0
       ? (async () => {
@@ -580,11 +615,21 @@ export async function aplicarLiquidacionSaldos(
 
           const ticketsCli: TicketContableRaw[] = decidibles
             .filter((d) => String(d.fila.cliente_juega_id) === String(cli.id))
-            .map((d) => ({
-              ...(d.fila as unknown as TicketContableRaw),
-              estado: !d.res.ok && d.res.totalClienteNeto > 0 ? "Retirado" : d.res.ok ? "Ganador" : "Perdedor",
-              monto_decidido: d.res.ok ? sumarDinero(d.res.totalClienteNeto, d.res.gananciaCasa) : ((d.fila.monto_jugado as number) ?? 0),
-            }));
+            .map((d) => {
+              const m = NUM(d.fila.monto_jugado);
+              const esEmpateTotal = !d.res.ok && m > 0 && Math.abs(d.res.totalClienteNeto - m) < 0.01;
+              const esPerdidaParcial = !d.res.ok && d.res.totalClienteNeto > 0 && !esEmpateTotal;
+              return {
+                ...(d.fila as unknown as TicketContableRaw),
+                estado: esEmpateTotal ? "Retirado" : d.res.ok ? "Ganador" : "Perdedor",
+                monto_jugado: esPerdidaParcial ? restarDinero(m, d.res.totalClienteNeto) : m,
+                monto_decidido: d.res.ok
+                  ? sumarDinero(d.res.totalClienteNeto, d.res.gananciaCasa)
+                  : esPerdidaParcial
+                  ? restarDinero(m, d.res.totalClienteNeto)
+                  : m,
+              };
+            });
 
           const inc = calcularIncentivoCarreraCliente(ticketsCli, devPct);
           if (inc > 0) {

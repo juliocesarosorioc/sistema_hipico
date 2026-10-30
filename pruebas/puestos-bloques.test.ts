@@ -23,6 +23,8 @@ import { validarComando } from "../src/features/taquilla/lib/validar";
 import { procesarJugadasPuestos } from "../src/features/taquilla/lib/procesarPuestos";
 import { esJugadaCoherente } from "../src/features/taquilla/lib/expandirDobleSplit";
 import { mensajePreliminarDeCarrera } from "../src/features/taquilla/lib/mensajeResultado";
+import { armarFilasPreview } from "../src/features/gestion/lib/preview-carrera";
+import { relacionResultados } from "../src/features/impresion/lib/reportGenerator";
 import { calcularEstadoCuentaCliente as calcDesdeCentral } from "../src/features/saldos/lib/contabilidad-central";
 import { calcularEstadoCuentaCliente as calcDesdeSaldos } from "../src/features/liquidacion/lib/saldos";
 import { calcularEstadoCuentaCliente as calcDesdeReportes } from "../src/features/liquidacion/lib/reportes";
@@ -144,10 +146,26 @@ console.log("\n=== [0] DESGLOSE BASE DE BLOQUES ANIDADOS (1P Y 1Y2N) ===");
     tickets: [{ comando: "1000 1P Y 1Y2N", monto: 1000, caballo: "1 · 1", cliente1: "AREVALO" }],
     tasaComision: 5,
   });
-  si(/→ 🔁 ANULADA/.test(mensaje), "con el 1 en 2º el veredicto general es ANULADA");
+  si(/→ ❌ PIERDE/.test(mensaje), "con el 1 en 2º el veredicto general es PIERDE (pierde 75% en 1P y empata 25% en 2N)");
   si(
     mensaje.includes("BLOQUES: 1P→❌ · 1Y2N→❌ (1P→❌ · 2N→🔁)"),
     "la línea estima BLOQUE 1: 1P→❌ y BLOQUE 2: 1Y2N→❌ (1P→❌ · 2N→🔁)"
+  );
+
+  // Y para una jugada COMBINADA ("2 jugadas en 1", ej. 2Y3N con el 7 en 3°):
+  // NO se etiqueta como BLOQUES sino como COMBINADA (2 en 1): 2P→❌ · 3N→🔁
+  const msgCombinada = mensajePreliminarDeCarrera({
+    hipodromo: "KEENELAND",
+    carrera: 4,
+    pizarra: pizarraDe("7", 3),
+    dividendos: null,
+    tickets: [{ comando: "30 2Y3N", monto: 30, caballo: "7", cliente1: "Sam", cliente2: "Newcastle" }],
+    tasaComision: 5,
+  });
+  si(/→ ❌ PIERDE/.test(msgCombinada), "2Y3N (7) en 3° → veredicto PIERDE (pierde mitad 2P, empata mitad 3N)");
+  si(
+    msgCombinada.includes("COMBINADA (2 en 1): 2P→❌ · 3N→🔁") && !msgCombinada.includes("BLOQUES:"),
+    "2Y3N se desglosa como 'COMBINADA (2 en 1): 2P→❌ · 3N→🔁' y NO como jugada de bloques"
   );
 }
 
@@ -359,6 +377,134 @@ console.log("\n=== [CASO 4] REGLA 4: Bloques en Escalera (75%/25% y 25%/75%) y C
 
   const proc = procesarJugadasPuestos("1P Y 1/2N", 100);
   si(cerca(proc["1p"] ?? 0, 75) && cerca(proc["2n"] ?? 0, 25), "procesarJugadasPuestos('1P Y 1/2N', 100) -> 75 en 1p y 25 en 2n");
+  const proc23 = procesarJugadasPuestos("2P Y 2/3N", 100);
+  si(cerca(proc23["2p"] ?? 0, 75) && cerca(proc23["3n"] ?? 0, 25), "procesarJugadasPuestos('2P Y 2/3N', 100) -> 75% en 2p y 25% en 3n");
+  const proc23Short = procesarJugadasPuestos("2P Y 2/3", 100);
+  si(cerca(proc23Short["2p"] ?? 0, 75) && cerca(proc23Short["3n"] ?? 0, 25), "procesarJugadasPuestos('2P Y 2/3', 100) -> 75% en 2p y 25% en 3n");
+  const proc23Inv = procesarJugadasPuestos("2/3N Y 3N", 100);
+  si(cerca(proc23Inv["2p"] ?? 0, 25) && cerca(proc23Inv["3n"] ?? 0, 75), "procesarJugadasPuestos('2/3N Y 3N', 100) -> 25% en 2p y 75% en 3n");
+  const proc33A = procesarJugadasPuestos("3N Y 3/3N", 100);
+  si(cerca(proc33A["3n"] ?? 0, 75) && cerca(proc33A["3p"] ?? 0, 25), "procesarJugadasPuestos('3N Y 3/3N', 100) -> 75% en 3n y 25% en 3p");
+  const proc33B = procesarJugadasPuestos("3/3N Y 3P", 100);
+  si(cerca(proc33B["3n"] ?? 0, 25) && cerca(proc33B["3p"] ?? 0, 75), "procesarJugadasPuestos('3/3N Y 3P', 100) -> 25% en 3n y 75% en 3p");
+
+  // Verificación end-to-end en Preview de Carrera y Relación de Resultados (WhatsApp) para Combinadas (50/50) y Bloques (75/25 · 25/75)
+  const filasPrev = armarFilasPreview(
+    [
+      {
+        id: "comb-2y3n",
+        nombre_jugada: "2Y3N",
+        caballo: "7",
+        monto_jugado: 30,
+        premio_pagar: 15,
+        comision_porcentaje: 5,
+        estado: "Perdedor",
+        cliente_juega_nombre: "Sam",
+        cliente_consigue_nombre: "Newcastle",
+      },
+      {
+        id: "bloq-75-25",
+        nombre_jugada: "2P Y 2/3N",
+        caballo: "7",
+        monto_jugado: 100,
+        premio_pagar: 25,
+        comision_porcentaje: 5,
+        estado: "Perdedor",
+        cliente_juega_nombre: "Sam",
+        cliente_consigue_nombre: "Newcastle",
+      },
+      {
+        id: "bloq-25-75",
+        nombre_jugada: "2/3N Y 3N",
+        caballo: "7",
+        monto_jugado: 100,
+        premio_pagar: 75,
+        comision_porcentaje: 5,
+        estado: "Perdedor",
+        cliente_juega_nombre: "Sam",
+        cliente_consigue_nombre: "Newcastle",
+      },
+    ],
+    [],
+    ["1", "10", "7", "4"]
+  );
+  si(
+    filasPrev[0].lado1.monto === 15 && filasPrev[0].lado2.monto === 14.25,
+    "Preview Combinada 2Y3N (30) en 3°: Sam pierde 50% (-15) y Newcastle gana 50% menos 5% (+14.25)"
+  );
+  si(
+    filasPrev[1].lado1.monto === 75 && filasPrev[1].lado2.monto === 71.25,
+    "Preview Bloque 2P Y 2/3N (100) en 3°: Sam pierde 75% (-75) y Newcastle gana 75% menos 5% (+71.25)"
+  );
+  si(
+    filasPrev[2].lado1.monto === 25 && filasPrev[2].lado2.monto === 23.75,
+    "Preview Bloque 2/3N Y 3N (100) en 3°: Sam pierde 25% (-25) y Newcastle gana 25% menos 5% (+23.75)"
+  );
+
+  const relBloques = relacionResultados(
+    {
+      grupo: "TERCIOS",
+      fecha: new Date("2026-10-30T12:00:00Z"),
+      hipodromo: "KEENELAND",
+      carrera: 4,
+      pizarra: "1 - 10 - 7 - 4",
+      pizarraPuestos: ["1", "10", "7", "4"],
+    },
+    [
+      {
+        clienteJuega: "Sam",
+        jugada: "2P Y 2/3N",
+        caballo: "7",
+        monto: 100,
+        clienteConsigue: "Newcastle",
+        modalidad: "GENERICA",
+        comisionPct: 5,
+      },
+      {
+        clienteJuega: "Luis",
+        jugada: "2/3N Y 3N",
+        caballo: "7",
+        monto: 100,
+        clienteConsigue: "Carlos",
+        modalidad: "GENERICA",
+        comisionPct: 5,
+      },
+      {
+        clienteJuega: "Pedro",
+        jugada: "3N Y 3/3N",
+        caballo: "7",
+        monto: 100,
+        clienteConsigue: "Miguel",
+        modalidad: "GENERICA",
+        comisionPct: 5,
+      },
+      {
+        clienteJuega: "Ana",
+        jugada: "3/3N Y 3P",
+        caballo: "7",
+        monto: 100,
+        clienteConsigue: "Sofia",
+        modalidad: "GENERICA",
+        comisionPct: 5,
+      },
+    ]
+  );
+  si(
+    relBloques.includes("Juega Sam $ -75,00") && relBloques.includes("Da Newcastle $ +71,25"),
+    "Relación WhatsApp Bloque '2P Y 2/3N' (100) en 3°: Sam -75,00 / Newcastle +71,25"
+  );
+  si(
+    relBloques.includes("Juega Luis $ -25,00") && relBloques.includes("Da Carlos $ +23,75"),
+    "Relación WhatsApp Bloque '2/3N Y 3N' (100) en 3°: Luis -25,00 / Carlos +23,75"
+  );
+  si(
+    relBloques.includes("Juega Pedro $ +23,75") && relBloques.includes("Da Miguel $ -25,00"),
+    "Relación WhatsApp Bloque '3N Y 3/3N' (100) en 3°: Pedro +23,75 / Miguel -25,00"
+  );
+  si(
+    relBloques.includes("Juega Ana $ +71,25") && relBloques.includes("Da Sofia $ -75,00"),
+    "Relación WhatsApp Bloque '3/3N Y 3P' (100) en 3°: Ana +71,25 / Sofia -75,00"
+  );
 
   // Saltos de peldaño prohibidos en bloques (Regla 4.2)
   for (const saltoInvalido of ["1P Y 2/2N", "1P Y 3N", "2N Y 3P", "1/2N Y 2P", "2N Y 2/3N", "1P Y 3/4N"]) {

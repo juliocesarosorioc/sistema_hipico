@@ -463,9 +463,27 @@ export async function listarJugadasDeCarrera(
         }
       }
       // Normalizar contraparte para modalidades del sistema (MARCAS, TF, REMATES, DUPLETA, POLLAS)
-      // y corregir en segundo plano cualquier fila heredada en BD que tuviera otro nombre (ej. SAM).
+      // y corregir en segundo plano cualquier fila heredada en BD que tuviera otro nombre (ej. SAM)
+      // o que hubiera quedado con `estado = "Anulada"` sin anulación administrativa.
       const porCorregirEnBd: Array<{ id: string; contraparte: string }> = [];
+      const idsEstadoMalAnulada: string[] = [];
+      const idsSincronizarAnulada: string[] = [];
       jugadas = jugadas.map((j) => {
+        const anuladaAdmin =
+          Boolean(j.anulada) ||
+          Boolean(j.anulada_at) ||
+          Boolean(j.anulada_motivo);
+        if (anuladaAdmin && (!j.anulada || !texto(j.estado).toLowerCase().startsWith("anul")) && j.id != null) {
+          idsSincronizarAnulada.push(String(j.id));
+        }
+        const esFalsaAnulada =
+          !anuladaAdmin &&
+          texto(j.estado).toUpperCase() === "ANULADA" &&
+          num(j.premio_pagar) > 0 &&
+          num(j.premio_pagar) < num(j.monto_jugado);
+        if (esFalsaAnulada && j.id != null) {
+          idsEstadoMalAnulada.push(String(j.id));
+        }
         const contraparteCanonica = resolverContraparteModalidad(
           j.nombre_jugada,
           j.cliente_consigue_nombre,
@@ -479,9 +497,27 @@ export async function listarJugadasDeCarrera(
         }
         return {
           ...j,
+          ...(anuladaAdmin ? { anulada: true, estado: "Anulada" } : {}),
+          ...(esFalsaAnulada ? { estado: "Perdedor" } : {}),
           cliente_consigue_nombre: contraparteCanonica || j.cliente_consigue_nombre,
         };
       });
+      if (idsSincronizarAnulada.length > 0) {
+        void Promise.resolve(
+          sb
+            .from("tickets_apuestas")
+            .update({ anulada: true, estado: "Anulada", premio_pagar: 0, monto_decidido: 0 })
+            .in("id", idsSincronizarAnulada)
+        ).catch(() => {});
+      }
+      if (idsEstadoMalAnulada.length > 0) {
+        void Promise.resolve(
+          sb
+            .from("tickets_apuestas")
+            .update({ estado: "Perdedor" })
+            .in("id", idsEstadoMalAnulada)
+        ).catch(() => {});
+      }
       if (porCorregirEnBd.length > 0) {
         void Promise.all(
           porCorregirEnBd.map(({ id, contraparte }) =>
@@ -786,12 +822,52 @@ export async function anularJugada(
   }
   const antes = await leerJugada(id);
   if (!antes) return { ok: false, error: "La jugada no existe." };
-  if (antes.anulada) return { ok: false, error: "Esa jugada ya estaba anulada." };
+  const yaEstabaAnulada =
+    Boolean(antes.anulada) ||
+    Boolean(antes.anulada_at) ||
+    Boolean(antes.anulada_motivo) ||
+    (texto(antes.estado).toLowerCase().startsWith("anul") && num(antes.premio_pagar) <= 0);
+  if (yaEstabaAnulada) {
+    // Idempotente: si la jugada ya estaba anulada en BD (pero seguía visible en alguna vista),
+    // aseguramos que `anulada = true` y `estado = "Anulada"` queden sincronizados sin duplicar el reembolso.
+    await supabase
+      .from("tickets_apuestas")
+      .update({
+        anulada: true,
+        estado: "Anulada",
+        premio_pagar: 0,
+        monto_decidido: 0,
+        anulada_motivo: antes.anulada_motivo || motivo.trim(),
+        anulada_por: antes.anulada_por || usuario || null,
+        anulada_at: antes.anulada_at || new Date().toISOString(),
+      })
+      .eq("id", id);
+    return { ok: true };
+  }
+
+  let yaReembolsoRpc = false;
+  if (texto(antes.estado) === "Pendiente" && /^\d+$/.test(String(id).trim())) {
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc("club_anular_jugada", {
+        p_ticket_id: Number(id),
+        p_usuario: usuario || null,
+        p_motivo: motivo.trim(),
+      });
+      if (!rpcErr && (rpcData as Record<string, unknown> | null)?.ok) {
+        yaReembolsoRpc = true;
+      }
+    } catch {
+      /* fallback a update directo */
+    }
+  }
 
   let { error } = await supabase
     .from("tickets_apuestas")
     .update({
       anulada: true,
+      estado: "Anulada",
+      premio_pagar: 0,
+      monto_decidido: 0,
       anulada_motivo: motivo.trim(),
       anulada_por: usuario || null,
       anulada_at: new Date().toISOString(),
@@ -800,16 +876,18 @@ export async function anularJugada(
   if (error && /(anulada_motivo|anulada_por|anulada_at|does not exist|42703)/i.test(`${error.code ?? ""} ${error.message ?? ""}`)) {
     const rFallback = await supabase
       .from("tickets_apuestas")
-      .update({ anulada: true })
+      .update({ anulada: true, estado: "Anulada", premio_pagar: 0, monto_decidido: 0 })
       .eq("id", id);
     error = rFallback.error;
   }
-  if (error) return { ok: false, error: error.message };
+  if (error && !yaReembolsoRpc) return { ok: false, error: error.message };
 
-  // Reintegrar el monto apostado al saldo_actual del cliente que jugó (la venta lo debitó al cargar).
+  // Reintegrar el monto apostado al saldo_actual del cliente que jugó (la venta lo debitó al cargar),
+  // salvo que ya lo haya reintegrado la RPC `club_anular_jugada` o el retiro previo (`estado = "Retirado"`).
   const montoJugado = num(antes.monto_jugado);
   const clienteJuegaId = antes.cliente_juega_id;
-  if (montoJugado > 0 && clienteJuegaId != null && String(clienteJuegaId).trim() !== "") {
+  const yaReembolsadoPorRetiro = texto(antes.estado).toLowerCase() === "retirado";
+  if (!yaReembolsoRpc && !yaReembolsadoPorRetiro && montoJugado > 0 && clienteJuegaId != null && String(clienteJuegaId).trim() !== "") {
     try {
       const { data: cli } = await supabase
         .from("clientes")
@@ -849,14 +927,15 @@ export async function restaurarJugada(id: string | number, motivo: string, usuar
   const antes = await leerJugada(id);
   if (!antes) return { ok: false, error: "La jugada no existe." };
 
+  const estadoRestaurado = texto(antes.estado).toLowerCase().startsWith("anul") ? "Pendiente" : (antes.estado ?? "Pendiente");
   let { error } = await supabase
     .from("tickets_apuestas")
-    .update({ anulada: false, anulada_motivo: null, anulada_por: null, anulada_at: null })
+    .update({ anulada: false, estado: estadoRestaurado, anulada_motivo: null, anulada_por: null, anulada_at: null })
     .eq("id", id);
   if (error && /(anulada_motivo|anulada_por|anulada_at|does not exist|42703)/i.test(`${error.code ?? ""} ${error.message ?? ""}`)) {
     const rFallback = await supabase
       .from("tickets_apuestas")
-      .update({ anulada: false })
+      .update({ anulada: false, estado: estadoRestaurado })
       .eq("id", id);
     error = rFallback.error;
   }

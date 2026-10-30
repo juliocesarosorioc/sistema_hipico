@@ -20,6 +20,7 @@ import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla, liquidarPendientesDeCarrera, type ResLiquidarCarrera } from "@/features/liquidacion/lib/pagarYCerrar";
 import {
   anularJugadaYRecalcular,
+  autoReliquidarSiLiquidada,
   corregirJugadaYRecalcular,
   recalcularCarreraCompleta,
 } from "@/features/liquidacion/lib/recalcular";
@@ -237,6 +238,8 @@ export function GestionJugadasModule() {
   const [notaAnularPreview, setNotaAnularPreview] = useState<string>(MOTIVOS_ANULACION[0]);
   const [edicionPreview, setEdicionPreview] = useState<EdicionPreview | null>(null);
   const [ocupadoPreview, setOcupadoPreview] = useState(false);
+  const [errorAccionPreview, setErrorAccionPreview] = useState("");
+  const [recalculando, setRecalculando] = useState(false);
   const [modalSaldoRapido, setModalSaldoRapido] = useState(false);
   const [modalCreacionRapidaCliente, setModalCreacionRapidaCliente] = useState(false);
 
@@ -646,7 +649,15 @@ const hipodromosDelDia = useMemo(() => {
       } else if (k === "y" || k === "r") {
         // Ctrl+Y (Resultados) y Ctrl+R (Registrar y Finalizar) hacen lo MISMO:
         // el flujo unificado decide internamente si precargar o liquidar.
+        // Si la carrera ya está liquidada, queda inhabilitado hasta que se reverse la liquidación.
         e.preventDefault();
+        if (carreraLiquidada) {
+          emitirToast(
+            "⚠️ La carrera ya está liquidada. Para volver a liquidar primero debe reversar la liquidación.",
+            "warning"
+          );
+          return;
+        }
         void abrirResultados();
       } else if (k === "h") {
         e.preventDefault();
@@ -1158,10 +1169,9 @@ const hipodromosDelDia = useMemo(() => {
   const ticketSesionDeFila = (fila: FilaPreviewCarrera): TicketTaquilla | undefined =>
     ticketsDeCarrera.find(
       (t) =>
-        (fila.ticketId != null && t.ticketId != null && String(t.ticketId) === fila.ticketId) ||
-        (fila.soloSesion &&
-          !fila.ticketId &&
-          String(t.monto) === String(fila.monto) &&
+        `ses-${t.id}` === fila.clave ||
+        (fila.ticketId != null && t.ticketId != null && String(t.ticketId) === String(fila.ticketId)) ||
+        (String(t.monto) === String(fila.monto) &&
           String(t.caballo ?? "").toUpperCase() === fila.caballo.toUpperCase() &&
           String(t.comando).replace(/^\d+(?:[.,]\d+)?\s+/, "").trim().toUpperCase() ===
             fila.jugada.toUpperCase())
@@ -1171,6 +1181,7 @@ const hipodromosDelDia = useMemo(() => {
   const abrirAccionPreview = (fila: FilaPreviewCarrera, modo: "editar" | "eliminar") => {
     setAccionPreview({ fila, modo });
     setMotivoPreview("");
+    setErrorAccionPreview("");
     setNotaAnularPreview(MOTIVOS_ANULACION[0]);
     setEdicionPreview(
       modo === "editar"
@@ -1194,6 +1205,7 @@ const hipodromosDelDia = useMemo(() => {
     setAccionPreview(null);
     setEdicionPreview(null);
     setMotivoPreview("");
+    setErrorAccionPreview("");
   };
 
   /**
@@ -1320,7 +1332,26 @@ const hipodromosDelDia = useMemo(() => {
             });
 
       if (!r.ok) {
+        const detalleErr = `${r.motivo} ${r.errores.join(" ")}`;
+        if (accion.modo === "eliminar" && /ya estaba anulada|no existe/i.test(detalleErr)) {
+          if (ticketSesion) eliminarTicket(ticketSesion.id);
+          setJugadasGuardadas((prev) =>
+            prev.map((j) => (String(j.id) === String(fila.ticketId) ? { ...j, anulada: true, estado: "Anulada" } : j))
+          );
+          void recargarClientes();
+          recargarRegistroCentral();
+          await recargarJugadasGuardadas();
+          const textoOk = `✅ Jugada #${fila.ticketId} sincronizada como anulada y retirada de la vista.`;
+          setAviso(textoOk);
+          toastPreview(textoOk, "success");
+          setAccionPreview(null);
+          setEdicionPreview(null);
+          setMotivoPreview("");
+          setErrorAccionPreview("");
+          return;
+        }
         const texto = `❌ ${r.motivo}${r.errores.length ? ` · ${r.errores[0]}` : ""}`;
+        setErrorAccionPreview(texto);
         setAviso(texto);
         toastPreview(texto, "error");
         return;
@@ -1329,7 +1360,7 @@ const hipodromosDelDia = useMemo(() => {
       if (ticketSesion) eliminarTicket(ticketSesion.id);
       if (accion.modo === "eliminar") {
         setJugadasGuardadas((prev) =>
-          prev.map((j) => (String(j.id) === String(fila.ticketId) ? { ...j, anulada: true } : j))
+          prev.map((j) => (String(j.id) === String(fila.ticketId) ? { ...j, anulada: true, estado: "Anulada" } : j))
         );
       } else if (campos) {
         setJugadasGuardadas((prev) =>
@@ -1472,6 +1503,28 @@ const hipodromosDelDia = useMemo(() => {
   const totalesPreview = useMemo(() => resumenPreview(filasPreview), [filasPreview]);
   const filasPreviewEnVivo = useMemo(() => filasPreview.filter((f) => !f.anulada && !f.esAdelantada), [filasPreview]);
   const filasPreviewAdelantadas = useMemo(() => filasPreview.filter((f) => !f.anulada && f.esAdelantada), [filasPreview]);
+
+  // Limpiar automáticamente del store local de sesión cualquier ticket que ya figure anulado en la base de datos.
+  useEffect(() => {
+    if (jugadasGuardadas.length === 0 || ticketsDeCarrera.length === 0) return;
+    const idsAnulados = new Set(
+      jugadasGuardadas
+        .filter(
+          (j) =>
+            Boolean(j.anulada) ||
+            Boolean(j.anulada_at) ||
+            Boolean(j.anulada_motivo) ||
+            (String(j.estado ?? "").toLowerCase().startsWith("anul") && Number(j.premio_pagar ?? 0) <= 0)
+        )
+        .map((j) => String(j.id))
+    );
+    if (idsAnulados.size === 0) return;
+    for (const t of ticketsDeCarrera) {
+      if (t.ticketId != null && idsAnulados.has(String(t.ticketId))) {
+        eliminarTicket(t.id);
+      }
+    }
+  }, [jugadasGuardadas, ticketsDeCarrera, eliminarTicket]);
 
   useEffect(() => {
     if (cargandoGuardadas) return;
@@ -1884,6 +1937,7 @@ const hipodromosDelDia = useMemo(() => {
    * mal tipeado agregaba ventas a una carrera que ya estaba armada.
    */
   const confirmarCargaAdicional = async (): Promise<boolean> => {
+    if (reapertura) return true;
     if (ticketsDeCarrera.length === 0 && !jugadasPorCarrera.includes(carrera)) return true;
     const ok = await confirmar({
       titulo: "Carga adicional",
@@ -2130,6 +2184,67 @@ const hipodromosDelDia = useMemo(() => {
         .map(({ r, i }) => ({ ...r, error: r.error ?? errores.find((e) => e.startsWith(`Fila ${i + 1}`)) }));
       return [...conservar, filaVacia()];
     });
+
+    // Si la carrera ya está liquidada (o tiene resultado oficial cargado), liquidar
+    // automáticamente las jugadas recién cargadas sin requerir presionar "Liquidar Carrera".
+    const auto = await autoReliquidarSiLiquidada({
+      hipodromo,
+      carrera,
+      fecha,
+      tasaComision: comisionNum,
+      usuario: usuarioVigente(),
+    });
+    let liquidadaAutomatico = auto.reliquidada;
+    let motivoAuto = auto.resumen?.motivo ?? "";
+
+    if (!liquidadaAutomatico && (carreraLiquidada || reapertura) && pizarraEfectiva) {
+      const pizarraConRet = {
+        ...pizarraEfectiva.pizarra,
+        retirados:
+          pizarraEfectiva.pizarra.retirados && pizarraEfectiva.pizarra.retirados.length > 0
+            ? pizarraEfectiva.pizarra.retirados
+            : retiradosPizarraActual,
+      };
+      const s = await aplicarLiquidacionSaldos({
+        hipodromo,
+        carrera,
+        pizarra: pizarraConRet,
+        dividendos: dividendosDePizarra(pizarraEfectiva),
+        tasaComision: comisionNum,
+        crucesPuestos: opcionesCrucesPuestos,
+        fecha,
+      });
+      liquidadaAutomatico = s.ok;
+      motivoAuto = s.motivo;
+    }
+
+    if (liquidadaAutomatico) {
+      const vigentes = useTaquillaStore
+        .getState()
+        .tickets.filter(
+          (t) =>
+            Number(t.carrera) === Number(carrera) &&
+            t.fecha === fecha &&
+            hipoKey(t.hipodromo ?? "") === hipoKey(hipodromo)
+        );
+      for (const t of vigentes) eliminarTicket(t.id);
+      setReapertura(false);
+      void registrarAuditoria(
+        "GESTION_JUGADAS",
+        "REABRIR_LIQUIDADA",
+        `Liquidación automática de ${n} jugada(s) cargada(s) post-cierre en ${nombreHipodromo} C${carrera} (${fecha}) por ${usuarioVigente()}: ${motivoAuto}`
+      );
+      const msgAuto =
+        `✅ ${n} jugada(s) registrada(s) y liquidada(s) automáticamente en ${nombreHipodromo} C${carrera}.` +
+        (errores.length ? ` ${errores.length} fila(s) con error quedaron en rojo para corregir.` : "") +
+        (recortes.length ? ` ⚠️ ${recortes.length} recortada(s) por saldo: ${recortes.join(" · ")}` : "");
+      setAviso(msgAuto);
+      toastPreview(msgAuto, "success");
+      recargarRegistroCentral();
+      await Promise.all([recargarClientes(), recargarJugadasGuardadas()]);
+      return;
+    }
+
     setAviso(
       `✅ ${n} jugada(s) registrada(s) y cobrada(s) en la taquilla (C${carrera}).` +
         (errores.length ? ` ${errores.length} fila(s) con error quedaron en rojo para corregir.` : "") +
@@ -2255,24 +2370,47 @@ const hipodromosDelDia = useMemo(() => {
    * tener que cargar una jugada nueva.
    */
   const recalcularCompleta = async () => {
-    if (!listoParaCargar) return setAviso("Elija hipódromo y carrera para recalcular.");
-    const r = await recalcularCarreraCompleta({
-      hipodromo,
-      carrera,
-      fecha,
-      tasaComision: comisionNum,
-      usuario: usuarioVigente(),
-    });
-    void registrarAuditoria(
-      "GESTION_JUGADAS",
-      "RECALCULAR_CARRERA",
-      `Recálculo completo de ${nombreHipodromo} C${carrera} (${fecha}) por ${usuarioVigente()}: ${r.motivo}`
-    );
-    setAviso(r.ok ? `🔄 ${r.motivo}` : `❌ ${r.motivo}${r.errores.length ? ` · ${r.errores.join(" | ")}` : ""}`);
-    // Los saldos y el cuaderno del cliente cambian: refrescar para que el
-    // estado de cuenta refleje al instante los cobros/pagos del recálculo.
-    void recargarClientes();
-    void recargarJugadasGuardadas();
+    if (!listoParaCargar) {
+      const msg = "⚠️ Elija hipódromo y carrera para recalcular.";
+      setAviso(msg);
+      toastPreview(msg, "error");
+      return;
+    }
+    if (recalculando) return;
+    setRecalculando(true);
+    try {
+      const r = await recalcularCarreraCompleta({
+        hipodromo,
+        carrera,
+        fecha,
+        tasaComision: comisionNum,
+        usuario: usuarioVigente(),
+      });
+      void registrarAuditoria(
+        "GESTION_JUGADAS",
+        "RECALCULAR_CARRERA",
+        `Recálculo completo de ${nombreHipodromo} C${carrera} (${fecha}) por ${usuarioVigente()}: ${r.motivo}`
+      );
+      const msg = r.ok
+        ? `🔄 ${r.motivo}`
+        : `⚠️ ${r.motivo}${r.errores.length ? ` · ${r.errores.join(" | ")}` : ""}`;
+      setAviso(msg);
+      toastPreview(msg, r.ok ? "success" : "error");
+      recargarRegistroCentral();
+      await Promise.all([recargarClientes(), recargarJugadasGuardadas()]);
+      void notificarTareaEjecutadaOperador({
+        titulo: r.ok ? "Carrera recalculada exitosamente" : "Aviso al recalcular la carrera",
+        mensaje: r.motivo || `Se procesó la solicitud de recálculo para ${nombreHipodromo} C${carrera} (${fecha}).`,
+        detalles: [
+          ...(r.puestos.length ? [`Pizarra oficial: ${r.puestos.join(" - ")}`] : []),
+          `Tickets revertidos: ${r.revertidos} · Tickets re-liquidados: ${r.reliquidados}`,
+          ...(r.errores.length ? r.errores.map((e) => `Aviso: ${e}`) : ["Saldos y estado de jugadas actualizados en vivo"]),
+        ],
+        variante: r.ok ? "success" : "warning",
+      });
+    } finally {
+      setRecalculando(false);
+    }
   };
 
   /**
@@ -2606,13 +2744,13 @@ const hipodromosDelDia = useMemo(() => {
       return;
     }
     setReapertura(true);
-    setAviso("🟠 Re-apertura: cargá las jugadas nuevas y luego «Liquidar jugadas agregadas» (Ctrl+R).");
+    setAviso("🟠 Re-apertura: cargá las jugadas nuevas y al registrarlas se liquidarán automáticamente contra el resultado oficial.");
     void registrarAuditoria(
       "GESTION_JUGADAS",
       "REABRIR_LIQUIDADA_INICIO",
       `Re-apertura de ${nombreHipodromo} C${carrera} (${fecha}) por ${usuarioVigente()}.`
     );
-    emitirToast("🟠 Carrera reabierta: se liquidará SÓLO lo agregado.", "warning");
+    emitirToast("🟠 Carrera reabierta: al cargar las jugadas nuevas se liquidarán automáticamente.", "warning");
   };
 
   /**
@@ -2669,6 +2807,12 @@ const hipodromosDelDia = useMemo(() => {
   /** Confirmación antes de liquidar la carrera activa: "¿LIQUIDAR CARRERA X ?" */
   const solicitarLiquidarCarrera = async () => {
     if (!listoParaCargar || bloqueoLiquidacionActivo) return;
+    if (carreraLiquidada) {
+      const msg = "⚠️ La carrera ya está liquidada. Para volver a liquidar primero debe reversar la liquidación.";
+      setAviso(msg);
+      emitirToast(msg, "warning");
+      return;
+    }
     const ok = await confirmar({
       titulo: `¿LIQUIDAR CARRERA ${carrera} ?`,
       mensaje: `¿Confirmas que deseas liquidar la Carrera ${carrera} (${nombreHipodromo})?`,
@@ -3283,14 +3427,16 @@ const hipodromosDelDia = useMemo(() => {
                 <button
                   type="button"
                   onClick={() => void solicitarLiquidarCarrera()}
-                  disabled={!listoParaCargar || bloqueoLiquidacionActivo}
+                  disabled={!listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada}
                   title={
-                    listoParaCargar
-                      ? "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)"
-                      : "Elija hipódromo y carrera para liquidar"
+                    !listoParaCargar
+                      ? "Elija hipódromo y carrera para liquidar"
+                      : carreraLiquidada
+                        ? "Carrera ya liquidada. Para volver a liquidar primero debe reversar la liquidación (🔄 Reversar Liquidación)."
+                        : "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)"
                   }
                   className={`group relative inline-flex h-9 sm:h-10 items-center justify-center gap-2 rounded-xl px-4 sm:px-5 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all shadow-md ${
-                    !listoParaCargar || bloqueoLiquidacionActivo
+                    !listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada
                       ? "cursor-not-allowed bg-slate-300 text-slate-500 opacity-60 shadow-none ring-0"
                       : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 shadow-emerald-600/35 ring-2 ring-emerald-400/60 hover:ring-emerald-300 hover:scale-[1.03] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]"
                   }`}
@@ -3298,7 +3444,7 @@ const hipodromosDelDia = useMemo(() => {
                   <span className="text-base sm:text-lg transition-transform duration-200 group-hover:scale-110 drop-shadow">
                     🏆
                   </span>
-                  <span>{carreraLiquidada ? "Ver / Liquidar Carrera" : "Liquidar Carrera"}</span>
+                  <span>Liquidar Carrera</span>
                   <span className="hidden sm:inline-flex items-center rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-extrabold tracking-normal text-emerald-100 opacity-90 shadow-2xs">
                     Ctrl+Y
                   </span>
@@ -4725,6 +4871,12 @@ const hipodromosDelDia = useMemo(() => {
                 </div>
               )}
 
+              {errorAccionPreview && (
+                <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700">
+                  {errorAccionPreview}
+                </p>
+              )}
+
               <div className="mt-4 flex justify-end gap-2">
                 <Button variant="ghost" size="sm" onClick={cerrarAccionPreview} disabled={ocupadoPreview}>
                   Cancelar
@@ -4864,10 +5016,16 @@ const hipodromosDelDia = useMemo(() => {
           </button>
           <button
             type="button"
-            disabled={!listoParaCargar || bloqueoLiquidacionActivo}
+            disabled={!listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada}
             onClick={() => void solicitarLiquidarCarrera()}
-            title={listoParaCargar ? "Carga/edita los resultados y liquida (Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para liquidar"}
-            className={`${BTN_BARRA} bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-sm ring-1 ring-emerald-400/50 hover:brightness-110 disabled:opacity-40`}
+            title={
+              !listoParaCargar
+                ? "Elija hipódromo y carrera para liquidar"
+                : carreraLiquidada
+                  ? "Carrera ya liquidada. Para volver a liquidar primero debe reversar la liquidación (🔄 Reversar Liquidación)."
+                  : "Carga/edita los resultados y liquida (Ctrl+Y o Ctrl+R)"
+            }
+            className={`${BTN_BARRA} bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-sm ring-1 ring-emerald-400/50 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed`}
           >
             🏆 Liquidar Carrera
           </button>
@@ -4940,11 +5098,11 @@ const hipodromosDelDia = useMemo(() => {
           <button
             type="button"
             onClick={() => void recalcularCompleta()}
-            disabled={!listoParaCargar || bloqueoLiquidacionActivo}
+            disabled={!listoParaCargar || bloqueoLiquidacionActivo || recalculando}
             title={listoParaCargar ? "🔄 Rehace toda la carrera contra el resultado vigente (revertir + re-liquidar tablas fijas, marcas, dupletas, remates y taquilla). Idempotente: no duplica cobros ni premios." : "Elija hipódromo y carrera para recalcular"}
             className={`${BTN_BARRA} bg-warning-600 text-white hover:bg-warning-500 disabled:opacity-40`}
           >
-            🔄 Recalcular
+            {recalculando ? "⏳ Recalculando…" : "🔄 Recalcular"}
           </button>
           <button
             type="button"

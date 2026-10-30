@@ -218,7 +218,9 @@ async function reembolsarTickets(
       (tk) =>
         claveHipodromo(String(tk.hipodromo ?? "")) === claveHipo &&
         jugadaInvolucraRetirado(tk.caballo, tk.ejemplar_numero, tk.nombre_jugada, numeros) &&
-        (tk.anulada === true || String(tk.estado ?? "") !== "Retirado")
+        !tk.anulada &&
+        String(tk.estado ?? "") !== "Retirado" &&
+        !String(tk.estado ?? "").toLowerCase().startsWith("anul")
     );
 
     if (afectados.length > 0) {

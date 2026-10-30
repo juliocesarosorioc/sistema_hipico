@@ -223,13 +223,18 @@ export async function liquidarCarreraYCerrarTabla(opts: {
       // Empate NINI (devuelve capital: !ok && totalClienteNeto === monto) no es pérdida para el cruce
       return !(metadatos[i].monto > 0 && !r.ok && Math.abs(r.totalClienteNeto - metadatos[i].monto) < 0.01);
     });
-  const items: NeteoCruceItem[] = indicesLegados.map((i) => ({
-    cliente: metadatos[i].cliente1 ?? "",
-    caballo: metadatos[i].caballo,
-    monto: metadatos[i].monto,
-    bruto: procesados[i].resultado.ok ? procesados[i].resultado.totalClienteNeto + procesados[i].resultado.gananciaCasa : 0,
-    ok: procesados[i].resultado.ok,
-  }));
+  const items: NeteoCruceItem[] = indicesLegados.map((i) => {
+    const r = procesados[i].resultado;
+    const m = metadatos[i].monto;
+    const perdidaEfectiva = !r.ok && r.totalClienteNeto > 0 && r.totalClienteNeto < m ? round2(m - r.totalClienteNeto) : m;
+    return {
+      cliente: metadatos[i].cliente1 ?? "",
+      caballo: metadatos[i].caballo,
+      monto: perdidaEfectiva,
+      bruto: r.ok ? r.totalClienteNeto + r.gananciaCasa : 0,
+      ok: r.ok,
+    };
+  });
   const gruposNeteo = netearComisionCruce(items, carrera, tasaComision, {
     agruparPorCliente: agruparPorCliente !== false,
     permiteCruces: agruparPorCliente !== false,
@@ -284,15 +289,20 @@ export async function liquidarCarreraYCerrarTabla(opts: {
           // Empate NINI (0/0, devuelve capital) no cuenta como pérdida en el cruce
           return !(metadatos[i].monto > 0 && !r.ok && Math.abs(r.totalClienteNeto - metadatos[i].monto) < 0.01);
         })
-        .map((i) => ({
-          cliente: jugador,
-          caballo: metadatos[i].caballo,
-          ok: procesados[i].resultado.ok,
-          bruto: procesados[i].resultado.ok
-            ? procesados[i].resultado.totalClienteNeto + procesados[i].resultado.gananciaCasa
-            : 0,
-          monto: metadatos[i].monto,
-        }));
+        .map((i) => {
+          const r = procesados[i].resultado;
+          const m = metadatos[i].monto;
+          const perdidaEfectiva = !r.ok && r.totalClienteNeto > 0 && r.totalClienteNeto < m ? round2(m - r.totalClienteNeto) : m;
+          return {
+            cliente: jugador,
+            caballo: metadatos[i].caballo,
+            ok: r.ok,
+            bruto: r.ok
+              ? r.totalClienteNeto + r.gananciaCasa
+              : 0,
+            monto: perdidaEfectiva,
+          };
+        });
       const liquidacion = calcularLiquidacionPuestosCarrera(entradas, {
         ...opts.crucesPuestos,
         pctComision: Number(tasaComision ?? 5),
