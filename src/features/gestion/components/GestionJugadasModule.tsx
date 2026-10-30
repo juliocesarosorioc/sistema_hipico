@@ -29,7 +29,7 @@ import { venderJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/v
 import { dividendosDePizarra, pizarraDePosiciones, posicionesDePizarra, posicionesRayaDePizarra } from "@/features/liquidacion/lib/posiciones";
 import { colorDiscoNumero, numerosDeCaballo } from "@/features/saldos/lib/discos";
 import { PREFIJO_WPS, tipoWps } from "@/features/motores/lib/wps";
-import { guardarPizarraCentral } from "@/features/liquidacion/lib/pizarraCentral";
+import { guardarPizarraCentral, pizarraDesdeResultadoOficial } from "@/features/liquidacion/lib/pizarraCentral";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { emitirToast } from "@/shared/lib/mensajeria";
 import { useConfirmar } from "@/shared/store/useConfirmStore";
@@ -464,6 +464,30 @@ export function GestionJugadasModule() {
   }, [carrerasDelDia, carrera]);
 
   const tieneResultadoCargado = carreraLiquidada || Boolean(pizarraCentral);
+
+  // Precarga automática del resultado oficial de pizarra cuando la carrera ya está liquidada
+  // o tiene resultados registrados en la base central (resultados_carreras).
+  useEffect(() => {
+    let activo = true;
+    if (!hipodromo || !carrera || !fecha) return;
+    void (async () => {
+      try {
+        const oficial = await leerResultadoOficial(hipodromo, carrera, fecha);
+        if (!activo || !oficial) return;
+        if (oficial.puestos && oficial.puestos.length > 0) {
+          const piz = pizarraDesdeResultadoOficial(oficial);
+          if (piz && activo) {
+            setPizarraCentral(piz);
+          }
+        }
+      } catch {
+        /* sin resultado oficial legible */
+      }
+    })();
+    return () => {
+      activo = false;
+    };
+  }, [hipodromo, fecha, carrera, carreraLiquidada]);
   /** Ítem 1: sólo quien tenga la capacidad puede reabrir una liquidada. */
   const puedeReabrir = tieneCapacidad("gestion_jugadas:fn_reabrir_carrera");
   const [resumen, setResumen] = useState<ResLiquidarCarrera | null>(null);
@@ -1345,24 +1369,32 @@ const hipodromosDelDia = useMemo(() => {
 
   /** Pizarra Oficial y Orden de Llegada (Raya) vigentes para la carrera actual. */
   const pizarraPuestosActual = useMemo<string[]>(() => {
+    if (ultimaPizarra?.pizarra) {
+      const pos = posicionesDePizarra(ultimaPizarra.pizarra);
+      if (pos.length > 0) return pos;
+    }
     if (centralDeCarrera?.ganadores && centralDeCarrera.ganadores.length > 0) {
       return centralDeCarrera.ganadores.map(String).filter(Boolean);
     }
-    if (ultimaPizarra?.pizarra) {
-      return posicionesDePizarra(ultimaPizarra.pizarra);
+    if (pizarraCentral?.pizarra) {
+      return posicionesDePizarra(pizarraCentral.pizarra);
     }
     return [];
-  }, [centralDeCarrera, ultimaPizarra]);
+  }, [centralDeCarrera, ultimaPizarra, pizarraCentral]);
 
   const pizarraRayaActual = useMemo<string[]>(() => {
+    if (ultimaPizarra?.pizarra) {
+      const pos = posicionesRayaDePizarra(ultimaPizarra.pizarra);
+      if (pos.length > 0) return pos;
+    }
     if (centralDeCarrera?.orden_llegada_raya && centralDeCarrera.orden_llegada_raya.length > 0) {
       return centralDeCarrera.orden_llegada_raya.map(String).filter(Boolean);
     }
-    if (ultimaPizarra?.pizarra) {
-      return posicionesRayaDePizarra(ultimaPizarra.pizarra);
+    if (pizarraCentral?.pizarra) {
+      return posicionesRayaDePizarra(pizarraCentral.pizarra);
     }
     return pizarraPuestosActual;
-  }, [centralDeCarrera, ultimaPizarra, pizarraPuestosActual]);
+  }, [centralDeCarrera, ultimaPizarra, pizarraCentral, pizarraPuestosActual]);
 
   const retiradosPizarraActual = useMemo<string[]>(() => {
     const enLlegada = new Set(
@@ -1470,25 +1502,24 @@ const hipodromosDelDia = useMemo(() => {
   /** Preliminar de Resultados: texto con la pizarra cargada + veredicto GANA/
    *  PIERDE/PENDIENTE por jugada, SIN balance. Si todavía no se cargó la
    *  pizarra (Ctrl+Y) el texto queda vacío y la vista pide cargarla. */
-  const preliminarResultadoTexto = useMemo(
-    () =>
-      ultimaPizarra
-        ? mensajePreliminarDeCarrera({
-            hipodromo: nombreHipodromoParaMostrar(hipodromo),
-            carrera,
-            fecha,
-            grupo: grupoCabecera,
-            retirados: retirados.trim() || undefined,
-            pizarra: ultimaPizarra.pizarra,
-            dividendos: ultimaPizarra.dividendos ?? null,
-            tickets: ticketsParaPreliminar,
-            tasaComision: comisionNum,
-            saldos: saldosAjustados,
-            observaciones: observaciones.trim() || undefined,
-          })
-        : "",
-    [carrera, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, retirados, saldosAjustados, ticketsParaPreliminar, ultimaPizarra]
-  );
+  const preliminarResultadoTexto = useMemo(() => {
+    const pizActiva = ultimaPizarra ?? pizarraCentral;
+    return pizActiva
+      ? mensajePreliminarDeCarrera({
+          hipodromo: nombreHipodromoParaMostrar(hipodromo),
+          carrera,
+          fecha,
+          grupo: grupoCabecera,
+          retirados: retirados.trim() || undefined,
+          pizarra: pizActiva.pizarra,
+          dividendos: pizActiva.dividendos ?? null,
+          tickets: ticketsParaPreliminar,
+          tasaComision: comisionNum,
+          saldos: saldosAjustados,
+          observaciones: observaciones.trim() || undefined,
+        })
+      : "";
+  }, [carrera, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, retirados, saldosAjustados, ticketsParaPreliminar, ultimaPizarra, pizarraCentral]);
 
   const generarMensajeResultados = useCallback(
     (pizarra: PizarraResultados) => {
@@ -4062,7 +4093,7 @@ const hipodromosDelDia = useMemo(() => {
               </div>
 
               {/* Vista Gráfica Preliminar (misma línea gráfica que el reporte final con observaciones y menciones @número) */}
-              {visorWhatsappTipo === "prejugadas" && (
+              {(visorWhatsappTipo === "prejugadas" || visorWhatsappTipo === "resultados") && (
                 <div className="mt-4 space-y-2 border-t border-slate-200 pt-3">
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2">
                     <span className="text-xs font-black text-blue-950">
@@ -4094,34 +4125,89 @@ const hipodromosDelDia = useMemo(() => {
                         logoHipodromo: null,
                         carrera: `Carrera ${carrera}`,
                         fecha,
-                        llegada: [],
+                        llegada: pizarraPuestosActual.map((puesto, idx) => ({
+                          numero: puesto,
+                          puesto: `${idx + 1}º`,
+                          color: colorDiscoNumero(puesto),
+                        })),
+                        ...(pizarraRayaActual.length > 0 && pizarraRayaActual.join(",") !== pizarraPuestosActual.join(",")
+                          ? {
+                              llegadaRaya: pizarraRayaActual.map((puesto, idx) => ({
+                                numero: puesto,
+                                puesto: `${idx + 1}º`,
+                                color: colorDiscoNumero(puesto),
+                              })),
+                            }
+                          : {}),
                         retirados: retiradosPizarraActual,
                       },
-                      liquidada: false,
+                      liquidada: carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0,
                       jugadasVivo: [
-                        ...filasPreviewEnVivo.map((f) => ({
-                          juega: f.cliente1,
-                          aposto: f.monto,
-                          jugo: f.jugada,
-                          caballo: f.caballo,
-                          da: f.cliente2,
-                          apostoDa: f.monto,
-                          resultado: null,
-                          resultadoDa: null,
-                          esAdelantada: false,
-                        })),
-                        ...filasPreviewAdelantadas.map((f) => ({
-                          juega: f.cliente1,
-                          aposto: f.aposto1 ?? f.monto,
-                          jugo: f.jugada,
-                          caballo: f.caballo,
-                          precioTabla: f.precioTabla,
-                          da: f.cliente2,
-                          apostoDa: f.aposto2 ?? f.monto,
-                          resultado: null,
-                          resultadoDa: null,
-                          esAdelantada: true,
-                        })),
+                        ...filasPreviewEnVivo.map((f) => {
+                          const estaLiquidada = carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0;
+                          return {
+                            juega: f.cliente1,
+                            aposto: f.monto,
+                            jugo: f.jugada,
+                            caballo: f.caballo,
+                            da: f.cliente2,
+                            apostoDa: f.monto,
+                            resultado: estaLiquidada
+                              ? f.lado1.estado === "GANO"
+                                ? f.lado1.monto
+                                : f.lado1.estado === "PERDIO"
+                                ? -f.lado1.monto
+                                : f.lado1.estado === "RETIRADO" || f.lado1.estado === "ANULADA"
+                                ? 0
+                                : null
+                              : null,
+                            resultadoDa: estaLiquidada
+                              ? f.lado2.estado === "GANO"
+                                ? f.lado2.monto
+                                : f.lado2.estado === "PERDIO"
+                                ? -f.lado2.monto
+                                : f.lado2.estado === "RETIRADO" || f.lado2.estado === "ANULADA"
+                                ? 0
+                                : null
+                              : null,
+                            esAdelantada: false,
+                            esRetirado: f.lado1.estado === "RETIRADO" || f.lado2.estado === "RETIRADO" || f.esEmpateNini,
+                            sinDecision: f.sinDecision,
+                          };
+                        }),
+                        ...filasPreviewAdelantadas.map((f) => {
+                          const estaLiquidada = carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0;
+                          return {
+                            juega: f.cliente1,
+                            aposto: f.aposto1 ?? f.monto,
+                            jugo: f.jugada,
+                            caballo: f.caballo,
+                            precioTabla: f.precioTabla,
+                            da: f.cliente2,
+                            apostoDa: f.aposto2 ?? f.monto,
+                            resultado: estaLiquidada
+                              ? f.lado1.estado === "GANO"
+                                ? f.lado1.monto
+                                : f.lado1.estado === "PERDIO"
+                                ? -f.lado1.monto
+                                : f.lado1.estado === "RETIRADO" || f.lado1.estado === "ANULADA"
+                                ? 0
+                                : null
+                              : null,
+                            resultadoDa: estaLiquidada
+                              ? f.lado2.estado === "GANO"
+                                ? f.lado2.monto
+                                : f.lado2.estado === "PERDIO"
+                                ? -f.lado2.monto
+                                : f.lado2.estado === "RETIRADO" || f.lado2.estado === "ANULADA"
+                                ? 0
+                                : null
+                              : null,
+                            esAdelantada: true,
+                            esRetirado: f.lado1.estado === "RETIRADO" || f.lado2.estado === "RETIRADO" || f.esEmpateNini,
+                            sinDecision: f.sinDecision,
+                          };
+                        }),
                       ],
                       adelantadas: { tablas: [], marcas: [], tercios: [], otras: [] },
                       resumen: { ganan: [], pierden: [] },
