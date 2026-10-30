@@ -8,8 +8,6 @@ import { Input } from "@/shared/components/ui/Input";
 import { DateInput } from "@/shared/components/ui/DateInput";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
-import { BotonDictadoAudio } from "@/shared/components/ui/BotonDictadoAudio";
-import { interpretarAudioCarrera } from "@/features/carreras/lib/audio-carrera";
 import { BuscadorPadron, type OpcionPadron } from "@/features/ejemplares/components/BuscadorPadron";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
@@ -399,22 +397,11 @@ export function CargaPrograma() {
             <Card className="w-full overflow-hidden">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surfaceAlt/60 px-4 py-2.5">
                 <div>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-primary-700">⚡ Pegado masivo o Dictado por Audio</h3>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-primary-700">⚡ Pegado masivo</h3>
                   <p className="mt-0.5 text-[11px] text-slate-500">
-                    Una línea por ejemplar (<b>Nº NOMBRE [NAC] [VALOR]</b>) o dicta por micrófono: <i>&ldquo;1 Duque de Alba 150, 2 Gato Negro 120&rdquo;</i>.
+                    Una línea por ejemplar (<b>Nº NOMBRE [NAC] [VALOR]</b>).
                   </p>
                 </div>
-                <BotonDictadoAudio
-                  compacto
-                  etiqueta="🎙️ Dictar Ejemplares"
-                  modo="carrera"
-                  onTextoReconocido={(txt) => {
-                    const info = interpretarAudioCarrera(txt);
-                    const bloque = info.ejemplaresTexto || info.textoNormalizado;
-                    setTextoRapida((prev) => (prev.trim() ? `${prev.trim()}\n${bloque}` : bloque));
-                    toast(`🎙️ Audio agregado al bloque (${info.ejemplaresLista.length || 1} línea(s)).`, "info");
-                  }}
-                />
               </div>
 
               <div className="flex flex-col gap-4 p-4">
@@ -537,38 +524,6 @@ export function CargaPrograma() {
                       {(c.caballos || []).filter((cb) => cb.nombre).length} ejemplares
                     </span>
                     <div className="ml-auto flex flex-wrap items-center gap-2">
-                      <BotonDictadoAudio
-                        compacto
-                        etiqueta="🎙️ Dictar"
-                        modo="carrera"
-                        onTextoReconocido={(txt) => {
-                          const info = interpretarAudioCarrera(txt);
-                          const nuevos = parseLineas(info.ejemplaresTexto || info.textoNormalizado, hipodromo);
-                          if (nuevos.length > 0) {
-                            setCarreras((prev) =>
-                              prev.map((car, idx) => {
-                                if (idx !== i) return car;
-                                const limpios = (car.caballos || []).filter((cb) => cb.nombre.trim().length > 0);
-                                return {
-                                  ...car,
-                                  distancia: info.distancia ? Number(info.distancia) : car.distancia,
-                                  superficie: info.superficie || car.superficie,
-                                  premio: info.premio ? Number(info.premio) : car.premio,
-                                  caballos: [...limpios, ...nuevos],
-                                };
-                              })
-                            );
-                            toast(`🎙️ ${nuevos.length} ejemplar(es) agregados por voz a Carrera ${c.carrera ?? i + 1}ª.`, "success");
-                          } else if (info.distancia || info.superficie || info.premio) {
-                            setCarrera(i, {
-                              distancia: info.distancia ? Number(info.distancia) : c.distancia,
-                              superficie: info.superficie || c.superficie,
-                              premio: info.premio ? Number(info.premio) : c.premio,
-                            });
-                            toast(`🎙️ Datos de Carrera ${c.carrera ?? i + 1}ª actualizados por voz.`, "info");
-                          }
-                        }}
-                      />
                       <Input label="" hint="" aria-label="Distancia"
                         type="number" placeholder="Dist. m" value={c.distancia || ""}
                         onChange={(e) => setCarrera(i, { distancia: Number(e.target.value) || 0 })}

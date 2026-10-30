@@ -5,8 +5,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
-import { BotonDictadoAudio } from "@/shared/components/ui/BotonDictadoAudio";
-import { interpretarAudioCarrera } from "@/features/carreras/lib/audio-carrera";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
@@ -84,7 +82,7 @@ const CHIPS_EJEMPLARES_RAPIDOS = [6, 8, 9, 10, 11, 12, 14, 16];
 
 /**
  * Carreras del Día — editor CENTRAL de la jornada (data única).
- * Optimizado para carga táctil rápida desde el celular y dictado por voz / audio.
+ * Optimizado para carga táctil rápida desde el celular o escritorio.
  */
 export function CarrerasDiaModule() {
   const [catalogo, setCatalogo] = useState<Hipodromo[]>([]);
@@ -103,7 +101,6 @@ export function CarrerasDiaModule() {
   const [confirmarEliminar, setConfirmarEliminar] = useState<CarreraCentral | null>(null);
   const [editorMarcas, setEditorMarcas] = useState<{ hipodromo: string; carrera: number; fecha: string } | null>(null);
   const [verSinEjemplares, setVerSinEjemplares] = useState(false);
-  const [ultimoDictado, setUltimoDictado] = useState<{ texto: string; resumen: string[] } | null>(null);
   const [rangoLote, setRangoLote] = useState<{ desde: number; hasta: number; ejemplares: number } | null>(null);
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
@@ -184,55 +181,6 @@ export function CarrerasDiaModule() {
       retirados: (c.retirados ?? []).join(","),
     });
   };
-
-  /**
-   * Procesa el dictado por voz / audio y rellena los campos del formulario
-   * (o del modal de edición si está abierto).
-   */
-  const aplicarDictadoAudio = useCallback(
-    (texto: string) => {
-      const info = interpretarAudioCarrera(texto);
-      setUltimoDictado({ texto: info.textoOriginal, resumen: info.resumen });
-
-      if (info.rangoCarreras) {
-        setRangoLote({
-          desde: info.rangoCarreras.desde,
-          hasta: info.rangoCarreras.hasta,
-          ejemplares: info.cantidadEjemplares ?? 12,
-        });
-      }
-
-      setModal((prev) => {
-        const carreraSugerida = info.carrera ?? (prev.carrera || String(masAlto + 1));
-        let ejemplaresNuevos = prev.ejemplares;
-        if (info.ejemplaresLista.length > 0) {
-          const bloque = info.ejemplaresLista.map((e) => `${e.numero} ${e.nombre}`).join("\n");
-          ejemplaresNuevos = prev.editar && prev.ejemplares.trim() ? `${prev.ejemplares.trim()}\n${bloque}` : bloque;
-        } else if (info.ejemplaresTexto) {
-          ejemplaresNuevos = info.ejemplaresTexto;
-        }
-        return {
-          ...prev,
-          abierta: true,
-          carrera: carreraSugerida,
-          ejemplares: ejemplaresNuevos,
-          distancia: info.distancia ?? prev.distancia,
-          superficie: info.superficie ?? prev.superficie,
-          premio: info.premio ?? prev.premio,
-          hora: info.hora ?? prev.hora,
-          retirados: info.retirados ?? prev.retirados,
-        };
-      });
-
-      toast(
-        info.resumen.length > 0
-          ? `🎙️ Interpretado: ${info.resumen.join(" · ")}`
-          : `🎙️ Dictado recibido: "${texto}"`,
-        "info"
-      );
-    },
-    [masAlto, toast]
-  );
 
   const guardarLoteCarreras = async (desde: number, hasta: number, cantEjemplares: number) => {
     if (!fecha) return toast("Seleccione primero una fecha en el buscador.", "warning");
@@ -362,15 +310,10 @@ export function CarrerasDiaModule() {
           <div>
             <h2 className="text-base font-extrabold uppercase tracking-wide sm:text-lg">Carreras del Día</h2>
             <p className="text-[11px] font-medium text-cyan-100">
-              Carga móvil rápida, manual y por voz — alimenta Apuestas, Tablas y Dupletas.
+              Carga manual y rápida de la jornada — alimenta Apuestas, Tablas y Dupletas.
             </p>
           </div>
         </div>
-        <BotonDictadoAudio
-          etiqueta="🎙️ Dictar Carrera / Ejemplares"
-          modo="carrera"
-          onTextoReconocido={aplicarDictadoAudio}
-        />
       </div>
 
       <BuscadorJornada
@@ -395,29 +338,23 @@ export function CarrerasDiaModule() {
           vacio={
             !fecha
               ? "Selecciona una fecha en el buscador de arriba para consultar el monitor."
-              : `Sin carreras registradas en la fecha ${fecha}. Regístralas abajo con un toque o dictando por audio.`
+              : `Sin carreras registradas en la fecha ${fecha}. Regístralas abajo con un toque.`
           }
         />
       </div>
 
-      {/* Panel de Registro Manual Optimizado para Celular + Dictado por Voz */}
+      {/* Panel de Registro Manual */}
       <div className="rounded-2xl border border-cyan-200 bg-white p-3 shadow-sm space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
           <div>
             <h3 className="text-xs font-black uppercase tracking-wider text-cyan-800">
-              📱 Carga Manual Rápida (Celular / Audio)
+              📱 Carga Manual Rápida
             </h3>
             <p className="text-[10px] font-semibold text-slate-500">
-              Toca el Nº de carrera y la cantidad de ejemplares, o dicta: <i>&ldquo;Carrera 3 con 12 ejemplares 1600 metros arena&rdquo;</i>
+              Toca el Nº de carrera y la cantidad de ejemplares para configurar la jornada.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <BotonDictadoAudio
-              compacto
-              etiqueta="🎙️ Dictar"
-              modo="carrera"
-              onTextoReconocido={aplicarDictadoAudio}
-            />
             <button
               type="button"
               onClick={() =>
@@ -431,27 +368,6 @@ export function CarrerasDiaModule() {
             </button>
           </div>
         </div>
-
-        {ultimoDictado && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50/70 px-3 py-1.5 text-[11px]">
-            <div className="min-w-0">
-              <span className="font-black text-rose-700">🎙️ Audio interpretado:</span>{" "}
-              <span className="italic text-slate-700">&ldquo;{ultimoDictado.texto}&rdquo;</span>
-              {ultimoDictado.resumen.length > 0 && (
-                <span className="ml-2 rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-black text-white">
-                  {ultimoDictado.resumen.join(" · ")}
-                </span>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setUltimoDictado(null)}
-              className="text-xs font-bold text-slate-400 hover:text-slate-600"
-            >
-              ✕
-            </button>
-          </div>
-        )}
 
         {/* Generador de lote de carreras en 1 toque (ideal para celular) */}
         {rangoLote && (
@@ -995,17 +911,6 @@ export function CarrerasDiaModule() {
               </button>
             </div>
             <div className="space-y-3 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50/60 px-3 py-2">
-                <span className="text-[11px] font-bold text-rose-800">
-                  🎙️ Dicta ejemplares o cambios por voz:
-                </span>
-                <BotonDictadoAudio
-                  compacto
-                  etiqueta="🎙️ Dictar Ejemplares"
-                  modo="carrera"
-                  onTextoReconocido={aplicarDictadoAudio}
-                />
-              </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
                   <span className={inputLbl}>Distancia (m)</span>
