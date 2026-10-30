@@ -53,7 +53,7 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
     setCargando(true);
     try {
       const [ops, hips] = await Promise.all([
-        listarOperadoresDeGrupo(grupoId),
+        listarOperadoresDeGrupo(grupoId, grupoNombre),
         listarHipodromos(),
       ]);
       setOperadores(ops);
@@ -63,7 +63,7 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
     } finally {
       setCargando(false);
     }
-  }, [grupoId]);
+  }, [grupoId, grupoNombre]);
 
   useEffect(() => {
     void refrescar();
@@ -143,6 +143,7 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
 
     const res = await guardarOperadorDeGrupo({
       grupoId,
+      grupoNombre,
       usuario: u,
       nombre: formNombre.trim() || u,
       clave: formClave.trim(),

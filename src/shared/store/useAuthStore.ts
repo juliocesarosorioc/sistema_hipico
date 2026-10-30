@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { supabase } from "@/core/supabase";
-import { obtenerClaveCacheLocal } from "@/features/grupos/lib/operadores-grupo";
+import { obtenerClaveCacheLocal, obtenerOperadorCacheLocal } from "@/features/grupos/lib/operadores-grupo";
 import {
   cerrarSesion as cerrarSesionSupabase,
   conTimeout,
@@ -583,7 +583,8 @@ export const useAuthStore = create<EstadoAuth>()(
           activo: true,
           capacidades: capsOperador,
         };
-        setGrupoActivoVigente(op.grupoId || null);
+        const grupoEfectivo = (op.grupoId && String(op.grupoId).trim() !== "") ? String(op.grupoId).trim() : null;
+        setGrupoActivoVigente(grupoEfectivo);
         publicarPermisosEnCookies(["OPERADOR"], capsOperador, op.id);
         setAccesosVigentes({
           permisos: capsOperador,
@@ -591,7 +592,7 @@ export const useAuthStore = create<EstadoAuth>()(
           usuario: op.id,
           tipoUsuario: "OPERADOR",
           atributos: {},
-          grupoId: op.grupoId,
+          grupoId: grupoEfectivo || "",
           grupoNombre: op.grupoNombre || "",
           veTodos: false,
         });
@@ -600,7 +601,12 @@ export const useAuthStore = create<EstadoAuth>()(
             localStorage.setItem(CLAVE_MODO_OPERADOR, "1");
             localStorage.setItem(CLAVE_SESION_OPERADOR_LOCAL, "1");
             localStorage.setItem(CLAVE_OPERADOR_ACTUAL, JSON.stringify(op));
-            if (op.grupoId) localStorage.setItem("hipico_grupo_activo", op.grupoId);
+            // Asignar SIEMPRE el grupo exclusivo del operador y limpiar residuos previos
+            if (grupoEfectivo) {
+              localStorage.setItem("hipico_grupo_activo", grupoEfectivo);
+            } else {
+              localStorage.removeItem("hipico_grupo_activo");
+            }
           }
         } catch {
           /* sinop */
@@ -619,9 +625,9 @@ export const useAuthStore = create<EstadoAuth>()(
           perfiles: ["OPERADOR"],
           modoOperador: true,
           veTodosLosGrupos: false,
-          grupoId: op.grupoId,
+          grupoId: grupoEfectivo || "",
           grupoNombre: op.grupoNombre || "",
-          grupoActivo: op.grupoId || null,
+          grupoActivo: grupoEfectivo,
         });
       },
 
@@ -636,7 +642,7 @@ export const useAuthStore = create<EstadoAuth>()(
         }
 
         // 1. Verificación directa y segura de operador por RPC (SECURITY DEFINER)
-        // Permite login de operadores tanto por usuario ('yes') como por teléfono celular (+584149327337 o 584149327337)
+        // Permite login de operadores tanto por usuario ('yes', 'ricardogunbold') como por teléfono celular (+584149327337 o 584149327337)
         if (supabase) {
           try {
             const { data: rpcRes, error: rpcErr } = await supabase.rpc("club_login_operador", {
@@ -646,11 +652,17 @@ export const useAuthStore = create<EstadoAuth>()(
             if (!rpcErr && rpcRes && typeof rpcRes === "object") {
               const r = rpcRes as Record<string, unknown>;
               if (r.ok === true && r.id) {
+                const opCache =
+                  obtenerOperadorCacheLocal(String(r.id)) ||
+                  (digitos ? obtenerOperadorCacheLocal(digitos) : null);
+                const gId = String(r.grupoId || opCache?.grupoId || "");
+                const gNom = String(r.grupoNombre || opCache?.grupoNombre || "Grupo Asignado");
+
                 get().entrarComoOperadorGrupo({
                   id: String(r.id),
-                  nombre: String(r.nombre || r.id),
-                  grupoId: String(r.grupoId || ""),
-                  grupoNombre: String(r.grupoNombre || "Grupo Asignado"),
+                  nombre: String(r.nombre || opCache?.nombre || r.id),
+                  grupoId: gId,
+                  grupoNombre: gNom,
                 });
                 return true;
               } else if (r.ok === false && r.error === "Contraseña incorrecta.") {
@@ -673,11 +685,24 @@ export const useAuthStore = create<EstadoAuth>()(
           if (!r.ok) {
             // Comprobar si es un operador asignado a un grupo por su usuario y clave celular
             try {
+              const opCache =
+                obtenerOperadorCacheLocal(idLimpio) ||
+                (digitos ? obtenerOperadorCacheLocal(digitos) : null);
               const claveCache =
+                opCache?.clave ||
                 obtenerClaveCacheLocal(idLimpio) ||
                 (digitos ? obtenerClaveCacheLocal(digitos) : null);
               let coincide = Boolean(claveCache && claveCache === clave);
               let opEncontrado: { id: string; nombre: string; grupoId: string; grupoNombre?: string } | null = null;
+
+              if (opCache && opCache.grupoId) {
+                opEncontrado = {
+                  id: opCache.usuario,
+                  nombre: opCache.nombre || opCache.usuario,
+                  grupoId: opCache.grupoId,
+                  grupoNombre: opCache.grupoNombre,
+                };
+              }
 
               if (supabase) {
                 let uFila: Record<string, unknown> | null = null;
@@ -730,7 +755,7 @@ export const useAuthStore = create<EstadoAuth>()(
                       grupoId: String(uFila.grupo_id),
                       grupoNombre: (gFila as Record<string, unknown>)?.nombre
                         ? String((gFila as Record<string, unknown>).nombre)
-                        : undefined,
+                        : opCache?.grupoNombre,
                     };
                   }
                 }
@@ -740,8 +765,8 @@ export const useAuthStore = create<EstadoAuth>()(
                 const opFinal = opEncontrado || {
                   id: idLimpio,
                   nombre: idLimpio.toUpperCase(),
-                  grupoId: "",
-                  grupoNombre: "Operador Móvil",
+                  grupoId: opCache?.grupoId || "",
+                  grupoNombre: opCache?.grupoNombre || "Operador Móvil",
                 };
                 get().entrarComoOperadorGrupo(opFinal);
                 return true;

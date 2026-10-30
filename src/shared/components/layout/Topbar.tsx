@@ -12,6 +12,7 @@ import { ModalGestionRapidaSaldo } from "@/features/contabilidad/components/Moda
 import { conCacheBust } from "@/shared/lib/logos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
 import { listarGruposVenta } from "@/features/grupos/lib/grupos";
+import { esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
 
 /**
  * Barra superior limpia de la SPA (Organismo del layout raíz).
@@ -113,6 +114,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const grupoActivo = useAuthStore((s) => s.grupoActivo);
   const grupoNombre = useAuthStore((s) => s.grupoNombre);
   const versionLogos = useVersionLogos();
+  const esOperador = esRolOperadorExclusivo(perfiles, modoOperador);
 
   const [logoGrupo, setLogoGrupo] = useState<string | null>(null);
   const [nombreGrupo, setNombreGrupo] = useState<string>("");
@@ -125,7 +127,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         const idBuscado = grupoId || grupoActivo;
         const encontrado = idBuscado
           ? grupos.find((g) => String(g.id) === String(idBuscado))
-          : grupos[0];
+          : (!esOperador && veTodosLosGrupos ? grupos[0] : null);
         if (encontrado) {
           setNombreGrupo(encontrado.nombre || grupoNombre || "Club del Dinero");
           setLogoGrupo((encontrado as { logo_url?: string | null }).logo_url ?? null);
@@ -143,7 +145,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
     return () => {
       vivo = false;
     };
-  }, [grupoId, grupoActivo, grupoNombre, versionLogos]);
+  }, [grupoId, grupoActivo, grupoNombre, esOperador, veTodosLosGrupos, versionLogos]);
 
   const esOperadorFijo =
     perfiles.length > 0 &&
@@ -330,7 +332,18 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         </button>
       )}
 
-      <SelectorGrupo />
+      {/* Selector de grupo: SOLO para administradores con capacidad de ver todos los grupos. Nunca para operadores */}
+      {!esOperador && veTodosLosGrupos ? (
+        <SelectorGrupo />
+      ) : (
+        <div
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 text-xs font-black text-emerald-800"
+          title={`Grupo asignado: ${nombreGrupo || grupoNombre || "Mi Grupo"}`}
+        >
+          <span aria-hidden="true">📁</span>
+          <span>{nombreGrupo || grupoNombre || "Mi Grupo"}</span>
+        </div>
+      )}
 
       <RelojNavegador />
 

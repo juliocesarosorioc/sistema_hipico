@@ -29,7 +29,17 @@ export type OperadorGrupo = {
   creadoEn?: string;
 };
 
+export type OperadorCache = {
+  usuario: string;
+  clave: string;
+  grupoId: string;
+  grupoNombre: string;
+  nombre?: string;
+  telefono?: string;
+};
+
 const CLAVE_STORAGE_CLAVES = "hipico_operadores_claves_cache";
+const CLAVE_STORAGE_OPERADORES = "hipico_operadores_perfiles_cache";
 
 /** Almacena claves de operadores en cache local como respaldo seguro */
 function guardarClaveEnCacheLocal(usuarioId: string, clave: string): void {
@@ -51,6 +61,43 @@ export function obtenerClaveCacheLocal(usuarioId: string): string | null {
     if (!raw) return null;
     const mapa = JSON.parse(raw);
     return mapa[usuarioId.toLowerCase()] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Guarda el perfil completo del operador en caché local */
+export function guardarOperadorEnCacheLocal(op: OperadorCache): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(CLAVE_STORAGE_OPERADORES);
+    const mapa = raw ? JSON.parse(raw) : {};
+    const key = op.usuario.toLowerCase().trim();
+    mapa[key] = op;
+    if (op.telefono) {
+      const dig = op.telefono.replace(/\D/g, "");
+      if (dig) mapa[dig] = op;
+    }
+    window.localStorage.setItem(CLAVE_STORAGE_OPERADORES, JSON.stringify(mapa));
+    guardarClaveEnCacheLocal(key, op.clave);
+    if (op.telefono) {
+      const dig = op.telefono.replace(/\D/g, "");
+      if (dig) guardarClaveEnCacheLocal(dig, op.clave);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+/** Obtiene el perfil completo del operador desde la caché local */
+export function obtenerOperadorCacheLocal(usuarioId: string): OperadorCache | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CLAVE_STORAGE_OPERADORES);
+    if (!raw) return null;
+    const mapa = JSON.parse(raw);
+    const key = usuarioId.toLowerCase().trim();
+    return mapa[key] ?? null;
   } catch {
     return null;
   }
@@ -110,7 +157,8 @@ async function obtenerHipodromosUsuarios(ids: string[]): Promise<Record<string, 
  * Lista todos los operadores asignados a un grupo de venta específico.
  */
 export async function listarOperadoresDeGrupo(
-  grupoId: string | number
+  grupoId: string | number,
+  grupoNombre?: string
 ): Promise<OperadorGrupo[]> {
   if (!supabase) return [];
   const gid = String(grupoId);
@@ -163,12 +211,25 @@ export async function listarOperadoresDeGrupo(
     return data.map((u) => {
       const id = String(u.id ?? "");
       const claveRemota = u.clave_acceso ? String(u.clave_acceso) : null;
-      const clave = claveRemota || obtenerClaveCacheLocal(id) || "";
+      const opCached = obtenerOperadorCacheLocal(id);
+      const clave = claveRemota || opCached?.clave || obtenerClaveCacheLocal(id) || "";
+
+      if (clave) {
+        guardarOperadorEnCacheLocal({
+          usuario: id,
+          clave,
+          grupoId: gid,
+          grupoNombre: grupoNombre || opCached?.grupoNombre || "Grupo Asignado",
+          nombre: String(u.nombre ?? id),
+          telefono: u.telefono ? String(u.telefono) : undefined,
+        });
+      }
 
       return {
         id,
         nombre: String(u.nombre ?? id),
         grupoId: String(u.grupo_id ?? gid),
+        grupoNombre: grupoNombre || opCached?.grupoNombre,
         clave,
         telefono: u.telefono ? String(u.telefono) : undefined,
         codigoPais: u.codigo_pais ? String(u.codigo_pais) : undefined,
@@ -188,6 +249,7 @@ export async function listarOperadoresDeGrupo(
  */
 export async function guardarOperadorDeGrupo(params: {
   grupoId: string | number;
+  grupoNombre?: string;
   usuario: string;
   nombre?: string;
   clave?: string;
@@ -276,13 +338,16 @@ export async function guardarOperadorDeGrupo(params: {
       return { ok: false, error: `No se pudo registrar el operador: ${errUpsert.message}` };
     }
 
-    // 4. Guardar en cache local la contraseña para acceso y consulta inmediata (por id y por teléfono)
+    // 4. Guardar en cache local el perfil completo para acceso y consulta inmediata (por id y por teléfono)
     if (claveLimpia) {
-      guardarClaveEnCacheLocal(idLimpio, claveLimpia);
-      if (telefonoLimpio) {
-        const digitos = telefonoLimpio.replace(/\D/g, "");
-        if (digitos) guardarClaveEnCacheLocal(digitos, claveLimpia);
-      }
+      guardarOperadorEnCacheLocal({
+        usuario: idLimpio,
+        clave: claveLimpia,
+        grupoId: grupoIdStr,
+        grupoNombre: params.grupoNombre || "Grupo Asignado",
+        nombre: nombreLimpio,
+        telefono: telefonoLimpio,
+      });
     }
 
     // 5. Guardar los hipódromos asignados si se especificaron

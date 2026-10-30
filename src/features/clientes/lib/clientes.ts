@@ -1316,12 +1316,13 @@ export function construirEstadoCuenta(
 /** Trae los tickets de apuestas de un cliente para el estado de cuenta (tanto donde juega como donde da / se le imputa la modalidad), incluyendo sus pizarras oficiales. */
 export async function cargarTicketsCliente(
   clienteId: string | number,
-  clienteInfo?: { nombre?: string | null; seudonimo?: string | null } | null
+  clienteInfo?: { nombre?: string | null; seudonimo?: string | null; grupo_id?: string | number | null } | null
 ): Promise<TicketApuesta[]> {
   if (!supabase) return [];
   try {
     const idStr = String(clienteId ?? "").trim();
     const clienteMem = cacheClientes?.find((c) => String(c.id) === idStr);
+    const grupoCliente = clienteInfo?.grupo_id ?? clienteMem?.grupo_id ?? null;
     const nombresCliente = new Set(
       [
         clienteInfo?.nombre,
@@ -1345,6 +1346,19 @@ export async function cargarTicketsCliente(
       fecha_carrera: extraerFechaCarreraTicket(r) || (r.fecha_carrera as string | null) || null,
     }));
     const filtrados = filas.filter((t) => {
+      // Si el cliente pertenece a un grupo específico, no mezclar con tickets de otros grupos
+      if (grupoCliente) {
+        const gEsperado = String(grupoCliente).trim();
+        const tGrupo = String(
+          (t as unknown as { grupo_cobro_id?: string | number; grupo_id?: string | number }).grupo_cobro_id ??
+          (t as unknown as { grupo_id?: string | number }).grupo_id ??
+          ""
+        ).trim();
+        if (tGrupo && tGrupo !== gEsperado) {
+          return false;
+        }
+      }
+
       const jId = t.cliente_juega_id != null ? String(t.cliente_juega_id).trim() : "";
       const cId =
         t.cliente_consigue_id != null

@@ -1,16 +1,18 @@
 -- ============================================================================
--- RPC DE AUTENTICACIÓN RÁPIDA DE OPERADORES Y COLUMNAS DE TELÉFONO
+-- RPC DE AUTENTICACIÓN RÁPIDA DE OPERADORES Y COLUMNAS DE TELÉFONO / GRUPO
 -- ============================================================================
 -- Permite el inicio de sesión de operadores desde teléfonos celulares mediante:
---   1. Nombre de usuario (ej. 'yes')
+--   1. Nombre de usuario (ej. 'ricardogunbold', 'yes')
 --   2. Número de teléfono celular completo con código de país (ej. '+584149327337')
 --   3. Número de teléfono solo dígitos (ej. '584149327337' o '04149327337')
 --
--- Con SECURITY DEFINER para permitir a usuarios anon o authenticated validar
--- credenciales de forma segura sin exponer la tabla usuario_sistema completa.
+-- Vincula estrictamente al operador a su grupo asignado (ej. Gun Bold, Argentina).
 -- ============================================================================
 
--- 1. Asegurar columnas de teléfono y clave en usuario_sistema
+-- 1. Asegurar columnas de grupo, teléfono y clave en usuario_sistema
+alter table public.usuario_sistema
+  add column if not exists grupo_id uuid references public.grupos_venta(id) on delete set null;
+
 alter table public.usuario_sistema
   add column if not exists telefono text;
 
@@ -20,10 +22,13 @@ alter table public.usuario_sistema
 alter table public.usuario_sistema
   add column if not exists clave_acceso text;
 
+create index if not exists usuario_sistema_grupo_idx
+  on public.usuario_sistema (grupo_id);
+
 create index if not exists usuario_sistema_telefono_idx
   on public.usuario_sistema (telefono);
 
--- 2. Función RPC para validar credenciales de operador
+-- 2. Función RPC para validar credenciales de operador y retornar su grupo exclusivo
 create or replace function public.club_login_operador(
   p_identificador text,
   p_clave text
@@ -94,14 +99,13 @@ $$;
 -- Permitir ejecución anónima y autenticada
 grant execute on function public.club_login_operador(text, text) to anon, authenticated;
 
--- 3. Actualizar / asegurar la operadora YES en Argentina
+-- 3. Vincular operadora YES estrictamente al grupo ARGENTINA
 do $actualizar_yes$
 declare
   v_gid uuid;
 begin
   select id into v_gid from public.grupos_venta where upper(trim(nombre)) like '%ARGENTINA%' limit 1;
   if v_gid is not null then
-    -- Si existe por id 'yes'
     update public.usuario_sistema
     set telefono = '+584149327337',
         codigo_pais = '+58',
@@ -110,7 +114,6 @@ begin
         activo = true
     where lower(id) = 'yes';
 
-    -- Si no existe la fila 'yes', insertarla
     if not found then
       insert into public.usuario_sistema (id, nombre, tipo_usuario_id, grupo_id, activo, telefono, codigo_pais, clave_acceso)
       values ('yes', 'YES', 2, v_gid, true, '+584149327337', '+58', 'Yes#2026')
@@ -124,3 +127,18 @@ begin
   end if;
 end;
 $actualizar_yes$;
+
+-- 4. Vincular operador ricardogunbold estrictamente al grupo GUN BOLD
+do $actualizar_ricardo$
+declare
+  v_gid uuid;
+begin
+  select id into v_gid from public.grupos_venta where upper(trim(nombre)) like '%GUN%BOLD%' limit 1;
+  if v_gid is not null then
+    update public.usuario_sistema
+    set grupo_id = v_gid,
+        activo = true
+    where lower(id) = 'ricardogunbold';
+  end if;
+end;
+$actualizar_ricardo$;

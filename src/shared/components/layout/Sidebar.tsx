@@ -207,6 +207,7 @@ export function Sidebar({
   const grupoNombre = useAuthStore((s) => s.grupoNombre);
   const grupoId = useAuthStore((s) => s.grupoId);
   const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const veTodosLosGrupos = useAuthStore((s) => s.veTodosLosGrupos);
   const esOperador = esRolOperadorExclusivo(perfiles, modoOperador);
   const categoriasVisibles = esOperador ? CATEGORIAS_OPERADOR : CATEGORIAS;
 
@@ -219,28 +220,28 @@ export function Sidebar({
     void listarGruposVenta()
       .then((grupos) => {
         if (!vivo) return;
-        const idBuscado = grupoId ?? grupoActivo;
+        const idBuscado = grupoId || grupoActivo;
         const encontrado = idBuscado
           ? grupos.find((g) => String(g.id) === String(idBuscado))
-          : grupos[0];
+          : (!esOperador && veTodosLosGrupos ? grupos[0] : null);
         if (encontrado) {
-          setNombreGrupoResuelto(encontrado.nombre || "");
+          setNombreGrupoResuelto(encontrado.nombre || grupoNombre || "");
           setLogoGrupoResuelto((encontrado as { logo_url?: string | null }).logo_url ?? null);
         } else {
-          setNombreGrupoResuelto("");
+          setNombreGrupoResuelto(grupoNombre || "");
           setLogoGrupoResuelto(null);
         }
       })
       .catch(() => {
         if (vivo) {
-          setNombreGrupoResuelto("");
+          setNombreGrupoResuelto(grupoNombre || "");
           setLogoGrupoResuelto(null);
         }
       });
     return () => {
       vivo = false;
     };
-  }, [grupoId, grupoActivo, versionLogos]);
+  }, [grupoId, grupoActivo, grupoNombre, esOperador, veTodosLosGrupos, versionLogos]);
 
   const nombreGrupoCabecera =
     (grupoNombre && grupoNombre.trim()) ||

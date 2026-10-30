@@ -20,12 +20,15 @@ import { limpiarCacheClientes } from "@/features/clientes/lib/clientes";
 
 export function SelectorGrupo() {
   const veTodos = useAuthStore((s) => s.veTodosLosGrupos);
+  const modoOperador = useAuthStore((s) => s.modoOperador);
+  const perfiles = useAuthStore((s) => s.perfiles);
+  const esOperador = modoOperador || perfiles.includes("OPERADOR");
   const grupoActivo = useAuthStore((s) => s.grupoActivo);
   const setGrupoActivo = useAuthStore((s) => s.setGrupoActivo);
   const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
 
   useEffect(() => {
-    if (!veTodos) return;
+    if (!veTodos || esOperador) return;
     let vivo = true;
     const cargar = () => {
       listarGruposVenta()
@@ -38,7 +41,7 @@ export function SelectorGrupo() {
             const actualExiste = gruposValidos.some((x) => String(x.id) === String(grupoActivo));
             if (!grupoActivo || !actualExiste) {
               const principal = gruposValidos.find((x) => x.es_principal) || gruposValidos[0];
-              setGrupoActivo(String(principal.id));
+              if (principal) setGrupoActivo(String(principal.id));
             }
           }
         })
@@ -53,7 +56,9 @@ export function SelectorGrupo() {
       vivo = false;
       window.removeEventListener("grupos:actualizados", cargar);
     };
-  }, [veTodos, grupoActivo, setGrupoActivo]);
+  }, [veTodos, esOperador, grupoActivo, setGrupoActivo]);
+
+  if (!veTodos || esOperador) return null;
 
   if (!veTodos) return null;
 
