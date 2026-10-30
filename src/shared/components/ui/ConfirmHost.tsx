@@ -70,7 +70,11 @@ export function ConfirmHost() {
             type="button"
             autoFocus
             onClick={() => resolver(true)}
-            className={`rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wide ${estiloConfirmar(tipo, peticion.destructivo)}`}
+            className={`rounded-xl px-5 py-2 text-xs sm:text-sm font-black uppercase tracking-wide transition-all shadow-md ${
+              /liquidar/i.test(peticion.textoConfirmar ?? "")
+                ? "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-600/30 ring-4 ring-emerald-400/40 hover:scale-[1.02] active:scale-[0.98]"
+                : estiloConfirmar(tipo, peticion.destructivo)
+            }`}
           >
             {peticion.textoConfirmar ?? "Confirmar"}
           </button>

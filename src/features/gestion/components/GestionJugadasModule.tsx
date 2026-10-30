@@ -2594,7 +2594,7 @@ const hipodromosDelDia = useMemo(() => {
       titulo: `¿LIQUIDAR CARRERA ${carrera} ?`,
       mensaje: `¿Confirmas que deseas liquidar la Carrera ${carrera} (${nombreHipodromo})?`,
       tipo: "warning",
-      textoConfirmar: "Confirmar",
+      textoConfirmar: "🏆 Liquidar Carrera",
       textoCancelar: "No",
     });
     if (!ok) return;

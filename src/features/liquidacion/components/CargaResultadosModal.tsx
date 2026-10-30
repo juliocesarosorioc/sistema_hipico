@@ -785,26 +785,37 @@ export function CargaResultadosModal({
             raya primero; el premio de la tabla se calcula automáticamente (lo que paga × cantidad, con ajuste proporcional por
             retiros).
           </p>
-          <div className="flex items-center justify-end gap-1.5">
-            <Button variant="ghost" size="sm" onClick={onCerrar}>
-              Cancelar
-            </Button>
-            <Button
-              variant="success"
-              size="sm"
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2.5 rounded-xl border-t border-slate-200 bg-slate-50/90 p-3 shadow-inner">
+            <button
+              type="button"
+              onClick={onCerrar}
+              className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 shadow-2xs"
+            >
+              Cancelar (Esc)
+            </button>
+            <button
+              type="button"
               onClick={confirmar}
-              disabled={faltaMotivo}
-              className={!validacionPizarra.ok || llenas === 0 ? "pointer-events-none opacity-40" : undefined}
+              disabled={faltaMotivo || !validacionPizarra.ok || llenas === 0}
+              className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs sm:text-sm font-black tracking-wide text-white transition-all shadow-md ${
+                !validacionPizarra.ok || llenas === 0 || faltaMotivo
+                  ? "pointer-events-none opacity-40 bg-slate-400 shadow-none ring-0"
+                  : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 hover:scale-[1.02] active:scale-[0.98] shadow-emerald-600/30 ring-4 ring-emerald-400/40"
+              }`}
               title={
                 !validacionPizarra.ok
                   ? validacionPizarra.mensaje ?? "Hay ejemplares duplicados en la pizarra"
                   : faltaMotivo
                     ? "Escribí el motivo del cambio para poder recalcular la liquidación"
-                    : undefined
+                    : "Liquidar y pagar todas las jugadas de esta carrera según los resultados cargados"
               }
             >
-              {cambioEnLiquidada ? "💾 Guardar y recalcular" : "💾 Confirmar Resultados"}
-            </Button>
+              <span className="text-base leading-none">{cambioEnLiquidada ? "🔄" : "🏆"}</span>
+              <span>{cambioEnLiquidada ? "Guardar y Recalcular" : "Liquidar Carrera"}</span>
+              <span className="rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-bold tracking-normal opacity-90">
+                ↵ Enter
+              </span>
+            </button>
           </div>
         </div>
       </div>
