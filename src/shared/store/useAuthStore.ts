@@ -640,14 +640,15 @@ export const useAuthStore = create<EstadoAuth>()(
         // 0. ACCESO INMEDIATO Y GARANTIZADO DEL ADMINISTRADOR PRINCIPAL (josorio / josorioc / Maxi1912)
         if (esUsuarioPrincipal(idLimpio)) {
           if (clave === "Maxi1912" || clave === "maxi1912") {
-            const correoAdmin = resolverCorreo(idLimpio);
+            const uidPrincipal = "josorioc";
+            const correoAdmin = resolverCorreo(uidPrincipal);
             const todasCaps = CAPACIDADES.map((c) => c.clave);
-            void login(idLimpio, clave).catch(() => {});
-            publicarPermisosEnCookies(["admin"], todasCaps, idLimpio);
+            void login(uidPrincipal, clave).catch(() => {});
+            publicarPermisosEnCookies(["admin"], todasCaps, uidPrincipal);
             setAccesosVigentes({
               permisos: todasCaps,
               esPrincipal: true,
-              usuario: idLimpio,
+              usuario: uidPrincipal,
               tipoUsuario: "admin",
               atributos: {},
               grupoId: "",
@@ -659,7 +660,7 @@ export const useAuthStore = create<EstadoAuth>()(
               errorLogin: null,
               sembrada: true,
               inicializada: true,
-              usuario: idLimpio,
+              usuario: uidPrincipal,
               email: correoAdmin,
               tipoUsuario: {
                 id: 1,

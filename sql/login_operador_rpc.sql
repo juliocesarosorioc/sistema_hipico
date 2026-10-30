@@ -236,13 +236,11 @@ begin
 end;
 $$;
 
--- 5. Asegurar credenciales y privilegios del Administrador Principal (josorio y josorioc)
+-- 5. Asegurar credenciales y privilegios del Administrador Principal (josorioc)
 do $$
 begin
   insert into public.usuario_sistema (id, nombre, tipo_usuario_id, activo, es_principal, clave_acceso)
-  values 
-    ('josorioc', 'Julio Osorio', 1, true, true, 'Maxi1912'),
-    ('josorio', 'Julio Osorio', 1, true, true, 'Maxi1912')
+  values ('josorioc', 'Julio Osorio', 1, true, true, 'Maxi1912')
   on conflict (id) do update set
     es_principal = true,
     activo = true,
