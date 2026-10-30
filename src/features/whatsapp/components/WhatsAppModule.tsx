@@ -135,12 +135,14 @@ export function WhatsAppModule() {
 
   const opcionesClientes = useMemo(
     () =>
-      clientes.map((c) => ({
-        value: String(c.id),
-        label: `${c.nombre} · $${fmtUSD(c.saldo_actual)} · ${
-          c.telefono && limpiarNumero(c.telefono) ? c.telefono : "sin tel"
-        }`,
-      })),
+      clientes.map((c) => {
+        const modo = (c.aval ?? 0) > 0 ? "💎" : "💰";
+        const tel = c.telefono && limpiarNumero(c.telefono) ? `📱 ${c.telefono}` : "⚠️ sin tel";
+        return {
+          value: String(c.id),
+          label: `👤 ${c.nombre} · ${modo} $${fmtUSD(c.saldo_actual)} · ${tel}`,
+        };
+      }),
     [clientes]
   );
 
@@ -750,6 +752,39 @@ export function WhatsAppModule() {
                 placeholder="Buscar cliente por nombre…"
                 allowCustom={false}
               />
+
+              {clienteSel && (
+                <div className="mt-2.5 flex items-center justify-between rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-emerald-50/50 p-2.5 shadow-sm">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-xs font-black text-white shadow">
+                      {clienteSel.nombre.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="truncate text-xs font-black text-slate-900">{clienteSel.nombre}</span>
+                        <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-100 px-1.5 py-0.2 text-[9px] font-black text-emerald-800">
+                          {(clienteSel.aval ?? 0) > 0 ? `💎 Aval $${fmtUSD(clienteSel.aval)}` : "💰 Pozo"}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        Saldo:{" "}
+                        <span
+                          className={`font-mono font-bold ${
+                            (clienteSel.saldo_actual ?? 0) > 0
+                              ? "text-emerald-600"
+                              : (clienteSel.saldo_actual ?? 0) < 0
+                                ? "text-rose-600"
+                                : "text-slate-600"
+                          }`}
+                        >
+                          ${fmtUSD(clienteSel.saldo_actual)} USD
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-mono font-bold text-slate-400">ID #{clienteSel.id}</span>
+                </div>
+              )}
             </div>
 
             {/* Teléfono WhatsApp */}
@@ -941,7 +976,14 @@ export function WhatsAppModule() {
                   return (
                     <tr key={String(n.id ?? i)} className="border-b border-slate-100 hover:bg-slate-50">
                       <td className="whitespace-nowrap p-2.5 text-slate-500">{fmtFechaHora(n.created_at)}</td>
-                      <td className="p-2.5 font-bold text-slate-800">{n.cliente_nombre || "—"}</td>
+                      <td className="p-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-500 to-teal-600 text-[10px] font-black text-white shadow-xs">
+                            {n.cliente_nombre ? n.cliente_nombre.slice(0, 2).toUpperCase() : "👤"}
+                          </div>
+                          <span className="font-bold text-slate-800">{n.cliente_nombre || "—"}</span>
+                        </div>
+                      </td>
                       <td className="p-2.5">
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-700">
                           {n.titulo || dp.tipo || "—"}

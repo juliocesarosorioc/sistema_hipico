@@ -125,7 +125,7 @@ export function iconoModalidadWhatsapp(c: ItemSaldoWhatsapp): string {
   const mod = obtenerModalidadWhatsapp(c);
   if (mod === "pozo") return "💰";
   if (mod === "libre") return "🔓";
-  return "🛡️";
+  return "💎";
 }
 
 /**
@@ -271,14 +271,14 @@ export function generarTextoPrejugadasWhatsapp(params: {
 
 /**
  * Genera el texto para WhatsApp del Reporte de Saldos Actualizados:
- * - Ícono por modalidad: 🛡️ Avalado, 🔓 Libre, 💰 Con Pozo.
+ * - Ícono por modalidad: 💎 Avalado, 🔓 Libre, 💰 Con Pozo.
  * - Oculta siempre los saldos en 0 (`|saldoContable| < 0.01`).
  * - Opciones de filtro:
  *   - `sin_ceros` / `todos`: mayores a 0 y menores a 0 (ocultando los 0).
  *   - `positivos`: solo quienes tengan saldo > 0 (ocultando 0 y < 0).
  *   - `negativos`: solo quienes tengan saldo < 0 (ocultando 0 y > 0).
- * - Regla de Avalados (🛡️): no se expone el cupo de aval como saldo; se muestra
- *   únicamente el ícono 🛡️ y su saldo real (+ o -). Cuando se aproxime a agotar
+ * - Regla de Avalados (💎): no se expone el cupo de aval como saldo; se muestra
+ *   únicamente el ícono 💎 y su saldo real (+ o -). Cuando se aproxime a agotar
  *   su aval, se agrega `Disp. XXXX`.
  */
 export function generarTextoSaldosWhatsapp(params: {
@@ -331,7 +331,7 @@ export function generarTextoSaldosWhatsapp(params: {
   if (params.hipodromo && params.carrera) {
     lineas.push(`${params.hipodromo} · Carrera ${params.carrera}${params.fecha ? ` · ${params.fecha}` : ""}`);
   }
-  lineas.push("🛡️ Avalado · 🔓 Libre · 💰 Pozo");
+  lineas.push("💎 Avalado · 🔓 Libre · 💰 Pozo");
   lineas.push("------------------------------");
 
   const fmtCliente = (c: ItemSaldoWhatsapp, idx: number) => {

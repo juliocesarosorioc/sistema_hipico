@@ -725,9 +725,10 @@ export function ProyeccionesModule() {
                     size="sm"
                     onClick={() => setAbrirGodetModal(true)}
                     className="bg-slate-900 text-amber-400 font-bold text-xs hover:bg-slate-800"
+                    title="Motor IA Godet v3"
                   >
                     <span>🧭</span>
-                    <span>Matriz Godet / MACTOR</span>
+                    <span>Matriz Godet / MACTOR (Motor IA Godet v3)</span>
                   </Button>
                 </div>
               </div>

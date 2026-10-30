@@ -34,7 +34,7 @@ export function infoModalidadJugadorVisual(tipo: "libre" | "pozo" | "aval") {
       return { icono: "💰", etiqueta: "Jugadores con Pozo", desc: "Saldo actual positivo de pozo", badge: "bg-purple-100 text-purple-800 border-purple-300" };
     case "aval":
     default:
-      return { icono: "🛡️", etiqueta: "Jugadores Avalados", desc: "Saldo actual (+ / -) / aval", badge: "bg-emerald-100 text-emerald-800 border-emerald-300" };
+      return { icono: "💎", etiqueta: "Jugadores Avalados", desc: "Saldo actual (+ / -) / aval", badge: "bg-emerald-100 text-emerald-800 border-emerald-300" };
   }
 }
 
@@ -304,7 +304,7 @@ export function ReporteSaldosVisual({
             }`}
             title="Muestra el saldo actual sea positivo o negativo / aval asignado"
           >
-            <span>🛡️</span>
+            <span>💎</span>
             <span>Jugadores Avalados ({clientes.filter((c) => obtenerModalidadJugadorVisual(c) === "aval").length})</span>
           </button>
           <button
@@ -390,7 +390,7 @@ export function ReporteSaldosVisual({
               {fecha ? ` · ${fecha}` : ""}
               {filtroModalidad !== "TODOS" && (
                 <span className="ml-2 inline-flex items-center gap-1 rounded bg-white/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-200">
-                  {filtroModalidad === "AVAL" && "🛡️ Jugadores Avalados (+/-)"}
+                  {filtroModalidad === "AVAL" && "💎 Jugadores Avalados (+/-)"}
                   {filtroModalidad === "LIBRE" && "🔓 Jugadores Libres (+/-)"}
                   {filtroModalidad === "POZO" && "💰 Jugadores con Pozo (> 0)"}
                 </span>
@@ -457,7 +457,7 @@ export function ReporteSaldosVisual({
               </div>
             </div>
             <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-white p-2.5 text-emerald-950 shadow-sm">
-              <span className="text-xl leading-none">🛡️</span>
+              <span className="text-xl leading-none">💎</span>
               <div>
                 <strong className="font-extrabold text-emerald-900 block text-[10px]">Jugadores Avalados</strong>
                 <span className="text-slate-600">Muestra el saldo actual sea positivo o negativo / aval asignado.</span>

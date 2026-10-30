@@ -524,7 +524,7 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
   igual(resMesa.estado.propuestas.length, 0, "la propuesta del ejemplar retirado se elimina de la mesa");
   igual(resMesa.estado.disponibles.PEDRO, 500, "anularJugadasMesaPorRetiro restituye el saldo comprometido a PEDRO");
 
-  // WhatsApp Saldos con íconos de modalidad (🛡️ Avalado, 🔓 Libre, 💰 Pozo), ocultando 0 y mostrando Disp. XXXX
+  // WhatsApp Saldos con íconos de modalidad (💎 Avalado, 🔓 Libre, 💰 Pozo), ocultando 0 y mostrando Disp. XXXX
   const wspSaldos = generarTextoSaldosWhatsapp({
     grupo: "PRINCIPAL",
     filtro: "sin_ceros",
@@ -539,8 +539,8 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
   si(!wspSaldos.includes("CERO"), "WhatsApp Saldos oculta clientes con saldo 0");
   si(wspSaldos.includes("💰 POZO_POS: *+250,00*"), "WhatsApp Saldos muestra ícono 💰 y saldo positivo");
   si(wspSaldos.includes("🔓 LIBRE_NEG: *-80,00*"), "WhatsApp Saldos muestra ícono 🔓 para cliente libre");
-  si(wspSaldos.includes("🛡️ AVAL_HOLGADO: *-100,00*") && !wspSaldos.includes("AVAL_HOLGADO: *-100,00* · Disp."), "WhatsApp Saldos muestra ícono 🛡️ y saldo del avalado sin Disp. cuando no está próximo a agotarse");
-  si(wspSaldos.includes("🛡️ AVAL_POR_AGOTAR: *-850,00* · Disp. 150,00"), "WhatsApp Saldos agrega Disp. XXXX cuando el avalado se aproxima a agotar su aval");
+  si(wspSaldos.includes("💎 AVAL_HOLGADO: *-100,00*") && !wspSaldos.includes("AVAL_HOLGADO: *-100,00* · Disp."), "WhatsApp Saldos muestra ícono 💎 y saldo del avalado sin Disp. cuando no está próximo a agotarse");
+  si(wspSaldos.includes("💎 AVAL_POR_AGOTAR: *-850,00* · Disp. 150,00"), "WhatsApp Saldos agrega Disp. XXXX cuando el avalado se aproxima a agotar su aval");
 }
 
 console.log(`\n${pasan} ok / ${fallan} fallaron`);

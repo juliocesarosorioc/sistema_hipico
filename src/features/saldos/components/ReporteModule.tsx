@@ -106,7 +106,7 @@ export function infoTipoJugador(tipo: TipoJugadorSaldo) {
     default:
       return {
         tipo: "aval" as const,
-        icono: "🛡️",
+        icono: "💎",
         etiqueta: "Jugador Avalado",
         colorTexto: "text-amber-700",
         badgeCls: "bg-amber-100 text-amber-900 border-amber-300",
@@ -908,7 +908,7 @@ export function ReporteModule() {
               className="rounded border border-slate-700 bg-slate-800 px-2 py-1 font-semibold text-white"
             >
               <option value="TODOS">Todos los tipos</option>
-              <option value="AVAL">🛡️ Jugadores Avalados (+/-)</option>
+              <option value="AVAL">💎 Jugadores Avalados (+/-)</option>
               <option value="LIBRE">🔓 Jugadores Libres (+/-)</option>
               <option value="POZO">💰 Jugadores con Pozo (+)</option>
             </select>
@@ -1050,7 +1050,7 @@ export function ReporteModule() {
                   }`}
                   title="Se muestra el saldo actual sea positivo o negativo / aval"
                 >
-                  🛡️ Jugadores Avalados (+/-)
+                  💎 Jugadores Avalados (+/-)
                 </button>
                 <button
                   type="button"
@@ -1189,7 +1189,7 @@ export function ReporteModule() {
                   </div>
                 </div>
                 <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-950/40 p-2.5">
-                  <span className="text-lg shrink-0">🛡️</span>
+                  <span className="text-lg shrink-0">💎</span>
                   <div>
                     <div className="text-xs font-black text-amber-300 uppercase">Jugadores Avalados</div>
                     <p className="text-[11px] text-amber-200/80 mt-0.5">
@@ -1294,7 +1294,7 @@ export function ReporteModule() {
                         return (
                           <div className="flex items-center gap-1.5">
                             <span title={meta?.etiqueta} className="text-sm shrink-0">
-                              {meta?.icono ?? "🛡️"}
+                              {meta?.icono ?? "💎"}
                             </span>
                             <span className="truncate">{row.cliente}</span>
                           </div>
@@ -1569,7 +1569,7 @@ export function ReporteModule() {
                 <span>🔓</span> <b>Jugadores Libres:</b> Saldo actual (+/-) libre
               </span>
               <span className="inline-flex items-center gap-1 font-semibold">
-                <span>🛡️</span> <b>Jugadores Avalados:</b> Saldo actual (+/-) / aval
+                <span>💎</span> <b>Jugadores Avalados:</b> Saldo actual (+/-) / aval
               </span>
               <span className="inline-flex items-center gap-1 font-semibold">
                 <span>💰</span> <b>Jugadores con Pozo:</b> Saldo actual (+) de pozo

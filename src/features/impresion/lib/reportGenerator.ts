@@ -772,7 +772,9 @@ export function relacionResultados(
 
 export function reporteDisponibilidad(clientes: SaldoCliente[]): string {
   const cabe = `🏇🏆 TERCIOS DISPONIBLE 🏆🏇`;
-  const listado = clientes.map((c) => `${String(c.nombre ?? "—")}\t${fmtMiles(num(c.saldo))}`).join("\n");
+  const listado = clientes
+    .map((c, i) => `${i + 1}) 👤 ${String(c.nombre ?? "—")}\t${fmtMiles(num(c.saldo))}`)
+    .join("\n");
   return [cabe, "", listado].join("\n");
 }
 
