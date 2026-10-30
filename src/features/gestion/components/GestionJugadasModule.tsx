@@ -36,6 +36,7 @@ import { useConfirmar } from "@/shared/store/useConfirmStore";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo, nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { CargaResultadosModal, type PizarraResultados } from "@/features/liquidacion/components/CargaResultadosModal";
+import { GuiaInteractivaOperador } from "@/features/gestion/components/GuiaInteractivaOperador";
 import { SemaforoCarreras } from "@/features/gestion/components/SemaforoCarreras";
 import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
@@ -432,6 +433,8 @@ export function GestionJugadasModule() {
   const [mostrarPreliminarResultado, setMostrarPreliminarResultado] = useState(false);
   const [mostrarHistorial, setMostrarHistorial] = useState(false);
   const [mostrarReporteLiquidacion, setMostrarReporteLiquidacion] = useState(false);
+  const [modalDecisionPostCierre, setModalDecisionPostCierre] = useState(false);
+  const [guiaOperadorAbierta, setGuiaOperadorAbierta] = useState(false);
   const [modalResultados, setModalResultados] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
   /** Abre el Reporte de Liquidación recién al cerrar «Registrar y Finalizar». */
@@ -4630,6 +4633,14 @@ const hipodromosDelDia = useMemo(() => {
           >
             🧾 Reporte Final
           </button>
+          <button
+            type="button"
+            onClick={() => setGuiaOperadorAbierta(true)}
+            title="Guía Interactiva para Operadores: Aprende cómo registrar jugadas, liquidar y operar la taquilla"
+            className={`${BTN_BARRA} bg-indigo-700 text-indigo-50 hover:bg-indigo-600 font-black shadow-sm`}
+          >
+            🎓 Guía Operador
+          </button>
           {(carreraLiquidada || pizarraCentral) && !reapertura && (
             <button
               type="button"
@@ -4857,6 +4868,7 @@ const hipodromosDelDia = useMemo(() => {
         onCerrar={() => {
           setMostrarReporteLiquidacion(false);
           setModoExclusivoReporte(false);
+          setModalDecisionPostCierre(true);
         }}
         hipodromoInicial={hipodromo}
         carreraInicial={carrera}
@@ -4968,6 +4980,66 @@ const hipodromosDelDia = useMemo(() => {
           }
         }}
       />
+
+      {/* 🎓 Guía Interactiva del Operador */}
+      <GuiaInteractivaOperador
+        abierto={guiaOperadorAbierta}
+        onCerrar={() => setGuiaOperadorAbierta(false)}
+        nombreOperador={usuarioVigente()}
+      />
+
+      {/* 🏁 Modal de Decisión Post-Cierre de Resultados de Carrera */}
+      {modalDecisionPostCierre && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 text-white shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600/30 text-2xl border border-indigo-500/30">
+                🏁
+              </span>
+              <div>
+                <h3 className="text-base font-black text-white">Carrera {carrera} Finalizada</h3>
+                <p className="text-xs text-slate-400">{nombreHipodromo} — {fecha}</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-200 font-semibold leading-relaxed">
+              ¿Desea salir y registrar carrera nueva o corregir carrera?
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setModalDecisionPostCierre(false);
+                  setAviso("🔧 Regresando con las opciones vigentes de la carrera para corrección.");
+                }}
+                className="flex items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs font-black text-amber-300 hover:bg-amber-500/20 transition"
+              >
+                <span>🔧</span>
+                <span>Corregir carrera</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setModalDecisionPostCierre(false);
+                  // Limpiar parámetros para registrar carrera nueva
+                  setCarrera((prev) => prev + 1);
+                  setCarreraConfirmada(true);
+                  setJugadasPorCarrera([]);
+                  setRetirados("");
+                  setObservaciones("");
+                  setAviso(`✨ Parámetros limpios. Listo para registrar nueva carrera (C${carrera + 1}).`);
+                }}
+                className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-xs font-black text-white hover:bg-indigo-500 transition shadow-lg shadow-indigo-600/30"
+              >
+                <span>➕</span>
+                <span>Salir y nueva</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Registrar y Finalizar (Ctrl+R) */}
       {modalFinalizar && (
