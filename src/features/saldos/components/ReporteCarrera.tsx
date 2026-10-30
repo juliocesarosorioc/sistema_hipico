@@ -45,6 +45,8 @@ export type JugadaVivo = {
   esAdelantada?: boolean;
   /** true cuando el ejemplar de la jugada fue retirado oficialmente. */
   esRetirado?: boolean;
+  /** true cuando el resultado es empate o nulo (ej. 2N..5N) y no un retiro. */
+  esEmpateNini?: boolean;
   /** true cuando una Marca no se decidió en la pizarra oficial. */
   sinDecision?: boolean;
   /** Hora de carga de la jugada (HH:mm). */
@@ -220,7 +222,7 @@ function TablaJugadas({
           const aposto1Num = typeof j.aposto === 'number' ? j.aposto : parseFloat(String(j.aposto ?? '').replace(',', '.')) || 0;
           const jugoStr = String(j.jugo ?? "").trim();
           const involucraRetirado = Boolean(
-            j.esRetirado ||
+            (j.esRetirado && !j.esEmpateNini && !j.sinDecision) ||
               (retirados && retirados.length > 0 && jugadaInvolucraRetirado(j.caballo, null, jugoStr, retirados))
           );
           const res1 = involucraRetirado

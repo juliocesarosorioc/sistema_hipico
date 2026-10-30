@@ -481,12 +481,11 @@ export async function aplicarLiquidacionSaldos(
 
   const decidibles = decisiones.filter((d) => !d.res.indeterminado);
   const updates: Promise<unknown>[] = decidibles.map(({ fila, res }) => {
-    // ANULADA: el motor devolvió el capital (ok:false con totalClienteNeto > 0
-    // = monto). Se marca "Retirado" (ni ganador ni perdedor) y se le DEVUELVE el
-    // capital al cliente. Antes caía en "Perdedor" con premio 0 y el cliente
-    // perdía su dinero en una jugada que la casa anuló.
+    // ANULADA / EMPATE: el motor devolvió el capital (ok:false con totalClienteNeto > 0
+    // = monto). Se marca "Retirado" ÚNICAMENTE si el ejemplar fue retirado en la pizarra.
+    // Si corrió y quedó en puesto nulo (empate NINI / devolución), se marca "Anulada"
+    // con premio_pagar = totalClienteNeto para reflejar el reembolso del capital sin falso retiro.
     const esAnulada = !res.ok && res.totalClienteNeto > 0;
-    const estado = esAnulada ? "Retirado" : res.ok ? "Ganador" : "Perdedor";
     const retiradosPizarra = Array.isArray((input.pizarra as Record<string, unknown>)?.retirados)
       ? ((input.pizarra as { retirados?: Array<string | number> }).retirados ?? [])
       : [];
@@ -494,6 +493,7 @@ export async function aplicarLiquidacionSaldos(
       esAnulada &&
       retiradosPizarra.length > 0 &&
       jugadaInvolucraRetirado(fila.caballo, fila.ejemplar_numero, fila.nombre_jugada, retiradosPizarra);
+    const estado = esPorRetirado ? "Retirado" : esAnulada ? "Anulada" : res.ok ? "Ganador" : "Perdedor";
     // premio_pagar / monto_decidido = PREMIO BRUTO (capital + ganancia ANTES de
     // comisión), que es la convención de TODO el sistema:
     //   · la liquidación legacy (marcas_venta.sql: premio_pagar = v_bruto;
@@ -503,11 +503,12 @@ export async function aplicarLiquidacionSaldos(
     //   · el reporte de liquidación (reportes.ts: lee premio_pagar como bruto),
     //   · el mensaje de resultados del grupo (reportGenerator.mapearJugada →
     //     balanceJugada trata premio_pagar como el premio bruto).
-    // Guardar aquí el NETO rompía todo eso: el "Consigue" del mensaje del grupo
-    // (que relee la BD) pagaba de menos toda la comisión y el banquero cobraba/
-    // pagaba de menos. El ABONO al saldo del ganador SÍ es neto
-    // (totalClienteNeto): es el dinero que recibe en mano.
-    const premioPagar = res.ok ? sumarDinero(res.totalClienteNeto, res.gananciaCasa) : 0;
+    // Para jugadas anuladas/empate, premio_pagar = totalClienteNeto (devolución del capital).
+    const premioPagar = res.ok
+      ? sumarDinero(res.totalClienteNeto, res.gananciaCasa)
+      : esAnulada
+      ? res.totalClienteNeto
+      : 0;
     const montDecidido = premioPagar;
     const credito = res.ok || esAnulada ? res.totalClienteNeto : 0;
 

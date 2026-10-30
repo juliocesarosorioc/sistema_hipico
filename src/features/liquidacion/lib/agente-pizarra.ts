@@ -97,9 +97,11 @@ export function pizarraDeLlegada(llegada: string[]): PizarraCarrera {
   return pizarraDesdeNums(llegada);
 }
 
-/** Bloque final `*💰 SALDOS*` del mensaje de WhatsApp (saldos reales ya actualizados). */
+/** Bloque final `*💰 SALDOS*` del mensaje de WhatsApp (saldos reales ya actualizados).
+ * Regla estricta: sólo incluye clientes con saldo DIFERENTE de 0 (se omiten los que tienen 0). */
 export function bloqueSaldos(saldos: Record<string, number>): string {
   const filas = Object.entries(saldos)
+    .filter(([, saldo]) => Math.abs(Number(saldo) || 0) >= 0.01)
     .sort(([a], [b]) => a.localeCompare(b, "es"))
     .map(([nombre, saldo], i) => `${i + 1}) ${nombre} ${fmtMonto(saldo)}`);
   return ["*💰 SALDOS*", ...(filas.length ? filas : ["-"])].join("\n");

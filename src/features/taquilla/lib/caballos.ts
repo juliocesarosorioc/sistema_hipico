@@ -67,15 +67,25 @@ export function topesPermitidos(
 ): Set<string> {
   const registrados = numerosDeLaCarrera(caballos);
   const fuera = new Set<string>();
+  const visible = Number(maximoVisible ?? 0);
+
   if (registrados.length > 0) {
     for (const n of registrados) fuera.add(n);
+    if (Number.isFinite(visible) && visible > 0) {
+      for (let i = 1; i <= visible; i++) fuera.add(String(i));
+    }
+    // Si la lista de registrados es muy reducida (≤ 4 ejemplares, típicamente una tabla parcial),
+    // permitir también el rango estándar de taquilla (1..16) para no bloquear apuestas legítimas
+    if (registrados.length <= 4) {
+      const tope = Math.max(TOPE_SIN_REGISTRO, visible);
+      for (let i = 1; i <= tope; i++) fuera.add(String(i));
+    }
     return fuera;
   }
 
-  // Sin lista de participated: se admite el rango, salvo que la carrera
-  // cargada muestre mas de 16 caballos, en cuyo caso manda ese maximo.
+  // Sin lista de participantes: se admite el rango, salvo que la carrera
+  // cargada muestre más de 16 caballos, en cuyo caso manda ese máximo.
   let tope = TOPE_SIN_REGISTRO;
-  const visible = Number(maximoVisible ?? 0);
   if (Number.isFinite(visible) && visible > tope) tope = visible;
   for (let i = 1; i <= tope; i++) fuera.add(String(i));
   return fuera;

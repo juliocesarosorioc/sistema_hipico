@@ -105,8 +105,7 @@ export function WidgetAsistenteIa() {
           reporteWhatsapp: textoReporte,
         },
       ]);
-      setAbierto(true);
-      setPestana("chat");
+      // NO abrir automáticamente el asistente cuando se liquida desde otro modal
     };
 
     window.addEventListener("agente-ia-reporte-generado", onReporteGenerado);

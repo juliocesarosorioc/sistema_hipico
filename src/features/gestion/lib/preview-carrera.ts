@@ -432,9 +432,10 @@ function filaDesdePersistida(
     sinDecision = true;
   }
   // Si hay pizarra oficial (o si el ticket quedó con estado "Perdedor" pero premio_pagar === monto),
-  // en el empate NINI ni gana ni pierde nadie (0 / 0 = Retirado/Empate).
+  // en el empate NINI ni gana ni pierde nadie (0 / 0 = Empate/Devolución de Capital).
+  // NUNCA debe marcarse como "Retirado" porque el ejemplar SÍ corrió.
   let esEmpateNini = false;
-  if (!anulada && (estado === "Ganador" || estado === "Perdedor") && esJugadaDeTaquilla(nombreJug)) {
+  if (!anulada && (estado === "Ganador" || estado === "Perdedor" || estado === "Retirado" || estado === "Pendiente") && esJugadaDeTaquilla(nombreJug)) {
     if (pizarraPuestos && pizarraPuestos.length > 0 && caballo) {
       const idx = pizarraPuestos.findIndex((p) => String(p).trim() === caballo);
       const pos = idx >= 0 ? idx + 1 : 99;
@@ -445,16 +446,16 @@ function filaDesdePersistida(
         comisionPct > 0 ? comisionPct : 5
       );
       if (r && !r.ok && Math.abs(r.totalClienteNeto - monto) < 0.01) {
-        estado = "Retirado";
+        estado = "Anulada";
         esEmpateNini = true;
       }
     } else if (
-      estado === "Perdedor" &&
+      (estado === "Perdedor" || estado === "Retirado") &&
       monto > 0 &&
       Math.abs(NUM(j.premio_pagar) - monto) < 0.01 &&
       /\b[2345]N\b/i.test(nombreJug)
     ) {
-      estado = "Retirado";
+      estado = "Anulada";
       esEmpateNini = true;
     }
   }

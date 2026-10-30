@@ -291,15 +291,6 @@ export function GestionJugadasModule() {
     setJugadasPorCarrera([]);
   }, [hipodromo, fecha]);
 
-  /** Opciones del Autocomplete CLIENTE 1/CLIENTE 2 (value = nombre real en BD). */
-  const opcionesClientes = useMemo(
-    () =>
-      [...new Map(clientes.map((c) => [String(c.nombre).trim().toUpperCase(), c])).values()]
-        .map((c) => ({ value: String(c.nombre), label: String(c.nombre) }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
-    [clientes]
-  );
-
   // Registro de clientes con saldos (validación inline CLIENTE 1 / CLIENTE 2)
   const [gruposMapa, setGruposMapa] = useState<Record<string, boolean>>({});
   /** Grupos de venta completos: fuente de la comisión de las jugadas entre tercios. */
@@ -713,6 +704,15 @@ const hipodromosDelDia = useMemo(() => {
     return filtrados;
   }, [clientes, grupoSesion, gruposVenta]);
 
+  /** Opciones del Autocomplete CLIENTE 1/CLIENTE 2 aisladas estrictamente al grupo activo. */
+  const opcionesClientes = useMemo(
+    () =>
+      [...new Map(clientesDelGrupo.map((c) => [String(c.nombre).trim().toUpperCase(), c])).values()]
+        .map((c) => ({ value: String(c.nombre), label: String(c.nombre) }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [clientesDelGrupo]
+  );
+
   const comisionGrupoSesion = comisionJugadasDeGrupo(gruposVenta, grupoSesion);
   const grupoReglasCruce = useMemo(() => {
     const grupo = gruposVenta.find((g) => String(g.id) === String(grupoSesion));
@@ -909,9 +909,30 @@ const hipodromosDelDia = useMemo(() => {
       retirado: Boolean(c.retirado) || retiradosCentral.has(String(c.numero)),
     });
     const central = centralDeCarrera?.caballos ?? [];
-    if (central.length > 0) return central.map((c) => marcar(c, ""));
-    if (tablaDeCarrera?.caballos?.length) return tablaDeCarrera.caballos.map((c) => marcar(c, ""));
-    return [];
+    const base = central.length > 0
+      ? central.map((c) => marcar(c, ""))
+      : (tablaDeCarrera?.caballos?.length ? tablaDeCarrera.caballos.map((c) => marcar(c, "")) : []);
+
+    // Suplementar con ejemplares de la llegada oficial o ganadores para que nunca
+    // queden fuera del padrón ejemplares válidos que cruzaron la meta
+    const existentes = new Set(base.map((c) => String(c.numero).trim()));
+    const deLlegada = [
+      ...(centralDeCarrera?.ganadores ?? []),
+      ...(centralDeCarrera?.orden_llegada_raya ?? []),
+    ];
+    for (const num of deLlegada) {
+      const s = String(num).trim();
+      if (s && !existentes.has(s)) {
+        base.push({
+          numero: s,
+          nombre: `Ejemplar #${s}`,
+          nacionalidad: null,
+          retirado: retiradosCentral.has(s),
+        });
+        existentes.add(s);
+      }
+    }
+    return base;
   }, [tablaDeCarrera, centralDeCarrera]);
 
   const monedaFmt = (n: number): string =>
@@ -1501,7 +1522,7 @@ const hipodromosDelDia = useMemo(() => {
               : f.estado === "Perdedor"
               ? false
               : undefined,
-          esRetirado: f.lado1.estado === "RETIRADO" || f.lado2.estado === "RETIRADO" || f.esEmpateNini,
+          esRetirado: (f.lado1.estado === "RETIRADO" || f.lado2.estado === "RETIRADO") && !f.esEmpateNini,
         }));
     }
     return ticketsDeCarrera;
@@ -1601,8 +1622,11 @@ const hipodromosDelDia = useMemo(() => {
         .filter(Boolean);
       const obsCombinadas = [...obsLimites, observaciones.trim()].filter(Boolean).join("\n") || undefined;
       const saldosFinales: Record<string, number> = {};
-      for (const c of clientes) {
-        saldosFinales[c.nombre] = saldoDeCliente(c);
+      for (const c of clientesDelGrupo) {
+        const s = saldoDeCliente(c);
+        if (Math.abs(s) >= 0.01) {
+          saldosFinales[c.nombre] = s;
+        }
       }
       const msg = construirMensajeResultadosAgente({
         hipodromo: nombreHipodromoParaMostrar(hipodromo),
@@ -1619,21 +1643,10 @@ const hipodromosDelDia = useMemo(() => {
         saldosFinales,
       });
       setMensajeWhatsapp(msg);
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("agente-ia-reporte-generado", {
-            detail: {
-              mensajeWhatsapp: msg,
-              hipodromo: nombreHipodromoParaMostrar(hipodromo),
-              carrera,
-              fecha,
-            },
-          })
-        );
-      }
+      // Liquidación manual desde el modal: NO abrir el widget de IA automáticamente
       return msg;
     },
-    [carrera, clientes, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, observacionesExcesoCarrera, retirados, saldosAjustados, ticketsParaPreliminar]
+    [carrera, clientesDelGrupo, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, observacionesExcesoCarrera, retirados, saldosAjustados, ticketsParaPreliminar]
   );
 
   const totalInvertidoSesion = useMemo(
@@ -2493,13 +2506,35 @@ const hipodromosDelDia = useMemo(() => {
         mensajeResultados: async (_llegada, piz) => {
           limpiarCacheClientesVenta();
           const clientesFrescos = await listarClientesVenta().catch(() => clientes);
+          // Filtrado estricto por grupo activo: PROHIBIDO mezclar clientes de otro grupo
+          const gMatch = gruposVenta.find(
+            (g) =>
+              String(g.id) === String(grupoSesion) ||
+              String(g.nombre).trim().toUpperCase() === String(grupoSesion).trim().toUpperCase()
+          );
+          const idObj = gMatch ? String(gMatch.id).toUpperCase() : grupoSesion ? String(grupoSesion).toUpperCase() : null;
+          const nomObj = gMatch?.nombre ? String(gMatch.nombre).trim().toUpperCase() : grupoSesion ? String(grupoSesion).trim().toUpperCase() : null;
+
+          const clientesFiltrados = idObj
+            ? clientesFrescos.filter((c) => {
+                const cGrupos = (c.grupos ?? []).map((x) => String(x).trim().toUpperCase());
+                const cGrupoId = c.grupo_id != null ? String(c.grupo_id).trim().toUpperCase() : null;
+                if (cGrupoId === idObj || cGrupos.includes(idObj)) return true;
+                if (nomObj && (cGrupoId === nomObj || cGrupos.includes(nomObj))) return true;
+                return false;
+              })
+            : clientesFrescos;
+
           const obsLimites = observacionesExcesoCarrera
             .map((o) => `${o.jugador} hasta ${Math.round(o.montoAceptado * 100) / 100}`)
             .filter(Boolean);
           const obsCombinadas = [...obsLimites, observaciones.trim()].filter(Boolean).join("\n") || undefined;
           const saldosFinales: Record<string, number> = {};
-          for (const c of clientesFrescos) {
-            saldosFinales[c.nombre] = saldoDeCliente(c);
+          for (const c of clientesFiltrados) {
+            const s = saldoDeCliente(c);
+            if (Math.abs(s) >= 0.01) {
+              saldosFinales[c.nombre] = s;
+            }
           }
           return construirMensajeResultadosAgente({
             hipodromo: nombreHipodromoParaMostrar(hipodromo),
@@ -4456,7 +4491,8 @@ const hipodromosDelDia = useMemo(() => {
                                 : null
                               : null,
                             esAdelantada: false,
-                            esRetirado: f.lado1.estado === "RETIRADO" || f.lado2.estado === "RETIRADO" || f.esEmpateNini,
+                            esRetirado: (f.lado1.estado === "RETIRADO" || f.lado2.estado === "RETIRADO") && !f.esEmpateNini,
+                            esEmpateNini: f.esEmpateNini,
                             sinDecision: f.sinDecision,
                           };
                         }),
@@ -4489,7 +4525,8 @@ const hipodromosDelDia = useMemo(() => {
                                 : null
                               : null,
                             esAdelantada: true,
-                            esRetirado: f.lado1.estado === "RETIRADO" || f.lado2.estado === "RETIRADO" || f.esEmpateNini,
+                            esRetirado: (f.lado1.estado === "RETIRADO" || f.lado2.estado === "RETIRADO") && !f.esEmpateNini,
+                            esEmpateNini: f.esEmpateNini,
                             sinDecision: f.sinDecision,
                           };
                         }),

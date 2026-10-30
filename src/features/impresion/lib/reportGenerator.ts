@@ -89,6 +89,8 @@ export type JugadaRelacion = {
    * como ganada o perdida cobraría $ a una jugada aún no decidida.
    */
   ganador?: boolean | "pendiente";
+  /** true cuando la jugada es nula/empate/anulada (nadie gana ni pierde). */
+  anulada?: boolean;
 };
 
 export type SaldoCliente = {
@@ -301,10 +303,11 @@ export type BalanceJugada = {
 export function balanceJugada(j: JugadaRelacion): BalanceJugada {
   const esGanador = j.ganador === true;
   if (
-    !esGanador &&
-    num(j.monto) > 0 &&
-    Math.abs(num(j.premioPotencial) - num(j.monto)) < 0.01 &&
-    /\b[2345]N\b/i.test(String(j.jugada ?? ""))
+    j.anulada ||
+    (!esGanador &&
+      num(j.monto) > 0 &&
+      Math.abs(num(j.premioPotencial) - num(j.monto)) < 0.01 &&
+      /\b[2345]N\b/i.test(String(j.jugada ?? "")))
   ) {
     return {
       jugada: j,
@@ -828,7 +831,8 @@ function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
       : String(r.caballo ?? "").trim();
   const precioPorTablaUnitario = esJugTabla ? extraerPrecioUnitarioTabla(rRec) : undefined;
   const estadoStr = String(r.estado ?? "").trim().toUpperCase();
-  const ganoPorEstado = estadoStr === "GANADOR" || estadoStr === "GANO" || estadoStr === "SOLUCIONADO";
+  const esAnuladaEstado = estadoStr === "ANULADA" || estadoStr === "ANULADO" || r.anulada === true;
+  const ganoPorEstado = !esAnuladaEstado && (estadoStr === "GANADOR" || estadoStr === "GANO" || estadoStr === "SOLUCIONADO");
   return {
     clienteJuega: String(r.cliente_juega_nombre ?? "—"),
     jugada: esJugMarca ? "MARCA" : esJugTabla ? "TABLA FIJA" : esNini ? normalizarNini(jugadaCruda) : jugadaCruda,
@@ -846,7 +850,8 @@ function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
     premioPotencial: num(r.premio_pagar),
     comisionPct: r.comision_porcentaje != null ? num(r.comision_porcentaje) : undefined,
     esAdelantada: esAdelantadaDe(rRec) || esJugMarca || esJugTabla,
-    ganador: num(r.premio_pagar) > 0 || ganoPorEstado,
+    anulada: esAnuladaEstado,
+    ganador: esAnuladaEstado ? false : num(r.premio_pagar) > 0 || ganoPorEstado,
   };
 }
 
