@@ -319,7 +319,7 @@ export function WidgetAsistenteIa() {
 
     rec.onend = () => {
       setEscuchandoVoz(false);
-      const finalLimpio = transcripcionFinal.trim();
+      const finalLimpio = (transcripcionFinal || textoInput).trim();
       if (finalLimpio) {
         handleEnviarMensaje(finalLimpio, true);
       }
