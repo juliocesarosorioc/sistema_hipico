@@ -64,6 +64,7 @@ import {
 import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 import { ModalActualizacionObligatoriaContacto } from "@/features/portal/components/ModalActualizacionObligatoriaContacto";
 import { ModalReportarPagoCliente } from "@/features/portal/components/ModalReportarPagoCliente";
+import { GuiaInteractivaJugador } from "@/features/portal/components/GuiaInteractivaJugador";
 import { MisPagosYComprobantesView } from "@/features/portal/components/MisPagosYComprobantesView";
 import {
   parsearMensajeJugada,
@@ -448,6 +449,23 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
   const [noRelAbierta, setNoRelAbierta] = useState(false);
   // 💳 Reportar Pago / Subir Comprobante
   const [modalReportarPagoAbierto, setModalReportarPagoAbierto] = useState(false);
+  // 🎓 Guía Interactiva del Jugador
+  const [guiaAbierta, setGuiaAbierta] = useState(false);
+
+  useEffect(() => {
+    try {
+      const c = sesion.cliente;
+      const idClave = c?.id || c?.seudonimo || "";
+      if (idClave && typeof window !== "undefined") {
+        const yaCompletada = localStorage.getItem(`portal_guia_completada_${idClave}`);
+        if (!yaCompletada) {
+          setGuiaAbierta(true);
+        }
+      }
+    } catch {
+      /* sinop */
+    }
+  }, [sesion.cliente]);
 
   // Verificación obligatoria de teléfono y correo para la primera vez o jugadores sin datos mínimos
   const [contactoActualizadoLocal, setContactoActualizadoLocal] = useState<boolean>(() => {
@@ -542,6 +560,15 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
           >
             <span>💳</span>
             <span className="hidden sm:inline">Reportar Pago</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setGuiaAbierta(true)}
+            className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-100 transition shadow-sm"
+            title="Guía Interactiva: ¿Cómo funciona mi portal?"
+          >
+            <span>🎓</span>
+            <span className="hidden sm:inline">Guía</span>
           </button>
           <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
             <span className="text-xs">👤</span>
@@ -654,6 +681,14 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
                 >
                   <span>➕</span>
                   <span>Solicitar Incluir Jugada No Relacionada</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGuiaAbierta(true)}
+                  className="flex w-full items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-left text-[11px] font-extrabold text-emerald-800 hover:bg-emerald-100 transition"
+                >
+                  <span>🎓</span>
+                  <span>Guía Interactiva</span>
                 </button>
                 <button
                   type="button"
@@ -796,6 +831,14 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
           onCerrar={() => setNoRelAbierta(false)}
         />
       ) : null}
+
+      {/* 🎓 Guía Interactiva del Jugador */}
+      <GuiaInteractivaJugador
+        abierto={guiaAbierta}
+        onCerrar={() => setGuiaAbierta(false)}
+        clienteId={sesion.cliente.id}
+        nombreJugador={sesion.cliente.nombre || sesion.cliente.seudonimo || "Jugador"}
+      />
 
       {/* Modal Obligatorio de Actualización de Teléfono y Correo la primera vez */}
       {requiereActualizarContacto && (
