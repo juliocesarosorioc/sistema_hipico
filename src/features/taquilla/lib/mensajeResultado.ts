@@ -64,6 +64,7 @@ export type TicketMensaje = {
   cantidadTablas?: number;
   premioPotencial?: number;
   ganador?: boolean;
+  esRetirado?: boolean;
 };
 
 export type OpcionesMensajeResultado = {
@@ -407,6 +408,9 @@ export function veredictoDeJugada(
   dividendos: Record<string, number> | null,
   tasaComision?: number | null
 ): VeredictoJugada {
+  if (t.ganador === true) return "GANA";
+  if (t.ganador === false) return "PIERDE";
+  if (t.esRetirado) return "ANULADA";
   const { res } = resultadoDeJugada(t, pizarra, dividendos, tasaComision);
   if (res.indeterminado) return "PENDIENTE";
   if (res.ok) return "GANA";

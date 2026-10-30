@@ -686,6 +686,28 @@ const hipodromosDelDia = useMemo(() => {
     return g.grupo_id != null ? String(g.grupo_id) : String(g.grupos[0]);
   }, [grupoActivo, clientes]);
 
+  /** Clientes que pertenecen al grupo en que se encuentra la sesión/caja. */
+  const clientesDelGrupo = useMemo(() => {
+    if (!grupoSesion) return clientes;
+    const gMatch = gruposVenta.find(
+      (g) =>
+        String(g.id) === String(grupoSesion) ||
+        String(g.nombre).trim().toUpperCase() === String(grupoSesion).trim().toUpperCase()
+    );
+    const idObj = gMatch ? String(gMatch.id).toUpperCase() : String(grupoSesion).toUpperCase();
+    const nomObj = gMatch?.nombre ? String(gMatch.nombre).trim().toUpperCase() : String(grupoSesion).trim().toUpperCase();
+
+    const filtrados = clientes.filter((c) => {
+      const cGrupos = (c.grupos ?? []).map((x) => String(x).trim().toUpperCase());
+      const cGrupoId = c.grupo_id != null ? String(c.grupo_id).trim().toUpperCase() : null;
+      if (cGrupoId === idObj || cGrupos.includes(idObj)) return true;
+      if (nomObj && (cGrupoId === nomObj || cGrupos.includes(nomObj))) return true;
+      return false;
+    });
+
+    return filtrados;
+  }, [clientes, grupoSesion, gruposVenta]);
+
   const comisionGrupoSesion = comisionJugadasDeGrupo(gruposVenta, grupoSesion);
   const grupoReglasCruce = useMemo(() => {
     const grupo = gruposVenta.find((g) => String(g.id) === String(grupoSesion));
@@ -1464,7 +1486,17 @@ const hipodromosDelDia = useMemo(() => {
           precioTabla: f.precioTabla,
           cantidadTablas: f.cantidadTablas,
           premioPotencial: f.aposto2,
-          ganador: f.estado === "Ganador" ? true : f.estado === "Perdedor" ? false : undefined,
+          ganador:
+            f.lado1.estado === "GANO"
+              ? true
+              : f.lado1.estado === "PERDIO"
+              ? false
+              : f.estado === "Ganador"
+              ? true
+              : f.estado === "Perdedor"
+              ? false
+              : undefined,
+          esRetirado: f.lado1.estado === "RETIRADO" || f.lado2.estado === "RETIRADO" || f.esEmpateNini,
         }));
     }
     return ticketsDeCarrera;
@@ -1478,10 +1510,10 @@ const hipodromosDelDia = useMemo(() => {
         carrera,
         fecha,
         grupo: grupoCabecera,
-        retirados: retirados.trim() || undefined,
+        retirados: retiradosPizarraActual.join(",") || retirados.trim() || undefined,
         tickets: ticketsParaPreliminar,
       }),
-    [carrera, fecha, grupoCabecera, hipodromo, retirados, ticketsParaPreliminar]
+    [carrera, fecha, grupoCabecera, hipodromo, retirados, retiradosPizarraActual, ticketsParaPreliminar]
   );
 
   /**
@@ -1491,26 +1523,62 @@ const hipodromosDelDia = useMemo(() => {
    */
   const saldosAjustados = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const c of clientes) {
+    for (const c of clientesDelGrupo) {
       if (esClienteLibre(c)) continue;
       const d = limiteDeJugar(c);
       if (Number.isFinite(d)) m[c.nombre] = d;
     }
     return m;
-  }, [clientes]);
+  }, [clientesDelGrupo]);
+
+  /** Pizarra efectiva y oficial para generar reportes y mensajes de resultados. */
+  const pizarraEfectiva = useMemo<PizarraResultados | null>(() => {
+    if (ultimaPizarra?.pizarra && posicionesDePizarra(ultimaPizarra.pizarra).length > 0) {
+      return ultimaPizarra;
+    }
+    if (pizarraCentral?.pizarra && posicionesDePizarra(pizarraCentral.pizarra).length > 0) {
+      return pizarraCentral;
+    }
+    if (pizarraPuestosActual.length > 0) {
+      const base = pizarraDePosiciones(pizarraPuestosActual);
+      if (base) {
+        const p: PizarraResultados["pizarra"] = {
+          primero: String(base.primero ?? ""),
+          segundo: base.segundo != null ? String(base.segundo) : undefined,
+          tercero: base.tercero != null ? String(base.tercero) : undefined,
+          cuarto: base.cuarto != null ? String(base.cuarto) : undefined,
+          quinto: base.quinto != null ? String(base.quinto) : undefined,
+          sexto: base.sexto != null ? String(base.sexto) : undefined,
+          septimo: base.septimo != null ? String(base.septimo) : undefined,
+          octavo: base.octavo != null ? String(base.octavo) : undefined,
+          ...(pizarraRayaActual.length > 0 && pizarraRayaActual.join(",") !== pizarraPuestosActual.join(",")
+            ? { primero_raya: String(pizarraRayaActual[0]), orden_llegada_raya: pizarraRayaActual.map(String) }
+            : {}),
+        };
+        return {
+          pizarra: p,
+          empates: [],
+          llenas: pizarraPuestosActual.length,
+          dividendos: ultimaPizarra?.dividendos ?? pizarraCentral?.dividendos ?? null,
+          matrizWps: ultimaPizarra?.matrizWps ?? pizarraCentral?.matrizWps ?? null,
+        };
+      }
+    }
+    return null;
+  }, [ultimaPizarra, pizarraCentral, pizarraPuestosActual, pizarraRayaActual]);
 
   /** Preliminar de Resultados: texto con la pizarra cargada + veredicto GANA/
    *  PIERDE/PENDIENTE por jugada, SIN balance. Si todavía no se cargó la
    *  pizarra (Ctrl+Y) el texto queda vacío y la vista pide cargarla. */
   const preliminarResultadoTexto = useMemo(() => {
-    const pizActiva = ultimaPizarra ?? pizarraCentral;
+    const pizActiva = pizarraEfectiva;
     return pizActiva
       ? mensajePreliminarDeCarrera({
           hipodromo: nombreHipodromoParaMostrar(hipodromo),
           carrera,
           fecha,
           grupo: grupoCabecera,
-          retirados: retirados.trim() || undefined,
+          retirados: retiradosPizarraActual.join(",") || retirados.trim() || undefined,
           pizarra: pizActiva.pizarra,
           dividendos: pizActiva.dividendos ?? null,
           tickets: ticketsParaPreliminar,
@@ -1519,7 +1587,7 @@ const hipodromosDelDia = useMemo(() => {
           observaciones: observaciones.trim() || undefined,
         })
       : "";
-  }, [carrera, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, retirados, saldosAjustados, ticketsParaPreliminar, ultimaPizarra, pizarraCentral]);
+  }, [carrera, comisionNum, fecha, grupoCabecera, hipodromo, observaciones, retirados, retiradosPizarraActual, saldosAjustados, ticketsParaPreliminar, pizarraEfectiva]);
 
   const generarMensajeResultados = useCallback(
     (pizarra: PizarraResultados) => {
@@ -3818,7 +3886,7 @@ const hipodromosDelDia = useMemo(() => {
 
         {/* Visor Interactivo de Reportes WhatsApp (#reporteArea) + Acuse de Recibo */}
         <div id="reporteArea" className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap py-1 scrollbar-thin">
             <button
               type="button"
               onClick={() => {
@@ -3854,7 +3922,7 @@ const hipodromosDelDia = useMemo(() => {
                   hipodromo: nombreHipodromo,
                   carrera,
                   fecha,
-                  retirados: retirados.trim() || undefined,
+                  retirados: retiradosPizarraActual.join(",") || retirados.trim() || undefined,
                   jugadasEnVivo: filasPreviewEnVivo.map((f) => ({
                     juega: f.cliente1,
                     jugada: f.jugada,
@@ -3877,19 +3945,28 @@ const hipodromosDelDia = useMemo(() => {
                 setTextoVisorWhatsapp(txt);
                 setAcuseReciboOperador(false);
               }}
-              className="rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-[11px] font-black text-indigo-800 hover:bg-indigo-100"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-[11px] font-black text-indigo-800 hover:bg-indigo-100"
             >
               📋 Ver Reporte de Prejugadas (Preliminar WhatsApp + Imagen)
             </button>
             <button
               type="button"
               onClick={() => {
-                const txt = preliminarResultadoTexto || planoPreliminarTexto;
+                let txt = preliminarResultadoTexto;
+                if (!txt && pizarraEfectiva) {
+                  txt = generarMensajeResultados(pizarraEfectiva);
+                }
+                if (!txt && mensajeWhatsapp) {
+                  txt = mensajeWhatsapp;
+                }
+                if (!txt) {
+                  txt = planoPreliminarTexto;
+                }
                 setVisorWhatsappTipo("resultados");
                 setTextoVisorWhatsapp(txt);
                 setAcuseReciboOperador(false);
               }}
-              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[11px] font-black text-emerald-800 hover:bg-emerald-100"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-black text-emerald-800 hover:bg-emerald-100"
             >
               🏁 Ver Preliminar de Resultados WhatsApp
             </button>
@@ -3901,7 +3978,7 @@ const hipodromosDelDia = useMemo(() => {
                   hipodromo: nombreHipodromo,
                   carrera,
                   fecha,
-                  clientes: clientes.map((c) => ({
+                  clientes: clientesDelGrupo.map((c) => ({
                     nombre: c.nombre,
                     saldoContable: saldoDeCliente(c),
                     aval: avalDeCliente(c),
@@ -3918,7 +3995,7 @@ const hipodromosDelDia = useMemo(() => {
                 setTextoVisorWhatsapp(txt);
                 setAcuseReciboOperador(false);
               }}
-              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] font-black text-amber-900 hover:bg-amber-100"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] font-black text-amber-900 hover:bg-amber-100"
             >
               💰 Ver Reporte de Saldos Actualizados WhatsApp
             </button>
@@ -3929,7 +4006,8 @@ const hipodromosDelDia = useMemo(() => {
               hipodromo={nombreHipodromo}
               carrera={carrera}
               fecha={fecha}
-              clientes={clientes.map((c) => ({
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-[11px] font-black text-indigo-900 shadow-sm transition hover:bg-indigo-100"
+              clientes={clientesDelGrupo.map((c) => ({
                 id: c.id,
                 nombre: c.nombre,
                 telefono: telefonoMencionCliente(c) || null,
@@ -3960,7 +4038,7 @@ const hipodromosDelDia = useMemo(() => {
                             hipodromo: nombreHipodromo,
                             carrera,
                             fecha,
-                            clientes: clientes.map((c) => ({
+                            clientes: clientesDelGrupo.map((c) => ({
                               nombre: c.nombre,
                               saldoContable: saldoDeCliente(c),
                               aval: avalDeCliente(c),
@@ -3998,7 +4076,7 @@ const hipodromosDelDia = useMemo(() => {
                             hipodromo: nombreHipodromo,
                             carrera,
                             fecha,
-                            clientes: clientes.map((c) => ({
+                            clientes: clientesDelGrupo.map((c) => ({
                               nombre: c.nombre,
                               saldoContable: saldoDeCliente(c),
                               aval: avalDeCliente(c),
@@ -4024,7 +4102,7 @@ const hipodromosDelDia = useMemo(() => {
                       hipodromo={nombreHipodromo}
                       carrera={carrera}
                       fecha={fecha}
-                      clientes={clientes.map((c) => ({
+                      clientes={clientesDelGrupo.map((c) => ({
                         id: c.id,
                         nombre: c.nombre,
                         telefono: telefonoMencionCliente(c) || null,
