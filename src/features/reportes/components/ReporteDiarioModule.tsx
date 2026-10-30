@@ -102,7 +102,7 @@ export function ReporteDiarioModule() {
       hasta,
       hipodromo: hipodromo || null,
       // Solo el super administrador manda el grupo; el resto lo fuerza el servidor.
-      grupoId: veTodos ? grupoActivo ?? null : null,
+      grupoId: veTodos ? grupoActivo ?? null : grupoSesion || null,
       clienteId: clienteId || null,
     });
     if (!r.ok) {

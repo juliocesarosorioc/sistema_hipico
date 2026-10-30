@@ -107,6 +107,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const modoOperador = useAuthStore((s) => s.modoOperador);
   const setModoOperador = useAuthStore((s) => s.setModoOperador);
   const perfiles = useAuthStore((s) => s.perfiles);
+  const veTodosLosGrupos = useAuthStore((s) => s.veTodosLosGrupos);
+  const esPrincipal = useAuthStore((s) => s.esPrincipal);
   const grupoId = useAuthStore((s) => s.grupoId);
   const grupoActivo = useAuthStore((s) => s.grupoActivo);
   const grupoNombre = useAuthStore((s) => s.grupoNombre);
@@ -147,6 +149,10 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
     perfiles.length > 0 &&
     perfiles.every((p) => p.toLowerCase().includes("operador")) &&
     !perfiles.some((p) => p.toLowerCase().includes("admin"));
+
+  // Solo el administrador o principal puede alternar modos de vista. Un operador
+  // entra directo a su interfaz vinculada a su grupo y no ve selectores ni botones de vista.
+  const puedeCambiarVista = Boolean((veTodosLosGrupos || esPrincipal) && !esOperadorFijo);
 
   const [saliendo, setSaliendo] = useState(false);
 
@@ -288,41 +294,41 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
                   </div>
                 ))}
             </div>
-            <div className="border-t border-line bg-gray-50 px-4 py-2 text-[10px] font-semibold text-slate-600">
-              <Link href="/seguridad?pestana=auditoria" className="hover:underline">
-                Ver la auditoría completa →
-              </Link>
-            </div>
+            {puedeCambiarVista && (
+              <div className="border-t border-line bg-gray-50 px-4 py-2 text-[10px] font-semibold text-slate-600">
+                <Link href="/seguridad?pestana=auditoria" className="hover:underline">
+                  Ver la auditoría completa →
+                </Link>
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={() => {
-          if (esOperadorFijo) {
-            router.push("/apuestas");
-            return;
+      {puedeCambiarVista && (
+        <button
+          type="button"
+          onClick={() => {
+            const nuevo = !modoOperador;
+            setModoOperador(nuevo);
+            if (nuevo) {
+              router.push("/apuestas");
+            }
+          }}
+          title={
+            modoOperador
+              ? "Modo Operador Activo: Módulos de Operación Principal y Jugadas vinculados a su grupo. Clic para volver a Vista Completa."
+              : "Cambiar a Vista Operador (ingresa directo a la vista de operador)"
           }
-          const nuevo = !modoOperador;
-          setModoOperador(nuevo);
-          if (nuevo) {
-            router.push("/apuestas");
-          }
-        }}
-        title={
-          modoOperador
-            ? "Modo Operador Activo: Módulos de Operación Principal y Jugadas vinculados a su grupo. Clic para volver a Vista Completa."
-            : "Cambiar a Vista Operador (ingresa directo a la vista de operador)"
-        }
-        className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition-colors ${
-          modoOperador
-            ? "border-amber-500 bg-amber-500/15 text-amber-800 hover:bg-amber-500/25"
-            : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200"
-        }`}
-      >
-        <span>{modoOperador ? "🐎🎲 VISTA: OPERADOR" : "🛡️ VISTA: COMPLETA"}</span>
-      </button>
+          className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition-colors ${
+            modoOperador
+              ? "border-amber-500 bg-amber-500/15 text-amber-800 hover:bg-amber-500/25"
+              : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200"
+          }`}
+        >
+          <span>{modoOperador ? "🐎🎲 VISTA: OPERADOR" : "🛡️ VISTA: COMPLETA"}</span>
+        </button>
+      )}
 
       <SelectorGrupo />
 

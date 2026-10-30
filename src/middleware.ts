@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   esRolCliente,
+  esRolOperadorExclusivo,
+  esRutaPermitidaOperador,
   primeraRutaPermitida,
   rutaPermitida,
 } from "@/features/seguridad/lib/capacidades";
@@ -137,7 +139,14 @@ export function middleware(req: NextRequest) {
     return irA("/portal");
   }
 
-  // 5) Cada ruta exige su capacidad. La decisión la toma `rutaPermitida`, la
+  // 5) Operador exclusivo: sólo puede operar dentro de su grupo y en las rutas de su operativa
+  if (esRolOperadorExclusivo(perfil)) {
+    if (!esRutaPermitidaOperador(pathname)) {
+      return irA("/apuestas");
+    }
+  }
+
+  // 6) Cada ruta exige su capacidad. La decisión la toma `rutaPermitida`, la
   //    MISMA función que usa `RutaProtegida` en el cliente: si las dos capas
   //    decidieran distinto, el usuario vería la página que el middleware dejó
   //    pasar o la redirección que el cliente ya había rechazado.

@@ -201,6 +201,7 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const usuario = useAuthStore((s) => s.usuario);
   const perfiles = useAuthStore((s) => s.perfiles);
   const modoOperador = useAuthStore((s) => s.modoOperador);
   const grupoNombre = useAuthStore((s) => s.grupoNombre);
@@ -338,7 +339,9 @@ export function Sidebar({
         >
           <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
           {esOperador
-            ? "OPERADOR (Apuestas y Reportes)"
+            ? usuario
+              ? `${usuario.toUpperCase()} · ${nombreGrupoCabecera}`
+              : nombreGrupoCabecera
             : perfiles.length
               ? perfiles.join(" · ")
               : "Administrador Principal"}

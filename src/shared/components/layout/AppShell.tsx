@@ -10,7 +10,7 @@ import { ModalConfirmacionYResultado } from "@/shared/components/ui/ModalConfirm
 import { WidgetAsistenteIa } from "@/features/soporte/components/WidgetAsistenteIa";
 import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 import { useAuthStore } from "@/shared/store/useAuthStore";
-import { esRutaPublica } from "@/features/seguridad/lib/capacidades";
+import { esRutaPublica, esRolOperadorExclusivo, esRutaPermitidaOperador } from "@/features/seguridad/lib/capacidades";
 
 const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
 // Las rutas públicas salen de `PUERTAS` (ver `esRutaPublica`). La lista fija
@@ -75,6 +75,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const perfiles = useAuthStore((s) => s.perfiles);
   const permisos = useAuthStore((s) => s.permisos);
+  const modoOperador = useAuthStore((s) => s.modoOperador);
   const inicializada = useAuthStore((s) => s.inicializada);
   const usuario = useAuthStore((s) => s.usuario);
 
@@ -86,8 +87,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
     if (usuario && !ES_PORTAL(pathname) && esRolCliente(perfiles, permisos)) {
       router.replace("/portal");
+      return;
     }
-  }, [inicializada, usuario, pathname, perfiles, permisos, router]);
+    const esOperador = esRolOperadorExclusivo(perfiles, modoOperador);
+    if (usuario && esOperador && !ES_LOGIN(pathname) && !ES_PORTAL(pathname) && !esRutaPermitidaOperador(pathname)) {
+      router.replace("/apuestas");
+    }
+  }, [inicializada, usuario, pathname, perfiles, permisos, modoOperador, router]);
 
   // Estado del menú lateral (paridad con el legacy):
   //   - escritorio: el botón NO lo saca de pantalla, lo deja en RAIL DE ICONOS

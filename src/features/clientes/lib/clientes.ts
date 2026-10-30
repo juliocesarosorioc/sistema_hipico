@@ -464,8 +464,9 @@ export function sinCamposDelPrincipal(
     }
     return patch;
   }
-  const yo = patch.grupo_id || grupoVigente() || grupoActivoVigente();
-  if (yo) return { ...patch, grupo_id: yo };
+  // Aislamiento estricto: un operador NUNCA puede asignar un cliente a un grupo ajeno
+  const miGrupo = grupoVigente() || grupoActivoVigente();
+  if (miGrupo) return { ...patch, grupo_id: miGrupo };
   const { grupo_id: _omitido, ...resto } = patch;
   return resto;
 }

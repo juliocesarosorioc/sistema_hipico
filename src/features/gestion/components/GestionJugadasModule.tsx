@@ -313,6 +313,7 @@ export function GestionJugadasModule() {
     diferenteEjemplar: false,
   });
   const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const miGrupoId = useAuthStore((s) => s.grupoId);
   const veTodosLosGrupos = useAuthStore((s) => s.veTodosLosGrupos);
   const esPrincipal = useAuthStore((s) => s.esPrincipal);
   const usuarioSesion = useAuthStore((s) => s.usuario);
@@ -684,10 +685,11 @@ const hipodromosDelDia = useMemo(() => {
    */
   const grupoSesion = useMemo(() => {
     if (grupoActivo) return String(grupoActivo);
+    if (miGrupoId) return String(miGrupoId);
     const g = clientes.find((c) => c.grupo_id != null || c.grupos.length > 0);
     if (!g) return null;
     return g.grupo_id != null ? String(g.grupo_id) : String(g.grupos[0]);
-  }, [grupoActivo, clientes]);
+  }, [grupoActivo, miGrupoId, clientes]);
 
   /** Clientes que pertenecen al grupo en que se encuentra la sesión/caja. */
   const clientesDelGrupo = useMemo(() => {
