@@ -22,6 +22,8 @@ import { BANCOS_VZLA, formatearCuenta } from "@/shared/lib/vzla";
 
 import { DIAS_SEMANA, etiquetaDia } from "@/features/liquidacion/lib/semana";
 
+import { supabase } from "@/core/supabase";
+
 import {
 
   actualizarGrupo,
@@ -41,7 +43,11 @@ import {
 
   eliminarGrupoRpc,
 
+  emitirGruposActualizados,
+
   errorCargaGrupos,
+
+  invalidarCacheGrupos,
 
   listarClientesLigeros,
 
@@ -368,6 +374,84 @@ export function GruposModule() {
 
 
 
+  useEffect(() => {
+
+    const onActualizados = () => {
+
+      void recargar();
+
+    };
+
+    if (typeof window !== "undefined") {
+
+      window.addEventListener("grupos:actualizados", onActualizados);
+
+      window.addEventListener("focus", onActualizados);
+
+    }
+
+
+
+    let canal: any = null;
+
+    try {
+
+      if (supabase) {
+
+        canal = supabase
+
+          .channel(`grupos-live-${Date.now()}`)
+
+          .on("postgres_changes", { event: "*", schema: "public", table: "grupos_venta" }, () => {
+
+            invalidarCacheGrupos();
+
+            void recargar();
+
+          })
+
+          .subscribe();
+
+      }
+
+    } catch {
+
+      /* sin realtime */
+
+    }
+
+
+
+    return () => {
+
+      if (typeof window !== "undefined") {
+
+        window.removeEventListener("grupos:actualizados", onActualizados);
+
+        window.removeEventListener("focus", onActualizados);
+
+      }
+
+      if (canal) {
+
+        try {
+
+          canal.unsubscribe();
+
+        } catch {
+
+          /* noop */
+
+        }
+
+      }
+
+    };
+
+  }, [recargar]);
+
+
+
   const miembrosDe = useCallback(
 
     (grupoId: string): (ClienteLigero & { adicional: boolean })[] => {
@@ -565,8 +649,10 @@ export function GruposModule() {
 
     toast(`Grupo "${nombre}" creado.`, "success");
 
-    // Propagación reactiva del logo del grupo: cabeceras/reportes al instante.
+    // Propagación reactiva del grupo y su logo: cabeceras/reportes al instante.
     emitirLogosActualizados({ grupoId: "" });
+    invalidarCacheGrupos();
+    emitirGruposActualizados();
 
     setFormNombre("");
 

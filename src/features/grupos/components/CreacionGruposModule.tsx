@@ -24,6 +24,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { Button } from "@/shared/components/ui/Button";
 import { Card } from "@/shared/components/ui/Card";
@@ -36,6 +37,8 @@ import {
   correoDeLogin,
   crearEcosistemaGrupo,
   actualizarGrupo,
+  emitirGruposActualizados,
+  invalidarCacheGrupos,
   porcentajeDeEntrada,
   type EcosistemaGrupoResultado,
   type EcosistemaGrupoEntrada,
@@ -238,6 +241,8 @@ export function CreacionGruposModule() {
         if (r.aviso) toast(r.aviso, "warning");
         // Propagación reactiva: el logo del grupo recién creado aparece ya.
         emitirLogosActualizados({ grupoId: r.grupoId ? String(r.grupoId) : "" });
+        invalidarCacheGrupos(r.grupoId ? String(r.grupoId) : undefined);
+        emitirGruposActualizados({ grupoId: r.grupoId ? String(r.grupoId) : "" });
       } else {
         toast(r.error ?? "No se pudo crear el grupo.", "error");
       }
@@ -357,7 +362,12 @@ export function CreacionGruposModule() {
             (opción “Recuperar clave” del login cambia la contraseña de la cuenta).
           </p>
 
-          <div className="mt-6 flex justify-end gap-3">
+          <div className="mt-6 flex flex-wrap justify-end gap-3">
+            <Link href="/grupos">
+              <Button variant="outline">
+                Ver en Lista de Grupos →
+              </Button>
+            </Link>
             <Button variant="default" onClick={reiniciar}>
               Crear otro grupo
             </Button>

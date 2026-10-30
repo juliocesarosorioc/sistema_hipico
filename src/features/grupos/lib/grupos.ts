@@ -87,10 +87,17 @@ export function limpiarCacheClientesVenta(): void {
   cacheClientesTs = 0;
 }
 
-function invalidarCacheGrupos(): void {
+export function invalidarCacheGrupos(grupoId?: string): void {
   cacheGruposVenta = null;
   cacheGruposAdmin = null;
   limpiarCacheClientesVenta();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("grupos:actualizados", { detail: { grupoId } }));
+  }
+}
+
+export function emitirGruposActualizados(detalle?: { grupoId?: string }): void {
+  invalidarCacheGrupos(detalle?.grupoId);
 }
 
 /** Lista los grupos de venta ACTIVOS (SELECT directo + fallback RPC). */
@@ -128,8 +135,7 @@ export async function listarGruposVenta(): Promise<GrupoVenta[]> {
     return [];
   }
   ultimoErrorGrupos = null;
-  const GRUPOS_AUTORIZADOS = new Set(["ARGENTINA", "MADRID", "ESPARTANOS"]);
-  const activos = grupos.filter((g) => GRUPOS_AUTORIZADOS.has(String(g.nombre || "").trim().toUpperCase())).map((g) => ({ ...g, activo: true }));
+  const activos = grupos.filter((g) => g.activo !== false);
   cacheGruposVenta = activos;
   return activos;
 }
@@ -427,8 +433,6 @@ export async function listarGruposAdmin(force = false): Promise<GrupoRow[]> {
     return [];
   }
   ultimoErrorGrupos = null;
-  const GRUPOS_AUTORIZADOS = new Set(["ARGENTINA", "MADRID", "ESPARTANOS"]);
-  grupos = grupos.filter((g) => GRUPOS_AUTORIZADOS.has(String(g.nombre || "").trim().toUpperCase()));
   cacheGruposAdmin = grupos;
   return grupos;
 }
@@ -1393,6 +1397,7 @@ export async function crearEcosistemaGrupo(
     const inv = await supabase.functions.invoke("crear-grupo", { body: entrada });
     const data = inv.data as Partial<EcosistemaGrupoResultado> | null;
     if (data && typeof data === "object" && data.ok === true) {
+      invalidarCacheGrupos(data.grupoId);
       return data as EcosistemaGrupoResultado;
     }
     if (data && typeof data === "object" && data.ok === false) {

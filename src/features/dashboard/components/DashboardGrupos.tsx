@@ -121,6 +121,13 @@ export function DashboardGrupos() {
 
   useEffect(() => {
     void recargar();
+    const onActualizados = () => {
+      void recargar();
+    };
+    window.addEventListener("grupos:actualizados", onActualizados);
+    return () => {
+      window.removeEventListener("grupos:actualizados", onActualizados);
+    };
   }, [recargar]);
 
   const grupo = useMemo(() => grupos.find((g) => String(g.id) === grupoId) ?? null, [grupos, grupoId]);

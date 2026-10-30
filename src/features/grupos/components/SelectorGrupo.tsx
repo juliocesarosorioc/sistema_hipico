@@ -27,25 +27,31 @@ export function SelectorGrupo() {
   useEffect(() => {
     if (!veTodos) return;
     let vivo = true;
-    listarGruposVenta()
-      .then((g) => {
-        if (!vivo) return;
-        const gruposValidos = g.filter((x) => x.activo !== false);
-        setGrupos(gruposValidos);
-        // Si no hay grupo activo seleccionado o el actual no es válido, seleccionar el grupo principal
-        if (gruposValidos.length > 0) {
-          const actualExiste = gruposValidos.some((x) => String(x.id) === String(grupoActivo));
-          if (!grupoActivo || !actualExiste) {
-            const principal = gruposValidos.find((x) => x.es_principal) || gruposValidos[0];
-            setGrupoActivo(String(principal.id));
+    const cargar = () => {
+      listarGruposVenta()
+        .then((g) => {
+          if (!vivo) return;
+          const gruposValidos = g.filter((x) => x.activo !== false);
+          setGrupos(gruposValidos);
+          // Si no hay grupo activo seleccionado o el actual no es válido, seleccionar el grupo principal
+          if (gruposValidos.length > 0) {
+            const actualExiste = gruposValidos.some((x) => String(x.id) === String(grupoActivo));
+            if (!grupoActivo || !actualExiste) {
+              const principal = gruposValidos.find((x) => x.es_principal) || gruposValidos[0];
+              setGrupoActivo(String(principal.id));
+            }
           }
-        }
-      })
-      .catch(() => {
-        /* sin grupos */
-      });
+        })
+        .catch(() => {
+          /* sin grupos */
+        });
+    };
+
+    cargar();
+    window.addEventListener("grupos:actualizados", cargar);
     return () => {
       vivo = false;
+      window.removeEventListener("grupos:actualizados", cargar);
     };
   }, [veTodos, grupoActivo, setGrupoActivo]);
 
