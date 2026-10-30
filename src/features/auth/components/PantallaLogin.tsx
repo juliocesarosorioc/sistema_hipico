@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { mensajeSinAcceso, useAuthStore } from "@/shared/store/useAuthStore";
 import { pedirRecuperacion, resolverCorreo } from "@/features/auth/lib/sesion";
 import { RateLimiterCliente, sanitizarIdentificador } from "@/shared/lib/security";
-import { RecaptchaWidget } from "@/shared/components/ui/RecaptchaWidget";
+import { CloudflareTurnstileWidget } from "@/shared/components/ui/CloudflareTurnstileWidget";
 import { activarProteccionAntiClonacion } from "@/shared/lib/anti-clonacion";
 
 /**
@@ -361,12 +361,24 @@ export default function PantallaLogin() {
           ) : null}
 
           
-          {/* Verificación reCAPTCHA Anti-Bot */}
-          <div className="flex justify-center my-3">
-            <RecaptchaWidget
+          {/* Verificación de seguridad Anti-Bot Cloudflare Turnstile */}
+          <div className="flex flex-col items-center justify-center my-3 space-y-1.5">
+            <CloudflareTurnstileWidget
               onVerificado={(t) => setRecaptchaToken(t)}
               onExpirado={() => setRecaptchaToken(null)}
             />
+            <div className="flex items-center justify-between w-full max-w-[320px] text-[10px] text-slate-400 px-1">
+              <span className="flex items-center gap-1 font-medium">
+                <span>🛡️</span> Verificación Cloudflare
+              </span>
+              <a
+                href="/verificacion"
+                className="hover:text-[#f38020] hover:underline transition-colors"
+                title="Ver pantalla completa de verificación de seguridad Cloudflare"
+              >
+                Ver pantalla completa ↗
+              </a>
+            </div>
           </div>
           <button
             type="submit"

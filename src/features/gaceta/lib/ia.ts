@@ -16,6 +16,7 @@ import {
   type ReporteReparacion,
 } from "@/features/gaceta/lib/numeros";
 import { armarBloques, consolidarPorNumero, segmentarPorCarreras } from "@/features/gaceta/lib/segmentar";
+import type { CarreraRegistro } from "@/features/gaceta/lib/ui";
 
 export type EjemplarExtraido = {
   numero: string | number;
@@ -37,6 +38,7 @@ export type CarreraExtraida = {
   distancia?: number;
   superficie?: string;
   premio?: number;
+  archivoOrigen?: string;
   ejemplares: EjemplarExtraido[];
 };
 
@@ -582,7 +584,8 @@ export async function transformarGacetaTexto(
   clave: string,
   texto: string,
   onLote?: (hecho: number, total: number) => void,
-  onEstado?: (s: string) => void
+  onEstado?: (s: string) => void,
+  archivoOrigen?: string
 ): Promise<ResultadoGaceta> {
   const diag = { respondio: "", ultimoError: "" };
   let cuotaTotal = false;
@@ -662,6 +665,7 @@ export async function transformarGacetaTexto(
         // (`consolidarPorNumero`), y no una copia que se pueda desviar.
         for (const c of nuevas) {
           normalizarExtraida(c);
+          if (archivoOrigen && !c.archivoOrigen) c.archivoOrigen = archivoOrigen;
           acumuladas.push(c);
         }
         onEstado?.(
@@ -745,7 +749,8 @@ export async function transformarGaceta(
   clave: string,
   imagenes: string[],
   onLote?: (hecho: number, total: number) => void,
-  onEstado?: (s: string) => void
+  onEstado?: (s: string) => void,
+  archivoOrigen?: string
 ): Promise<ResultadoGaceta> {
   const diag = { respondio: "", ultimoError: "" };
   let cuotaTotal = false;
@@ -795,6 +800,11 @@ export async function transformarGaceta(
         }
         try {
           const nuevas = await extraerLote(clave, modelos, lote, etiqueta, diag, onEstado);
+          if (archivoOrigen) {
+            nuevas.forEach((c) => {
+              if (!c.archivoOrigen) c.archivoOrigen = archivoOrigen;
+            });
+          }
           fusionarCarreras(carreras, nuevas);
           lote.forEach((p) => paginasFallidas.delete(p.num));
           onEstado?.(`${etiqueta}: ${nuevas.length} carrera(s). Total acumulado: ${carreras.length}.`);
@@ -878,5 +888,84 @@ export async function transformarGaceta(
       diag: pintarDiag(),
       cuotaTotal,
     };
+  }
+}
+
+/**
+ * Re-verifica una carrera específica con la IA cuando se detectan omisiones o datos incompletos.
+ * Envía una instrucción focalizada de corrección y devuelve la carrera reconstruida.
+ */
+export async function reverificarCarreraConIA(
+  clave: string,
+  carrera: CarreraExtraida | CarreraRegistro,
+  fuenteTexto: string,
+  incidencias: string[],
+  imagenes: string[] = [],
+  onEstado?: (s: string) => void
+): Promise<{ ok: boolean; carrera?: CarreraExtraida; error?: string }> {
+  if (!clave.trim()) {
+    return { ok: false, error: "Falta la clave de Gemini." };
+  }
+
+  const numCarrera = carrera.carrera ?? "N/A";
+  const hipo = String(carrera.hipodromo || "").trim().toUpperCase();
+
+  const instruccionFocalizada = `ATENCIÓN: Se detectó que la CARRERA ${numCarrera} de ${hipo || "la reunión"} se extrajo de manera INCOMPLETA.
+Problemas reportados por el validador:
+${incidencias.map((i) => ` - ${i}`).join("\n")}
+
+INSTRUCCIÓN PRIORITARIA:
+Re-analiza con suma minuciosidad el texto o imágenes adjuntos correspondientes a la CARRERA ${numCarrera}.
+Debes extraer TODOS y cada uno de los ejemplares participantes sin omitir ninguno.
+Asegúrate de incluir:
+ - carrera: ${numCarrera}
+ - hipodromo: "${hipo}"
+ - distancia: número entero en metros (si se lee)
+ - superficie: ARENA, CESPED, FANGO o TAPETA
+ - premio: número si aparece
+ - ejemplares: lista completa con:
+     * numero: número oficial / de gualdrapa
+     * pp: puesto de pista (si se indica)
+     * nombre: nombre exacto en mayúsculas
+     * jockey: nombre del jinete
+     * entrenador: nombre del entrenador
+     * peso: peso en kg o libras asignado
+     * nacionalidad: código de país (VE, USA, etc.)
+Responde ÚNICAMENTE con JSON con formato {"carreras": [...]}.`;
+
+  const diag = { respondio: "", ultimoError: "" };
+  try {
+    const descubiertos = await listaModelosFlash(clave);
+    const modelos = elegirModelos(descubiertos);
+    if (!modelos.length) {
+      return { ok: false, error: "No se encontraron modelos de Gemini disponibles con esta clave." };
+    }
+
+    onEstado?.(`🤖 Re-verificando Carrera ${numCarrera} con IA...`);
+
+    const contenido: ContenidoLote = fuenteTexto && fuenteTexto.trim().length > 100
+      ? { durls: [], texto: `${instruccionFocalizada}\n\n=== DOCUMENTO ORIGINAL ===\n${fuenteTexto}` }
+      : { durls: imagenes, texto: instruccionFocalizada };
+
+    const parte: Parte = {
+      contenido,
+      etiqueta: `Re-verificación C${numCarrera}`,
+      partir: () => null,
+    };
+
+    const res = await extraerParte(clave, modelos, parte, diag, onEstado);
+    if (res && res.length > 0) {
+      // Tomar la carrera correspondiente
+      const encontrada = res.find((c) => numeroDeCarrera(c.carrera) === numeroDeCarrera(numCarrera)) || res[0];
+      normalizarExtraida(encontrada);
+      if (carrera.archivoOrigen && !encontrada.archivoOrigen) {
+        encontrada.archivoOrigen = carrera.archivoOrigen;
+      }
+      return { ok: true, carrera: encontrada };
+    }
+
+    return { ok: false, error: diag.ultimoError || `No se pudo re-extraer la carrera ${numCarrera}.` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

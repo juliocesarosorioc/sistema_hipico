@@ -50,7 +50,7 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
  * `npm run build` + `next start` es el que conserva esta capa de servidor.
  */
 
-const ES_PUBLICA = (p: string) => p === "/login" || p === "/";
+const ES_PUBLICA = (p: string) => p === "/login" || p === "/" || p === "/verificacion";
 
 const BLOQUEAR = (p: string) => {
   return (
@@ -167,5 +167,5 @@ export const config = {
   // `*.cjs`) tienen punto en el nombre. Sin esta entrada, un `GET /algo.sql`
   // se escapaba del middleware por el matcher y lo servía el servidor de
   // archivos en vez de recibir el 403 de `BLOQUEAR`.
-  matcher: ["/((?!login|_next|favicon.ico|.*\\..*).*)", "/:path*\\.(sql|mjs|cjs)"],
+  matcher: ["/((?!login|verificacion|_next|favicon.ico|.*\\..*).*)", "/:path*\\.(sql|mjs|cjs)"],
 };

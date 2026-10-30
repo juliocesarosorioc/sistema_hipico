@@ -22,6 +22,7 @@ export type EjemplarMinimo = { numero?: number | string | null; nombre?: string 
 export type CarreraMinima = {
   carrera: number | string | null;
   hipodromo?: string | null;
+  archivoOrigen?: string | null;
   ejemplares?: EjemplarMinimo[] | null;
   caballos?: EjemplarMinimo[] | null;
 };
@@ -234,6 +235,7 @@ function choqueDeCaballos(a: CarreraMinima | null | undefined, b: CarreraMinima 
  * Une los ejemplares de `origen` dentro de `destino`, sin duplicar por número/nombre.
  */
 function unirEjemplares<T extends CarreraMinima>(destino: T, origen: T): void {
+  if (!destino.archivoOrigen && origen.archivoOrigen) destino.archivoOrigen = origen.archivoOrigen;
   const be = (destino.ejemplares = destino.ejemplares || []);
   const ids = new Set(be.map((e) => String(e?.numero ?? e?.nombre ?? "")));
   for (const e of origen.ejemplares || origen.caballos || []) {

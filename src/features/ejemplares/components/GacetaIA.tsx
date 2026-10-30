@@ -1,13 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CLAVE_GEMINI_KEY,
   transformarGaceta,
   transformarGacetaTexto,
+  reverificarCarreraConIA,
   type CarreraExtraida,
 } from "@/features/gaceta/lib/ia";
+import {
+  validarCarrera,
+  validarLoteCarreras,
+  generarMensajeResumenImportacion,
+  generarMensajeParaAgenteIA,
+  type ReporteValidacionLote,
+  type DiagnosticoCarrera,
+} from "@/features/gaceta/lib/validador";
 import { guardarHistorialGaceta, registrarEjemplares, registrarGacetaEHistorial } from "@/features/gaceta/lib/padron";
 import { sincronizarCarrerasAlCentral, type ResultadoCargaCarrera } from "@/features/carreras/lib/sincronizar";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
@@ -323,6 +332,9 @@ export function GacetaIA() {
    * buzón del Ensamblaje y cuántas del día se mandaron desde la Gaceta.
    */
   const [informeResultado, setInformeResultado] = useState<ResultadoInformeCarga | null>(null);
+  const [archivosSubidos, setArchivosSubidos] = useState<string[]>([]);
+  const [carreraReverificandoIndex, setCarreraReverificandoIndex] = useState<number | null>(null);
+  const [modalMensajeriaAbierto, setModalMensajeriaAbierto] = useState(false);
   const [alertaGacetaPrevia, setAlertaGacetaPrevia] = useState<{
     existe: boolean;
     carreras: number;
@@ -629,6 +641,7 @@ export function GacetaIA() {
     setSeleccionadas(new Set());
     setTextoDocumento("");
     setTextosDocumentos([]);
+    setArchivosSubidos([]);
     setDiag("");
     setEstado("Archivos vaciados. Puede cargar nuevas gacetas.");
   }, []);
@@ -652,6 +665,8 @@ export function GacetaIA() {
       setLeyendo(true);
       setEstado("Leyendo archivos...");
       setDiag("");
+      const nombresNuevos = arr.map((f) => f.name);
+      setArchivosSubidos((prev) => [...new Set([...prev, ...nombresNuevos])]);
       try {
         const baseOrden = paginas.length;
         const nuevas: PaginaGaceta[] = [];
@@ -808,13 +823,18 @@ export function GacetaIA() {
           clave.trim(),
           doc.texto,
           (hecho, total) => setProgreso({ hecho, total }),
-          (s) => setEstado(`${prefijo}${s}`)
+          (s) => setEstado(`${prefijo}${s}`),
+          doc.nombre
         );
         if (resDoc.diag) diags.push(prefijo ? `${prefijo}\n${resDoc.diag}` : resDoc.diag);
         if (resDoc.cuotaTotal) huboCuotaTotal = true;
         if (resDoc.avisoNumeracion) avisosNum.push(`${prefijo}${resDoc.avisoNumeracion}`);
         if (resDoc.ok && resDoc.carreras.length > 0) {
-          carrerasAcumuladas.push(...resDoc.carreras);
+          const carrerasConDoc = resDoc.carreras.map((c) => ({
+            ...c,
+            archivoOrigen: c.archivoOrigen || doc.nombre,
+          }));
+          carrerasAcumuladas.push(...carrerasConDoc);
           archivosTextoExitosos.add(doc.nombre);
         } else if (resDoc.error) {
           ultimoError = resDoc.error;
@@ -828,11 +848,13 @@ export function GacetaIA() {
         .map((p) => p.dataUrl);
 
       if (imgsParaVision.length > 0 && !huboCuotaTotal) {
+        const archivoVision = paginasSel.find((p) => p.archivo)?.archivo;
         const resImg = await transformarGaceta(
           clave.trim(),
           imgsParaVision,
           (hecho, total) => setProgreso({ hecho, total }),
-          (s) => setEstado(s)
+          (s) => setEstado(s),
+          archivoVision
         );
         if (resImg.diag) diags.push(resImg.diag);
         if (resImg.cuotaTotal) huboCuotaTotal = true;
@@ -886,6 +908,7 @@ export function GacetaIA() {
       }
       const lista: CarreraRegistro[] = dedupe.lista.map((c) => ({
         ...c,
+        archivoOrigen: (c as CarreraExtraida).archivoOrigen || undefined,
         // La fecha elegida para la jornada manda sobre fechas inferidas por IA:
         // evita que un encabezado erróneo o histórico desvíe la carrera.
         fecha: fechaDestino,
@@ -1074,6 +1097,124 @@ export function GacetaIA() {
       toast(resto > 0 ? `Carrera eliminada (quedan ${resto}).` : "Registro vacío tras eliminar la carrera.", "info");
     },
     [carreras, toast]
+  );
+
+  // Reporte dinámico de validación y verificación de integridad
+  const reporteValidacion: ReporteValidacionLote = useMemo(() => {
+    const archivosConocidos = archivosSubidos.length
+      ? archivosSubidos
+      : textosDocumentos.length
+      ? textosDocumentos.map((t) => t.nombre)
+      : [...new Set(paginas.map((p) => p.archivo).filter(Boolean) as string[])];
+    return validarLoteCarreras(carreras, archivosConocidos);
+  }, [carreras, archivosSubidos, textosDocumentos, paginas]);
+
+  // Copiar resumen de mensajería para WhatsApp / Operadores
+  const copiarMensajeMensajeria = useCallback(() => {
+    const hiposUnicos = [...new Set(carreras.map((c) => String(c.hipodromo || "")).filter(Boolean))].join(" · ");
+    const texto = generarMensajeResumenImportacion(reporteValidacion, fechaJornada, hiposUnicos);
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard
+        .writeText(texto)
+        .then(() => {
+          toast("📋 Reporte consolidado copiado para WhatsApp / Operadores.", "success");
+        })
+        .catch(() => {
+          toast("No se pudo copiar al portapapeles.", "warning");
+        });
+    }
+  }, [reporteValidacion, fechaJornada, carreras, toast]);
+
+  // Re-verificación puntual con el Agente IA para una carrera con información incompleta
+  const handleReverificarCarrera = useCallback(
+    async (index: number) => {
+      const c = carreras[index];
+      if (!c) return;
+      if (!clave.trim()) {
+        toast("Introduce primero tu clave de Gemini para re-verificar con IA.", "warning");
+        return;
+      }
+      const diag = validarCarrera(c);
+      const incidenciasTexto = diag.incidencias.map((i) => i.mensaje);
+      if (diag.caballosFaltantes.length > 0) {
+        incidenciasTexto.push(`Faltan en la numeración los ejemplares: #${diag.caballosFaltantes.join(", #")}`);
+      }
+
+      // Buscar texto fuente del archivo correspondiente o del documento completo
+      let fuenteTexto = "";
+      if (c.archivoOrigen) {
+        const doc = textosDocumentos.find((d) => d.nombre === c.archivoOrigen);
+        if (doc) fuenteTexto = doc.texto;
+      }
+      if (!fuenteTexto) {
+        fuenteTexto = textoDocumento;
+      }
+
+      let imgsParaCarrera: string[] = [];
+      if (!fuenteTexto || fuenteTexto.trim().length < 100) {
+        imgsParaCarrera = paginas
+          .filter((p) => !c.archivoOrigen || p.archivo === c.archivoOrigen)
+          .map((p) => p.dataUrl);
+      }
+
+      setCarreraReverificandoIndex(index);
+      setEstado(`🤖 Re-verificando Carrera ${c.carrera ?? index + 1} con IA...`);
+      try {
+        const res = await reverificarCarreraConIA(
+          clave.trim(),
+          c,
+          fuenteTexto,
+          incidenciasTexto,
+          imgsParaCarrera,
+          (s) => setEstado(s)
+        );
+
+        if (res.ok && res.carrera) {
+          const nueva = res.carrera;
+          const actualizada: CarreraRegistro = {
+            ...c,
+            hipodromo: nueva.hipodromo || c.hipodromo,
+            distancia: nueva.distancia || c.distancia,
+            superficie: nueva.superficie || c.superficie,
+            premio: nueva.premio || c.premio,
+            archivoOrigen: c.archivoOrigen || nueva.archivoOrigen,
+            ejemplares: nueva.ejemplares.map((e) => ({
+              numero: e.numero,
+              nombre: e.nombre,
+              nacionalidad: e.nacionalidad,
+              jockey: e.jockey,
+              entrenador: e.entrenador,
+              peso: e.peso,
+              medicamento: e.medicamento,
+              implementos: e.implementos,
+              valor: 0,
+              pts: 0,
+            })),
+          };
+
+          setCarreras((prev) => {
+            const nextList = prev.map((item, k) => (k === index ? actualizada : item));
+            persistirRegistro(nextList);
+            return nextList;
+          });
+
+          toast(
+            `✅ Carrera ${c.carrera ?? index + 1} re-verificada con éxito (${actualizada.ejemplares?.length ?? 0} ejemplares).`,
+            "success"
+          );
+          setEstado(`Carrera ${c.carrera ?? index + 1} actualizada con IA.`);
+        } else {
+          toast(`⚠️ No se pudo re-verificar la carrera: ${res.error || "Sin respuesta"}`, "warning");
+          setEstado(`Aviso: ${res.error || "No se pudo re-verificar"}`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast(`❌ Error al re-verificar: ${msg}`, "error");
+      } finally {
+        setCarreraReverificandoIndex(null);
+      }
+    },
+    [carreras, clave, textosDocumentos, textoDocumento, paginas, toast]
   );
 
   // Navegación de teclado tipo planilla sobre los VALORES (Tab/Enter/↑↓),
@@ -1477,6 +1618,111 @@ export function GacetaIA() {
         </section>
       )}
 
+      {/* HERRAMIENTA DE VERIFICACIÓN, VALIDACIÓN Y MENSAJERÍA */}
+      {carreras.length > 0 && (
+        <section
+          className="rounded-2xl border border-indigo-200 bg-white p-4 shadow-xs"
+          aria-label="Validación de Carreras y Mensajería"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 text-base">
+                🔍
+              </span>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                  Herramienta de Verificación y Validación de Gacetas IA
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Auditoría automática de completitud: detecta omisiones de ejemplares, secuencias y carreras entre archivos
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setModalMensajeriaAbierto(true)}
+                className="text-[11px] font-bold"
+              >
+                📱 Ver Desglose y Mensajería ({reporteValidacion.totalArchivos} archivo{reporteValidacion.totalArchivos === 1 ? "" : "s"})
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={copiarMensajeMensajeria}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs"
+              >
+                📋 Copiar Reporte WhatsApp / Operadores
+              </Button>
+            </div>
+          </div>
+
+          {/* Métricas cuantitativas */}
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center">
+              <span className="text-[10px] font-bold uppercase text-slate-500">Archivos Procesados</span>
+              <p className="text-lg font-black text-slate-800">{reporteValidacion.totalArchivos}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2.5 text-center">
+              <span className="text-[10px] font-bold uppercase text-emerald-800">Carreras Completas</span>
+              <p className="text-lg font-black text-emerald-700">{reporteValidacion.carrerasCompletas}</p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2.5 text-center">
+              <span className="text-[10px] font-bold uppercase text-amber-800">Con Observaciones</span>
+              <p className="text-lg font-black text-amber-700">{reporteValidacion.carrerasConAdvertencia}</p>
+            </div>
+            <div className="rounded-xl border border-red-200 bg-red-50/60 p-2.5 text-center">
+              <span className="text-[10px] font-bold uppercase text-red-800">Incompletas / Omisiones</span>
+              <p className="text-lg font-black text-red-700">{reporteValidacion.carrerasIncompletas}</p>
+            </div>
+          </div>
+
+          {/* Desglose rápido por archivo */}
+          {reporteValidacion.desglosePorArchivo.length > 0 && (
+            <div className="mt-3 rounded-xl border border-line bg-surfaceAlt p-2.5 text-xs">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-600">
+                📁 Desglose de Carreras y Caballos por Archivo:
+              </span>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {reporteValidacion.desglosePorArchivo.map((arch, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-2xs"
+                  >
+                    <span className="font-bold text-slate-800">📄 {arch.archivo}:</span>
+                    <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-black text-indigo-700">
+                      {arch.totalCarreras} carrera{arch.totalCarreras === 1 ? "" : "s"}
+                    </span>
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                      {arch.totalCaballos} caballo{arch.totalCaballos === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Alertas de omisión o datos incompletos */}
+          {(reporteValidacion.carrerasIncompletas > 0 || reporteValidacion.carrerasConAdvertencia > 0) && (
+            <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50/90 p-3 text-xs text-amber-900">
+              <div className="flex items-start gap-2">
+                <span className="text-base">⚠️</span>
+                <div className="space-y-1">
+                  <p className="font-black uppercase tracking-wide">
+                    Atención: Se detectó información incompleta o posibles omisiones en carreras
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-amber-800">
+                    Revise las tarjetas destacadas en color rojo/ámbar abajo. Puede escribir o corregir directamente los nombres, presionar <b>➕ Agregar Caballo</b> para sumar participantes omitidos, o usar el botón <b>🤖 Re-verificar IA</b> para que el agente vuelva a examinar la fuente original.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
       {carreras.length > 0 && (
         <div className="rounded-2xl border border-line bg-surface p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1520,6 +1766,8 @@ export function GacetaIA() {
                 onChange={(nc) => setCarreras((prev) => prev.map((x, k) => (k === i ? nc : x)))}
                 onEnviar={(id) => void enviar([carreras[id]])}
                 onEliminar={() => eliminarCarrera(i)}
+                onReverificar={handleReverificarCarrera}
+                reverificando={carreraReverificandoIndex === i}
               />
             ))}
           </div>
@@ -1676,6 +1924,183 @@ export function GacetaIA() {
               >
                 Ir a Apuestas 🐎🎲
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE MENSAJERÍA Y DESGLOSE DETALLADO POR ARCHIVO */}
+      {modalMensajeriaAbierto && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-150"
+        >
+          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl border border-indigo-500/40 bg-white shadow-2xl">
+            {/* Cabecera del modal */}
+            <div className="flex items-center justify-between border-b border-indigo-100 bg-indigo-50/70 px-5 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl">📱</span>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wide text-indigo-950">
+                    Herramienta de Mensajería y Desglose de Archivos
+                  </h3>
+                  <p className="text-[11px] text-indigo-700">
+                    Totalizado consolidado: cantidad de archivos, carreras por archivo y caballos por carrera
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalMensajeriaAbierto(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-indigo-100 hover:text-slate-700"
+                aria-label="Cerrar modal de mensajería"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Contenido scrolleable */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {/* Resumen numérico */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-center">
+                  <span className="text-[10px] font-bold uppercase text-slate-500">📁 Total Archivos</span>
+                  <p className="text-xl font-black text-slate-900">{reporteValidacion.totalArchivos}</p>
+                </div>
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-2 text-center">
+                  <span className="text-[10px] font-bold uppercase text-indigo-800">🏁 Total Carreras</span>
+                  <p className="text-xl font-black text-indigo-700">{reporteValidacion.totalCarreras}</p>
+                </div>
+                <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-2 text-center">
+                  <span className="text-[10px] font-bold uppercase text-sky-800">🐴 Total Caballos</span>
+                  <p className="text-xl font-black text-sky-700">{reporteValidacion.totalCaballos}</p>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-2 text-center">
+                  <span className="text-[10px] font-bold uppercase text-emerald-800">✅ Completas</span>
+                  <p className="text-xl font-black text-emerald-700">{reporteValidacion.carrerasCompletas}</p>
+                </div>
+              </div>
+
+              {/* Desglose por cada archivo */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
+                  📂 Desglose por Archivo de Origen ({reporteValidacion.desglosePorArchivo.length}):
+                </h4>
+                {reporteValidacion.desglosePorArchivo.map((arch, idx) => (
+                  <div key={idx} className="rounded-xl border border-line bg-surfaceAlt p-3.5 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">📄</span>
+                        <span className="text-xs font-black text-slate-900">{arch.archivo}</span>
+                      </div>
+                      <div className="flex gap-1.5 text-[10px]">
+                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-bold text-indigo-800">
+                          {arch.totalCarreras} carrera{arch.totalCarreras === 1 ? "" : "s"}
+                        </span>
+                        <span className="rounded-full bg-slate-200 px-2 py-0.5 font-bold text-slate-700">
+                          {arch.totalCaballos} caballo{arch.totalCaballos === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {arch.carreras.length === 0 ? (
+                      <p className="text-[11px] italic text-slate-400">
+                        No se detectaron carreras directamente asociadas a este archivo.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        {arch.carreras.map((c, k) => {
+                          const d = c.diagnostico;
+                          return (
+                            <div
+                              key={k}
+                              className={`flex items-center justify-between rounded-lg border p-2 text-xs transition-colors ${
+                                d.nivel === "completa"
+                                  ? "border-emerald-200 bg-white"
+                                  : d.nivel === "advertencia"
+                                  ? "border-amber-200 bg-amber-50/60"
+                                  : "border-red-200 bg-red-50/60"
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <span className="font-bold text-slate-800">Carrera {c.carrera}:</span>{" "}
+                                <span className="font-black text-indigo-700">{c.totalCaballos} caballos</span>
+                                {d.incidencias.length > 0 && (
+                                  <p className="truncate text-[9px] text-amber-800 mt-0.5">
+                                    {d.incidencias.map((i) => i.mensaje).join(", ")}
+                                  </p>
+                                )}
+                              </div>
+                              <span
+                                className={`ml-2 shrink-0 rounded px-1.5 py-0.5 text-[9px] font-black uppercase ${
+                                  d.nivel === "completa"
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : d.nivel === "advertencia"
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-red-100 text-red-800"
+                                }`}
+                              >
+                                {d.nivel}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Vista previa del mensaje formateado para mensajería */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    💬 Formato listo para WhatsApp / Telegram / Operadores:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={copiarMensajeMensajeria}
+                    className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 hover:underline"
+                  >
+                    Copiar al portapapeles 📋
+                  </button>
+                </div>
+                <textarea
+                  readOnly
+                  rows={7}
+                  value={generarMensajeResumenImportacion(
+                    reporteValidacion,
+                    fechaJornada,
+                    [...new Set(carreras.map((c) => String(c.hipodromo || "")).filter(Boolean))].join(" · ")
+                  )}
+                  className="w-full rounded-xl border border-line bg-slate-950 p-3 font-mono text-[11px] text-emerald-400 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Pie del modal */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
+              <span className="text-[10px] text-slate-500">
+                Totalizado dinámico en tiempo real según ediciones efectuadas.
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setModalMensajeriaAbierto(false)}
+                >
+                  Cerrar
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={copiarMensajeMensajeria}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                >
+                  📋 Copiar Mensaje WhatsApp
+                </Button>
+              </div>
             </div>
           </div>
         </div>

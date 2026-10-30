@@ -8,6 +8,11 @@ module.exports = {
   content: ["./src/**/*.{ts,tsx,js,jsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["'Inter'", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],
+        heading: ["'Outfit'", "'Inter'", "sans-serif"],
+        mono: ["'JetBrains Mono'", "ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
+      },
       colors: {
         background: colors.gray[50],
         surface: colors.white,

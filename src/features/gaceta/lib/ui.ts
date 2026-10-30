@@ -84,6 +84,7 @@ export type CarreraRegistro = {
   premio?: number;
   ejemplares?: EjemplarEditable[];
   caballos?: EjemplarEditable[];
+  archivoOrigen?: string;
   /** Marcada como enviada al Ensamblaje (persistido en gaceta_registro). */
   enviada?: boolean;
   aplicada?: boolean;

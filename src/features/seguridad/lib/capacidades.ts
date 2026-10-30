@@ -722,6 +722,8 @@ export const PUERTAS: Array<{
   // de un solo uso y vence. La página sola no cambia ninguna contraseña: sin
   // esa sesión, `updateUser()` no tiene a quién y no hace nada.
   { ruta: "/reset-password", publica: true },
+  { ruta: "/verificacion", publica: true },
+  { ruta: "/fuentes", capacidad: "seguridad:ruta_seguridad" },
   // El Portal del Cliente se autentica con SU PROPIO token contra la Edge
   // Function `portal-auth`, no con la sesión de Supabase del staff. Por eso es
   // público: sin `publica: true`, `AuthBootstrap` —que corre en todas las
