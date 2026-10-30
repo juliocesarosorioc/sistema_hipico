@@ -224,7 +224,7 @@ begin
 end;
 $actualizar_yes$;
 
--- 4. Vincular operador ricardogunbold estrictamente al grupo GUN BOLD
+-- 4. Vincular operador ricardogunbold estrictamente al grupo GUN BOLD con clave Ricardo123*
 do $actualizar_ricardo$
 declare
   v_gid uuid;
@@ -235,21 +235,33 @@ begin
   limit 1;
 
   if v_gid is not null then
-    update public.usuario_sistema
-    set grupo_id = v_gid,
-        activo = true
-    where lower(id) = 'ricardogunbold';
+    insert into public.usuario_sistema (id, nombre, tipo_usuario_id, grupo_id, activo, es_principal, clave_acceso)
+    values ('ricardogunbold', 'Ricardo Gun Bold', 2, v_gid, true, false, 'Ricardo123*')
+    on conflict (id) do update set
+      grupo_id = v_gid,
+      activo = true,
+      es_principal = false,
+      clave_acceso = 'Ricardo123*';
   end if;
 end;
 $actualizar_ricardo$;
 
--- 5. Asegurar credenciales y privilegios del Administrador Principal (josorioc)
+-- 5. Asegurar credenciales y privilegios del Administrador Principal (josorio y josorioc)
 do $actualizar_josorioc$
 begin
   update public.usuario_sistema
   set es_principal = true,
       activo = true,
       clave_acceso = 'Maxi1912'
-  where lower(id) = 'josorioc';
+  where lower(id) in ('josorioc', 'josorio');
+
+  insert into public.usuario_sistema (id, nombre, tipo_usuario_id, activo, es_principal, clave_acceso)
+  values 
+    ('josorioc', 'Julio Osorio', 1, true, true, 'Maxi1912'),
+    ('josorio', 'Julio Osorio', 1, true, true, 'Maxi1912')
+  on conflict (id) do update set
+    es_principal = true,
+    activo = true,
+    clave_acceso = 'Maxi1912';
 end;
 $actualizar_josorioc$;

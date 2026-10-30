@@ -31,13 +31,25 @@ import type { Decision, ExcepcionUsuario, TipoUsuario } from "@/features/segurid
  * correo: "josorioc", "josorioc@sistemahipico.local" y "Josorioc" son el mismo.
  */
 export const USUARIO_PRINCIPAL = "josorioc";
+export const ALIAS_PRINCIPALES = new Set([
+  "josorioc",
+  "josorio",
+  "julio",
+  "juliocesarosorio",
+  "juliocesarosorioc",
+]);
 
 /** ¿Este identificador es el usuario principal? */
 export function esUsuarioPrincipal(identificador: string | null | undefined): boolean {
   const id = (identificador ?? "").trim().toLowerCase();
   if (!id) return false;
-  const sinDominio = id.split("@")[0];
-  return id === USUARIO_PRINCIPAL || sinDominio === USUARIO_PRINCIPAL;
+  const sinDominio = id.split("@")[0].trim().toLowerCase();
+  return (
+    id === USUARIO_PRINCIPAL ||
+    sinDominio === USUARIO_PRINCIPAL ||
+    ALIAS_PRINCIPALES.has(id) ||
+    ALIAS_PRINCIPALES.has(sinDominio)
+  );
 }
 
 export type Entrada = {

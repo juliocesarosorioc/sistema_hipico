@@ -637,17 +637,17 @@ export const useAuthStore = create<EstadoAuth>()(
         const idLimpio = (identificador ?? "").trim().toLowerCase().split("@")[0];
         const digitos = (identificador ?? "").replace(/\D/g, "");
 
-        // 0. ACCESO INMEDIATO Y GARANTIZADO DEL ADMINISTRADOR PRINCIPAL (josorioc / Maxi1912)
+        // 0. ACCESO INMEDIATO Y GARANTIZADO DEL ADMINISTRADOR PRINCIPAL (josorio / josorioc / Maxi1912)
         if (esUsuarioPrincipal(idLimpio)) {
-          if (clave === "Maxi1912") {
-            const correoAdmin = resolverCorreo("josorioc");
+          if (clave === "Maxi1912" || clave === "maxi1912") {
+            const correoAdmin = resolverCorreo(idLimpio);
             const todasCaps = CAPACIDADES.map((c) => c.clave);
-            void login("josorioc", clave).catch(() => {});
-            publicarPermisosEnCookies(["admin"], todasCaps, "josorioc");
+            void login(idLimpio, clave).catch(() => {});
+            publicarPermisosEnCookies(["admin"], todasCaps, idLimpio);
             setAccesosVigentes({
               permisos: todasCaps,
               esPrincipal: true,
-              usuario: "josorioc",
+              usuario: idLimpio,
               tipoUsuario: "admin",
               atributos: {},
               grupoId: "",
@@ -659,7 +659,7 @@ export const useAuthStore = create<EstadoAuth>()(
               errorLogin: null,
               sembrada: true,
               inicializada: true,
-              usuario: "josorioc",
+              usuario: idLimpio,
               email: correoAdmin,
               tipoUsuario: {
                 id: 1,
@@ -680,6 +680,34 @@ export const useAuthStore = create<EstadoAuth>()(
             });
             return true;
           }
+        }
+
+        // Operador Gun Bold garantizado (ricardogunbold / Ricardo123*)
+        if (idLimpio === "ricardogunbold" && (clave === "Ricardo123*" || clave === "ricardo123*")) {
+          let gId = "";
+          let gNom = "Gun Bold";
+          if (supabase) {
+            try {
+              const { data: g } = await supabase
+                .from("grupos_venta")
+                .select("id, nombre")
+                .or("nombre.ilike.%gun%bold%,nombre.ilike.%gun%")
+                .maybeSingle();
+              if (g) {
+                gId = String(g.id);
+                gNom = String(g.nombre || "Gun Bold");
+              }
+            } catch {
+              /* fallback */
+            }
+          }
+          get().entrarComoOperadorGrupo({
+            id: "ricardogunbold",
+            nombre: "Ricardo Gun Bold",
+            grupoId: gId,
+            grupoNombre: gNom,
+          });
+          return true;
         }
 
         if (idLimpio === "operador" && (clave === "operador2026" || clave === "operador123" || clave === "123456")) {

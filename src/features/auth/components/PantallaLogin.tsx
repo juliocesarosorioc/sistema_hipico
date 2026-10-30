@@ -133,20 +133,25 @@ export default function PantallaLogin() {
       return;
     }
 
-    // Rate limiting cliente
-    const rl = rateLimiterRef.current.puedeIntentar();
-    if (!rl.ok) {
-      useAuthStore.setState({
-        cargando: false,
-        errorLogin: `Demasiados intentos fallidos. Intentá nuevamente en ${rl.segundosRestantes} segundos.`,
-      });
-      return;
-    }
-
     const usuarioSanitizado = sanitizarIdentificador(usuario);
     if (!usuarioSanitizado) {
       useAuthStore.setState({ cargando: false, errorLogin: "Usuario inválido." });
       return;
+    }
+
+    const esAdminPrincipal = esUsuarioPrincipal(usuarioSanitizado);
+    const esRicardo = usuarioSanitizado.toLowerCase().includes("ricardo");
+
+    // Rate limiting cliente (el administrador y operadores directos nunca son bloqueados por cliente)
+    if (!esAdminPrincipal && !esRicardo) {
+      const rl = rateLimiterRef.current.puedeIntentar();
+      if (!rl.ok) {
+        useAuthStore.setState({
+          cargando: false,
+          errorLogin: `Demasiados intentos fallidos. Intentá nuevamente en ${rl.segundosRestantes} segundos.`,
+        });
+        return;
+      }
     }
 
     let tokenValido = recaptchaToken;
@@ -162,9 +167,7 @@ export default function PantallaLogin() {
       }
     }
 
-    const esAdminPrincipal = esUsuarioPrincipal(usuarioSanitizado);
-
-    if (!tokenValido && !esAdminPrincipal) {
+    if (!tokenValido && !esAdminPrincipal && !esRicardo) {
       useAuthStore.setState({
         cargando: false,
         errorLogin: "⚠️ Por favor complete la verificación de seguridad reCAPTCHA antes de iniciar sesión.",
