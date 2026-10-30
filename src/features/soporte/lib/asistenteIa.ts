@@ -602,7 +602,9 @@ export async function consultarAgenteIaEnVivo(
         respuesta:
           `🚀 **Proceso Completo Automatizado Activado**:\n` +
           `• 🏁 **Apertura de carrera**: C${numCar}${hip ? ` en ${hip.toUpperCase()}` : ""}${esManual ? " (✍️ Modo Manual)" : ""}\n` +
-          (txtJugadas ? `• 🏇 **Jugadas a registrar**:\n\`${txtJugadas}\`\n` : `• 🏇 **Jugadas**: Sin jugadas registradas\n`) +
+          (txtJugadas
+            ? `• 🏇 **Jugadas a registrar**:\n\`${txtJugadas}\`\n`
+            : `• 🏇 **Jugadas**: ⚠️ No hay jugadas por cargar para esta carrera\n`) +
           (numsLlegada.length > 0 ? `• 🏆 **Liquidación oficial**: Pizarra ${numsLlegada.join(" - ")}\n` : "") +
           `• 📲 **Reporte WhatsApp**: Se generará y emitirá automáticamente en este chat con opciones de envío directo por WhatsApp y copia.`,
         resuelto: true,
@@ -658,13 +660,32 @@ export async function consultarAgenteIaEnVivo(
     // 0C. Registro de Jugadas (Manual o Directo a Taquilla)
     const matchRegistroJugada =
       mensaje.match(
-        /(?:registrar|cargar|meter|ingresar)\s+(?:las?\s+)?(?:jugadas?|apuestas?)(?:\s+(?:manual(?:es)?|direct[ao]s?))?[:\s]+([\s\S]+)/i
+        /(?:registrar|cargar|meter|ingresar)\s+(?:las?\s+)?(?:jugadas?|apuestas?)(?:\s+(?:manual(?:es)?|direct[ao]s?))?(?:[:\s]+([\s\S]*))?$/i
       ) ||
       mensaje.match(
-        /(?:jugadas?|apuestas?)(?:\s+(?:manual(?:es)?|direct[ao]s?))?[:\s]+([\s\S]+)/i
+        /(?:jugadas?|apuestas?)(?:\s+(?:manual(?:es)?|direct[ao]s?))?[:\s]+([\s\S]*)$/i
       );
     if (matchRegistroJugada && !textoLimpio.startsWith("bloquear") && !textoLimpio.includes("reglas")) {
-      const txt = matchRegistroJugada[1].trim();
+      const txt = (matchRegistroJugada[1] ?? "").trim();
+      if (!txt) {
+        return {
+          respuesta:
+            `⚠️ **No hay jugadas por cargar**.\n` +
+            `Por favor indica las jugadas que deseas registrar. Por ejemplo:\n` +
+            `• \`Pedro 50 al 3\`\n` +
+            `• \`Carlos 100 ganador 4 contra Juan\`\n` +
+            `• O puedes dictarlas por voz con el botón 🎙️.`,
+          resuelto: true,
+          sugerenciaEscalamiento: false,
+          categoriaDetectada: "duda_plataforma",
+          prioridadDetectada: "baja",
+          rutaNavegacion: "/apuestas",
+          eventoAccion: {
+            accion: "registrar_jugada",
+            texto: "",
+          },
+        };
+      }
       const esDirecto = /\b(direct[ao]s?|autom[aá]tic[ao]s?)\b/i.test(textoLimpio);
       const esManual = /\b(manual(?:es)?)\b/i.test(textoLimpio);
 

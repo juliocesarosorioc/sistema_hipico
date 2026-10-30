@@ -1905,6 +1905,14 @@ const hipodromosDelDia = useMemo(() => {
     const recortes: string[] = [];
     const descontado = new Map<string, number>();
     const filasTrabajo = filasAProcesar ?? filas;
+    const filasConDatos = filasTrabajo.filter(
+      (f) => f.jugada.trim() || f.monto.trim() || f.caballo.trim() || f.cliente1.trim()
+    );
+    if (filasConDatos.length === 0) {
+      setAviso("⚠️ No hay jugadas por cargar.");
+      emitirToast("⚠️ No hay jugadas por cargar.", "warning");
+      return;
+    }
     for (const f of filasTrabajo) {
       if (!f.jugada.trim() && !f.monto.trim()) continue;
       if (!f.caballo.trim() || !/\d/.test(f.caballo)) {
@@ -2087,9 +2095,16 @@ const hipodromosDelDia = useMemo(() => {
     }
     if (n === 0) {
       if (indicesError.length > 0) {
-        setFilas((fs) => fs.map((r, i) => (indicesError.includes(i) ? { ...r, error: errores.find((e) => e.startsWith(`Fila ${i + 1}`)) } : r)));
+        setFilas((fs) => {
+          const base = filasAProcesar ?? fs;
+          return base.map((r, i) => (indicesError.includes(i) ? { ...r, error: errores.find((e) => e.startsWith(`Fila ${i + 1}`)) } : r));
+        });
+        emitirToast(`⚠️ Hay ${indicesError.length} fila(s) con error. Revise los datos para cargar.`, "warning");
+        return setAviso("Carga al menos una jugada válida (JUGADA + MONTO). " + (errores[0] ?? ""));
       }
-      return setAviso("Carga al menos una jugada válida (JUGADA + MONTO). " + (errores[0] ?? ""));
+      setAviso("⚠️ No hay jugadas por cargar.");
+      emitirToast("⚠️ No hay jugadas por cargar.", "warning");
+      return;
     }
     if (modoManual) void consolidarManual();
     if (!jugadasPorCarrera.includes(carrera)) setJugadasPorCarrera((j) => [...j, carrera]);
@@ -2176,7 +2191,8 @@ const hipodromosDelDia = useMemo(() => {
           : `⚠️ Ninguna línea fue legible. ${ilegibles} fila(s) quedaron en rojo — corregí jugada y monto, o escribí el bloque con "JUGADA CABALLO MONTO CLIENTE1 [CLIENTE2]".`
       );
     } else {
-      setAviso("⚠️ Pegá al menos una línea con una jugada para poder poblarla.");
+      setAviso("⚠️ No hay jugadas por cargar.");
+      emitirToast("⚠️ No hay jugadas por cargar.", "warning");
     }
   };
 
@@ -2683,7 +2699,11 @@ const hipodromosDelDia = useMemo(() => {
         }
         case "registrar_jugada": {
           const texto = String(d.texto ?? "").trim();
-          if (!texto) break;
+          if (!texto) {
+            setAviso("⚠️ No hay jugadas por cargar.");
+            emitirToast("⚠️ No hay jugadas por cargar.", "warning");
+            break;
+          }
           if (d.modoManual !== undefined) {
             setModoManual(Boolean(d.modoManual));
           }
@@ -2720,6 +2740,9 @@ const hipodromosDelDia = useMemo(() => {
                 void cargarAtaquilla(filasNuevas, true);
               }, 350);
             }
+          } else {
+            setAviso("⚠️ No hay jugadas por cargar.");
+            emitirToast("⚠️ No hay jugadas por cargar.", "warning");
           }
           break;
         }
@@ -2778,6 +2801,9 @@ const hipodromosDelDia = useMemo(() => {
           if (filasNuevas.length > 0) {
             setFilas(filasNuevas);
             void cargarAtaquilla(filasNuevas, true);
+          } else {
+            setAviso("⚠️ No hay jugadas por cargar en esta carrera.");
+            emitirToast("⚠️ No hay jugadas por cargar en esta carrera.", "info");
           }
 
           const cmdPiz = String(d.comandoPizarra ?? "").trim();
