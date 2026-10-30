@@ -16,6 +16,7 @@ import { DateInput } from "@/shared/components/ui/DateInput";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
+import { claveHipodromo } from "@/features/carreras/lib/claves";
 
 export type CarreraMonitor = {
   id?: string | number;
@@ -78,9 +79,9 @@ export function MonitorHipodromos({
   return (
     <div className={`no-print ${className ?? ""}`}>
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-        <span className="mon-titulo">
-          🏇 Hipódromos del Día
-          <span className="mon-contador">{grupos.length}</span>
+        <span className="mon-titulo inline-flex items-center gap-1.5">
+          <span>🏇 Hipódromos del Día</span>
+          <span className="mon-contador font-mono font-black">{grupos.length}</span>
         </span>
         <div className="flex items-center gap-2">
           <label className="mon-control">
@@ -126,7 +127,7 @@ export function MonitorHipodromos({
       ) : (
         <div className="mon-grid">
 {grupos.map(({ hipodromo, carreras }) => {
-            const activo = filtro === hipodromo;
+            const activo = Boolean(filtro && (filtro === hipodromo || claveHipodromo(filtro) === claveHipodromo(hipodromo)));
             const nombreHipo = nombre(hipodromo);
             return (
               <button

@@ -69,12 +69,104 @@ export type ResCrud = { ok: boolean; error?: string; code?: string; reactivado?:
  *  primera letra en mayúscula. Sigue colapsando espacios y siendo idempotente,
  *  que es de lo que depende la detección de duplicados y la reactivación por
  *  nombre. */
-export function formatearNombre(t: string): string {
-  return String(t || "")
-    .trim()
+/**
+ * Diccionario canónico de hipódromos reconocidos para respetar la redacción
+ * exacta con sus espacios y mayúsculas, incluso si la clave viene pegada
+ * ("GULFSTREAMPARK", "Gulfstreampark") o con variantes ("Hollywood Charles Town").
+ */
+export const NOMBRES_CANONICOS_HIPODROMOS: Record<string, string> = {
+  CHARLESTOWN: "Charles Town",
+  HOLLYWOODCHARLESTOWN: "Charles Town",
+  GULFSTREAM: "Gulfstream Park",
+  GULFSTREAMPARK: "Gulfstream Park",
+  LARINCONADA: "La Rinconada",
+  SANTARITA: "Santa Rita",
+  SANTAANITA: "Santa Anita",
+  SANTAANITAPARK: "Santa Anita",
+  DELMAR: "Del Mar",
+  CHURCHILLDOWNS: "Churchill Downs",
+  BELMONT: "Belmont Park",
+  BELMONTPARK: "Belmont Park",
+  TAMPABAY: "Tampa Bay Downs",
+  TAMPABAYDOWNS: "Tampa Bay Downs",
+  PARX: "Parx Racing",
+  PARXRACING: "Parx Racing",
+  FAIRGROUNDS: "Fair Grounds",
+  GOLDENGATE: "Golden Gate Fields",
+  GOLDENGATEFIELDS: "Golden Gate Fields",
+  PENNNATIONAL: "Penn National",
+  SAMHOUSTON: "Sam Houston",
+  MAHONINGVALLEY: "Mahoning Valley",
+  MOUNTAINEER: "Mountaineer",
+  REMINGTON: "Remington Park",
+  REMINGTONPARK: "Remington Park",
+  TURFWAY: "Turfway Park",
+  TURFWAYPARK: "Turfway Park",
+  OAKLAWN: "Oaklawn Park",
+  OAKLAWNPARK: "Oaklawn Park",
+  MONMOUTH: "Monmouth Park",
+  MONMOUTHPARK: "Monmouth Park",
+  LAUREL: "Laurel Park",
+  LAURELPARK: "Laurel Park",
+  SUNLAND: "Sunland Park",
+  SUNLANDPARK: "Sunland Park",
+  LONESTAR: "Lone Star Park",
+  LONESTARPARK: "Lone Star Park",
+  DELTADOWNS: "Delta Downs",
+  EVANGELINEDOWNS: "Evangeline Downs",
+  COLONIALDOWNS: "Colonial Downs",
+  KENTUCKYDOWNS: "Kentucky Downs",
+  PRESQUEISLE: "Presque Isle Downs",
+  PRESQUEISLEDOWNS: "Presque Isle Downs",
+  CANTERBURYPARK: "Canterbury Park",
+  EMERALDDOWNS: "Emerald Downs",
+  LOSALAMITOS: "Los Alamitos",
+  RANCHOALEGRE: "Rancho Alegre",
+  FINGERLAKES: "Finger Lakes",
+  HORSESHOEINDIANAPOLIS: "Horseshoe Indianapolis",
+  INDIANAGRAND: "Horseshoe Indianapolis",
+  WOODBINE: "Woodbine",
+  KEENELAND: "Keeneland",
+  AQUEDUCT: "Aqueduct",
+  SARATOGA: "Saratoga",
+  VALENCIA: "Valencia",
+  HAWTHORNE: "Hawthorne",
+  PIMLICO: "Pimlico",
+};
+
+/**
+ * Normaliza cualquier variante de un nombre de hipódromo a su redacción propia
+ * canónica (separando palabras pegadas y unificando alias como Hollywood Charles Town).
+ */
+export function normalizarNombreHipodromo(t: unknown): string {
+  const crudo = String(t ?? "").trim();
+  if (!crudo) return "";
+
+  const clave = crudo
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "");
+
+  if (clave.includes("CHARLESTOWN")) {
+    return "Charles Town";
+  }
+  if (clave === "GULFSTREAM" || clave === "GULFSTREAMPARK" || clave.startsWith("GULFSTREAM")) {
+    return "Gulfstream Park";
+  }
+
+  if (NOMBRES_CANONICOS_HIPODROMOS[clave]) {
+    return NOMBRES_CANONICOS_HIPODROMOS[clave];
+  }
+
+  return crudo
     .replace(/\s+/g, " ")
     .toLowerCase()
     .replace(/\b[a-záéíóúñ]|\b\d+\b/g, (m) => m.toUpperCase());
+}
+
+export function formatearNombre(t: string): string {
+  return normalizarNombreHipodromo(t);
 }
 
 /** Distancia de Levenshtein normalizada (0 = igual, 1 = totalmente distinto). */

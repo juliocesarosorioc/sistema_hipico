@@ -12,11 +12,13 @@ import { formatearNombre } from "@/features/hipodromos/lib/tipos";
  * ningún hipódromo del catálogo, se formatea igual el valor crudo (que suele
  * ser la clave normalizada "LARINCONADA" o un tipeo libre).
  */
-export function nombrePropioHipodromo(valor: string | null | undefined, activos: OpcionHipodromo[]): string {
+import { claveHipodromo } from "@/features/carreras/lib/claves";
+
+export function nombrePropioHipodromo(valor: string | null | undefined, activos?: OpcionHipodromo[]): string {
   const v = String(valor ?? "").trim();
   if (!v) return "";
-  const clave = v.toUpperCase();
-  const op = (activos ?? []).find((a) => a.value === clave);
+  const k = claveHipodromo(v);
+  const op = (activos ?? []).find((a) => claveHipodromo(a.value) === k || claveHipodromo(a.label) === k);
   return formatearNombre(op?.label ?? v);
 }
 

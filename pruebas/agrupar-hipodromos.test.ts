@@ -103,5 +103,40 @@ igual(agruparPorHipodromo(mixtas, "2026-10-18", "venta").length, 0, "eje venta: 
 igual(agruparPorHipodromo(mixtas, "2026-10-17", "carrera").length, 0, "eje carrera: el 17 no corre nadie");
 igual(agruparPorHipodromo(mixtas, "", "venta").flatMap((g) => g.carreras).length, 2, "eje venta sin día: TODAS");
 
+console.log("\n== UNIFICACIÓN Y REDACCIÓN CANÓNICA (Gulfstream Park y Charles Town) ==");
+const { claveHipodromo } = require("../src/features/carreras/lib/claves");
+const { formatearNombre, normalizarNombreHipodromo } = require("../src/features/hipodromos/lib/tipos");
+const { nombrePropioHipodromo, nombreHipodromoParaMostrar } = require("../src/features/hipodromos/lib/nombre");
+
+// 1. Unificación canónica de Hollywood Charles Town y Charles Town
+igual(claveHipodromo("Hollywood Charles Town"), "CHARLESTOWN", "Hollywood Charles Town clave es CHARLESTOWN");
+igual(claveHipodromo("Charles Town"), "CHARLESTOWN", "Charles Town clave es CHARLESTOWN");
+igual(claveHipodromo("HOLLYWOOD CHARLES TOWN"), "CHARLESTOWN", "HOLLYWOOD CHARLES TOWN clave es CHARLESTOWN");
+igual(formatearNombre("Hollywood Charles Town"), "Charles Town", "formatearNombre unifica Hollywood Charles Town a Charles Town");
+igual(formatearNombre("Charles Town"), "Charles Town", "formatearNombre mantiene Charles Town");
+igual(nombrePropioHipodromo("HOLLYWOODCHARLESTOWN"), "Charles Town", "nombrePropioHipodromo formatea a Charles Town");
+igual(nombreHipodromoParaMostrar("Hollywood Charles Town"), "Charles Town", "nombreHipodromoParaMostrar unifica a Charles Town");
+
+// 2. Redacción y separación de Gulfstream Park
+igual(claveHipodromo("Gulfstream Park"), "GULFSTREAMPARK", "Gulfstream Park clave es GULFSTREAMPARK");
+igual(claveHipodromo("Gulfstreampark"), "GULFSTREAMPARK", "Gulfstreampark clave es GULFSTREAMPARK");
+igual(claveHipodromo("GULFSTREAM"), "GULFSTREAMPARK", "GULFSTREAM clave es GULFSTREAMPARK");
+igual(formatearNombre("Gulfstreampark"), "Gulfstream Park", "formatearNombre separa Gulfstreampark a Gulfstream Park");
+igual(formatearNombre("GULFSTREAMPARK"), "Gulfstream Park", "formatearNombre separa GULFSTREAMPARK a Gulfstream Park");
+igual(nombrePropioHipodromo("GULFSTREAMPARK"), "Gulfstream Park", "nombrePropioHipodromo devuelve Gulfstream Park con espacio");
+igual(nombreHipodromoParaMostrar("Gulfstreampark"), "Gulfstream Park", "nombreHipodromoParaMostrar devuelve Gulfstream Park");
+
+// 3. Agrupación unificada en agruparPorHipodromo
+const carrerasMixtasCharlesTown: CarreraAgrupable[] = [
+  { hipodromo: "Hollywood Charles Town", carrera: 1, fecha: "2026-10-30" },
+  { hipodromo: "Charles Town", carrera: 2, fecha: "2026-10-30" },
+  { hipodromo: "Gulfstreampark", carrera: 1, fecha: "2026-10-30" },
+  { hipodromo: "Gulfstream Park", carrera: 2, fecha: "2026-10-30" },
+];
+const gruposUnificados = agruparPorHipodromo(carrerasMixtasCharlesTown, "2026-10-30");
+igual(gruposUnificados.map((g) => g.hipodromo), ["CHARLESTOWN", "GULFSTREAMPARK"], "unifica en 2 únicos hipódromos");
+igual(gruposUnificados.find((g) => g.hipodromo === "CHARLESTOWN")?.carreras.map((c) => c.carrera), [1, 2], "carreras 1 y 2 unificadas en Charles Town");
+igual(gruposUnificados.find((g) => g.hipodromo === "GULFSTREAMPARK")?.carreras.map((c) => c.carrera), [1, 2], "carreras 1 y 2 unificadas en Gulfstream Park");
+
 console.log(`\n  ${pasan} ok, ${fallan} fallaron`);
 if (fallan > 0) process.exit(1);

@@ -16,12 +16,60 @@
 
 /** Clave de comparación de hipódromo: mayúsculas, sin espacios redundantes. */
 export function claveHipodromo(v: unknown): string {
-  return String(v ?? "")
+  const s = String(v ?? "")
     .trim()
     .toUpperCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, "");
+  if (!s) return "";
+
+  // Unificaciones canónicas:
+  // "Hollywood Charles Town" y "Charles Town" es lo mismo -> CHARLESTOWN
+  if (s.includes("CHARLESTOWN")) {
+    return "CHARLESTOWN";
+  }
+  // "Gulfstream Park" y "Gulfstream" -> GULFSTREAMPARK
+  if (s === "GULFSTREAM" || s === "GULFSTREAMPARK" || s.startsWith("GULFSTREAM")) {
+    return "GULFSTREAMPARK";
+  }
+  if (s === "BELMONT" || s === "BELMONTPARK") {
+    return "BELMONTPARK";
+  }
+  if (s === "SANTAANITA" || s === "SANTAANITAPARK") {
+    return "SANTAANITA";
+  }
+  if (s === "TAMPABAY" || s === "TAMPABAYDOWNS") {
+    return "TAMPABAYDOWNS";
+  }
+  if (s === "GOLDENGATE" || s === "GOLDENGATEFIELDS") {
+    return "GOLDENGATEFIELDS";
+  }
+  if (s === "PARX" || s === "PARXRACING") {
+    return "PARXRACING";
+  }
+  if (s === "REMINGTON" || s === "REMINGTONPARK") {
+    return "REMINGTONPARK";
+  }
+  if (s === "TURFWAY" || s === "TURFWAYPARK") {
+    return "TURFWAYPARK";
+  }
+  if (s === "OAKLAWN" || s === "OAKLAWNPARK") {
+    return "OAKLAWNPARK";
+  }
+  if (s === "MONMOUTH" || s === "MONMOUTHPARK") {
+    return "MONMOUTHPARK";
+  }
+  if (s === "LAUREL" || s === "LAURELPARK") {
+    return "LAURELPARK";
+  }
+  if (s === "SUNLAND" || s === "SUNLANDPARK") {
+    return "SUNLANDPARK";
+  }
+  if (s === "LONESTAR" || s === "LONESTARPARK") {
+    return "LONESTARPARK";
+  }
+  return s;
 }
 
 /** Número de carrera usable. `0` cuando no lo es (PP, "", null, NaN). */
