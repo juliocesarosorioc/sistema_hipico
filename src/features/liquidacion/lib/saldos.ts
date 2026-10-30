@@ -414,9 +414,9 @@ export async function aplicarLiquidacionSaldos(
         .filter(
           (d) =>
             !d.anulada &&
-            String(d.estado ?? "") === "Anulada" &&
-            NUM(d.premio_pagar) > 0 &&
-            NUM(d.premio_pagar) < NUM(d.monto_jugado) &&
+            !d.anulada_at &&
+            !d.anulada_motivo &&
+            String(d.estado ?? "").toLowerCase().startsWith("anul") &&
             d.id != null
         )
         .map((d) => d.id);

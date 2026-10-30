@@ -546,21 +546,36 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
   igual(filasConRetirado[2].estado, "Retirado", "ticket en sesión con ejemplar retirado también queda como Retirado (Empate)");
   si(!filasConRetirado[2].anulada, "ticket en sesión con ejemplar retirado permanece visible como Empate");
 
-  // Gulfstream Park 6: jugadas explícitamente anuladas (anulada=true o estado="Anulada" con premio_pagar=0),
-  // incluso si son NINI/combinadas o de un ejemplar retirado, quedan siempre con anulada=true para ocultarse de la vista activa.
-  const filasGulfstreamAnuladas = armarFilasPreview(
+  // Gulfstream Park 6: jugadas activas de combinadas (2Y3N, 3Y4N) con la pizarra 2-10-5-12.
+  // 2Y3N (5) en 3° lugar es dos jugadas en una: 2P pierde y 3N empata -> el jugador pierde la mitad y el dador gana la mitad.
+  // NUNCA se anula unilateralmente. Solo se anula si anulada=true administrativamente.
+  const filasGulfstream = armarFilasPreview(
     [
-      persistida({ id: "gp6-1", nombre_jugada: "2P", caballo: "7", monto_jugado: 100, estado: "Retirado", anulada: true }),
-      persistida({ id: "gp6-2", nombre_jugada: "2Y3N", caballo: "4", monto_jugado: 50, estado: "Anulada", anulada: false, premio_pagar: 0 }),
+      persistida({ id: "gp6-1", nombre_jugada: "3Y4N", caballo: "2", monto_jugado: 30, estado: "Pendiente", cliente_juega_nombre: "Ayari", cliente_consigue_nombre: "Gaetano", comision_porcentaje: 5 }),
+      persistida({ id: "gp6-2", nombre_jugada: "2Y3N", caballo: "5", monto_jugado: 60, estado: "Anulada", anulada: false, premio_pagar: 0, cliente_juega_nombre: "Sam", cliente_consigue_nombre: "Camacho", comision_porcentaje: 5 }),
+      persistida({ id: "gp6-3", nombre_jugada: "2Y3N", caballo: "5", monto_jugado: 30, estado: "Pendiente", cliente_juega_nombre: "Sam", cliente_consigue_nombre: "Gaetano", comision_porcentaje: 5 }),
+      persistida({ id: "gp6-4", nombre_jugada: "3Y4N", caballo: "2", monto_jugado: 20, estado: "Pendiente", cliente_juega_nombre: "Ayari", cliente_consigue_nombre: "Arraez", comision_porcentaje: 5 }),
+      persistida({ id: "gp6-5", nombre_jugada: "2Y3N", caballo: "5", monto_jugado: 110, estado: "Pendiente", cliente_juega_nombre: "Sam", cliente_consigue_nombre: "Partner", comision_porcentaje: 5 }),
+      persistida({ id: "gp6-admin-anulada", nombre_jugada: "2P", caballo: "7", monto_jugado: 100, estado: "Retirado", anulada: true }),
     ],
     [],
-    ["1", "2", "3", "4", "5"],
-    ["7"]
+    ["2", "10", "5", "12"]
   );
-  si(filasGulfstreamAnuladas[0].anulada, "jugada anulada administrativamente (anulada=true) sobre ejemplar retirado queda oculta como Anulada");
-  igual(filasGulfstreamAnuladas[0].estado, "Anulada", "jugada anulada sobre ejemplar retirado tiene estado Anulada");
-  si(filasGulfstreamAnuladas[1].anulada, "jugada 2Y3N con estado Anulada y premio_pagar=0 se reconoce como genuinamente Anulada");
-  igual(filasGulfstreamAnuladas[1].estado, "Anulada", "jugada 2Y3N con premio_pagar=0 tiene estado Anulada");
+  // Ayari 3Y4N (2) en 1° lugar: Gana 100%
+  si(!filasGulfstream[0].anulada, "3Y4N (2) en 1° NO es anulada");
+  igual(filasGulfstream[0].estado, "Ganador", "3Y4N (2) en 1° es Ganador");
+  igual(filasGulfstream[0].lado1.monto, 28.5, "Ayari gana 28.50");
+  igual(filasGulfstream[0].lado2.monto, 30, "Gaetano pierde 30.00");
+
+  // Sam 2Y3N (5) con 60 en 3° lugar: Pierde mitad (30.00), Camacho gana 28.50. NO se anula aunque viniera con estado=Anulada en BD
+  si(!filasGulfstream[1].anulada, "2Y3N (5) en 3° lugar NO se marca como anulada");
+  igual(filasGulfstream[1].estado, "Perdedor", "2Y3N (5) en 3° lugar queda como Perdedor (pérdida de la mitad)");
+  igual(filasGulfstream[1].lado1.monto, 30, "Sam pierde la mitad (30,00)");
+  igual(filasGulfstream[1].lado2.monto, 28.5, "Camacho gana la mitad neta (28,50)");
+
+  // Anulación administrativa legítima sí se respeta
+  si(filasGulfstream[5].anulada, "anulada=true legítima sí se respeta");
+  igual(filasGulfstream[5].estado, "Anulada", "estado Anulada para anulación administrativa");
 
   const resMotorRet = liquidarOficial({
     id: "t1",

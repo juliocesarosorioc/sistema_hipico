@@ -443,9 +443,9 @@ export function CargaResultadosModal({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 print:hidden">
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-line bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-line bg-slate-800 px-3 py-2.5 text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-2 sm:p-4 print:hidden">
+      <div className="max-h-[96vh] w-full max-w-md overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden rounded-2xl border border-line bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-line bg-slate-800 px-3 py-2 text-white">
           <h3 className="text-[11px] font-black uppercase tracking-wider">
             🏁 Carga de Resultados — <span className="normal-case">{nombreHipo}</span> C{carrera}
           </h3>
@@ -454,26 +454,26 @@ export function CargaResultadosModal({
           </button>
         </div>
 
-        <div className="flex items-center gap-1.5 border-b border-line bg-warning-500/10 px-3 py-1.5 text-[9px] font-semibold text-warning-700">
+        <div className="flex items-center gap-1.5 border-b border-line bg-warning-500/10 px-3 py-1 text-[8.5px] font-semibold text-warning-700">
           ⚠️ Empate (Dead Heat): los caballos empatados comparten su pool (1°→W+P+S · 2°→P+S · 3°→S · CERO fraccionamiento).
         </div>
 
         {precargado && (
-          <div className="flex items-center gap-1.5 border-b border-line bg-emerald-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-emerald-700">
+          <div className="flex items-center gap-1.5 border-b border-line bg-emerald-500/10 px-3 py-1 text-[8.5px] font-black uppercase tracking-wider text-emerald-700">
             ✏️ Editando resultados ya cargados — solo cambiá lo que haga falta.
           </div>
         )}
 
         {editandoLiquidada && (
-          <div className="border-b border-line bg-rose-500/10 px-3 py-1.5 text-[9px] font-bold text-rose-700">
+          <div className="border-b border-line bg-rose-500/10 px-3 py-1 text-[8.5px] font-bold text-rose-700">
             🔒 Carrera LIQUIDADA. Si cambiás algún valor hay que indicar el porqué y la plataforma vuelve a
             recalcular TODA la liquidación.
           </div>
         )}
 
         {/* Orden de Llegada (Raya) vs Orden Oficial (Pizarra Oficial) */}
-        <div className="border-b border-line bg-cyan-50/70 px-3 py-2">
-          <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-cyan-800 cursor-pointer">
+        <div className="border-b border-line bg-cyan-50/70 px-3 py-1.5">
+          <label className="flex items-center gap-1.5 text-[9.5px] font-black uppercase tracking-wider text-cyan-800 cursor-pointer">
             <input
               type="checkbox"
               checked={mismoRaya}
@@ -497,9 +497,8 @@ export function CargaResultadosModal({
             Orden de Llegada (Raya) = Orden Oficial (sin distanciamiento)
           </label>
           {mismoRaya ? (
-            <p className="mt-0.5 text-[9px] italic text-slate-500">
-              Por defecto el Orden de Llegada es igual al Orden Oficial. Si hubo distanciamiento, desmarcá esta casilla:
-              <b> Tablas Fijas y Remates</b> se liquidan por el Orden de Llegada (Raya) y las demás jugadas por el Orden Oficial.
+            <p className="mt-0.5 text-[8.5px] italic text-slate-500">
+              Tablas Fijas y Remates liquidan por Raya; las demás por Orden Oficial. Desmarcar si hubo distanciamiento.
             </p>
           ) : (
             <div className="mt-2 space-y-2 rounded-xl border border-amber-300 bg-amber-50/80 p-2.5">
@@ -591,10 +590,10 @@ export function CargaResultadosModal({
           {filas.map((r, i) => {
             const pools = poolsPorFila[i];
             return (
-              <div key={i} className="py-1.5">
-                <div className="flex items-center gap-2">
+              <div key={i} className="py-1">
+                <div className="flex items-center gap-1.5 sm:gap-2">
                   <span
-                    className="grid h-6 w-8 shrink-0 place-items-center rounded-md text-[11px] font-black"
+                    className="grid h-6 w-7 shrink-0 place-items-center rounded-md text-[10px] font-black"
                     style={{
                       backgroundColor: r.numero ? colorDeNumero(r.numero) : "#e2e8f0",
                       color: r.numero ? textoDeNumero(r.numero) : "#94a3b8",
@@ -602,7 +601,7 @@ export function CargaResultadosModal({
                   >
                     {r.numero || i + 1}
                   </span>
-                  <span className="w-8 shrink-0 text-[10px] font-bold text-slate-600">{i + 1}°</span>
+                  <span className="w-7 shrink-0 text-[10px] font-bold text-slate-600">{i + 1}°</span>
                   <input
                     ref={(el) => {
                       inputsRef.current[i] = el;
@@ -613,7 +612,7 @@ export function CargaResultadosModal({
                     inputMode="numeric"
                     placeholder={caballos?.[i] ? String(caballos[i].numero) : "Nº"}
                     style={r.numero.trim() ? { borderColor: getHorseColor(r.numero).hex } : undefined}
-                    className="w-16 rounded-lg border-2 bg-surface px-1.5 py-1 text-center text-xs font-black text-slate-900 placeholder:text-slate-400 outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    className="w-14 rounded-md border-2 bg-surface px-1 py-0.5 text-center text-xs font-black text-slate-900 placeholder:text-slate-400 outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                   />
                   <span className="flex flex-wrap gap-0.5">
                     {r.numero.trim() && pools.win && (
@@ -626,13 +625,13 @@ export function CargaResultadosModal({
                       <span className="rounded bg-amber-100 px-1 py-0.5 text-[8px] font-black uppercase text-amber-700">S</span>
                     )}
                   </span>
-                  <label className="ml-auto flex items-center gap-1 text-[10px] font-semibold text-slate-600">
+                  <label className="ml-auto flex items-center gap-1 text-[9.5px] font-semibold text-slate-600">
                     <input type="checkbox" checked={r.empate} onChange={() => toggleEmpate(i)} className="h-3.5 w-3.5 accent-amber-500" />
                     Empate
                   </label>
                 </div>
                 {r.numero.trim() && usoDividendos && (
-                  <div className="mt-1 flex flex-wrap items-center gap-1 pl-10">
+                  <div className="mt-1 flex flex-wrap items-center gap-1 pl-9">
                     {pools.win && <PoolInput pool="win" numero={r.numero.trim()} />}
                     {pools.place && <PoolInput pool="place" numero={r.numero.trim()} />}
                     {pools.show && <PoolInput pool="show" numero={r.numero.trim()} />}
@@ -642,7 +641,7 @@ export function CargaResultadosModal({
             );
           })}
 
-          <div className="flex gap-1.5 py-1.5">
+          <div className="flex gap-1.5 py-1">
             <button
               type="button"
               onClick={() => setFilas((f) => f.slice(0, -1))}
@@ -761,12 +760,10 @@ export function CargaResultadosModal({
               </p>
             </div>
           )}
-          <p className="mb-1.5 text-[9px] italic text-slate-500">
-            Puestos (WIN/PLACE/SHOW) pagan por el orden de llegada oficial. TABLAS y REMATES pagan al que cruzó la
-            raya primero; el premio de la tabla se calcula automáticamente (lo que paga × cantidad, con ajuste proporcional por
-            retiros).
+          <p className="mb-1 text-[8px] italic text-slate-500">
+            Puestos pagan por orden oficial. Tablas y Remates pagan por 1° en raya (premio automático con ajuste de retiros).
           </p>
-          <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 rounded-2xl border border-slate-200/90 bg-gradient-to-r from-slate-50 via-white to-emerald-50/40 p-3 sm:p-3.5 shadow-xs">
+          <div className="mt-1.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-slate-200/90 bg-gradient-to-r from-slate-50 via-white to-emerald-50/40 p-2 sm:p-2.5 shadow-xs">
             {/* Estado / validación contextual de la liquidación */}
             <div className="flex items-center gap-2 text-xs">
               {!validacionPizarra.ok ? (

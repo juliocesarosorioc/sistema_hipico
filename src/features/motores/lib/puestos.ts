@@ -1268,7 +1268,7 @@ function evaluarBloque(
     fuente: bloque.fuente,
     monto: montoBloque,
     bruto: round2(bruto),
-    estado: d.anulada ? "ANULADA" : d.ganador === "jugador" ? "GANA" : "PIERDE",
+    estado: d.anulada ? "EMPATA" : d.ganador === "jugador" ? "GANA" : "PIERDE",
     motivo: d.motivo,
   };
 }

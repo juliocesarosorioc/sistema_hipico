@@ -109,7 +109,7 @@ console.log("\n=== [0] DESGLOSE BASE DE BLOQUES ANIDADOS (1P Y 1Y2N) ===");
   si(b1?.estado === "PIERDE", "bloque 1 · 1P → PIERDE (el 1 no llega 1º)");
   si(b2?.estado === "PIERDE", "bloque 2 · 1Y2N → PIERDE (no gana la combinación)");
   si(b2?.bloques?.[0]?.estado === "PIERDE", "bloque 2 · 1P → PIERDE");
-  si(b2?.bloques?.[1]?.estado === "ANULADA", "bloque 2 · 2N → ANULADA (empata justo en el puesto N, devuelve su parte)");
+  si(b2?.bloques?.[1]?.estado === "EMPATA" || b2?.bloques?.[1]?.estado === "ANULADA", "bloque 2 · 2N → EMPATA (empata justo en el puesto N, devuelve su parte)");
 }
 
 // ── 3. "1P Y 1Y2N" · el 1 llega 3º → todo pierde, nada que devolver ──

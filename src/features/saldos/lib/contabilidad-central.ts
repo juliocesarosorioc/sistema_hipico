@@ -151,16 +151,15 @@ export function esTablaInexistente42P01(err: unknown): boolean {
 /** Verifica si el estado de una jugada es anulado, cancelado, eliminado o retirado. */
 export function esJugadaAnuladaOExcluida(t: TicketContableRaw): boolean {
   if (!t) return true;
-  if (t.anulada === true) return true;
+  const tRec = t as unknown as Record<string, unknown>;
+  if (t.anulada === true || Boolean(tRec.anulada_at) || Boolean(tRec.anulada_motivo)) return true;
   const est = String(t.estado ?? "").trim().toUpperCase();
-  if (est === "ANULADA") {
-    const premio = Number(t.premio_pagar ?? 0);
-    const monto = Number(t.monto_jugado ?? t.monto ?? 0);
-    if (premio > 0 && (monto <= 0 || premio < monto)) {
-      return false;
-    }
+  // Si no tiene anulación administrativa explícita, nunca excluir una jugada activa
+  // (combinadas 2Y3N, puestos, o cualquier jugada con caballo no retirado).
+  if (est === "ANULADA" || est === "ANULADO") {
+    return false;
   }
-  return ["ANULADA", "ANULADO", "CANCELADA", "CANCELADO", "ELIMINADA", "ELIMINADO", "RETIRADO", "RECHAZADO"].includes(
+  return ["CANCELADA", "CANCELADO", "ELIMINADA", "ELIMINADO", "RETIRADO", "RECHAZADO"].includes(
     est
   );
 }
@@ -720,10 +719,12 @@ export async function sincronizarSaldosRealesClientes<
     const idsPorModalidad = new Map<string, Array<string | number>>();
     const idsEstadoMalAnulada: Array<string | number> = [];
     for (const t of tickets) {
+      const tRec = t as unknown as Record<string, unknown>;
+      const anuladaAdmin = Boolean(t.anulada) || Boolean(tRec.anulada_at) || Boolean(tRec.anulada_motivo);
       if (
-        t.anulada !== true &&
-        String(t.estado ?? "").trim().toUpperCase() === "ANULADA" &&
-        (Number(t.premio_pagar ?? 0) > 0 || /\b[1-5]N\b|\d+Y\d+N/i.test(String(t.nombre_jugada ?? t.jugada ?? "")))
+        !anuladaAdmin &&
+        (String(t.estado ?? "").trim().toUpperCase() === "ANULADA" ||
+         String(t.estado ?? "").trim().toUpperCase() === "ANULADO")
       ) {
         t.estado = "Perdedor";
         if (t.id != null) idsEstadoMalAnulada.push(t.id);

@@ -478,9 +478,7 @@ export async function listarJugadasDeCarrera(
         }
         const esFalsaAnulada =
           !anuladaAdmin &&
-          texto(j.estado).toUpperCase() === "ANULADA" &&
-          num(j.premio_pagar) > 0 &&
-          num(j.premio_pagar) < num(j.monto_jugado);
+          (texto(j.estado).toUpperCase() === "ANULADA" || texto(j.estado).toUpperCase() === "ANULADO");
         if (esFalsaAnulada && j.id != null) {
           idsEstadoMalAnulada.push(String(j.id));
         }

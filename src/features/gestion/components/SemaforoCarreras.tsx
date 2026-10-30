@@ -244,7 +244,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
           })}
         </div>
         {accionDerecha ? (
-          <div className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
+          <div className="w-full sm:w-auto sm:ml-auto flex flex-wrap items-center justify-start sm:justify-end gap-1.5 mt-1 sm:mt-0">
             {accionDerecha}
           </div>
         ) : null}

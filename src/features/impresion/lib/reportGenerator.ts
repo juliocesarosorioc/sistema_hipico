@@ -855,12 +855,11 @@ function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
       : String(r.caballo ?? "").trim();
   const precioPorTablaUnitario = esJugTabla ? extraerPrecioUnitarioTabla(rRec) : undefined;
   const estadoStr = String(r.estado ?? "").trim().toUpperCase();
-  const esFalsaAnuladaMotor =
-    r.anulada !== true &&
-    estadoStr === "ANULADA" &&
-    num(r.premio_pagar) > 0 &&
-    num(r.premio_pagar) < num(r.monto_jugado);
-  const esAnuladaEstado = !esFalsaAnuladaMotor && (estadoStr === "ANULADA" || estadoStr === "ANULADO" || r.anulada === true);
+  const anuladaAdmin =
+    r.anulada === true ||
+    Boolean(rRec.anulada_at) ||
+    Boolean(rRec.anulada_motivo);
+  const esAnuladaEstado = anuladaAdmin;
   const ganoPorEstado = !esAnuladaEstado && (estadoStr === "GANADOR" || estadoStr === "GANO" || estadoStr === "SOLUCIONADO");
   const ganoPorPremio = esJugTabla ? num(r.premio_pagar) > 0 && ganoPorEstado : num(r.premio_pagar) > num(r.monto_jugado);
   return {
@@ -919,14 +918,8 @@ export async function cargarJugadasDeCarrera(
     if (error) throw error;
     // VENTAS DE REMATE y ANULADAS administrativamente fuera: no son apuestas vigentes de la carrera.
     const filas = ((data ?? []) as unknown as Array<Record<string, unknown>>).filter((rec) => {
-      if (rec.anulada === true) return false;
-      const est = String(rec.estado ?? "").trim().toUpperCase();
-      if (est === "ANULADO") return false;
-      if (est === "ANULADA") {
-        const esFalsaAnulada =
-          num(rec.premio_pagar) > 0 || /\b[1-5]N\b|\d+Y\d+N/i.test(String(rec.nombre_jugada ?? ""));
-        if (!esFalsaAnulada) return false;
-      }
+      const anuladaAdmin = rec.anulada === true || Boolean(rec.anulada_at) || Boolean(rec.anulada_motivo);
+      if (anuladaAdmin) return false;
       return !esVentaDeRemate(rec.nombre_jugada);
     });
 

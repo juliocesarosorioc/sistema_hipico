@@ -322,13 +322,14 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
               ? "Modo Operador Activo: Módulos de Operación Principal y Jugadas vinculados a su grupo. Clic para volver a Vista Completa."
               : "Cambiar a Vista Operador (ingresa directo a la vista de operador)"
           }
-          className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black transition-colors ${
+          className={`inline-flex h-8 items-center gap-1 sm:gap-1.5 rounded-lg border px-1.5 sm:px-2.5 text-[11px] font-black transition-colors shrink-0 ${
             modoOperador
               ? "border-amber-500 bg-amber-500/15 text-amber-800 hover:bg-amber-500/25"
               : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200"
           }`}
         >
-          <span>{modoOperador ? "🐎🎲 VISTA: OPERADOR" : "🛡️ VISTA: COMPLETA"}</span>
+          <span className="hidden sm:inline">{modoOperador ? "🐎🎲 VISTA: OPERADOR" : "🛡️ VISTA: COMPLETA"}</span>
+          <span className="sm:hidden">{modoOperador ? "🐎 OPE" : "🛡️ ADM"}</span>
         </button>
       )}
 
@@ -350,7 +351,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
       <button
         type="button"
         onClick={() => void cerrarSesion()}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-danger-500/40 bg-danger-500/10 px-3 py-1.5 text-xs font-bold text-danger-600 transition-colors hover:bg-danger-500 hover:text-white shrink-0"
+        title="Cerrar Sesión"
+        className="inline-flex items-center gap-1 sm:gap-1.5 rounded-lg border border-danger-500/40 bg-danger-500/10 px-2 sm:px-3 py-1.5 text-xs font-bold text-danger-600 transition-colors hover:bg-danger-500 hover:text-white shrink-0"
       >
         <span aria-hidden="true">⏻</span>
         <span className="hidden sm:inline">Cerrar Sesión</span>

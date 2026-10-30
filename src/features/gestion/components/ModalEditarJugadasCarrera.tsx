@@ -373,16 +373,22 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
               {visibles.map((j) => {
                 const esEmpateNini =
                   !j.anulada &&
-                  /\b[1-5]N\b/i.test(String(j.nombre_jugada ?? "")) &&
                   (j.estado === "Retirado" ||
                     (j.estado === "Perdedor" &&
                       Number(j.monto_jugado ?? 0) > 0 &&
                       Math.abs(Number(j.premio_pagar ?? 0) - Number(j.monto_jugado ?? 0)) < 0.01));
+                const esPerdidaParcial =
+                  !j.anulada &&
+                  j.estado === "Perdedor" &&
+                  Number(j.premio_pagar ?? 0) > 0 &&
+                  Number(j.premio_pagar ?? 0) < Number(j.monto_jugado ?? 0);
                 const estado = j.anulada
                   ? "Anulado"
                   : esEmpateNini
                     ? "Empate (0/0)"
-                    : j.estado ?? "Pendiente";
+                    : esPerdidaParcial
+                      ? "Pérdida Parcial"
+                      : j.estado ?? "Pendiente";
                 const enEdicion = edicion?.id === String(j.id);
                 return (
                   <tr key={String(j.id)} className={`border-t border-line ${enEdicion ? "bg-indigo-50/60" : j.anulada ? "bg-amber-50/50" : ""}`}>

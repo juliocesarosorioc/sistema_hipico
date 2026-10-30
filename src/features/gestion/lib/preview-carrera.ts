@@ -391,18 +391,18 @@ function filaDesdePersistida(
     Boolean(jRec.anulada_motivo);
   const esFalsaAnuladaMotor =
     !anuladaAdmin &&
-    TXT(j.estado).toLowerCase() === "anulada" &&
-    NUM(j.premio_pagar) > 0 &&
-    NUM(j.premio_pagar) < monto;
-  const anulada =
-    anuladaAdmin ||
-    (!esFalsaAnuladaMotor && TXT(j.estado).toLowerCase().startsWith("anul"));
+    TXT(j.estado).toLowerCase().startsWith("anul");
+  const anulada = anuladaAdmin;
   let estado = anulada
     ? "Anulada"
     : involucraRetirado
       ? "Retirado"
       : esFalsaAnuladaMotor
-        ? "Perdedor"
+        ? NUM(j.premio_pagar) > 0 && NUM(j.premio_pagar) < monto
+          ? "Perdedor"
+          : NUM(j.premio_pagar) >= monto
+          ? "Ganador"
+          : "Pendiente"
         : estadoDeFila(j.estado, false);
   const ticketId = String(j.id ?? "").trim() || null;
   const precioTabla = esJugTabla ? extraerPrecioUnitarioTabla(jRec) : undefined;
