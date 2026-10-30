@@ -196,36 +196,26 @@ $$;
 grant execute on function public.club_eliminar_operador(text) to anon, authenticated;
 
 -- 3. Vincular operadora YES estrictamente al grupo ARGENTINA
-do $actualizar_yes$
+do $$
 declare
   v_gid uuid;
 begin
   select id into v_gid from public.grupos_venta where upper(trim(nombre)) like '%ARGENTINA%' limit 1;
   if v_gid is not null then
-    update public.usuario_sistema
-    set telefono = '+584149327337',
-        codigo_pais = '+58',
-        clave_acceso = 'Yes#2026',
-        grupo_id = v_gid,
-        activo = true
-    where lower(id) = 'yes';
-
-    if not found then
-      insert into public.usuario_sistema (id, nombre, tipo_usuario_id, grupo_id, activo, telefono, codigo_pais, clave_acceso)
-      values ('yes', 'YES', 2, v_gid, true, '+584149327337', '+58', 'Yes#2026')
-      on conflict (id) do update set
-        telefono = excluded.telefono,
-        codigo_pais = excluded.codigo_pais,
-        clave_acceso = excluded.clave_acceso,
-        grupo_id = excluded.grupo_id,
-        activo = excluded.activo;
-    end if;
+    insert into public.usuario_sistema (id, nombre, tipo_usuario_id, grupo_id, activo, telefono, codigo_pais, clave_acceso)
+    values ('yes', 'YES', 2, v_gid, true, '+584149327337', '+58', 'Yes#2026')
+    on conflict (id) do update set
+      telefono = excluded.telefono,
+      codigo_pais = excluded.codigo_pais,
+      clave_acceso = excluded.clave_acceso,
+      grupo_id = excluded.grupo_id,
+      activo = excluded.activo;
   end if;
 end;
-$actualizar_yes$;
+$$;
 
 -- 4. Vincular operador ricardogunbold estrictamente al grupo GUN BOLD con clave Ricardo123*
-do $actualizar_ricardo$
+do $$
 declare
   v_gid uuid;
 begin
@@ -244,17 +234,11 @@ begin
       clave_acceso = 'Ricardo123*';
   end if;
 end;
-$actualizar_ricardo$;
+$$;
 
 -- 5. Asegurar credenciales y privilegios del Administrador Principal (josorio y josorioc)
-do $actualizar_josorioc$
+do $$
 begin
-  update public.usuario_sistema
-  set es_principal = true,
-      activo = true,
-      clave_acceso = 'Maxi1912'
-  where lower(id) in ('josorioc', 'josorio');
-
   insert into public.usuario_sistema (id, nombre, tipo_usuario_id, activo, es_principal, clave_acceso)
   values 
     ('josorioc', 'Julio Osorio', 1, true, true, 'Maxi1912'),
@@ -264,4 +248,4 @@ begin
     activo = true,
     clave_acceso = 'Maxi1912';
 end;
-$actualizar_josorioc$;
+$$;
