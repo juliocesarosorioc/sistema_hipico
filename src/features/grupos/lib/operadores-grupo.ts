@@ -22,6 +22,8 @@ export type OperadorGrupo = {
   grupoId: string;
   grupoNombre?: string;
   clave?: string;
+  telefono?: string;
+  codigoPais?: string;
   activo: boolean;
   hipodromos: string[];
   creadoEn?: string;
@@ -114,12 +116,12 @@ export async function listarOperadoresDeGrupo(
   const gid = String(grupoId);
 
   try {
-    // 1. Intentar leer incluyendo clave_acceso
+    // 1. Intentar leer incluyendo clave_acceso, telefono y codigo_pais
     let data: Array<Record<string, unknown>> | null = null;
     try {
       const res = await supabase
         .from("usuario_sistema")
-        .select("id, nombre, activo, grupo_id, creado_en, clave_acceso, tipo_usuario_id, tipo_usuario(nombre)")
+        .select("id, nombre, activo, grupo_id, creado_en, clave_acceso, telefono, codigo_pais, tipo_usuario_id, tipo_usuario(nombre)")
         .eq("grupo_id", gid);
       if (!res.error && Array.isArray(res.data)) {
         data = res.data;
@@ -128,7 +130,22 @@ export async function listarOperadoresDeGrupo(
       data = null;
     }
 
-    // 2. Si falló por la columna clave_acceso, releer sin esa columna
+    // 2. Si falló por columnas nuevas, reintentar con columnas base
+    if (!data) {
+      try {
+        const resClave = await supabase
+          .from("usuario_sistema")
+          .select("id, nombre, activo, grupo_id, creado_en, clave_acceso, tipo_usuario_id, tipo_usuario(nombre)")
+          .eq("grupo_id", gid);
+        if (!resClave.error && Array.isArray(resClave.data)) {
+          data = resClave.data;
+        }
+      } catch {
+        data = null;
+      }
+    }
+
+    // 3. Fallback absoluto a columnas estándar
     if (!data) {
       const res2 = await supabase
         .from("usuario_sistema")
@@ -153,6 +170,8 @@ export async function listarOperadoresDeGrupo(
         nombre: String(u.nombre ?? id),
         grupoId: String(u.grupo_id ?? gid),
         clave,
+        telefono: u.telefono ? String(u.telefono) : undefined,
+        codigoPais: u.codigo_pais ? String(u.codigo_pais) : undefined,
         activo: u.activo !== false,
         hipodromos: hiposMap[id.toLowerCase()] ?? [],
         creadoEn: u.creado_en ? String(u.creado_en) : undefined,
@@ -172,6 +191,8 @@ export async function guardarOperadorDeGrupo(params: {
   usuario: string;
   nombre?: string;
   clave?: string;
+  telefono?: string;
+  codigoPais?: string;
   activo?: boolean;
   hipodromos?: string[];
 }): Promise<{ ok: boolean; error?: string }> {
@@ -184,12 +205,14 @@ export async function guardarOperadorDeGrupo(params: {
   const tipoId = await obtenerIdTipoOperador();
   const nombreLimpio = (params.nombre || idLimpio).trim();
   const claveLimpia = (params.clave || "").trim();
+  const telefonoLimpio = (params.telefono || "").trim();
+  const codPaisLimpio = (params.codigoPais || "+58").trim();
 
   try {
-    // 1. Guardar en usuario_sistema (intentar con clave_acceso)
+    // 1. Guardar en usuario_sistema (intentar con clave_acceso, telefono, codigo_pais)
     let errUpsert: { message?: string } | null = null;
     try {
-      const payloadConClave: Record<string, unknown> = {
+      const payloadCompleto: Record<string, unknown> = {
         id: idLimpio,
         nombre: nombreLimpio,
         tipo_usuario_id: tipoId,
@@ -197,19 +220,41 @@ export async function guardarOperadorDeGrupo(params: {
         activo: params.activo !== false,
         es_principal: false,
       };
-      if (claveLimpia) {
-        payloadConClave.clave_acceso = claveLimpia;
-      }
+      if (claveLimpia) payloadCompleto.clave_acceso = claveLimpia;
+      if (telefonoLimpio) payloadCompleto.telefono = telefonoLimpio;
+      if (codPaisLimpio) payloadCompleto.codigo_pais = codPaisLimpio;
 
       const res = await supabase
         .from("usuario_sistema")
-        .upsert(payloadConClave, { onConflict: "id" });
+        .upsert(payloadCompleto, { onConflict: "id" });
       errUpsert = res.error;
     } catch (e) {
       errUpsert = { message: String(e) };
     }
 
-    // 2. Si dio error por columna inexistente de clave_acceso, intentar sin ella
+    // 2. Si dio error por columnas inexistentes, reintentar quitando telefono y codigo_pais
+    if (errUpsert && /telefono|codigo_pais|column|does not exist/i.test(errUpsert.message ?? "")) {
+      try {
+        const payloadConClave: Record<string, unknown> = {
+          id: idLimpio,
+          nombre: nombreLimpio,
+          tipo_usuario_id: tipoId,
+          grupo_id: grupoIdStr,
+          activo: params.activo !== false,
+          es_principal: false,
+        };
+        if (claveLimpia) payloadConClave.clave_acceso = claveLimpia;
+
+        const resConClave = await supabase
+          .from("usuario_sistema")
+          .upsert(payloadConClave, { onConflict: "id" });
+        errUpsert = resConClave.error;
+      } catch (e) {
+        errUpsert = { message: String(e) };
+      }
+    }
+
+    // 3. Si aún da error por clave_acceso, reintentar solo columnas base
     if (errUpsert && /clave_acceso|column|does not exist/i.test(errUpsert.message ?? "")) {
       const resSinClave = await supabase
         .from("usuario_sistema")
@@ -231,17 +276,21 @@ export async function guardarOperadorDeGrupo(params: {
       return { ok: false, error: `No se pudo registrar el operador: ${errUpsert.message}` };
     }
 
-    // 3. Guardar en cache local la contraseña para acceso y consulta inmediata
+    // 4. Guardar en cache local la contraseña para acceso y consulta inmediata (por id y por teléfono)
     if (claveLimpia) {
       guardarClaveEnCacheLocal(idLimpio, claveLimpia);
+      if (telefonoLimpio) {
+        const digitos = telefonoLimpio.replace(/\D/g, "");
+        if (digitos) guardarClaveEnCacheLocal(digitos, claveLimpia);
+      }
     }
 
-    // 4. Guardar los hipódromos asignados si se especificaron
+    // 5. Guardar los hipódromos asignados si se especificaron
     if (params.hipodromos !== undefined) {
       await guardarHipodromosDeOperador(idLimpio, params.hipodromos);
     }
 
-    // 5. Intentar crear o actualizar en Supabase Auth mediante la edge function si existe
+    // 6. Intentar crear o actualizar en Supabase Auth mediante la edge function si existe
     if (claveLimpia) {
       try {
         void supabase.functions.invoke("crear-grupo", {
@@ -334,20 +383,22 @@ export function generarMensajeWhatsappOperador(opts: {
   usuario: string;
   clave: string;
   nombre?: string;
+  telefono?: string;
   urlLogin?: string;
 }): string {
   const url = opts.urlLogin || urlLoginOperador();
   const nombreTxt = opts.nombre ? `\n👤 *Operador:* ${opts.nombre}` : "";
+  const telTxt = opts.telefono ? `\n📞 *Teléfono:* ${opts.telefono}` : "";
 
   return (
     `🏇 *ACCESO DE OPERADOR — TAQUILLA MÓVIL*\n` +
-    `🏢 *Grupo:* ${opts.grupoNombre.toUpperCase()}${nombreTxt}\n` +
+    `🏢 *Grupo:* ${opts.grupoNombre.toUpperCase()}${nombreTxt}${telTxt}\n` +
     `\n` +
-    `📱 *Usuario de Acceso:* \`${opts.usuario}\`\n` +
+    `📱 *Usuario / Teléfono:* \`${opts.usuario}\`\n` +
     `🔑 *Contraseña:* \`${opts.clave || "(asignada)"}\`\n` +
     `\n` +
     `🌐 *Enlace de Ingreso:* ${url}\n` +
     `\n` +
-    `_Ingresa con estas credenciales desde tu teléfono celular para registrar jugadas y consultar reportes._`
+    `_Ingresa con tu usuario o celular y esta contraseña para registrar jugadas y consultar reportes._`
   );
 }

@@ -98,11 +98,27 @@ export async function leerTipoDeUsuario(identificador: string): Promise<TipoUsua
     // `capacidad`. Con `clave` la consulta no encontraba a nadie y el usuario
     // perdía su tipo al recargar.
   const id = claveDeUsuario(identificador);
-  const { data: alta } = await supabase
+  let { data: alta } = await supabase
     .from("usuario_sistema")
-    .select("tipo_usuario_id, activo")
+    .select("id, tipo_usuario_id, activo")
     .eq("id", id)
     .maybeSingle();
+
+  if (!alta) {
+    const digitos = id.replace(/\D/g, "");
+    if (digitos.length >= 7) {
+      try {
+        const { data: porTel } = await supabase
+          .from("usuario_sistema")
+          .select("id, tipo_usuario_id, activo")
+          .ilike("telefono", `%${digitos}%`)
+          .maybeSingle();
+        if (porTel) alta = porTel;
+      } catch {
+        /* sinop */
+      }
+    }
+  }
   // Un alta dada de baja no accede a nada, aunque su tipo siga activo: es la
   // forma de cortar a una persona sin borrar su historial.
   if (alta && (alta as { activo?: unknown }).activo === false) return null;

@@ -12,6 +12,7 @@ import {
   generarMensajeWhatsappOperador,
   type OperadorGrupo,
 } from "@/features/grupos/lib/operadores-grupo";
+import { codigosPaisUnicos, componerTelefono, desglosarTelefono } from "@/shared/lib/vzla";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import { estaBorrado, type Hipodromo } from "@/features/hipodromos/lib/tipos";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
@@ -39,6 +40,8 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
   const [formUsuario, setFormUsuario] = useState("");
   const [formNombre, setFormNombre] = useState("");
   const [formClave, setFormClave] = useState("");
+  const [formCodigoPais, setFormCodigoPais] = useState("+58");
+  const [formTelefono, setFormTelefono] = useState("");
   const [formActivo, setFormActivo] = useState(true);
   const [formHipodromos, setFormHipodromos] = useState<Set<string>>(new Set());
   const [todosHipodromos, setTodosHipodromos] = useState(true);
@@ -74,6 +77,8 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
     setModoForm("crear");
     setFormUsuario("");
     setFormNombre("");
+    setFormCodigoPais("+58");
+    setFormTelefono("");
     // Generar contraseña sugerida de 6 dígitos
     const randomPass = "OP" + Math.floor(1000 + Math.random() * 9000);
     setFormClave(randomPass);
@@ -87,6 +92,9 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
     setFormUsuario(op.id);
     setFormNombre(op.nombre || op.id);
     setFormClave(op.clave || "");
+    const des = desglosarTelefono(op.telefono);
+    setFormCodigoPais(op.codigoPais || des.codigo || "+58");
+    setFormTelefono(des.numero);
     setFormActivo(op.activo);
     if (!op.hipodromos || op.hipodromos.length === 0) {
       setTodosHipodromos(true);
@@ -129,12 +137,17 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
 
     setGuardando(true);
     const hipos = todosHipodromos ? [] : Array.from(formHipodromos);
+    const tlfCompleto = formTelefono.trim()
+      ? componerTelefono(formCodigoPais, formTelefono.trim())
+      : "";
 
     const res = await guardarOperadorDeGrupo({
       grupoId,
       usuario: u,
       nombre: formNombre.trim() || u,
       clave: formClave.trim(),
+      telefono: tlfCompleto,
+      codigoPais: formCodigoPais,
       activo: formActivo,
       hipodromos: hipos,
     });
@@ -189,6 +202,7 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
       usuario: op.id,
       clave: op.clave || "",
       nombre: op.nombre,
+      telefono: op.telefono,
     });
 
     if (navigator.clipboard) {
@@ -303,6 +317,36 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
               />
               <p className="mt-0.5 text-[9.5px] text-slate-400">
                 Clave con la que ingresará al portal de venta en su teléfono.
+              </p>
+            </div>
+
+            {/* Número de Teléfono Celular con Código de País */}
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-600 mb-1">
+                Teléfono Celular (con código de país)
+              </label>
+              <div className="flex gap-1.5">
+                <select
+                  value={formCodigoPais}
+                  onChange={(e) => setFormCodigoPais(e.target.value)}
+                  className="w-32 shrink-0 rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-bold text-slate-800 bg-white focus:border-indigo-500 focus:outline-none"
+                >
+                  {codigosPaisUnicos().map((p) => (
+                    <option key={p.codigo} value={p.codigo}>
+                      {p.codigo} ({p.pais})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="tel"
+                  value={formTelefono}
+                  onChange={(e) => setFormTelefono(e.target.value.replace(/[^\d\s-]/g, ""))}
+                  placeholder="Ej: 4149327337"
+                  className="w-full flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-900 focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+              <p className="mt-0.5 text-[9.5px] text-slate-400">
+                Permite enviar credenciales directo por WhatsApp e iniciar sesión con el número.
               </p>
             </div>
 
@@ -443,6 +487,14 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
                       <div className="text-xs font-bold text-slate-700">
                         {op.nombre}
                       </div>
+                      {op.telefono ? (
+                        <div className="text-[10.5px] font-semibold text-slate-500 flex items-center gap-1 mt-0.5">
+                          <span>📞</span>
+                          <span className="font-mono text-slate-700 font-bold">{op.telefono}</span>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-400 italic mt-0.5">Sin teléfono registrado</div>
+                      )}
                     </div>
                   </div>
 
@@ -490,15 +542,36 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
                   {/* ACCIONES */}
                   <div className="flex items-center gap-1.5 ml-auto">
                     {/* Botón WhatsApp */}
-                    <button
-                      type="button"
-                      onClick={() => copiarMensajeWhatsapp(op)}
-                      title="Copiar datos de acceso para WhatsApp"
-                      className="flex items-center gap-1 rounded-lg bg-emerald-50 border border-emerald-300 px-2.5 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors shadow-xs"
-                    >
-                      <span>💬</span>
-                      <span className="hidden sm:inline">WhatsApp</span>
-                    </button>
+                    {op.telefono ? (
+                      <a
+                        href={`https://wa.me/${op.telefono.replace(/\D/g, "")}?text=${encodeURIComponent(
+                          generarMensajeWhatsappOperador({
+                            grupoNombre,
+                            usuario: op.id,
+                            clave: op.clave || "",
+                            nombre: op.nombre,
+                            telefono: op.telefono,
+                          })
+                        )}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`Enviar credenciales por WhatsApp a ${op.telefono}`}
+                        className="flex items-center gap-1 rounded-lg bg-emerald-600 text-white px-2.5 py-1 text-xs font-bold hover:bg-emerald-500 transition-colors shadow-xs"
+                      >
+                        <span>💬</span>
+                        <span className="hidden sm:inline">WhatsApp</span>
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => copiarMensajeWhatsapp(op)}
+                        title="Copiar datos de acceso para WhatsApp"
+                        className="flex items-center gap-1 rounded-lg bg-emerald-50 border border-emerald-300 px-2.5 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors shadow-xs"
+                      >
+                        <span>💬</span>
+                        <span className="hidden sm:inline">Copiar</span>
+                      </button>
+                    )}
 
                     {/* Alternar Activo/Inactivo */}
                     <button

@@ -184,15 +184,30 @@ export async function iniciarSesion(identificador: string, clave: string): Promi
   if (!clave) return { ok: false, error: "Escribí tu contraseña." };
 
   try {
-    const { data, error } = await conTimeout(
+    let res = await conTimeout(
       supabase.auth.signInWithPassword({ email: correo, password: clave }),
       TIMEOUT_SESION_MS,
       "El inicio de sesión"
     );
-    if (error || !data.user) {
-      return { ok: false, error: mensajeDeError(error?.code ?? "", error?.message ?? "") };
+    if ((res.error || !res.data.user) && identificador.startsWith("+")) {
+      const correoSinMas = resolverCorreo(identificador.replace(/^\+/, ""));
+      try {
+        const r2 = await conTimeout(
+          supabase.auth.signInWithPassword({ email: correoSinMas, password: clave }),
+          TIMEOUT_SESION_MS,
+          "El inicio de sesión"
+        );
+        if (!r2.error && r2.data.user) {
+          res = r2;
+        }
+      } catch {
+        /* sinop */
+      }
     }
-    return { ok: true, correo: data.user.email ?? correo };
+    if (res.error || !res.data.user) {
+      return { ok: false, error: mensajeDeError(res.error?.code ?? "", res.error?.message ?? "") };
+    }
+    return { ok: true, correo: res.data.user.email ?? correo };
   } catch (e) {
     return { ok: false, error: mensajeDeError("", (e as Error).message) };
   }

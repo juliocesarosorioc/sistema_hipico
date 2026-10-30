@@ -628,25 +628,67 @@ export const useAuthStore = create<EstadoAuth>()(
       iniciarSesion: async (identificador, clave) => {
         set({ cargando: true, errorLogin: null });
         const idLimpio = (identificador ?? "").trim().toLowerCase().split("@")[0];
+        const digitos = (identificador ?? "").replace(/\D/g, "");
+
         if (idLimpio === "operador" && (clave === "operador2026" || clave === "operador123" || clave === "123456")) {
           get().entrarComoOperador();
           return true;
         }
+
+        // 1. Verificación directa y segura de operador por RPC (SECURITY DEFINER)
+        // Permite login de operadores tanto por usuario ('yes') como por teléfono celular (+584149327337 o 584149327337)
+        if (supabase) {
+          try {
+            const { data: rpcRes, error: rpcErr } = await supabase.rpc("club_login_operador", {
+              p_identificador: identificador,
+              p_clave: clave,
+            });
+            if (!rpcErr && rpcRes && typeof rpcRes === "object") {
+              const r = rpcRes as Record<string, unknown>;
+              if (r.ok === true && r.id) {
+                get().entrarComoOperadorGrupo({
+                  id: String(r.id),
+                  nombre: String(r.nombre || r.id),
+                  grupoId: String(r.grupoId || ""),
+                  grupoNombre: String(r.grupoNombre || "Grupo Asignado"),
+                });
+                return true;
+              } else if (r.ok === false && r.error === "Contraseña incorrecta.") {
+                set({ cargando: false, errorLogin: "Contraseña incorrecta." });
+                return false;
+              }
+            }
+          } catch {
+            /* best-effort: si la RPC no existe aún, continuar al flujo Supabase Auth / local */
+          }
+        }
+
         try {
-          const r = await login(identificador, clave);
+          let r = await login(identificador, clave);
+          if (!r.ok && digitos && digitos !== idLimpio && digitos.length >= 7) {
+            const rDig = await login(digitos, clave);
+            if (rDig.ok) r = rDig;
+          }
+
           if (!r.ok) {
             // Comprobar si es un operador asignado a un grupo por su usuario y clave celular
             try {
-              const claveCache = obtenerClaveCacheLocal(idLimpio);
+              const claveCache =
+                obtenerClaveCacheLocal(idLimpio) ||
+                (digitos ? obtenerClaveCacheLocal(digitos) : null);
               let coincide = Boolean(claveCache && claveCache === clave);
               let opEncontrado: { id: string; nombre: string; grupoId: string; grupoNombre?: string } | null = null;
 
               if (supabase) {
-                const { data: uFila } = await supabase
+                let q = supabase
                   .from("usuario_sistema")
-                  .select("id, nombre, activo, grupo_id, clave_acceso")
-                  .eq("id", idLimpio)
-                  .maybeSingle();
+                  .select("id, nombre, activo, grupo_id, clave_acceso, telefono");
+                if (digitos.length >= 7) {
+                  q = q.or(`id.eq.${idLimpio},telefono.ilike.%${digitos}%`);
+                } else {
+                  q = q.eq("id", idLimpio);
+                }
+                const { data: uFila } = await q.maybeSingle();
 
                 if (uFila && uFila.activo !== false) {
                   const claveBD = (uFila as Record<string, unknown>).clave_acceso

@@ -24,7 +24,7 @@ export function sanitizarIdentificador(input: unknown, max = 64): string {
   if (typeof input !== "string") return "";
   return input
     .toLowerCase()
-    .replace(/[^a-z0-9._-]/g, "")
+    .replace(/[^a-z0-9._+-]/g, "")
     .trim()
     .slice(0, max);
 }
