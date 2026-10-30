@@ -15,8 +15,9 @@
  * lugar de simular el movimiento con escrituras parciales.
  */
 import { supabase } from "@/core/supabase";
-import { exigirCapacidad, exigirPermiso, grupoActivoVigente } from "@/features/seguridad/lib/vigente";
+import { exigirCapacidad, exigirPermiso, grupoActivoVigente, esPrincipalVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import { listarClientes } from "@/features/clientes/lib/clientes";
+import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
 import { aNumero, calcularComisionExacta, monedaExacta } from "@/shared/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -399,16 +400,26 @@ export async function eliminarBanco(id: string): Promise<{ ok: boolean; error?: 
 export async function listarClientesSaldos(): Promise<ClienteSaldo[]> {
   if (!supabase) return [];
   // El aislamiento por grupo lo hace el RLS de la base; esto solo implementa el
-  // filtro "ver un grupo / todos" del super administrador.
-  const activo = grupoActivoVigente();
+  // filtro "ver un grupo / todos" del super administrador o del grupo asignado.
+  const activo = !esPrincipalVigente() ? (grupoVigente() || null) : (grupoActivoVigente() || null);
   let q = supabase
     .from("clientes")
-    .select("id, nombre, saldo_actual, aval")
+    .select("id, nombre, saldo_actual, aval, grupo_id, telefono, codigo_pais")
     .order("nombre");
   if (activo) q = q.eq("grupo_id", activo);
   const { data, error } = await q;
   if (error) return [];
-  return ((data ?? []) as Array<Record<string, unknown>>).map((c) => ({
+  const rawList = ((data ?? []) as Array<Record<string, unknown>>).map((c) => ({
+    id: String(c.id),
+    nombre: String(c.nombre ?? ""),
+    saldo_actual: num(c.saldo_actual),
+    aval: num(c.aval),
+    grupo_id: c.grupo_id != null ? String(c.grupo_id) : activo,
+    telefono: c.telefono ? String(c.telefono) : null,
+    codigo_pais: c.codigo_pais ? String(c.codigo_pais) : null,
+  }));
+  const sincronizados = await sincronizarSaldosRealesClientes(rawList, activo);
+  return sincronizados.map((c) => ({
     id: String(c.id),
     nombre: String(c.nombre ?? ""),
     saldo_actual: num(c.saldo_actual),

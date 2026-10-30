@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/core/supabase";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/components/ModalPagoAGanadorYConciliacion";
@@ -140,6 +141,12 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
     setCargando(false);
   }, []);
 
+  /** Refresca los saldos de clientes en tiempo real sin recargar todo el módulo */
+  const refrescarClientes = useCallback(async () => {
+    const c = await listarClientesSaldos();
+    setClientes(c);
+  }, []);
+
   /** Balance acumulado (todo el libro) o del período pedido. */
   const aplicarRango = useCallback(async (nuevo: { desde?: string; hasta?: string }) => {
     setRango(nuevo);
@@ -158,7 +165,50 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
       setBalance(await obtenerBalanceComprobacionNIIF({}));
       setAsientos(await listarAsientosNIIF(50));
     })();
-  }, [cargar]);
+  }, [cargar, grupoActivo]);
+
+  // Sincronización en tiempo real de saldos de clientes
+  useEffect(() => {
+    const handleActualizar = () => {
+      void refrescarClientes();
+    };
+
+    window.addEventListener("hipico:saldos-actualizados", handleActualizar);
+    window.addEventListener("hipico_tickets_actualizados", handleActualizar);
+    window.addEventListener("hipico:movimientos-operador-actualizados", handleActualizar);
+    window.addEventListener("focus", handleActualizar);
+
+    let channel: any = null;
+    if (supabase) {
+      channel = supabase
+        .channel("contabilidad-realtime-saldos")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "clientes" },
+          () => {
+            void refrescarClientes();
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "tickets_apuestas" },
+          () => {
+            void refrescarClientes();
+          }
+        )
+        .subscribe();
+    }
+
+    return () => {
+      window.removeEventListener("hipico:saldos-actualizados", handleActualizar);
+      window.removeEventListener("hipico_tickets_actualizados", handleActualizar);
+      window.removeEventListener("hipico:movimientos-operador-actualizados", handleActualizar);
+      window.removeEventListener("focus", handleActualizar);
+      if (channel && supabase) {
+        void supabase.removeChannel(channel);
+      }
+    };
+  }, [refrescarClientes]);
 
   // La pestaña vigente sale de la URL: cada pantalla tiene su ruta y el
   // Balance NIIF se abre como vista (`?vista=niif`). Se lee de
