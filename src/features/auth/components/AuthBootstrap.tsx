@@ -32,6 +32,15 @@ export function AuthBootstrap() {
     const alCambiar = (evento: "SIGNED_IN" | "SIGNED_OUT" | "TOKEN_REFRESHED" | "USER_UPDATED" | "PASSWORD_RECOVERY" | "INITIAL_SESSION") => {
       if (!vivo) return;
       if (evento === "SIGNED_OUT") {
+        const st = useAuthStore.getState();
+        const sesionAdminLocal =
+          st.esPrincipal ||
+          (typeof window !== "undefined" && Boolean(localStorage.getItem("hipico_sesion_admin_local")));
+        const sesionOpLocal =
+          st.modoOperador ||
+          (typeof window !== "undefined" && localStorage.getItem("hipico_sesion_operador_local") === "1");
+        if (sesionAdminLocal || sesionOpLocal) return;
+
         // Supabase ya completó el cierre; no vuelvas a llamar signOut desde
         // su propio callback (puede bloquear la cola de eventos de Auth).
         void salir(false).then(() => router.replace("/login"));
@@ -43,13 +52,6 @@ export function AuthBootstrap() {
         // SOLO desde una pantalla de INGRESO. Si el operador está a mitad de una
         // recuperación de contraseña, esa ruta es pública pero no de acceso:
         // mandarlo al dashboard lo deja sin poder guardar la clave nueva.
-        //
-        // Y SOLO si de verdad hay sesión. `onAuthStateChange` dispara
-        // INITIAL_SESSION al suscribirse, incluso sin nadie dentro. Mandando a
-        // /dashboard sin sesión, el dashboard expulsaba de vuelta al login, el
-        // efecto volvía a correr porque depende de `ruta`, se re-suscribía y
-        // repetía: un bucle de recargas que dejaba el formulario sin poder
-        // usarse. La redirección se mira el store, no el evento.
         const s = useAuthStore.getState();
         if (!s.inicializada || !s.sembrada) return;
         if (esPantallaDeAcceso(ruta)) router.replace(s.modoOperador ? "/apuestas" : "/inicio");
@@ -65,21 +67,19 @@ export function AuthBootstrap() {
       // enlace del correo —que justamente llega SIN sesión— expulsaba también:
       // la recuperación de contraseña se rompía sola.
       const st = useAuthStore.getState();
+      const sesionAdminLocal =
+        st.esPrincipal ||
+        (typeof window !== "undefined" && Boolean(localStorage.getItem("hipico_sesion_admin_local")));
       const sesionOpLocal =
         st.modoOperador ||
         (typeof window !== "undefined" && localStorage.getItem("hipico_sesion_operador_local") === "1");
-      if (!s && !sesionOpLocal && !esRutaPublica(ruta)) router.replace("/login");
+      if (!s && !sesionOpLocal && !sesionAdminLocal && !esRutaPublica(ruta)) router.replace("/login");
     })();
 
     // El cliente de Supabase notifica por canal; el evento de storage cubre el
     // cierre de sesión ejecutado en otra pestaña.
     //
     // La suscripción se registra una vez y en un `let` que el cleanup puede ver.
-    // Antes se asignaba dentro de un `async` sin awaited: si el efecto se
-    // desarmaba antes de que terminara el import dinámico, el `unsubscribe` se
-    // perdía y la suscripción vieja seguía viva. Cada efecto que se repetía
-    // dejaba una copia más escuchando `onAuthStateChange`, y todas llamaban a
-    // `inicializar()`: de ahí el "carga y carga" que se veía en el login.
     let canal: { unsubscribe: () => void } | null = null;
     let desarmado = false;
     void (async () => {

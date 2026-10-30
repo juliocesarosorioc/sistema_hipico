@@ -47,6 +47,8 @@ export default function PantallaLogin() {
   const [clave, setClave] = useState("");
   const [verClave, setVerClave] = useState(false);
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+  const [ingresando, setIngresando] = useState(false);
+  const yaNavegandoRef = useRef(false);
 
   useEffect(() => {
     activarProteccionAntiClonacion();
@@ -114,6 +116,9 @@ export default function PantallaLogin() {
   useEffect(() => {
     if (!inicializada) return;
     if (usuarioActual && (perfiles.length > 0 || esPrincipal)) {
+      if (yaNavegandoRef.current) return;
+      yaNavegandoRef.current = true;
+      setIngresando(true);
       const esOp =
         modoOperador ||
         (perfiles.length > 0 &&
@@ -125,7 +130,7 @@ export default function PantallaLogin() {
 
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
-    if (cargando) return;
+    if (cargando || ingresando || yaNavegandoRef.current) return;
 
     // Honeypot anti-bot (oculto)
     if (honeypotRef.current && honeypotRef.current.value) {
@@ -175,9 +180,11 @@ export default function PantallaLogin() {
       return;
     }
 
+    setIngresando(true);
     try {
       const ok = await iniciarSesion(usuarioSanitizado, clave);
       if (!ok) {
+        setIngresando(false);
         rateLimiterRef.current.registrarFallo();
         setClave("");
         const r2 = rateLimiterRef.current.puedeIntentar();
@@ -190,14 +197,18 @@ export default function PantallaLogin() {
         return;
       }
       rateLimiterRef.current.registrarExito();
-      const st = useAuthStore.getState();
-      const esOp =
-        st.modoOperador ||
-        (st.perfiles.length > 0 &&
-          st.perfiles.every((p) => p.toLowerCase().includes("operador")) &&
-          !st.esPrincipal);
-      router.replace(esOp ? "/apuestas" : "/inicio");
+      if (!yaNavegandoRef.current) {
+        yaNavegandoRef.current = true;
+        const st = useAuthStore.getState();
+        const esOp =
+          st.modoOperador ||
+          (st.perfiles.length > 0 &&
+            st.perfiles.every((p) => p.toLowerCase().includes("operador")) &&
+            !st.esPrincipal);
+        router.replace(esOp ? "/apuestas" : "/inicio");
+      }
     } catch (err) {
+      setIngresando(false);
       rateLimiterRef.current.registrarFallo();
       useAuthStore.setState({
         cargando: false,
@@ -388,15 +399,15 @@ export default function PantallaLogin() {
           </div>
           <button
             type="submit"
-            disabled={cargando}
+            disabled={cargando || ingresando}
             className="w-full rounded-lg bg-slate-800 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {cargando ? (
+            {cargando || ingresando ? (
               <>
                 <svg viewBox="0 0 24 24" className="mr-2 inline h-4 w-4 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                   <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                 </svg>
-                Autenticando...
+                Ingresando...
               </>
             ) : (
               <>

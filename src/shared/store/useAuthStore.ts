@@ -37,6 +37,7 @@ const CLAVE_ACCESO = "hipico_acceso";
 const CLAVE_GRUPO_ACTIVO = "hipico_grupo_activo";
 const CLAVE_MODO_OPERADOR = "hipico_modo_operador";
 const CLAVE_SESION_OPERADOR_LOCAL = "hipico_sesion_operador_local";
+const CLAVE_SESION_ADMIN_LOCAL = "hipico_sesion_admin_local";
 const CLAVE_OPERADOR_ACTUAL = "hipico_operador_actual";
 
 function leerModoOperadorGuardado(): boolean {
@@ -52,6 +53,32 @@ function leerSesionOperadorLocal(): boolean {
     return typeof window !== "undefined" && localStorage.getItem(CLAVE_SESION_OPERADOR_LOCAL) === "1";
   } catch {
     return false;
+  }
+}
+
+function leerSesionAdminLocal(): string | null {
+  try {
+    if (typeof window !== "undefined") {
+      const u = localStorage.getItem(CLAVE_SESION_ADMIN_LOCAL);
+      if (u && esUsuarioPrincipal(u)) return u;
+    }
+  } catch {
+    /* sinop */
+  }
+  return null;
+}
+
+function guardarSesionAdminLocal(u: string | null): void {
+  try {
+    if (typeof window !== "undefined") {
+      if (u && esUsuarioPrincipal(u)) {
+        localStorage.setItem(CLAVE_SESION_ADMIN_LOCAL, u);
+      } else {
+        localStorage.removeItem(CLAVE_SESION_ADMIN_LOCAL);
+      }
+    }
+  } catch {
+    /* sinop */
   }
 }
 
@@ -356,6 +383,47 @@ export function mensajeSinAcceso(identificador: string, falloLectura: boolean): 
 async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promise<void> {
   const sesion = await sesionActual();
   if (!sesion) {
+    const adminLocal = leerSesionAdminLocal();
+    if (adminLocal) {
+      const uidPrincipal = "josorioc";
+      const correoAdmin = resolverCorreo(uidPrincipal);
+      const todasCaps = CAPACIDADES.map((c) => c.clave);
+      publicarPermisosEnCookies(["admin"], todasCaps, uidPrincipal);
+      setAccesosVigentes({
+        permisos: todasCaps,
+        esPrincipal: true,
+        usuario: uidPrincipal,
+        tipoUsuario: "admin",
+        atributos: {},
+        grupoId: "",
+        grupoNombre: "Todos los grupos",
+        veTodos: true,
+      });
+      set({
+        inicializada: true,
+        sembrada: true,
+        cargando: false,
+        usuario: uidPrincipal,
+        email: correoAdmin,
+        tipoUsuario: {
+          id: 1,
+          nombre: "admin",
+          descripcion: "Administrador Principal",
+          activo: true,
+          capacidades: todasCaps,
+        },
+        excepciones: {},
+        esPrincipal: true,
+        permisos: todasCaps,
+        perfiles: ["admin"],
+        modoOperador: false,
+        veTodosLosGrupos: true,
+        grupoId: "",
+        grupoNombre: "Todos los grupos",
+        grupoActivo: null,
+      });
+      return;
+    }
     if (leerSesionOperadorLocal()) {
       try {
         const rawOp = typeof window !== "undefined" ? localStorage.getItem(CLAVE_OPERADOR_ACTUAL) : null;
@@ -372,6 +440,14 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
       useAuthStore.getState().entrarComoOperador();
       return;
     }
+
+    // Si ya existe una sesión en memoria activa y sembrada, conservarla sin parpadeos
+    const stActual = useAuthStore.getState();
+    if (stActual.sembrada && stActual.usuario) {
+      set({ inicializada: true, cargando: false });
+      return;
+    }
+
     limpiarAccesosVigentes();
     set({
       inicializada: true,
@@ -643,6 +719,7 @@ export const useAuthStore = create<EstadoAuth>()(
             const uidPrincipal = "josorioc";
             const correoAdmin = resolverCorreo(uidPrincipal);
             const todasCaps = CAPACIDADES.map((c) => c.clave);
+            guardarSesionAdminLocal(uidPrincipal);
             void login(uidPrincipal, clave).catch(() => {});
             publicarPermisosEnCookies(["admin"], todasCaps, uidPrincipal);
             setAccesosVigentes({
@@ -987,11 +1064,13 @@ export const useAuthStore = create<EstadoAuth>()(
         borrarCookiesDeAcceso();
         limpiarAccesosVigentes();
         guardarGrupoActivo(null);
+        guardarSesionAdminLocal(null);
         try {
           if (typeof window !== "undefined") {
             localStorage.removeItem(CLAVE_MODO_OPERADOR);
             localStorage.removeItem(CLAVE_SESION_OPERADOR_LOCAL);
             localStorage.removeItem(CLAVE_OPERADOR_ACTUAL);
+            localStorage.removeItem(CLAVE_SESION_ADMIN_LOCAL);
           }
         } catch {
           /* sinop */
