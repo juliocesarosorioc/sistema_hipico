@@ -353,7 +353,7 @@ export async function registrarPagoComprobante(
     moneda_origen: params.monedaOrigen || "VES",
     tasa_cambio: tasa,
     monto_equivalente_base: montoBase,
-    comprobante_url: params.comprobanteUrl,
+    comprobante_url: params.comprobanteUrl || "",
     comprobante_nombre: params.comprobanteNombre || null,
     comprobante_tipo: params.comprobanteTipo || null,
     comprobante_peso: params.comprobantePeso || null,
@@ -554,6 +554,155 @@ export async function aprobarPagoCliente(
 /**
  * Rechaza un pago de cliente con un motivo explícito.
  */
+/**
+ * Registra un cobro realizado directamente por el administrador u operador a un cliente con saldo deudor.
+ * - Descuenta la deuda (suma el monto al saldo del cliente).
+ * - Crea el registro de pago comprobante con estado APROBADO.
+ * - Genera notificación para el usuario en el portal para que valide que lo recibió satisfactoriamente.
+ */
+export async function registrarCobroDirectoACliente(params: {
+  grupoId?: string | null;
+  clienteId: string;
+  clienteNombre: string;
+  metodoPago: string;
+  bancoDestinoCasa?: string;
+  referenciaBancaria: string;
+  montoCobrado: number;
+  moneda?: string;
+  tasaCambio?: number;
+  comprobanteUrl?: string;
+  notas?: string;
+  operador?: string;
+}): Promise<{ ok: boolean; nuevoSaldo?: number; error?: string }> {
+  const monto = Number(params.montoCobrado);
+  if (!Number.isFinite(monto) || monto <= 0) {
+    return { ok: false, error: "El monto a cobrar debe ser mayor a 0." };
+  }
+  const ref = params.referenciaBancaria.trim();
+  if (!ref) {
+    return { ok: false, error: "El número de referencia del pago es obligatorio." };
+  }
+
+  const operador = params.operador || "Administrador";
+  const ahora = new Date().toISOString();
+  const nuevoId = "cobro-" + Math.random().toString(36).substring(2, 10);
+  let nuevoSaldoCalculado = 0;
+
+  // 1. Actualizar saldo del cliente (abonar monto cobrado)
+  if (supabase && params.clienteId) {
+    try {
+      const { data: cli } = await supabase
+        .from("clientes")
+        .select("saldo_actual, saldo")
+        .eq("id", params.clienteId)
+        .maybeSingle();
+
+      if (cli) {
+        const actual = Number(cli.saldo_actual ?? cli.saldo ?? 0);
+        nuevoSaldoCalculado = sumarDinero(actual, monto);
+        await supabase
+          .from("clientes")
+          .update({ saldo_actual: nuevoSaldoCalculado, saldo: nuevoSaldoCalculado })
+          .eq("id", params.clienteId as never);
+      }
+    } catch {
+      /* fallback */
+    }
+  }
+
+  // 2. Registrar pago en pagos_comprobantes
+  const fila: PagoComprobanteRow = {
+    id: nuevoId,
+    grupo_id: params.grupoId || null,
+    cliente_id: params.clienteId,
+    cliente_nombre: params.clienteNombre,
+    direccion_flujo: "PAGO_DE_CLIENTE",
+    metodo_pago: params.metodoPago,
+    banco_origen: null,
+    banco_destino: params.bancoDestinoCasa || null,
+    referencia_bancaria: ref,
+    monto_moneda_origen: monto,
+    moneda_origen: params.moneda || "USD",
+    tasa_cambio: params.tasaCambio || 1,
+    monto_equivalente_base: monto,
+    comprobante_url: params.comprobanteUrl || "",
+    comprobante_nombre: null,
+    comprobante_tipo: null,
+    comprobante_peso: null,
+    estado: "APROBADO",
+    motivo_rechazo: null,
+    notas: params.notas || "Cobro registrado directamente por administración. Pendiente de validación por el usuario.",
+    registrado_por: operador,
+    atendido_por: operador,
+    atendido_at: ahora,
+    asiento_contable_id: null,
+    created_at: ahora,
+    updated_at: ahora,
+  };
+  memoriaPagos.set(fila.id, fila);
+
+  if (supabase) {
+    try {
+      await supabase.from("pagos_comprobantes").insert([fila]);
+    } catch {
+      /* best-effort */
+    }
+
+    // 3. Crear notificación para el cliente en el portal
+    try {
+      await supabase.from("notificaciones").insert([
+        {
+          tipo: "cobro_casa_validacion",
+          titulo: "Pago registrado por la administración",
+          mensaje: `La administración ha registrado tu pago de ${formatearMontoSinMoneda(monto)} ${params.moneda || "USD"} (Ref #${ref}). Por favor confirma en tu portal que lo recibiste y está conforme.`,
+          cliente_id: params.clienteId,
+          cliente_nombre: params.clienteNombre,
+          datos: {
+            pago_id: nuevoId,
+            referencia: ref,
+            monto,
+            moneda: params.moneda || "USD",
+            metodo: params.metodoPago,
+            fecha: ahora,
+            estado: "pendiente_confirmacion_cliente",
+          },
+          estado: "Nueva",
+        },
+      ]);
+    } catch {
+      /* ignore */
+    }
+
+    // 4. Asiento contable
+    try {
+      await generarAsientoDepositoCliente({
+        grupoId: params.grupoId,
+        fecha: ahora.slice(0, 10),
+        clienteId: params.clienteId,
+        clienteNombre: params.clienteNombre,
+        monto,
+        referencia: ref,
+        bancoCodigo: resolverCodigoCuentaBancoPorMetodo(params.metodoPago),
+        usuario: operador,
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Notificar evento global de saldos
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(new CustomEvent("hipico:saldos-actualizados"));
+      window.dispatchEvent(new CustomEvent("hipico_tickets_actualizados"));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return { ok: true, nuevoSaldo: nuevoSaldoCalculado };
+}
+
 export async function rechazarPagoCliente(
   pagoId: string,
   motivo: string,

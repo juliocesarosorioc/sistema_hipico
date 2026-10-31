@@ -22,13 +22,15 @@ export function SelectorGrupo() {
   const veTodos = useAuthStore((s) => s.veTodosLosGrupos);
   const modoOperador = useAuthStore((s) => s.modoOperador);
   const perfiles = useAuthStore((s) => s.perfiles);
+  const miGrupoId = useAuthStore((s) => s.grupoId);
+  const tieneGrupoAsignado = Boolean(miGrupoId && miGrupoId.trim() !== "");
   const esOperador = modoOperador || perfiles.includes("OPERADOR");
   const grupoActivo = useAuthStore((s) => s.grupoActivo);
   const setGrupoActivo = useAuthStore((s) => s.setGrupoActivo);
   const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
 
   useEffect(() => {
-    if (!veTodos || esOperador) return;
+    if (!veTodos || esOperador || tieneGrupoAsignado) return;
     let vivo = true;
     const cargar = () => {
       listarGruposVenta()
@@ -58,9 +60,7 @@ export function SelectorGrupo() {
     };
   }, [veTodos, esOperador, grupoActivo, setGrupoActivo]);
 
-  if (!veTodos || esOperador) return null;
-
-  if (!veTodos) return null;
+  if (!veTodos || esOperador || tieneGrupoAsignado) return null;
 
   const cambiar = (valor: string) => {
     const v = valor && valor.trim() !== "" ? valor.trim() : null;

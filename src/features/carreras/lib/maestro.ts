@@ -454,20 +454,59 @@ export async function eliminarCarreraMaestro(
     return { ok: false, error: (e as Error).message };
   }
   const num = numeroCarrera(carrera);
-  if (!claveHipodromo(hipodromo) || !num) {
+  const clave = claveHipodromo(hipodromo);
+  if (!clave || !num) {
     return { ok: false, error: "Hipódromo y Nº de carrera requeridos." };
   }
   try {
-    const guardado = await textoHipodromoEnMatriz(fecha, hipodromo);
-    // No hay fila con esa clave: no hay nada que borrar, y no es un fallo.
-    if (!guardado) return { ok: true };
-    const { error } = await supabase
+    const pedido = String(hipodromo).trim().toUpperCase();
+    const nombresHipo = new Set([pedido]);
+
+    // Buscar todas las variantes del hipódromo registradas para este día en la matriz
+    const { data: filasHipo } = await supabase
+      .from("carreras")
+      .select("hipodromo")
+      .eq("fecha", fecha);
+    for (const f of filasHipo ?? []) {
+      if (claveHipodromo(f.hipodromo) === clave) {
+        nombresHipo.add(String(f.hipodromo));
+      }
+    }
+
+    const listaHipos = [...nombresHipo];
+
+    // 1. Borrar de carreras (matriz de oferta)
+    const { error: errCarreras } = await supabase
       .from("carreras")
       .delete()
       .eq("fecha", fecha)
-      .eq("hipodromo", guardado)
+      .in("hipodromo", listaHipos)
       .eq("carrera", num);
-    if (error) return { ok: false, error: error.message };
+
+    if (errCarreras) return { ok: false, error: errCarreras.message };
+
+    // 2. Borrar también de resultados_carreras si existía un libro de resultados para esa carrera
+    try {
+      const { data: resFilas } = await supabase
+        .from("resultados_carreras")
+        .select("hipodromo")
+        .eq("fecha", fecha);
+      const resHipos = new Set(listaHipos);
+      for (const rf of resFilas ?? []) {
+        if (claveHipodromo(rf.hipodromo) === clave) {
+          resHipos.add(String(rf.hipodromo));
+        }
+      }
+      await supabase
+        .from("resultados_carreras")
+        .delete()
+        .eq("fecha", fecha)
+        .in("hipodromo", [...resHipos])
+        .eq("carrera", num);
+    } catch {
+      /* best-effort si resultados_carreras no existe o no tiene fila */
+    }
+
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

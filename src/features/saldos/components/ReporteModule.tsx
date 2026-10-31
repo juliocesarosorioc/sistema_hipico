@@ -24,6 +24,7 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/components/ModalPagoAGanadorYConciliacion";
+import { ModalCobroYValidacionCliente } from "@/features/contabilidad/components/ModalCobroYValidacionCliente";
 import { BotonIconoReporteSaldosVisual } from "@/features/saldos/components/ReporteSaldosVisual";
 import { etiquetaJugada, caballoPareoLegible, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 import { redondearCentavos } from "@/shared/lib/dinero";
@@ -153,6 +154,8 @@ export function ReporteModule() {
   const [modalPagoGanadorAbierto, setModalPagoGanadorAbierto] = useState(false);
   const [clientePagoSeleccionadoId, setClientePagoSeleccionadoId] = useState<string | null>(null);
   const [pestanaModalPagos, setPestanaModalPagos] = useState<"PAGAR_GANADORES" | "CONCILIAR_PAGOS">("PAGAR_GANADORES");
+  const [modalCobroAbierto, setModalCobroAbierto] = useState(false);
+  const [clienteCobroSeleccionado, setClienteCobroSeleccionado] = useState<{ id?: string | number | null; nombre?: string | null; saldo?: number | null } | null>(null);
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
   // Id de la última consulta: descarta respuestas viejas que llegan tarde
   const solicitud = useRef(0);
@@ -1002,6 +1005,17 @@ export function ReporteModule() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => {
+                    setClienteCobroSeleccionado(null);
+                    setModalCobroAbierto(true);
+                  }}
+                  className="rounded-md bg-blue-600 px-2.5 py-1 font-black text-white hover:bg-blue-500 transition shadow-sm"
+                  title="Registrar cobro directo o validar reportes de pago de clientes"
+                >
+                  📥 Registrar Cobro / Validar Pagos
+                </button>
+                <button
+                  type="button"
                   onClick={() => setFuenteSaldos4Col("JORNADA")}
                   className={`rounded-md px-2.5 py-1 font-bold transition ${
                     !resumenCuatroColumnas.usandoCartera
@@ -1137,11 +1151,28 @@ export function ReporteModule() {
                         </td>
                         <td className="py-1.5 px-3 font-bold text-slate-800 border-r border-slate-200">
                           {par.neg ? (
-                            <div className="flex items-center gap-1.5">
-                              <span title={par.neg.etiqueta} className="text-sm shrink-0">
-                                {par.neg.icono}
-                              </span>
-                              <span className="truncate">{par.neg.nombre}</span>
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span title={par.neg.etiqueta} className="text-sm shrink-0">
+                                  {par.neg.icono}
+                                </span>
+                                <span className="truncate">{par.neg.nombre}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setClienteCobroSeleccionado({
+                                    id: par.neg?.id,
+                                    nombre: par.neg?.nombre,
+                                    saldo: par.neg?.saldo,
+                                  });
+                                  setModalCobroAbierto(true);
+                                }}
+                                className="shrink-0 inline-flex items-center gap-1 rounded bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white hover:bg-blue-700 transition shadow-xs"
+                                title="Cobrar saldo deudor o validar reporte de pago de este cliente"
+                              >
+                                📥 Cobrar
+                              </button>
                             </div>
                           ) : "—"}
                         </td>
@@ -1597,6 +1628,24 @@ export function ReporteModule() {
           }}
           clientePreseleccionadoId={clientePagoSeleccionadoId || undefined}
           pestanaInicial={pestanaModalPagos}
+        />
+      )}
+
+      {modalCobroAbierto && (
+        <ModalCobroYValidacionCliente
+          abierto={modalCobroAbierto}
+          onCerrar={() => {
+            setModalCobroAbierto(false);
+            setClienteCobroSeleccionado(null);
+          }}
+          grupoId={grupoId || null}
+          clienteInicial={clienteCobroSeleccionado}
+          onOperacionCompletada={() => {
+            void cargar();
+            if (grupoId) {
+              void listarClientes(true, grupoId).then(setClientesGrupo).catch(() => {});
+            }
+          }}
         />
       )}
 

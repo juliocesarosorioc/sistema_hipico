@@ -57,7 +57,7 @@ export function WidgetAsistenteIa() {
     {
       id: "bienvenida",
       remitente: "ia",
-      texto: `👋 ¡Hola! Soy tu **🤖 Agente de IA del Sistema Hípico**.\nTengo **todas las acciones de la plataforma activadas**: suministro información en vivo, ejecuto operaciones (liquidación, **🤖 Cambio de Pizarra**, cruces, saldos, clientes, bloqueos del portal y navegación a los 24 módulos) y puedes **dictarme por voz (🎙️)** o usar la pestaña **⚡ Acciones**.`,
+      texto: `👋 ¡Hola! Soy tu **🤖 Super Club del Sistema Hípico**.\nTengo **todas las acciones de la plataforma activadas**: suministro información en vivo, ejecuto operaciones (liquidación, **🤖 Cambio de Pizarra**, cruces, saldos, clientes, bloqueos del portal y navegación a los 24 módulos) y puedes **dictarme por voz (🎙️)** o usar la pestaña **⚡ Acciones Super Club**.`,
       fecha: new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
@@ -230,7 +230,7 @@ export function WidgetAsistenteIa() {
       ? "operador"
       : "operador";
 
-  // Enviar mensaje al Agente de IA
+  // Enviar mensaje al Super Club
   const handleEnviarMensaje = (textoPersonalizado?: string, fueDictado = false) => {
     const mensajeAEnviar = (textoPersonalizado || textoInput).trim();
     if (!mensajeAEnviar) return;
@@ -248,7 +248,7 @@ export function WidgetAsistenteIa() {
     setTextoInput("");
     setEscribiendoIa(true);
 
-    // Procesamiento inteligente del Agente de IA con acceso a toda la información del sistema y FSM contable
+    // Procesamiento inteligente del Super Club con acceso a toda la información del sistema y FSM contable
     setTimeout(async () => {
       const textoNormalizado = normalizarDictadoVoz(mensajeAEnviar);
       const sesionActual = obtenerSesionCopilotoGlobal();
@@ -419,7 +419,7 @@ export function WidgetAsistenteIa() {
         <button
           onClick={() => setAbierto(true)}
           className="group relative flex items-center gap-2.5 rounded-full border-2 border-emerald-400 bg-slate-900 px-4 py-2.5 text-white shadow-2xl shadow-emerald-500/30 transition-all hover:scale-105 hover:bg-slate-800"
-          title="Abrir Agente de IA · Información del Sistema y Dictado por Voz"
+          title="Abrir Super Club · Información del Sistema y Dictado por Voz"
         >
           <span className="relative flex h-3 w-3">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -428,7 +428,7 @@ export function WidgetAsistenteIa() {
           <span className="text-xl">🤖</span>
           <div className="flex flex-col text-left">
             <span className="text-xs font-black tracking-tight text-emerald-400">
-              🤖 Agente de IA
+              🤖 Super Club
             </span>
             <span className="text-[10px] font-bold text-slate-300">
               Info del Sistema · 🎙️ Dictado por Voz
@@ -448,7 +448,7 @@ export function WidgetAsistenteIa() {
               </div>
               <div>
                 <h4 className="text-xs font-black tracking-tight text-white flex items-center gap-1.5">
-                  <span>🤖 Agente de IA del Sistema</span>
+                  <span>🤖 Super Club del Sistema</span>
                   <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                 </h4>
                 <p className="text-[10px] text-slate-400">
@@ -488,7 +488,7 @@ export function WidgetAsistenteIa() {
                   : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
-              ⚡ Acciones
+              ⚡ Acciones Super Club
             </button>
             <button
               onClick={() => setPestana("mis_tickets")}
@@ -649,7 +649,7 @@ export function WidgetAsistenteIa() {
                     ) : (
                       <>
                         <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400">
-                          <span>{m.remitente === "usuario" ? "Tú" : "🤖 Agente de IA"}</span>
+                          <span>{m.remitente === "usuario" ? "Tú" : "🤖 Super Club"}</span>
                           <span>•</span>
                           <span>{m.fecha}</span>
                         </div>
@@ -710,7 +710,7 @@ export function WidgetAsistenteIa() {
                 {escribiendoIa && (
                   <div className="flex items-center gap-2 text-xs text-slate-400 italic">
                     <span className="h-2 w-2 rounded-full bg-emerald-500 animate-bounce" />
-                    <span>El Agente de IA está procesando la información del sistema...</span>
+                    <span>El Super Club está procesando la información del sistema...</span>
                   </div>
                 )}
 
@@ -837,7 +837,7 @@ export function WidgetAsistenteIa() {
                     <button
                       type="button"
                       onClick={alternarDictadoVoz}
-                      title={escuchandoVoz ? "Detener dictado por voz" : "Dictar por voz (el Agente de IA interpreta tu voz)"}
+                      title={escuchandoVoz ? "Detener dictado por voz" : "Dictar por voz (el Super Club interpreta tu voz)"}
                       className={`shrink-0 rounded-xl border px-2.5 py-2 text-xs font-black transition ${
                         escuchandoVoz
                           ? "border-rose-400 bg-rose-600 text-white animate-pulse"

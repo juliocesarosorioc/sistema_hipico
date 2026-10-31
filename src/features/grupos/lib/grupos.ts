@@ -198,7 +198,7 @@ export function porcentajeDeEntrada(
 
 /** Lista clientes con sus saldos y grupos (clientes + clientes_grupos). */
 export async function listarClientesVenta(force = false): Promise<ClienteVenta[]> {
-  const activo = grupoActivoVigente();
+  const activo = grupoActivoVigente() || grupoVigente() || null;
   if (!force && cacheClientes && cacheClientesGrupo === activo && Date.now() - cacheClientesTs < 1500) {
     return cacheClientes;
   }

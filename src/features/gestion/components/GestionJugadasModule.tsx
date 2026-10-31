@@ -3014,6 +3014,7 @@ const hipodromosDelDia = useMemo(() => {
           break;
         }
         case "abrir_liquidar_carrera":
+        case "abrir_cargar_pizarra":
           void abrirResultados();
           break;
         case "abrir_reporte_liquidacion":

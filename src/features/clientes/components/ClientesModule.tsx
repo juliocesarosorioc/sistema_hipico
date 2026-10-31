@@ -89,7 +89,9 @@ export function ClientesModule() {
       if (!activo) return;
       const validos = gs.filter((g) => g.activo !== false);
       setGrupos(validos);
-      if (esPrincipal) {
+      if (miGrupoId) {
+        setGrupoConsultado(miGrupoId);
+      } else if (esPrincipal) {
         if (grupoActivo) {
           setGrupoConsultado(grupoActivo);
         } else if (validos.length > 0) {
@@ -97,8 +99,6 @@ export function ClientesModule() {
           setGrupoConsultado(String(principal.id));
           useAuthStore.getState().setGrupoActivo(String(principal.id));
         }
-      } else if (miGrupoId) {
-        setGrupoConsultado(miGrupoId);
       }
     });
     return () => {
@@ -244,7 +244,7 @@ export function ClientesModule() {
           <h1 className="text-xl font-black text-slate-800">
             <span className="mr-2 text-primary-600">👥</span> Gestión de Clientes
           </h1>
-          {esPrincipal ? (
+          {esPrincipal && veTodos && !miGrupoId ? (
             <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs">
               <span className="font-bold text-amber-900">📁 Grupo:</span>
               <select
@@ -267,7 +267,7 @@ export function ClientesModule() {
             <div className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
               <span>📁 Mi Grupo:</span>
               <span className="font-black text-slate-900">
-                {grupos.find((g) => String(g.id) === String(miGrupoId))?.nombre || "Grupo asignado"}
+                {grupos.find((g) => String(g.id) === String(grupoConsultado || miGrupoId || grupoActivo))?.nombre || "Grupo asignado"}
               </span>
             </div>
           )}
@@ -398,7 +398,7 @@ export function ClientesModule() {
                       aria-label="Seleccionar la página"
                     />
                   </th>
-                  <th className={th + " w-[26%] min-w-[14rem]"}>Jugador</th>
+                  <th className={th + " w-[34%] min-w-[20rem]"}>Jugador</th>
                   <th className={th + " w-[11%]"}>Contacto</th>
                   <th className={th + " w-16 text-center"} title="Modo de juego">Modo</th>
                   <th className={th + " w-24 text-right"} title="Saldo actual en USD">Saldo</th>

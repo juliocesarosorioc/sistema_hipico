@@ -74,6 +74,8 @@ export type CarrerasDiaState = {
   estadoDe: (hipodromo: string, carrera: number | string, fecha?: string) => CarreraDelDia | null;
   /** ¿Existe ya esa carrera en el ledger para [fecha + hipódromo]? */
   existeCarrera: (hipodromo: string, carrera: number | string, fecha?: string) => boolean;
+  /** Elimina una carrera del ledger persistido al darla de baja. */
+  eliminarCarrera: (hipodromo: string, carrera: number | string, fecha?: string) => void;
 };
 
 function clave(h: string, c: number | string): string {
@@ -131,6 +133,16 @@ export const useCarrerasDiaStore = create<CarrerasDiaState>()(
             };
           }
           return { carreras: copia };
+        }),
+
+      eliminarCarrera: (hipodromo, carrera, fecha) =>
+        set((s) => {
+          const f = fecha || s.fechaSeleccionada || hoy();
+          const k = clave(hipodromo, carrera);
+          const filtradas = s.carreras.filter(
+            (x) => !(clave(x.hipodromo, x.carrera) === k && x.fecha === f)
+          );
+          return { carreras: filtradas };
         }),
 
       upsert: (c) =>

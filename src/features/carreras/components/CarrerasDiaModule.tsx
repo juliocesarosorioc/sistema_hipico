@@ -9,6 +9,7 @@ import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
 import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
+import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
 import {
   nombreHipodromoParaMostrar,
   nombrePropioHipodromo,
@@ -292,8 +293,20 @@ export function CarrerasDiaModule() {
   };
 
   const eliminar = async (c: CarreraCentral) => {
-    const r = await eliminarCarreraCentral(fecha, hipodromo || c.hipodromo, c.carrera);
+    const hipoTarget = hipodromo || c.hipodromo;
+    const r = await eliminarCarreraCentral(fecha, hipoTarget, c.carrera);
     if (!r.ok) return toast("Error al eliminar: " + (r.error ?? "desconocido"), "error");
+    useRegistroCentral.getState().eliminarCarrera(fecha, hipoTarget, c.carrera);
+    useCarrerasDiaStore.getState().eliminarCarrera(hipoTarget, c.carrera, fecha);
+    try {
+      window.dispatchEvent(
+        new CustomEvent("hipico:carreras-actualizadas", {
+          detail: { fecha, hipodromo: hipoTarget, carrera: c.carrera, accion: "eliminada" },
+        })
+      );
+    } catch {
+      /* ignore */
+    }
     toast(`🗑️ Carrera C${c.carrera} quitada del día (no se borran tablas ni jugadas).`, "success");
     setConfirmarEliminar(null);
     void refrescar();

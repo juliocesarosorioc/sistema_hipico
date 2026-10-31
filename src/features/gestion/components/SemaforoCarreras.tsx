@@ -28,7 +28,7 @@ type Props = {
   accionDerecha?: ReactNode;
 };
 
-export type EstadoCarrera = "inactiva" | "abierta" | "con_jugadas" | "cerrada";
+export type EstadoCarrera = "inactiva" | "abierta" | "con_jugadas" | "cerrada" | "borrada";
 
 const COLORES: Record<EstadoCarrera, { chip: string; label: string; txt: string }> = {
   // Azul casi gris con letra más oscura cuando no hay carrera registrada.
@@ -54,6 +54,12 @@ const COLORES: Record<EstadoCarrera, { chip: string; label: string; txt: string 
     chip: "border-red-700 bg-red-600 text-white shadow-xs",
     label: "Carrera liquidada (Rojo)",
     txt: "text-red-600",
+  },
+  // Carrera borrada de la matriz pero con jugadas registradas pendientes
+  borrada: {
+    chip: "border-slate-800 bg-slate-800 text-amber-400 shadow-xs ring-1 ring-amber-500",
+    label: "Carrera borrada del día · Posee jugadas registradas (Gris oscuro)",
+    txt: "text-amber-500",
   },
 };
 
@@ -96,6 +102,18 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   // Garantiza que al reversar una liquidación o recargar la página, las carreras que
   // tienen jugadas cargadas se pinten en AMARILLO (`con_jugadas`).
   const [carrerasBdConJugadas, setCarrerasBdConJugadas] = useState<number[]>([]);
+  const [recargaVersion, setRecargaVersion] = useState(0);
+
+  useEffect(() => {
+    const handleActualizar = () => {
+      setRecargaVersion((v) => v + 1);
+    };
+    window.addEventListener("hipico:carreras-actualizadas", handleActualizar);
+    return () => {
+      window.removeEventListener("hipico:carreras-actualizadas", handleActualizar);
+    };
+  }, []);
+
   useEffect(() => {
     let vivo = true;
     const sb = supabase;
@@ -139,7 +157,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       }
     })();
     return () => { vivo = false; };
-  }, [fecha, hipodromo, centrales, carrerasConJugadas?.length]);
+  }, [fecha, hipodromo, centrales, carrerasConJugadas?.length, recargaVersion]);
 
   const porCarrera = (n: number): { estado: EstadoCarrera; tieneVentas: boolean } => {
     // TODO el cruce va acotado a `fecha`: una tabla o un registro del día
@@ -194,6 +212,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       (registro?.ventas?.length ?? 0) > 0;
 
     if (liquidada) return { estado: "cerrada", tieneVentas: conVentas };
+    if (!registrada && conVentas) return { estado: "borrada", tieneVentas: true };
     if (conVentas) return { estado: "con_jugadas", tieneVentas: true };
     if (registrada) return { estado: "abierta", tieneVentas: false };
     return { estado: "inactiva", tieneVentas: false };
@@ -211,6 +230,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-emerald-600" /> Verde: Carrera registrada</span>
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-amber-400 ring-1 ring-amber-500" /> Amarillo: Con jugadas (sin liquidar)</span>
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-red-600" /> Rojo: Liquidada</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-slate-800 border border-slate-600 ring-1 ring-amber-500" /> Gris oscuro: Borrada (con jugadas)</span>
         {manual && (
           <span className="rounded-full bg-blue-600/15 px-2 py-0.5 font-black uppercase text-blue-700">
             ✍️ Modo Manual — carreras sin Gaceta habilitadas

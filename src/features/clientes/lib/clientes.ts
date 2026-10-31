@@ -305,9 +305,9 @@ export function errorClientes(): string | null {
  * Para el super administrador: estrictamente el grupo seleccionado.
  */
 function grupoParaFiltrar(): string | null {
-  if (!esPrincipalVigente()) {
-    return grupoVigente() || null;
-  }
+  // Si el usuario tiene un grupo asignado específico, ese grupo tiene prioridad absoluta
+  const miGrupo = grupoVigente();
+  if (miGrupo) return miGrupo;
   return grupoActivoVigente();
 }
 
@@ -364,12 +364,52 @@ export async function listarClientes(force = false, grupoIdOverride?: string | n
   ultimoErrorClientes = null;
   if (supabase) {
     try {
-      // Filtrar SIEMPRE por el grupo_id activo
-      const q = supabase.from("clientes").select("*").eq("grupo_id", activo).order("nombre");
+      // Resolver todos los identificadores del grupo objetivo (id, código, nombre)
+      const idsObjetivo = new Set<string>([String(activo)]);
+      try {
+        const { data: gRows } = await supabase
+          .from("grupos_venta")
+          .select("id, nombre, codigo")
+          .or(`id.eq.${activo},nombre.ilike.%${activo}%,codigo.ilike.%${activo}%`);
+        for (const g of gRows ?? []) {
+          if (g.id != null) idsObjetivo.add(String(g.id));
+          if (g.codigo) idsObjetivo.add(String(g.codigo).toUpperCase());
+          if (g.nombre) idsObjetivo.add(String(g.nombre).toUpperCase());
+        }
+      } catch {
+        /* best-effort */
+      }
+
+      // Buscar también clientes asociados por la tabla puente clientes_grupos
+      const idsClientesPuente = new Set<string>();
+      try {
+        const { data: cgRows } = await supabase
+          .from("clientes_grupos")
+          .select("cliente_id, grupo_id");
+        for (const cg of cgRows ?? []) {
+          if (idsObjetivo.has(String(cg.grupo_id)) && cg.cliente_id != null) {
+            idsClientesPuente.add(String(cg.cliente_id));
+          }
+        }
+      } catch {
+        /* best-effort */
+      }
+
+      // Filtrar por grupo_id en la base de datos
+      const q = supabase.from("clientes").select("*").order("nombre");
       const { data, error } = await q;
       if (error) throw error;
+
+      // Aislamiento ESTRICTO en memoria: solo clientes que pertenezcan única y exclusivamente a este grupo
+      const candidatos = ((data ?? []) as ClienteRow[]);
+      const filtradosPorGrupo = candidatos.filter((c) => {
+        const gCli = c.grupo_id != null ? String(c.grupo_id) : "";
+        if (gCli && idsObjetivo.has(gCli)) return true;
+        if (idsClientesPuente.has(String(c.id))) return true;
+        return false;
+      });
       lista = (await sincronizarSaldosRealesClientes(
-        ((data ?? []) as ClienteRow[]).map((c) => {
+        filtradosPorGrupo.map((c) => {
           const creds = credencialesPortalPorDefecto(c);
           return {
             ...c,
