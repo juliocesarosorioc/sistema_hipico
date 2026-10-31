@@ -382,6 +382,27 @@ export function procesarMensajeSalaJugadas(
       };
     }
 
+    // Regla: un jugador no puede jugar ni dar contra sí mismo.
+    if (normalizarNombre(autor) === normalizarNombre(respuestaA.autor)) {
+      const msgIa: MensajeSalaWhatsApp = {
+        id: `ia-${Date.now()}-mismo`,
+        autor: "🤖 Agente IA",
+        texto: "Favor aclarar: un jugador no puede jugar ni dar contra sí mismo.",
+        fecha: ahoraFmt,
+        esIa: true,
+        respuestaA: { id: idMsg, autor, texto },
+      };
+      mensajesGenerados.push(msgIa);
+      return {
+        nuevoEstado: {
+          ...estado,
+          saldos,
+          mensajes: [...estado.mensajes, ...mensajesGenerados],
+        },
+        mensajesGenerados,
+      };
+    }
+
     // Evaluar si la concreción es válida sintáctica y semánticamente
     const evaluacionConcrecion = evaluarConcrecionRespuesta(texto, prop);
 

@@ -202,6 +202,13 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
       setAviso("⚠️ El Jugador 1 (Quien Juega) no puede quedar vacío.");
       return;
     }
+    if (
+      edicion.jugador2.trim() &&
+      edicion.jugador2.trim().toUpperCase() === edicion.jugador1.trim().toUpperCase()
+    ) {
+      setAviso("⚠️ El mismo cliente no puede jugar ni dar contra sí mismo.");
+      return;
+    }
     if (!edicion.nombre.trim()) {
       setAviso("⚠️ La jugada (nomenclatura) no puede quedar vacía.");
       return;
