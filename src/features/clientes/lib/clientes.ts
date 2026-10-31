@@ -72,6 +72,10 @@ export type ClienteRow = {
   disponible?: number | string | null;
   devolucion?: number | string | null;
   socio_asignado?: string | null;
+  /** Porcentaje de comisión otorgado al socio por este cliente (ej. 1.25%, 1.00%) */
+  comision_socio_pct?: number | string | null;
+  /** Fecha a partir de la cual se calculan o recalculan las comisiones al socio */
+  fecha_inicio_comision_socio?: string | null;
   mostrar_saldo_socio?: boolean | null;
   metodo_pago?: string | null;
   dia_cuadre?: string | null;

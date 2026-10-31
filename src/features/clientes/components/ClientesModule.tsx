@@ -8,6 +8,7 @@ import { ModalCliente } from "@/features/clientes/components/ModalCliente";
 import { ModalCreacionRapidaCliente } from "@/features/clientes/components/ModalCreacionRapidaCliente";
 import { ModalPortalCliente } from "@/features/clientes/components/ModalPortalCliente";
 import { EstadoCuentaAcordeon } from "@/features/clientes/components/EstadoCuentaAcordeon";
+import { ReporteDestinatariosDevolucion } from "@/features/clientes/components/ReporteDestinatariosDevolucion";
 import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente";
 import { NotificacionesPortal } from "@/features/clientes/components/NotificacionesPortal";
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
@@ -44,7 +45,7 @@ const afiliadosDe = (c: ClienteRow, lista: ClienteRow[]): number =>
 
 const DIAS = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"];
 
-type Tab = "cartera" | "estado" | "cuaderno" | "cuadre" | "notificaciones";
+type Tab = "cartera" | "estado" | "destinatarios_devolucion" | "cuaderno" | "cuadre" | "notificaciones";
 
 /**
  * ClientesModule — Gestión de Clientes (clon de js/clientes.js, tarea 5).
@@ -302,6 +303,7 @@ export function ClientesModule() {
           [
             ["cartera", "Cartera"],
             ["estado", "Estado de Cuenta"],
+            ["destinatarios_devolucion", "🔀 Destinatarios de Devolución"],
             ["cuaderno", "📒 Cuaderno"],
             ["cuadre", "Cuadre Semanal"],
             ["notificaciones", "Notificaciones del Portal"],
@@ -690,6 +692,11 @@ export function ClientesModule() {
           clienteEstado={clienteEstado}
           onCargarTickets={cargarTicketsCliente}
           onActivo={(c) => setClienteEstado(c)}
+        />
+      ) : tab === "destinatarios_devolucion" ? (
+        <ReporteDestinatariosDevolucion
+          clientes={clientes}
+          onRecargar={() => void recargar(grupoConsultado)}
         />
       ) : tab === "cuadre" ? (
         <CuadreSemanal clientes={clientes} />

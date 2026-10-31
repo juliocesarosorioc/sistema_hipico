@@ -17,6 +17,7 @@ import {
   type ClienteRow,
   type FormaPago,
 } from "@/features/clientes/lib/clientes";
+import { buscarReglaDevolucionCliente } from "@/features/clientes/lib/comisiones-socios";
 import {
   codigosPaisUnicos,
   componerTelefono,
@@ -217,6 +218,8 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
   const [modo, setModo] = useState("aval");
   const [aval, setAval] = useState("");
   const [devolucion, setDevolucion] = useState("");
+  const [comisionSocio, setComisionSocio] = useState("");
+  const [fechaInicioComisionSocio, setFechaInicioComisionSocio] = useState("2026-10-29");
   const [socio, setSocio] = useState("");
   const [mostrarS, setMostrarS] = useState(false);
   const [esSocio, setEsSocio] = useState(false);
@@ -293,7 +296,16 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
     setComision(cliente.comision != null ? String(cliente.comision) : "");
     setEsSocio(cliente.es_socio === true);
     setAval(cliente.aval != null ? String(cliente.aval) : "");
-    setDevolucion(cliente.devolucion != null ? String(cliente.devolucion) : "");
+    const reglaPre = buscarReglaDevolucionCliente(cliente.seudonimo || cliente.nombre || "");
+    const devPropia = cliente.devolucion != null 
+      ? String(cliente.devolucion) 
+      : (reglaPre?.devolucionPropiaPct != null ? String(reglaPre.devolucionPropiaPct) : "");
+    setDevolucion(devPropia);
+    const comSoc = cliente.comision_socio_pct != null 
+      ? String(cliente.comision_socio_pct) 
+      : (reglaPre?.comisionSocioPct != null ? String(reglaPre.comisionSocioPct) : "");
+    setComisionSocio(comSoc);
+    setFechaInicioComisionSocio(cliente.fecha_inicio_comision_socio || reglaPre?.fechaInicioComision || "2026-10-29");
     setModo(cliente.modo_juego || (cliente.libre ? "libre" : "aval"));
     setMostrarS(Boolean(cliente.mostrar_saldo_socio));
     const cruceLegado = cliente.permite_cruces ?? null;
@@ -348,6 +360,7 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
     for (const [k, v, max] of [
       ["devolucion", devolucion, 100],
       ["comision", comision, 100],
+      ["comisionSocio", comisionSocio, 100],
     ] as const) {
       if (v.trim() && (Number.isNaN(Number(v)) || Number(v) < 0 || Number(v) > max)) e[k] = `Debe estar entre 0 y ${max}.`;
     }
@@ -435,6 +448,8 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
             comision: num(comision),
             aval: num(aval),
             devolucion: num(devolucion),
+            comision_socio_pct: socio ? num(comisionSocio) : null,
+            fecha_inicio_comision_socio: socio ? (fechaInicioComisionSocio || "2026-10-29") : null,
             tasa_cuadre: num(tasaCuadre),
           },
           cliente
@@ -449,6 +464,8 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
           comision: num(comision),
           aval: num(aval),
           devolucion: num(devolucion),
+          comision_socio_pct: socio ? num(comisionSocio) : null,
+          fecha_inicio_comision_socio: socio ? (fechaInicioComisionSocio || "2026-10-29") : null,
           tasa_cuadre: num(tasaCuadre),
         });
     setGuardando(false);
@@ -645,6 +662,45 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
                   ))}
                 </select>
               </Campo>
+              {Boolean(socio) && (
+                <>
+                  <Campo
+                    texto="Comisión al Socio por este cliente %"
+                    icono="👔💰"
+                    tono="text-indigo-600"
+                    error={errores.comisionSocio}
+                  >
+                    <input
+                      value={comisionSocio}
+                      onChange={(e) => {
+                        setComisionSocio(e.target.value);
+                        limpiar("comisionSocio");
+                      }}
+                      className={numInp + " text-indigo-700 font-bold" + (errores.comisionSocio ? " " + inpErr : "")}
+                      inputMode="decimal"
+                      placeholder="Ej: 1.00 ó 1.25"
+                      aria-invalid={!!errores.comisionSocio}
+                    />
+                  </Campo>
+                  <Campo
+                    texto="Calcular comisiones al socio desde"
+                    icono="📅"
+                    tono="text-indigo-600"
+                    error={errores.fechaInicioComisionSocio}
+                  >
+                    <input
+                      type="date"
+                      value={fechaInicioComisionSocio}
+                      onChange={(e) => {
+                        setFechaInicioComisionSocio(e.target.value);
+                        limpiar("fechaInicioComisionSocio");
+                      }}
+                      className={inp + " text-xs font-semibold text-indigo-900"}
+                      title="Fecha a partir de la cual se calculan comisiones de este cliente para el socio"
+                    />
+                  </Campo>
+                </>
+              )}
               <Campo texto="Comisión propia %" icono="🤲" tono="text-emerald-600" error={errores.comision}>
                 <input
                   value={comision}

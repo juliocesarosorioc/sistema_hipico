@@ -166,6 +166,8 @@
     "../src/features/apuestas/lib/eventos-especiales.ts",
     "./apuestas-evento-especial.test.ts",
     "../src/features/seguridad/lib/seguimiento-usuarios.ts",
-    "./seguridad-usuarios-conectados.test.ts"
+    "./seguridad-usuarios-conectados.test.ts",
+    "../src/features/clientes/lib/comisiones-socios.ts",
+    "./comisiones-socios-devoluciones.test.ts"
   ]
 }

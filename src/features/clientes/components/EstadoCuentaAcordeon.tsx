@@ -14,6 +14,11 @@ import {
   construirFichaEstadoCuentaUnificada,
   type FichaEstadoCuentaUnificada,
 } from "@/features/saldos/lib/contabilidad-central";
+import {
+  calcularComisionesSocioPorClientes,
+  cargarTodosTicketsParaComisiones,
+  type ResumenComisionesSocio,
+} from "@/features/clientes/lib/comisiones-socios";
 import { formatoMoneda } from "@/shared/lib/vzla";
 
 /** Nodo acordeón recursivo con el mismo criterio de totales del legacy. */
@@ -241,16 +246,20 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
   const [devolucionPct, setDevolucionPct] = useState(0);
   const [totales, setTotales] = useState({ monto: 0, dec: 0 });
   const [ficha, setFicha] = useState<FichaEstadoCuentaUnificada | null>(null);
+  const [resumenSocio, setResumenSocio] = useState<ResumenComisionesSocio | null>(null);
+  const [desplegadosClientes, setDesplegadosClientes] = useState<Record<string, boolean>>({});
 
   const seleccionar = async (c: ClienteRow | null) => {
     onActivo(c);
     if (!c) {
       setRaiz(null);
       setFicha(null);
+      setResumenSocio(null);
       return;
     }
     setCargando(true);
     setRaiz(null);
+    setResumenSocio(null);
     const pct = parseFloat(String(c.devolucion ?? "")) || 0;
     setDevolucionPct(pct);
     const tickets = await onCargarTickets(c.id);
@@ -285,6 +294,26 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
         anulada: t.anulada,
       })),
     });
+
+    // Cargar comisiones como socio por sus clientes asignados
+    const cNom = String(c.nombre ?? c.seudonimo ?? "").trim();
+    const tieneAfiliados = clientes.some(
+      (x) => String(x.socio_asignado || "").trim().toUpperCase() === cNom.toUpperCase()
+    );
+    if (c.es_socio || tieneAfiliados) {
+      try {
+        const allTickets = await cargarTodosTicketsParaComisiones();
+        const resCom = calcularComisionesSocioPorClientes({
+          socioNombre: cNom,
+          tickets: allTickets,
+          clientes,
+        });
+        setResumenSocio(resCom);
+      } catch (err) {
+        console.error("Error al calcular comisiones de socio:", err);
+      }
+    }
+
     setRaiz(tree);
     setTotales({ monto: tree.monto, dec: tree.dec });
     setFicha(fichaCalc);
@@ -372,56 +401,207 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
           </div>
 
           {ficha ? (
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 rounded-2xl border border-line bg-white p-3 text-[11px] shadow-sm">
-              <div className="rounded-lg bg-slate-50 p-2">
-                <div className="text-[9px] font-black uppercase text-slate-400">1. Saldo Inicial / Anterior</div>
-                <div className="font-mono font-bold text-slate-800">{formatoMoneda("USD", ficha.saldoInicial)}</div>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-2">
-                <div className="text-[9px] font-black uppercase text-slate-400">2. Depósitos (+) / Retiros (-)</div>
-                <div className="font-mono font-bold text-slate-800">
-                  +{formatoMoneda("USD", ficha.depositos)} / -{formatoMoneda("USD", ficha.retiros)}
-                </div>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-2">
-                <div className="text-[9px] font-black uppercase text-amber-600">3. Aval Vigente</div>
-                <div className="font-mono font-bold text-amber-700">{formatoMoneda("USD", ficha.avalVigente)}</div>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-2">
-                <div className="text-[9px] font-black uppercase text-indigo-600">4. En Vivo / Adelantadas</div>
-                <div className="font-mono font-bold text-indigo-700">
-                  {ficha.jugadasEnVivoCount} en vivo · {ficha.jugadasAdelantadasCount} adel.
-                </div>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-2">
-                <div className="text-[9px] font-black uppercase text-emerald-600">5. Ganadas / Com. / Reemb. Cruce</div>
-                <div className="font-mono font-bold text-emerald-700">
-                  {formatoMoneda("USD", ficha.jugadasGanadasBruto)} (-{formatoMoneda("USD", ficha.comisionesCobradas)} / +{formatoMoneda("USD", ficha.reembolsoCruce)})
-                </div>
-              </div>
-              <div className="rounded-lg bg-emerald-50 p-2">
-                <div className="text-[9px] font-black uppercase text-emerald-700">6. 🎁 Devolución / Incentivo a favor</div>
-                <div className="font-mono font-black text-emerald-700">+{formatoMoneda("USD", ficha.devolucionIncentivo)}</div>
-              </div>
-              <div className="rounded-lg bg-rose-50 p-2">
-                <div className="text-[9px] font-black uppercase text-rose-600">7. Jugadas Perdidas (-)</div>
-                <div className="font-mono font-bold text-rose-700">-{formatoMoneda("USD", ficha.jugadasPerdidas)}</div>
-              </div>
-              <div className="rounded-lg bg-amber-50 p-2">
-                <div className="text-[9px] font-black uppercase text-amber-600">8. Riesgo en Curso (-)</div>
-                <div className="font-mono font-bold text-amber-700">-{formatoMoneda("USD", ficha.riesgoEnCurso)}</div>
-              </div>
-              <div className="rounded-lg bg-slate-100 p-2">
-                <div className="text-[9px] font-black uppercase text-slate-600">9. Saldo Contable Neto</div>
-                <div className="font-mono font-black text-slate-900">{formatoMoneda("USD", ficha.saldoContable)}</div>
-              </div>
-              <div className="rounded-lg bg-indigo-50 p-2">
-                <div className="text-[9px] font-black uppercase text-indigo-700">10. Disponible Total para Apostar</div>
-                <div className="font-mono font-black text-indigo-800">
-                  {Number.isFinite(ficha.disponibleParaJugar) ? formatoMoneda("USD", ficha.disponibleParaJugar) : "LIBRE"}
-                </div>
-              </div>
-            </div>
+            (() => {
+              const comisionesSociosTotal = resumenSocio?.totalComisionesClientes ?? 0;
+              const saldoContableNetoFinal = ficha.saldoContable + comisionesSociosTotal;
+              const disponibleParaJugarFinal = Number.isFinite(ficha.disponibleParaJugar)
+                ? ficha.disponibleParaJugar + comisionesSociosTotal
+                : NaN;
+
+              return (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 rounded-2xl border border-line bg-white p-3 text-[11px] shadow-sm">
+                    <div className="rounded-lg bg-slate-50 p-2">
+                      <div className="text-[9px] font-black uppercase text-slate-400">1. Saldo Inicial / Anterior</div>
+                      <div className="font-mono font-bold text-slate-800">{formatoMoneda("USD", ficha.saldoInicial)}</div>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2">
+                      <div className="text-[9px] font-black uppercase text-slate-400">2. Depósitos (+) / Retiros (-)</div>
+                      <div className="font-mono font-bold text-slate-800">
+                        +{formatoMoneda("USD", ficha.depositos)} / -{formatoMoneda("USD", ficha.retiros)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2">
+                      <div className="text-[9px] font-black uppercase text-amber-600">3. Aval Vigente</div>
+                      <div className="font-mono font-bold text-amber-700">{formatoMoneda("USD", ficha.avalVigente)}</div>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2">
+                      <div className="text-[9px] font-black uppercase text-indigo-600">4. En Vivo / Adelantadas</div>
+                      <div className="font-mono font-bold text-indigo-700">
+                        {ficha.jugadasEnVivoCount} en vivo · {ficha.jugadasAdelantadasCount} adel.
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2">
+                      <div className="text-[9px] font-black uppercase text-emerald-600">5. Ganadas / Com. / Reemb. Cruce</div>
+                      <div className="font-mono font-bold text-emerald-700">
+                        {formatoMoneda("USD", ficha.jugadasGanadasBruto)} (-{formatoMoneda("USD", ficha.comisionesCobradas)} / +{formatoMoneda("USD", ficha.reembolsoCruce)})
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-emerald-50 p-2">
+                      <div className="text-[9px] font-black uppercase text-emerald-700">6. 🎁 Devolución propia</div>
+                      <div className="font-mono font-black text-emerald-700">+{formatoMoneda("USD", ficha.devolucionIncentivo)}</div>
+                    </div>
+                    {comisionesSociosTotal > 0 ? (
+                      <div className="rounded-lg bg-purple-50 p-2 border border-purple-200">
+                        <div className="text-[9px] font-black uppercase text-purple-700">6b. 🤝 Comisiones Afiliados (+)</div>
+                        <div className="font-mono font-black text-purple-700">+{formatoMoneda("USD", comisionesSociosTotal)}</div>
+                      </div>
+                    ) : null}
+                    <div className="rounded-lg bg-rose-50 p-2">
+                      <div className="text-[9px] font-black uppercase text-rose-600">7. Jugadas Perdidas (-)</div>
+                      <div className="font-mono font-bold text-rose-700">-{formatoMoneda("USD", ficha.jugadasPerdidas)}</div>
+                    </div>
+                    <div className="rounded-lg bg-amber-50 p-2">
+                      <div className="text-[9px] font-black uppercase text-amber-600">8. Riesgo en Curso (-)</div>
+                      <div className="font-mono font-bold text-amber-700">-{formatoMoneda("USD", ficha.riesgoEnCurso)}</div>
+                    </div>
+                    <div className="rounded-lg bg-slate-100 p-2">
+                      <div className="text-[9px] font-black uppercase text-slate-600">9. Saldo Contable Neto</div>
+                      <div className="font-mono font-black text-slate-900">{formatoMoneda("USD", saldoContableNetoFinal)}</div>
+                    </div>
+                    <div className="rounded-lg bg-indigo-50 p-2">
+                      <div className="text-[9px] font-black uppercase text-indigo-700">10. Disponible Total para Apostar</div>
+                      <div className="font-mono font-black text-indigo-800">
+                        {Number.isFinite(disponibleParaJugarFinal) ? formatoMoneda("USD", disponibleParaJugarFinal) : "LIBRE"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECCIÓN SEGMENTADA POR COMISIONES DE OTROS JUGADORES (SOCIOS) */}
+                  {resumenSocio && resumenSocio.desglosePorCliente.length > 0 ? (
+                    <div className="rounded-2xl border border-purple-200 bg-white p-4 shadow-sm space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-100 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">🤝</span>
+                          <div>
+                            <h3 className="text-sm font-black text-slate-800">
+                              Comisiones Ganadas por Clientes Asignados
+                            </h3>
+                            <p className="text-[10px] text-slate-500">
+                              Imputadas directamente en el saldo del socio. No alteran el cobro ni pago nominal de tickets.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[9px] font-black uppercase text-purple-600">Total Comisiones</div>
+                          <div className="text-base font-black text-purple-700 font-mono">
+                            +{formatoMoneda("USD", resumenSocio.totalComisionesClientes)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        {resumenSocio.desglosePorCliente.map((cl) => {
+                          const estaAbierto = Boolean(desplegadosClientes[cl.clienteNombre]);
+                          return (
+                            <div
+                              key={cl.clienteNombre}
+                              className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden"
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDesplegadosClientes((prev) => ({
+                                    ...prev,
+                                    [cl.clienteNombre]: !prev[cl.clienteNombre],
+                                  }))
+                                }
+                                className="w-full flex flex-wrap items-center justify-between gap-2 p-3 text-left hover:bg-purple-50/50 transition-colors"
+                              >
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-mono text-xs text-purple-600 font-bold">
+                                    {estaAbierto ? "▼" : "▶"}
+                                  </span>
+                                  <span className="font-bold text-xs text-slate-800">
+                                    👤 {cl.clienteNombre}
+                                  </span>
+                                  <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded-full">
+                                    {cl.comisionPct}% comisión
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">
+                                    (desde {cl.fechaInicio})
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3 text-right">
+                                  <div>
+                                    <div className="text-[9px] text-slate-400 uppercase">Jugado</div>
+                                    <div className="font-mono font-bold text-xs text-slate-700">
+                                      {formatoMoneda("USD", cl.totalJugado)}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="text-[9px] text-purple-600 uppercase font-black">Comisión Socio</div>
+                                    <div className="font-mono font-black text-xs text-purple-700">
+                                      +{formatoMoneda("USD", cl.totalComision)}
+                                    </div>
+                                  </div>
+                                  <span className="text-[11px] text-slate-400 font-semibold">
+                                    {cl.jugadas.length} jugada(s)
+                                  </span>
+                                </div>
+                              </button>
+
+                              {estaAbierto ? (
+                                <div className="border-t border-slate-200 bg-white p-3">
+                                  {cl.jugadas.length === 0 ? (
+                                    <p className="text-xs text-slate-400 italic text-center py-2">
+                                      No hay jugadas registradas para {cl.clienteNombre} desde {cl.fechaInicio}.
+                                    </p>
+                                  ) : (
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-left text-[11px]">
+                                        <thead>
+                                          <tr className="border-b border-slate-200 text-slate-500 uppercase text-[9px] font-black">
+                                            <th className="py-1">Fecha</th>
+                                            <th className="py-1">Hipódromo / Carr.</th>
+                                            <th className="py-1">Jugada / Ejemplar</th>
+                                            <th className="py-1 text-right">Monto Jugado</th>
+                                            <th className="py-1 text-right">% Com.</th>
+                                            <th className="py-1 text-right text-purple-700">Comisión Socio</th>
+                                            <th className="py-1 text-center">Estado</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                          {cl.jugadas.map((j) => (
+                                            <tr key={String(j.id)} className="hover:bg-slate-50">
+                                              <td className="py-1 font-mono text-slate-600">{j.fecha}</td>
+                                              <td className="py-1 font-bold text-slate-700">
+                                                {j.hipodromo} C{j.carrera}
+                                              </td>
+                                              <td className="py-1 text-slate-800">
+                                                <span className="font-semibold">{j.nombreJugada}</span> {j.caballo ? `• #${j.caballo}` : ""}
+                                              </td>
+                                              <td className="py-1 text-right font-mono text-slate-700">
+                                                {formatoMoneda("USD", j.montoJugado)}
+                                              </td>
+                                              <td className="py-1 text-right font-mono text-slate-500">
+                                                {j.comisionPct}%
+                                              </td>
+                                              <td className="py-1 text-right font-mono font-black text-purple-700">
+                                                +{formatoMoneda("USD", j.montoComision)}
+                                              </td>
+                                              <td className="py-1 text-center">
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold uppercase">
+                                                  {j.estado}
+                                                </span>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              );
+            })()
           ) : null}
 
           <div className="space-y-1">
