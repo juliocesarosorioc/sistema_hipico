@@ -12,7 +12,9 @@ import {
   detectarIntencionContableInicial,
   type EstadoAgenteTransaccional,
   type RespuestaTurnoAgente,
+  herramienta_sincronizar_carreras_usa,
 } from "@/features/ia-copiloto/lib/agente-transaccional";
+import { HIPODROMOS_USA_DISPONIBLES } from "@/features/carreras/lib/sincronizar-usa-tvg-drf";
 import {
   guardarBloqueosJugadas,
   leerBloqueosJugadas,
@@ -83,6 +85,16 @@ export interface AccionOperativaPlataforma {
 }
 
 export const CATALOGO_ACCIONES_PLATAFORMA: ReadonlyArray<AccionOperativaPlataforma> = [
+  {
+    id: "sincronizar_usa",
+    categoria: "apuestas",
+    icono: "🇺🇸",
+    etiqueta: "Sincronizar USA (TVG / DRF)",
+    descripcion: "Sincroniza carreras, horarios, ejemplares y retirados de hipódromos americanos",
+    comandoChat: "Sincroniza las carreras americanas de hoy desde TVG y DRF",
+    evento: { accion: "abrir_sincronizador_usa" },
+    rutaRequerida: "/carreras",
+  },
   // 1. Apuestas y Liquidación
   {
     id: "abrir_carrera_nueva",
@@ -1122,6 +1134,31 @@ export async function consultarAgenteIaEnVivo(
           eventoAccion: { accion: "recargar_saldos" },
         };
       }
+    }
+
+    // 1F2. Sincronización de Carreras y Ejemplares Americanos (TVG / DRF)
+    if (
+      /\b(?:sincroniz(?:ar?|a)|actualiz(?:ar?|a))\b/i.test(textoLimpio) &&
+      /\b(?:carreras\s+americanas?|tvg|drf|retirados|gulfstream|santa\s+anita|tampa|saratoga|belmont|aqueduct|del\s+mar|keeneland|churchill|oaklawn|parx|monmouth|laurel|delaware|charles\s+town)\b/i.test(textoLimpio)
+    ) {
+      const hipodromosDetectados: string[] = [];
+      for (const h of HIPODROMOS_USA_DISPONIBLES) {
+        const regex = new RegExp(`\\b${h.nombre.replace(/\s+/g, "\\s+")}\\b`, "i");
+        if (regex.test(textoLimpio) || (h.drfCode && new RegExp(`\\b${h.drfCode}\\b`, "i").test(textoLimpio))) {
+          hipodromosDetectados.push(h.nombre);
+        }
+      }
+      const resTool = await herramienta_sincronizar_carreras_usa({
+        hipodromos: hipodromosDetectados.length > 0 ? hipodromosDetectados : undefined,
+      });
+      return {
+        respuesta: resTool.resumen,
+        resuelto: true,
+        sugerenciaEscalamiento: false,
+        categoriaDetectada: "carrera_liquidacion",
+        prioridadDetectada: "baja",
+        eventoAccion: { accion: "carreras_actualizadas" },
+      };
     }
 
     // 1G. Cambiar Grupo de Trabajo Activo ("cambiar a grupo ARGENTINA" o "activar grupo principal")

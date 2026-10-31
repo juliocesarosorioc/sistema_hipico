@@ -29,6 +29,7 @@ import {
 } from "@/features/hipodromos/lib/tipos";
 import { useHipodromosStore } from "@/shared/store/useHipodromosStore";
 import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
+import { ModalSincronizadorUsa } from "@/features/carreras/components/ModalSincronizadorUsa";
 
 type FormModal = { abierta: boolean; editando: Hipodromo | null; nombre: string; pais: string; estado: string; logo_url: string | null };
 
@@ -61,6 +62,7 @@ export function HipodromosModule() {
   const [busqueda, setBusqueda] = useState("");
   const [modal, setModal] = useState<FormModal>(() => inicialModal(null));
   const [guardando, setGuardando] = useState(false);
+  const [modalSincUsa, setModalSincUsa] = useState(false);
 
   const confirmar = useConfirmar();
 
@@ -264,6 +266,14 @@ export function HipodromosModule() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black"
+            size="md"
+            onClick={() => setModalSincUsa(true)}
+            title="Sincronizar carreras y ejemplares de hipódromos americanos desde TVG y DRF"
+          >
+            🇺🇸 Sincronizar USA Hoy (TVG / DRF)
+          </Button>
           <Button variant="outline" size="md" onClick={() => void activarTodos()} title="Poner en Activo todos los hipódromos vigentes">
             ⚡ Activar todos
           </Button>
@@ -486,6 +496,15 @@ export function HipodromosModule() {
           </Card>
         </div>
       )}
+
+      <ModalSincronizadorUsa
+        abierto={modalSincUsa}
+        onCerrar={() => setModalSincUsa(false)}
+        onActualizado={() => {
+          invalidarSelectores();
+          void refrescar();
+        }}
+      />
 
       <ToastHost />
     </section>

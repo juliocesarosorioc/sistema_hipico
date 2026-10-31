@@ -52,6 +52,11 @@ import {
   type PagoComprobanteRow,
 } from "@/features/contabilidad/lib/pagos-comprobantes";
 import type { AsientoContableRegistrado } from "@/features/contabilidad/lib/plan-cuentas";
+import {
+  sincronizarCarrerasAmericanasDia,
+  HIPODROMOS_USA_DISPONIBLES,
+  type ResumenSincronizacionUsa,
+} from "@/features/carreras/lib/sincronizar-usa-tvg-drf";
 
 export { MENSAJE_CARRERA_CERRADA };
 
@@ -123,7 +128,8 @@ export interface RespuestaTurnoAgente {
     | "OPERACION_CONTABLE_CANCELADA"
     | "JUGADA_O_PROPUESTA"
     | "CAMBIO_ESTADO_CARRERA"
-    | "ACLARATORIA";
+    | "ACLARATORIA"
+    | "SINCRONIZACION_USA";
   mensaje: string;
   mensajes: string[];
   notificacionesSaldo: string[];
@@ -133,6 +139,48 @@ export interface RespuestaTurnoAgente {
   propuesta?: PropuestaPuesto;
   concrecion?: ConcrecionPuesto;
   nuevoSaldoCliente?: number;
+}
+
+
+/**
+ * Herramienta: herramienta_sincronizar_carreras_usa
+ * Sincroniza carreras, ejemplares y retirados de hipódromos americanos desde TVG y DRF.
+ */
+export async function herramienta_sincronizar_carreras_usa(params?: {
+  fecha?: string;
+  hipodromos?: string[];
+  fuente?: "AUTO_TVG_DRF" | "DRF" | "TVG";
+}): Promise<{ ok: boolean; resumen: string; datos?: ResumenSincronizacionUsa; error?: string }> {
+  try {
+    const res = await sincronizarCarrerasAmericanasDia({
+      fechaISO: params?.fecha,
+      tracksFiltro: params?.hipodromos,
+      fuentePreferida: params?.fuente ?? "AUTO_TVG_DRF",
+    });
+
+    const resumenTracks = res.detallesPorTrack
+      .map((t) => {
+        const retInfo = t.retirados > 0 ? `, ${t.retirados} retirados` : "";
+        return `${t.hipodromo} (${t.carreras} carreras, ${t.ejemplares} ejemplares${retInfo})`;
+      })
+      .join(", ");
+
+    const texto = `✅ Cartelera USA sincronizada: ${resumenTracks || "sin carreras nuevas"}. Ya disponibles en Apuestas, Tablas, Marcas y Portal.`;
+
+    return {
+      ok: res.ok,
+      resumen: texto,
+      datos: res,
+      error: res.error,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      resumen: `❌ Error al sincronizar carreras USA: ${msg}`,
+      error: msg,
+    };
+  }
 }
 
 const fmtMonto = (n: number): string =>
@@ -863,6 +911,38 @@ export async function procesarTurnoAgente(
       tipoAccion: "PREGUNTA_CONTABLE_PASO",
       mensaje: preguntaPaso,
       mensajes: [preguntaPaso],
+      notificacionesSaldo: [],
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // 2B. HERRAMIENTA AGENTE: SINCRONIZACIÓN USA (TVG / DRF)
+  // --------------------------------------------------------------------------
+  if (
+    /\b(?:sincroniz(?:ar?|a)|actualiz(?:ar?|a))\b/i.test(texto) &&
+    /\b(?:carreras\s+americanas?|tvg|drf|retirados|gulfstream|santa\s+anita|tampa|saratoga|belmont|aqueduct|del\s+mar|keeneland|churchill|oaklawn|parx|monmouth|laurel|delaware|charles\s+town)\b/i.test(texto)
+  ) {
+    // Detectar si el usuario especificó hipódromos específicos
+    const hipodromosDetectados: string[] = [];
+    for (const h of HIPODROMOS_USA_DISPONIBLES) {
+      const regex = new RegExp(`\\b${h.nombre.replace(/\s+/g, "\\s+")}\\b`, "i");
+      if (regex.test(texto) || (h.drfCode && new RegExp(`\\b${h.drfCode}\\b`, "i").test(texto))) {
+        hipodromosDetectados.push(h.nombre);
+      }
+    }
+
+    const resultadoTool = await herramienta_sincronizar_carreras_usa({
+      hipodromos: hipodromosDetectados.length > 0 ? hipodromosDetectados : undefined,
+    });
+
+    siguienteEstado.historialMensajes.push({ remitente: "agente", texto: resultadoTool.resumen });
+    return {
+      estado: siguienteEstado,
+      ok: resultadoTool.ok,
+      bloqueado: false,
+      tipoAccion: "SINCRONIZACION_USA",
+      mensaje: resultadoTool.resumen,
+      mensajes: [resultadoTool.resumen],
       notificacionesSaldo: [],
     };
   }

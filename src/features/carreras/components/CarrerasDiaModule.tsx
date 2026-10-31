@@ -29,6 +29,7 @@ import { marcarCarreraVerificada, guardarInvalidadosRemate } from "@/features/ca
 import { MonitorHipodromos } from "@/shared/components/ui/MonitorHipodromos";
 import { agruparPorHipodromo } from "@/features/carreras/lib/agruparHipodromos";
 import { ModalMarcasEditor } from "@/features/marcas/components/ModalMarcasEditor";
+import { ModalSincronizadorUsa } from "@/features/carreras/components/ModalSincronizadorUsa";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 
@@ -102,6 +103,7 @@ export function CarrerasDiaModule() {
   const [confirmarEliminar, setConfirmarEliminar] = useState<CarreraCentral | null>(null);
   const [editorMarcas, setEditorMarcas] = useState<{ hipodromo: string; carrera: number; fecha: string } | null>(null);
   const [verSinEjemplares, setVerSinEjemplares] = useState(false);
+  const [modalSincUsa, setModalSincUsa] = useState(false);
   const [rangoLote, setRangoLote] = useState<{ desde: number; hasta: number; ejemplares: number } | null>(null);
 
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
@@ -326,6 +328,17 @@ export function CarrerasDiaModule() {
               Carga manual y rápida de la jornada — alimenta Apuestas, Tablas y Dupletas.
             </p>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setModalSincUsa(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-95 px-3.5 py-1.5 text-xs font-black uppercase text-slate-950 shadow-md transition-all"
+            title="Sincronizar carreras y ejemplares de hipódromos americanos desde TVG y DRF"
+          >
+            <span>🇺🇸</span>
+            <span>Sincronizar USA Hoy (TVG / DRF)</span>
+          </button>
         </div>
       </div>
 
@@ -1031,6 +1044,13 @@ export function CarrerasDiaModule() {
           onCambio={() => void refrescar()}
         />
       )}
+    
+      <ModalSincronizadorUsa
+        abierto={modalSincUsa}
+        onCerrar={() => setModalSincUsa(false)}
+        fechaDefecto={fecha}
+        onActualizado={() => void refrescar()}
+      />
     </div>
   );
 }
