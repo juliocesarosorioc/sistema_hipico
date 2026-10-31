@@ -80,7 +80,6 @@ function ejemplaresATexto(caballos: EjemplarCarreraCentral[] | undefined): strin
     .join("\n");
 }
 
-const CHIPS_EJEMPLARES_RAPIDOS = [6, 8, 9, 10, 11, 12, 14, 16];
 
 /**
  * Carreras del Día — editor CENTRAL de la jornada (data única).
@@ -104,8 +103,7 @@ export function CarrerasDiaModule() {
   const [editorMarcas, setEditorMarcas] = useState<{ hipodromo: string; carrera: number; fecha: string } | null>(null);
   const [verSinEjemplares, setVerSinEjemplares] = useState(false);
   const [modalSincUsa, setModalSincUsa] = useState(false);
-  const [rangoLote, setRangoLote] = useState<{ desde: number; hasta: number; ejemplares: number } | null>(null);
-
+  
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
   }, []);
@@ -183,31 +181,6 @@ export function CarrerasDiaModule() {
       hora: c.hora ?? "",
       retirados: (c.retirados ?? []).join(","),
     });
-  };
-
-  const guardarLoteCarreras = async (desde: number, hasta: number, cantEjemplares: number) => {
-    if (!fecha) return toast("Seleccione primero una fecha en el buscador.", "warning");
-    if (!hipodromo) return toast("Elija un hipódromo arriba antes de crear el lote.", "warning");
-    setGuardando(true);
-    let creadas = 0;
-    const caballos = numerosEjemplares(Math.max(1, cantEjemplares));
-    for (let n = desde; n <= hasta; n++) {
-      const r = await guardarCarreraCentral({
-        fecha,
-        hipodromo,
-        carrera: n,
-        caballos,
-        distancia: modal.distancia.trim() || null,
-        superficie: modal.superficie.trim().toUpperCase() || "ARENA",
-        premio: modal.premio.trim() ? Number(modal.premio) : null,
-        hora: null,
-      });
-      if (r.ok) creadas++;
-    }
-    setGuardando(false);
-    setRangoLote(null);
-    toast(`✅ ${creadas} carrera(s) registradas en lote (C${desde}–C${hasta} con ${cantEjemplares} ejemplares).`, "success");
-    void refrescar();
   };
 
   const guardar = async () => {
@@ -364,231 +337,9 @@ export function CarrerasDiaModule() {
           vacio={
             !fecha
               ? "Selecciona una fecha en el buscador de arriba para consultar el monitor."
-              : `Sin carreras registradas en la fecha ${fecha}. Regístralas abajo con un toque.`
+              : `Sin carreras registradas en la fecha ${fecha}.`
           }
         />
-      </div>
-
-      {/* Panel de Registro Manual */}
-      <div className="rounded-2xl border border-cyan-200 bg-white p-3 shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
-          <div>
-            <h3 className="text-xs font-black uppercase tracking-wider text-cyan-800">
-              📱 Carga Manual Rápida
-            </h3>
-            <p className="text-[10px] font-semibold text-slate-500">
-              Toca el Nº de carrera y la cantidad de ejemplares para configurar la jornada.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() =>
-                setRangoLote((prev) =>
-                  prev ? null : { desde: 1, hasta: 10, ejemplares: 12 }
-                )
-              }
-              className="rounded-lg border border-cyan-300 bg-cyan-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-cyan-800 hover:bg-cyan-100 active:scale-95"
-            >
-              ⚡ Crear Lote (C1–C10)
-            </button>
-          </div>
-        </div>
-
-        {/* Generador de lote de carreras en 1 toque (ideal para celular) */}
-        {rangoLote && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50/80 p-2.5 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-black uppercase text-emerald-900">⚡ Lote de Carreras:</span>
-              <label className="inline-flex items-center gap-1 font-bold text-slate-700">
-                Desde C
-                <input
-                  type="number"
-                  min={1}
-                  max={25}
-                  value={rangoLote.desde}
-                  onChange={(e) => setRangoLote((r) => (r ? { ...r, desde: Number(e.target.value) || 1 } : null))}
-                  className="w-14 rounded border border-emerald-400 bg-white px-2 py-1 text-center font-black"
-                />
-              </label>
-              <label className="inline-flex items-center gap-1 font-bold text-slate-700">
-                Hasta C
-                <input
-                  type="number"
-                  min={1}
-                  max={25}
-                  value={rangoLote.hasta}
-                  onChange={(e) => setRangoLote((r) => (r ? { ...r, hasta: Number(e.target.value) || 10 } : null))}
-                  className="w-14 rounded border border-emerald-400 bg-white px-2 py-1 text-center font-black"
-                />
-              </label>
-              <label className="inline-flex items-center gap-1 font-bold text-slate-700">
-                Ejemplares c/u:
-                <input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={rangoLote.ejemplares}
-                  onChange={(e) => setRangoLote((r) => (r ? { ...r, ejemplares: Number(e.target.value) || 12 } : null))}
-                  className="w-16 rounded border border-emerald-400 bg-white px-2 py-1 text-center font-black"
-                />
-              </label>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="success"
-                size="sm"
-                disabled={guardando || !hipodromo || !fecha}
-                onClick={() => void guardarLoteCarreras(rangoLote.desde, rangoLote.hasta, rangoLote.ejemplares)}
-              >
-                {guardando ? "Creando…" : `💾 Crear C${rangoLote.desde} a C${rangoLote.hasta}`}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setRangoLote(null)}>
-                Cancelar
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Botonera táctil para celular: Selección de Carrera y Cantidad de Ejemplares en 1 toque */}
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2">
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                1. Toca Nº Carrera
-              </span>
-              <button
-                type="button"
-                onClick={() => setModal((m) => ({ ...m, abierta: true, carrera: String(masAlto + 1) }))}
-                className="rounded bg-cyan-600 px-2 py-0.5 text-[10px] font-black text-white hover:bg-cyan-500"
-              >
-                Siguiente: C{masAlto + 1}
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {Array.from({ length: 12 }, (_, idx) => idx + 1).map((n) => {
-                const activa = modal.abierta && Number(modal.carrera) === n;
-                const yaExiste = previstos.includes(n);
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setModal((m) => ({ ...m, abierta: true, carrera: String(n) }))}
-                    className={`h-8 min-w-[2.1rem] rounded-lg border px-1.5 text-xs font-black transition active:scale-95 ${
-                      activa
-                        ? "border-cyan-700 bg-cyan-600 text-white ring-2 ring-cyan-300"
-                        : yaExiste
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    C{n}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2">
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                2. Toca Cantidad de Ejemplares
-              </span>
-              <span className="text-[10px] font-bold text-slate-400">o escribe nombres abajo</span>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {CHIPS_EJEMPLARES_RAPIDOS.map((cant) => {
-                const activo = modal.abierta && modal.ejemplares.trim() === String(cant);
-                return (
-                  <button
-                    key={cant}
-                    type="button"
-                    onClick={() =>
-                      setModal((m) => ({
-                        ...m,
-                        abierta: true,
-                        carrera: m.carrera || String(masAlto + 1),
-                        ejemplares: String(cant),
-                      }))
-                    }
-                    className={`h-8 min-w-[2.4rem] rounded-lg border px-2 text-xs font-black transition active:scale-95 ${
-                      activo
-                        ? "border-indigo-700 bg-indigo-600 text-white ring-2 ring-indigo-300"
-                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    {cant} ej.
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Campos detallados */}
-        <div className="grid grid-cols-2 gap-x-2.5 gap-y-2 sm:grid-cols-3 xl:grid-cols-6">
-          <label className="block">
-            <span className={inputLbl}>Nº Carrera</span>
-            <input
-              value={modal.abierta ? modal.carrera : ""}
-              onChange={(e) => setModal((m) => ({ ...m, abierta: true, carrera: e.target.value }))}
-              placeholder={String(masAlto + 1)}
-              inputMode="numeric"
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-black text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-            />
-          </label>
-          <label className="block col-span-1 sm:col-span-2 xl:col-span-1">
-            <span className={inputLbl}>Ejemplares (Cant. o 1 NOMBRE)</span>
-            <input
-              value={modal.abierta ? modal.ejemplares : ""}
-              onChange={(e) => setModal((m) => ({ ...m, abierta: true, ejemplares: e.target.value }))}
-              placeholder="12 ó 1 RAYO, 2 SOL"
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-            />
-          </label>
-          <label className="block">
-            <span className={inputLbl}>Distancia (m)</span>
-            <input
-              value={modal.abierta ? modal.distancia : ""}
-              onChange={(e) => setModal((m) => ({ ...m, abierta: true, distancia: e.target.value }))}
-              placeholder="1600"
-              inputMode="numeric"
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-            />
-          </label>
-          <label className="block">
-            <span className={inputLbl}>Superficie</span>
-            <select
-              value={modal.abierta ? modal.superficie : "ARENA"}
-              onChange={(e) => setModal((m) => ({ ...m, abierta: true, superficie: e.target.value }))}
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-black uppercase text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-            >
-              {["ARENA", "PASTO", "HIPICA", "SINTETICA"].map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className={inputLbl}>Retirados (opc.)</span>
-            <input
-              value={modal.abierta ? modal.retirados : ""}
-              onChange={(e) => setModal((m) => ({ ...m, abierta: true, retirados: e.target.value }))}
-              placeholder="ej. 2,5"
-              className="w-full rounded-lg border border-red-200 bg-red-50/40 px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-            />
-          </label>
-          <div className="col-span-2 flex items-end gap-2 sm:col-span-3 xl:col-span-1">
-            <Button
-              variant="success"
-              size="md"
-              className="w-full py-2.5 font-black"
-              onClick={() => void guardar()}
-              disabled={guardando || !hipodromo || !fecha}
-            >
-              {guardando ? "Guardando…" : "💾 Registrar Carrera"}
-            </Button>
-          </div>
-        </div>
       </div>
 
       {/* Listado del día (Tarjetas táctiles en Celular + Tabla en Escritorio) */}

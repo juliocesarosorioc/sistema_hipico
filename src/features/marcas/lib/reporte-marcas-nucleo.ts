@@ -70,8 +70,8 @@ export function etiquetaMarca(row: Record<string, unknown>): string {
 }
 
 /** Mapea una fila cruda de `tickets_apuestas` (marca) al modelo del reporte. */
-export function normalizarMarca(row: Record<string, unknown>): VentaTablaReporte {
-  const v = normalizarVenta(row);
+export function normalizarMarca(row: Record<string, unknown>, mapaSeudonimos?: Map<string, string>): VentaTablaReporte {
+  const v = normalizarVenta(row, mapaSeudonimos);
   return {
     ...v,
     // El matchup es la esencia de la jugada: se muestra en la columna Ejemplar.
@@ -82,6 +82,6 @@ export function normalizarMarca(row: Record<string, unknown>): VentaTablaReporte
 }
 
 /** Normaliza un lote de filas crudas. */
-export function normalizarMarcas(rows: Record<string, unknown>[]): VentaTablaReporte[] {
-  return rows.map(normalizarMarca);
+export function normalizarMarcas(rows: Record<string, unknown>[], mapaSeudonimos?: Map<string, string>): VentaTablaReporte[] {
+  return rows.map((r) => normalizarMarca(r, mapaSeudonimos));
 }

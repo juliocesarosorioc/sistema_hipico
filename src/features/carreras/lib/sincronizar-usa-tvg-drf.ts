@@ -64,6 +64,14 @@ export const HIPODROMOS_USA_DISPONIBLES: HipodromoUsaMeta[] = [
   { codigo: "RP", nombre: "Remington Park", drfCode: "RP", tvgSlug: "remington-park", estadoDefecto: "OK" },
   { codigo: "MNR", nombre: "Mountaineer", drfCode: "MNR", tvgSlug: "mountaineer", estadoDefecto: "WV" },
   { codigo: "MVR", nombre: "Mahoning Valley", drfCode: "MVR", tvgSlug: "mahoning-valley", estadoDefecto: "OH" },
+  { codigo: "WO", nombre: "Woodbine", drfCode: "WO", tvgSlug: "woodbine", estadoDefecto: "ON" },
+  { codigo: "IND", nombre: "Horseshoe Indianapolis", drfCode: "IND", tvgSlug: "horseshoe-indianapolis", estadoDefecto: "IN" },
+  { codigo: "PEN", nombre: "Penn National", drfCode: "PEN", tvgSlug: "penn-national", estadoDefecto: "PA" },
+  { codigo: "LRC", nombre: "Los Alamitos", drfCode: "LRC", tvgSlug: "los-alamitos", estadoDefecto: "CA" },
+  { codigo: "DED", nombre: "Delta Downs", drfCode: "DED", tvgSlug: "delta-downs", estadoDefecto: "LA" },
+  { codigo: "HOU", nombre: "Sam Houston", drfCode: "HOU", tvgSlug: "sam-houston-race-park", estadoDefecto: "TX" },
+  { codigo: "LS", nombre: "Lone Star Park", drfCode: "LS", tvgSlug: "lone-star-park", estadoDefecto: "TX" },
+  { codigo: "CBY", nombre: "Canterbury Park", drfCode: "CBY", tvgSlug: "canterbury-park", estadoDefecto: "MN" },
 ];
 
 /**
@@ -127,6 +135,122 @@ export type ResumenSincronizacionUsa = {
   error?: string;
 };
 
+export type FuenteSincronizacionUsa = "AUTO_TVG_DRF" | "DRF" | "EQUIBASE" | "TVG" | "OTRAS";
+
+// ----------------------------------------------------------------------------
+// Extractor de Fechas para Carreras del Día y Días Futuros (DRF / Equibase / TVG)
+// ----------------------------------------------------------------------------
+const MESES_MAPA: Record<string, string> = {
+  january: "01", jan: "01", enero: "01", ene: "01",
+  february: "02", feb: "02", febrero: "02",
+  march: "03", mar: "03", marzo: "03",
+  april: "04", apr: "04", abril: "04", abr: "04",
+  may: "05", mayo: "05",
+  june: "06", jun: "06", junio: "06",
+  july: "07", jul: "07", julio: "07",
+  august: "08", aug: "08", agosto: "08", ago: "08",
+  september: "09", sep: "09", sept: "09", septiembre: "09",
+  october: "10", oct: "10", octubre: "10",
+  november: "11", nov: "11", noviembre: "11",
+  december: "12", dec: "12", diciembre: "12", dic: "12",
+};
+
+/**
+ * Detecta y extrae fechas de textos o carteleras pegadas de DRF, Equibase, TVG, etc.
+ * Soporta fechas de hoy y DÍAS FUTUROS (ej. "Saturday, October 31, 2026", "11/07/2026", "2026-11-05").
+ */
+export function extraerFechaDeTexto(texto: string): string | null {
+  if (!texto) return null;
+
+  // 1. Formato ISO YYYY-MM-DD
+  const mIso = texto.match(/\b(20\d{2})-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])\b/);
+  if (mIso) return `${mIso[1]}-${mIso[2]}-${mIso[3]}`;
+
+  // 2. Formato Mes DD, YYYY o Día, Mes DD, YYYY (e.g. "October 31, 2026", "Saturday, Oct 31, 2026")
+  const mIngles = texto.match(/\b([a-zA-Z]+)\s+([0-2]?[0-9]|3[01]),?\s+(20\d{2})\b/);
+  if (mIngles) {
+    const mesStr = mIngles[1].toLowerCase();
+    const dia = mIngles[2].padStart(2, "0");
+    const anio = mIngles[3];
+    if (MESES_MAPA[mesStr]) {
+      return `${anio}-${MESES_MAPA[mesStr]}-${dia}`;
+    }
+  }
+
+  // 3. Formato DD de Mes de YYYY (Español)
+  const mEsp = texto.match(/\b([0-2]?[0-9]|3[01])\s+de\s+([a-zA-Z]+)(?:\s+de)?\s+(20\d{2})\b/i);
+  if (mEsp) {
+    const dia = mEsp[1].padStart(2, "0");
+    const mesStr = mEsp[2].toLowerCase();
+    const anio = mEsp[3];
+    if (MESES_MAPA[mesStr]) {
+      return `${anio}-${MESES_MAPA[mesStr]}-${dia}`;
+    }
+  }
+
+  // 4. Formato MM/DD/YYYY o MM/DD/YY (USA Standard)
+  const mUsaDate = texto.match(/\b(0?[1-9]|1[0-2])\/([0-2]?[0-9]|3[01])\/(20\d{2}|\d{2})\b/);
+  if (mUsaDate) {
+    const mes = mUsaDate[1].padStart(2, "0");
+    const dia = mUsaDate[2].padStart(2, "0");
+    let anio = mUsaDate[3];
+    if (anio.length === 2) anio = `20${anio}`;
+    return `${anio}-${mes}-${dia}`;
+  }
+
+  return null;
+}
+
+/**
+ * Detecta si el texto pegado menciona explícitamente algún hipódromo americano.
+ */
+export function extraerHipodromoDeTexto(texto: string): string | null {
+  if (!texto) return null;
+  const textoMin = texto.toLowerCase();
+
+  for (const h of HIPODROMOS_USA_DISPONIBLES) {
+    if (textoMin.includes(h.nombre.toLowerCase())) {
+      return h.nombre;
+    }
+  }
+  if (textoMin.includes("gulfstream")) return "Gulfstream Park";
+  if (textoMin.includes("santa anita")) return "Santa Anita";
+  if (textoMin.includes("tampa bay")) return "Tampa Bay Downs";
+  if (textoMin.includes("churchill")) return "Churchill Downs";
+  if (textoMin.includes("del mar")) return "Del Mar";
+  if (textoMin.includes("parx")) return "Parx Racing";
+  if (textoMin.includes("belmont")) return "Belmont Park";
+  if (textoMin.includes("saratoga")) return "Saratoga";
+  if (textoMin.includes("woodbine")) return "Woodbine";
+  if (textoMin.includes("turfway")) return "Turfway Park";
+  if (textoMin.includes("horseshoe") || textoMin.includes("indiana grand")) return "Horseshoe Indianapolis";
+  if (textoMin.includes("penn national")) return "Penn National";
+  if (textoMin.includes("los alamitos")) return "Los Alamitos";
+  if (textoMin.includes("delta downs")) return "Delta Downs";
+
+  return null;
+}
+
+/**
+ * Parsea distancias fraccionadas americanas (ej. '6 1/2 F', '1 1/16 M', '5 Furlongs').
+ */
+export function parsearDistanciaUsa(textoDistancia: string): number | undefined {
+  const m = textoDistancia.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*(Furlongs?|F|Miles?|Meters?|Metros?|M)\b/i);
+  if (!m) return undefined;
+  let val = parseFloat(m[1]);
+  if (m[2] && m[3]) {
+    val += parseFloat(m[2]) / parseFloat(m[3]);
+  }
+  const unidad = m[4].toLowerCase();
+  if (unidad.startsWith("f")) {
+    return Math.round(val * 201.168);
+  }
+  if (unidad.startsWith("mile") || (unidad === "m" && val < 4)) {
+    return Math.round(val * 1609.34);
+  }
+  return Math.round(val);
+}
+
 // ----------------------------------------------------------------------------
 // Parser Heurístico para Texto / HTML Copiado de TVG o DRF
 // ----------------------------------------------------------------------------
@@ -135,8 +259,16 @@ export function parsearTextoPegadoUsa(
   hipodromoDefecto = "Gulfstream Park",
   fechaDefecto = hoyLocal()
 ): CarreraSincronizadaUsa[] {
-  if (esHipodromoVenezolano(hipodromoDefecto)) {
-    throw new Error(`Jurisdicción exclusiva USA: '${hipodromoDefecto}' no está permitido.`);
+  // 1. Extraer posible fecha embebida en el texto (ej. "Saturday, October 31, 2026", "11/05/2026")
+  const fechaDetectada = extraerFechaDeTexto(texto);
+  const fechaEfectiva = fechaDetectada || fechaDefecto;
+
+  // 2. Extraer posible hipódromo especificado en texto
+  const hipoDetectado = extraerHipodromoDeTexto(texto);
+  const hipoEfectivo = hipoDetectado || hipodromoDefecto;
+
+  if (esHipodromoVenezolano(hipoEfectivo)) {
+    throw new Error(`Jurisdicción exclusiva USA: '${hipoEfectivo}' no está permitido.`);
   }
 
   const lineas = texto.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -156,9 +288,9 @@ export function parsearTextoPegadoUsa(
 
       if (!carrerasMap.has(carreraActual)) {
         carrerasMap.set(carreraActual, {
-          hipodromo: hipodromoDefecto,
+          hipodromo: hipoEfectivo,
           carrera: carreraActual,
-          fecha: fechaDefecto,
+          fecha: fechaEfectiva,
           hora: horaDetectada,
           superficie: lin.toLowerCase().includes("turf") ? "GRAMA" : "ARENA",
           caballos: [],
@@ -179,21 +311,28 @@ export function parsearTextoPegadoUsa(
         if (mHora) c.hora = mHora[1].trim();
       }
       if (!c.distancia) {
-        const mDist = lin.match(/(\d+(?:\.\d+)?)\s*(?:Furlongs?|F|Meters?|M|Miles?)/i);
-        if (mDist) {
-          const val = parseFloat(mDist[1]);
-          if (lin.toLowerCase().includes("f")) c.distancia = Math.round(val * 201.168);
-          else if (lin.toLowerCase().includes("mile")) c.distancia = Math.round(val * 1609.34);
-          else c.distancia = Math.round(val);
+        const distParsed = parsearDistanciaUsa(lin);
+        if (distParsed) {
+          c.distancia = distParsed;
         }
       }
     }
 
-    // Detección de ejemplar: línea que inicia con número de programa (#1, 1, 1A, 2, 2B, etc.)
-    const mNum = lin.match(/^(?:#?\s*)(\d{1,2}[A-Z]?)\b/i);
+    // Si la línea describe distancia o pools de apuestas, no interpretarla como caballo
+    if (/\b(?:furlongs?|meters?|metros?|miles?)\b/i.test(lin) || /\b(?:exacta|trifecta|superfecta|pick\s*\d+)\b/i.test(lin)) {
+      continue;
+    }
+
+    // Detección de ejemplar:
+    // Soporta:
+    // 1. Equibase / Fast Entries: "1 (1) Forte (KY) 122 I. Ortiz, Jr. Todd A. Pletcher 8-5"
+    // 2. TVG / DRF: "#1 Fierceness (PP: 1, ML: 4/5, Jockey: John R. Velazquez)"
+    // 3. Estándar: "1 Speightstown"
+    const mNum = lin.match(/^(?:#?\s*)(\d{1,2}[A-Z]?)(?:\s*\(([0-9]{1,2})\))?\s+(.+)$/i);
     if (mNum) {
       const numProg = mNum[1].toUpperCase().trim();
-      const resto = lin.slice(mNum[0].length).trim();
+      const ppParentesis = mNum[2] ? parseInt(mNum[2], 10) : undefined;
+      const resto = mNum[3].trim();
       if (/^(?:st|nd|rd|th)?\s*(?:race|carrera)/i.test(resto)) continue;
 
       const esScratched = /\b(SCRATCHED|SCR|RETIRADO|RET)\b/i.test(lin);
@@ -206,34 +345,49 @@ export function parsearTextoPegadoUsa(
       const mTrainer = lin.match(/(?:Trainer:?\s*|Entrenador:?\s*|\bT:\s*)([A-Za-z\s'.-]+?)(?:,|\)|;|\s*Weight|\s*ML|$)/i);
       const entrenador = mTrainer ? mTrainer[1].trim() : undefined;
 
-      // Extraer ML odds
-      const mMl = lin.match(/(?:ML:?\s*|\bML\s+)(\d{1,2}\/\d{1,2}|\d+\.?\d*)|(?:\s)(\d{1,2}\/\d{1,2})(?:\s|\)|$)/i);
-      const ml = mMl ? (mMl[1] || mMl[2])?.trim() : undefined;
+      // Extraer ML odds (soporta 8-5, 9-2, 5/2, ML: 5/2, ML 8-5)
+      const mMl = lin.match(/(?:ML:?\s*|\bML\s+)(\d{1,2}[/-]\d{1,2}|\d+\.?\d*)|(?:\s)(\d{1,2}[/-]\d{1,2})(?:\s|\)|$)/i);
+      let ml: string | undefined = undefined;
+      if (mMl) {
+        const rawMl = (mMl[1] || mMl[2])?.trim();
+        if (rawMl) ml = rawMl.replace("-", "/");
+      }
 
       // Extraer PP
-      const mPp = lin.match(/(?:PP:?\s*|\bP(?:ost)?\s*P(?:os)?:\s*)(\d{1,2})/i);
-      const pp = mPp ? parseInt(mPp[1], 10) : undefined;
+      let pp = ppParentesis;
+      if (!pp) {
+        const mPp = lin.match(/(?:PP:?\s*|\bP(?:ost)?\s*P(?:os)?:\s*)(\d{1,2})/i);
+        if (mPp) pp = parseInt(mPp[1], 10);
+      }
 
       // Extraer nombre limpio del ejemplar
       let nombreLimpio = resto
         .replace(/\((?:PP:?|ML:?|Jockey:?|Trainer:?|Weight:?|SCRATCHED|SCR)[^)]*\)/gi, "")
         .replace(/\b(SCRATCHED|SCR|RETIRADO)\b/gi, "")
         .replace(/\bPP:\s*\d+/gi, "")
-        .replace(/\bML:\s*[0-9/.]+/gi, "")
+        .replace(/\bML:\s*[0-9/.-]+/gi, "")
         .replace(/\bJockey:\s*[A-Za-z\s'.-]+/gi, "")
         .replace(/\bTrainer:\s*[A-Za-z\s'.-]+/gi, "")
         .replace(/\bWeight:\s*\d+/gi, "")
+        .replace(/\(([A-Z]{2,3})\)/g, "")
+        .replace(/\b\d{1,2}[/-]\d{1,2}\b/g, "")
         .replace(/^[-(: ]+|[-): ]+$/g, "")
         .trim();
+
+      // En Equibase si hay peso de 3 dígitos (ej. 122, 126), separar lo previo como nombre
+      const mPeso = nombreLimpio.match(/^([A-Za-z\s'.-]+?)\s+\d{3}\b/);
+      if (mPeso) {
+        nombreLimpio = mPeso[1].trim();
+      }
 
       nombreLimpio = nombreLimpio.replace(/[()]/g, "").trim().toUpperCase();
 
       if (nombreLimpio && nombreLimpio.length >= 2 && !nombreLimpio.startsWith("RACE") && !nombreLimpio.startsWith("EXACTA")) {
         if (!carrerasMap.has(carreraActual)) {
           carrerasMap.set(carreraActual, {
-            hipodromo: hipodromoDefecto,
+            hipodromo: hipoEfectivo,
             carrera: carreraActual,
-            fecha: fechaDefecto,
+            fecha: fechaEfectiva,
             caballos: [],
             retirados: [],
           });
@@ -268,13 +422,13 @@ export function parsearTextoPegadoUsa(
 export async function sincronizarCarrerasAmericanasDia(opciones?: {
   fechaISO?: string;
   tracksFiltro?: string[];
-  fuentePreferida?: "AUTO_TVG_DRF" | "DRF" | "TVG";
+  fuentePreferida?: "AUTO_TVG_DRF" | "DRF" | "EQUIBASE" | "TVG" | "OTRAS";
   htmlOTextoPegado?: string;
   hipodromoPegado?: string;
   creadoPor?: string;
 }): Promise<ResumenSincronizacionUsa> {
-  const fecha = opciones?.fechaISO || hoyLocal();
-  const creadoPor = opciones?.creadoPor || "Sincronizador TVG/DRF";
+  let fecha = opciones?.fechaISO || hoyLocal();
+  const creadoPor = opciones?.creadoPor || "Sincronizador TVG/DRF/Equibase";
   const tracksFiltro = opciones?.tracksFiltro && opciones.tracksFiltro.length > 0
     ? opciones.tracksFiltro
     : ["GP", "SA", "TAM", "AQU"];
@@ -299,6 +453,9 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
   if (opciones?.htmlOTextoPegado && opciones.htmlOTextoPegado.trim()) {
     const hipoTarget = opciones.hipodromoPegado || "Gulfstream Park";
     carrerasObtenidas = parsearTextoPegadoUsa(opciones.htmlOTextoPegado, hipoTarget, fecha);
+    if (carrerasObtenidas.length > 0 && carrerasObtenidas[0].fecha) {
+      fecha = carrerasObtenidas[0].fecha;
+    }
   } else {
     // CASO 2: Invocación a Supabase Edge Function `sync-usa-races`
     let edgeOk = false;

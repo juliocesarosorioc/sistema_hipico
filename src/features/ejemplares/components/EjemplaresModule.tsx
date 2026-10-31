@@ -3,20 +3,18 @@
 import { useEffect, useState } from "react";
 import { PadronTabla } from "@/features/ejemplares/components/PadronTabla";
 import { GacetaIA } from "@/features/ejemplares/components/GacetaIA";
-import { CargaPrograma } from "@/features/ejemplares/components/CargaPrograma";
 import { CarrerasDiaModule } from "@/features/carreras/components/CarrerasDiaModule";
 
-type TabId = "padron" | "gaceta" | "programa" | "carreras";
+type TabId = "padron" | "gaceta" | "carreras";
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "padron", label: "📖 Registro de Ejemplares" },
   { id: "gaceta", label: "📰 Carga de Gaceta (IA)" },
-  { id: "programa", label: "📅 Carga de Programa" },
   { id: "carreras", label: "🏁 Carreras del Día" },
 ];
 
 const ES_TAB = (v: string | null): v is TabId =>
-  v === "padron" || v === "gaceta" || v === "programa" || v === "carreras";
+  v === "padron" || v === "gaceta" || v === "carreras";
 
 export function EjemplaresModule() {
   const [tab, setTab] = useState<TabId>("padron");
@@ -56,8 +54,6 @@ export function EjemplaresModule() {
         <PadronTabla />
       ) : tab === "gaceta" ? (
         <GacetaIA />
-      ) : tab === "programa" ? (
-        <CargaPrograma />
       ) : (
         <CarrerasDiaModule />
       )}

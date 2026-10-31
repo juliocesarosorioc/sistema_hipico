@@ -104,13 +104,16 @@ export function ganadoresEfectivos(
  */
 export function pagoPotencialEjemplar(opts: {
   premio: number;
-  base: number;
+  base?: number;
+  cantidad?: number;
   monto: number;
   invalidado?: boolean;
 }): number {
   if (opts.invalidado) return 0;
   if (!opts.monto) return 0;
-  return (opts.premio / (opts.base || 1)) * opts.monto;
+  if (opts.cantidad && opts.cantidad > 0) return opts.premio * opts.cantidad;
+  const cant = opts.base && opts.base > 0 ? Math.max(1, Math.round(opts.monto / opts.base)) : 1;
+  return opts.premio * cant;
 }
 
 /**

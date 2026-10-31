@@ -6,6 +6,7 @@
  * día, y sincroniza el estado ganador/perdedor con los resultados oficiales
  * cargados en Gestión de Jugadas (`resultados_carreras`, 1° en Raya).
  */
+import { cargarMapaSeudonimosClientes } from "@/features/clientes/lib/clientes";
 import { supabase } from "@/core/supabase";
 import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
 import {
@@ -29,7 +30,7 @@ export async function cargarRematesVendidos(fecha: string): Promise<ResultadoCar
   const dia = String(fecha ?? "").slice(0, 10);
   if (!dia) return { ok: false, ventas: [], error: "Indique el día del reporte." };
   try {
-    const [{ data, error }, { data: resData }, { data: rematesData }] = await Promise.all([
+    const [{ data, error }, { data: resData }, { data: rematesData }, mapaSeudonimos] = await Promise.all([
       supabase
         .from("tickets_apuestas")
         .select("*")
@@ -44,6 +45,7 @@ export async function cargarRematesVendidos(fecha: string): Promise<ResultadoCar
         .from("remates")
         .select("id, hipodromo, carrera, fecha, incentivo, incentivo_pct, comision_pct")
         .eq("fecha", dia),
+      cargarMapaSeudonimosClientes().catch(() => new Map<string, string>()),
     ]);
     if (error) return { ok: false, ventas: [], error: error.message };
 
@@ -78,7 +80,7 @@ export async function cargarRematesVendidos(fecha: string): Promise<ResultadoCar
       const remIds = listaRemates.map((r) => String(r.id ?? "")).filter(Boolean);
       const { data: cabs } = await supabase
         .from("remate_caballos")
-        .select("id, remate_id, numero, ejemplar_numero, nombre, monto_usd, cliente_id, clientes(nombre)")
+        .select("id, remate_id, numero, ejemplar_numero, nombre, monto_usd, cliente_id, clientes(nombre, seudonimo)")
         .in("remate_id", remIds);
       const cabsPorRemate = new Map<string, Array<Record<string, unknown>>>();
       for (const c of (cabs ?? []) as Array<Record<string, unknown>>) {
@@ -103,7 +105,7 @@ export async function cargarRematesVendidos(fecha: string): Promise<ResultadoCar
           const cid = String(c.id ?? "");
           const monto = Number(c.monto_usd) || 0;
           if (!c.cliente_id || monto <= 0 || idsCaballosEnTickets.has(cid)) continue;
-          const cliObj = c.clientes as { nombre?: unknown } | null;
+          const cliObj = c.clientes as { nombre?: unknown; seudonimo?: unknown } | null;
           const numEj = String(c.ejemplar_numero ?? c.numero ?? "").trim();
           pujasExtra.push({
             id: `rem-cab-${cid}`,
@@ -112,7 +114,7 @@ export async function cargarRematesVendidos(fecha: string): Promise<ResultadoCar
             numero: numEj,
             caballo: String(c.nombre ?? numEj),
             jugadorId: String(c.cliente_id),
-            jugador: cliObj?.nombre != null ? String(cliObj.nombre) : String(c.cliente_id),
+            jugador: String((c.cliente_id && mapaSeudonimos.get(String(c.cliente_id))) || cliObj?.seudonimo || cliObj?.nombre || c.cliente_id || "—"),
             grupoId: "REMATE",
             grupo: "REMATE",
             monto,
@@ -133,7 +135,7 @@ export async function cargarRematesVendidos(fecha: string): Promise<ResultadoCar
       }
     }
 
-    const baseVentas = [...filasTickets.map(normalizarVenta), ...pujasExtra];
+    const baseVentas = [...filasTickets.map((r) => normalizarVenta(r, mapaSeudonimos)), ...pujasExtra];
     const ventas = baseVentas.map((venta) => {
       if (venta.anulada) return venta;
       if (estadoNormalizado(venta.estado) === "Retirado") return venta;

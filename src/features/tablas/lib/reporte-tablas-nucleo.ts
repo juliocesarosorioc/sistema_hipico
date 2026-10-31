@@ -28,6 +28,7 @@ export type VentaTablaReporte = {
   id: string;
   hipodromo: string;
   carrera: number;
+  nombreJugada?: string;
   numero: string;
   caballo: string;
   jugadorId: string;
@@ -232,16 +233,28 @@ function diaLocalDeVenta(raw: unknown): string {
 }
 
 /** Mapea una fila cruda de `tickets_apuestas` al modelo del reporte. */
-export function normalizarVenta(row: Record<string, unknown>): VentaTablaReporte {
+export function normalizarVenta(
+  row: Record<string, unknown>,
+  mapaSeudonimos?: Map<string, string>
+): VentaTablaReporte {
   const grupo = texto(row.grupo_cobro_nombre) || texto(row.grupo_comision_nombre) || texto(row.grupo);
-  const jugador = texto(row.cliente_juega_nombre) || texto(row.cliente_juega_id);
+  const cid = texto(row.cliente_juega_id);
+  const cnom = texto(row.cliente_juega_nombre);
+  // En los reportes SIEMPRE toma el seudónimo del usuario
+  const aliasResuelto =
+    (cid && mapaSeudonimos?.get(cid)) ||
+    (cnom && mapaSeudonimos?.get(cnom.toUpperCase())) ||
+    cnom ||
+    cid;
+  const jugador = aliasResuelto || "(sin jugador)";
   return {
     id: texto(row.id),
     hipodromo: texto(row.hipodromo).toUpperCase(),
     carrera: cifra(row.carrera),
+    nombreJugada: texto(row.nombre_jugada),
     numero: texto(row.ejemplar_numero),
     caballo: texto(row.caballo),
-    jugadorId: texto(row.cliente_juega_id) || jugador,
+    jugadorId: cid || jugador,
     jugador,
     grupoId: texto(row.grupo_cobro_id) || texto(row.grupo_comision_id) || grupo,
     grupo,

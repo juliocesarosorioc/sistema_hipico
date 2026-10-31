@@ -31,7 +31,7 @@
  * El permiso NO se decide acá: la puerta está en `edicion-reporte.ts`
  * (perfil Administrador Principal). Este componente solo pinta y llama.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import {
   MOTIVOS_ANULACION,
@@ -49,7 +49,8 @@ import { ETIQUETA_ESTADO, ESTADOS_MAESTROS, estadoMaestro, type EstadoMaestro } 
 import { nombreOficialDeCaballoSuelto } from "@/features/liquidacion/lib/resolver-ejemplar";
 import { ETIQUETA_ADELANTADA, ETIQUETA_EN_VIVO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
 import { leerCarrerasMaestro, aCarreraCentral } from "@/features/carreras/lib/maestro";
-import { listarGruposVenta } from "@/features/grupos/lib/grupos";
+import { listarGruposVenta, jugadoresDeGrupo, type ClienteVenta } from "@/features/grupos/lib/grupos";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 
 export type ModoAccionJugada = "editar" | "anular" | "restaurar";
 
@@ -96,7 +97,9 @@ export function ModalAccionJugadaReporte({
   /** Se llama con un mensaje de éxito (o el aviso de auditoría) y ya cerrado. */
   onHecho: (mensaje: string) => void;
 }) {
-  const [nombreJugada, setNombreJugada] = useState(venta.caballo ?? "");
+  const [nombreJugada, setNombreJugada] = useState(
+    venta.nombreJugada || (venta.numero ? `TABLA FIJA · ${venta.numero}` : "TABLA FIJA")
+  );
   const [jugador1, setJugador1] = useState(venta.jugador ?? "");
   const [jugador1Id, setJugador1Id] = useState(venta.jugadorId ?? "");
   const [jugador2, setJugador2] = useState("");
@@ -105,6 +108,8 @@ export function ModalAccionJugadaReporte({
   const [grupoNombre, setGrupoNombre] = useState(venta.grupo ?? "");
   const [caballo, setCaballo] = useState(venta.caballo ?? "");
   const [ejemplar, setEjemplar] = useState(venta.numero ?? "");
+  const [jugadoresGrupo, setJugadoresGrupo] = useState<ClienteVenta[]>([]);
+  const [cargandoJugadores, setCargandoJugadores] = useState(false);
   /** Padrón de la carrera: permite elegir el ejemplar y autocompletar etiquetas. */
   const [ejemplaresCarrera, setEjemplaresCarrera] = useState<Array<{ numero: string; nombre: string }>>([]);
   /** Nombre oficial resuelto del padrón al cambiar el Nº ("" = no se pudo). */
@@ -169,7 +174,22 @@ export function ModalAccionJugadaReporte({
         const lista = (gs ?? [])
           .map((g: any) => ({ id: String(g?.id ?? ""), nombre: String(g?.nombre ?? "").trim() }))
           .filter((g: any) => g.id && g.nombre);
-        if (!cancelado) setGrupos(lista);
+        if (!cancelado) {
+          setGrupos(lista);
+          // Sincronizar ID de grupo si venta.grupoId no coincide con un ID pero sí con el nombre
+          const idActual = (grupoId || venta.grupoId || "").trim();
+          const nombreActual = (grupoNombre || venta.grupo || "").trim().toLowerCase();
+          const coincidePorId = lista.find((x) => x.id === idActual);
+          if (!coincidePorId && nombreActual) {
+            const coincidePorNombre = lista.find((x) => x.nombre.trim().toLowerCase() === nombreActual);
+            if (coincidePorNombre) {
+              setGrupoId(coincidePorNombre.id);
+              setGrupoNombre(coincidePorNombre.nombre);
+            }
+          } else if (coincidePorId && !grupoNombre) {
+            setGrupoNombre(coincidePorId.nombre);
+          }
+        }
       } catch {
         /* best effort */
       }
@@ -177,7 +197,86 @@ export function ModalAccionJugadaReporte({
     return () => {
       cancelado = true;
     };
-  }, [modo]);
+  }, [modo, venta.grupo, venta.grupoId]);
+
+  // Carga los jugadores del grupo seleccionado para permitir buscarlos y corregirlos
+  useEffect(() => {
+    if (modo !== "editar") return;
+    const gid = (grupoId || venta.grupoId || "").trim();
+    if (!gid) {
+      setJugadoresGrupo([]);
+      return;
+    }
+    let cancelado = false;
+    setCargandoJugadores(true);
+    (async () => {
+      try {
+        let idParaBuscar = gid;
+        if (grupos.length > 0 && !grupos.some((g) => g.id === gid)) {
+          const porNombre = grupos.find((g) => g.nombre.trim().toLowerCase() === gid.toLowerCase());
+          if (porNombre) idParaBuscar = porNombre.id;
+        }
+        const js = await jugadoresDeGrupo(idParaBuscar);
+        if (cancelado) return;
+        setJugadoresGrupo(js);
+
+        // Si el jugador 1 no tiene ID, asociarlo si hay match exacto
+        if (jugador1 && !jugador1Id) {
+          const exacto = js.find((x) => x.nombre.trim().toLowerCase() === jugador1.trim().toLowerCase());
+          if (exacto) setJugador1Id(String(exacto.id));
+        }
+      } catch {
+        if (!cancelado) setJugadoresGrupo([]);
+      } finally {
+        if (!cancelado) setCargandoJugadores(false);
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [modo, grupoId, venta.grupoId, grupos]);
+
+  const opcionesJugadores = useMemo(() => {
+    return jugadoresGrupo.map((j) => {
+      const saldo = j.saldo_actual ?? 0;
+      const aval = j.aval ?? 0;
+      const detalle = j.libre
+        ? "libre"
+        : `Disp. $${(saldo + aval).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${aval > 0 ? ` (aval ${aval})` : ""}`;
+      return {
+        value: String(j.id),
+        label: `${j.nombre} · ${detalle}`,
+      };
+    });
+  }, [jugadoresGrupo]);
+
+  const seleccionarGrupo = (gid: string) => {
+    setGrupoId(gid);
+    const g = grupos.find((x) => x.id === gid);
+    setGrupoNombre(g?.nombre ?? (gid === "" ? venta.grupo ?? "" : ""));
+  };
+
+  const seleccionarJugador1 = (val: string) => {
+    const encontrado = jugadoresGrupo.find((j) => String(j.id) === String(val));
+    if (encontrado) {
+      setJugador1(encontrado.nombre);
+      setJugador1Id(String(encontrado.id));
+    } else {
+      setJugador1(val);
+      setJugador1Id("");
+    }
+  };
+
+  const seleccionarJugador2 = (val: string) => {
+    const encontrado = jugadoresGrupo.find((j) => String(j.id) === String(val));
+    if (encontrado) {
+      setJugador2(encontrado.nombre);
+      setJugador2Id(String(encontrado.id));
+    } else {
+      setJugador2(val);
+      setJugador2Id("");
+    }
+  };
 
   /**
    * Al cambiar el Nº de ejemplar, busca el nombre OFICIAL en el padrón de la
@@ -246,18 +345,27 @@ export function ModalAccionJugadaReporte({
         // actual del ticket (no inventa un ganador): solo cambia si venía pendiente.
         const estadoInterno =
           estado === "ANULADA" ? "Anulado" : estado === "PENDIENTE" ? "Pendiente" : venta.estado || "Ganador";
+
+        const numFinal =
+          ejemplar.trim() !== ""
+            ? Number(ejemplar)
+            : /^\d+$/.test(caballo.trim())
+              ? Number(caballo.trim())
+              : null;
+        const cabFinal = caballo.trim() || (numFinal != null ? String(numFinal) : null);
+
         r = await editarJugadaDeReporte(
           venta.id,
           {
             nombre_jugada: nombreJugada.trim() || null,
-            caballo: caballo.trim() || null,
+            caballo: cabFinal,
             cliente_juega_id: jugador1Id.trim() || null,
             cliente_juega_nombre: jugador1.trim() || null,
             cliente_consigue_id: jugador2Id.trim() || null,
             cliente_consigue_nombre: jugador2.trim() || null,
             grupo_cobro_id: grupoId.trim() || null,
             grupo_cobro_nombre: grupoNombre.trim() || null,
-            ejemplar_numero: ejemplar.trim() === "" ? null : Number(ejemplar),
+            ejemplar_numero: numFinal,
             monto_jugado: monto.trim() === "" ? null : Number(monto),
             premio_pagar: premio.trim() === "" ? null : Number(premio),
             estado: estadoInterno,
@@ -321,36 +429,10 @@ export function ModalAccionJugadaReporte({
 
           {modo === "editar" ? (
             <div className="grid grid-cols-2 gap-3">
-              <Campo label="Jugador 1 (juega / usuario)">
-                <input
-                  value={jugador1}
-                  onChange={(e) => {
-                    setJugador1(e.target.value);
-                    setJugador1Id("");
-                  }}
-                  className={inputCls}
-                />
-              </Campo>
-              <Campo label="Jugador 2 / paga (banquero)">
-                <input
-                  value={jugador2}
-                  onChange={(e) => {
-                    setJugador2(e.target.value);
-                    setJugador2Id("");
-                  }}
-                  placeholder="Cliente que paga / banquero"
-                  className={inputCls}
-                />
-              </Campo>
               <Campo label="Grupo de cobro">
                 <select
                   value={grupoId}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setGrupoId(v);
-                    const g = grupos.find((x) => x.id === v);
-                    setGrupoNombre(g?.nombre ?? (v === "" ? venta.grupo ?? "" : ""));
-                  }}
+                  onChange={(e) => seleccionarGrupo(e.target.value)}
                   className={inputCls}
                 >
                   <option value="">— Sin cambiar / actual —</option>
@@ -361,12 +443,48 @@ export function ModalAccionJugadaReporte({
                   ))}
                 </select>
               </Campo>
+
               <Campo label="Tipo de jugada (nomenclatura)">
                 <input
                   value={nombreJugada}
                   onChange={(e) => setNombreJugada(e.target.value)}
                   placeholder="ej. TABLA FIJA, MARCA, DUPLETA…"
                   className={inputCls}
+                />
+              </Campo>
+
+              <Campo label="Jugador 1 (juega / usuario del grupo)">
+                <SearchableSelect
+                  options={opcionesJugadores}
+                  value={jugador1Id || jugador1}
+                  displayValue={jugador1}
+                  onChange={seleccionarJugador1}
+                  allowCustom={true}
+                  placeholder={
+                    cargandoJugadores
+                      ? "Cargando jugadores del grupo…"
+                      : opcionesJugadores.length > 0
+                        ? "Buscar jugador del grupo…"
+                        : "Buscar o escribir jugador…"
+                  }
+                  inputClassName={inputCls}
+                />
+                {jugadoresGrupo.length > 0 && (
+                  <span className="mt-0.5 block text-[10px] text-slate-500">
+                    👥 {jugadoresGrupo.length} jugador(es) en este grupo
+                  </span>
+                )}
+              </Campo>
+
+              <Campo label="Jugador 2 / paga (banquero)">
+                <SearchableSelect
+                  options={opcionesJugadores}
+                  value={jugador2Id || jugador2}
+                  displayValue={jugador2}
+                  onChange={seleccionarJugador2}
+                  allowCustom={true}
+                  placeholder="Cliente que paga / banquero (opcional)"
+                  inputClassName={inputCls}
                 />
               </Campo>
               <Campo label="Ejemplar (desde carrera / etiqueta)">

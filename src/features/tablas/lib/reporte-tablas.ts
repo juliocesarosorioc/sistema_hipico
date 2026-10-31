@@ -6,6 +6,7 @@
  * Gestión de Jugadas (`resultados_carreras`), evaluando por el 1° en Raya.
  */
 import { supabase } from "@/core/supabase";
+import { cargarMapaSeudonimosClientes } from "@/features/clientes/lib/clientes";
 import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
 import {
   normalizarVenta,
@@ -97,7 +98,7 @@ export async function cargarVentasTablasFijas(fecha: string): Promise<ResultadoC
   const dia = String(fecha ?? "").slice(0, 10);
   if (!dia) return { ok: false, ventas: [], error: "Indique el día del reporte." };
   try {
-    const [{ data, error }, resultadosDia] = await Promise.all([
+    const [{ data, error }, resultadosDia, mapaSeudonimos] = await Promise.all([
       supabase
         .from("tickets_apuestas")
         .select("*")
@@ -105,13 +106,14 @@ export async function cargarVentasTablasFijas(fecha: string): Promise<ResultadoC
         .ilike("nombre_jugada", "TABLA FIJA%")
         .order("fecha_registro"),
       leerResultadosTablasDia(dia),
+      cargarMapaSeudonimosClientes(),
     ]);
     if (error) return { ok: false, ventas: [], error: error.message };
 
     const filasDia = ((data ?? []) as Record<string, unknown>[]).filter((row) =>
       perteneceADiaJornada(row, dia)
     );
-    const conInvalidados = await marcarInvalidados(filasDia.map(normalizarVenta));
+    const conInvalidados = await marcarInvalidados(filasDia.map((r) => normalizarVenta(r, mapaSeudonimos)));
 
     const ventas = conInvalidados.map((v) => {
       if (v.anulada) return v;
@@ -149,3 +151,5 @@ export async function cargarVentasTablasFijas(fecha: string): Promise<ResultadoC
     return { ok: false, ventas: [], error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+export { cargarMapaSeudonimosClientes } from "@/features/clientes/lib/clientes";

@@ -7,8 +7,12 @@ import {
   sincronizarCarrerasAmericanasDia,
   iniciarAutoActualizadorRetirados,
   detenerAutoActualizadorRetirados,
+  extraerFechaDeTexto,
+  extraerHipodromoDeTexto,
   type ResumenSincronizacionUsa,
+  type FuenteSincronizacionUsa,
 } from "@/features/carreras/lib/sincronizar-usa-tvg-drf";
+import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
 import { hoyLocal } from "@/core/utils/fechas";
 import { emitirToast } from "@/shared/lib/mensajeria";
 
@@ -17,6 +21,22 @@ interface ModalSincronizadorUsaProps {
   onCerrar: () => void;
   fechaDefecto?: string;
   onActualizado?: () => void;
+}
+
+function calcularFechaFutura(dias: number): string {
+  const base = new Date();
+  base.setDate(base.getDate() + dias);
+  return base.toISOString().slice(0, 10);
+}
+
+function calcularProximoDiaSemana(diaObjetivo: number): string {
+  // 0 = domingo, 6 = sábado
+  const base = new Date();
+  const diaActual = base.getDay();
+  let diff = diaObjetivo - diaActual;
+  if (diff <= 0) diff += 7;
+  base.setDate(base.getDate() + diff);
+  return base.toISOString().slice(0, 10);
 }
 
 export function ModalSincronizadorUsa({
@@ -28,7 +48,7 @@ export function ModalSincronizadorUsa({
   const switchId = useId();
   const [tab, setTab] = useState<"auto" | "pegar">("auto");
   const [fecha, setFecha] = useState<string>(() => fechaDefecto || hoyLocal());
-  const [fuente, setFuente] = useState<"AUTO_TVG_DRF" | "DRF" | "TVG">("AUTO_TVG_DRF");
+  const [fuente, setFuente] = useState<FuenteSincronizacionUsa>("AUTO_TVG_DRF");
   const [seleccionTodos, setSeleccionTodos] = useState(true);
   const [seleccionados, setSeleccionados] = useState<string[]>([
     "Gulfstream Park",
@@ -93,8 +113,9 @@ export function ModalSincronizadorUsa({
 
       setResumen(res);
       if (res.ok) {
+        useCarrerasDiaStore.getState().setFecha(res.fecha || fecha);
         emitirToast(
-          `✅ Sincronizados ${res.tracksProcesados.length} hipódromos (${res.totalCarreras} carreras, ${res.totalEjemplares} ejemplares).`,
+          `✅ Sincronizados ${res.tracksProcesados.length} hipódromos (${res.totalCarreras} carreras, ${res.totalEjemplares} ejemplares) para ${res.fecha || fecha}.`,
           "success"
         );
         startTransition(() => {
@@ -119,7 +140,7 @@ export function ModalSincronizadorUsa({
 
     setCargando(true);
     try {
-      const parseados = parsearTextoPegadoUsa(textoPegado, hipodromoPegado);
+      const parseados = parsearTextoPegadoUsa(textoPegado, hipodromoPegado, fecha);
       if (parseados.length === 0) {
         emitirToast("No se detectaron carreras en el texto pegado. Verifica el formato.", "warning");
         setCargando(false);
@@ -131,12 +152,14 @@ export function ModalSincronizadorUsa({
         tracksFiltro: [hipodromoPegado],
         htmlOTextoPegado: textoPegado,
         hipodromoPegado,
+        fuentePreferida: fuente,
       });
 
       setResumen(res);
       if (res.ok) {
+        useCarrerasDiaStore.getState().setFecha(res.fecha || fecha);
         emitirToast(
-          `✅ Procesado con éxito: ${parseados.length} carrera(s) para ${hipodromoPegado}.`,
+          `✅ Procesado con éxito: ${parseados.length} carrera(s) para ${hipodromoPegado} (${res.fecha || fecha}).`,
           "success"
         );
         setTextoPegado("");
@@ -151,6 +174,20 @@ export function ModalSincronizadorUsa({
       emitirToast(`❌ Error al procesar texto pegado: ${msg}`, "error");
     } finally {
       setCargando(false);
+    }
+  };
+
+  const handleCambioTextoPegado = (valor: string) => {
+    setTextoPegado(valor);
+    const f = extraerFechaDeTexto(valor);
+    if (f && f !== fecha) {
+      setFecha(f);
+      emitirToast(`📅 Detectada fecha del programa: ${f}`, "info");
+    }
+    const h = extraerHipodromoDeTexto(valor);
+    if (h && h !== hipodromoPegado) {
+      setHipodromoPegado(h);
+      emitirToast(`🏇 Detectado hipódromo: ${h}`, "info");
     }
   };
 
@@ -170,10 +207,10 @@ export function ModalSincronizadorUsa({
             </div>
             <div>
               <h2 id="modal-sinc-usa-title" className="text-base font-black tracking-wide text-white uppercase sm:text-lg">
-                Sincronizador USA · TVG & DRF
+                Sincronizador USA · TVG, DRF, Equibase y Más
               </h2>
               <p className="text-xs font-semibold text-amber-200/80">
-                Alimenta de forma universal Apuestas, Tablas, Marcas, Pollas, Remates y Portal.
+                Alimenta de forma universal Apuestas, Tablas, Marcas, Pollas, Remates y Portal para hoy o días futuros.
               </p>
             </div>
           </div>
@@ -207,7 +244,7 @@ export function ModalSincronizadorUsa({
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            🌐 Sincronización Automática TVG / DRF
+            🌐 Sincronización Automática TVG / DRF, Equibase y Otras
           </button>
           <button
             type="button"
@@ -218,7 +255,7 @@ export function ModalSincronizadorUsa({
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            📋 Pegar Rápido desde TVG / DRF
+            📋 Pegar Rápido desde TVG / DRF, Equibase y Otras
           </button>
         </div>
 
@@ -237,6 +274,75 @@ export function ModalSincronizadorUsa({
                 onChange={(e) => setFecha(e.target.value)}
                 className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-bold text-white focus:border-amber-400 focus:outline-none"
               />
+              {/* Botones de navegación rápida para hoy y días futuros */}
+              <div className="mt-2 flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setFecha(hoyLocal())}
+                  className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase transition-all ${
+                    fecha === hoyLocal()
+                      ? "bg-amber-400 text-slate-950 shadow"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  }`}
+                >
+                  Hoy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFecha(calcularFechaFutura(1))}
+                  className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase transition-all ${
+                    fecha === calcularFechaFutura(1)
+                      ? "bg-amber-400 text-slate-950 shadow"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  }`}
+                >
+                  Mañana (+1d)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFecha(calcularFechaFutura(2))}
+                  className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase transition-all ${
+                    fecha === calcularFechaFutura(2)
+                      ? "bg-amber-400 text-slate-950 shadow"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  }`}
+                >
+                  +2 Días
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFecha(calcularFechaFutura(3))}
+                  className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase transition-all ${
+                    fecha === calcularFechaFutura(3)
+                      ? "bg-amber-400 text-slate-950 shadow"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  }`}
+                >
+                  +3 Días
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFecha(calcularProximoDiaSemana(6))}
+                  className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase transition-all ${
+                    fecha === calcularProximoDiaSemana(6)
+                      ? "bg-amber-400 text-slate-950 shadow"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  }`}
+                >
+                  Sábado
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFecha(calcularProximoDiaSemana(0))}
+                  className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase transition-all ${
+                    fecha === calcularProximoDiaSemana(0)
+                      ? "bg-amber-400 text-slate-950 shadow"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  }`}
+                >
+                  Domingo
+                </button>
+              </div>
             </div>
             <div>
               <label htmlFor="fuente-sinc-usa" className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -245,15 +351,32 @@ export function ModalSincronizadorUsa({
               <select
                 id="fuente-sinc-usa"
                 value={fuente}
-                onChange={(e) => setFuente(e.target.value as "AUTO_TVG_DRF" | "DRF" | "TVG")}
+                onChange={(e) => setFuente(e.target.value as FuenteSincronizacionUsa)}
                 className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-bold text-white focus:border-amber-400 focus:outline-none"
               >
-                <option value="AUTO_TVG_DRF">⚡ TVG + DRF Combinado (Recomendado)</option>
+                <option value="AUTO_TVG_DRF">⚡ Multi-Fuente: DRF + TVG + Equibase (Recomendado)</option>
                 <option value="DRF">🎯 Daily Racing Form (DRF Entries)</option>
-                <option value="TVG">📺 TVG Live Racecards</option>
+                <option value="EQUIBASE">🏇 Equibase (Entries & Fast Entries)</option>
+                <option value="TVG">📺 TVG / FanDuel Racing</option>
+                <option value="OTRAS">🌐 TwinSpires / Brisnet / Otras Páginas</option>
               </select>
             </div>
           </div>
+
+                    {/* Alerta de Jornada Futura */}
+          {fecha > hoyLocal() && (
+            <div className="flex items-center gap-2.5 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs font-semibold text-amber-200">
+              <span className="text-xl">🗓️</span>
+              <div>
+                <span className="font-black text-white uppercase tracking-wider">
+                  Programación para Jornada Futura: {fecha}
+                </span>
+                <p className="text-[11px] text-amber-100/90 font-normal">
+                  Las carreras importadas para este día venidero quedarán registradas en el catálogo central y disponibles al instante en Apuestas, Tablas, Marcas y Reportes de esa fecha.
+                </p>
+              </div>
+            </div>
+          )}
 
           {tab === "auto" ? (
             <>
@@ -273,7 +396,7 @@ export function ModalSincronizadorUsa({
                           : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                       }`}
                     >
-                      ✓ Todos los de Hoy
+                      ✓ Todos los de la Jornada
                     </button>
                     <button
                       type="button"
@@ -371,16 +494,22 @@ export function ModalSincronizadorUsa({
                 <textarea
                   id="texto-pegado-textarea"
                   rows={8}
-                  placeholder={`Pega aquí la tabla o página copiada de TVG o DRF. Ejemplo:
-Race 1 - 12:30 PM
-1 Speightstown (Jockey: I. Ortiz Jr., Trainer: T. Pletcher, ML: 5/2)
-2 Fierceness (SCRATCHED)
-3 Gun Runner (Jockey: J. Rosario, ML: 3/1)
+                  placeholder={`Pega aquí la cartelera o entries copiado de Equibase, DRF, TVG, TwinSpires, Brisnet, etc.
+Soporta programaciones de HOY y DÍAS FUTUROS. Detecta automáticamente fecha, hipódromo, distancias, PP, dividendos ML y ejemplares retirados.
 
-Race 2 - 1:02 PM
-...`}
+Ejemplo Equibase (Fast Entries):
+Gulfstream Park - Saturday, October 31, 2026
+Race 1 - 12:30 PM - 6 1/2 Furlongs
+1 (1) Fierceness (KY) 124 J. Velazquez T. Pletcher 8-5
+2 (2) Sierra Leone (KY) 124 T. Gaffalione C. Brown 3-1
+3 (3) Dornoch (SCRATCHED)
+
+Ejemplo DRF / TVG:
+Race 1 - 12:35 PM
+1 Speightstown (PP: 1, ML: 5/2, Jockey: I. Ortiz Jr., Trainer: T. Pletcher)
+2 Dornoch (SCRATCHED)`}
                   value={textoPegado}
-                  onChange={(e) => setTextoPegado(e.target.value)}
+                  onChange={(e) => handleCambioTextoPegado(e.target.value)}
                   className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 font-mono text-xs text-slate-200 placeholder:text-slate-600 focus:border-amber-400 focus:outline-none"
                 />
               </div>

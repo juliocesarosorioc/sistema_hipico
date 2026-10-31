@@ -292,7 +292,7 @@ export function ReporteModule() {
   const mapaInfoClientes = useMemo(() => {
     const map = new Map<string, { id: string; modo: TipoJugadorSaldo; libre: boolean; aval: number; saldoActual: number; icono: string; etiqueta: string }>();
     for (const c of clientesGrupo) {
-      const key = String(c.nombre ?? c.seudonimo ?? c.id).trim().toUpperCase();
+      const key = String(c.seudonimo ?? c.nombre ?? c.id).trim().toUpperCase();
       const tipo = obtenerTipoJugador(c);
       const meta = infoTipoJugador(tipo);
       map.set(key, {
@@ -542,7 +542,7 @@ export function ReporteModule() {
           const meta = infoTipoJugador(tipo);
           return {
             id: String(c.id),
-            nombre: String(c.nombre ?? c.seudonimo ?? c.id).trim().toUpperCase(),
+            nombre: String(c.seudonimo ?? c.nombre ?? c.id).trim().toUpperCase(),
             saldo: redondearCentavos(Number(c.saldo_actual) || 0),
             tipo,
             icono: meta.icono,
@@ -669,7 +669,7 @@ export function ReporteModule() {
                 const libre = Boolean(c.libre) || String(c.modo_juego || "").toLowerCase().trim() === "libre";
                 return {
                   id: c.id,
-                  nombre: String(c.nombre ?? c.seudonimo ?? c.id),
+                  nombre: String(c.seudonimo ?? c.nombre ?? c.id),
                   telefono: c.telefono ?? null,
                   saldoContable: saldo,
                   aval,

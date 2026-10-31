@@ -436,6 +436,40 @@ export async function listarClientes(force = false, grupoIdOverride?: string | n
   return lista;
 }
 
+
+let cacheMapaSeudonimos: Map<string, string> | null = null;
+let cacheMapaSeudonimosTs = 0;
+
+/**
+ * Mapa centralizado de resolución de seudónimos para reportes.
+ * En los reportes el usuario SIEMPRE debe identificarse por su SEUDÓNIMO.
+ * Asocia id -> seudonimo || nombre, nombre -> seudonimo, y seudonimo -> seudonimo.
+ */
+export async function cargarMapaSeudonimosClientes(force = false): Promise<Map<string, string>> {
+  if (!force && cacheMapaSeudonimos && Date.now() - cacheMapaSeudonimosTs < 15000) {
+    return cacheMapaSeudonimos;
+  }
+  const mapa = new Map<string, string>();
+  if (!supabase) return mapa;
+  try {
+    const { data } = await supabase
+      .from("clientes")
+      .select("id, nombre, seudonimo");
+    for (const c of (data ?? []) as Array<{ id?: string | number; nombre?: string | null; seudonimo?: string | null }>) {
+      const alias = String(c.seudonimo || c.nombre || "").trim();
+      if (!alias) continue;
+      if (c.id != null) mapa.set(String(c.id), alias);
+      if (c.nombre) mapa.set(String(c.nombre).trim().toUpperCase(), alias);
+      if (c.seudonimo) mapa.set(String(c.seudonimo).trim().toUpperCase(), alias);
+    }
+    cacheMapaSeudonimos = mapa;
+    cacheMapaSeudonimosTs = Date.now();
+  } catch {
+    /* best effort */
+  }
+  return mapa;
+}
+
 export function limpiarCacheClientes(): void {
   cacheClientes = null;
   cacheClientesGrupo = undefined;

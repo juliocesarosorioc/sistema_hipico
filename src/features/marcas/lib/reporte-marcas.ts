@@ -7,6 +7,7 @@
  * mostrando `SIN DECISIÓN` cuando ninguno de los ejemplares de la marca entra en
  * la pizarra oficial.
  */
+import { cargarMapaSeudonimosClientes } from "@/features/clientes/lib/clientes";
 import { supabase } from "@/core/supabase";
 import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
 import { normalizarMarca, rivalesDeNota } from "@/features/marcas/lib/reporte-marcas-nucleo";
@@ -66,7 +67,7 @@ export async function cargarMarcasJugadas(fecha: string): Promise<ResultadoCarga
   const dia = String(fecha ?? "").slice(0, 10);
   if (!dia) return { ok: false, ventas: [], error: "Indique el día del reporte." };
   try {
-    const [{ data, error }, resultadosDia] = await Promise.all([
+    const [{ data, error }, resultadosDia, mapaSeudonimos] = await Promise.all([
       supabase
         .from("tickets_apuestas")
         .select("*")
@@ -74,6 +75,7 @@ export async function cargarMarcasJugadas(fecha: string): Promise<ResultadoCarga
         .ilike("nombre_jugada", "%MARCA%")
         .order("fecha_registro"),
       leerResultadosDia(dia),
+      cargarMapaSeudonimosClientes(),
     ]);
     if (error) return { ok: false, ventas: [], error: error.message };
 
@@ -82,7 +84,7 @@ export async function cargarMarcasJugadas(fecha: string): Promise<ResultadoCarga
     );
 
     const ventas = filasDia.map((row) => {
-      const v = normalizarMarca(row);
+      const v = normalizarMarca(row, mapaSeudonimos);
       if (v.anulada) return v;
 
       const k = `${claveHipodromo(v.hipodromo)}|${Number(v.carrera) || 0}`;

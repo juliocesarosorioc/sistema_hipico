@@ -29,6 +29,7 @@ import {
 import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
 import { _reembolsosCruce, normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
 import { calcularEstadoCuentaCliente } from "@/features/saldos/lib/contabilidad-central";
+import { cargarMapaSeudonimosClientes } from "@/features/clientes/lib/clientes";
 
 export { calcularEstadoCuentaCliente };
 import type { TicketMotor } from "@/features/betting/lib/bettingEngine";
@@ -842,7 +843,7 @@ export function esVentaDeRemate(nombreJugada: unknown): boolean {
   return String(nombreJugada ?? "").trim().toUpperCase().startsWith("REMATE ");
 }
 
-function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
+function mapearJugada(r: TicketApuestaJugada, mapaSeudonimos?: Map<string, string>): JugadaRelacion {
   const rRec = r as unknown as Record<string, unknown>;
   const jugadaCruda = String(r.nombre_jugada ?? "").trim();
   const esJugMarca = esMarca(jugadaCruda);
@@ -862,15 +863,27 @@ function mapearJugada(r: TicketApuestaJugada): JugadaRelacion {
   const esAnuladaEstado = anuladaAdmin;
   const ganoPorEstado = !esAnuladaEstado && (estadoStr === "GANADOR" || estadoStr === "GANO" || estadoStr === "SOLUCIONADO");
   const ganoPorPremio = esJugTabla ? num(r.premio_pagar) > 0 && ganoPorEstado : num(r.premio_pagar) > num(r.monto_jugado);
+
+  const resolverSeudonimo = (nom?: string | null, id?: unknown): string => {
+    if (!mapaSeudonimos) return String(nom ?? "—");
+    if (id != null && mapaSeudonimos.has(String(id))) return mapaSeudonimos.get(String(id))!;
+    const nomNorm = String(nom ?? "").trim().toUpperCase();
+    if (nomNorm && mapaSeudonimos.has(nomNorm)) return mapaSeudonimos.get(nomNorm)!;
+    return String(nom ?? "—");
+  };
+
+  const cJuega = resolverSeudonimo(r.cliente_juega_nombre, (r as Record<string, unknown>).cliente_juega_id);
+  const cConsigueRaw = r.cliente_consigue_nombre ? resolverSeudonimo(r.cliente_consigue_nombre, (r as Record<string, unknown>).cliente_consigue_id) : undefined;
+
   return {
-    clienteJuega: String(r.cliente_juega_nombre ?? "—"),
+    clienteJuega: cJuega,
     jugada: esJugMarca ? "MARCA" : esJugTabla ? "TABLA FIJA" : esNini ? normalizarNini(jugadaCruda) : jugadaCruda,
     caballo,
     monto: num(r.monto_jugado),
     clienteConsigue:
       resolverContraparteModalidad(
         jugadaCruda,
-        r.cliente_consigue_nombre ? String(r.cliente_consigue_nombre) : undefined
+        cConsigueRaw
       ) || undefined,
     modalidad: esNini ? "NINI" : "GENERICA",
     cantidadTablas: num(r.cantidad_tablas),
@@ -906,7 +919,7 @@ export async function cargarJugadasDeCarrera(
       return q;
     };
     const colsExtendidas =
-      "id, nombre_jugada, caballo, ejemplar_numero, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, pts_ejemplar, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre, nota_auditoria, es_adelantada, anulada";
+      "id, nombre_jugada, caballo, ejemplar_numero, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, pts_ejemplar, comision_porcentaje, estado, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, nota_auditoria, es_adelantada, anulada";
     const colsBase =
       "id, nombre_jugada, caballo, ejemplar_numero, cantidad_tablas, monto_jugado, premio_pagar, premio_por_tabla, comision_porcentaje, estado, cliente_juega_nombre, cliente_consigue_nombre, nota_auditoria";
     let { data, error } = await consultar(colsExtendidas);
@@ -923,6 +936,8 @@ export async function cargarJugadasDeCarrera(
       return !esVentaDeRemate(rec.nombre_jugada);
     });
 
+    const mapaSeudonimos = await cargarMapaSeudonimosClientes().catch(() => new Map<string, string>());
+
     // Evitar duplicados por ID (defensa ante escrituras dobles en tickets_apuestas)
     const vistos = new Set<string>();
     const unicas: Array<Record<string, unknown>> = [];
@@ -934,7 +949,7 @@ export async function cargarJugadasDeCarrera(
     }
 
     return unicas
-      .map((r) => mapearJugada(r as unknown as TicketApuestaJugada))
+      .map((r) => mapearJugada(r as unknown as TicketApuestaJugada, mapaSeudonimos))
       .filter((j) => j.clienteJuega !== "—" && (j.jugada || j.caballo) && j.monto > 0);
   } catch {
     return [];

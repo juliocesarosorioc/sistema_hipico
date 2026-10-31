@@ -103,6 +103,7 @@
     "./saldos-jornada.test.ts",
     "./reporte-tablas.test.ts",
     "./reporte-edicion.test.ts",
+    "./reporte-seudonimo.test.ts",
     "./comision-cero.test.ts",
     "./relacion-observaciones.test.ts",
     "./agrupar-hipodromos.test.ts",
@@ -161,6 +162,8 @@
     "../src/features/gaceta/lib/validador.ts",
     "./validador-gaceta.test.ts",
     "../src/features/carreras/lib/sincronizar-usa-tvg-drf.ts",
-    "./sincronizador-usa-tvg-drf.test.ts"
+    "./sincronizador-usa-tvg-drf.test.ts",
+    "../src/features/seguridad/lib/seguimiento-usuarios.ts",
+    "./seguridad-usuarios-conectados.test.ts"
   ]
 }

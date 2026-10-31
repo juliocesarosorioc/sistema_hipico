@@ -796,8 +796,11 @@ function ModalEditar({
     if (!motivoFinal) return toast("Indicá el motivo de la corrección.", "warning");
     if (!jugador1.trim()) return toast("El Jugador 1 (Quien Juega) es obligatorio.", "warning");
     if (!nombre.trim()) return toast("La jugada no puede quedar vacía.", "warning");
+    const numEj = ejemplar.trim() !== "" ? Number(ejemplar) : (/^\d+$/.test(caballo.trim()) ? Number(caballo.trim()) : null);
     const cabFinal = caballo.trim() || ejemplar.trim();
-    if (!cabFinal || !/\d/.test(cabFinal)) {
+    const tieneNumero = numEj != null && numEj > 0;
+    const tieneCaballo = cabFinal !== "" && (/\d/.test(cabFinal) || tieneNumero || cabFinal.length >= 2);
+    if (!tieneCaballo && !tieneNumero) {
       return toast("Condición sine qua non: el ejemplar es obligatorio.", "warning");
     }
     const carreraNum = Number(carrera);

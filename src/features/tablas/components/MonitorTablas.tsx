@@ -493,13 +493,21 @@ export function MonitorTablas({
     }
     const cliente = opcionesVenta.clientes.find((x) => String(x.id) === clienteVenta);
     const grupo = opcionesVenta.grupos.find((x) => String(x.id) === grupoEfectivo);
-    const nombreCab =
-      (vendiendo.caballos ?? []).find((c) => String(c.numero) === ejemplarVenta)?.nombre ?? "TABLA COMPLETA";
+    const cObj = (vendiendo.caballos ?? []).find((c) => String(c.numero) === ejemplarVenta);
+    const nombreCab = cObj?.nombre ?? "TABLA COMPLETA";
+    const valorUnitario = parseNum(cObj?.valor_ejemplar);
+    const cantidadCalculada =
+      ejemplarVenta === "TABLA"
+        ? Math.max(1, Math.round(monto))
+        : valorUnitario > 0
+          ? Math.max(1, Math.round(monto / valorUnitario))
+          : 1;
     const item: VentaTablaItem = {
       tablaId: vendiendo.id,
       numero: ejemplarVenta,
       nombre: nombreCab,
       monto,
+      cantidad: cantidadCalculada,
       grupo: grupo
         ? { id: grupo.id, nombre: grupo.nombre }
         : grupoEfectivo
@@ -529,12 +537,12 @@ export function MonitorTablas({
         fecha: diaDeLaTabla(vendiendo),
         carrera: vendiendo.carrera ?? "",
         titulo: `TABLA ${nombreHipodromoParaMostrar(vendiendo.hipodromo)} C${vendiendo.carrera} · ${ejemplarVenta === "TABLA" ? "COMPLETA" : `Nº ${ejemplarVenta}`}`,
-        detalle: nombreCab,
+        detalle: `${nombreCab}${cantidadCalculada > 1 ? ` × ${cantidadCalculada} tablas` : ""}`,
         jugador: cliente?.nombre ?? "",
         grupo: grupo?.nombre ?? (grupoEfectivo ? nombreGrupoSesion || null : null),
         monto,
         moneda: grupo?.moneda ?? vendiendo.moneda,
-        pago: pagoPotencialNumerico(vendiendo, ejemplarVenta, monto),
+        pago: pagoPotencialNumerico(vendiendo, ejemplarVenta, monto, cantidadCalculada),
         saldoAntes: saldo,
         saldoDespues: saldo - monto,
         banquero: "TF",
@@ -722,7 +730,7 @@ export function MonitorTablas({
         grupo: item.grupo?.nombre ?? null,
         monto: item.monto,
         moneda: tabla.moneda,
-        pago: pagoPotencialNumerico(tabla, item.numero, item.monto),
+        pago: pagoPotencialNumerico(tabla, item.numero, item.monto, item.cantidad),
         saldoAntes: saldo,
         saldoDespues: saldo - item.monto,
         banquero: "TF",
@@ -1733,19 +1741,25 @@ function MatrizImpresion({ tablas }: { tablas: StoredTablaFija[] }) {
   );
 }
 
-function pagoPotencialNumerico(t: StoredTablaFija, numero: string, monto: number): number {
+function pagoPotencialNumerico(
+  t: StoredTablaFija,
+  numero: string,
+  monto: number,
+  cantidad?: number
+): number {
   if (!monto || !numero) return 0;
-  const premio = t.premio_recalculado ?? 0;
-  if (numero === "TABLA") return premio * monto;
+  const premio = Number(t.premio_recalculado ?? t.premio_original ?? t.monto_tabla ?? 100);
+  if (numero === "TABLA") return premio * (cantidad ?? monto);
   const c = (t.caballos ?? []).find((x) => String(x.numero) === numero);
-  // Un ejemplar INVALIDADO no puede ganar, asi que no tiene premio potencial:
-  // no se le ofrece una apuesta que la casa no podria cobrar.
-  return pagoPotencialEjemplar({
-    premio,
-    base: t.suma_base_tabla ?? 1,
-    monto,
-    invalidado: Boolean(c?.invalidado),
-  });
+  if (c?.invalidado || c?.retirado) return 0;
+
+  if (cantidad && cantidad > 0) {
+    return premio * cantidad;
+  }
+
+  const valorUnitario = parseNum(c?.valor_ejemplar);
+  const cantCalculada = valorUnitario > 0 ? Math.max(1, Math.round(monto / valorUnitario)) : 1;
+  return premio * cantCalculada;
 }
 
 function PremioVenta(t: StoredTablaFija, numero: string, monto: string): string {

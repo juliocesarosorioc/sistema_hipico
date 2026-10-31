@@ -59,11 +59,12 @@ ok("sin sesión NO tiene el perfil", esPerfilAdministradorVigente() === false);
 ok("tipoUsuarioVigente queda vacío", tipoUsuarioVigente() === "");
 
 // ---------------------------------------------------------------------------
-// 2) El detalle del reporte conoce el estado de anulación
+// 2) El detalle del reporte conoce el estado de anulación y nombre_jugada
 // ---------------------------------------------------------------------------
 ok("fila sin anulada → anulada=false", normalizarVenta({ id: "1" }).anulada === false);
 ok("fila anulada=true → anulada=true", normalizarVenta({ id: "2", anulada: true }).anulada === true);
 ok("anulada no booleana no cuenta", normalizarVenta({ id: "3", anulada: "true" }).anulada === false);
+ok("normalizarVenta preserva nombre_jugada", normalizarVenta({ id: "4", nombre_jugada: "TABLA FIJA" }).nombreJugada === "TABLA FIJA");
 
 // ---------------------------------------------------------------------------
 // 3) Cableado de la capa de presentación (fuente)
@@ -76,6 +77,13 @@ ok("el reporte consulta el perfil al abrir", /puedeEditarDesdeReporte\(\)/.test(
 ok("la columna de acciones depende del perfil", /accionesDetalle/.test(modal));
 ok("hay botones de restaurar/anular/editar", /"restaurar"/.test(modal) && /"anular"/.test(modal) && /"editar"/.test(modal));
 ok("el modal de acción se monta", /ModalAccionJugadaReporte/.test(modal));
+
+const modalAccion = leer("src", "features", "reportes", "components", "ModalAccionJugadaReporte.tsx");
+ok("el modal de acción busca jugadores del grupo", /jugadoresDeGrupo\(/.test(modalAccion));
+ok("el modal de acción usa SearchableSelect para el jugador", /SearchableSelect/.test(modalAccion) && /opcionesJugadores/.test(modalAccion));
+
+const jugadasLib = leer("src", "features", "jugadas", "lib", "jugadas.ts");
+ok("editarJugada permite ejemplar_numero numérico con nombre de caballo", /tieneNumeroValido/.test(jugadasLib) && /tieneCaballoValido/.test(jugadasLib));
 
 const puerta = leer("src", "features", "reportes", "lib", "edicion-reporte.ts");
 ok("la puerta exige el perfil antes de delegar", /if \(!puedeEditarDesdeReporte\(\)\) return \{ ok: false, error: SIN_PERFIL_ADMIN \}/.test(puerta));

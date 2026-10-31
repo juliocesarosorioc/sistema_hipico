@@ -12,6 +12,7 @@
  *  · Paginación A4 igual al legacy: resumen en la página 1 y tarjetas en
  *    grilla de 2 columnas hasta completar las páginas.
  */
+import { cargarMapaSeudonimosClientes } from "@/features/clientes/lib/clientes";
 import { supabase } from "@/core/supabase";
 import { parseNum } from "@/features/tablas/lib/tipos";
 import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
@@ -95,7 +96,7 @@ export async function cargarReporteJugadores(filtros?: { dia?: string; hipodromo
     let sel = supabase
       .from("tickets_apuestas")
       .select(
-        "id,fecha_registro,fecha_carrera,nota_auditoria,hipodromo,carrera,ejemplar_numero,caballo,cantidad_tablas,monto_jugado,monto_decidido,cliente_juega_nombre,grupo,moneda,estado,anulada"
+        "id,fecha_registro,fecha_carrera,nota_auditoria,hipodromo,carrera,ejemplar_numero,caballo,cantidad_tablas,monto_jugado,monto_decidido,cliente_juega_id,cliente_juega_nombre,grupo,moneda,estado,anulada"
       )
       .order("fecha_registro");
     if (dia) sel = sel.or(filtroDiaJornada(dia));
@@ -126,7 +127,8 @@ export async function cargarReporteJugadores(filtros?: { dia?: string; hipodromo
   const idx = new Map<string, TablaMetaCruda>();
   for (const t of tablas) idx.set(`${hipoKey(un(t.hipodromo))}|${un(t.carrera).trim()}`, t);
 
-  const jugadores = armarJugadores(tickets, idx);
+  const mapaSeudonimos = await cargarMapaSeudonimosClientes();
+  const jugadores = armarJugadores(tickets, idx, mapaSeudonimos);
   const tomadas = new Set<string>();
   for (const t of tickets) tomadas.add(`${hipoKey(un(t.hipodromo))}|${un(t.carrera).trim()}`);
 
@@ -173,12 +175,14 @@ export async function cargarReporteJugadores(filtros?: { dia?: string; hipodromo
   };
 }
 
-function armarJugadores(tickets: TicketCrudo[], idx: Map<string, TablaMetaCruda>): JugadorReporte[] {
+function armarJugadores(tickets: TicketCrudo[], idx: Map<string, TablaMetaCruda>, mapaSeudonimos?: Map<string, string>): JugadorReporte[] {
   const pj = new Map<string, JugadorReporte>();
   const ordG = new Map<string, number>();
 
   for (const t of tickets) {
-    const jug = un(t.cliente_juega_nombre) || "SIN NOMBRE";
+    const cid = un((t as Record<string, unknown>).cliente_juega_id);
+    const cnom = un(t.cliente_juega_nombre);
+    const jug = (cid && mapaSeudonimos?.get(cid)) || (cnom && mapaSeudonimos?.get(cnom.toUpperCase())) || cnom || "SIN NOMBRE";
     const grp = un(t.grupo) || "SIN GRUPO";
     if (!pj.has(jug)) {
       ordG.set(grp, (ordG.get(grp) || 0) + 1);

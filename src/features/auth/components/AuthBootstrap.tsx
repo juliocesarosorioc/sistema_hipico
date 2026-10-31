@@ -5,22 +5,79 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { esPantallaDeAcceso, esRutaPublica } from "@/features/seguridad/lib/capacidades";
 import { sesionActual } from "@/features/auth/lib/sesion";
+import {
+  registrarLatidoPresencia,
+  registrarVisitaPagina,
+  registrarAccionUsuario,
+  purgarActividadAntigua10Dias,
+} from "@/features/seguridad/lib/seguimiento-usuarios";
 
 /**
  * Al montar el SPA siembra la sesión RBAC (permisos en memoria + cookies para
  * el middleware) y vigila la sesión de Supabase: sin sesión válida manda a
- * /login, y al cerrarse (logout o expiración) vuelve a expulsar. No renderiza
- * nada.
+ * /login, y al cerrarse (logout o expiración) vuelve a expulsar.
+ * Además gestiona la presencia en vivo, el registro de páginas/acciones y la
+ * purga automática de actividad cada 10 días.
  */
 export function AuthBootstrap() {
   const inicializar = useAuthStore((s) => s.inicializar);
   const salir = useAuthStore((s) => s.salir);
+  const miUsuario = useAuthStore((s) => s.usuario);
+  const tipoUsuario = useAuthStore((s) => s.tipoUsuario);
+  const perfiles = useAuthStore((s) => s.perfiles);
+  const miGrupoId = useAuthStore((s) => s.grupoId);
   const router = useRouter();
   const ruta = usePathname();
 
   useEffect(() => {
     void inicializar();
   }, [inicializar]);
+
+  // Registro de páginas visitadas, latidos de presencia y purga automática cada 10 días
+  useEffect(() => {
+    if (!miUsuario) return;
+
+    // Registrar visita a la página actual
+    registrarVisitaPagina(miUsuario, ruta);
+
+    // Enviar latido de presencia inicial
+    void registrarLatidoPresencia({
+      usuarioId: miUsuario,
+      nombre: miUsuario,
+        rol: tipoUsuario?.nombre || perfiles[0] || "Operador",
+      grupoId: miGrupoId ? String(miGrupoId) : null,
+      paginaActual: ruta,
+    });
+
+    // Purgar automáticamente registros con más de 10 días de antigüedad
+    void purgarActividadAntigua10Dias();
+
+    // Heartbeat periódico cada 45 segundos
+    const timer = setInterval(() => {
+      void registrarLatidoPresencia({
+        usuarioId: miUsuario,
+        nombre: miUsuario,
+        rol: tipoUsuario?.nombre || perfiles[0] || "Operador",
+        grupoId: miGrupoId ? String(miGrupoId) : null,
+        paginaActual: ruta,
+      });
+    }, 45000);
+
+    return () => clearInterval(timer);
+  }, [miUsuario, ruta, tipoUsuario, perfiles, miGrupoId]);
+
+  // Escuchar eventos globales de acciones operativas ejecutadas
+  useEffect(() => {
+    if (!miUsuario) return;
+    const alAccion = (e: Event) => {
+      const ce = e as CustomEvent<{ accion: string; detalle?: unknown }>;
+      if (ce.detail?.accion) {
+        registrarAccionUsuario(miUsuario, ce.detail.accion, ce.detail.detalle as any);
+      }
+    };
+    window.addEventListener("hipico:accion", alAccion);
+    return () => window.removeEventListener("hipico:accion", alAccion);
+  }, [miUsuario]);
 
   useEffect(() => {
     let vivo = true;
@@ -61,11 +118,6 @@ export function AuthBootstrap() {
     void (async () => {
       const s = await sesionActual();
       if (!vivo) return;
-      // La pregunta NO es "¿tiene sesión?" sino "¿esta ruta necesita sesión?".
-      // Con la comparación fija contra "/login", entrar a la raíz sin sesión
-      // expulsaba a "/login" (redirección inútil, y una de los parpadeos que se quejaba el login) y, peor, entrar a `/reset-password` desde el
-      // enlace del correo —que justamente llega SIN sesión— expulsaba también:
-      // la recuperación de contraseña se rompía sola.
       const st = useAuthStore.getState();
       const sesionAdminLocal =
         st.esPrincipal ||
@@ -76,10 +128,6 @@ export function AuthBootstrap() {
       if (!s && !sesionOpLocal && !sesionAdminLocal && !esRutaPublica(ruta)) router.replace("/login");
     })();
 
-    // El cliente de Supabase notifica por canal; el evento de storage cubre el
-    // cierre de sesión ejecutado en otra pestaña.
-    //
-    // La suscripción se registra una vez y en un `let` que el cleanup puede ver.
     let canal: { unsubscribe: () => void } | null = null;
     let desarmado = false;
     void (async () => {

@@ -1255,25 +1255,73 @@ export function GacetaIA() {
           <h3 className="mb-4 border-b border-line pb-2 text-xs font-bold uppercase tracking-wider text-slate-600">
             📤 Subir la Gaceta (PDF o Imagen)
           </h3>
-          <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surfaceAlt p-3">
-            <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
-              <span>📅 Fecha de la jornada</span>
+          {/* Fila conjunta: Fecha de la jornada y Subida de Archivos */}
+          <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 items-stretch">
+            {/* Columna 1: Fecha de la jornada */}
+            <div className="flex flex-col justify-between rounded-xl border border-line bg-surfaceAlt p-3.5">
+              <div>
+                <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
+                  <span>📅 Fecha de la jornada</span>
+                  <input
+                    type="date"
+                    value={fechaJornada}
+                    onChange={(e) => {
+                      const fecha = e.target.value;
+                      fechaJornadaRef.current = fecha;
+                      setFechaJornada(fecha);
+                      if (fecha) useCarrerasDiaStore.getState().setFecha(fecha);
+                    }}
+                    className="rounded-lg border border-line bg-surface px-2.5 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  />
+                </label>
+              </div>
+              <p className="mt-2 text-[10px] leading-snug text-slate-500">
+                La fecha seleccionada se asigna a todas las carreras extraídas. Sirve para cargar, registrar y publicar
+                <b> jornadas de días posteriores</b> (o anteriores) al actual.
+              </p>
+            </div>
+
+            {/* Columna 2: Arrastre el PDF o la imagen de la gaceta aquí */}
+            <div
+              onClick={() => inputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (e.dataTransfer.files.length) void onArchivos(e.dataTransfer.files);
+              }}
+              className={`flex flex-col justify-center cursor-pointer rounded-xl border-2 border-dashed p-4 text-center transition-colors hover:border-primary-500/60 hover:bg-primary-500/5 ${
+                leyendo ? "pointer-events-none border-primary-400 bg-primary-500/5" : "border-line"
+              }`}
+            >
+              {leyendo ? (
+                <>
+                  <p className="mb-1 inline-flex items-center justify-center gap-2 text-sm font-bold text-primary-700">
+                    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-300 border-t-primary-700" />
+                    Cargando la gaceta…
+                  </p>
+                  <p className="text-xs text-slate-500">{estado}</p>
+                </>
+              ) : (
+                <>
+                  <p className="mb-1 text-sm font-bold text-slate-600">☁️ Arrastre el PDF o la imagen de la gaceta aquí</p>
+                  <p className="text-xs text-slate-500">o haga clic para elegir el archivo (JPG, PNG, WEBP o PDF)</p>
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    Los PDF se renderizan página por página y se optimizan (JPEG ≤ 1600 px) para el envío a la IA.
+                  </p>
+                </>
+              )}
               <input
-                type="date"
-                value={fechaJornada}
+                ref={inputRef}
+                type="file"
+                accept=".pdf,image/*"
+                multiple
+                className="hidden"
                 onChange={(e) => {
-                  const fecha = e.target.value;
-                  fechaJornadaRef.current = fecha;
-                  setFechaJornada(fecha);
-                  if (fecha) useCarrerasDiaStore.getState().setFecha(fecha);
+                  if (e.target.files?.length) void onArchivos(e.target.files);
+                  e.target.value = "";
                 }}
-                className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               />
-            </label>
-            <p className="max-w-md pb-1 text-[10px] leading-snug text-slate-500">
-              La fecha seleccionada se asigna a todas las carreras extraídas. Sirve para cargar, registrar y publicar
-              <b> jornadas de días posteriores</b> (o anteriores) al actual.
-            </p>
+            </div>
           </div>
 
           {alertaGacetaPrevia?.existe && (
@@ -1290,47 +1338,8 @@ export function GacetaIA() {
               </div>
             </div>
           )}
-          <div
-            onClick={() => inputRef.current?.click()}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (e.dataTransfer.files.length) void onArchivos(e.dataTransfer.files);
-            }}
-            className={`cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-colors hover:border-primary-500/60 hover:bg-primary-500/5 ${
-              leyendo ? "pointer-events-none border-primary-400 bg-primary-500/5" : "border-line"
-            }`}
-          >
-            {leyendo ? (
-              <>
-                <p className="mb-1 inline-flex items-center gap-2 text-sm font-bold text-primary-700">
-                  <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-300 border-t-primary-700" />
-                  Cargando la gaceta…
-                </p>
-                <p className="text-xs text-slate-500">{estado}</p>
-              </>
-            ) : (
-              <>
-                <p className="mb-1 text-sm font-bold text-slate-600">☁️ Arrastre el PDF o la imagen de la gaceta aquí</p>
-                <p className="text-xs text-slate-500">o haga clic para elegir el archivo (JPG, PNG, WEBP o PDF)</p>
-                <p className="mt-1 text-[10px] text-slate-400">
-                  Los PDF se renderizan página por página y se optimizan (JPEG ≤ 1600 px) para el envío a la IA.
-                </p>
-              </>
-            )}
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".pdf,image/*"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files?.length) void onArchivos(e.target.files);
-                e.target.value = "";
-              }}
-            />
-          </div>
 
+          {/* Sección inmediatamente inferior: Vista previa de páginas */}
           {paginas.length > 0 && (
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between">

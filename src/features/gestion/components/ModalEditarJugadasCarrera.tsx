@@ -84,6 +84,7 @@ type Edicion = {
   nombre: string;
   /** El ÚNICO ejemplar/caballo que se juega (texto: "7", "1-2"…). */
   caballo: string;
+  ejemplarNumero?: number | null;
   monto: string;
   /** Nota predefinida elegida (o "OTRO" para introducir libremente) + detalle libre, para la auditoría. */
   nota: string;
@@ -155,6 +156,7 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
       esAdelantada: Boolean(j.es_adelantada),
       nombre: j.nombre_jugada ?? "",
       caballo: cabStr,
+      ejemplarNumero: j.ejemplar_numero != null ? Number(j.ejemplar_numero) : null,
       monto: j.monto_jugado != null ? String(j.monto_jugado) : "",
       nota: NOTAS_PREDEFINIDAS_EDICION[0],
       detalle: "",
@@ -204,9 +206,12 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
       setAviso("⚠️ La jugada (nomenclatura) no puede quedar vacía.");
       return;
     }
+    const numDerivado = ejemplarDeCaballo(edicion.caballo) ?? (edicion.ejemplarNumero != null ? Number(edicion.ejemplarNumero) : null);
     const caballo = edicion.caballo.trim().toUpperCase();
-    if (!caballo || !/\d/.test(caballo)) {
-      setAviso("⚠️ Condición sine qua non: toda jugada debe tener ejemplar (número de caballo).");
+    const tieneNumero = numDerivado != null && numDerivado > 0;
+    const tieneCaballo = caballo !== "" && (/\d/.test(caballo) || tieneNumero || caballo.length >= 2);
+    if (!tieneCaballo && !tieneNumero) {
+      setAviso("⚠️ Condición sine qua non: toda jugada debe tener ejemplar (número o nombre de caballo).");
       return;
     }
     const carreraNueva = Number(edicion.carrera);
@@ -232,7 +237,7 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
         monto_jugado: monto,
         nombre_jugada: edicion.nombre.trim().toUpperCase(),
         caballo,
-        ejemplar_numero: ejemplarDeCaballo(edicion.caballo),
+        ejemplar_numero: numDerivado,
       },
       motivo: motivoFinal,
       usuario,

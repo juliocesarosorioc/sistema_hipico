@@ -638,18 +638,36 @@ export async function editarJugada(
   if (Object.keys(payload).length === 0) return { ok: false, error: "No hay cambios para guardar." };
 
   // Condición sine qua non: toda jugada debe conservar un ejemplar válido.
-  const caballoResultante = String(
+  // Puede estar identificado por número (ejemplar_numero), por caballo (número o nombre), o ambos.
+  const numFinal =
+    payload.ejemplar_numero !== undefined
+      ? payload.ejemplar_numero
+      : antes.ejemplar_numero;
+  const numStr = numFinal != null ? String(numFinal).trim() : "";
+  const tieneNumeroValido = numStr !== "" && /\d/.test(numStr) && Number(numStr) > 0;
+
+  const cabFinal = String(
     payload.caballo !== undefined
       ? (payload.caballo ?? "")
-      : payload.ejemplar_numero !== undefined
-        ? (payload.ejemplar_numero ?? "")
-        : (antes.caballo ?? antes.ejemplar_numero ?? "")
+      : (antes.caballo ?? "")
   ).trim();
-  if (!caballoResultante || !/\d/.test(caballoResultante)) {
+  const tieneCaballoValido = cabFinal !== "" && (/\d/.test(cabFinal) || cabFinal.length >= 2 || tieneNumeroValido);
+
+  if (!tieneNumeroValido && !tieneCaballoValido) {
     return {
       ok: false,
       error: "⚠️ No puede guardarse una jugada sin ejemplar (condición sine qua non).",
     };
+  }
+
+  // Si tiene número válido y caballo está vacío, asegurar que caballo guarde el número
+  if (tieneNumeroValido && (!payload.caballo || String(payload.caballo).trim() === "")) {
+    payload.caballo = numStr;
+  }
+  // Si tiene caballo con dígitos y ejemplar_numero no vino en el payload, derivarlo
+  if (payload.ejemplar_numero === undefined && cabFinal) {
+    const m = cabFinal.match(/\b\d+\b/);
+    if (m) payload.ejemplar_numero = Number(m[0]);
   }
 
   // Sincronizar nota_auditoria si cambia fecha_carrera o es_adelantada
@@ -680,6 +698,8 @@ export async function editarJugada(
       /* ignore */
     }
   }
+
+
   if ("cliente_consigue_nombre" in payload && !("cliente_consigue_id" in payload) && payload.cliente_consigue_nombre) {
     try {
       const { data: cDa } = await supabase
@@ -694,6 +714,15 @@ export async function editarJugada(
     } catch {
       /* ignore */
     }
+  }
+
+  // Sincronizar columnas de grupo si cambia grupo_cobro_nombre o grupo_cobro_id
+  if ("grupo_cobro_nombre" in payload && payload.grupo_cobro_nombre) {
+    if (!("grupo" in payload)) payload.grupo = payload.grupo_cobro_nombre;
+    if (!("grupo_comision_nombre" in payload)) payload.grupo_comision_nombre = payload.grupo_cobro_nombre;
+  }
+  if ("grupo_cobro_id" in payload && payload.grupo_cobro_id) {
+    if (!("grupo_comision_id" in payload)) payload.grupo_comision_id = payload.grupo_cobro_id;
   }
 
   // -------------------------------------------------------------------------

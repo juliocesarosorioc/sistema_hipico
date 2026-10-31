@@ -5,6 +5,7 @@
  * y sincroniza el estado de cada dupleta con los resultados oficiales cargados en
  * Gestión de Jugadas (`resultados_carreras`).
  */
+import { cargarMapaSeudonimosClientes } from "@/features/clientes/lib/clientes";
 import { supabase } from "@/core/supabase";
 import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
 import {
@@ -25,7 +26,7 @@ export async function cargarDupletasJugadas(fecha: string): Promise<ResultadoCar
   const dia = String(fecha ?? "").slice(0, 10);
   if (!dia) return { ok: false, ventas: [], error: "Indique el día del reporte." };
   try {
-    const [{ data, error }, { data: resData }] = await Promise.all([
+    const [{ data, error }, { data: resData }, mapaSeudonimos] = await Promise.all([
       supabase
         .from("tickets_apuestas")
         .select("*")
@@ -36,6 +37,7 @@ export async function cargarDupletasJugadas(fecha: string): Promise<ResultadoCar
         .from("resultados_carreras")
         .select("hipodromo, carrera, ganadores, orden_llegada, retirados")
         .eq("fecha", dia),
+      cargarMapaSeudonimosClientes().catch(() => new Map<string, string>()),
     ]);
     if (error) return { ok: false, ventas: [], error: error.message };
 
@@ -58,7 +60,7 @@ export async function cargarDupletasJugadas(fecha: string): Promise<ResultadoCar
     );
 
     const ventas = filasDia.map((row) => {
-      const v = normalizarVenta(row);
+      const v = normalizarVenta(row, mapaSeudonimos);
       if (v.anulada) return v;
       let c1 = Number(v.carrera) || 0;
       let c2 = 0;

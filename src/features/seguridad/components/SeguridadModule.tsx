@@ -25,11 +25,12 @@ import {
 import type { Decision, ExcepcionUsuario, TipoCapacidad, TipoUsuario } from "@/features/seguridad/lib/tipos";
 import { Guard } from "@/shared/components/ui/Guard";
 import { AuditoriaPanel } from "@/features/seguridad/components/AuditoriaPanel";
+import { SeccionUsuariosConectados } from "@/features/seguridad/components/SeccionUsuariosConectados";
 import { listarClientes, type ClienteRow } from "@/features/clientes/lib/clientes";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 
-type Pestana = "esquema" | "reglas" | "tipos" | "usuarios" | "auditoria";
+type Pestana = "esquema" | "reglas" | "tipos" | "usuarios" | "conectados" | "auditoria";
 
 const CHOICES_TIPO: TipoCapacidad[] = ["ruta", "boton", "modal", "celda", "campo", "funcion"];
 
@@ -127,7 +128,7 @@ export default function SeguridadModule() {
   // useSearchParams para no obligar a la página a renderizarse en dynamic.
   useEffect(() => {
     const pedida = new URLSearchParams(window.location.search).get("pestana");
-    if (pedida && (["esquema", "reglas", "tipos", "usuarios", "auditoria"] as string[]).includes(pedida)) {
+    if (pedida && (["esquema", "reglas", "tipos", "usuarios", "conectados", "auditoria"] as string[]).includes(pedida)) {
       setPestana(pedida as Pestana);
     }
   }, []);
@@ -138,6 +139,7 @@ export default function SeguridadModule() {
   const [presetAplicado, setPresetAplicado] = useState<string | null>(null);
   const [tipos, setTipos] = useState<TipoUsuario[]>(tiposPorDefecto());
   const [usuarios, setUsuarios] = useState<UsuarioAlta[]>([]);
+  const [subVistaUsuario, setSubVistaUsuario] = useState<"conectados" | "permisos">("conectados");
 
   const usuariosVisibles = useMemo(() => {
     if (!veTodosLosGrupos) {
@@ -443,10 +445,11 @@ export default function SeguridadModule() {
       <nav className="flex gap-1 border-b border-slate-200">
         {(
           [
-            ["esquema", `Esquema del sistema (${CAPACIDADES.length})`],
-            ["reglas", `Reglas de contexto (${REGLAS_ABAC.length})`],
+            ["esquema", `Esquema (${CAPACIDADES.length})`],
+            ["reglas", `Reglas (${REGLAS_ABAC.length})`],
             ["tipos", "Tipos de usuario"],
             ["usuarios", "Usuarios"],
+            ["conectados", "🟢 Usuarios Conectados & Actividad"],
             ["auditoria", "Auditoría"],
           ] as Array<[Pestana, string]>
         ).map(([id, texto]) => (
@@ -873,10 +876,47 @@ export default function SeguridadModule() {
       ) : null}
 
       {/* ------------------------------------------------------------------ */}
-      {/* PESTAÑA 4 — USUARIOS                                                 */}
+      {/* PESTAÑA 4 — USUARIOS Y CONEXIONES                                   */}
       {/* ------------------------------------------------------------------ */}
       {pestana === "usuarios" ? (
-        <div className="grid gap-2 lg:grid-cols-[17rem_1fr]">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSubVistaUsuario("conectados")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-black uppercase transition-all ${
+                  subVistaUsuario === "conectados"
+                    ? "bg-indigo-600 text-white shadow"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                🟢 Conexiones y Actividad en Vivo
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubVistaUsuario("permisos")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-black uppercase transition-all ${
+                  subVistaUsuario === "permisos"
+                    ? "bg-indigo-600 text-white shadow"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                ⚙️ Personalizar Permisos y Excepciones
+              </button>
+            </div>
+            <span className="rounded bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200">
+              🛡️ Purga automática: registros mayores a 10 días se eliminan solos
+            </span>
+          </div>
+
+          {subVistaUsuario === "conectados" ? (
+            <SeccionUsuariosConectados
+              usuarioSeleccionadoId={usuarioSel}
+              onSeleccionarUsuario={(id) => setUsuarioSel(id)}
+            />
+          ) : (
+            <div className="grid gap-2 lg:grid-cols-[17rem_1fr]">
           <aside className="rounded-lg border border-slate-200 bg-white p-2">
             <p className="mb-1.5 text-[10px] font-black uppercase text-slate-400">Usuarios del sistema</p>
             {usuariosVisibles.map((u) => (
@@ -1027,6 +1067,18 @@ export default function SeguridadModule() {
               })}
             </div>
           </div>
+        </div>
+          )}
+        </div>
+      ) : null}
+
+      {/* PESTAÑA DIRECTA: USUARIOS CONECTADOS & ACTIVIDAD */}
+      {pestana === "conectados" ? (
+        <div className="space-y-3">
+          <SeccionUsuariosConectados
+            usuarioSeleccionadoId={usuarioSel}
+            onSeleccionarUsuario={(id) => setUsuarioSel(id)}
+          />
         </div>
       ) : null}
 

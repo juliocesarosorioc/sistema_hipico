@@ -49,6 +49,8 @@ export type GrupoVenta = {
 export type ClienteVenta = {
   id: string | number;
   nombre: string;
+  nombre_real?: string | null;
+  seudonimo?: string | null;
   saldo_actual?: number | null;
   aval?: number | null;
   libre?: boolean | null;
@@ -206,7 +208,7 @@ export async function listarClientesVenta(force = false): Promise<ClienteVenta[]
   try {
     let q = supabase
       .from("clientes")
-      .select("id, nombre, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar");
+      .select("id, nombre, seudonimo, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar");
     // Filtro del super administrador (los demás los filtra el RLS de la base).
     if (activo) q = q.eq("grupo_id", activo);
     const { data: cli, error: e1 } = await q;
@@ -217,7 +219,9 @@ export async function listarClientesVenta(force = false): Promise<ClienteVenta[]
     if (e2) throw e2;
     const clientes = (cli ?? []).map((c) => ({
       id: String(c.id),
-      nombre: String(c.nombre ?? ""),
+      nombre: String(c.seudonimo || c.nombre || ""),
+      nombre_real: String(c.nombre ?? ""),
+      seudonimo: c.seudonimo ? String(c.seudonimo) : null,
       saldo_actual: c.saldo_actual != null ? Number(c.saldo_actual) : null,
       aval: c.aval != null ? Number(c.aval) : null,
       libre: Boolean(c.libre),
@@ -378,6 +382,8 @@ export type GrupoRow = {
 export type ClienteLigero = {
   id: string | number;
   nombre: string;
+  nombre_real?: string | null;
+  seudonimo?: string | null;
   grupo_id?: string | number | null;
 };
 

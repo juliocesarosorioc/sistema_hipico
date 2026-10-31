@@ -53,6 +53,15 @@ export const TRACKS_USA_CATALOGO: Record<string, { nombre: string; drfCode: stri
   RP: { nombre: "Remington Park", drfCode: "RP", tvgSlug: "remington-park" },
   MNR: { nombre: "Mountaineer", drfCode: "MNR", tvgSlug: "mountaineer" },
   MVR: { nombre: "Mahoning Valley", drfCode: "MVR", tvgSlug: "mahoning-valley" },
+  WO: { nombre: "Woodbine", drfCode: "WO", tvgSlug: "woodbine" },
+  WOODBINE: { nombre: "Woodbine", drfCode: "WO", tvgSlug: "woodbine" },
+  IND: { nombre: "Horseshoe Indianapolis", drfCode: "IND", tvgSlug: "horseshoe-indianapolis" },
+  PEN: { nombre: "Penn National", drfCode: "PEN", tvgSlug: "penn-national" },
+  LRC: { nombre: "Los Alamitos", drfCode: "LRC", tvgSlug: "los-alamitos" },
+  DED: { nombre: "Delta Downs", drfCode: "DED", tvgSlug: "delta-downs" },
+  HOU: { nombre: "Sam Houston", drfCode: "HOU", tvgSlug: "sam-houston-race-park" },
+  LS: { nombre: "Lone Star Park", drfCode: "LS", tvgSlug: "lone-star-park" },
+  CBY: { nombre: "Canterbury Park", drfCode: "CBY", tvgSlug: "canterbury-park" },
 };
 
 // ----------------------------------------------------------------------------

@@ -502,6 +502,7 @@ export function normalizarTickets(
   optsUnificados?: {
     pizarras?: Map<string, PizarraCarrera>;
     clienteFiltro?: { id?: string; nombres?: string[] } | null;
+    mapaSeudonimos?: Map<string, string>;
   }
 ): JugadaReporte[] {
   if (!optsUnificados) {
@@ -602,7 +603,7 @@ export function normalizarTickets(
         fecha,
         horaCarga: juega.horaCarga,
         rol: "Juega",
-        cliente: juega.clienteNombre,
+        cliente: String((juega.clienteId && optsUnificados?.mapaSeudonimos?.get(String(juega.clienteId))) || (juega.clienteNombre && optsUnificados?.mapaSeudonimos?.get(String(juega.clienteNombre).trim().toUpperCase())) || juega.clienteNombre),
         jugada: juega.jugada,
         caballo: juega.caballo,
         estado: juega.estado,
@@ -641,7 +642,7 @@ export function normalizarTickets(
         fecha,
         horaCarga: consigue.horaCarga,
         rol: "Consigue",
-        cliente: consigue.clienteNombre,
+        cliente: String((consigue.clienteId && optsUnificados?.mapaSeudonimos?.get(String(consigue.clienteId))) || (consigue.clienteNombre && optsUnificados?.mapaSeudonimos?.get(String(consigue.clienteNombre).trim().toUpperCase())) || consigue.clienteNombre),
         jugada: consigue.jugada,
         caballo: consigue.caballo,
         estado: consigue.estado,
@@ -774,6 +775,7 @@ async function leerPorRespaldo(opts: OpcionesReporteDiario): Promise<ResultadoRe
   ]);
 
   const devolucionPorCliente = new Map<string, number>();
+  const mapaSeudonimos = new Map<string, string>();
   let clienteFiltro: { id?: string; nombres?: string[] } | null = null;
   const idBuscado = String(opts.clienteId ?? "").trim();
 
@@ -786,6 +788,12 @@ async function leerPorRespaldo(opts: OpcionesReporteDiario): Promise<ResultadoRe
     const idStr = String(c.id);
     const pct = num(c.devolucion);
     devolucionPorCliente.set(idStr, pct);
+    const alias = String(c.seudonimo || c.nombre || "").trim();
+    if (alias) {
+      mapaSeudonimos.set(idStr, alias);
+      if (c.nombre) mapaSeudonimos.set(String(c.nombre).trim().toUpperCase(), alias);
+      if (c.seudonimo) mapaSeudonimos.set(String(c.seudonimo).trim().toUpperCase(), alias);
+    }
     if (c.nombre) devolucionPorCliente.set(String(c.nombre).trim().toUpperCase(), pct);
     if (c.seudonimo) devolucionPorCliente.set(String(c.seudonimo).trim().toUpperCase(), pct);
     if (idBuscado && idStr === idBuscado) {
@@ -802,6 +810,7 @@ async function leerPorRespaldo(opts: OpcionesReporteDiario): Promise<ResultadoRe
   const jugadas = normalizarTickets(ticketsTotales, devolucionPorCliente, {
     pizarras,
     clienteFiltro,
+    mapaSeudonimos,
   });
   return { ok: true, datos: armarReporteDiario(jugadas), fuente: "cliente", respaldo: true };
 }
