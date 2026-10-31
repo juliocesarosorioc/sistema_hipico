@@ -217,8 +217,8 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
           </span>
         )}
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-1.5">
+      <div className="flex items-center justify-between gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-0.5 w-full">
+        <div className="flex items-center gap-1.5 shrink-0 flex-nowrap">
           {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
             const { estado, tieneVentas } = porCarrera(n);
             const existe = manual || carreras.includes(n) || tieneVentas;
@@ -232,7 +232,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
                 onClick={() => existe && onSeleccionar(n, { abierta: estado !== "inactiva", estado })}
                 disabled={!existe}
                 title={existe ? (manualSinRegistro ? `C${n} (sin carrera registrada)` : c.label) : `C${n} · No hay carrera registrada para ${fecha}`}
-                className={`grid h-9 w-9 place-items-center rounded-lg border-2 text-xs font-black transition-transform ${
+                className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg border-2 text-xs font-black transition-transform ${
                   !existe
                     ? `cursor-not-allowed ${COLORES.inactiva.chip} opacity-90`
                     : `hover:scale-105 ${c.chip}`
@@ -244,7 +244,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
           })}
         </div>
         {accionDerecha ? (
-          <div className="w-full sm:w-auto sm:ml-auto flex flex-wrap items-center justify-start sm:justify-end gap-1.5 mt-1 sm:mt-0">
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto whitespace-nowrap sticky right-0 bg-surface/95 backdrop-blur-xs pl-2 z-10">
             {accionDerecha}
           </div>
         ) : null}

@@ -3417,75 +3417,72 @@ const hipodromosDelDia = useMemo(() => {
         </div>
       </div>
 
-      {!hipodromoElegido ? (
+      {!hipodromoElegido && (
         <div className="rounded-2xl border border-dashed border-cyan-300 bg-cyan-50/60 px-4 py-3 text-center text-xs font-bold text-cyan-800">
           ① Seleccione el <b>hipódromo</b> (paso 2) para habilitar la carga de jugadas.
         </div>
-      ) : (
-        <>
-          {!carreraConfirmada && (
-            <div className="rounded-2xl border border-dashed border-emerald-300 bg-emerald-50/60 px-4 py-3 text-center text-xs font-bold text-emerald-800">
-              ② Seleccione la <b>carrera</b> en el semáforo para habilitar la carga de jugadas.
-            </div>
-          )}
-          <SemaforoCarreras
-            hipodromo={hipodromo}
-            fecha={fecha}
-            carreras={carrerasPorDia}
-            activa={carreraConfirmada ? carrera : null}
-            manual={modoManual}
-            carrerasConJugadas={
-              filasPreview.some((f) => !f.anulada) && !jugadasPorCarrera.includes(carrera)
-                ? [...jugadasPorCarrera, carrera]
-                : jugadasPorCarrera
-            }
-            onSeleccionar={(n, info) => {
-              void seleccionarCarreraConConfirmacion(n, info);
-            }}
-            accionDerecha={
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void solicitarLiquidarCarrera()}
-                  disabled={!listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada}
-                  title={
-                    !listoParaCargar
-                      ? "Elija hipódromo y carrera para liquidar"
-                      : carreraLiquidada
-                        ? "Carrera ya liquidada. Para volver a liquidar primero debe reversar la liquidación (🔄 Reversar Liquidación)."
-                        : filasPreview.filter((f) => !f.anulada).length === 0
-                          ? "Sin jugadas cargadas: cargue información de jugadas antes de liquidar"
-                          : "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)"
-                  }
-                  className={`group relative inline-flex h-9 sm:h-10 items-center justify-center gap-2 rounded-xl px-4 sm:px-5 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all shadow-md ${
-                    !listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada
-                      ? "cursor-not-allowed bg-slate-300 text-slate-500 opacity-60 shadow-none ring-0"
-                      : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 shadow-emerald-600/35 ring-2 ring-emerald-400/60 hover:ring-emerald-300 hover:scale-[1.03] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]"
-                  }`}
-                >
-                  <span className="text-base sm:text-lg transition-transform duration-200 group-hover:scale-110 drop-shadow">
-                    🏆
-                  </span>
-                  <span>Liquidar Carrera</span>
-                  <span className="hidden sm:inline-flex items-center rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-extrabold tracking-normal text-emerald-100 opacity-90 shadow-2xs">
-                    Ctrl+Y
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setModalAgentePizarra(true)}
-                  disabled={bloqueoLiquidacionActivo}
-                  title="🤖 Agente de Pizarra Oficial (Cambio de Pizarra · Liquidación · Variación · Saldos)"
-                  className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs transition-all hover:bg-indigo-50 hover:border-indigo-300 disabled:opacity-40"
-                >
-                  <span className="text-sm">🤖</span>
-                  <span>Pizarra</span>
-                </button>
-              </div>
-            }
-          />
-        </>
       )}
+      {hipodromoElegido && !carreraConfirmada && (
+        <div className="rounded-2xl border border-dashed border-emerald-300 bg-emerald-50/60 px-4 py-3 text-center text-xs font-bold text-emerald-800">
+          ② Seleccione la <b>carrera</b> en el semáforo para habilitar la carga de jugadas.
+        </div>
+      )}
+      <SemaforoCarreras
+        hipodromo={hipodromo}
+        fecha={fecha}
+        carreras={carrerasPorDia}
+        activa={carreraConfirmada ? carrera : null}
+        manual={modoManual}
+        carrerasConJugadas={
+          filasPreview.some((f) => !f.anulada) && !jugadasPorCarrera.includes(carrera)
+            ? [...jugadasPorCarrera, carrera]
+            : jugadasPorCarrera
+        }
+        onSeleccionar={(n, info) => {
+          void seleccionarCarreraConConfirmacion(n, info);
+        }}
+        accionDerecha={
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-nowrap">
+            <button
+              type="button"
+              onClick={() => void solicitarLiquidarCarrera()}
+              disabled={!listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada}
+              title={
+                !listoParaCargar
+                  ? "Elija hipódromo y carrera para liquidar"
+                  : carreraLiquidada
+                    ? "Carrera ya liquidada. Para volver a liquidar primero debe reversar la liquidación (🔄 Reversar Liquidación)."
+                    : filasPreview.filter((f) => !f.anulada).length === 0
+                      ? "Sin jugadas cargadas: cargue información de jugadas antes de liquidar"
+                      : "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)"
+              }
+              className={`group relative inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all shadow-md shrink-0 whitespace-nowrap ${
+                !listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada
+                  ? "cursor-not-allowed bg-slate-300 text-slate-500 opacity-60 shadow-none ring-0"
+                  : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 shadow-emerald-600/35 ring-2 ring-emerald-400/60 hover:ring-emerald-300 hover:scale-[1.03] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]"
+              }`}
+            >
+              <span className="text-base sm:text-lg transition-transform duration-200 group-hover:scale-110 drop-shadow">
+                🏆
+              </span>
+              <span>Liquidar Carrera</span>
+              <span className="hidden md:inline-flex items-center rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-extrabold tracking-normal text-emerald-100 opacity-90 shadow-2xs">
+                Ctrl+Y
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalAgentePizarra(true)}
+              disabled={bloqueoLiquidacionActivo}
+              title="🤖 Agente de Pizarra Oficial (Cambio de Pizarra · Liquidación · Variación · Saldos)"
+              className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-2.5 sm:px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs transition-all hover:bg-indigo-50 hover:border-indigo-300 disabled:opacity-40 shrink-0 whitespace-nowrap"
+            >
+              <span className="text-sm">🤖</span>
+              <span>Pizarra</span>
+            </button>
+          </div>
+        }
+      />
 
       {/* Tabla de Carga Individual (clon 1:1 del legacy) */}
       {!listoParaCargar ? (
