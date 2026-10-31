@@ -80,6 +80,7 @@ export const PLAN_CUENTAS_HIPICO: readonly CuentaContableDef[] = [
   { codigo: "2.1.01", nombre: "Fondos en Custodia de Clientes", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 3, codigo_padre: "2.1", acepta_movimientos: false, modulo_origen: "CLIENTES", activa: true },
   { codigo: "2.1.01.001", nombre: "Depósitos y Saldos Acreedores de Clientes (Custodia Jugadores)", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.01", acepta_movimientos: true, modulo_origen: "CLIENTES", activa: true },
   { codigo: "2.1.01.002", nombre: "Retiros de Clientes Pendientes por Pagar", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.01", acepta_movimientos: true, modulo_origen: "TESORERIA", activa: true },
+  { codigo: "2.1.01.003", nombre: "Cuentas por Pagar — Premios Clientes Ganadores Avalados", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.01", acepta_movimientos: true, modulo_origen: "CLIENTES", activa: true },
   { codigo: "2.1.02", nombre: "Bolsa de Apuestas en Tránsito", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 3, codigo_padre: "2.1", acepta_movimientos: false, modulo_origen: "APUESTAS_TERCIOS", activa: true },
   { codigo: "2.1.02.001", nombre: "Bolsa en Tránsito — Jugadas en Vivo", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.02", acepta_movimientos: true, modulo_origen: "APUESTAS_TERCIOS", activa: true },
   { codigo: "2.1.02.002", nombre: "Bolsa en Tránsito — Jugadas Adelantadas", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.02", acepta_movimientos: true, modulo_origen: "APUESTAS_TERCIOS", activa: true },
@@ -90,6 +91,8 @@ export const PLAN_CUENTAS_HIPICO: readonly CuentaContableDef[] = [
   { codigo: "2.1.04.001", nombre: "Devoluciones e Incentivos por Acreditar a Clientes", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.04", acepta_movimientos: true, modulo_origen: "INCENTIVOS", activa: true },
   { codigo: "2.1.05", nombre: "Obligaciones por Convenios Inter-Grupos", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 3, codigo_padre: "2.1", acepta_movimientos: false, modulo_origen: "CONVENIOS", activa: true },
   { codigo: "2.1.05.001", nombre: "Comisiones por Pagar a Grupos en Convenio", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.05", acepta_movimientos: true, modulo_origen: "CONVENIOS", activa: true },
+  { codigo: "2.1.06", nombre: "Obligaciones Laborales y Honorarios por Pagar", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 3, codigo_padre: "2.1", acepta_movimientos: false, modulo_origen: "TESORERIA", activa: true },
+  { codigo: "2.1.06.001", nombre: "Cuentas por Pagar Honorarios Equipo de Trabajo", clase: "PASIVO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "2.1.06", acepta_movimientos: true, modulo_origen: "TESORERIA", activa: true },
 
   // 3. PATRIMONIO
   { codigo: "3", nombre: "PATRIMONIO", clase: "PATRIMONIO", naturaleza: "ACREEDORA", nivel: 1, codigo_padre: null, acepta_movimientos: false, modulo_origen: "CIERRE_SEMANAL", activa: true },
@@ -110,6 +113,12 @@ export const PLAN_CUENTAS_HIPICO: readonly CuentaContableDef[] = [
   { codigo: "4.1", nombre: "INGRESOS POR COMISIÓN DE INTERMEDIACIÓN", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 2, codigo_padre: "4", acepta_movimientos: false, modulo_origen: "APUESTAS_TERCIOS", activa: true },
   { codigo: "4.1.01", nombre: "Comisión Apuestas entre Tercios", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 3, codigo_padre: "4.1", acepta_movimientos: false, modulo_origen: "APUESTAS_TERCIOS", activa: true },
   { codigo: "4.1.01.001", nombre: "Ingresos por Comisión — Apuestas entre Tercios", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "4.1.01", acepta_movimientos: true, modulo_origen: "APUESTAS_TERCIOS", activa: true },
+  { codigo: "4.1.01.002", nombre: "Ingresos por Comisión — Tablas Fijas", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "4.1.01", acepta_movimientos: true, modulo_origen: "TABLAS_FIJAS", activa: true },
+  { codigo: "4.1.01.003", nombre: "Ingresos por Comisión — Marcas", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "4.1.01", acepta_movimientos: true, modulo_origen: "MARCAS", activa: true },
+  { codigo: "4.1.01.004", nombre: "Ingresos por Comisión — Dupletas", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "4.1.01", acepta_movimientos: true, modulo_origen: "DUPLETAS", activa: true },
+  { codigo: "4.1.01.005", nombre: "Ingresos por Comisión — Pollas y Remates", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "4.1.01", acepta_movimientos: true, modulo_origen: "POLLAS", activa: true },
+  { codigo: "4.1.01.006", nombre: "Ingresos por Comisión — Taquilla WPS", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "4.1.01", acepta_movimientos: true, modulo_origen: "TAQUILLA_WPS", activa: true },
+  { codigo: "4.1.01.007", nombre: "Ingresos por Comisión — Eventos Especiales y Libres", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "4.1.01", acepta_movimientos: true, modulo_origen: "APUESTAS_TERCIOS", activa: true },
   { codigo: "4.1.02", nombre: "Comisión Remates Hípicos", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 3, codigo_padre: "4.1", acepta_movimientos: false, modulo_origen: "REMATES", activa: true },
   { codigo: "4.1.02.001", nombre: "Ingresos por Comisión — Remates Hípicos", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "4.1.02", acepta_movimientos: true, modulo_origen: "REMATES", activa: true },
   { codigo: "4.1.03", nombre: "Comisión Pollas Hípicas", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 3, codigo_padre: "4.1", acepta_movimientos: false, modulo_origen: "POLLAS", activa: true },
@@ -126,6 +135,7 @@ export const PLAN_CUENTAS_HIPICO: readonly CuentaContableDef[] = [
   { codigo: "4.3", nombre: "INGRESOS POR CONVENIOS", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 2, codigo_padre: "4", acepta_movimientos: false, modulo_origen: "CONVENIOS", activa: true },
   { codigo: "4.3.01", nombre: "Comisión Convenios Inter-Grupos", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 3, codigo_padre: "4.3", acepta_movimientos: false, modulo_origen: "CONVENIOS", activa: true },
   { codigo: "4.3.01.001", nombre: "Ingresos por Convenios Inter-Grupos", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "4.3.01", acepta_movimientos: true, modulo_origen: "CONVENIOS", activa: true },
+  { codigo: "4.3.01.002", nombre: "Ingresos Venta Neta Inter-Grupos (Argentina)", clase: "INGRESO", naturaleza: "ACREEDORA", nivel: 4, codigo_padre: "4.3.01", acepta_movimientos: true, modulo_origen: "CONVENIOS", activa: true },
 
   // 5. REBAJAS SOBRE INGRESOS, CRUCES, INCENTIVOS Y COSTOS DE PREMIOS
   { codigo: "5", nombre: "COSTOS, CRUCES E INCENTIVOS", clase: "COSTO_CONTRA_INGRESO", naturaleza: "DEUDORA", nivel: 1, codigo_padre: null, acepta_movimientos: false, modulo_origen: "CRUCES", activa: true },
@@ -191,7 +201,12 @@ export type TipoEventoContable =
   | "ANULACION_JUGADA"
   | "GASTO_OPERATIVO"
   | "AJUSTE_AUDITORIA"
-  | "CIERRE_SEMANAL";
+  | "CIERRE_SEMANAL"
+  | "VENTA_INTERGRUPO_ARGENTINA"
+  | "HONORARIOS_EQUIPO"
+  | "COBRO_CLIENTE_AVALADO"
+  | "PAGO_GANADOR_AVALADO"
+  | "DEPOSITO_BANCO";
 
 export interface LineaAsientoContable {
   cuenta_codigo: string;
@@ -216,6 +231,7 @@ export interface AsientoContableParam {
 
 export interface AsientoContableRegistrado {
   id: string;
+  grupo_id?: string | null;
   numero_asiento: number;
   fecha_contable: string;
   tipo_evento: TipoEventoContable;
@@ -330,6 +346,7 @@ export async function generarAsientoPartidaDoble(
 
   const registrado: AsientoContableRegistrado = {
     id: asientoId,
+    grupo_id: param.grupo_id || null,
     numero_asiento: numeroAsiento,
     fecha_contable: fecha,
     tipo_evento: param.tipo_evento,
@@ -580,42 +597,82 @@ export async function generarAsientoLiquidacionCarrera(p: {
   carreraId: string;
   carreraNumero: number;
   hipodromo: string;
-  perdedores: Array<{ clienteId: string; clienteNombre: string; montoPerdido: number }>;
-  ganadores: Array<{ clienteId: string; clienteNombre: string; montoGanadoNeto: number }>;
+  perdedores: Array<{ clienteId: string; clienteNombre: string; montoPerdido: number; esAvalado?: boolean }>;
+  ganadores: Array<{ clienteId: string; clienteNombre: string; montoGanadoNeto: number; esAvalado?: boolean }>;
   totalComisionCasa: number;
+  comisionesPorModalidad?: {
+    entreTercios?: number;
+    tablasFijas?: number;
+    marcas?: number;
+    dupletas?: number;
+    pollas?: number;
+    wps?: number;
+    eventosEspeciales?: number;
+  };
   crucesReembolso?: Array<{ clienteId: string; clienteNombre: string; montoReembolso: number }>;
   usuario?: string | null;
 }) {
   const lineas: LineaAsientoContable[] = [];
 
-  // Perdedores (Debe: disminución de su saldo acreedor o aumento de cuenta por cobrar)
+  // Perdedores (Debe)
+  // CRITERIO CONTABLE EXPERTO:
+  // Si el cliente es AVALADO, su pérdida incrementa Cuentas por Cobrar (Activo: 1.2.02.001).
+  // Si es un cliente regular (prepago/custodia), reduce Fondos en Custodia (Pasivo: 2.1.01.001).
   for (const perd of p.perdedores) {
     if (perd.montoPerdido <= 0) continue;
+    const cta = perd.esAvalado ? "1.2.02.001" : "2.1.01.001";
+    const tipoTxt = perd.esAvalado ? " (Cta. por Cobrar Aval)" : "";
     lineas.push({
-      cuenta_codigo: "2.1.01.001",
+      cuenta_codigo: cta,
       cliente_id: perd.clienteId,
       cliente_nombre: perd.clienteNombre,
       debe: perd.montoPerdido,
       haber: 0,
-      concepto: `Pérdida en carrera C${p.carreraNumero} ${p.hipodromo} - ${perd.clienteNombre}`,
+      concepto: `Pérdida en carrera C${p.carreraNumero} ${p.hipodromo} - ${perd.clienteNombre}${tipoTxt}`,
     });
   }
 
-  // Ganadores netos (Haber: aumento de saldo a favor del jugador)
+  // Ganadores netos (Haber)
+  // CRITERIO CONTABLE EXPERTO:
+  // Si el cliente es AVALADO, el premio ganado representa una obligación: Cuentas por Pagar (Pasivo: 2.1.01.003).
+  // Si es un cliente regular, se abona a su saldo en custodia (Pasivo: 2.1.01.001).
   for (const gan of p.ganadores) {
     if (gan.montoGanadoNeto <= 0) continue;
+    const cta = gan.esAvalado ? "2.1.01.003" : "2.1.01.001";
+    const tipoTxt = gan.esAvalado ? " (Cta. por Pagar Ganador Aval)" : "";
     lineas.push({
-      cuenta_codigo: "2.1.01.001",
+      cuenta_codigo: cta,
       cliente_id: gan.clienteId,
       cliente_nombre: gan.clienteNombre,
       debe: 0,
       haber: gan.montoGanadoNeto,
-      concepto: `Premio neto ganado en C${p.carreraNumero} ${p.hipodromo} - ${gan.clienteNombre}`,
+      concepto: `Premio neto ganado en C${p.carreraNumero} ${p.hipodromo} - ${gan.clienteNombre}${tipoTxt}`,
     });
   }
 
-  // Comisión de intermediación de la Casa (Haber: Ingreso Operacional)
-  if (p.totalComisionCasa > 0) {
+  // Comisión de intermediación de la Casa por modalidad o total
+  if (p.comisionesPorModalidad) {
+    const mapModalidades: Record<string, { codigo: string; nombre: string }> = {
+      entreTercios: { codigo: "4.1.01.001", nombre: "Comisión Apuestas entre Tercios" },
+      tablasFijas: { codigo: "4.1.01.002", nombre: "Comisión Tablas Fijas" },
+      marcas: { codigo: "4.1.01.003", nombre: "Comisión Marcas" },
+      dupletas: { codigo: "4.1.01.004", nombre: "Comisión Dupletas" },
+      pollas: { codigo: "4.1.01.005", nombre: "Comisión Pollas y Remates" },
+      wps: { codigo: "4.1.01.006", nombre: "Comisión Taquilla WPS" },
+      eventosEspeciales: { codigo: "4.1.01.007", nombre: "Comisión Eventos Especiales" },
+    };
+    for (const [mod, monto] of Object.entries(p.comisionesPorModalidad)) {
+      if (monto && monto > 0) {
+        const info = mapModalidades[mod] ?? { codigo: "4.1.01.001", nombre: `Comisión ${mod}` };
+        lineas.push({
+          cuenta_codigo: info.codigo,
+          debe: 0,
+          haber: monto,
+          concepto: `${info.nombre} C${p.carreraNumero} ${p.hipodromo}`,
+        });
+      }
+    }
+  } else if (p.totalComisionCasa > 0) {
     lineas.push({
       cuenta_codigo: "4.1.01.001", // Ingresos por Comisión — Apuestas entre Tercios
       debe: 0,
@@ -764,6 +821,153 @@ export async function generarContraAsientoSimetrico(asientoOriginal: AsientoCont
   }
 
   return res;
+}
+
+/**
+ * Asiento de Imputación de Venta Inter-Grupos para "Argentina":
+ * La venta por tablas fijas, marcas y dupletas en otros grupos se le imputa
+ * a la contabilidad de argentina:
+ *  - Si NO resultó ganador (la casa retiene el pozo/venta):
+ *      Debe 1.2.03.001 (Cuentas por Cobrar a Grupos en Convenio) por montoCobrado
+ *      Haber 4.3.01.002 (Ingresos Venta Neta Inter-Grupos Argentina) por montoCobrado
+ *  - Si HUBÓ ganador:
+ *      Argentina asume el premio neto:
+ *      Debe 5.2.01.001 / 5.2.02.001 (Costo de Premios Pagados) por premioPagar
+ *      Haber 2.1.01.001 (Cuentas por Pagar Premios Ganadores) por premioPagar
+ *      Debe 1.2.03.001 (Cuentas por Cobrar a Grupos en Convenio) por montoCobrado
+ *      Haber 4.3.01.002 (Ingresos Venta Inter-Grupos Argentina) por montoCobrado
+ */
+export async function generarAsientoImputacionArgentina(p: {
+  grupoIdArgentina?: string | null;
+  grupoOrigenId?: string | null;
+  grupoOrigenNombre?: string;
+  modalidad: "TABLAS_FIJAS" | "MARCAS" | "DUPLETAS";
+  referenciaId: string;
+  montoCobrado: number;
+  premioPagar: number;
+  huboGanador: boolean;
+  fecha?: string;
+  usuario?: string | null;
+}) {
+  const lineas: LineaAsientoContable[] = [];
+  const gOrig = p.grupoOrigenNombre || "Grupo Convenio";
+  const cobrado = Math.round((p.montoCobrado || 0) * 100) / 100;
+  const premio = Math.round((p.premioPagar || 0) * 100) / 100;
+
+  if (!p.huboGanador) {
+    if (cobrado > 0) {
+      lineas.push({
+        cuenta_codigo: "1.2.03.001", // Cuentas por Cobrar a Grupos en Convenio
+        debe: cobrado,
+        haber: 0,
+        concepto: `Cobro a ${gOrig} por venta ${p.modalidad} sin ganador (Ganancia Argentina)`,
+      });
+      lineas.push({
+        cuenta_codigo: "4.3.01.002", // Ingresos Venta Neta Inter-Grupos (Argentina)
+        debe: 0,
+        haber: cobrado,
+        concepto: `Ingreso neto asignado a Argentina por venta ${p.modalidad} de ${gOrig}`,
+      });
+    }
+  } else {
+    const ctaCosto = p.modalidad === "TABLAS_FIJAS" ? "5.2.01.001" : "5.2.02.001";
+    if (premio > 0) {
+      lineas.push({
+        cuenta_codigo: ctaCosto,
+        debe: premio,
+        haber: 0,
+        concepto: `Costo de premio a pagar por ${p.modalidad} vendida en ${gOrig}`,
+      });
+      lineas.push({
+        cuenta_codigo: "2.1.01.001",
+        debe: 0,
+        haber: premio,
+        concepto: `Premio por pagar al ganador de ${p.modalidad} (${gOrig})`,
+      });
+    }
+    if (cobrado > 0) {
+      lineas.push({
+        cuenta_codigo: "1.2.03.001",
+        debe: cobrado,
+        haber: 0,
+        concepto: `Recaudación por cobrar a ${gOrig} de jugadas ${p.modalidad}`,
+      });
+      lineas.push({
+        cuenta_codigo: "4.3.01.002",
+        debe: 0,
+        haber: cobrado,
+        concepto: `Ingreso bruto por venta inter-grupo de ${gOrig}`,
+      });
+    }
+  }
+
+  if (lineas.length === 0) return { ok: true };
+
+  return generarAsientoPartidaDoble({
+    grupo_id: p.grupoIdArgentina || null,
+    fecha_contable: p.fecha,
+    tipo_evento: "VENTA_INTERGRUPO_ARGENTINA",
+    referencia_id: p.referenciaId,
+    clave_idempotencia: `ARG:${p.modalidad}:${p.referenciaId}:${p.fecha || "hoy"}`,
+    descripcion: `Imputación de ${p.modalidad} (${gOrig}) en contabilidad de Argentina`,
+    creado_por: p.usuario,
+    lineas,
+  });
+}
+
+/**
+ * Asiento de Honorarios del Equipo de Trabajo:
+ *  - Si es PAGADO: Debe Gastos de Honorarios (6.1.03.001) / Haber Bancos o Caja (1.1.x)
+ *  - Si es POR PAGAR: Debe Gastos de Honorarios (6.1.03.001) / Haber Cuentas por Pagar Honorarios (2.1.06.001)
+ */
+export async function generarAsientoHonorariosEquipo(p: {
+  grupoId?: string | null;
+  fecha?: string;
+  miembroId: string;
+  miembroNombre: string;
+  monto: number;
+  concepto: string;
+  estado: "PAGADO" | "POR_PAGAR";
+  cuentaPagoCodigo?: string;
+  usuario?: string | null;
+}) {
+  const monto = Math.round(Number(p.monto) * 100) / 100;
+  if (monto <= 0) return { ok: false, error: "Monto inválido" };
+
+  const ctaHaber = p.estado === "PAGADO"
+    ? (p.cuentaPagoCodigo || "1.1.02.001")
+    : "2.1.06.001";
+
+  const conceptoHaber = p.estado === "PAGADO"
+    ? `Desembolso de honorarios a ${p.miembroNombre}`
+    : `Obligación por pagar de honorarios a ${p.miembroNombre}`;
+
+  const lineas: LineaAsientoContable[] = [
+    {
+      cuenta_codigo: "6.1.03.001", // Gastos de Operadores y Honorarios de Equipo
+      cliente_nombre: p.miembroNombre,
+      debe: monto,
+      haber: 0,
+      concepto: p.concepto || `Honorarios devengados: ${p.miembroNombre}`,
+    },
+    {
+      cuenta_codigo: ctaHaber,
+      cliente_nombre: p.miembroNombre,
+      debe: 0,
+      haber: monto,
+      concepto: conceptoHaber,
+    },
+  ];
+
+  return generarAsientoPartidaDoble({
+    grupo_id: p.grupoId || null,
+    fecha_contable: p.fecha,
+    tipo_evento: "HONORARIOS_EQUIPO",
+    referencia_id: `HON:${p.miembroId}:${Date.now()}`,
+    descripcion: `Honorarios de equipo: ${p.miembroNombre} - ${p.concepto}`,
+    creado_por: p.usuario,
+    lineas,
+  });
 }
 
 /**
@@ -935,15 +1139,20 @@ export async function generarAsientoLiberacionCompromisoJugada(params: {
 // CONSULTAS DEL LIBRO MAYOR Y REPORTES FINANCIEROS (NIIF)
 // ============================================================================
 
-export function obtenerAsientosMemoria(): AsientoContableRegistrado[] {
+export function obtenerAsientosMemoria(grupoId?: string | null): AsientoContableRegistrado[] {
+  if (grupoId) {
+    return ASIENTOS_MEMORIA.filter((a) => !a.grupo_id || String(a.grupo_id) === String(grupoId));
+  }
   return [...ASIENTOS_MEMORIA];
 }
 
 /**
  * Calcula los saldos acumulados de todas las cuentas del PUC (Debe - Haber según naturaleza)
+ * Soporta filtrado individual por grupo.
  */
 export function calcularSaldosPlanCuentas(
-  asientos: AsientoContableRegistrado[] = ASIENTOS_MEMORIA
+  asientos: AsientoContableRegistrado[] = ASIENTOS_MEMORIA,
+  grupoId?: string | null
 ): Map<string, { saldo: number; totalDebe: number; totalHaber: number }> {
   const mapa = new Map<string, { saldo: number; totalDebe: number; totalHaber: number }>();
 
@@ -952,7 +1161,11 @@ export function calcularSaldosPlanCuentas(
     mapa.set(cta.codigo, { saldo: 0, totalDebe: 0, totalHaber: 0 });
   }
 
-  for (const as of asientos) {
+  const asientosFiltrados = grupoId
+    ? asientos.filter((a) => !a.grupo_id || String(a.grupo_id) === String(grupoId))
+    : asientos;
+
+  for (const as of asientosFiltrados) {
     for (const l of as.lineas) {
       const reg = mapa.get(l.cuenta_codigo) || { saldo: 0, totalDebe: 0, totalHaber: 0 };
       const ctaDef = obtenerCuentaPorCodigo(l.cuenta_codigo);
@@ -987,29 +1200,41 @@ export function calcularSaldosPlanCuentas(
  *   = Utilidad Neta de la Semana
  */
 export function calcularEstadoResultadosSemana(
-  asientos: AsientoContableRegistrado[] = ASIENTOS_MEMORIA
+  asientos: AsientoContableRegistrado[] = ASIENTOS_MEMORIA,
+  grupoId?: string | null
 ) {
-  const saldos = calcularSaldosPlanCuentas(asientos);
+  const saldos = calcularSaldosPlanCuentas(asientos, grupoId);
 
-  // 4. Ingresos por comisión y ventas
+  // 4. Ingresos por comisión y ventas por modalidad
   const comisionTercios = saldos.get("4.1.01.001")?.saldo || 0;
+  const comisionTablasFijas = saldos.get("4.1.01.002")?.saldo || 0;
+  const comisionMarcas = saldos.get("4.1.01.003")?.saldo || 0;
+  const comisionDupletas = saldos.get("4.1.01.004")?.saldo || 0;
+  const comisionPollas = saldos.get("4.1.01.005")?.saldo || saldos.get("4.1.03.001")?.saldo || 0;
+  const comisionWps = saldos.get("4.1.01.006")?.saldo || 0;
+  const comisionEventosEspeciales = saldos.get("4.1.01.007")?.saldo || 0;
   const comisionRemates = saldos.get("4.1.02.001")?.saldo || 0;
-  const comisionPollas = saldos.get("4.1.03.001")?.saldo || 0;
-  const comisionDupletas = saldos.get("4.1.04.001")?.saldo || 0;
+
   const ventasTablas = saldos.get("4.2.01.001")?.saldo || 0;
   const ventasMarcas = saldos.get("4.2.02.001")?.saldo || 0;
   const ventasWps = saldos.get("4.2.03.001")?.saldo || 0;
   const convenios = saldos.get("4.3.01.001")?.saldo || 0;
+  const ventaInterGruposArgentina = saldos.get("4.3.01.002")?.saldo || 0;
 
   const totalIngresosBrutos = sumarDinero(
     comisionTercios,
-    comisionRemates,
-    comisionPollas,
+    comisionTablasFijas,
+    comisionMarcas,
     comisionDupletas,
+    comisionPollas,
+    comisionWps,
+    comisionEventosEspeciales,
+    comisionRemates,
     ventasTablas,
     ventasMarcas,
     ventasWps,
-    convenios
+    convenios,
+    ventaInterGruposArgentina
   );
 
   // 5.1 Rebajas por Cruces e Incentivos
@@ -1030,8 +1255,9 @@ export function calcularEstadoResultadosSemana(
   // 6. Gastos Operativos
   const comisionesBancarias = saldos.get("6.1.01.001")?.saldo || 0;
   const diferencialCambiario = saldos.get("6.1.02.001")?.saldo || 0;
-  const administracionOperadores = saldos.get("6.1.03.001")?.saldo || 0;
-  const totalGastos = sumarDinero(comisionesBancarias, diferencialCambiario, administracionOperadores);
+  const honorariosEquipo = saldos.get("6.1.03.001")?.saldo || 0;
+  const administracionOperadores = honorariosEquipo;
+  const totalGastos = sumarDinero(comisionesBancarias, diferencialCambiario, honorariosEquipo);
 
   // Utilidad Neta
   const utilidadNeta = restarDinero(ingresoNetoOperacional, sumarDinero(totalPremios, totalGastos));
@@ -1039,13 +1265,18 @@ export function calcularEstadoResultadosSemana(
   return {
     ingresos: {
       comisionTercios,
-      comisionRemates,
-      comisionPollas,
+      comisionTablasFijas,
+      comisionMarcas,
       comisionDupletas,
+      comisionPollas,
+      comisionWps,
+      comisionEventosEspeciales,
+      comisionRemates,
       ventasTablas,
       ventasMarcas,
       ventasWps,
       convenios,
+      ventaInterGruposArgentina,
       totalIngresosBrutos,
     },
     rebajasEIncentivos: {
@@ -1065,6 +1296,7 @@ export function calcularEstadoResultadosSemana(
       comisionesBancarias,
       diferencialCambiario,
       administracionOperadores,
+      honorariosEquipo,
       totalGastos,
     },
     utilidadNeta,

@@ -168,6 +168,9 @@
     "../src/features/seguridad/lib/seguimiento-usuarios.ts",
     "./seguridad-usuarios-conectados.test.ts",
     "../src/features/clientes/lib/comisiones-socios.ts",
-    "./comisiones-socios-devoluciones.test.ts"
+    "./comisiones-socios-devoluciones.test.ts",
+    "../src/features/contabilidad/lib/honorarios-equipo.ts",
+    "../src/features/contabilidad/lib/contabilidad-automatica.ts",
+    "./contabilidad-automatizada-grupos-honorarios.test.ts"
   ]
 }

@@ -34,6 +34,10 @@ import {
   TabLibroDiarioMayor,
   TabEstadoResultadosSemana,
 } from "@/features/contabilidad/components/ContabilidadTabs";
+import { TabHonorariosEquipo } from "@/features/contabilidad/components/TabHonorariosEquipo";
+import { TabCopilotoContableIA } from "@/features/contabilidad/components/TabCopilotoContableIA";
+import { TabManualContableNIIF } from "@/features/contabilidad/components/TabManualContableNIIF";
+import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import {
   listarAsientosNIIF,
   listarBancos,
@@ -64,7 +68,10 @@ type Tab =
   | "puc"
   | "libro_diario"
   | "estado_resultados"
-  | "niif";
+  | "niif"
+  | "honorarios"
+  | "asistente_ia"
+  | "manual";
 
 /**
  * Cada pantalla tiene su propia ruta para que el menú no marque varias
@@ -82,6 +89,9 @@ const RUTAS: Record<Tab, { ruta: string; txt: string; emoji: string }> = {
   libro_diario: { ruta: "/contabilidad?vista=libro_diario", txt: "Libro Diario (Partida Doble)", emoji: "📒" },
   estado_resultados: { ruta: "/contabilidad?vista=estado_resultados", txt: "Resultados Semanales", emoji: "📊" },
   niif: { ruta: "/contabilidad?vista=niif", txt: "Balance NIIF", emoji: "⚖️" },
+  honorarios: { ruta: "/contabilidad?vista=honorarios", txt: "Honorarios Equipo", emoji: "👥" },
+  asistente_ia: { ruta: "/contabilidad?vista=asistente_ia", txt: "Copiloto IA", emoji: "🤖" },
+  manual: { ruta: "/contabilidad?vista=manual", txt: "Manual NIIF", emoji: "📖" },
 };
 
 export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: Tab }) {
@@ -117,6 +127,28 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
    * abriría en "Ingresos" en el primer clic.
    */
   const tabPedida = useRef<Tab | null>(null);
+
+  const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
+  const [grupoSeleccionado, setGrupoSeleccionado] = useState<string>(grupoActivo || "");
+
+  useEffect(() => {
+    void listarGruposVenta().then((g) => {
+      setGrupos(g || []);
+      if (!grupoSeleccionado && grupoActivo) {
+        setGrupoSeleccionado(grupoActivo);
+      }
+    });
+  }, [grupoActivo]);
+
+  useEffect(() => {
+    const handler = () => {
+      void recargarBalance();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("contabilidad:asiento-registrado", handler);
+      return () => window.removeEventListener("contabilidad:asiento-registrado", handler);
+    }
+  }, []);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -253,6 +285,21 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
           <span className="mr-2 text-primary-600">🪙</span> Contabilidad
         </h1>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-xl border border-line bg-slate-50 px-2.5 py-1 text-xs">
+            <span className="font-bold text-slate-500 uppercase text-[10px]">🏢 Grupo:</span>
+            <select
+              value={grupoSeleccionado}
+              onChange={(e) => setGrupoSeleccionado(e.target.value)}
+              className="bg-transparent font-black text-slate-800 outline-none text-xs cursor-pointer"
+            >
+              <option value="">— Consolidado / Todos —</option>
+              {grupos.map((g) => (
+                <option key={String(g.id)} value={String(g.id)}>
+                  {g.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -339,11 +386,17 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
           onHecho={cargar}
         />
       ) : tab === "puc" ? (
-        <TabPlanCuentasPUC />
+        <TabPlanCuentasPUC grupoId={grupoSeleccionado || null} />
       ) : tab === "libro_diario" ? (
-        <TabLibroDiarioMayor />
+        <TabLibroDiarioMayor grupoId={grupoSeleccionado || null} />
       ) : tab === "estado_resultados" ? (
-        <TabEstadoResultadosSemana />
+        <TabEstadoResultadosSemana grupoId={grupoSeleccionado || null} />
+      ) : tab === "honorarios" ? (
+        <TabHonorariosEquipo grupoId={grupoSeleccionado || null} />
+      ) : tab === "asistente_ia" ? (
+        <TabCopilotoContableIA grupoId={grupoSeleccionado || null} onAsientoRegistrado={() => void recargarBalance()} />
+      ) : tab === "manual" ? (
+        <TabManualContableNIIF />
       ) : (
         <TabBalanceNIIF
           balance={balance}

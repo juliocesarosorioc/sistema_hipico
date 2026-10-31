@@ -2356,7 +2356,7 @@ export function TabBalanceNIIF({
 //  📘  PESTAÑA 1: PLAN ÚNICO DE CUENTAS (PUC-NIIF HÍPICO)
 // ===========================================================================
 
-export function TabPlanCuentasPUC() {
+export function TabPlanCuentasPUC({ grupoId }: { grupoId?: string | null } = {}) {
   const [cuentas, setCuentas] = useState<CuentaContableDef[]>([...PLAN_CUENTAS_HIPICO]);
   const [filtroTexto, setFiltroTexto] = useState("");
   const [filtroClase, setFiltroClase] = useState<string>("TODAS");
@@ -2374,8 +2374,8 @@ export function TabPlanCuentasPUC() {
 
   // Saldos en vivo
   const saldos = useMemo(() => {
-    return calcularSaldosPlanCuentas();
-  }, []);
+    return calcularSaldosPlanCuentas(obtenerAsientosMemoria(grupoId), grupoId);
+  }, [grupoId]);
 
   const cuentasFiltradas = useMemo(() => {
     const txt = filtroTexto.trim().toUpperCase();
@@ -2735,13 +2735,17 @@ export function TabPlanCuentasPUC() {
 //  📒  PESTAÑA 2: LIBRO DIARIO Y MAYOR ANALÍTICO (PARTIDA DOBLE)
 // ===========================================================================
 
-export function TabLibroDiarioMayor() {
+export function TabLibroDiarioMayor({ grupoId }: { grupoId?: string | null } = {}) {
   const [filtroTexto, setFiltroTexto] = useState("");
   const [filtroEvento, setFiltroEvento] = useState("TODOS");
-  const [asientos, setAsientos] = useState<AsientoContableRegistrado[]>(() => obtenerAsientosMemoria());
+  const [asientos, setAsientos] = useState<AsientoContableRegistrado[]>(() => obtenerAsientosMemoria(grupoId));
+
+  useEffect(() => {
+    setAsientos(obtenerAsientosMemoria(grupoId));
+  }, [grupoId]);
 
   const recargarAsientos = () => {
-    setAsientos(obtenerAsientosMemoria());
+    setAsientos(obtenerAsientosMemoria(grupoId));
   };
 
   const asientosFiltrados = useMemo(() => {
@@ -2962,11 +2966,16 @@ export function TabLibroDiarioMayor() {
 //  📊  PESTAÑA 3: BALANCE DE COMPROBACIÓN Y ESTADO DE RESULTADOS DE LA SEMANA
 // ===========================================================================
 
-export function TabEstadoResultadosSemana() {
-  const [asientos] = useState<AsientoContableRegistrado[]>(() => obtenerAsientosMemoria());
+export function TabEstadoResultadosSemana({ grupoId }: { grupoId?: string | null } = {}) {
+  const [asientos, setAsientos] = useState<AsientoContableRegistrado[]>(() => obtenerAsientosMemoria(grupoId));
+
+  useEffect(() => {
+    setAsientos(obtenerAsientosMemoria(grupoId));
+  }, [grupoId]);
+
   const r = useMemo(() => {
-    return calcularEstadoResultadosSemana(asientos);
-  }, [asientos]);
+    return calcularEstadoResultadosSemana(asientos, grupoId);
+  }, [asientos, grupoId]);
 
   return (
     <div className="space-y-4">

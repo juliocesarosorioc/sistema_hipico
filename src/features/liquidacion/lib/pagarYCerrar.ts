@@ -18,6 +18,7 @@ import { calcularFinanzasRemate } from "@/features/remates/lib/core";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { redondearCentavos } from "@/shared/lib/dinero";
+import { sincronizarContabilidadCarreraEnSegundoPlano } from "@/features/contabilidad/lib/contabilidad-automatica";
 import { limpiarCacheClientes } from "@/features/clientes/lib/clientes";
 import { limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
 import {
@@ -427,6 +428,43 @@ export async function liquidarCarreraYCerrarTabla(opts: {
 
   limpiarCacheClientes();
   limpiarCacheClientesVenta();
+
+  // Sincronización contable automática en segundo plano (no bloquea UI)
+  try {
+    const perdedoresContables: Array<{ clienteId: string; clienteNombre: string; montoPerdido: number; esAvalado?: boolean }> = [];
+    const ganadoresContables: Array<{ clienteId: string; clienteNombre: string; montoGanadoNeto: number; esAvalado?: boolean }> = [];
+
+    for (let idx = 0; idx < procesados.length; idx++) {
+      const p = procesados[idx];
+      const cliNombre = metadatos[idx]?.cliente1 || "Cliente";
+      if (p.resultado.totalClienteNeto > 0) {
+        ganadoresContables.push({
+          clienteId: `cli-${idx}`,
+          clienteNombre: cliNombre,
+          montoGanadoNeto: p.resultado.totalClienteNeto,
+        });
+      }
+      if (p.resultado.balanceBanca > 0) {
+        perdedoresContables.push({
+          clienteId: `cli-${idx}`,
+          clienteNombre: cliNombre,
+          montoPerdido: p.resultado.balanceBanca,
+        });
+      }
+    }
+
+    sincronizarContabilidadCarreraEnSegundoPlano({
+      hipodromo,
+      carreraNumero: carrera,
+      fecha,
+      perdedores: perdedoresContables,
+      ganadores: ganadoresContables,
+      totalComisionCasa: gananciaCasa,
+    });
+  } catch (err) {
+    console.warn("Fallo no bloqueante al encolar contabilidad en segundo plano:", err);
+  }
+
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("hipico:saldos-actualizados"));
     window.dispatchEvent(new CustomEvent("hipico_tickets_actualizados"));
