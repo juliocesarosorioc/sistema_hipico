@@ -14,6 +14,29 @@ import { exigirCapacidad, esPrincipalVigente, grupoActivoVigente, grupoVigente }
 import { resumenFormasPago, type FormaPago } from "@/features/clientes/lib/formasPago";
 import { redondearCentavos } from "@/shared/lib/dinero";
 import {
+  calcularLiquidacionConIncentivosYSocios,
+  emitirMensajePaso,
+  type BaseIncentivo,
+  type BaseSocio,
+  type ConfigJugadorLiquidacion,
+  type JugadaParaLiquidacion,
+  type ResultadoLiquidacionJugador,
+  type DesgloseComisionSocio,
+  type ResultadoLiquidacionUnificada,
+} from "@/features/liquidacion/lib/liquidacion-incentivos-socios";
+
+export {
+  calcularLiquidacionConIncentivosYSocios,
+  emitirMensajePaso,
+  type BaseIncentivo,
+  type BaseSocio,
+  type ConfigJugadorLiquidacion,
+  type JugadaParaLiquidacion,
+  type ResultadoLiquidacionJugador,
+  type DesgloseComisionSocio,
+  type ResultadoLiquidacionUnificada,
+};
+import {
   sincronizarSaldosRealesClientes,
   esJugadaPuestosParaIncentivo,
   calcularIncentivoCarreraCliente,
@@ -101,6 +124,13 @@ export type ClienteRow = {
   /** Comisión propia del cliente; si es null/absente usa la del grupo. */
   comision?: number | string | null;
   comision_personalizada?: boolean | null;
+  comision_particular_pct?: number | null;
+  incentivo_pct?: number | null;
+  incentivo_base?: BaseIncentivo | null;
+  socio_id?: string | null;
+  socio_comision_pct?: number | string | null;
+  socio_base?: BaseSocio | null;
+
 };
 
 /** Socio que puede asignarse a un cliente. */

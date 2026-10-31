@@ -171,6 +171,8 @@
     "./comisiones-socios-devoluciones.test.ts",
     "../src/features/contabilidad/lib/honorarios-equipo.ts",
     "../src/features/contabilidad/lib/contabilidad-automatica.ts",
-    "./contabilidad-automatizada-grupos-honorarios.test.ts"
+    "./contabilidad-automatizada-grupos-honorarios.test.ts",
+    "../src/features/liquidacion/lib/liquidacion-incentivos-socios.ts",
+    "./comision-particular-incentivo-socio.test.ts"
   ]
 }

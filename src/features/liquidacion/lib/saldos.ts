@@ -1,3 +1,9 @@
+import {
+  calcularLiquidacionConIncentivosYSocios,
+  emitirMensajePaso,
+  type BaseIncentivo,
+  type BaseSocio,
+} from "@/features/liquidacion/lib/liquidacion-incentivos-socios";
 /**
  * Saldos — Aplicación TRANSACCIONAL de la liquidación universal sobre el
  * saldo real del cliente (Bloque 3). Firma de seguridad:
@@ -24,7 +30,7 @@ import {
   type OpcionesCrucesPuestos,
 } from "@/features/motores/lib/puestos";
 import { cargarOpcionesCrucesPuestos } from "@/features/gestion/lib/cruces-carrera";
-import { redondearCentavos, sumarDinero, restarDinero, formatearMontoSinMoneda } from "@/shared/lib/dinero";
+import { redondearCentavos, sumarDinero, restarDinero, formatearMontoSinMoneda, calcularComisionExacta } from "@/shared/lib/dinero";
 import {
   calcularEstadoCuentaCliente,
   calcularResumenContableCliente,
@@ -598,9 +604,8 @@ export async function aplicarLiquidacionSaldos(
 
   await Promise.all(updates);
 
-  // ── ACREDITACIÓN SILENCIOSA DE INCENTIVOS CARRERA A CARRERA ──
-  // Cada vez que se liquida una carrera, se calcula el incentivo ganado por cada
-  // cliente en esa carrera específica y se suma de inmediato a su saldo real.
+  // ── ACREDITACIÓN UNIFICADA DE INCENTIVOS Y COMISIONES DE SOCIOS CARRERA A CARRERA ──
+  emitirMensajePaso("⏳ Acreditando incentivos y comisiones de socios de la carrera...", "info");
   const clientesParticipantes = [
     ...new Set(
       decidibles
@@ -613,59 +618,97 @@ export async function aplicarLiquidacionSaldos(
     try {
       const { data: dbClientes } = await sdb
         .from("clientes")
-        .select("id, nombre, saldo_actual, devolucion, grupo_id")
+        .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, incentivo_base, socio_id, socio_asignado, socio_comision_pct, comision_socio_pct, socio_base, grupo_id")
         .in("id", clientesParticipantes as string[]);
 
       if (dbClientes && dbClientes.length > 0) {
         for (const cli of dbClientes as Array<Record<string, unknown>>) {
-          const devPct = Math.max(0, Number(cli.devolucion) || 0);
-          if (devPct <= 0) continue;
+          const incPct = Math.max(0, Number(cli.incentivo_pct ?? cli.devolucion) || 0);
+          const incBase = (cli.incentivo_base as BaseIncentivo) || "MONTO_DECIDIDO";
+          const socioIdRaw = (cli.socio_id ?? cli.socio_asignado) as string | null;
+          const socPct = Math.max(0, Number(cli.socio_comision_pct ?? cli.comision_socio_pct) || 0);
+          const socBase = (cli.socio_base as BaseSocio) || "MONTO_DECIDIDO";
 
-          const ticketsCli: TicketContableRaw[] = decidibles
-            .filter((d) => String(d.fila.cliente_juega_id) === String(cli.id))
-            .map((d) => {
-              const m = NUM(d.fila.monto_jugado);
-              const esEmpateTotal = !d.res.ok && m > 0 && Math.abs(d.res.totalClienteNeto - m) < 0.01;
-              const esPerdidaParcial = !d.res.ok && d.res.totalClienteNeto > 0 && !esEmpateTotal;
-              return {
-                ...(d.fila as unknown as TicketContableRaw),
-                estado: esEmpateTotal ? "Retirado" : d.res.ok ? "Ganador" : "Perdedor",
-                monto_jugado: esPerdidaParcial ? restarDinero(m, d.res.totalClienteNeto) : m,
-                monto_decidido: d.res.ok
-                  ? sumarDinero(d.res.totalClienteNeto, d.res.gananciaCasa)
-                  : esPerdidaParcial
-                  ? restarDinero(m, d.res.totalClienteNeto)
-                  : m,
-              };
-            });
+          const ticketsCli = decidibles.filter((d) => String(d.fila.cliente_juega_id) === String(cli.id));
+          let montoIncTotal = 0;
+          let baseSocioTotal = 0;
 
-          const inc = calcularIncentivoCarreraCliente(ticketsCli, devPct);
-          if (inc > 0) {
+          for (const d of ticketsCli) {
+            const m = NUM(d.fila.monto_jugado);
+            const esGanador = d.res.ok;
+            const esPerdedor = !d.res.ok && d.res.totalClienteNeto === 0;
+            const premioDevuelto = d.res.totalClienteNeto;
+            const perdidaParcial = !d.res.ok && premioDevuelto > 0 && premioDevuelto < m;
+            const montoPerdido = perdidaParcial ? restarDinero(m, premioDevuelto) : (esPerdedor ? m : 0);
+            const gananciaBruta = esGanador ? Math.max(0, restarDinero(d.res.totalClienteNeto + d.res.gananciaCasa, m)) : 0;
+            const montoDecidido = esGanador ? (d.res.totalClienteNeto + d.res.gananciaCasa) : (perdidaParcial ? montoPerdido : m);
+
+            // Cálculo incentivo cliente
+            if (incPct > 0) {
+              let baseInc = 0;
+              if (incBase === "GANANCIA") baseInc = gananciaBruta;
+              else if (incBase === "PERDIDA") baseInc = montoPerdido;
+              else baseInc = montoDecidido;
+              if (baseInc > 0) {
+                montoIncTotal = sumarDinero(montoIncTotal, calcularComisionExacta(baseInc, incPct));
+              }
+            }
+
+            // Base para socio
+            if (socioIdRaw && socPct > 0) {
+              if (socBase === "GANANCIA") baseSocioTotal = sumarDinero(baseSocioTotal, gananciaBruta);
+              else if (socBase === "PERDIDA") baseSocioTotal = sumarDinero(baseSocioTotal, montoPerdido);
+              else if (socBase === "COMISION_COBRADA") baseSocioTotal = sumarDinero(baseSocioTotal, d.res.gananciaCasa);
+              else baseSocioTotal = sumarDinero(baseSocioTotal, montoDecidido);
+            }
+          }
+
+          // Acreditar incentivo al cliente (+ a su saldo y visible en cuenta diaria)
+          if (montoIncTotal > 0) {
             const actual = NUM(cli.saldo_actual);
-            const nuevoSaldo = sumarDinero(actual, inc);
-            await sdb
-              .from("clientes")
-              .update({ saldo_actual: nuevoSaldo })
-              .eq("id", cli.id as never);
+            const nuevoSaldo = sumarDinero(actual, montoIncTotal);
+            await sdb.from("clientes").update({ saldo_actual: nuevoSaldo }).eq("id", cli.id as never);
 
             try {
               await generarAsientoDevolucionIncentivo({
                 grupoId: cli.grupo_id ? String(cli.grupo_id) : null,
                 fecha: dia,
                 clienteId: String(cli.id),
-                clienteNombre: String(cli.nombre ?? "Cliente"),
-                montoIncentivo: inc,
+                clienteNombre: String(cli.nombre ?? cli.seudonimo ?? "Cliente"),
+                montoIncentivo: montoIncTotal,
                 referenciaId: `${dia}:${input.hipodromo}:C${input.carrera}`,
                 usuario: "SISTEMA_LIQUIDACION",
               });
             } catch {
-              /* ignore non-blocking accounting error */
+              /* ignore non-blocking */
+            }
+          }
+
+          // Acreditar comisión confidencial al socio (+ a su saldo, visible SOLO para el socio)
+          if (socioIdRaw && socPct > 0 && baseSocioTotal > 0) {
+            const montoSocio = calcularComisionExacta(baseSocioTotal, socPct);
+            if (montoSocio > 0) {
+              // Buscar el socio por id o seudónimo
+              const { data: socioDb } = await sdb
+                .from("clientes")
+                .select("id, saldo_actual, nombre, seudonimo")
+                .or(`id.eq.${socioIdRaw},nombre.ilike.${socioIdRaw},seudonimo.ilike.${socioIdRaw}`)
+                .limit(1)
+                .maybeSingle();
+
+              if (socioDb) {
+                const actualSoc = NUM(socioDb.saldo_actual);
+                await sdb
+                  .from("clientes")
+                  .update({ saldo_actual: sumarDinero(actualSoc, montoSocio) })
+                  .eq("id", socioDb.id as never);
+              }
             }
           }
         }
       }
     } catch (e) {
-      console.error("Error acreditando incentivos silenciosos en carrera:", e);
+      console.error("Error acreditando incentivos y comisiones de socios:", e);
     }
   }
 

@@ -1,3 +1,5 @@
+import { calcularComisionExacta } from "@/shared/lib/dinero";
+import { emitirMensajePaso, type BaseIncentivo, type BaseSocio } from "@/features/liquidacion/lib/liquidacion-incentivos-socios";
 /**
  * ============================================================================
  * RECALCULAR CARRERA — corregir una jugada ya liquidada REHACE la carrera
@@ -203,7 +205,11 @@ export async function revertirLiquidacionCarrera(opts: {
   }
   await Promise.all(updates);
 
-  // ── REVERSIÓN SIMÉTRICA DE INCENTIVOS SILENCIOSOS CARRERA A CARRERA ──
+  // Paso 1/3 completado (premios reversados)
+  emitirMensajePaso("Paso 1/3: Reversando premios...", "info");
+
+  // ── REVERSIÓN SIMÉTRICA DE INCENTIVOS Y COMISIONES DE SOCIOS ──
+  emitirMensajePaso("Paso 2/3: Reversando incentivos y comisiones de socios...", "info");
   const clientesReversion = [
     ...new Set(
       decisiones
@@ -216,47 +222,83 @@ export async function revertirLiquidacionCarrera(opts: {
     try {
       const { data: dbClientes } = await sdb
         .from("clientes")
-        .select("id, nombre, saldo_actual, devolucion")
+        .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, incentivo_base, socio_id, socio_asignado, socio_comision_pct, comision_socio_pct, socio_base")
         .in("id", clientesReversion as string[]);
 
       if (dbClientes && dbClientes.length > 0) {
         for (const cli of dbClientes as Array<Record<string, unknown>>) {
-          const devPct = Math.max(0, Number(cli.devolucion) || 0);
-          if (devPct <= 0) continue;
+          const incPct = Math.max(0, Number(cli.incentivo_pct ?? cli.devolucion) || 0);
+          const incBase = (cli.incentivo_base as BaseIncentivo) || "MONTO_DECIDIDO";
+          const socioIdRaw = (cli.socio_id ?? cli.socio_asignado) as string | null;
+          const socPct = Math.max(0, Number(cli.socio_comision_pct ?? cli.comision_socio_pct) || 0);
+          const socBase = (cli.socio_base as BaseSocio) || "MONTO_DECIDIDO";
 
-          const ticketsCli: TicketContableRaw[] = decisiones
-            .filter((d) => String((d.fila as Record<string, unknown>).cliente_juega_id) === String(cli.id))
-            .map((d) => {
-              const m = NUM((d.fila as Record<string, unknown>).monto_jugado);
-              const esEmpateTotal = !d.res.ok && m > 0 && Math.abs(d.res.totalClienteNeto - m) < 0.01;
-              const esPerdidaParcial = !d.res.ok && d.res.totalClienteNeto > 0 && !esEmpateTotal;
-              return {
-                ...(d.fila as unknown as TicketContableRaw),
-                estado: esEmpateTotal ? "Retirado" : d.res.ok ? "Ganador" : "Perdedor",
-                monto_jugado: esPerdidaParcial ? restarDinero(m, d.res.totalClienteNeto) : m,
-                monto_decidido: d.res.ok
-                  ? sumarDinero(d.res.totalClienteNeto, d.res.gananciaCasa)
-                  : esPerdidaParcial
-                  ? restarDinero(m, d.res.totalClienteNeto)
-                  : m,
-              };
-            });
+          const ticketsCli = decisiones.filter((d) => String((d.fila as Record<string, unknown>).cliente_juega_id) === String(cli.id));
+          let montoIncTotal = 0;
+          let baseSocioTotal = 0;
 
-          const inc = calcularIncentivoCarreraCliente(ticketsCli, devPct);
-          if (inc > 0) {
+          for (const d of ticketsCli) {
+            const m = NUM((d.fila as Record<string, unknown>).monto_jugado);
+            const esGanador = d.res.ok;
+            const esPerdedor = !d.res.ok && d.res.totalClienteNeto === 0;
+            const premioDevuelto = d.res.totalClienteNeto;
+            const perdidaParcial = !d.res.ok && premioDevuelto > 0 && premioDevuelto < m;
+            const montoPerdido = perdidaParcial ? restarDinero(m, premioDevuelto) : (esPerdedor ? m : 0);
+            const gananciaBruta = esGanador ? Math.max(0, restarDinero(d.res.totalClienteNeto + d.res.gananciaCasa, m)) : 0;
+            const montoDecidido = esGanador ? (d.res.totalClienteNeto + d.res.gananciaCasa) : (perdidaParcial ? montoPerdido : m);
+
+            if (incPct > 0) {
+              let baseInc = 0;
+              if (incBase === "GANANCIA") baseInc = gananciaBruta;
+              else if (incBase === "PERDIDA") baseInc = montoPerdido;
+              else baseInc = montoDecidido;
+              if (baseInc > 0) {
+                montoIncTotal = sumarDinero(montoIncTotal, calcularComisionExacta(baseInc, incPct));
+              }
+            }
+
+            if (socioIdRaw && socPct > 0) {
+              if (socBase === "GANANCIA") baseSocioTotal = sumarDinero(baseSocioTotal, gananciaBruta);
+              else if (socBase === "PERDIDA") baseSocioTotal = sumarDinero(baseSocioTotal, montoPerdido);
+              else if (socBase === "COMISION_COBRADA") baseSocioTotal = sumarDinero(baseSocioTotal, d.res.gananciaCasa);
+              else baseSocioTotal = sumarDinero(baseSocioTotal, montoDecidido);
+            }
+          }
+
+          if (montoIncTotal > 0) {
             const actual = NUM(cli.saldo_actual);
-            const nuevoSaldo = restarDinero(actual, inc);
-            await sdb
-              .from("clientes")
-              .update({ saldo_actual: nuevoSaldo })
-              .eq("id", cli.id as never);
+            const nuevoSaldo = restarDinero(actual, montoIncTotal);
+            await sdb.from("clientes").update({ saldo_actual: nuevoSaldo }).eq("id", cli.id as never);
+          }
+
+          if (socioIdRaw && socPct > 0 && baseSocioTotal > 0) {
+            const montoSocio = calcularComisionExacta(baseSocioTotal, socPct);
+            if (montoSocio > 0) {
+              const { data: socioDb } = await sdb
+                .from("clientes")
+                .select("id, saldo_actual")
+                .or(`id.eq.${socioIdRaw},nombre.ilike.${socioIdRaw},seudonimo.ilike.${socioIdRaw}`)
+                .limit(1)
+                .maybeSingle();
+
+              if (socioDb) {
+                const actualSoc = NUM(socioDb.saldo_actual);
+                await sdb
+                  .from("clientes")
+                  .update({ saldo_actual: restarDinero(actualSoc, montoSocio) })
+                  .eq("id", socioDb.id as never);
+              }
+            }
           }
         }
       }
     } catch (e) {
-      console.error("Error revirtiendo incentivos silenciosos en carrera:", e);
+      console.error("Error revirtiendo incentivos y comisiones de socios:", e);
     }
   }
+
+  emitirMensajePaso("Paso 3/3: Saldos y cuenta diaria actualizados", "success");
+
   return {
     ok: errores.length === 0,
     motivo: `Revertidos ${revertidos} ticket(s) · $${revertidoTotal.toFixed(2)} devuelto a los clientes.`,

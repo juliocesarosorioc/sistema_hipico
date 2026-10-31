@@ -218,6 +218,9 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
   const [modo, setModo] = useState("aval");
   const [aval, setAval] = useState("");
   const [devolucion, setDevolucion] = useState("");
+  const [incentivoBase, setIncentivoBase] = useState<"MONTO_DECIDIDO" | "PERDIDA" | "GANANCIA">("MONTO_DECIDIDO");
+  const [socioBase, setSocioBase] = useState<"MONTO_DECIDIDO" | "PERDIDA" | "GANANCIA" | "COMISION_COBRADA">("MONTO_DECIDIDO");
+  const [comisionParticular, setComisionParticular] = useState("");
   const [comisionSocio, setComisionSocio] = useState("");
   const [fechaInicioComisionSocio, setFechaInicioComisionSocio] = useState("2026-10-29");
   const [socio, setSocio] = useState("");
@@ -445,7 +448,12 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
             mostrar_saldo_socio: mostrarS,
             cruce_mismo_ejemplar: cruceMismoEjemplar,
             cruce_diferente_ejemplar: cruceDiferenteEjemplar,
-            comision: num(comision),
+            comision: comisionParticular.trim() !== "" ? num(comisionParticular) : num(comision),
+            comision_particular_pct: comisionParticular.trim() !== "" ? num(comisionParticular) : null,
+            incentivo_pct: num(devolucion),
+            incentivo_base: incentivoBase,
+            socio_id: socio || null,
+            socio_base: socioBase,
             aval: num(aval),
             devolucion: num(devolucion),
             comision_socio_pct: socio ? num(comisionSocio) : null,
@@ -461,8 +469,13 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
           mostrar_saldo_socio: mostrarS,
           cruce_mismo_ejemplar: cruceMismoEjemplar,
           cruce_diferente_ejemplar: cruceDiferenteEjemplar,
-          comision: num(comision),
-          aval: num(aval),
+          comision: comisionParticular.trim() !== "" ? num(comisionParticular) : num(comision),
+            comision_particular_pct: comisionParticular.trim() !== "" ? num(comisionParticular) : null,
+            incentivo_pct: num(devolucion),
+            incentivo_base: incentivoBase,
+            socio_id: socio || null,
+            socio_base: socioBase,
+            aval: num(aval),
           devolucion: num(devolucion),
           comision_socio_pct: socio ? num(comisionSocio) : null,
           fecha_inicio_comision_socio: socio ? (fechaInicioComisionSocio || "2026-10-29") : null,
@@ -683,6 +696,22 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
                     />
                   </Campo>
                   <Campo
+                    texto="Base comisión al socio"
+                    icono="📐"
+                    tono="text-indigo-600"
+                  >
+                    <select
+                      value={socioBase}
+                      onChange={(e) => setSocioBase(e.target.value as any)}
+                      className={inp + " text-xs font-bold text-indigo-900"}
+                    >
+                      <option value="MONTO_DECIDIDO">Monto Decidido (Volumen)</option>
+                      <option value="PERDIDA">Sobre Pérdida</option>
+                      <option value="GANANCIA">Sobre Ganancia</option>
+                      <option value="COMISION_COBRADA">Sobre Comisión Cobrada</option>
+                    </select>
+                  </Campo>
+                  <Campo
                     texto="Calcular comisiones al socio desde"
                     icono="📅"
                     tono="text-indigo-600"
@@ -701,17 +730,18 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
                   </Campo>
                 </>
               )}
-              <Campo texto="Comisión propia %" icono="🤲" tono="text-emerald-600" error={errores.comision}>
+              <Campo texto="Comisión particular jugador %" icono="🎯" tono="text-emerald-600" error={errores.comisionParticular}>
                 <input
-                  value={comision}
+                  value={comisionParticular}
                   onChange={(e) => {
+                    setComisionParticular(e.target.value);
                     setComision(e.target.value);
-                    limpiar("comision");
+                    limpiar("comisionParticular");
                   }}
-                  className={numInp + " text-emerald-700" + (errores.comision ? " " + inpErr : "")}
+                  className={numInp + " text-emerald-700 font-bold" + (errores.comisionParticular ? " " + inpErr : "")}
                   inputMode="decimal"
-                  placeholder="usa la del grupo"
-                  aria-invalid={!!errores.comision}
+                  placeholder="Ej: 3, 0 (vacio: grupo)"
+                  title="Si tiene valor cobra esta comision cuando gana, ignorando la del grupo"
                 />
               </Campo>
               <div className="grid grid-cols-1 gap-1.5 self-end">
