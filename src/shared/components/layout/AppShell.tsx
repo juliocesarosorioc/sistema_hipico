@@ -11,6 +11,7 @@ import { WidgetAsistenteIa } from "@/features/soporte/components/WidgetAsistente
 import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { esRutaPublica, esRolOperadorExclusivo, esRutaPermitidaOperador } from "@/features/seguridad/lib/capacidades";
+import { sincronizarYAuditarContabilidadCompleta } from "@/features/contabilidad/lib/motor-backfill-retroactivo";
 
 const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
 // Las rutas públicas salen de `PUERTAS` (ver `esRutaPublica`). La lista fija
@@ -94,6 +95,26 @@ export function AppShell({ children }: { children: ReactNode }) {
       router.replace("/apuestas");
     }
   }, [inicializada, usuario, pathname, perfiles, permisos, modoOperador, router]);
+
+  // Motor contable automático: asegura que todas las transacciones de la semana actual tengan su asiento NIIF
+  useEffect(() => {
+    if (!inicializada || !usuario || ES_LOGIN(pathname) || ES_PORTAL(pathname)) return;
+    const grupoActivo = useAuthStore.getState().grupoActivo || useAuthStore.getState().grupoId || null;
+    void sincronizarYAuditarContabilidadCompleta({ grupoId: grupoActivo, silencioso: true });
+
+    const onTransaccionNueva = () => {
+      const g = useAuthStore.getState().grupoActivo || useAuthStore.getState().grupoId || null;
+      void sincronizarYAuditarContabilidadCompleta({ grupoId: g, silencioso: true });
+    };
+    window.addEventListener("hipico_tickets_actualizados", onTransaccionNueva);
+    window.addEventListener("hipico:saldos-actualizados", onTransaccionNueva);
+    window.addEventListener("hipico:movimientos-operador-actualizados", onTransaccionNueva);
+    return () => {
+      window.removeEventListener("hipico_tickets_actualizados", onTransaccionNueva);
+      window.removeEventListener("hipico:saldos-actualizados", onTransaccionNueva);
+      window.removeEventListener("hipico:movimientos-operador-actualizados", onTransaccionNueva);
+    };
+  }, [inicializada, usuario, pathname]);
 
   // Estado del menú lateral (paridad con el legacy):
   //   - escritorio: el botón NO lo saca de pantalla, lo deja en RAIL DE ICONOS

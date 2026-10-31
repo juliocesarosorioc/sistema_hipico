@@ -141,7 +141,15 @@ export function CarrerasDiaModule() {
 
   const carreras = useMemo(() => {
     const h = claveHipodromo(hipodromo);
-    return h ? todas.filter((c) => claveHipodromo(c.hipodromo) === h) : todas;
+    const filtradas = h ? todas.filter((c) => claveHipodromo(c.hipodromo) === h) : todas;
+    return [...filtradas]
+      .sort((a, b) => (Number(a.carrera) || 0) - (Number(b.carrera) || 0))
+      .map((c) => ({
+        ...c,
+        caballos: [...(c.caballos ?? [])].sort(
+          (x, y) => (parseInt(String(x.numero), 10) || 0) - (parseInt(String(y.numero), 10) || 0)
+        ),
+      }));
   }, [todas, hipodromo]);
 
   const conEjemplares = useMemo(() => carreras.filter((c) => (c.caballos?.length ?? 0) > 0), [carreras]);
@@ -302,7 +310,18 @@ export function CarrerasDiaModule() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("ejemplares:cambiar-tab", { detail: "gaceta" }));
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 px-3.5 py-1.5 text-xs font-black uppercase text-white shadow-md transition-all border border-purple-300/40"
+            title="Abrir Descarga de Gaceta IA, Buscar Carreras Faltantes y Enviar Órdenes Particulares al Agente IA"
+          >
+            <span>📰🤖</span>
+            <span>Descarga y Corrección Gaceta IA</span>
+          </button>
           <button
             type="button"
             onClick={() => setModalSincUsa(true)}

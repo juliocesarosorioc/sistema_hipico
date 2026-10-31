@@ -2372,10 +2372,21 @@ export function TabPlanCuentasPUC({ grupoId }: { grupoId?: string | null } = {})
   const [nuevoModulo, setNuevoModulo] = useState<ModuloOrigenCuenta>("TESORERIA");
   const [guardando, setGuardando] = useState(false);
 
+  const [versionAsientos, setVersionAsientos] = useState(0);
+
+  useEffect(() => {
+    const onAsiento = () => setVersionAsientos((v) => v + 1);
+    if (typeof window !== "undefined") {
+      window.addEventListener("contabilidad:asiento-registrado", onAsiento);
+      return () => window.removeEventListener("contabilidad:asiento-registrado", onAsiento);
+    }
+  }, []);
+
   // Saldos en vivo
   const saldos = useMemo(() => {
+    void versionAsientos;
     return calcularSaldosPlanCuentas(obtenerAsientosMemoria(grupoId), grupoId);
-  }, [grupoId]);
+  }, [grupoId, versionAsientos]);
 
   const cuentasFiltradas = useMemo(() => {
     const txt = filtroTexto.trim().toUpperCase();
@@ -2742,6 +2753,11 @@ export function TabLibroDiarioMayor({ grupoId }: { grupoId?: string | null } = {
 
   useEffect(() => {
     setAsientos(obtenerAsientosMemoria(grupoId));
+    const onAsiento = () => setAsientos([...obtenerAsientosMemoria(grupoId)]);
+    if (typeof window !== "undefined") {
+      window.addEventListener("contabilidad:asiento-registrado", onAsiento);
+      return () => window.removeEventListener("contabilidad:asiento-registrado", onAsiento);
+    }
   }, [grupoId]);
 
   const recargarAsientos = () => {
@@ -2971,6 +2987,11 @@ export function TabEstadoResultadosSemana({ grupoId }: { grupoId?: string | null
 
   useEffect(() => {
     setAsientos(obtenerAsientosMemoria(grupoId));
+    const onAsiento = () => setAsientos([...obtenerAsientosMemoria(grupoId)]);
+    if (typeof window !== "undefined") {
+      window.addEventListener("contabilidad:asiento-registrado", onAsiento);
+      return () => window.removeEventListener("contabilidad:asiento-registrado", onAsiento);
+    }
   }, [grupoId]);
 
   const r = useMemo(() => {

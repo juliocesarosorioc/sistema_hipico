@@ -9,6 +9,7 @@ import { ModalCreacionRapidaCliente } from "@/features/clientes/components/Modal
 import { ModalPortalCliente } from "@/features/clientes/components/ModalPortalCliente";
 import { EstadoCuentaAcordeon } from "@/features/clientes/components/EstadoCuentaAcordeon";
 import { ReporteDestinatariosDevolucion } from "@/features/clientes/components/ReporteDestinatariosDevolucion";
+import { aplicarParametrosOficialesDevolucion, PARAMETROS_PREDETERMINADOS_DEVOLUCION } from "@/features/clientes/lib/comisiones-socios";
 import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente";
 import { NotificacionesPortal } from "@/features/clientes/components/NotificacionesPortal";
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
@@ -171,14 +172,44 @@ export function ClientesModule() {
   const recargar = async (gid?: string) => {
     setCargando(true);
     const target = gid !== undefined ? gid : grupoConsultado;
-    const cs = await listarClientes(true, target || null);
+    let cs = await listarClientes(true, target || null);
+    // Enriquecer en memoria con los parámetros oficiales de devolución/socios si el cliente aún no los tiene cargados
+    cs = cs.map((c) => {
+      const claveNom = String(c.seudonimo || c.nombre || "").trim().toUpperCase();
+      const paramOficial = PARAMETROS_PREDETERMINADOS_DEVOLUCION.find(
+        (p) => p.nombre.toUpperCase() === claveNom || String(c.nombre || "").trim().toUpperCase() === p.nombre.toUpperCase()
+      );
+      if (!paramOficial) return c;
+      return {
+        ...c,
+        devolucion: c.devolucion != null && Number(c.devolucion) > 0 ? c.devolucion : paramOficial.devolucionPropiaPct,
+        incentivo_pct: c.incentivo_pct != null && Number(c.incentivo_pct) > 0 ? c.incentivo_pct : paramOficial.devolucionPropiaPct,
+        es_socio: c.es_socio ?? paramOficial.esSocio,
+        socio_asignado: c.socio_asignado || c.socio_id || paramOficial.socioAsignado || null,
+        socio_id: c.socio_id || c.socio_asignado || paramOficial.socioAsignado || null,
+        socio_comision_pct: c.socio_comision_pct ?? c.comision_socio_pct ?? paramOficial.comisionSocioPct ?? null,
+        comision_socio_pct: c.comision_socio_pct ?? c.socio_comision_pct ?? paramOficial.comisionSocioPct ?? null,
+      };
+    });
     setClientes(cs);
     setErrorCarga(errorClientes());
     setCargando(false);
   };
 
   useEffect(() => {
-    void recargar(grupoConsultado);
+    void (async () => {
+      try {
+        const keySync = `club_sync_dev_oficial_${grupoConsultado || "all"}`;
+        if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(keySync)) {
+          sessionStorage.setItem(keySync, "1");
+          await aplicarParametrosOficialesDevolucion(grupoConsultado || undefined);
+          limpiarCacheClientes();
+        }
+      } catch {
+        /* ignore */
+      }
+      await recargar(grupoConsultado);
+    })();
 
     const handleActualizar = () => {
       limpiarCacheClientes();

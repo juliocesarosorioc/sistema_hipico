@@ -37,6 +37,7 @@ import {
 import { TabHonorariosEquipo } from "@/features/contabilidad/components/TabHonorariosEquipo";
 import { TabCopilotoContableIA } from "@/features/contabilidad/components/TabCopilotoContableIA";
 import { TabManualContableNIIF } from "@/features/contabilidad/components/TabManualContableNIIF";
+import { sincronizarYAuditarContabilidadCompleta } from "@/features/contabilidad/lib/motor-backfill-retroactivo";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import {
   listarAsientosNIIF,
@@ -194,10 +195,14 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
   useEffect(() => {
     void (async () => {
       await cargar();
+      await sincronizarYAuditarContabilidadCompleta({
+        grupoId: grupoSeleccionado || grupoActivo || null,
+        silencioso: true,
+      });
       setBalance(await obtenerBalanceComprobacionNIIF({}));
       setAsientos(await listarAsientosNIIF(50));
     })();
-  }, [cargar, grupoActivo]);
+  }, [cargar, grupoActivo, grupoSeleccionado]);
 
   // Sincronización en tiempo real de saldos de clientes
   useEffect(() => {
@@ -325,12 +330,16 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
             size="sm"
             onClick={() =>
               void (async () => {
+                await sincronizarYAuditarContabilidadCompleta({
+                  grupoId: grupoSeleccionado || grupoActivo || null,
+                  silencioso: false,
+                });
                 await cargar();
                 await recargarBalance();
               })()
             }
           >
-            <span>🔄</span> Actualizar
+            <span>⚖️🔄</span> Sincronizar Contabilidad NIIF
           </Button>
         </div>
       </div>

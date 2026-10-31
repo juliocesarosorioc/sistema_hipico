@@ -24,6 +24,13 @@ export function EjemplaresModule() {
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
     if (ES_TAB(t)) setTab(t);
+
+    const onCambiarTab = (ev: Event) => {
+      const nuevoTab = (ev as CustomEvent<TabId>).detail;
+      if (ES_TAB(nuevoTab)) setTab(nuevoTab);
+    };
+    window.addEventListener("ejemplares:cambiar-tab", onCambiarTab);
+    return () => window.removeEventListener("ejemplares:cambiar-tab", onCambiarTab);
   }, []);
 
   return (

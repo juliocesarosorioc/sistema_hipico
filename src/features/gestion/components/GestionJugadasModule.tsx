@@ -1,5 +1,5 @@
-import { ModalEventoLibre } from "@/features/eventos-libres/components/ModalEventoLibre";
 "use client";
+import { ModalEventoLibre } from "@/features/eventos-libres/components/ModalEventoLibre";
 import { DateInput } from "@/shared/components/ui/DateInput";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -3486,8 +3486,18 @@ const hipodromosDelDia = useMemo(() => {
               title="🤖 Agente de Pizarra Oficial (Cambio de Pizarra · Liquidación · Variación · Saldos)"
               className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-2.5 sm:px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs transition-all hover:bg-indigo-50 hover:border-indigo-300 disabled:opacity-40 shrink-0 whitespace-nowrap"
             >
-              <span className="text-sm">🤖</span>
+              <span className="text-sm">🔄</span>
               <span>Cambio de Pizarra</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalEventoEspecial(true)}
+              disabled={bloqueoLiquidacionActivo}
+              title="🎯 Evento Libre / Sportsbook P2P (MLB, NBA, NFL, Fútbol, Boxeo/UFC, Logros 10/6, 10A7, etc.)"
+              className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl border border-purple-300 bg-purple-700 px-2.5 sm:px-3 py-1.5 text-xs font-black text-white shadow-2xs transition-all hover:bg-purple-600 disabled:opacity-40 shrink-0 whitespace-nowrap"
+            >
+              <span className="text-sm">🎯</span>
+              <span>Evento Libre / P2P</span>
             </button>
           </div>
         }
@@ -5154,12 +5164,15 @@ const hipodromosDelDia = useMemo(() => {
         </div>
       </div>
 
-      {/* Modal 🎯 Apuesta Especial / Evento Libre */}
+      {/* Modal 🎯 Apuesta Especial / Evento Libre P2P & Sportsbook */}
       {modalEventoEspecial && (
-        <ModalApuestaEventoEspecial
-          abierto={modalEventoEspecial}
-          onCerrar={() => setModalEventoEspecial(false)}
+        <ModalEventoLibre
           clientes={clientes}
+          onClose={() => {
+            setModalEventoEspecial(false);
+            void recargarClientes();
+          }}
+          comisionGrupoDefault={comisionNum}
         />
       )}
 

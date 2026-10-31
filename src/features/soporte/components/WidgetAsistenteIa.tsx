@@ -26,6 +26,7 @@ import {
 } from "../lib/ticketsStorage";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { CategoriaTicket, PrioridadTicket, TicketIncidencia } from "../types/soporte";
+import { TabSalaJugadasIa } from "./TabSalaJugadasIa";
 
 interface MensajeChat {
   id: string;
@@ -48,7 +49,7 @@ export function WidgetAsistenteIa() {
   const modoOperador = useAuthStore((s) => s.modoOperador);
 
   const [abierto, setAbierto] = useState(false);
-  const [pestana, setPestana] = useState<"chat" | "acciones" | "mis_tickets">("chat");
+  const [pestana, setPestana] = useState<"chat" | "sala_jugadas" | "acciones" | "mis_tickets">("chat");
   const [bloqueosPortal, setBloqueosPortal] = useState<Record<ModalidadPortalJugada, boolean> | null>(null);
   const [guardandoBloqueoIa, setGuardandoBloqueoIa] = useState(false);
 
@@ -481,6 +482,16 @@ export function WidgetAsistenteIa() {
               💬 Agente IA
             </button>
             <button
+              onClick={() => setPestana("sala_jugadas")}
+              className={`flex-1 py-2 text-center transition border-b-2 ${
+                pestana === "sala_jugadas"
+                  ? "border-teal-400 text-teal-300 bg-teal-950/30"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              🏇 Sala IA
+            </button>
+            <button
               onClick={() => setPestana("acciones")}
               className={`flex-1 py-2 text-center transition border-b-2 ${
                 pestana === "acciones"
@@ -488,7 +499,7 @@ export function WidgetAsistenteIa() {
                   : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
-              ⚡ Acciones Super Club
+              ⚡ Acciones
             </button>
             <button
               onClick={() => setPestana("mis_tickets")}
@@ -501,6 +512,13 @@ export function WidgetAsistenteIa() {
               🎫 Tickets ({misTickets.length})
             </button>
           </div>
+
+          {/* CONTENIDO PESTAÑA SALA DE JUGADAS IA (ESTILO WHATSAPP) */}
+          {pestana === "sala_jugadas" && (
+            <div className="flex-1 overflow-hidden flex flex-col">
+              <TabSalaJugadasIa />
+            </div>
+          )}
 
           {/* CONTENIDO PESTAÑA ACCIONES DE LA PLATAFORMA */}
           {pestana === "acciones" && (

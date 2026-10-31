@@ -21,6 +21,7 @@ import {
 } from "@/features/gaceta/lib/validador";
 import { guardarHistorialGaceta, registrarEjemplares, registrarGacetaEHistorial } from "@/features/gaceta/lib/padron";
 import { sincronizarCarrerasAlCentral, type ResultadoCargaCarrera } from "@/features/carreras/lib/sincronizar";
+import { listarCarrerasCentrales } from "@/features/carreras/lib/central";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
@@ -554,25 +555,46 @@ export function GacetaIA() {
     }
   }, []);
 
-  // Recupera las carreras pendientes del registro (sin re-transformar).
+  // Recupera las carreras pendientes del registro (sin re-transformar) o desde la matriz central de la jornada.
   useEffect(() => {
-    const guardadas = leerRegistro();
-    if (!guardadas || !guardadas.length) return;
-
     const diaActual = fechaJornadaRef.current || hoyLocal();
-    const guardadasHoy = guardadas.filter((c) => {
+    const guardadas = leerRegistro();
+    const guardadasHoy = (guardadas || []).filter((c) => {
       const f = c.fecha ? (normalizarFechaIso(c.fecha) || "").slice(0, 10) : "";
       return f === diaActual;
     });
 
     if (!guardadasHoy.length) {
       limpiarTodoRegistro();
-      setCarreras([]);
-      setEstado("");
+      // Fallback: cargar las carreras centrales del día para que el operador pueda ordenarlas, buscarlas o corregirlas con IA
+      void listarCarrerasCentrales(diaActual, "").then((r) => {
+        if (r.ok && r.datos && r.datos.length > 0) {
+          const convertidas: CarreraRegistro[] = r.datos.map((c) => ({
+            carrera: c.carrera,
+            hipodromo: c.hipodromo,
+            fecha: c.fecha || diaActual,
+            distancia: c.distancia || 0,
+            superficie: c.superficie || "ARENA",
+            premio: c.premio || 100,
+            ejemplares: (c.caballos || []).map((cb) => ({
+              numero: cb.numero,
+              nombre: cb.nombre || `EJEMPLAR ${cb.numero}`,
+              valor: 0,
+              pts: 0,
+            })),
+            seleccionada: true,
+          }));
+          setCarreras(ordenarCarrerasYEjemplares(convertidas));
+          setEstado(`${convertidas.length} carrera(s) cargada(s) desde la jornada activa (${diaActual}).`);
+        } else {
+          setCarreras([]);
+          setEstado("");
+        }
+      });
       return;
     }
 
-    if (guardadasHoy.length !== guardadas.length) {
+    if (guardadas && guardadasHoy.length !== guardadas.length) {
       persistirRegistro(guardadasHoy);
     }
     // Un registro guardado con versiones viejas puede traer repetidas: se
@@ -582,11 +604,8 @@ export function GacetaIA() {
     if (!arr.length) return;
     const pendientes = arr.filter((c) => !c.enviada);
     const enviadas = arr.length - pendientes.length;
-    if (!pendientes.length) {
-      setEstado(`${enviadas} carrera(s) ya se enviaron al Ensamblaje. Cargue un nuevo programa o use "Limpiar registro" para empezar de nuevo.`);
-      return;
-    }
-    const lista = pendientes.map((c) => {
+    const baseRecuperar = pendientes.length > 0 ? pendientes : arr;
+    const lista = baseRecuperar.map((c) => {
       const copia: CarreraRegistro = Object.assign({}, c);
       delete copia.enviada;
       delete copia.aplicada;
@@ -601,12 +620,14 @@ export function GacetaIA() {
         setResumen({ nuevos: tot.nuevos, vinculados: tot.vinculados });
         setCarreras((prev) => prev.map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) })));
         setEstado(
-          `${lista.length} carrera(s) guardada(s) pendientes de ensamblar${enviadas ? ` · ${enviadas} ya enviada(s)` : ""}. Puede enviarlas al Ensamblaje sin volver a transformar.`
+          pendientes.length > 0
+            ? `${lista.length} carrera(s) guardada(s) pendientes de ensamblar${enviadas ? ` · ${enviadas} ya enviada(s)` : ""}. Puede enviarlas al Ensamblaje sin volver a transformar.`
+            : `${lista.length} carrera(s) de la jornada activa cargada(s) y ordenada(s) (1..N). Puede verificar, agregar carreras faltantes o enviar órdenes particulares al Agente IA.`
         );
       })
       .catch(() => {
         setCarreras((prev) => prev.map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) })));
-        setEstado(`${lista.length} carrera(s) guardada(s) pendientes de ensamblar. Puede enviarlas al Ensamblaje sin volver a transformar.`);
+        setEstado(`${lista.length} carrera(s) de la jornada activa cargada(s) y ordenada(s).`);
       });
     // Registro CENTRAL: las carreras recuperadas del registro local pueden venir
     // de una sesión previa a la centralización; se publican igual en la matriz.
@@ -1328,10 +1349,6 @@ export function GacetaIA() {
       toast("Introduce primero tu clave de Gemini.", "warning");
       return;
     }
-    if (carreras.length === 0) {
-      toast("No hay carreras cargadas actualmente para corregir.", "warning");
-      return;
-    }
 
     let fuenteTexto = textoDocumento;
     if (!fuenteTexto && textosDocumentos.length > 0) {
@@ -1912,78 +1929,75 @@ export function GacetaIA() {
         </section>
       )}
 
-      {/* MEDIDA ADICIONAL: DETECCIÓN Y BÚSQUEDA DE CARRERAS FALTANTES */}
-      {carreras.length > 0 && (
-        <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-xs">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-800 text-base font-black">
-                🔍
-              </span>
-              <div>
-                <h3 className="text-xs font-black uppercase tracking-wider text-amber-950">
-                  Búsqueda de Carreras Faltantes con IA
-                </h3>
-                <p className="text-[11px] text-amber-800">
-                  Si falta alguna carrera en la secuencia o no fue detectada, instruye a la IA para que la busque y la integre ordenada en la gaceta.
-                </p>
-              </div>
-            </div>
-
-            {/* Buscador puntual de cualquier carrera */}
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                min="1"
-                max="24"
-                placeholder="N° Carrera"
-                value={carreraFaltanteInput}
-                onChange={(e) => setCarreraFaltanteInput(e.target.value)}
-                className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <Button
-                variant="default"
-                size="sm"
-                disabled={buscandoFaltante || !carreraFaltanteInput.trim()}
-                onClick={() => void handleBuscarCarreraFaltante()}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-black text-[11px] shadow-xs"
-              >
-                {buscandoFaltante ? "Buscando..." : "➕ Buscar y Agregar Carrera con IA"}
-              </Button>
+      {/* MEDIDA ADICIONAL: DETECCIÓN Y BÚSQUEDA DE CARRERAS FALTANTES (SIEMPRE VISIBLE) */}
+      <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-800 text-base font-black">
+              🔍
+            </span>
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wider text-amber-950">
+                Búsqueda de Carreras Faltantes con IA
+              </h3>
+              <p className="text-[11px] text-amber-800">
+                Si falta alguna carrera en la secuencia o no fue detectada, instruye a la IA para que la busque y la integre ordenada en la gaceta.
+              </p>
             </div>
           </div>
 
-          {/* Detección de huecos automáticos */}
-          {listaFaltantes.length > 0 && (
-            <div className="mt-3 rounded-xl border border-amber-300 bg-white p-3 shadow-xs">
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">
-                🚨 Huecos detectados en la numeración:
-              </span>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {listaFaltantes.flatMap((f) =>
-                  f.faltan.map((num) => (
-                    <button
-                      key={`${f.hipodromo}-${num}`}
-                      type="button"
-                      disabled={buscandoFaltante}
-                      onClick={() => void handleBuscarCarreraFaltante(num, f.hipodromo)}
-                      className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 px-3 py-1 text-xs font-black text-amber-900 transition-colors disabled:opacity-50"
-                      title={`Buscar minuciosamente la Carrera ${num} de ${f.hipodromo} con IA`}
-                    >
-                      <span>🔍 Buscar Carrera #{num}</span>
-                      <span className="text-[10px] text-amber-700">({f.hipodromo})</span>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-      )}
+          {/* Buscador puntual de cualquier carrera */}
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              min="1"
+              max="24"
+              placeholder="N° Carrera"
+              value={carreraFaltanteInput}
+              onChange={(e) => setCarreraFaltanteInput(e.target.value)}
+              className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            <Button
+              variant="default"
+              size="sm"
+              disabled={buscandoFaltante || !carreraFaltanteInput.trim()}
+              onClick={() => void handleBuscarCarreraFaltante()}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-black text-[11px] shadow-xs"
+            >
+              {buscandoFaltante ? "Buscando..." : "➕ Buscar y Agregar Carrera con IA"}
+            </Button>
+          </div>
+        </div>
 
-      {/* SECCIÓN DE ÓRDENES PARTICULARES PARA EL AGENTE IA */}
-      {carreras.length > 0 && (
-        <section className="rounded-2xl border border-purple-200 bg-linear-to-r from-purple-50/80 via-white to-indigo-50/60 p-4 shadow-xs">
+        {/* Detección de huecos automáticos */}
+        {listaFaltantes.length > 0 && (
+          <div className="mt-3 rounded-xl border border-amber-300 bg-white p-3 shadow-xs">
+            <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">
+              🚨 Huecos detectados en la numeración:
+            </span>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {listaFaltantes.flatMap((f) =>
+                f.faltan.map((num) => (
+                  <button
+                    key={`${f.hipodromo}-${num}`}
+                    type="button"
+                    disabled={buscandoFaltante}
+                    onClick={() => void handleBuscarCarreraFaltante(num, f.hipodromo)}
+                    className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 px-3 py-1 text-xs font-black text-amber-900 transition-colors disabled:opacity-50"
+                    title={`Buscar minuciosamente la Carrera ${num} de ${f.hipodromo} con IA`}
+                  >
+                    <span>🔍 Buscar Carrera #{num}</span>
+                    <span className="text-[10px] text-amber-700">({f.hipodromo})</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* SECCIÓN DE ÓRDENES PARTICULARES PARA EL AGENTE IA (SIEMPRE VISIBLE) */}
+      <section className="rounded-2xl border border-purple-200 bg-linear-to-r from-purple-50/80 via-white to-indigo-50/60 p-4 shadow-xs">
           <div className="flex items-center gap-2.5 border-b border-purple-100 pb-3">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-700 text-base font-black">
               🎯
@@ -2067,7 +2081,6 @@ export function GacetaIA() {
             </div>
           </div>
         </section>
-      )}
 
       {carreras.length > 0 && (
         <div className="rounded-2xl border border-line bg-surface p-4">

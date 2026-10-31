@@ -361,6 +361,13 @@ export async function generarAsientoPartidaDoble(
   };
 
   ASIENTOS_MEMORIA.unshift(registrado);
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(new CustomEvent("contabilidad:asiento-registrado", { detail: registrado }));
+    } catch {
+      /* ignore */
+    }
+  }
   return { ok: true, asiento: registrado };
 }
 

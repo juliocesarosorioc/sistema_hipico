@@ -19,6 +19,7 @@ import { exigirCapacidad, exigirPermiso, grupoActivoVigente, esPrincipalVigente,
 import { listarClientes } from "@/features/clientes/lib/clientes";
 import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
 import { aNumero, calcularComisionExacta, monedaExacta } from "@/shared/lib/utils";
+import { obtenerAsientosMemoria } from "@/features/contabilidad/lib/plan-cuentas";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -1119,7 +1120,21 @@ export async function registrarContraAsientoNIIF(
 
 /** Lista los asientos registrados (los más recientes primero). */
 export async function listarAsientosNIIF(limite = 50): Promise<AsientoNIIFResumen[]> {
-  if (!supabase) return [];
+  const deMemoria: AsientoNIIFResumen[] = obtenerAsientosMemoria().slice(0, limite).map((a) => ({
+    id: a.id,
+    clave: a.clave_idempotencia || a.referencia_id || `AS-${a.numero_asiento}`,
+    fecha: a.fecha_contable,
+    concepto: a.descripcion,
+    moneda_operacion: "USD",
+    moneda_presentacion: "USD",
+    tasa_cambio: 1,
+    total_debe: monedaExacta(a.total_debe),
+    total_haber: monedaExacta(a.total_haber),
+    es_contra_asiento: a.estado === "REVERSADO" || a.tipo_evento === "REVERSION_LIQUIDACION",
+    asiento_origen: a.referencia_id ?? null,
+  }));
+
+  if (!supabase) return deMemoria;
   const { data, error } = await supabase
     .from("asientos_niif")
     .select(
@@ -1128,8 +1143,8 @@ export async function listarAsientosNIIF(limite = 50): Promise<AsientoNIIFResume
     .order("fecha", { ascending: false })
     .order("creado_at", { ascending: false })
     .limit(limite);
-  if (error) return [];
-  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+  if (error || !data || data.length === 0) return deMemoria;
+  const deBd = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
     id: String(r.id ?? ""),
     clave: String(r.clave ?? ""),
     fecha: r.fecha != null ? String(r.fecha) : null,
@@ -1142,6 +1157,8 @@ export async function listarAsientosNIIF(limite = 50): Promise<AsientoNIIFResume
     es_contra_asiento: Boolean(r.es_contra_asiento),
     asiento_origen: r.asiento_origen != null ? String(r.asiento_origen) : null,
   }));
+  const clavesBd = new Set(deBd.map((x) => x.clave));
+  return [...deBd, ...deMemoria.filter((m) => !clavesBd.has(m.clave))].slice(0, limite);
 }
 
 /**
@@ -1150,21 +1167,55 @@ export async function listarAsientosNIIF(limite = 50): Promise<AsientoNIIFResume
  * Sin rango de fechas devuelve lo que trae la vista
  * `vw_balance_comprobacion_niif`: una fila por cuenta con el total del debe,
  * el total del haber y el saldo (debe − haber) en la MONEDA DE PRESENTACIÓN.
- *
- * CON RANGO DE FECHAS el balance acumulado no sirve (mezclaría saldos de
- * antes y después del corte), así que se recalcula sobre el DETALLE del
- * rango: se leen las cabeceras del período, después sus líneas, y se agregan
- * por cuenta en CENTAVOS ENTEROS. El resultado es el mismo balance, pero del
- * período pedido.
+ * Si la vista no tiene filas, consolida los asientos en memoria (`obtenerAsientosMemoria`).
  */
 export async function obtenerBalanceComprobacionNIIF(
   filtros: FiltroBalanceNIIF = {}
 ): Promise<FilaBalanceNIIF[]> {
-  if (!supabase) return [];
+  const consolidarDesdeMemoria = (): FilaBalanceNIIF[] => {
+    const mapa = new Map<
+      string,
+      { cuenta: string; nombre_cuenta: string; moneda: string; debe: number; haber: number; mov: number }
+    >();
+    const asientos = obtenerAsientosMemoria();
+    for (const a of asientos) {
+      if (filtros.desde && a.fecha_contable < filtros.desde) continue;
+      if (filtros.hasta && a.fecha_contable > filtros.hasta) continue;
+      for (const l of a.lineas) {
+        const cuenta = String(l.cuenta_codigo || "").trim();
+        if (!cuenta) continue;
+        const clave = `${cuenta}|USD`;
+        const fila = mapa.get(clave) ?? {
+          cuenta,
+          nombre_cuenta: String(l.cuenta_nombre || ""),
+          moneda: "USD",
+          debe: 0,
+          haber: 0,
+          mov: 0,
+        };
+        fila.debe += Math.round(monedaExacta(l.debe) * 100);
+        fila.haber += Math.round(monedaExacta(l.haber) * 100);
+        fila.mov += 1;
+        mapa.set(clave, fila);
+      }
+    }
+    const filasMem = Array.from(mapa.values()).map((f) => ({
+      cuenta: f.cuenta,
+      nombre_cuenta: f.nombre_cuenta,
+      moneda_presentacion: f.moneda,
+      total_debe: f.debe / 100,
+      total_haber: f.haber / 100,
+      saldo: (f.debe - f.haber) / 100,
+      movimientos: f.mov,
+    }));
+    return filtrarBalanceNIIF(filasMem, filtros);
+  };
+
+  if (!supabase) return consolidarDesdeMemoria();
 
   if (!filtros.desde && !filtros.hasta) {
     const { data, error } = await supabase.from("vw_balance_comprobacion_niif").select("*");
-    if (error) return [];
+    if (error || !data || data.length === 0) return consolidarDesdeMemoria();
     const filas = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
       cuenta: String(r.cuenta ?? ""),
       nombre_cuenta: String(r.nombre_cuenta ?? ""),

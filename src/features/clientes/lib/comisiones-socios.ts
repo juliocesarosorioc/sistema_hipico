@@ -397,30 +397,45 @@ export async function aplicarParametrosOficialesDevolucion(grupoId?: string): Pr
 
   try {
     for (const r of PARAMETROS_PREDETERMINADOS_DEVOLUCION) {
-      const updateData: Record<string, any> = {
+      // 1. Actualizar columnas núcleo seguras que siempre existen en public.clientes
+      const coreData: Record<string, any> = {
         devolucion: r.devolucionPropiaPct,
       };
       if (r.esSocio) {
-        updateData.es_socio = true;
+        coreData.es_socio = true;
       }
       if (r.socioAsignado) {
-        updateData.socio_asignado = r.socioAsignado;
-        updateData.comision_socio_pct = r.comisionSocioPct ?? 1.00;
-        updateData.fecha_inicio_comision_socio = r.fechaInicioComision || "2026-10-29";
+        coreData.socio_asignado = r.socioAsignado;
       }
 
-      let q = supabase
+      let qCore = supabase
         .from("clientes")
-        .update(updateData)
+        .update(coreData)
         .or(`nombre.ilike.${r.nombre},seudonimo.ilike.${r.nombre}`);
 
       if (grupoId) {
-        q = q.eq("grupo_id", grupoId);
+        qCore = qCore.eq("grupo_id", grupoId);
       }
 
-      const { data, error } = await q.select("id");
-      if (!error && data) {
+      const { data, error } = await qCore.select("id");
+      if (!error && data && data.length > 0) {
         count += data.length;
+        // 2. Best-effort para columnas extendidas (si sql/004 ya fue aplicado)
+        if (r.socioAsignado) {
+          try {
+            await supabase
+              .from("clientes")
+              .update({
+                socio_id: r.socioAsignado,
+                socio_comision_pct: r.comisionSocioPct ?? 1.00,
+                comision_socio_pct: r.comisionSocioPct ?? 1.00,
+                fecha_inicio_comision_socio: r.fechaInicioComision || "2026-10-29",
+              })
+              .in("id", data.map((d: any) => d.id));
+          } catch {
+            /* best effort si las columnas nuevas aún no están en el esquema remoto */
+          }
+        }
       }
     }
     return { ok: true, actualizados: count };

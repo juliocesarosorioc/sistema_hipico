@@ -9,6 +9,7 @@ import {
   PLAN_CUENTAS_HIPICO,
   type LineaAsientoContable,
 } from "@/features/contabilidad/lib/plan-cuentas";
+import { procesarIntencionDataAnalystCpa } from "@/features/ia-copiloto/lib/analista-cpa-auditor";
 
 interface Props {
   grupoId?: string | null;
@@ -35,6 +36,24 @@ export function TabCopilotoContableIA({ grupoId, onAsientoRegistrado }: Props) {
   const [modalidadPago, setModalidadPago] = useState<"EFECTIVO" | "BANCO_PAGO_MOVIL" | "ZELLE_USDT" | "POR_PAGAR">("BANCO_PAGO_MOVIL");
 
   const [procesando, setProcesando] = useState(false);
+  const [reporteCpa, setReporteCpa] = useState<string>("");
+  const [auditandoCpa, setAuditandoCpa] = useState(false);
+
+  const ejecutarAnalisisCpa = async (consulta: string) => {
+    setAuditandoCpa(true);
+    try {
+      const res = await procesarIntencionDataAnalystCpa(consulta, {
+        grupoId: grupoId || null,
+        usuario: "AUDITOR_CPA",
+      });
+      if (res.esAnalitico && res.texto) {
+        setReporteCpa(res.texto);
+        onAsientoRegistrado?.();
+      }
+    } finally {
+      setAuditandoCpa(false);
+    }
+  };
 
   // Interpretación asistida por IA de texto libre
   const interpretarPrompt = () => {
@@ -254,6 +273,55 @@ export function TabCopilotoContableIA({ grupoId, onAsientoRegistrado }: Props) {
             ✨ Interpretar con IA
           </Button>
         </div>
+
+        {/* Acciones rápidas Senior Data Analyst & CPA Auditor */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/15 pt-3">
+          <span className="text-[11px] font-black uppercase tracking-wider text-amber-300">
+            📊 Perfil Data Analyst & Auditor CPA:
+          </span>
+          <button
+            type="button"
+            disabled={auditandoCpa}
+            onClick={() => void ejecutarAnalisisCpa("Verificar cuadre contable y auditoría NIIF partida doble")}
+            className="rounded-lg border border-emerald-400/50 bg-emerald-600/30 px-2.5 py-1 text-[11px] font-bold text-emerald-100 hover:bg-emerald-600/50 transition disabled:opacity-50"
+          >
+            {auditandoCpa ? "⏳ Auditando..." : "⚖️ Auditar Cuadre Contable NIIF"}
+          </button>
+          <button
+            type="button"
+            disabled={auditandoCpa}
+            onClick={() => void ejecutarAnalisisCpa("Analizar rentabilidad, ganancia de la casa e incentivos devueltos")}
+            className="rounded-lg border border-sky-400/50 bg-sky-600/30 px-2.5 py-1 text-[11px] font-bold text-sky-100 hover:bg-sky-600/50 transition disabled:opacity-50"
+          >
+            📈 Rentabilidad e Incentivos
+          </button>
+          <button
+            type="button"
+            disabled={auditandoCpa}
+            onClick={() => void ejecutarAnalisisCpa("Auditar rendimiento por socio y comisiones de socios")}
+            className="rounded-lg border border-amber-400/50 bg-amber-600/30 px-2.5 py-1 text-[11px] font-bold text-amber-100 hover:bg-amber-600/50 transition disabled:opacity-50"
+          >
+            👔 Auditar Comisiones a Socios
+          </button>
+        </div>
+
+        {reporteCpa && (
+          <div className="mt-3 rounded-xl border border-emerald-400/40 bg-slate-950/90 p-3.5 text-xs text-emerald-100 shadow-inner">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="font-black uppercase text-emerald-400 text-[11px]">
+                📋 Dictamen del Auditor CPA & Data Analyst
+              </span>
+              <button
+                type="button"
+                onClick={() => setReporteCpa("")}
+                className="text-[11px] text-slate-400 hover:text-white"
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+            <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed">{reporteCpa}</pre>
+          </div>
+        )}
       </div>
 
       {/* Preguntas Orientadoras Guiadas */}

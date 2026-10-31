@@ -293,6 +293,48 @@ const num = (v: number | string | null | undefined): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const CLAVE_OVERLAY_CLIENTES_EXT = "club_clientes_config_ext_v1";
+const CAMPOS_EXTENDIDOS_CLIENTE = [
+  "comision_particular_pct",
+  "incentivo_pct",
+  "incentivo_base",
+  "socio_id",
+  "socio_comision_pct",
+  "socio_base",
+  "comision_socio_pct",
+  "fecha_inicio_comision_socio",
+  "socio_asignado",
+  "devolucion",
+  "es_socio",
+] as const;
+
+function leerOverlayClientesExt(): Record<string, Record<string, unknown>> {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(CLAVE_OVERLAY_CLIENTES_EXT);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function guardarOverlayClienteExt(id: string | number, patch: Record<string, unknown>): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    const actual = leerOverlayClientesExt();
+    const key = String(id);
+    const prev = actual[key] || {};
+    const nuevo: Record<string, unknown> = { ...prev };
+    for (const k of CAMPOS_EXTENDIDOS_CLIENTE) {
+      if (k in patch) nuevo[k] = patch[k];
+    }
+    actual[key] = nuevo;
+    localStorage.setItem(CLAVE_OVERLAY_CLIENTES_EXT, JSON.stringify(actual));
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Filtra el payload a las columnas que existen realmente en la fila (evita 400). */
 export function soloColumnasExistentes(payload: Record<string, unknown>, fila?: ClienteRow | null): Record<string, unknown> {
   if (!fila) return payload;
@@ -442,11 +484,14 @@ export async function listarClientes(force = false, grupoIdOverride?: string | n
         if (idsClientesPuente.has(String(c.id))) return true;
         return false;
       });
+      const overlayExt = leerOverlayClientesExt();
       lista = (await sincronizarSaldosRealesClientes(
         filtradosPorGrupo.map((c) => {
           const creds = credencialesPortalPorDefecto(c);
+          const ext = overlayExt[String(c.id)] || {};
           return {
             ...c,
+            ...ext,
             saldo_actual: c.saldo_actual != null ? redondearCentavos(c.saldo_actual) : 0,
             aval: c.aval != null ? redondearCentavos(c.aval) : 0,
             portal_habilitado: creds.portal_habilitado,
@@ -602,9 +647,11 @@ export async function actualizarCliente(
         error: "No se pueden guardar reglas de cruce: aplique sql/permite_cruces_jerarquia.sql en Supabase y vuelva a cargar el cliente.",
       };
     }
+    guardarOverlayClienteExt(id, patch);
     const seguro = soloColumnasExistentes(sinCamposDelPrincipal(patch), fila);
     if (seguro && Object.keys(seguro).length === 0) {
-      return { ok: false, error: "No hay campos a guardar (revisa los permisos o el cliente editado)." };
+      limpiarCachéClientesTodo();
+      return { ok: true };
     }
     if ("nombre" in seguro && seguro.nombre) {
       const nombreNorm = String(seguro.nombre).trim().toUpperCase();

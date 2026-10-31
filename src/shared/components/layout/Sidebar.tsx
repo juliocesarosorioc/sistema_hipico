@@ -137,6 +137,7 @@ export const CATEGORIAS: Categoria[] = [
     emoji: "⚙️",
     items: [
       { href: "/portal", emoji: "🌐", txt: "Portal Clientes", visibleSiempre: true },
+      { href: "/ejemplares?tab=gaceta", emoji: "📰", txt: "Descarga Gaceta IA" },
       { href: "/carreras", emoji: "🏇", txt: "Registrar Carreras IA" },
       {
         href: "/inteligencia-hipica/proyecciones",

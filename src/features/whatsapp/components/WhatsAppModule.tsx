@@ -5,6 +5,7 @@ import { Button } from "@/shared/components/ui/Button";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { GestionPlantillasModal } from "@/features/whatsapp/components/GestionPlantillasModal";
+import { TabSalaJugadasIa } from "@/features/soporte/components/TabSalaJugadasIa";
 import {
   CLUB_NOMBRE,
   CODIGOS_PAIS,
@@ -437,6 +438,19 @@ export function WhatsAppModule() {
           {fechaHeader}
         </span>
       </header>
+
+      {/* ============ SALA DE JUGADAS IA ESTILO WHATSAPP ============ */}
+      <section aria-label="Sala de Jugadas en Agente IA estilo WhatsApp" className="overflow-hidden rounded-2xl border border-emerald-500/40 bg-slate-950 text-white shadow-lg">
+        <div className="flex items-center justify-between bg-emerald-900 px-4 py-3 text-xs font-black uppercase tracking-wider text-white">
+          <span>🏇🤖 Sala de Jugadas en Vivo (Agente IA Estilo WhatsApp · Puestos P2P)</span>
+          <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-bold text-emerald-200 border border-emerald-400/40">
+            Respuesta citada · Validación y bloqueo de saldo · &quot;Aquí Jugaron&quot;
+          </span>
+        </div>
+        <div className="h-[540px] flex flex-col">
+          <TabSalaJugadasIa />
+        </div>
+      </section>
 
       {/* ============ CONEXIÓN AL GRUPO (WhatsApp Cloud API) ============ */}
       <section aria-label="Conexión al grupo de WhatsApp" className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
