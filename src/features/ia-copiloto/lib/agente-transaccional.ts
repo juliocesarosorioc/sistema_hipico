@@ -1,3 +1,4 @@
+import { procesarIntencionDataAnalystCpa } from "@/features/ia-copiloto/lib/analista-cpa-auditor";
 /**
  * ============================================================================
  * AGENTE IA COPILOTO TRANSACCIONAL (`agente-transaccional.ts`)

@@ -173,6 +173,10 @@
     "../src/features/contabilidad/lib/contabilidad-automatica.ts",
     "./contabilidad-automatizada-grupos-honorarios.test.ts",
     "../src/features/liquidacion/lib/liquidacion-incentivos-socios.ts",
-    "./comision-particular-incentivo-socio.test.ts"
+    "./comision-particular-incentivo-socio.test.ts",
+    "../src/features/eventos-libres/lib/eventos-libres.ts",
+    "../src/features/contabilidad/lib/motor-backfill-retroactivo.ts",
+    "../src/features/ia-copiloto/lib/analista-cpa-auditor.ts",
+    "./contabilidad-backfill-evento-libre-ui.test.ts"
   ]
 }

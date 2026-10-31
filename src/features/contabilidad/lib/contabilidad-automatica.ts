@@ -1,3 +1,12 @@
+import {
+  sincronizarYAuditarContabilidadCompleta,
+  type ResumenAuditoriaContableCompleta,
+} from "@/features/contabilidad/lib/motor-backfill-retroactivo";
+
+export {
+  sincronizarYAuditarContabilidadCompleta,
+  type ResumenAuditoriaContableCompleta,
+};
 /**
  * ============================================================================
  * MOTOR DE CONTABILIDAD AUTOMÁTICA EN SEGUNDO PLANO Y COLA ASÍNCRONA

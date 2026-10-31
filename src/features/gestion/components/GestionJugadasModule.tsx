@@ -1,3 +1,4 @@
+import { ModalEventoLibre } from "@/features/eventos-libres/components/ModalEventoLibre";
 "use client";
 import { DateInput } from "@/shared/components/ui/DateInput";
 
@@ -243,6 +244,7 @@ export function GestionJugadasModule() {
   const [recalculando, setRecalculando] = useState(false);
   const [modalSaldoRapido, setModalSaldoRapido] = useState(false);
   const [modalCreacionRapidaCliente, setModalCreacionRapidaCliente] = useState(false);
+  const [modalEventoLibre, setModalEventoLibre] = useState(false);
 
   const { carreras: centralCarrerasDiaAllBase, carrerasDe, recargar: recargarRegistroCentral } =
     useRegistroCentralOpts(fecha);
@@ -2479,6 +2481,10 @@ const hipodromosDelDia = useMemo(() => {
     const piz = pizarraConfirmada ?? ultimaPizarra;
     if (!piz) {
       setModalFinalizar(false);
+        // Limpiar hipódromo y mesa de trabajo para dejar en blanco y limpio tras liquidar
+        setHipodromo("");
+        setCarreraConfirmada(false);
+        setFilas([filaVacia()]);
       setReporteAlCerrarFinalizar(false);
       void abrirResultados();
       const motivo = "Primero cargá los resultados (Ctrl+Y o Ctrl+R) para liquidar.";
@@ -3481,7 +3487,7 @@ const hipodromosDelDia = useMemo(() => {
               className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-2.5 sm:px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs transition-all hover:bg-indigo-50 hover:border-indigo-300 disabled:opacity-40 shrink-0 whitespace-nowrap"
             >
               <span className="text-sm">🤖</span>
-              <span>Pizarra</span>
+              <span>Cambio de Pizarra</span>
             </button>
           </div>
         }

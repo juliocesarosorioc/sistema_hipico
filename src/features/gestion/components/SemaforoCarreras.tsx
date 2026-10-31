@@ -237,7 +237,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
           </span>
         )}
       </div>
-      <div className="flex items-center justify-between gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-0.5 w-full">
+      <div className="flex items-center justify-between gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-2 min-h-[44px] items-center overflow-y-visible w-full">
         <div className="flex items-center gap-1.5 shrink-0 flex-nowrap">
           {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
             const { estado, tieneVentas } = porCarrera(n);
