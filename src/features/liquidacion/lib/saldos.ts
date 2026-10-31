@@ -452,7 +452,15 @@ export async function aplicarLiquidacionSaldos(
       };
     }
 
-    return { ok: true, motivo: "Sin tickets pendientes para esta carrera.", aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [] };
+    return {
+      ok: false,
+      motivo: "No se puede liquidar la carrera porque no hay jugadas cargadas. No se liquidará hasta que cargue información de jugadas.",
+      aplicados: 0,
+      yaAplicado: false,
+      reembolsos: 0,
+      abonoTotal: 0,
+      errores: ["No se encontraron jugadas registradas para esta carrera."],
+    };
   }
 
   // Decide cada ticket con el motor universal (idempotente por estado) y aplica

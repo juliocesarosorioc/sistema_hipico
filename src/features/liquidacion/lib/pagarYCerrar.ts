@@ -162,6 +162,34 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     ? ({ ...pizarra, retirados: retiradosActuales } as PizarraCarrera)
     : pizarra;
 
+  // Verificación estricta: No liquidar si no hay jugadas cargadas
+  let totalTicketsCount = tickets.length;
+  if (totalTicketsCount === 0 && supabase) {
+    try {
+      const dia = String(fecha).slice(0, 10);
+      const { count } = await supabase
+        .from("tickets_apuestas")
+        .select("id", { count: "exact", head: true })
+        .or(filtroDiaJornada(dia))
+        .eq("hipodromo", hipodromo.trim().toUpperCase())
+        .eq("carrera", Number(carrera));
+      totalTicketsCount = count ?? 0;
+    } catch {
+      /* ignorar fallo de consulta secundaria */
+    }
+  }
+  if (totalTicketsCount === 0) {
+    return {
+      ok: false,
+      motivo: "No se puede liquidar la carrera porque no hay jugadas cargadas. No se liquidará hasta que cargue información de jugadas.",
+      procesados: [],
+      totalInvertido: 0,
+      totalClienteNeto: 0,
+      balanceBanca: 0,
+      gananciaCasa: 0,
+    };
+  }
+
   const procesados: ResLiquidarCarrera["procesados"] = [];
   const metadatos: Array<{ cliente1?: string; caballo: string; monto: number; tipo: string }> = [];
   let totalInvertido = 0;

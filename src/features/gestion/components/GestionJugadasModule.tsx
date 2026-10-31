@@ -581,99 +581,11 @@ const hipodromosDelDia = useMemo(() => {
    *      se abría precargada y el operador tenía que borrar la llegada ajena a
    *      mano antes de cargar la suya.
    */
-  const abrirResultados = useCallback(async () => {
-    if (!listoParaCargar) return;
-    // Con la Carga de Resultados ya abierta, no re-abrir: evita que un Ctrl+Y/R
-    // accidental mientras se tipea reinicie el formulario.
-    if (modalResultados) return;
-    if (ultimaPizarra) {
-      setModalFinalizar(true);
-      return;
-    }
-    // SOLO se muestran llegadas si la carrera YA está LIQUIDADA: en ese caso se
-    // precarga el resultado oficial para editarlo (y, si cambia algo, se pide el
-    // motivo y se recalcula). Una carrera que todavía no liquidó abre EN BLANCO:
-    // traer el resultado del central obligaba a borrar a mano una llegada que el
-    // operador quería cargar de nuevo.
-    if (carreraLiquidada) {
-      try {
-        const oficial = await leerResultadoOficial(hipodromo, carrera, fecha);
-        const p = pizarraDePosiciones(oficial?.puestos ?? []);
-        if (p) {
-          const posiciones = (oficial?.puestos ?? []).map((n) => String(n).trim());
-          // El central guarda los pools por caballo y la matriz W/P/S en un solo
-          // blob (`dividendos`). Se separan acá porque el formulario los edita en
-          // dos lugares distintos: si el `wps_` cayera en los pools, la firma de
-          // comparación lo vería como un cambio y pediría un motivo inexistente.
-          // La matriz conserva su prefijo `wps_` (así la espera `PizarraResultados`).
-          const porCaballo: Record<string, number> = {};
-          const matriz: Record<string, number> = {};
-          for (const [k, v] of Object.entries(oficial?.dividendos ?? {})) {
-            if (k.startsWith(PREFIJO_WPS)) matriz[k] = v;
-            else porCaballo[k] = v;
-          }
-          setPizarraCentral({
-            pizarra: p as PizarraResultados["pizarra"],
-            empates: [],
-            llenas: posiciones.length,
-            dividendos: Object.keys(porCaballo).length ? porCaballo : null,
-            matrizWps: Object.keys(matriz).length ? matriz : null,
-          });
-          setModalResultados(true);
-          return;
-        }
-      } catch {
-        /* sin resultado oficial legible: se abre en blanco */
-      }
-    }
-    // Carrera sin liquidar (o sin resultado oficial): EN BLANCO.
-    setPizarraCentral(null);
-    setModalResultados(true);
-  }, [listoParaCargar, modalResultados, ultimaPizarra, carreraLiquidada, hipodromo, carrera, fecha]);
-
   const [liquidandoCarrera, setLiquidandoCarrera] = useState(false);
   const [modoExclusivoReporte, setModoExclusivoReporte] = useState(false);
   const [adelantadasAbierto, setAdelantadasAbierto] = useState(false);
   const [modalAgentePizarra, setModalAgentePizarra] = useState(false);
   const bloqueoLiquidacionActivo = liquidandoCarrera || (mostrarReporteLiquidacion && modoExclusivoReporte);
-
-  // Atajos de la Barra de Comandos (real keyboard events)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (bloqueoLiquidacionActivo) return;
-      if (!e.ctrlKey) return;
-      const k = e.key.toLowerCase();
-      if (k === "q") {
-        e.preventDefault();
-        setMostrarPlanoPreliminar(true);
-      } else if (k === "y" || k === "r") {
-        // Ctrl+Y (Resultados) y Ctrl+R (Registrar y Finalizar) hacen lo MISMO:
-        // el flujo unificado decide internamente si precargar o liquidar.
-        // Si la carrera ya está liquidada, queda inhabilitado hasta que se reverse la liquidación.
-        e.preventDefault();
-        if (carreraLiquidada) {
-          emitirToast(
-            "⚠️ La carrera ya está liquidada. Para volver a liquidar primero debe reversar la liquidación.",
-            "warning"
-          );
-          return;
-        }
-        void abrirResultados();
-      } else if (k === "h") {
-        e.preventDefault();
-        setMostrarHistorial((v) => !v);
-      } else if (k === "g") {
-        e.preventDefault();
-        setModoExclusivoReporte(false);
-        setMostrarReporteLiquidacion(true);
-      } else if (k === "k" && e.shiftKey) {
-        e.preventDefault();
-        setModalComandos(true);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [abrirResultados, bloqueoLiquidacionActivo]);
 
   const comisionNum = useMemo(() => {
     const n = parseFloat(comision.replace(",", "."));
@@ -1503,6 +1415,103 @@ const hipodromosDelDia = useMemo(() => {
   const totalesPreview = useMemo(() => resumenPreview(filasPreview), [filasPreview]);
   const filasPreviewEnVivo = useMemo(() => filasPreview.filter((f) => !f.anulada && !f.esAdelantada), [filasPreview]);
   const filasPreviewAdelantadas = useMemo(() => filasPreview.filter((f) => !f.anulada && f.esAdelantada), [filasPreview]);
+
+  const abrirResultados = useCallback(async () => {
+    if (!listoParaCargar) return;
+    // Con la Carga de Resultados ya abierta, no re-abrir: evita que un Ctrl+Y/R
+    // accidental mientras se tipea reinicie el formulario.
+    if (modalResultados) return;
+    if (ultimaPizarra) {
+      setModalFinalizar(true);
+      return;
+    }
+    // SOLO se muestran llegadas si la carrera YA está LIQUIDADA: en ese caso se
+    // precarga el resultado oficial para editarlo (y, si cambia algo, se pide el
+    // motivo y se recalcula). Una carrera que todavía no liquidó abre EN BLANCO:
+    // traer el resultado del central obligaba a borrar a mano una llegada que el
+    // operador quería cargar de nuevo.
+    if (carreraLiquidada) {
+      try {
+        const oficial = await leerResultadoOficial(hipodromo, carrera, fecha);
+        const p = pizarraDePosiciones(oficial?.puestos ?? []);
+        if (p) {
+          const posiciones = (oficial?.puestos ?? []).map((n) => String(n).trim());
+          const porCaballo: Record<string, number> = {};
+          const matriz: Record<string, number> = {};
+          for (const [k, v] of Object.entries(oficial?.dividendos ?? {})) {
+            if (k.startsWith(PREFIJO_WPS)) matriz[k] = v;
+            else porCaballo[k] = v;
+          }
+          setPizarraCentral({
+            pizarra: p as PizarraResultados["pizarra"],
+            empates: [],
+            llenas: posiciones.length,
+            dividendos: Object.keys(porCaballo).length ? porCaballo : null,
+            matrizWps: Object.keys(matriz).length ? matriz : null,
+          });
+          setModalResultados(true);
+          return;
+        }
+      } catch {
+        /* sin resultado oficial legible: se abre en blanco */
+      }
+    }
+    // Carrera sin liquidar (o sin resultado oficial): EN BLANCO.
+    const cantJugadasValidas = filasPreview.filter((f) => !f.anulada).length;
+    if (!carreraLiquidada && cantJugadasValidas === 0) {
+      const msg = "ℹ️ No se puede liquidar la carrera porque no hay jugadas cargadas. No se liquidará hasta que cargue información de jugadas.";
+      setAviso(msg);
+      emitirToast(msg, "info");
+      return;
+    }
+    setPizarraCentral(null);
+    setModalResultados(true);
+  }, [listoParaCargar, modalResultados, ultimaPizarra, carreraLiquidada, hipodromo, carrera, fecha, filasPreview]);
+
+  // Atajos de la Barra de Comandos (real keyboard events)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (bloqueoLiquidacionActivo) return;
+      if (!e.ctrlKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "q") {
+        e.preventDefault();
+        setMostrarPlanoPreliminar(true);
+      } else if (k === "y" || k === "r") {
+        // Ctrl+Y (Resultados) y Ctrl+R (Registrar y Finalizar) hacen lo MISMO:
+        // el flujo unificado decide internamente si precargar o liquidar.
+        // Si la carrera ya está liquidada, queda inhabilitado hasta que se reverse la liquidación.
+        e.preventDefault();
+        if (carreraLiquidada) {
+          emitirToast(
+            "⚠️ La carrera ya está liquidada. Para volver a liquidar primero debe reversar la liquidación.",
+            "warning"
+          );
+          return;
+        }
+        const cantJugadasValidas = filasPreview.filter((f) => !f.anulada).length;
+        if (cantJugadasValidas === 0) {
+          const msg = "ℹ️ No se puede liquidar la carrera porque no hay jugadas cargadas. No se liquidará hasta que cargue información de jugadas.";
+          setAviso(msg);
+          emitirToast(msg, "info");
+          return;
+        }
+        void abrirResultados();
+      } else if (k === "h") {
+        e.preventDefault();
+        setMostrarHistorial((v) => !v);
+      } else if (k === "g") {
+        e.preventDefault();
+        setModoExclusivoReporte(false);
+        setMostrarReporteLiquidacion(true);
+      } else if (k === "k" && e.shiftKey) {
+        e.preventDefault();
+        setModalComandos(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [abrirResultados, bloqueoLiquidacionActivo, carreraLiquidada, filasPreview]);
 
   // Limpiar automáticamente del store local de sesión cualquier ticket que ya figure anulado en la base de datos.
   useEffect(() => {
@@ -2514,12 +2523,16 @@ const hipodromosDelDia = useMemo(() => {
       void recargarJugadasGuardadas();
       return { ok: s.ok, motivo: s.motivo };
     }
-    // AUNQUE no haya jugadas EN SESIÓN, la carrera se registra y se liquida: las
-    // jugadas vendidas en OTROS módulos (tablas fijas, marcas, dupletas,
-    // taquilla) tienen que pagarse igual al registrar el resultado. Antes este
-    // `return` temprano dejaba la tabla fija SIN liquidar cuando la carrera se
-    // finalizaba desde acá sin tickets en pantalla — el pago no aparecía en el
-    // reporte.
+    // Verificación estricta: si no hay jugadas cargadas, no se liquida hasta cargar información.
+    const cantJugadasValidas = filasPreview.filter((f) => !f.anulada).length;
+    if (!reapertura && !carreraLiquidada && cantJugadasValidas === 0 && ticketsDeCarrera.length === 0 && jugadasGuardadas.length === 0) {
+      const motivo = "No se puede liquidar la carrera porque no hay jugadas cargadas. No se liquidará hasta que cargue información de jugadas.";
+      setAviso(`ℹ️ ${motivo}`);
+      emitirToast(`ℹ️ ${motivo}`, "info");
+      setModalFinalizar(false);
+      return { ok: false, motivo };
+    }
+    // AUNQUE no haya jugadas EN SESIÓN, si hay jugadas persistidas o en tablas fijas/marcas se liquidan.
     setLiquidandoCarrera(true);
     try {
       // Ejecución en paralelo de cierre de carrera/tablas/marcas y liquidación de saldos
@@ -2811,6 +2824,13 @@ const hipodromosDelDia = useMemo(() => {
       const msg = "⚠️ La carrera ya está liquidada. Para volver a liquidar primero debe reversar la liquidación.";
       setAviso(msg);
       emitirToast(msg, "warning");
+      return;
+    }
+    const cantJugadasValidas = filasPreview.filter((f) => !f.anulada).length;
+    if (cantJugadasValidas === 0) {
+      const msg = "ℹ️ No se puede liquidar la carrera porque no hay jugadas cargadas. No se liquidará hasta que cargue información de jugadas.";
+      setAviso(msg);
+      emitirToast(msg, "info");
       return;
     }
     const ok = await confirmar({
@@ -3433,7 +3453,9 @@ const hipodromosDelDia = useMemo(() => {
                       ? "Elija hipódromo y carrera para liquidar"
                       : carreraLiquidada
                         ? "Carrera ya liquidada. Para volver a liquidar primero debe reversar la liquidación (🔄 Reversar Liquidación)."
-                        : "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)"
+                        : filasPreview.filter((f) => !f.anulada).length === 0
+                          ? "Sin jugadas cargadas: cargue información de jugadas antes de liquidar"
+                          : "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)"
                   }
                   className={`group relative inline-flex h-9 sm:h-10 items-center justify-center gap-2 rounded-xl px-4 sm:px-5 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all shadow-md ${
                     !listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada
@@ -5023,7 +5045,9 @@ const hipodromosDelDia = useMemo(() => {
                 ? "Elija hipódromo y carrera para liquidar"
                 : carreraLiquidada
                   ? "Carrera ya liquidada. Para volver a liquidar primero debe reversar la liquidación (🔄 Reversar Liquidación)."
-                  : "Carga/edita los resultados y liquida (Ctrl+Y o Ctrl+R)"
+                  : filasPreview.filter((f) => !f.anulada).length === 0
+                    ? "Sin jugadas cargadas: cargue información de jugadas antes de liquidar"
+                    : "Carga/edita los resultados y liquida (Ctrl+Y o Ctrl+R)"
             }
             className={`${BTN_BARRA} bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-sm ring-1 ring-emerald-400/50 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed`}
           >
@@ -5293,6 +5317,7 @@ const hipodromosDelDia = useMemo(() => {
         caballos={caballosDeCarrera.length ? caballosDeCarrera : null}
         inicial={ultimaPizarra ?? pizarraCentral}
         editandoLiquidada={carreraLiquidada}
+        cantidadJugadas={filasPreview.filter((f) => !f.anulada).length}
         onConfirmar={async (r, motivo) => {
           setModalResultados(false);
           try {

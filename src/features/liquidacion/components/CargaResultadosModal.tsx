@@ -86,6 +86,8 @@ type Props = {
    * no hay forma de auditar una diferencia de caja.
    */
   editandoLiquidada?: boolean;
+  /** Cantidad de jugadas registradas para esta carrera. Si es 0 y no está liquidada, no se liquida. */
+  cantidadJugadas?: number;
   onConfirmar: (r: PizarraResultados, motivo?: string) => void;
 };
 
@@ -110,8 +112,10 @@ export function CargaResultadosModal({
   minLugares = PUESTOS_MIN,
   inicial,
   editandoLiquidada = false,
+  cantidadJugadas,
   onConfirmar,
 }: Props) {
+  const sinJugadas = typeof cantidadJugadas === "number" && cantidadJugadas === 0 && !editandoLiquidada;
   const [filas, setFilas] = useState<Fila[]>([]);
   const [motivo, setMotivo] = useState("");
   const [usoDividendos, setUsoDividendos] = useState(false);
@@ -411,6 +415,12 @@ export function CargaResultadosModal({
   const setMatriz = (k: string, v: string) => setMatrizWps((m) => ({ ...m, [k]: v.replace(/[^\d.]/g, "") }));
 
   const confirmar = () => {
+    if (sinJugadas) {
+      setAlertaDuplicado(
+        "No se puede liquidar la carrera porque no hay jugadas cargadas. No se liquidará hasta que cargue información de jugadas."
+      );
+      return;
+    }
     const r = construirResultado();
     if (!r.pizarra.primero) return;
     if (!validacionPizarra.ok) {
@@ -766,7 +776,12 @@ export function CargaResultadosModal({
           <div className="mt-1.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-slate-200/90 bg-gradient-to-r from-slate-50 via-white to-emerald-50/40 p-2 sm:p-2.5 shadow-xs">
             {/* Estado / validación contextual de la liquidación */}
             <div className="flex items-center gap-2 text-xs">
-              {!validacionPizarra.ok ? (
+              {sinJugadas ? (
+                <div className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 font-bold text-sky-800 border border-sky-300 text-[11px]">
+                  <span>ℹ️</span>
+                  <span>Sin jugadas cargadas · No se liquidará hasta cargar información</span>
+                </div>
+              ) : !validacionPizarra.ok ? (
                 <div className="inline-flex items-center gap-1.5 rounded-lg bg-rose-50 px-2.5 py-1 font-bold text-rose-700 border border-rose-200 text-[11px]">
                   <span>⚠️</span>
                   <span>{validacionPizarra.mensaje ?? "Ejemplares duplicados en la pizarra"}</span>
@@ -801,14 +816,16 @@ export function CargaResultadosModal({
               <button
                 type="button"
                 onClick={confirmar}
-                disabled={faltaMotivo || !validacionPizarra.ok || llenas === 0}
+                disabled={faltaMotivo || !validacionPizarra.ok || llenas === 0 || sinJugadas}
                 className={`group relative inline-flex items-center justify-center gap-2.5 rounded-2xl px-6 sm:px-7 py-2.5 sm:py-3 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all ${
-                  !validacionPizarra.ok || llenas === 0 || faltaMotivo
+                  !validacionPizarra.ok || llenas === 0 || faltaMotivo || sinJugadas
                     ? "cursor-not-allowed bg-slate-300 text-slate-500 shadow-none ring-0 opacity-60"
                     : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 shadow-lg shadow-emerald-600/35 ring-4 ring-emerald-400/40 hover:ring-emerald-400/70 hover:scale-[1.02] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)]"
                 }`}
                 title={
-                  !validacionPizarra.ok
+                  sinJugadas
+                    ? "No se puede liquidar la carrera porque no hay jugadas cargadas. No se liquidará hasta que cargue información de jugadas."
+                    : !validacionPizarra.ok
                     ? validacionPizarra.mensaje ?? "Hay ejemplares duplicados en la pizarra"
                     : faltaMotivo
                       ? "Escribí el motivo del cambio para poder recalcular la liquidación"

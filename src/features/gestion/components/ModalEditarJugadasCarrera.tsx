@@ -258,6 +258,7 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
 
   const confirmarAnulacion = async () => {
     if (!anulando) return;
+    // Indicá el motivo de la anulación (o usa predeterminado por el operador)
     const texto = motivoAnular.trim() || "Anulación de jugada por el operador";
     setOcupado(true);
     const r = await anularJugadaYRecalcular({
