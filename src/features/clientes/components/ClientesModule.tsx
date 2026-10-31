@@ -16,6 +16,8 @@ import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/componen
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import {
   aplicarDevolucionMasiva,
+  actualizarCliente,
+  crearCliente,
   cargarTicketsCliente,
   convertirSocio,
   eliminarCliente,
@@ -142,6 +144,10 @@ export function ClientesModule() {
   const [pctDev, setPctDev] = useState("");
   const [afectados, setAfectados] = useState(0);
 
+  const [abrirCargaMasiva, setAbrirCargaMasiva] = useState(false);
+  const [textoCargaMasiva, setTextoCargaMasiva] = useState("");
+  const [procesandoCargaMasiva, setProcesandoCargaMasiva] = useState(false);
+
   const [clienteEstado, setClienteEstado] = useState<ClienteRow | null>(null);
   const [socioConvertir, setSocioConvertir] = useState("");
 
@@ -227,6 +233,53 @@ export function ClientesModule() {
     void recargar();
   };
 
+  const procesarCargaMasiva = async () => {
+    const grupoDestino = grupoConsultado || miGrupoId || grupoActivoVigente() || null;
+    const lineas = textoCargaMasiva
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lineas.length === 0) return toast("Pegue al menos una línea.", "warning");
+
+    setProcesandoCargaMasiva(true);
+    let creados = 0;
+    let actualizados = 0;
+    let errores = 0;
+    const existentes = await listarClientes(true, grupoDestino);
+
+    for (const linea of lineas) {
+      // Formato soportado: "NOMBRE,SALDO" o "NOMBRE SALDO" (saldo opcional, default 0).
+      const partes = linea.split(/[;,|\t]/).map((p) => p.trim()).filter(Boolean);
+      const nombre = (partes[0] || "").toUpperCase();
+      const saldo = num(partes[1] ?? "0");
+      if (!nombre) { errores++; continue; }
+
+      const ya = existentes.find(
+        (c) => String(c.nombre ?? "").trim().toUpperCase() === nombre
+      );
+
+      if (ya?.id != null) {
+        const r = await actualizarCliente(ya.id, { saldo_actual: saldo });
+        if (r.ok) actualizados++;
+        else errores++;
+      } else {
+        const r = await crearCliente({ nombre, saldo_actual: saldo, grupo_id: grupoDestino });
+        if (r.ok) creados++;
+        else errores++;
+      }
+    }
+
+    setProcesandoCargaMasiva(false);
+    setTextoCargaMasiva("");
+    setAbrirCargaMasiva(false);
+    limpiarCacheClientes();
+    await recargar(grupoDestino ?? undefined);
+    toast(
+      `Carga masiva: ${creados} creados, ${actualizados} actualizados, ${errores} error(es).`,
+      errores > 0 ? "warning" : "success"
+    );
+  };
+
   const socioAplicar = async () => {
     const nom = socioConvertir.trim().toUpperCase();
     if (!nom) return toast("Indique el nombre del socio.", "warning");
@@ -300,6 +353,15 @@ export function ClientesModule() {
               <span >％</span> Devoluciones Masivas
             </Button>
           </Guard>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAbrirCargaMasiva(true)}
+            className="!border-emerald-400 !bg-emerald-50 !font-black !text-emerald-800 hover:!bg-emerald-100"
+            title="Cargar varios usuarios con sus saldos de una vez (una línea por cliente: NOMBRE,SALDO)"
+          >
+            <span>📥</span> Carga Masiva
+          </Button>
         </div>
       </div>
 
@@ -753,6 +815,43 @@ export function ClientesModule() {
               </Button>
               <Button variant="danger" size="sm" onClick={() => void confirmarEliminar(borrando)}>
                 <span className="mr-1">🗑️</span> Eliminar
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Carga masiva de usuarios y saldos */}
+      {abrirCargaMasiva ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setAbrirCargaMasiva(false);
+          }}
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl p-5 space-y-4">
+            <h3 className="text-sm font-black text-slate-800">
+              <span className="mr-2 text-emerald-600">📥</span> Carga Masiva de Usuarios y Saldos
+            </h3>
+            <p className="text-xs text-slate-600">
+              Pegue una línea por cliente. Formato: <b>NOMBRE,SALDO</b> (también acepta espacio, tab o `;`). Si el cliente ya existe se actualiza su saldo; si no, se crea en el grupo actual.
+            </p>
+            <textarea
+              autoFocus
+              value={textoCargaMasiva}
+              onChange={(e) => setTextoCargaMasiva(e.target.value)}
+              rows={8}
+              placeholder={"SAM,1500\nEDDIE 2000\nPARTNER;3500"}
+              className="w-full border border-line rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setAbrirCargaMasiva(false)} disabled={procesandoCargaMasiva}>
+                Cancelar
+              </Button>
+              <Button variant="default" size="sm" onClick={() => void procesarCargaMasiva()} disabled={procesandoCargaMasiva}>
+                <span className="mr-1">✅</span> {procesandoCargaMasiva ? "Procesando..." : "Procesar"}
               </Button>
             </div>
           </div>
