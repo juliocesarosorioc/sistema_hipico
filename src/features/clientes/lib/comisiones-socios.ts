@@ -159,9 +159,15 @@ export function calcularComisionesSocioPorClientes(params: {
   }> = [];
 
   // Primero de la lista viva de clientes
+  const socioObj = clientes.find(
+    (x) => normalizar(x.nombre) === socioNorm || normalizar(x.seudonimo) === socioNorm
+  );
+  const socioIdStr = socioObj ? String(socioObj.id) : "";
+
   for (const c of clientes) {
     const sAsig = normalizar(c.socio_asignado);
-    if (sAsig === socioNorm) {
+    const sId = String((c as any).socio_id || "").trim();
+    if (sAsig === socioNorm || (socioIdStr && (sAsig === socioIdStr || sId === socioIdStr))) {
       const nom = c.seudonimo || c.nombre || "";
       const regla = buscarReglaDevolucionCliente(nom);
       const comPct = Number(c.comision_socio_pct ?? regla?.comisionSocioPct ?? 1.00);

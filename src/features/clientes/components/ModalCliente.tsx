@@ -340,8 +340,9 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
   // quedaría en "Ninguno", borrando la relación al guardar.
   useEffect(() => {
     if (!cliente) return;
-    setSocio(valorSocioAsignado(resolverSocio(cliente.socio_asignado, socios)) ?? "");
-  }, [cliente?.id, socios]);
+    const ref = cliente.socio_id || cliente.socio_asignado;
+    setSocio(valorSocioAsignado(resolverSocio(ref, socios)) ?? "");
+  }, [cliente?.id, cliente?.socio_id, cliente?.socio_asignado, socios]);
 
   const limpiar = (campo: string) => setErrores((x) => (x[campo] ? { ...x, [campo]: "" } : x));
 
@@ -394,6 +395,8 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
     // migración es reversible: no se pierde ningún dato al volver atrás.
     const formasGuardables = normalizarFormasPago(formas);
     const principal = formasGuardables.find((f) => f.principal) ?? null;
+    const socioObj = socios.find((s) => String(s.id) === String(socio));
+    const nombreSocio = socioObj ? (socioObj.seudonimo || socioObj.nombre) : null;
     const comun = {
       nombre,
       seudonimo: seudonimo.trim().toUpperCase(),
@@ -405,7 +408,7 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
       email: email.trim() || null,
       cedula_rif: cedulaRif.trim().toUpperCase() || null,
       direccion: direccion.trim() || null,
-      socio_asignado: socio || null,
+      socio_asignado: nombreSocio || socio || null,
       metodo_pago: principal?.metodo ?? null,
       dia_cuadre: diaCuadre || null,
       forma_cuadre: formaCuadre || null,

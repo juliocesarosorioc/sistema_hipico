@@ -296,10 +296,12 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
     });
 
     // Cargar comisiones como socio por sus clientes asignados
-    const cNom = String(c.nombre ?? c.seudonimo ?? "").trim();
-    const tieneAfiliados = clientes.some(
-      (x) => String(x.socio_asignado || "").trim().toUpperCase() === cNom.toUpperCase()
-    );
+    const cNom = String(c.nombre ?? c.seudonimo ?? "").trim().toUpperCase();
+    const cId = String(c.id);
+    const tieneAfiliados = clientes.some((x) => {
+      const val = String(x.socio_asignado || x.socio_id || "").trim();
+      return val === cId || (cNom && val.toUpperCase() === cNom);
+    });
     if (c.es_socio || tieneAfiliados) {
       try {
         const allTickets = await cargarTodosTicketsParaComisiones();

@@ -39,9 +39,35 @@ const num = (v: number | string | null | undefined): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-/** Afiliados de un socio/agencia (clientes cuyo socio_asignado coincide con este nombre). */
-const afiliadosDe = (c: ClienteRow, lista: ClienteRow[]): number =>
-  lista.filter((s) => String(s.socio_asignado || "").toUpperCase() === String(c.nombre || c.seudonimo || "").toUpperCase()).length;
+/** Resuelve el nombre visible de un socio a partir de su id o nombre asignado */
+const obtenerNombreSocio = (c: ClienteRow, todosClientes: ClienteRow[]): string | null => {
+  const ref = c.socio_asignado || c.socio_id;
+  if (!ref) return null;
+  const sRef = String(ref).trim();
+  const socio = todosClientes.find(
+    (s) =>
+      String(s.id) === sRef ||
+      String(s.nombre || "").trim().toUpperCase() === sRef.toUpperCase() ||
+      String(s.seudonimo || "").trim().toUpperCase() === sRef.toUpperCase()
+  );
+  if (socio) {
+    return socio.seudonimo || socio.nombre || String(socio.id);
+  }
+  return sRef;
+};
+
+/** Afiliados de un socio/agencia (clientes cuyo socio_asignado o socio_id coincide con este socio). */
+const afiliadosDe = (socio: ClienteRow, lista: ClienteRow[]): number => {
+  const sId = String(socio.id);
+  const sNom = String(socio.nombre || "").trim().toUpperCase();
+  const sSeud = String(socio.seudonimo || "").trim().toUpperCase();
+
+  return lista.filter((cli) => {
+    const val = String(cli.socio_asignado || cli.socio_id || "").trim();
+    if (!val) return false;
+    return val === sId || (sNom && val.toUpperCase() === sNom) || (sSeud && val.toUpperCase() === sSeud);
+  }).length;
+};
 
 const DIAS = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"];
 
@@ -523,8 +549,10 @@ export function ClientesModule() {
                       )}
                     </td>
                     <td className={td}>
-                      {c.socio_asignado ? (
-                        <span className="truncate block font-bold text-amber-700">{c.socio_asignado}</span>
+                      {obtenerNombreSocio(c, clientes) ? (
+                        <span className="truncate block font-bold text-amber-700" title={`Socio: ${obtenerNombreSocio(c, clientes)}`}>
+                          {obtenerNombreSocio(c, clientes)}
+                        </span>
                       ) : c.es_socio ? (
                         <span className="text-[10px] text-slate-400">
                           Agencia <span className="text-[9px]">👥</span> {afiliadosDe(c, clientes)}
