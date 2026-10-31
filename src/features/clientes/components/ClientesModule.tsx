@@ -30,6 +30,7 @@ import {
   type ClienteRow,
 } from "@/features/clientes/lib/clientes";
 import { esClienteAfiliadoAlSocio } from "@/features/clientes/lib/comisiones-socios";
+import { supabase } from "@/core/supabase";
 import { formatoMoneda } from "@/shared/lib/vzla";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { useAuthStore } from "@/shared/store/useAuthStore";
@@ -148,6 +149,8 @@ export function ClientesModule() {
   const [textoCargaMasiva, setTextoCargaMasiva] = useState("");
   const [procesandoCargaMasiva, setProcesandoCargaMasiva] = useState(false);
 
+  const [solicitudesAbono, setSolicitudesAbono] = useState<Array<Record<string, unknown>>>([]);
+
   const [clienteEstado, setClienteEstado] = useState<ClienteRow | null>(null);
   const [socioConvertir, setSocioConvertir] = useState("");
 
@@ -161,6 +164,17 @@ export function ClientesModule() {
     const cs = await listarClientes(true, target || null);
     setClientes(cs);
     setErrorCarga(errorClientes());
+    // Cargar solicitudes de abono pendientes
+    if (supabase) {
+      try {
+        const { data } = await supabase
+          .from("whatsapp_solicitudes_abono")
+          .select("*")
+          .eq("estado", "PENDIENTE")
+          .order("created_at", { ascending: false });
+        setSolicitudesAbono((data ?? []) as Array<Record<string, unknown>>);
+      } catch { /* ignore */ }
+    }
     setCargando(false);
   };
 
@@ -231,6 +245,23 @@ export function ClientesModule() {
     setAbrirDev(false);
     setSeleccion(new Set());
     void recargar();
+  };
+
+  const aprobarAbono = async (sol: Record<string, unknown>) => {
+    if (!supabase) return;
+    try {
+      const monto = Number(sol.monto ?? 0);
+      if (sol.cliente_id) {
+        const { data: cli } = await supabase.from("clientes").select("saldo_actual").eq("id", sol.cliente_id).maybeSingle();
+        const actual = Number((cli as Record<string, unknown>)?.saldo_actual ?? 0);
+        await supabase.from("clientes").update({ saldo_actual: actual + monto }).eq("id", sol.cliente_id);
+      }
+      await supabase.from("whatsapp_solicitudes_abono").update({ estado: "APROBADO" }).eq("id", sol.id);
+      toast(`Abono ${sol.codigo_corto} aprobado.`, "success");
+      void recargar();
+    } catch (e) {
+      toast("Error al aprobar abono.", "error");
+    }
   };
 
   const procesarCargaMasiva = async () => {
@@ -914,6 +945,28 @@ export function ClientesModule() {
           void recargar();
         }}
       />
+
+      {/* Solicitudes de abono pendientes (WhatsApp) */}
+      {solicitudesAbono.length > 0 ? (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-2">
+          <h3 className="text-sm font-black text-amber-900">🔔 Solicitudes de Abono Pendientes (WhatsApp)</h3>
+          <div className="space-y-2">
+            {solicitudesAbono.map((s) => (
+              <div key={String(s.id)} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-xs shadow-sm">
+                <div>
+                  <span className="font-bold text-slate-800">{String(s.codigo_corto ?? "")}</span>
+                  <span className="ml-2 text-slate-600">{String(s.cliente_nombre ?? "Cliente")}</span>
+                  <span className="ml-2 font-mono text-emerald-700">${Number(s.monto ?? 0).toFixed(2)}</span>
+                  <span className="ml-2 text-slate-500">{String(s.metodo_pago ?? "")}</span>
+                </div>
+                <Button variant="default" size="sm" onClick={() => void aprobarAbono(s)}>
+                  ✅ Aprobar Abono
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <ToastHost />
     </div>
