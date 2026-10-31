@@ -174,6 +174,7 @@
     "../src/features/contabilidad/lib/honorarios-equipo.ts",
     "../src/features/contabilidad/lib/contabilidad-automatica.ts",
     "./contabilidad-automatizada-grupos-honorarios.test.ts",
-    "./sala-jugadas-whatsapp.test.ts"
+    "./sala-jugadas-whatsapp.test.ts",
+    "./whatsapp-grupo-carrera-y-abono-admin.test.ts"
   ]
 }
