@@ -394,3 +394,66 @@ export function carrerasFaltantes<T extends CarreraMinima>(
   }
   return out;
 }
+
+/**
+ * Parsea el número de dorsal/gualdrapa de un ejemplar para ordenamiento numérico exacto.
+ * Ejemplos:
+ *   1 -> { num: 1, sufijo: "" }
+ *   "1A" -> { num: 1, sufijo: "A" }
+ *   " 2B " -> { num: 2, sufijo: "B" }
+ *   "10" -> { num: 10, sufijo: "" }
+ */
+export function parseNumeroCaballo(val: unknown): { num: number; sufijo: string; raw: string } {
+  const raw = String(val ?? "").trim();
+  if (!raw) return { num: 9999, sufijo: "", raw: "" };
+  const m = raw.match(/^(\d+)(.*)$/);
+  if (m) {
+    const num = parseInt(m[1], 10);
+    const sufijo = (m[2] || "").trim().toUpperCase();
+    return { num, sufijo, raw };
+  }
+  return { num: 9999, sufijo: raw.toUpperCase(), raw };
+}
+
+/**
+ * Función de comparación pura para ordenar ejemplares de menor a mayor dorsal:
+ * 1, 1A, 2, 2A, 2B, 3, 4, ..., 10, 11, etc.
+ */
+export function compararEjemplares(a: EjemplarMinimo, b: EjemplarMinimo): number {
+  const pa = parseNumeroCaballo(a?.numero);
+  const pb = parseNumeroCaballo(b?.numero);
+  if (pa.num !== pb.num) return pa.num - pb.num;
+  if (pa.sufijo !== pb.sufijo) return pa.sufijo.localeCompare(pb.sufijo);
+  return String(a?.nombre || "").trim().localeCompare(String(b?.nombre || "").trim());
+}
+
+/**
+ * Ordena DETERMINÍSTICAMENTE una lista de carreras y todos los ejemplares dentro de cada carrera:
+ * 1. Todos los ejemplares dentro de cada carrera se ordenan por su número de dorsal ascendente (1, 1A, 2, ..., 14).
+ * 2. Las carreras se ordenan por hipódromo y por su número de carrera correlativo ascendente (1, 2, 3, ..., 12).
+ */
+export function ordenarCarrerasYEjemplares<T extends CarreraMinima>(carreras: T[]): T[] {
+  if (!Array.isArray(carreras)) return [];
+
+  for (const c of carreras) {
+    if (!c) continue;
+    if (Array.isArray(c.ejemplares)) {
+      c.ejemplares.sort(compararEjemplares);
+    }
+    if (Array.isArray(c.caballos)) {
+      c.caballos.sort(compararEjemplares);
+    }
+  }
+
+  return carreras.sort((a, b) => {
+    const hipoA = String(a?.hipodromo || "").trim().toUpperCase();
+    const hipoB = String(b?.hipodromo || "").trim().toUpperCase();
+    if (hipoA !== hipoB) {
+      return hipoA.localeCompare(hipoB);
+    }
+    const numA = numeroDeCarrera(a?.carrera) ?? 9999;
+    const numB = numeroDeCarrera(b?.carrera) ?? 9999;
+    if (numA !== numB) return numA - numB;
+    return String(a?.carrera ?? "").localeCompare(String(b?.carrera ?? ""));
+  });
+}

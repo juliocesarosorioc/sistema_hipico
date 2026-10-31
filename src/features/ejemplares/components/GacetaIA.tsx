@@ -7,6 +7,8 @@ import {
   transformarGaceta,
   transformarGacetaTexto,
   reverificarCarreraConIA,
+  buscarCarreraFaltanteConIA,
+  ejecutarOrdenParticularConIA,
   type CarreraExtraida,
 } from "@/features/gaceta/lib/ia";
 import {
@@ -27,7 +29,7 @@ import { useConfirmar } from "@/shared/store/useConfirmStore";
 import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
 import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
-import { numeroDeCarrera } from "@/features/gaceta/lib/numeros";
+import { numeroDeCarrera, carrerasFaltantes, ordenarCarrerasYEjemplares } from "@/features/gaceta/lib/numeros";
 import { CarreraGacetaCard } from "@/features/ejemplares/components/CarreraGacetaCard";
 import { listarHipodromos, publicarTablasLote, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
 import type { TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
@@ -342,6 +344,13 @@ export function GacetaIA() {
     fecha: string;
   } | null>(null);
 
+  // Estados para órdenes particulares e inserción de carreras faltantes con IA
+  const [ordenParticular, setOrdenParticular] = useState("");
+  const [carreraOrdenIndex, setCarreraOrdenIndex] = useState<number>(-1);
+  const [ejecutandoOrden, setEjecutandoOrden] = useState(false);
+  const [buscandoFaltante, setBuscandoFaltante] = useState(false);
+  const [carreraFaltanteInput, setCarreraFaltanteInput] = useState("");
+
   const verificarGacetaExistente = useCallback(async (hipo: string, f: string) => {
     if (!supabase || !hipo.trim() || !f.trim()) return;
     try {
@@ -585,7 +594,7 @@ export function GacetaIA() {
       if (!copia.fecha) copia.fecha = fechaJornadaRef.current;
       return copia;
     });
-    setCarreras(lista.map((c) => ({ ...c, seleccionada: true })));
+    setCarreras(ordenarCarrerasYEjemplares(lista.map((c) => ({ ...c, seleccionada: true }))));
     setEstado("Recuperando las carreras guardadas…");
     void registrarEjemplares(lista as unknown as Array<Record<string, unknown>>)
       .then((tot) => {
@@ -918,9 +927,10 @@ export function GacetaIA() {
         enviada: false,
         aplicada: false,
       }));
-      setCarreras(lista);
+      const listaOrdenada = ordenarCarrerasYEjemplares(lista);
+      setCarreras(listaOrdenada);
       setResumen({ nuevos: 0, vinculados: 0 });
-      persistirRegistro(lista);
+      persistirRegistro(listaOrdenada);
       setEstado("💾 Registrando automáticamente en Carreras del Día...");
       if (dedupe.quitadas > 0) {
         toast(
@@ -1109,6 +1119,11 @@ export function GacetaIA() {
     return validarLoteCarreras(carreras, archivosConocidos);
   }, [carreras, archivosSubidos, textosDocumentos, paginas]);
 
+  // Detección en tiempo real de huecos en la secuencia de carreras
+  const listaFaltantes = useMemo(() => {
+    return carrerasFaltantes(carreras);
+  }, [carreras]);
+
   // Copiar resumen de mensajería para WhatsApp / Operadores
   const copiarMensajeMensajeria = useCallback(() => {
     const hiposUnicos = [...new Set(carreras.map((c) => String(c.hipodromo || "")).filter(Boolean))].join(" · ");
@@ -1216,6 +1231,171 @@ export function GacetaIA() {
     },
     [carreras, clave, textosDocumentos, textoDocumento, paginas, toast]
   );
+
+  // Buscar una carrera faltante con la IA
+  const handleBuscarCarreraFaltante = useCallback(
+    async (numTarget?: number | string, hipoTarget?: string) => {
+      const num = numTarget ?? (parseInt(carreraFaltanteInput, 10) || carreraFaltanteInput);
+      if (!num) {
+        toast("Indique el número de carrera a buscar.", "warning");
+        return;
+      }
+      if (!clave.trim()) {
+        toast("Introduce primero tu clave de Gemini para buscar con IA.", "warning");
+        return;
+      }
+
+      const hipo = hipoTarget || carreras[0]?.hipodromo || "LA RINCONADA";
+      let fuenteTexto = textoDocumento;
+      if (!fuenteTexto && textosDocumentos.length > 0) {
+        fuenteTexto = textosDocumentos.map((d) => d.texto).join("\n\n");
+      }
+      const imgs = (!fuenteTexto || fuenteTexto.trim().length < 100) ? paginas.map((p) => p.dataUrl) : [];
+
+      setBuscandoFaltante(true);
+      setEstado(`🔍 Buscando Carrera ${num} con IA...`);
+      try {
+        const res = await buscarCarreraFaltanteConIA(
+          clave.trim(),
+          num,
+          hipo,
+          fuenteTexto,
+          imgs,
+          undefined,
+          (s) => setEstado(s)
+        );
+
+        if (res.ok && res.carrera) {
+          const nueva = res.carrera;
+          const fechaDestino = normalizarFechaIso(fechaJornadaRef.current) || hoyLocal();
+          const carreraReg: CarreraRegistro = {
+            carrera: nueva.carrera,
+            hipodromo: nueva.hipodromo || hipo,
+            fecha: fechaDestino,
+            distancia: nueva.distancia || 0,
+            superficie: nueva.superficie || "ARENA",
+            premio: nueva.premio || 100,
+            archivoOrigen: nueva.archivoOrigen || carreras[0]?.archivoOrigen,
+            ejemplares: (nueva.ejemplares || []).map((e) => ({
+              numero: e.numero,
+              nombre: e.nombre,
+              nacionalidad: e.nacionalidad,
+              jockey: e.jockey,
+              entrenador: e.entrenador,
+              peso: e.peso,
+              medicamento: e.medicamento,
+              implementos: e.implementos,
+              valor: 0,
+              pts: 0,
+            })),
+            seleccionada: true,
+            enviada: false,
+            aplicada: false,
+          };
+
+          setCarreras((prev) => {
+            const filtradas = prev.filter((c) => Number(c.carrera) !== Number(nueva.carrera));
+            const combinadas = [...filtradas, carreraReg];
+            const ordenadas = ordenarCarrerasYEjemplares(combinadas);
+            persistirRegistro(ordenadas);
+            return ordenadas;
+          });
+
+          setCarreraFaltanteInput("");
+          toast(`✅ ¡Carrera ${num} encontrada y agregada con éxito! (${carreraReg.ejemplares?.length ?? 0} ejemplares)`, "success");
+          setEstado(`Carrera ${num} agregada y ordenada.`);
+        } else {
+          toast(`⚠️ ${res.error || "No se encontró la carrera en el documento."}`, "warning");
+          setEstado(res.error || "Carrera no encontrada.");
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast(`❌ Error buscando carrera faltante: ${msg}`, "error");
+      } finally {
+        setBuscandoFaltante(false);
+      }
+    },
+    [carreraFaltanteInput, clave, carreras, textoDocumento, textosDocumentos, paginas, toast]
+  );
+
+  // Ejecutar orden particular interactiva con IA
+  const handleEjecutarOrdenParticular = useCallback(async () => {
+    if (!ordenParticular.trim()) {
+      toast("Por favor escribe la orden para el agente IA.", "warning");
+      return;
+    }
+    if (!clave.trim()) {
+      toast("Introduce primero tu clave de Gemini.", "warning");
+      return;
+    }
+    if (carreras.length === 0) {
+      toast("No hay carreras cargadas actualmente para corregir.", "warning");
+      return;
+    }
+
+    let fuenteTexto = textoDocumento;
+    if (!fuenteTexto && textosDocumentos.length > 0) {
+      fuenteTexto = textosDocumentos.map((d) => d.texto).join("\n\n");
+    }
+    const imgs = (!fuenteTexto || fuenteTexto.trim().length < 100) ? paginas.map((p) => p.dataUrl) : [];
+
+    setEjecutandoOrden(true);
+    setEstado("🤖 Ejecutando orden particular con IA...");
+    try {
+      const res = await ejecutarOrdenParticularConIA(
+        clave.trim(),
+        ordenParticular.trim(),
+        carreras,
+        carreraOrdenIndex >= 0 ? carreraOrdenIndex : undefined,
+        fuenteTexto,
+        imgs,
+        (s) => setEstado(s)
+      );
+
+      if (res.ok && res.carreras && res.carreras.length > 0) {
+        const fechaDestino = normalizarFechaIso(fechaJornadaRef.current) || hoyLocal();
+        const carrerasActualizadas: CarreraRegistro[] = res.carreras.map((c) => ({
+          carrera: c.carrera,
+          hipodromo: c.hipodromo || carreras[0]?.hipodromo,
+          fecha: c.fecha || fechaDestino,
+          distancia: c.distancia || 0,
+          superficie: c.superficie || "ARENA",
+          premio: c.premio || 100,
+          archivoOrigen: c.archivoOrigen || carreras[0]?.archivoOrigen,
+          ejemplares: (c.ejemplares || []).map((e) => ({
+            numero: e.numero,
+            nombre: e.nombre,
+            nacionalidad: e.nacionalidad,
+            jockey: e.jockey,
+            entrenador: e.entrenador,
+            peso: e.peso,
+            medicamento: e.medicamento,
+            implementos: e.implementos,
+            valor: (e as any).valor || 0,
+            pts: (e as any).pts || 0,
+          })),
+          seleccionada: true,
+          enviada: false,
+          aplicada: false,
+        }));
+
+        const ordenadas = ordenarCarrerasYEjemplares(carrerasActualizadas);
+        setCarreras(ordenadas);
+        persistirRegistro(ordenadas);
+        toast(`✅ ${res.mensaje || "Corrección aplicada con éxito por el Agente IA."}`, "success");
+        setEstado("Orden ejecutada y carreras ordenadas.");
+        setOrdenParticular("");
+      } else {
+        toast(`⚠️ ${res.error || "No se pudo completar la orden."}`, "warning");
+        setEstado(res.error || "Error en orden particular.");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(`❌ Error al ejecutar orden: ${msg}`, "error");
+    } finally {
+      setEjecutandoOrden(false);
+    }
+  }, [ordenParticular, clave, carreras, carreraOrdenIndex, textoDocumento, textosDocumentos, paginas, toast]);
 
   // Navegación de teclado tipo planilla sobre los VALORES (Tab/Enter/↑↓),
   // igual que el legacy js/gaceta.js.
@@ -1729,6 +1909,163 @@ export function GacetaIA() {
               </div>
             </div>
           )}
+        </section>
+      )}
+
+      {/* MEDIDA ADICIONAL: DETECCIÓN Y BÚSQUEDA DE CARRERAS FALTANTES */}
+      {carreras.length > 0 && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-800 text-base font-black">
+                🔍
+              </span>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-amber-950">
+                  Búsqueda de Carreras Faltantes con IA
+                </h3>
+                <p className="text-[11px] text-amber-800">
+                  Si falta alguna carrera en la secuencia o no fue detectada, instruye a la IA para que la busque y la integre ordenada en la gaceta.
+                </p>
+              </div>
+            </div>
+
+            {/* Buscador puntual de cualquier carrera */}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min="1"
+                max="24"
+                placeholder="N° Carrera"
+                value={carreraFaltanteInput}
+                onChange={(e) => setCarreraFaltanteInput(e.target.value)}
+                className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              <Button
+                variant="default"
+                size="sm"
+                disabled={buscandoFaltante || !carreraFaltanteInput.trim()}
+                onClick={() => void handleBuscarCarreraFaltante()}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-black text-[11px] shadow-xs"
+              >
+                {buscandoFaltante ? "Buscando..." : "➕ Buscar y Agregar Carrera con IA"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Detección de huecos automáticos */}
+          {listaFaltantes.length > 0 && (
+            <div className="mt-3 rounded-xl border border-amber-300 bg-white p-3 shadow-xs">
+              <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">
+                🚨 Huecos detectados en la numeración:
+              </span>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {listaFaltantes.flatMap((f) =>
+                  f.faltan.map((num) => (
+                    <button
+                      key={`${f.hipodromo}-${num}`}
+                      type="button"
+                      disabled={buscandoFaltante}
+                      onClick={() => void handleBuscarCarreraFaltante(num, f.hipodromo)}
+                      className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 px-3 py-1 text-xs font-black text-amber-900 transition-colors disabled:opacity-50"
+                      title={`Buscar minuciosamente la Carrera ${num} de ${f.hipodromo} con IA`}
+                    >
+                      <span>🔍 Buscar Carrera #{num}</span>
+                      <span className="text-[10px] text-amber-700">({f.hipodromo})</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* SECCIÓN DE ÓRDENES PARTICULARES PARA EL AGENTE IA */}
+      {carreras.length > 0 && (
+        <section className="rounded-2xl border border-purple-200 bg-linear-to-r from-purple-50/80 via-white to-indigo-50/60 p-4 shadow-xs">
+          <div className="flex items-center gap-2.5 border-b border-purple-100 pb-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-700 text-base font-black">
+              🎯
+            </span>
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wider text-purple-950">
+                Órdenes Particulares al Agente IA (Corrección Interactiva)
+              </h3>
+              <p className="text-[11px] text-purple-700">
+                Escribe instrucciones en lenguaje natural para que el Agente IA corrija nombres, renumere válidas 5y6, agregue ejemplares o modifique datos.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 space-y-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-slate-600">Ámbito de la orden:</span>
+              <select
+                value={carreraOrdenIndex}
+                onChange={(e) => setCarreraOrdenIndex(parseInt(e.target.value, 10))}
+                className="rounded-lg border border-purple-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-purple-400"
+              >
+                <option value={-1}>🌐 Toda la Gaceta ({carreras.length} carreras)</option>
+                {carreras.map((c, idx) => (
+                  <option key={idx} value={idx}>
+                    🏇 Carrera #{c.carrera ?? idx + 1} ({c.hipodromo || "Hipódromo"} · {c.ejemplares?.length ?? 0} ejemplares)
+                  </option>
+                ))}
+              </select>
+
+              {/* Botones de plantilla rápida */}
+              <div className="flex flex-wrap gap-1.5 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setOrdenParticular("Renumera las válidas del 5y6 empezando en la carrera 7 (1ª Válida = Carrera 7, 2ª Válida = Carrera 8, etc.)")}
+                  className="rounded-md border border-purple-200 bg-purple-50/60 px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100 transition-colors"
+                >
+                  ⚡ Válidas desde Carrera 7
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrdenParticular("Verifica y ordena todos los ejemplares de menor a mayor por dorsal (1, 2, 3...) sin omitir ningún caballo")}
+                  className="rounded-md border border-purple-200 bg-purple-50/60 px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100 transition-colors"
+                >
+                  ⚡ Ordenar ejemplares 1..N
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrdenParticular("Revisa los nombres de los jinetes y entrenadores ausentes y complétalos")}
+                  className="rounded-md border border-purple-200 bg-purple-50/60 px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100 transition-colors"
+                >
+                  ⚡ Completar jinetes
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <textarea
+                rows={2}
+                value={ordenParticular}
+                onChange={(e) => setOrdenParticular(e.target.value)}
+                placeholder="Ejemplo: 'Falta el caballo número 4 de la carrera 3, agrégalo', 'En la carrera 2 el caballo 5 es de USA', 'Corrige la distancia de la carrera 1 a 1400 metros'..."
+                className="w-full rounded-xl border border-purple-200 bg-white p-2.5 text-xs text-slate-800 placeholder-slate-400 outline-none focus:ring-2 focus:ring-purple-500 shadow-2xs"
+              />
+              <Button
+                variant="default"
+                size="md"
+                disabled={ejecutandoOrden || !ordenParticular.trim()}
+                onClick={() => void handleEjecutarOrdenParticular()}
+                className="shrink-0 bg-purple-700 hover:bg-purple-800 text-white font-black text-xs px-4 shadow-sm"
+              >
+                {ejecutandoOrden ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Ejecutando...
+                  </span>
+                ) : (
+                  "🤖 Ejecutar Orden con IA"
+                )}
+              </Button>
+            </div>
+          </div>
         </section>
       )}
 

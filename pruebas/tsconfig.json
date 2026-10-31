@@ -177,6 +177,8 @@
     "../src/features/eventos-libres/lib/eventos-libres.ts",
     "../src/features/contabilidad/lib/motor-backfill-retroactivo.ts",
     "../src/features/ia-copiloto/lib/analista-cpa-auditor.ts",
-    "./contabilidad-backfill-evento-libre-ui.test.ts"
+    "./contabilidad-backfill-evento-libre-ui.test.ts",
+    "../src/features/gaceta/lib/ia.ts",
+    "./gaceta-ordenamiento-carreras-faltantes.test.ts"
   ]
 }

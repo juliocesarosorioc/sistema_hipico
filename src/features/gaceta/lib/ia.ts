@@ -10,8 +10,10 @@
 
 import {
   carrerasFaltantes,
+  compararEjemplares,
   fusionarCarrerasSinPerder,
   numeroDeCarrera,
+  ordenarCarrerasYEjemplares,
   repararNumerosCarreras,
   type ReporteReparacion,
 } from "@/features/gaceta/lib/numeros";
@@ -78,32 +80,43 @@ const HIPODROMOS_USA = [
   "PIMLICO", "SANTA ANITA", "SARATOGA", "TAMPA BAY DOWNS",
 ];
 
-const SYS = `Eres el transcriptor de la gaceta hípica venezolana. Recibes páginas/imágenes del programa oficial de carreras.
-Extrae TODAS las carreras visibles y sus ejemplares participantes.
-La gaceta numera las carreras de forma CONSECUTIVA del 1 al total (1, 2, 3, …, 12 o 13): devuelve TODAS sin omitir ninguna y SIN repetir ni saltar números. Si el programa trae 12 o 13 carreras, la respuesta tiene 12 o 13 objetos (la última incluida).
-Para cada carrera devuelve:
-  - carrera: número de la carrera (entero general correlativo)
-  - hipodromo: nombre del hipódromo (MAYÚSCULAS; ej: LA RINCONADA, SANTA RITA, VALENCIA). Si no se lee usa "".
-  - fecha: fecha de la jornada en formato YYYY-MM-DD si aparece, si no null
-  - distancia: distancia de la carrera en metros (entero) si se lee, si no 0
-  - superficie: una de ARENA, CESPED, FANGO, TAPETA u otra si se lee explícita; si no ARENA
-  - premio: número si se lee (ej: 15000), si no 0
-  - ejemplares: lista con:
-    - numero (número oficial / de gualdrapa del ejemplar)
-    - pp (PUESTO DE PARTIDA: En Venezuela el puesto de pista PP es el número de partidor vertical en la columna PP, ej: en 1400m o 1500m el caballo con gualdrapa 1 puede partir por el PP 6. Extrae exactamente el entero del 1 al 14 del puesto de partida si aparece; si no, null o el mismo número de gualdrapa)
-    - nombre (MAYÚSCULAS, EXACTO como aparece)
-    - nacionalidad (país si se indica: VE, USA, BR, AR, CL, MX, PA, PE, CO, EC, UY; si NO se indica: USA si el hipódromo es de Estados Unidos, si no VE)
-    - valor (monta del ejemplar: SOLO número si aparece, si no 0)
-    - jockey, entrenador, peso, medicamento e implementos solo si son legibles (si no, null)
-REGLAS: NO inventes nombres ni datos; transcribe exactamente lo que lees. REGISTRA TODOS los ejemplares de cada carrera sin omitir ninguno (todos los números de participante que aparezcan). Si un ejemplar aparece repetido entre páginas, mantenlo tal cual. Si el documento no tiene carreras, devuelve {"carreras":[]}.
-PARA EL CAMPO carrera: lee el número de carrera EXACTAMENTE como aparece impreso (puede ser numérico: 1, 2, ..., 14 o romano: I, II, ..., XIV). Convierte los romanos a entero (XIII → 13) y los ordinales escritos a entero ("primera" → 1, "séptima" → 7, "decimotercera" → 13).
-ATENCIÓN ESPECIAL HIPÓDROMOS DE VENEZUELA (LA RINCONADA / VALENCIA):
-En los programas de carreras de Venezuela, las carreras del bloque de apuestas "5 y 6" se titulan como "1ª VÁLIDA", "2ª VÁLIDA", "3ª VÁLIDA", "4ª VÁLIDA", "5ª VÁLIDA" y "6ª VÁLIDA".
-1. En La Rinconada, la "1ª VÁLIDA" corresponde habitualmente a la SÉPTIMA CARRERA (Carrera 7) del programa general (las carreras 1 a 6 son ordinarias no válidas, y la 1ª Válida es la 7ª carrera; o carrera 5 si hay 4 no válidas).
-2. NUNCA devuelvas carrera: 1 para la 1ª Válida si ya hubo carreras previas en la reunión.
-3. El campo "carrera" debe ser SIEMPRE el número correlativo general del programa oficial (ej: Carrera 1, 2, 3, 4, 5, 6, 7 [1ª Válida], 8 [2ª Válida], 9 [3ª Válida], 10 [4ª Válida], 11 [5ª Válida], 12 [6ª Válida]).
-4. Si la cabecera dice "1ª VÁLIDA" o "1ª VÁLIDA (7ª CARRERA)" o "SÉPTIMA CARRERA - 1ª VÁLIDA", el número de carrera es 7 (o el correlativo correspondiente).
-5. Extrae la 7ª carrera con TODOS sus ejemplares participantes exactamente igual que las demás carreras; NUNCA la omitas ni la unas con la 1ª carrera.`;
+const SYS = `Eres el transcriptor oficial de máxima precisión para gacetas hípicas (Venezuela y Estados Unidos).
+Recibes páginas escaneadas, texto o imágenes del programa oficial de carreras.
+
+REGLAS CRÍTICAS DE ORDENAMIENTO Y COMPLETITUD OBLIGATORIA:
+1. ORDEN SECUENCIAL ESTRICTO DE CARRERAS:
+   - Las carreras DEBEN devolverse ordenadas de forma estrictamente secuencial y correlativa: Carrera 1, Carrera 2, Carrera 3, ..., Carrera N.
+   - NUNCA devuelvas carreras salteadas, desordenadas ni repetidas.
+2. ORDEN ASCENDENTE ESTRICTO DE EJEMPLARES:
+   - Dentro del array "ejemplares" de cada carrera, los caballos DEBEN listarse rigurosamente ordenados por su número oficial de dorsal/gualdrapa de menor a mayor (1, 1A, 2, 2A, 3, 4, ..., 12, 13, 14).
+   - NUNCA pongas ejemplares desordenados, invertidos ni en orden arbitrario.
+3. COMPLETITUD TOTAL (CERO OMISIONES):
+   - Extrae ABSOLUTAMENTE TODOS los ejemplares participantes de cada carrera sin omitir ninguno.
+   - Si una carrera tiene 12 inscritos, el array de ejemplares debe contener exactamente los 12 participantes.
+   - Si el programa trae 10 carreras, el array "carreras" debe contener las 10 carreras.
+4. DIFERENCIACIÓN OBLIGATORIA ENTRE DORSAL ("numero") Y PUESTO DE PISTA ("pp"):
+   - "numero": Número oficial de dorsal o gualdrapa con el que corre el ejemplar (columna principal, ej: 1, 2, 3...).
+   - "pp": Puesto de pista o cajón de partida en el partidor. En Venezuela o distancias de 1200m-1500m un ejemplar con dorsal 1 puede salir por el puesto de pista 6. NUNCA intercambies dorsal con PP.
+5. VENEZUELA (LA RINCONADA / VALENCIA - 5 Y 6):
+   - Las carreras válidas del 5 y 6 (tituladas "1ª VÁLIDA", "2ª VÁLIDA", ..., "6ª VÁLIDA") NO reinician la numeración en 1.
+   - Mapea siempre al número correlativo general de la reunión (ej: Carrera 5 a 10, o Carrera 7 a 12 según las no válidas previas). La 1ª Válida nunca es Carrera 1 si hubo carreras ordinarias previas.
+
+Estructura de salida JSON para cada carrera:
+- carrera: número entero de la carrera (1, 2, 3...)
+- hipodromo: nombre oficial en MAYÚSCULAS (ej: "LA RINCONADA", "GULFSTREAM PARK", "VALENCIA")
+- fecha: YYYY-MM-DD si es legible, si no null
+- distancia: distancia en metros (entero, ej: 1200, 1400, 1600)
+- superficie: ARENA, CESPED, FANGO o TAPETA
+- premio: número si aparece, si no 0
+- ejemplares: lista de objetos con:
+  - numero: dorsal del caballo (1, 2, 3, 1A...)
+  - pp: puesto de pista (entero o null)
+  - nombre: nombre exacto en MAYÚSCULAS
+  - nacionalidad: VE, USA, etc.
+  - valor: 0
+  - jockey, entrenador, peso, medicamento, implementos si aparecen legibles (si no, null).
+
+Si el documento no tiene carreras, devuelve {"carreras":[]}. Responde ÚNICAMENTE con JSON válido.`;
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -340,7 +353,7 @@ function armarBody(contenido: ContenidoLote, estricto: boolean): Record<string, 
     contents: [{ parts: partes }],
     systemInstruction: { parts: [{ text: SYS }] },
     generationConfig: {
-      temperature: estricto ? 0.2 : 0,
+      temperature: 0,
       maxOutputTokens: 8192,
       responseMimeType: "application/json",
     },
@@ -724,6 +737,9 @@ export async function transformarGacetaTexto(
       }
     }
 
+    // Ordenamiento determinista de carreras y ejemplares
+    ordenarCarrerasYEjemplares(carreras);
+
     return {
       ok: true,
       carreras,
@@ -863,6 +879,8 @@ export async function transformarGaceta(
     }
 
     if (carreras.length > 0) {
+      // Ordenamiento determinista de carreras y ejemplares
+      ordenarCarrerasYEjemplares(carreras);
       return {
         ok: true,
         carreras,
@@ -965,6 +983,166 @@ Responde ÚNICAMENTE con JSON con formato {"carreras": [...]}.`;
     }
 
     return { ok: false, error: diag.ultimoError || `No se pudo re-extraer la carrera ${numCarrera}.` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Busca específicamente una carrera faltante en la gaceta (ej: Carrera 5 omitida) usando Gemini.
+ * Analiza minuciosamente el documento/imágenes y extrae la carrera con todos sus participantes ordenados.
+ */
+export async function buscarCarreraFaltanteConIA(
+  clave: string,
+  numeroCarrera: number | string,
+  hipodromo: string,
+  fuenteTexto: string,
+  imagenes: string[] = [],
+  instruccionesExtra?: string,
+  onEstado?: (s: string) => void
+): Promise<{ ok: boolean; carrera?: CarreraExtraida; error?: string }> {
+  if (!clave.trim()) {
+    return { ok: false, error: "Falta la clave de Gemini." };
+  }
+
+  const num = numeroDeCarrera(numeroCarrera) ?? numeroCarrera;
+  const hipo = String(hipodromo || "").trim().toUpperCase();
+
+  const prompt = `ALERTA DE CARRERA FALTANTE:
+En la importación de la gaceta no se encontró o se omitió la CARRERA ${num} de ${hipo || "la jornada"}.
+Tu misión es buscar minuciosamente en el documento/imágenes adjuntos y EXTRAER ÚNICAMENTE la CARRERA ${num}.
+
+INSTRUCCIONES ESPECÍFICAS:
+1. Localiza la sección, tabla o página de la CARRERA ${num}.
+   - Recuerda que en Venezuela, si es una carrera de 5 y 6, puede titularse "1ª VÁLIDA", "2ª VÁLIDA", etc.
+2. Extrae TODOS los ejemplares participantes de menor a mayor dorsal (1, 2, 3, ...).
+   - numero: dorsal del caballo (columna gualdrapa)
+   - pp: puesto de pista (si se indica)
+   - nombre: nombre oficial en MAYÚSCULAS
+   - jockey: jinete
+   - entrenador: entrenador
+   - peso: peso asignado
+   - nacionalidad: país (VE, USA, etc.)
+${instruccionesExtra ? `3. Órdenes adicionales del usuario: ${instruccionesExtra}\n` : ""}
+Responde estrictamente con JSON en el formato {"carreras": [{"carrera": ${num}, "hipodromo": "${hipo}", "distancia": 0, "superficie": "ARENA", "premio": 0, "ejemplares": [...]}]}.`;
+
+  const diag = { respondio: "", ultimoError: "" };
+  try {
+    const descubiertos = await listaModelosFlash(clave);
+    const modelos = elegirModelos(descubiertos);
+    if (!modelos.length) {
+      return { ok: false, error: "No se encontraron modelos Flash disponibles con esta clave." };
+    }
+
+    onEstado?.(`🔍 Buscando Carrera ${num} con IA...`);
+
+    const contenido: ContenidoLote = fuenteTexto && fuenteTexto.trim().length > 100
+      ? { durls: [], texto: `${prompt}\n\n=== TEXTO DE LA GACETA ===\n${fuenteTexto}` }
+      : { durls: imagenes, texto: prompt };
+
+    const parte: Parte = {
+      contenido,
+      etiqueta: `Buscar Carrera Faltante C${num}`,
+      partir: () => null,
+    };
+
+    const res = await extraerParte(clave, modelos, parte, diag, onEstado);
+    if (res && res.length > 0) {
+      const encontrada = res.find((c) => numeroDeCarrera(c.carrera) === numeroDeCarrera(num)) || res[0];
+      encontrada.carrera = num;
+      if (hipo && !encontrada.hipodromo) encontrada.hipodromo = hipo;
+      normalizarExtraida(encontrada);
+      if (Array.isArray(encontrada.ejemplares)) {
+        encontrada.ejemplares.sort(compararEjemplares);
+      }
+      return { ok: true, carrera: encontrada };
+    }
+
+    return { ok: false, error: diag.ultimoError || `No se encontró la carrera ${num} en el documento.` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Ejecuta una orden particular o correctiva del usuario sobre la gaceta o una carrera específica.
+ * Permite corregir nombres, re-numerar carreras, agregar ejemplares faltantes, etc.
+ */
+export async function ejecutarOrdenParticularConIA(
+  clave: string,
+  orden: string,
+  carrerasActuales: CarreraExtraida[] | CarreraRegistro[],
+  carreraIndice?: number,
+  fuenteTexto: string = "",
+  imagenes: string[] = [],
+  onEstado?: (s: string) => void
+): Promise<{ ok: boolean; carreras?: CarreraExtraida[]; error?: string; mensaje?: string }> {
+  if (!clave.trim()) {
+    return { ok: false, error: "Falta la clave de Gemini." };
+  }
+  if (!orden.trim()) {
+    return { ok: false, error: "Escriba la orden o instrucción para el agente IA." };
+  }
+
+  const diag = { respondio: "", ultimoError: "" };
+  try {
+    const descubiertos = await listaModelosFlash(clave);
+    const modelos = elegirModelos(descubiertos);
+    if (!modelos.length) {
+      return { ok: false, error: "No se encontraron modelos Flash disponibles con esta clave." };
+    }
+
+    onEstado?.("🤖 Ejecutando orden particular con IA...");
+
+    // Si es para una carrera en particular o todas
+    const esParaUnaCarrera = carreraIndice !== undefined && carreraIndice >= 0 && carreraIndice < carrerasActuales.length;
+    const carrerasTarget = esParaUnaCarrera ? [carrerasActuales[carreraIndice]] : carrerasActuales;
+
+    const prompt = `ORDEN PARTICULAR DEL OPERADOR / CORRECCIÓN DE GACETA:
+"${orden.trim()}"
+
+CARRERA(S) ACTUALMENTE EXTRAÍDAS:
+${JSON.stringify(carrerasTarget, null, 2)}
+
+INSTRUCCIONES DE CORRECCIÓN:
+1. Aplica con exactitud quirúrgica la orden dada por el operador sobre las carreras y ejemplares.
+2. Si la orden pide agregar un caballo faltante, busca en la fuente sus datos o créalo según la orden.
+3. Si la orden pide re-numerar, ajustar distancias, nombres o puestos de pista (PP), hazlo fielmente.
+4. Asegúrate de que los ejemplares queden estrictamente ordenados de menor a mayor por su número dorsal (1, 2, 3...).
+5. Responde ÚNICAMENTE con JSON en el formato {"carreras": [...]}, conteniendo la(s) carrera(s) modificada(s) con todos sus ejemplares.`;
+
+    const contenido: ContenidoLote = fuenteTexto && fuenteTexto.trim().length > 100
+      ? { durls: [], texto: `${prompt}\n\n=== TEXTO FUENTE ORIGINAL ===\n${fuenteTexto}` }
+      : { durls: imagenes, texto: prompt };
+
+    const parte: Parte = {
+      contenido,
+      etiqueta: "Orden Particular IA",
+      partir: () => null,
+    };
+
+    const res = await extraerParte(clave, modelos, parte, diag, onEstado);
+    if (res && res.length > 0) {
+      for (const c of res) {
+        normalizarExtraida(c);
+        if (Array.isArray(c.ejemplares)) {
+          c.ejemplares.sort(compararEjemplares);
+        }
+      }
+
+      if (esParaUnaCarrera) {
+        // Reemplazar la carrera modificada en la lista completa
+        const copia = [...carrerasActuales] as CarreraExtraida[];
+        copia[carreraIndice] = res[0];
+        ordenarCarrerasYEjemplares(copia);
+        return { ok: true, carreras: copia, mensaje: "Carrera corregida exitosamente." };
+      } else {
+        ordenarCarrerasYEjemplares(res);
+        return { ok: true, carreras: res, mensaje: "Gaceta corregida exitosamente según sus órdenes." };
+      }
+    }
+
+    return { ok: false, error: diag.ultimoError || "La IA no pudo procesar la orden solicitada." };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
