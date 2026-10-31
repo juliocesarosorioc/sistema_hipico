@@ -163,6 +163,8 @@
     "./validador-gaceta.test.ts",
     "../src/features/carreras/lib/sincronizar-usa-tvg-drf.ts",
     "./sincronizador-usa-tvg-drf.test.ts",
+    "../src/features/apuestas/lib/eventos-especiales.ts",
+    "./apuestas-evento-especial.test.ts",
     "../src/features/seguridad/lib/seguimiento-usuarios.ts",
     "./seguridad-usuarios-conectados.test.ts"
   ]

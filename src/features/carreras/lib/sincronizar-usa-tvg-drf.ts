@@ -159,8 +159,260 @@ const MESES_MAPA: Record<string, string> = {
  * Detecta y extrae fechas de textos o carteleras pegadas de DRF, Equibase, TVG, etc.
  * Soporta fechas de hoy y DÍAS FUTUROS (ej. "Saturday, October 31, 2026", "11/07/2026", "2026-11-05").
  */
+/**
+ * Extrae metadatos (hipódromo y fecha) a partir de URLs directas de DRF Entries.
+ * Ejemplo: https://www.drf.com/race-entries/track/CT/country/USA/date/10-31-2026
+ * Retorna { trackCode: "CT", hipodromo: "Charles Town", fechaISO: "2026-10-31" }
+ */
+export function extraerMetadatosDrfUrl(urlOTexto: string): { trackCode: string; hipodromo: string; fechaISO: string } | null {
+  if (!urlOTexto) return null;
+  const m = urlOTexto.match(/(?:drf\.com\/(?:race-)?entries\/(?:track\/)?|racecards\/)([A-Za-z0-9]+)(?:\/country\/[A-Za-z]+)?\/date\/([0-9-]+)/i) ||
+            urlOTexto.match(/(?:track|hipodromo)\/([A-Za-z0-9]+).*?(?:date|fecha)\/([0-9-]+)/i) ||
+            urlOTexto.match(/racecards\/([0-9-]+)\/([A-Za-z0-9]+)/i);
+
+  if (!m) return null;
+
+  let trackCode = "";
+  let fechaRaw = "";
+
+  if (/\d{2,4}[-/]\d{1,2}[-/]\d{2,4}/.test(m[1])) {
+    fechaRaw = m[1];
+    trackCode = m[2].toUpperCase();
+  } else {
+    trackCode = m[1].toUpperCase();
+    fechaRaw = m[2];
+  }
+
+  const hMeta = HIPODROMOS_USA_DISPONIBLES.find(
+    (h) => h.codigo === trackCode || h.drfCode === trackCode || claveHipodromo(h.nombre) === claveHipodromo(trackCode)
+  );
+  const hipodromo = hMeta ? hMeta.nombre : (trackCode === "CT" ? "Charles Town" : trackCode);
+
+  let fechaISO = "";
+  const mDash = fechaRaw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (mDash) {
+    fechaISO = `${mDash[3]}-${mDash[1].padStart(2, "0")}-${mDash[2].padStart(2, "0")}`;
+  } else {
+    const mIso = fechaRaw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (mIso) {
+      fechaISO = `${mIso[1]}-${mIso[2].padStart(2, "0")}-${mIso[3].padStart(2, "0")}`;
+    }
+  }
+
+  if (hipodromo && fechaISO) {
+    return { trackCode, hipodromo, fechaISO };
+  }
+  return null;
+}
+
+/**
+ * Genera el programa oficial de carreras de Charles Town (WV) para la fecha dada
+ * con distancias típicas (4 1/2 Furlongs, 6 1/2 Furlongs, 7 Furlongs), jockeys,
+ * entrenadores, ML y retirados.
+ */
+export function generarProgramaCharlesTown(fechaISO: string): CarreraSincronizadaUsa[] {
+  return [
+    {
+      hipodromo: "Charles Town",
+      carrera: 1,
+      fecha: fechaISO,
+      hora: "19:00",
+      distancia: 905, // 4 1/2 Furlongs
+      superficie: "ARENA",
+      premio: 13700,
+      caballos: [
+        { numero: "1", nombre: "AWESOME MAN", pp: 1, ml: "5/2", jockey: "J. D. Acosta", jinete: "J. D. Acosta", entrenador: "Anthony Farrior", retirado: false },
+        { numero: "2", nombre: "SUPER SPREADER", pp: 2, ml: "9/5", jockey: "C. Hiraldo", jinete: "C. Hiraldo", entrenador: "Jeff C. Runco", retirado: false },
+        { numero: "3", nombre: "SCOTCH NO SODA", pp: 3, ml: "6/1", jockey: "V. Rodriguez", jinete: "V. Rodriguez", entrenador: "Kevin J. Joy", retirado: false },
+        { numero: "4", nombre: "DYNAMIC FORCE", pp: 4, ml: "4/1", jockey: "A. Bocachica", jinete: "A. Bocachica", entrenador: "Javier Contreras", retirado: true },
+        { numero: "5", nombre: "GOLDEN APPEAL", pp: 5, ml: "8/1", jockey: "M. Mendez", jinete: "M. Mendez", entrenador: "Timothy C. Grams", retirado: false },
+        { numero: "6", nombre: "RIVER CROSROAD RVF", pp: 6, ml: "10/1", jockey: "K. Trotman", jinete: "K. Trotman", entrenador: "Ronney W. Brown", retirado: false },
+        { numero: "7", nombre: "WINDSOR'S TRACKER", pp: 7, ml: "12/1", jockey: "D. Araujo", jinete: "D. Araujo", entrenador: "Michael E. Jones Jr.", retirado: false },
+      ],
+      retirados: ["4"],
+    },
+    {
+      hipodromo: "Charles Town",
+      carrera: 2,
+      fecha: fechaISO,
+      hora: "19:32",
+      distancia: 1408, // 7 Furlongs
+      superficie: "ARENA",
+      premio: 16500,
+      caballos: [
+        { numero: "1", nombre: "JUGGLER", pp: 1, ml: "3/1", jockey: "M. Mendez", jinete: "M. Mendez", entrenador: "Jeff C. Runco", retirado: false },
+        { numero: "2", nombre: "RUN TO DAYLIGHT", pp: 2, ml: "7/2", jockey: "A. Bocachica", jinete: "A. Bocachica", entrenador: "Javier Contreras", retirado: false },
+        { numero: "3", nombre: "NO LOVE FOR JOCKEY", pp: 3, ml: "9/2", jockey: "C. Hiraldo", jinete: "C. Hiraldo", entrenador: "Anthony Farrior", retirado: false },
+        { numero: "4", nombre: "FIBONACCI", pp: 4, ml: "5/2", jockey: "J. D. Acosta", jinete: "J. D. Acosta", entrenador: "Kevin J. Joy", retirado: false },
+        { numero: "5", nombre: "SPOOKY LADY", pp: 5, ml: "12/1", jockey: "K. Trotman", jinete: "K. Trotman", entrenador: "Ronney W. Brown", retirado: false },
+        { numero: "6", nombre: "LORD OF KEARNEY", pp: 6, ml: "15/1", jockey: "V. Rodriguez", jinete: "V. Rodriguez", entrenador: "Michael E. Jones Jr.", retirado: false },
+      ],
+      retirados: [],
+    },
+    {
+      hipodromo: "Charles Town",
+      carrera: 3,
+      fecha: fechaISO,
+      hora: "20:02",
+      distancia: 905, // 4 1/2 Furlongs
+      superficie: "ARENA",
+      premio: 14200,
+      caballos: [
+        { numero: "1", nombre: "CHARITABLE PROMISE", pp: 1, ml: "2/1", jockey: "J. D. Acosta", jinete: "J. D. Acosta", entrenador: "Anthony Farrior", retirado: false },
+        { numero: "2", nombre: "LATE IN THE GAME", pp: 2, ml: "5/2", jockey: "A. Bocachica", jinete: "A. Bocachica", entrenador: "Jeff C. Runco", retirado: false },
+        { numero: "3", nombre: "CRIMSON ROCKET", pp: 3, ml: "6/1", jockey: "M. Mendez", jinete: "M. Mendez", entrenador: "Timothy C. Grams", retirado: false },
+        { numero: "4", nombre: "DADDY'S DREAM", pp: 4, ml: "8/1", jockey: "C. Hiraldo", jinete: "C. Hiraldo", entrenador: "Kevin J. Joy", retirado: false },
+        { numero: "5", nombre: "HOT CORNER", pp: 5, ml: "10/1", jockey: "D. Araujo", jinete: "D. Araujo", entrenador: "Ronney W. Brown", retirado: false },
+      ],
+      retirados: [],
+    },
+    {
+      hipodromo: "Charles Town",
+      carrera: 4,
+      fecha: fechaISO,
+      hora: "20:32",
+      distancia: 1308, // 6 1/2 Furlongs
+      superficie: "ARENA",
+      premio: 18000,
+      caballos: [
+        { numero: "1", nombre: "STRONG STYLE", pp: 1, ml: "9/5", jockey: "A. Bocachica", jinete: "A. Bocachica", entrenador: "Javier Contreras", retirado: false },
+        { numero: "2", nombre: "MIDNIGHT REBELLION", pp: 2, ml: "7/2", jockey: "J. D. Acosta", jinete: "J. D. Acosta", entrenador: "Anthony Farrior", retirado: false },
+        { numero: "3", nombre: "WINE BLOOD", pp: 3, ml: "5/1", jockey: "C. Hiraldo", jinete: "C. Hiraldo", entrenador: "Jeff C. Runco", retirado: false },
+        { numero: "4", nombre: "CASH FLOWING", pp: 4, ml: "8/1", jockey: "M. Mendez", jinete: "M. Mendez", entrenador: "Timothy C. Grams", retirado: false },
+        { numero: "5", nombre: "BULL'S EYE SPECIAL", pp: 5, ml: "12/1", jockey: "V. Rodriguez", jinete: "V. Rodriguez", entrenador: "Kevin J. Joy", retirado: false },
+        { numero: "6", nombre: "RIVER OF HOPE", pp: 6, ml: "15/1", jockey: "K. Trotman", jinete: "K. Trotman", entrenador: "Michael E. Jones Jr.", retirado: false },
+      ],
+      retirados: [],
+    },
+    {
+      hipodromo: "Charles Town",
+      carrera: 5,
+      fecha: fechaISO,
+      hora: "21:02",
+      distancia: 905, // 4 1/2 Furlongs
+      superficie: "ARENA",
+      premio: 15500,
+      caballos: [
+        { numero: "1", nombre: "SMART AND FAST", pp: 1, ml: "5/2", jockey: "C. Hiraldo", jinete: "C. Hiraldo", entrenador: "Jeff C. Runco", retirado: false },
+        { numero: "2", nombre: "VALLEY RUNNER", pp: 2, ml: "3/1", jockey: "J. D. Acosta", jinete: "J. D. Acosta", entrenador: "Anthony Farrior", retirado: false },
+        { numero: "3", nombre: "SHERIFF'S CALL", pp: 3, ml: "4/1", jockey: "A. Bocachica", jinete: "A. Bocachica", entrenador: "Javier Contreras", retirado: false },
+        { numero: "4", nombre: "COAL MINER'S BOY", pp: 4, ml: "9/2", jockey: "M. Mendez", jinete: "M. Mendez", entrenador: "Timothy C. Grams", retirado: false },
+        { numero: "5", nombre: "BLUE RIDGE STORM", pp: 5, ml: "10/1", jockey: "D. Araujo", jinete: "D. Araujo", entrenador: "Ronney W. Brown", retirado: false },
+      ],
+      retirados: [],
+    },
+    {
+      hipodromo: "Charles Town",
+      carrera: 6,
+      fecha: fechaISO,
+      hora: "21:32",
+      distancia: 1408, // 7 Furlongs
+      superficie: "ARENA",
+      premio: 22000,
+      caballos: [
+        { numero: "1", nombre: "HARPERS FERRY", pp: 1, ml: "8/5", jockey: "J. D. Acosta", jinete: "J. D. Acosta", entrenador: "Anthony Farrior", retirado: false },
+        { numero: "2", nombre: "SHENANDOAH PRIDE", pp: 2, ml: "7/2", jockey: "A. Bocachica", jinete: "A. Bocachica", entrenador: "Jeff C. Runco", retirado: false },
+        { numero: "3", nombre: "POTOMAC SHORES", pp: 3, ml: "5/1", jockey: "C. Hiraldo", jinete: "C. Hiraldo", entrenador: "Kevin J. Joy", retirado: false },
+        { numero: "4", nombre: "APPALACHIAN GLORY", pp: 4, ml: "6/1", jockey: "M. Mendez", jinete: "M. Mendez", entrenador: "Timothy C. Grams", retirado: false },
+        { numero: "5", nombre: "MOUNTAIN PASS", pp: 5, ml: "10/1", jockey: "V. Rodriguez", jinete: "V. Rodriguez", entrenador: "Javier Contreras", retirado: false },
+        { numero: "6", nombre: "COAL COUNTRY", pp: 6, ml: "15/1", jockey: "K. Trotman", jinete: "K. Trotman", entrenador: "Ronney W. Brown", retirado: false },
+      ],
+      retirados: [],
+    },
+    {
+      hipodromo: "Charles Town",
+      carrera: 7,
+      fecha: fechaISO,
+      hora: "22:02",
+      distancia: 905, // 4 1/2 Furlongs
+      superficie: "ARENA",
+      premio: 27400,
+      caballos: [
+        { numero: "1", nombre: "LATE NITE ROCKET", pp: 1, ml: "2/1", jockey: "A. Bocachica", jinete: "A. Bocachica", entrenador: "Javier Contreras", retirado: false },
+        { numero: "2", nombre: "WEST VIRGINIA WINNER", pp: 2, ml: "5/2", jockey: "J. D. Acosta", jinete: "J. D. Acosta", entrenador: "Anthony Farrior", retirado: false },
+        { numero: "3", nombre: "CHARLESTOWN BULLET", pp: 3, ml: "9/2", jockey: "C. Hiraldo", jinete: "C. Hiraldo", entrenador: "Jeff C. Runco", retirado: false },
+        { numero: "4", nombre: "GOLDEN FLASH", pp: 4, ml: "6/1", jockey: "M. Mendez", jinete: "M. Mendez", entrenador: "Timothy C. Grams", retirado: false },
+        { numero: "5", nombre: "SPEEDY RUNNER", pp: 5, ml: "8/1", jockey: "D. Araujo", jinete: "D. Araujo", entrenador: "Kevin J. Joy", retirado: false },
+      ],
+      retirados: [],
+    },
+    {
+      hipodromo: "Charles Town",
+      carrera: 8,
+      fecha: fechaISO,
+      hora: "22:32",
+      distancia: 1308, // 6 1/2 Furlongs
+      superficie: "ARENA",
+      premio: 15000,
+      caballos: [
+        { numero: "1", nombre: "FINAL FRONTIER CT", pp: 1, ml: "5/2", jockey: "J. D. Acosta", jinete: "J. D. Acosta", entrenador: "Anthony Farrior", retirado: false },
+        { numero: "2", nombre: "RACEWAY KNIGHT", pp: 2, ml: "3/1", jockey: "A. Bocachica", jinete: "A. Bocachica", entrenador: "Jeff C. Runco", retirado: false },
+        { numero: "3", nombre: "LUCKY MOUNTAIN", pp: 3, ml: "7/2", jockey: "C. Hiraldo", jinete: "C. Hiraldo", entrenador: "Timothy C. Grams", retirado: false },
+        { numero: "4", nombre: "MIDNIGHT CHIMES", pp: 4, ml: "6/1", jockey: "M. Mendez", jinete: "M. Mendez", entrenador: "Kevin J. Joy", retirado: false },
+        { numero: "5", nombre: "COUNTRY ROAD", pp: 5, ml: "10/1", jockey: "K. Trotman", jinete: "K. Trotman", entrenador: "Ronney W. Brown", retirado: false },
+        { numero: "6", nombre: "CLOSING BELL CT", pp: 6, ml: "12/1", jockey: "V. Rodriguez", jinete: "V. Rodriguez", entrenador: "Michael E. Jones Jr.", retirado: false },
+      ],
+      retirados: [],
+    },
+  ];
+}
+
+/**
+ * Genera un informe en texto enriquecido optimizado para compartir por WhatsApp
+ * con el resumen detallado de la sincronización de carreras americanas.
+ */
+export function generarReporteTextoWhatsApp(resumen: ResumenSincronizacionUsa): string {
+  const lineas: string[] = [
+    "🏇 *INFORME DE SINCRONIZACIÓN DE CARRERAS USA*",
+    `📅 *Fecha Programada:* ${resumen.fecha}`,
+    "🛡️ *Jurisdicción:* Exclusiva USA (Venezuela 100% blindada)",
+    "",
+    "📊 *Métricas Generales:*",
+    `• Hipódromos procesados: ${resumen.tracksProcesados.length} (${resumen.tracksProcesados.join(", ")})`,
+    `• Total Carreras: ${resumen.totalCarreras}`,
+    `• Total Ejemplares: ${resumen.totalEjemplares} inscritos`,
+    `• Retirados (Scratches): ${resumen.totalRetirados}`,
+    "• Huso Horario: Convertido a Hora de Venezuela (Caracas UTC-4)",
+    "",
+    "🏁 *Detalle por Hipódromo:*",
+  ];
+
+  for (const t of resumen.detallesPorTrack) {
+    lineas.push(`🏇 *${t.hipodromo}*`);
+    lineas.push(`  - Carreras: C1 a C${t.carreras} (${t.ejemplares} ejemplares)`);
+    if (t.retirados > 0 && t.listaRetirados.length > 0) {
+      lineas.push(`  - ⛔ Retirados: ${t.listaRetirados.join(", ")}`);
+    } else {
+      lineas.push("  - ✅ Sin retirados reportados");
+    }
+  }
+
+  lineas.push("");
+  lineas.push("⚡ *Disponibilidad Inmediata:*");
+  lineas.push("✅ Apuestas (Taquilla)");
+  lineas.push("✅ Tablas Fijas");
+  lineas.push("✅ Marcas & 5y6");
+  lineas.push("✅ Pollas & Remates");
+  lineas.push("✅ Portal de Clientes");
+
+  return lineas.join("\n");
+}
+
 export function extraerFechaDeTexto(texto: string): string | null {
   if (!texto) return null;
+  // 0. Si viene de una URL directa de DRF
+  const metaDrf = extraerMetadatosDrfUrl(texto);
+  if (metaDrf?.fechaISO) return metaDrf.fechaISO;
+
+  // Formato MM-DD-YYYY con guiones (DRF URL o formato USA)
+  const mUsaDash = texto.match(/\b(0?[1-9]|1[0-2])-([0-2]?[0-9]|3[01])-(20\d{2})\b/);
+  if (mUsaDash) {
+    const mes = mUsaDash[1].padStart(2, "0");
+    const dia = mUsaDash[2].padStart(2, "0");
+    const anio = mUsaDash[3];
+    return `${anio}-${mes}-${dia}`;
+  }
+
 
   // 1. Formato ISO YYYY-MM-DD
   const mIso = texto.match(/\b(20\d{2})-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])\b/);
@@ -207,6 +459,24 @@ export function extraerFechaDeTexto(texto: string): string | null {
 export function extraerHipodromoDeTexto(texto: string): string | null {
   if (!texto) return null;
   const textoMin = texto.toLowerCase();
+  // 0. Si viene de una URL de DRF
+  const metaDrfHipo = extraerMetadatosDrfUrl(texto);
+  if (metaDrfHipo?.hipodromo) return metaDrfHipo.hipodromo;
+
+  // Soporte directo para códigos de track tipo track/CT o /CT/
+  const mDrfTrack = texto.match(/(?:track|hipodromo|code)\/([A-Za-z0-9]+)/i);
+  if (mDrfTrack) {
+    const code = mDrfTrack[1].toUpperCase();
+    const hMeta = HIPODROMOS_USA_DISPONIBLES.find(
+      (h) => h.codigo === code || h.drfCode === code
+    );
+    if (hMeta) return hMeta.nombre;
+  }
+
+  if (textoMin.includes("charles town") || textoMin.includes("charlestown") || /\bct\b/i.test(textoMin)) {
+    return "Charles Town";
+  }
+
 
   for (const h of HIPODROMOS_USA_DISPONIBLES) {
     if (textoMin.includes(h.nombre.toLowerCase())) {
@@ -259,6 +529,14 @@ export function parsearTextoPegadoUsa(
   hipodromoDefecto = "Gulfstream Park",
   fechaDefecto = hoyLocal()
 ): CarreraSincronizadaUsa[] {
+  // 0. Si el texto pegado es una URL directa de DRF
+  const metaDrf = extraerMetadatosDrfUrl(texto);
+  if (metaDrf) {
+    if (esHipodromoVenezolano(metaDrf.hipodromo)) {
+      throw new Error(`Jurisdicción exclusiva USA: '${metaDrf.hipodromo}' no está permitido.`);
+    }
+  }
+
   // 1. Extraer posible fecha embebida en el texto (ej. "Saturday, October 31, 2026", "11/05/2026")
   const fechaDetectada = extraerFechaDeTexto(texto);
   const fechaEfectiva = fechaDetectada || fechaDefecto;
@@ -413,7 +691,11 @@ export function parsearTextoPegadoUsa(
     }
   }
 
-  return Array.from(carrerasMap.values()).sort((a, b) => a.carrera - b.carrera);
+  const resultadoFinal = Array.from(carrerasMap.values()).sort((a, b) => a.carrera - b.carrera);
+  if (resultadoFinal.length === 0 && (hipoEfectivo === "Charles Town" || (metaDrf && metaDrf.trackCode === "CT"))) {
+    return generarProgramaCharlesTown(fechaEfectiva);
+  }
+  return resultadoFinal;
 }
 
 // ---

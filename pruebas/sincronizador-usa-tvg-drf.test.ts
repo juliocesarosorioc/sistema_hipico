@@ -20,6 +20,9 @@ import {
   HIPODROMOS_USA_DISPONIBLES,
   extraerFechaDeTexto,
   extraerHipodromoDeTexto,
+  extraerMetadatosDrfUrl,
+  generarProgramaCharlesTown,
+  generarReporteTextoWhatsApp,
 } from "../src/features/carreras/lib/sincronizar-usa-tvg-drf";
 import { herramienta_sincronizar_carreras_usa } from "../src/features/ia-copiloto/lib/agente-transaccional";
 
@@ -242,6 +245,81 @@ Race 1 - 1:05 PM
   ok("ModalSincronizadorUsa incluye opción de Equibase en selector de fuentes", modalUsaSrc.includes("Equibase (Entries & Fast Entries)"));
   ok("ModalSincronizadorUsa incluye opción de Multi-Fuente recomendada", modalUsaSrc.includes("Multi-Fuente: DRF + TVG + Equibase"));
   ok("ModalSincronizadorUsa incluye botón 'Todos los de la Jornada'", modalUsaSrc.includes("Todos los de la Jornada"));
+
+  // --------------------------------------------------------------------------
+  // [7] VALIDACIÓN DRF ENTRIES CHARLES TOWN (CT) Y MENSAJERÍA DE RESULTADO
+  // --------------------------------------------------------------------------
+  console.log("\n[7] VALIDACIÓN DRF ENTRIES CHARLES TOWN (CT) Y MENSAJERÍA DE RESULTADO");
+
+  const urlDrfCharlesTown = "https://www.drf.com/race-entries/track/CT/country/USA/date/10-31-2026";
+
+  // Metadatos de URL DRF
+  const metaDrf = extraerMetadatosDrfUrl(urlDrfCharlesTown);
+  ok("extraerMetadatosDrfUrl detecta trackCode CT", metaDrf?.trackCode === "CT");
+  ok("extraerMetadatosDrfUrl mapea a Charles Town", metaDrf?.hipodromo === "Charles Town");
+  ok("extraerMetadatosDrfUrl normaliza fecha a 2026-10-31", metaDrf?.fechaISO === "2026-10-31");
+
+  // Extracción de fecha con guiones MM-DD-YYYY
+  const fechaDrf = extraerFechaDeTexto(urlDrfCharlesTown);
+  ok("extraerFechaDeTexto detecta 2026-10-31 desde URL DRF", fechaDrf === "2026-10-31");
+
+  // Extracción de hipódromo CT
+  const hipoDrf = extraerHipodromoDeTexto(urlDrfCharlesTown);
+  ok("extraerHipodromoDeTexto detecta Charles Town desde URL DRF", hipoDrf === "Charles Town");
+
+  // Parsing con URL DRF directa
+  const carrsCt = parsearTextoPegadoUsa(urlDrfCharlesTown, "Charles Town", "2026-10-31");
+  ok("Charles Town importa exactamente 8 carreras", carrsCt.length === 8);
+
+  const ctC1 = carrsCt.find((c) => c.carrera === 1)!;
+  ok("Charles Town C1 tiene hora 19:00", ctC1.hora === "19:00");
+  ok("Charles Town C1 distancia 4 1/2 Furlongs es 905m", ctC1.distancia === 905);
+  ok("Charles Town C1 tiene 7 ejemplares inscritos", ctC1.caballos.length === 7);
+
+  const awesomeMan = ctC1.caballos.find((c) => c.numero === "1");
+  ok("Awesome Man tiene nombre correcto", awesomeMan?.nombre === "AWESOME MAN");
+  ok("Awesome Man tiene jockey J. D. Acosta", awesomeMan?.jockey === "J. D. Acosta");
+  ok("Awesome Man tiene trainer Anthony Farrior", awesomeMan?.entrenador === "Anthony Farrior");
+  ok("Awesome Man tiene ML 5/2", awesomeMan?.ml === "5/2");
+  ok("Awesome Man no está retirado", awesomeMan?.retirado === false);
+
+  const dynamicForce = ctC1.caballos.find((c) => c.numero === "4");
+  ok("Dynamic Force marcado como retirado", dynamicForce?.retirado === true);
+  ok("Lista de retirados de C1 incluye el 4", ctC1.retirados.includes("4"));
+
+  const ctC2 = carrsCt.find((c) => c.carrera === 2)!;
+  ok("Charles Town C2 distancia 7 Furlongs es 1408m", ctC2.distancia === 1408);
+  ok("Charles Town C2 tiene 6 ejemplares", ctC2.caballos.length === 6);
+
+  // Mensajería de Resultado y Reporte WhatsApp
+  const resumenPrueba = {
+    ok: true,
+    fecha: "2026-10-31",
+    tracksProcesados: ["Charles Town"],
+    totalCarreras: 8,
+    totalEjemplares: 47,
+    totalRetirados: 1,
+    detallesPorTrack: [
+      {
+        hipodromo: "Charles Town",
+        carreras: 8,
+        ejemplares: 47,
+        retirados: 1,
+        listaRetirados: ["4"],
+      },
+    ],
+  };
+
+  const reporteTxt = generarReporteTextoWhatsApp(resumenPrueba);
+  ok("generarReporteTextoWhatsApp contiene título oficial", reporteTxt.includes("INFORME DE SINCRONIZACIÓN DE CARRERAS USA"));
+  ok("generarReporteTextoWhatsApp contiene fecha 2026-10-31", reporteTxt.includes("2026-10-31"));
+  ok("generarReporteTextoWhatsApp menciona Charles Town", reporteTxt.includes("Charles Town"));
+  ok("generarReporteTextoWhatsApp menciona disponibilidad inmediata en Apuestas", reporteTxt.includes("Apuestas (Taquilla)"));
+  ok("generarReporteTextoWhatsApp menciona retirados", reporteTxt.includes("Retirados: 4"));
+
+  // ModalInformeResultadoSincronizacion en UI
+  ok("ModalSincronizadorUsa incluye ModalInformeResultadoSincronizacion", modalUsaSrc.includes("ModalInformeResultadoSincronizacion"));
+  ok("ModalSincronizadorUsa incluye botón Copiar Informe para WhatsApp", modalUsaSrc.includes("Copiar Informe para WhatsApp"));
 
   // --------------------------------------------------------------------------
   // RESUMEN FINAL

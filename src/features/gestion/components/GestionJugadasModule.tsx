@@ -100,6 +100,7 @@ import { agruparAdelantadasPorSeccion } from "@/features/liquidacion/lib/reporte
 import ReporteCarrera, { type ObservacionOrdenExceso } from "@/features/saldos/components/ReporteCarrera";
 import { BotonIconoReporteSaldosVisual } from "@/features/saldos/components/ReporteSaldosVisual";
 import { ModalWpsApuestas } from "@/features/motores/components/ModalWpsApuestas";
+import { ModalApuestaEventoEspecial } from "@/features/apuestas/components/ModalApuestaEventoEspecial";
 import { parsearLineaWps, type ApuestaWpsParseada } from "@/features/motores/lib/wps-incentivos";
 import {
   ejecutarComandoPizarra,
@@ -585,6 +586,7 @@ const hipodromosDelDia = useMemo(() => {
   const [modoExclusivoReporte, setModoExclusivoReporte] = useState(false);
   const [adelantadasAbierto, setAdelantadasAbierto] = useState(false);
   const [modalAgentePizarra, setModalAgentePizarra] = useState(false);
+  const [modalEventoEspecial, setModalEventoEspecial] = useState(false);
   const bloqueoLiquidacionActivo = liquidandoCarrera || (mostrarReporteLiquidacion && modoExclusivoReporte);
 
   const comisionNum = useMemo(() => {
@@ -5135,8 +5137,25 @@ const hipodromosDelDia = useMemo(() => {
           >
             ❓ Comando
           </button>
+          <button
+            type="button"
+            onClick={() => setModalEventoEspecial(true)}
+            title="🎯 Registrar apuesta de evento libre o especial (ej. 10/6 Milwaukee Brewers campeón serie mundial) y reporte con selección de ganador"
+            className={`${BTN_BARRA} bg-purple-700 text-purple-100 hover:bg-purple-600 font-bold shadow-sm`}
+          >
+            🎯 Evento Libre
+          </button>
         </div>
       </div>
+
+      {/* Modal 🎯 Apuesta Especial / Evento Libre */}
+      {modalEventoEspecial && (
+        <ModalApuestaEventoEspecial
+          abierto={modalEventoEspecial}
+          onCerrar={() => setModalEventoEspecial(false)}
+          clientes={clientes}
+        />
+      )}
 
       {/* Modal 🤖 Agente de Pizarra Oficial (Liquidación · Variación · Saldos) */}
       {modalAgentePizarra && (

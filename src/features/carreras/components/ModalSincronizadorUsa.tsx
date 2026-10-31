@@ -11,6 +11,7 @@ import {
   extraerHipodromoDeTexto,
   type ResumenSincronizacionUsa,
   type FuenteSincronizacionUsa,
+  generarReporteTextoWhatsApp,
 } from "@/features/carreras/lib/sincronizar-usa-tvg-drf";
 import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
 import { hoyLocal } from "@/core/utils/fechas";
@@ -55,7 +56,9 @@ export function ModalSincronizadorUsa({
     "Santa Anita",
     "Tampa Bay Downs",
     "Aqueduct",
+    "Charles Town",
   ]);
+  const [mostrarInformeModal, setMostrarInformeModal] = useState(false);
   const [autoRetiros, setAutoRetiros] = useState(false);
 
   // Tab Pegar
@@ -113,6 +116,7 @@ export function ModalSincronizadorUsa({
 
       setResumen(res);
       if (res.ok) {
+        setMostrarInformeModal(true);
         useCarrerasDiaStore.getState().setFecha(res.fecha || fecha);
         emitirToast(
           `✅ Sincronizados ${res.tracksProcesados.length} hipódromos (${res.totalCarreras} carreras, ${res.totalEjemplares} ejemplares) para ${res.fecha || fecha}.`,
@@ -625,7 +629,181 @@ Race 1 - 12:35 PM
             </button>
           )}
         </div>
+        {/* Modal de Informe de Resultado */}
+        {mostrarInformeModal && resumen && (
+          <ModalInformeResultadoSincronizacion
+            resumen={resumen}
+            fuente={fuente}
+            onCerrar={() => setMostrarInformeModal(false)}
+          />
+        )}
       </div>
     </div>
   );
 }
+
+
+interface ModalInformeResultadoProps {
+  resumen: ResumenSincronizacionUsa;
+  fuente: string;
+  onCerrar: () => void;
+}
+
+function ModalInformeResultadoSincronizacion({
+  resumen,
+  fuente,
+  onCerrar,
+}: ModalInformeResultadoProps) {
+  const [copiado, setCopiado] = useState(false);
+
+  const handleCopiar = () => {
+    const texto = generarReporteTextoWhatsApp(resumen);
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(texto);
+      setCopiado(true);
+      emitirToast("📋 ¡Informe copiado al portapapeles listo para WhatsApp!", "success");
+      setTimeout(() => setCopiado(false), 3000);
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-3 sm:p-4 backdrop-blur-md animate-in fade-in duration-200"
+    >
+      <div className="relative flex max-h-[90vh] w-full max-w-xl flex-col rounded-3xl border border-emerald-500/50 bg-slate-900 text-slate-100 shadow-2xl overflow-hidden">
+        {/* Cabecera */}
+        <div className="flex items-center justify-between border-b border-slate-800 bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-2xl shadow-lg shadow-emerald-950/50">
+              📋
+            </div>
+            <div>
+              <h3 className="text-base font-black uppercase tracking-wide text-white">
+                Informe de Sincronización de Carreras
+              </h3>
+              <p className="text-xs font-semibold text-emerald-300">
+                Programación consolidada para {resumen.fecha} · Fuente: {fuente}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Cuerpo */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Métricas destacadas */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3 text-center">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Hipódromos</span>
+              <span className="text-xl font-black text-amber-400">{resumen.tracksProcesados.length}</span>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3 text-center">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Carreras</span>
+              <span className="text-xl font-black text-cyan-400">{resumen.totalCarreras}</span>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3 text-center">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Ejemplares</span>
+              <span className="text-xl font-black text-emerald-400">{resumen.totalEjemplares}</span>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3 text-center">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Retirados</span>
+              <span className={`text-xl font-black ${resumen.totalRetirados > 0 ? "text-rose-400" : "text-slate-400"}`}>
+                {resumen.totalRetirados}
+              </span>
+            </div>
+          </div>
+
+          {/* Desglose por Hipódromo */}
+          <div className="space-y-2">
+            <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+              Detalle por Hipódromo Procesado:
+            </h4>
+            <div className="space-y-2">
+              {resumen.detallesPorTrack.map((t) => (
+                <div
+                  key={t.hipodromo}
+                  className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3.5 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-black text-white">{t.hipodromo}</span>
+                      <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                        C1–C{t.carreras}
+                      </span>
+                    </div>
+                    <span className="text-xs font-mono font-bold text-slate-300">
+                      {t.ejemplares} ejemplares
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                    <span>
+                      {t.retirados > 0
+                        ? `⛔ ${t.retirados} retirado(s) detectados: #${t.listaRetirados.join(", #")}`
+                        : "✅ Pista completa sin retirados"}
+                    </span>
+                    <span className="text-emerald-400 font-bold">● Activo en sistema</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Módulos confirmados */}
+          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-3.5 space-y-2">
+            <span className="text-[11px] font-black uppercase text-emerald-300 block">
+              ✅ Disponibilidad Inmediata Confirmada:
+            </span>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="flex items-center gap-2 text-slate-200">
+                <span className="text-emerald-400">✓</span> Apuestas & Taquilla
+              </div>
+              <div className="flex items-center gap-2 text-slate-200">
+                <span className="text-emerald-400">✓</span> Tablas Fijas
+              </div>
+              <div className="flex items-center gap-2 text-slate-200">
+                <span className="text-emerald-400">✓</span> Marcas & 5y6
+              </div>
+              <div className="flex items-center gap-2 text-slate-200">
+                <span className="text-emerald-400">✓</span> Pollas & Remates
+              </div>
+              <div className="flex items-center gap-2 text-slate-200">
+                <span className="text-emerald-400">✓</span> Portal de Clientes
+              </div>
+              <div className="flex items-center gap-2 text-slate-200">
+                <span className="text-emerald-400">✓</span> Hora Caracas (UTC-4)
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Pie con botón para WhatsApp */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-slate-800 bg-slate-950 px-5 py-3.5">
+          <button
+            type="button"
+            onClick={handleCopiar}
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black uppercase text-white shadow-lg shadow-emerald-950/40 hover:bg-emerald-500 active:scale-95 transition-all"
+          >
+            <span>{copiado ? "✅" : "📋"}</span>
+            <span>{copiado ? "¡Copiado!" : "Copiar Informe para WhatsApp"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition-all"
+          >
+            Entendido
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
