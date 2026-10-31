@@ -582,3 +582,37 @@ export async function verificarEstadoCarreraParaJugada(
   };
 }
 
+export const EVENTO_ESTADO_CARRERA_CAMBIADO = "carrera_estado_cambiado";
+
+/**
+ * Abre o cierra una carrera globalmente, actualiza la memoria y emite el evento
+ * para sincronizar de inmediato al Agente IA, la Sala de Jugadas y los modales de apuestas.
+ */
+export function alternarEstadoCarreraGlobal(opts: {
+  hipodromo?: string | null;
+  carrera: number | string;
+  fecha?: string | null;
+  estado: EstadoOperativoCarrera;
+}): void {
+  marcarEstadoCarreraEnMemoria({
+    hipodromo: opts.hipodromo,
+    carrera: opts.carrera,
+    fecha: opts.fecha,
+    estado: opts.estado,
+  });
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent(EVENTO_ESTADO_CARRERA_CAMBIADO, {
+        detail: {
+          hipodromo: opts.hipodromo,
+          carrera: opts.carrera,
+          fecha: opts.fecha,
+          estado: opts.estado,
+        },
+      })
+    );
+  }
+}
+
+
