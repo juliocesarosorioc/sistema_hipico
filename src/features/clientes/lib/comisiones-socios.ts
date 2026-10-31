@@ -23,6 +23,25 @@ export interface ReglaDevolucionCliente {
   fechaInicioComision?: string; // YYYY-MM-DD
 }
 
+/** Forma mínima de un cliente para resolver la relación «socio_asignado». */
+export type ClienteSocioLike = {
+  id?: string | number | null;
+  nombre?: string | null;
+  seudonimo?: string | null;
+  es_socio?: boolean | null;
+  socio_asignado?: string | null;
+  devolucion?: number | string | null;
+  comision_socio_pct?: number | string | null;
+  fecha_inicio_comision_socio?: string | null;
+};
+
+/** Referencia de socio tolerante a id, nombre y seudónimo. */
+export type SocioRefLike = {
+  id?: string | number | null;
+  nombre?: string | null;
+  seudonimo?: string | null;
+};
+
 /**
  * Parámetros predeterminados oficiales establecidos para la semana (2026-10-29 a 2026-10-30 y vigentes)
  */
@@ -128,6 +147,64 @@ function normalizar(s?: string | null): string {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function resolverSocioRef(
+  socioNombre: string,
+  socioId: string | number | null | undefined,
+  clientes: ClienteSocioLike[]
+): SocioRefLike {
+  const norm = normalizar(socioNombre);
+  const porId =
+    socioId != null
+      ? clientes.find((c) => String(c.id ?? "") === String(socioId))
+      : undefined;
+  const porNombre = clientes.find(
+    (c) =>
+      normalizar(c.nombre) === norm ||
+      normalizar(c.seudonimo) === norm
+  );
+  const ref = porId ?? porNombre;
+  return {
+    id: ref?.id ?? socioId ?? undefined,
+    nombre: ref?.nombre ?? socioNombre,
+    seudonimo: ref?.seudonimo ?? socioNombre,
+  };
+}
+
+/**
+ * Determina si un cliente pertenece/está afiliado a un socio.
+ *
+ * `clientes.socio_asignado` históricamente guardó el NOMBRE, pero el valor
+ * canónico actual es el **ID** del socio (`valorSocioAsignado`). Esta función
+ * acepta ambos para que la comisión no se pierda al migrar los datos.
+ */
+export function esClienteAfiliadoAlSocio(
+  cliente: Pick<ClienteSocioLike, "id" | "socio_asignado"> | null | undefined,
+  socio: SocioRefLike | null | undefined,
+  clientesParaResolver: ClienteSocioLike[] = []
+): boolean {
+  const valor = String(cliente?.socio_asignado ?? "").trim();
+  if (!valor || !socio) return false;
+
+  if (socio.id != null && valor === String(socio.id)) return true;
+
+  const aliasSocio = new Set(
+    [socio.nombre, socio.seudonimo].map(normalizar).filter(Boolean)
+  );
+  if (aliasSocio.has(normalizar(valor))) return true;
+
+  // Si `socio_asignado` guarda el ID, resolvemos ese cliente y comparamos
+  // sus nombres/seudónimos con los del socio.
+  const referencia = clientesParaResolver.find((c) => String(c.id ?? "") === valor);
+  if (referencia) {
+    const aliasReferencia = [referencia.nombre, referencia.seudonimo]
+      .map(normalizar)
+      .filter(Boolean);
+    if (aliasReferencia.some((n) => aliasSocio.has(n))) return true;
+  }
+
+  return false;
+}
+
 /**
  * Obtiene la regla predeterminada o configurada para un cliente
  */
@@ -141,14 +218,17 @@ export function buscarReglaDevolucionCliente(nombre: string): ReglaDevolucionCli
  */
 export function calcularComisionesSocioPorClientes(params: {
   socioNombre: string;
+  /** ID canónico del socio (recomendado). Permite resolver afiliados guardados por ID. */
+  socioId?: string | number | null;
   fechaDesde?: string;
   fechaHasta?: string;
   tickets?: any[];
-  clientes?: any[];
+  clientes?: ClienteSocioLike[];
 }): ResumenComisionesSocio {
   const socioNorm = normalizar(params.socioNombre);
   const tickets = params.tickets || [];
   const clientes = params.clientes || [];
+  const socioRef = resolverSocioRef(params.socioNombre, params.socioId, clientes);
 
   // Buscar todos los clientes que tienen a este socio asignado
   const clientesAfiliados: Array<{
@@ -159,21 +239,14 @@ export function calcularComisionesSocioPorClientes(params: {
   }> = [];
 
   // Primero de la lista viva de clientes
-  const socioObj = clientes.find(
-    (x) => normalizar(x.nombre) === socioNorm || normalizar(x.seudonimo) === socioNorm
-  );
-  const socioIdStr = socioObj ? String(socioObj.id) : "";
-
   for (const c of clientes) {
-    const sAsig = normalizar(c.socio_asignado);
-    const sId = String((c as any).socio_id || "").trim();
-    if (sAsig === socioNorm || (socioIdStr && (sAsig === socioIdStr || sId === socioIdStr))) {
+    if (esClienteAfiliadoAlSocio(c, socioRef, clientes)) {
       const nom = c.seudonimo || c.nombre || "";
       const regla = buscarReglaDevolucionCliente(nom);
       const comPct = Number(c.comision_socio_pct ?? regla?.comisionSocioPct ?? 1.00);
       const fIni = c.fecha_inicio_comision_socio || regla?.fechaInicioComision || "2026-10-29";
       clientesAfiliados.push({
-        id: c.id,
+        id: c.id ?? undefined,
         nombre: nom,
         comisionPct: comPct,
         fechaInicio: fIni,
@@ -182,8 +255,11 @@ export function calcularComisionesSocioPorClientes(params: {
   }
 
   // Si no vinieron en la lista viva, tomar de los parámetros predeterminados
+  const nombresSocio = new Set(
+    [socioRef.nombre, socioRef.seudonimo, params.socioNombre].map(normalizar).filter(Boolean)
+  );
   for (const r of PARAMETROS_PREDETERMINADOS_DEVOLUCION) {
-    if (normalizar(r.socioAsignado) === socioNorm) {
+    if (nombresSocio.has(normalizar(r.socioAsignado))) {
       if (!clientesAfiliados.some((ca) => normalizar(ca.nombre) === normalizar(r.nombre))) {
         clientesAfiliados.push({
           nombre: r.nombre,
@@ -196,19 +272,22 @@ export function calcularComisionesSocioPorClientes(params: {
 
   // Devolución propia del socio
   const socioRegla = buscarReglaDevolucionCliente(params.socioNombre);
-  const socioClienteObj = clientes.find((c) => normalizar(c.seudonimo || c.nombre) === socioNorm);
+  const socioClienteObj =
+    (params.socioId != null
+      ? clientes.find((c) => String(c.id ?? "") === String(params.socioId))
+      : undefined) ??
+    clientes.find(
+      (c) => normalizar(c.seudonimo) === socioNorm || normalizar(c.nombre) === socioNorm
+    );
   const devPropiaPct = Number(socioClienteObj?.devolucion ?? socioRegla?.devolucionPropiaPct ?? 1.00);
 
   // Calcular jugadas propias del socio para su devolución propia
   let montoJugadoPropio = 0;
   for (const t of tickets) {
     if (t.anulada) continue;
-    const estT = String(t.estado || "").trim().toUpperCase();
-    if (estT === "RETIRADO" || estT === "ANULADO") continue;
     const tCli = normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre);
-    const tCliConsigue = normalizar(t.cliente_consigue_nombre || t.clienteConsigue || t.tercio || t.contraparte);
-    const fechaT = String(t.fecha_carrera || t.fecha || t.fecha_registro || "").slice(0, 10);
-    if (tCli === socioNorm || tCliConsigue === socioNorm) {
+    const fechaT = String(t.fecha_carrera || t.fecha || "").slice(0, 10);
+    if (tCli === socioNorm) {
       if (params.fechaDesde && fechaT < params.fechaDesde) continue;
       if (params.fechaHasta && fechaT > params.fechaHasta) continue;
       const m = Number(t.monto_jugado ?? t.monto ?? t.monto_decidido ?? 0);
@@ -228,13 +307,10 @@ export function calcularComisionesSocioPorClientes(params: {
 
     for (const t of tickets) {
       if (t.anulada) continue;
-      const estT = String(t.estado || "").trim().toUpperCase();
-      if (estT === "RETIRADO" || estT === "ANULADO") continue;
       const tCli = normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre);
-      const tCliConsigue = normalizar(t.cliente_consigue_nombre || t.clienteConsigue || t.tercio || t.contraparte);
-      const fechaT = String(t.fecha_carrera || t.fecha || t.fecha_registro || "").slice(0, 10);
+      const fechaT = String(t.fecha_carrera || t.fecha || "").slice(0, 10);
 
-      if (tCli === afNorm || tCliConsigue === afNorm) {
+      if (tCli === afNorm) {
         // Validación de fecha inicio de cálculo para el socio
         if (fechaT < af.fechaInicio) continue;
         if (params.fechaDesde && fechaT < params.fechaDesde) continue;
@@ -402,46 +478,46 @@ export async function aplicarParametrosOficialesDevolucion(grupoId?: string): Pr
   if (!supabase) return { ok: true, actualizados: 0 };
 
   try {
+    // Resolver los IDs canónicos de los socios para guardarlos en
+    // `socio_asignado` (el contrato actual es el ID, no el nombre).
+    const { data: todos } = await supabase
+      .from("clientes")
+      .select("id, nombre, seudonimo");
+    const sociosPorNombre = new Map<string, string>();
+    for (const c of (todos ?? []) as Array<{ id?: unknown; nombre?: unknown; seudonimo?: unknown }>) {
+      if (c.id == null) continue;
+      for (const alias of [c.nombre, c.seudonimo]) {
+        const n = normalizar(alias as string | null);
+        if (n) sociosPorNombre.set(n, String(c.id));
+      }
+    }
+
     for (const r of PARAMETROS_PREDETERMINADOS_DEVOLUCION) {
-      // 1. Actualizar columnas núcleo seguras que siempre existen en public.clientes
-      const coreData: Record<string, any> = {
+      const updateData: Record<string, any> = {
         devolucion: r.devolucionPropiaPct,
       };
       if (r.esSocio) {
-        coreData.es_socio = true;
+        updateData.es_socio = true;
       }
       if (r.socioAsignado) {
-        coreData.socio_asignado = r.socioAsignado;
+        updateData.socio_asignado =
+          sociosPorNombre.get(normalizar(r.socioAsignado)) ?? r.socioAsignado;
+        updateData.comision_socio_pct = r.comisionSocioPct ?? 1.00;
+        updateData.fecha_inicio_comision_socio = r.fechaInicioComision || "2026-10-29";
       }
 
-      let qCore = supabase
+      let q = supabase
         .from("clientes")
-        .update(coreData)
+        .update(updateData)
         .or(`nombre.ilike.${r.nombre},seudonimo.ilike.${r.nombre}`);
 
       if (grupoId) {
-        qCore = qCore.eq("grupo_id", grupoId);
+        q = q.eq("grupo_id", grupoId);
       }
 
-      const { data, error } = await qCore.select("id");
-      if (!error && data && data.length > 0) {
+      const { data, error } = await q.select("id");
+      if (!error && data) {
         count += data.length;
-        // 2. Best-effort para columnas extendidas (si sql/004 ya fue aplicado)
-        if (r.socioAsignado) {
-          try {
-            await supabase
-              .from("clientes")
-              .update({
-                socio_id: r.socioAsignado,
-                socio_comision_pct: r.comisionSocioPct ?? 1.00,
-                comision_socio_pct: r.comisionSocioPct ?? 1.00,
-                fecha_inicio_comision_socio: r.fechaInicioComision || "2026-10-29",
-              })
-              .in("id", data.map((d: any) => d.id));
-          } catch {
-            /* best effort si las columnas nuevas aún no están en el esquema remoto */
-          }
-        }
       }
     }
     return { ok: true, actualizados: count };

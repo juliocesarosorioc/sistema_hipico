@@ -17,8 +17,10 @@ import {
 import {
   calcularComisionesSocioPorClientes,
   cargarTodosTicketsParaComisiones,
+  esClienteAfiliadoAlSocio,
   type ResumenComisionesSocio,
 } from "@/features/clientes/lib/comisiones-socios";
+import { redondearCentavos } from "@/shared/lib/dinero";
 import { formatoMoneda } from "@/shared/lib/vzla";
 
 /** Nodo acordeón recursivo con el mismo criterio de totales del legacy. */
@@ -264,14 +266,50 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
     setDevolucionPct(pct);
     const tickets = await onCargarTickets(c.id);
     const tree = construirEstadoCuenta(tickets, pct, c);
+
+    // Comisiones como socio por sus clientes asignados (id, nombre o seudónimo).
+    const cNom = String(c.nombre ?? c.seudonimo ?? "").trim();
+    const tieneAfiliados = clientes.some((x) =>
+      esClienteAfiliadoAlSocio(
+        { id: x.id, socio_asignado: x.socio_asignado },
+        { id: c.id, nombre: c.nombre, seudonimo: c.seudonimo },
+        clientes
+      )
+    );
+    let comisionSocioDevengada = 0;
+    if (c.es_socio || tieneAfiliados) {
+      try {
+        const allTickets = await cargarTodosTicketsParaComisiones();
+        const resCom = calcularComisionesSocioPorClientes({
+          socioNombre: cNom,
+          socioId: c.id,
+          tickets: allTickets,
+          clientes,
+        });
+        setResumenSocio(resCom);
+        comisionSocioDevengada = resCom.totalComisionesClientes;
+      } catch (err) {
+        console.error("Error al calcular comisiones de socio:", err);
+      }
+    }
+
+    // `listarClientes` ya imputa `comision_socio_devengada` en `saldo_actual`.
+    // La descontamos de la base para que `contabilidad-central` la vuelva a
+    // sumar UNA sola vez (fuente única de verdad: la ficha unificada).
+    const comisionYaEnSaldo = Number(
+      (c as unknown as { comision_socio_devengada?: number | string }).comision_socio_devengada ?? 0
+    );
+    const saldoBaseBd = redondearCentavos(Number(c.saldo_actual ?? 0) - comisionYaEnSaldo);
+
     const fichaCalc = construirFichaEstadoCuentaUnificada({
       id: c.id,
       nombre: c.nombre ?? c.seudonimo ?? "",
-      saldoBaseBd: c.saldo_actual ?? 0,
+      saldoBaseBd,
       aval: c.aval ?? 0,
       comisionPct: c.comision ?? 5,
       devolucionPct: pct,
       devolucionIncentivo: tree.dec,
+      comisionSocioDevengada,
       libre: String(c.modo_juego ?? "").toLowerCase().trim() === "libre",
       movimientos: tickets.map((t) => ({
         id: t.id,
@@ -294,27 +332,6 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
         anulada: t.anulada,
       })),
     });
-
-    // Cargar comisiones como socio por sus clientes asignados
-    const cNom = String(c.nombre ?? c.seudonimo ?? "").trim().toUpperCase();
-    const cId = String(c.id);
-    const tieneAfiliados = clientes.some((x) => {
-      const val = String(x.socio_asignado || x.socio_id || "").trim();
-      return val === cId || (cNom && val.toUpperCase() === cNom);
-    });
-    if (c.es_socio || tieneAfiliados) {
-      try {
-        const allTickets = await cargarTodosTicketsParaComisiones();
-        const resCom = calcularComisionesSocioPorClientes({
-          socioNombre: cNom,
-          tickets: allTickets,
-          clientes,
-        });
-        setResumenSocio(resCom);
-      } catch (err) {
-        console.error("Error al calcular comisiones de socio:", err);
-      }
-    }
 
     setRaiz(tree);
     setTotales({ monto: tree.monto, dec: tree.dec });
@@ -404,10 +421,12 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
 
           {ficha ? (
             (() => {
-              const comisionesSociosTotal = resumenSocio?.totalComisionesClientes ?? 0;
-              const saldoContableNetoFinal = ficha.saldoContable + comisionesSociosTotal;
+              // La ficha unificada ya imputa la comisión del socio en el saldo.
+              // Fuente única: contabilidad-central.ts (no volver a sumarla).
+              const comisionesSociosTotal = ficha.comisionSocioDevengada;
+              const saldoContableNetoFinal = ficha.saldoContable;
               const disponibleParaJugarFinal = Number.isFinite(ficha.disponibleParaJugar)
-                ? ficha.disponibleParaJugar + comisionesSociosTotal
+                ? ficha.disponibleParaJugar
                 : NaN;
 
               return (

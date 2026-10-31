@@ -24,6 +24,7 @@ import {
   autoReliquidarSiLiquidada,
   corregirJugadaYRecalcular,
   recalcularCarreraCompleta,
+  recalcularJornadaCompleta,
 } from "@/features/liquidacion/lib/recalcular";
 import { reversarLiquidacionCarrera } from "@/features/liquidacion/lib/reversar";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
@@ -242,6 +243,7 @@ export function GestionJugadasModule() {
   const [ocupadoPreview, setOcupadoPreview] = useState(false);
   const [errorAccionPreview, setErrorAccionPreview] = useState("");
   const [recalculando, setRecalculando] = useState(false);
+  const [recalculandoJornada, setRecalculandoJornada] = useState(false);
   const [modalSaldoRapido, setModalSaldoRapido] = useState(false);
   const [modalCreacionRapidaCliente, setModalCreacionRapidaCliente] = useState(false);
   const [modalEventoLibre, setModalEventoLibre] = useState(false);
@@ -2423,6 +2425,46 @@ const hipodromosDelDia = useMemo(() => {
       });
     } finally {
       setRecalculando(false);
+    }
+  };
+
+  /**
+   * Recalcula TODA la jornada (todas las carreras con resultado oficial de la
+   * fecha activa) y sincroniza los saldos reales de los clientes.
+   *
+   * Útil después de cargar jugadas rezagadas o corregir resultados: el motor
+   * `recalcularJornadaCompleta` es idempotente y usa el SSOT de puestos.
+   */
+  const recalcularJornada = async () => {
+    if (recalculandoJornada) return;
+    setRecalculandoJornada(true);
+    try {
+      const r = await recalcularJornadaCompleta(fecha, {
+        tasaComision: comisionNum,
+        usuario: usuarioVigente(),
+      });
+      const msg = r.ok
+        ? `🔄 Jornada ${r.fecha}: ${r.carrerasRecalculadas} carrera(s) recalculada(s).`
+        : `⚠️ Jornada ${r.fecha}: ${
+            r.errores.join(" | ") || "no se encontraron carreras con resultado oficial"
+          }`;
+      setAviso(msg);
+      toastPreview(msg, r.ok ? "success" : "error");
+      void registrarAuditoria("GESTION_JUGADAS", "RECALCULAR_JORNADA", msg);
+      recargarRegistroCentral();
+      await Promise.all([recargarClientes(), recargarJugadasGuardadas()]);
+      void notificarTareaEjecutadaOperador({
+        titulo: r.ok ? "Jornada recalculada exitosamente" : "Aviso al recalcular la jornada",
+        mensaje: msg,
+        detalles: [
+          `Fecha: ${r.fecha}`,
+          `Carreras recalculadas: ${r.carrerasRecalculadas}`,
+          ...(r.errores.length ? r.errores.map((e) => `Aviso: ${e}`) : ["Saldos sincronizados con contabilidad-central"]),
+        ],
+        variante: r.ok ? "success" : "warning",
+      });
+    } finally {
+      setRecalculandoJornada(false);
     }
   };
 
@@ -5143,6 +5185,15 @@ const hipodromosDelDia = useMemo(() => {
             className={`${BTN_BARRA} bg-warning-600 text-white hover:bg-warning-500 disabled:opacity-40`}
           >
             {recalculando ? "⏳ Recalculando…" : "🔄 Recalcular"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void recalcularJornada()}
+            disabled={bloqueoLiquidacionActivo || recalculandoJornada}
+            title="🔄 Recalcula TODA la jornada de la fecha activa (todas las carreras con resultado oficial) y sincroniza los saldos reales de los clientes. Idempotente: no duplica cobros ni premios."
+            className={`${BTN_BARRA} bg-amber-700 text-white hover:bg-amber-600 disabled:opacity-40`}
+          >
+            {recalculandoJornada ? "⏳ Recalculando jornada…" : "🔄 Recalcular Jornada"}
           </button>
           <button
             type="button"

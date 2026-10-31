@@ -39,6 +39,8 @@
     "../src/features/grupos/lib/atribucion-grupo.ts",
     "../src/features/portal/lib/ventana-reclamos.ts",
     "../src/features/portal/lib/jugada-usuario.ts",
+    "../src/features/portal/lib/bloqueo-jugadas.ts",
+    "../src/features/portal/lib/sala-jugadas-whatsapp.ts",
     "../src/features/liquidacion/lib/reversar-nucleo.ts",
     "../src/features/liquidacion/lib/estados-jugada.ts",
     "../src/features/liquidacion/lib/resolver-ejemplar-nucleo.ts",
@@ -172,13 +174,6 @@
     "../src/features/contabilidad/lib/honorarios-equipo.ts",
     "../src/features/contabilidad/lib/contabilidad-automatica.ts",
     "./contabilidad-automatizada-grupos-honorarios.test.ts",
-    "../src/features/liquidacion/lib/liquidacion-incentivos-socios.ts",
-    "./comision-particular-incentivo-socio.test.ts",
-    "../src/features/eventos-libres/lib/eventos-libres.ts",
-    "../src/features/contabilidad/lib/motor-backfill-retroactivo.ts",
-    "../src/features/ia-copiloto/lib/analista-cpa-auditor.ts",
-    "./contabilidad-backfill-evento-libre-ui.test.ts",
-    "../src/features/gaceta/lib/ia.ts",
-    "./gaceta-ordenamiento-carreras-faltantes.test.ts"
+    "./sala-jugadas-whatsapp.test.ts"
   ]
 }

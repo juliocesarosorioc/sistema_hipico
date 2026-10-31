@@ -9,7 +9,6 @@ import { ModalCreacionRapidaCliente } from "@/features/clientes/components/Modal
 import { ModalPortalCliente } from "@/features/clientes/components/ModalPortalCliente";
 import { EstadoCuentaAcordeon } from "@/features/clientes/components/EstadoCuentaAcordeon";
 import { ReporteDestinatariosDevolucion } from "@/features/clientes/components/ReporteDestinatariosDevolucion";
-import { aplicarParametrosOficialesDevolucion, PARAMETROS_PREDETERMINADOS_DEVOLUCION } from "@/features/clientes/lib/comisiones-socios";
 import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente";
 import { NotificacionesPortal } from "@/features/clientes/components/NotificacionesPortal";
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
@@ -28,6 +27,7 @@ import {
   resumenFormaPago,
   type ClienteRow,
 } from "@/features/clientes/lib/clientes";
+import { esClienteAfiliadoAlSocio } from "@/features/clientes/lib/comisiones-socios";
 import { formatoMoneda } from "@/shared/lib/vzla";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { useAuthStore } from "@/shared/store/useAuthStore";
@@ -40,35 +40,15 @@ const num = (v: number | string | null | undefined): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-/** Resuelve el nombre visible de un socio a partir de su id o nombre asignado */
-const obtenerNombreSocio = (c: ClienteRow, todosClientes: ClienteRow[]): string | null => {
-  const ref = c.socio_asignado || c.socio_id;
-  if (!ref) return null;
-  const sRef = String(ref).trim();
-  const socio = todosClientes.find(
-    (s) =>
-      String(s.id) === sRef ||
-      String(s.nombre || "").trim().toUpperCase() === sRef.toUpperCase() ||
-      String(s.seudonimo || "").trim().toUpperCase() === sRef.toUpperCase()
-  );
-  if (socio) {
-    return socio.seudonimo || socio.nombre || String(socio.id);
-  }
-  return sRef;
-};
-
-/** Afiliados de un socio/agencia (clientes cuyo socio_asignado o socio_id coincide con este socio). */
-const afiliadosDe = (socio: ClienteRow, lista: ClienteRow[]): number => {
-  const sId = String(socio.id);
-  const sNom = String(socio.nombre || "").trim().toUpperCase();
-  const sSeud = String(socio.seudonimo || "").trim().toUpperCase();
-
-  return lista.filter((cli) => {
-    const val = String(cli.socio_asignado || cli.socio_id || "").trim();
-    if (!val) return false;
-    return val === sId || (sNom && val.toUpperCase() === sNom) || (sSeud && val.toUpperCase() === sSeud);
-  }).length;
-};
+/** Afiliados de un socio/agencia (socio_asignado puede guardar id, nombre o seudónimo). */
+const afiliadosDe = (c: ClienteRow, lista: ClienteRow[]): number =>
+  lista.filter((s) =>
+    esClienteAfiliadoAlSocio(
+      { id: s.id, socio_asignado: s.socio_asignado },
+      { id: c.id, nombre: c.nombre, seudonimo: c.seudonimo },
+      lista
+    )
+  ).length;
 
 const DIAS = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"];
 
@@ -172,44 +152,14 @@ export function ClientesModule() {
   const recargar = async (gid?: string) => {
     setCargando(true);
     const target = gid !== undefined ? gid : grupoConsultado;
-    let cs = await listarClientes(true, target || null);
-    // Enriquecer en memoria con los parámetros oficiales de devolución/socios si el cliente aún no los tiene cargados
-    cs = cs.map((c) => {
-      const claveNom = String(c.seudonimo || c.nombre || "").trim().toUpperCase();
-      const paramOficial = PARAMETROS_PREDETERMINADOS_DEVOLUCION.find(
-        (p) => p.nombre.toUpperCase() === claveNom || String(c.nombre || "").trim().toUpperCase() === p.nombre.toUpperCase()
-      );
-      if (!paramOficial) return c;
-      return {
-        ...c,
-        devolucion: c.devolucion != null && Number(c.devolucion) > 0 ? c.devolucion : paramOficial.devolucionPropiaPct,
-        incentivo_pct: c.incentivo_pct != null && Number(c.incentivo_pct) > 0 ? c.incentivo_pct : paramOficial.devolucionPropiaPct,
-        es_socio: c.es_socio ?? paramOficial.esSocio,
-        socio_asignado: c.socio_asignado || c.socio_id || paramOficial.socioAsignado || null,
-        socio_id: c.socio_id || c.socio_asignado || paramOficial.socioAsignado || null,
-        socio_comision_pct: c.socio_comision_pct ?? c.comision_socio_pct ?? paramOficial.comisionSocioPct ?? null,
-        comision_socio_pct: c.comision_socio_pct ?? c.socio_comision_pct ?? paramOficial.comisionSocioPct ?? null,
-      };
-    });
+    const cs = await listarClientes(true, target || null);
     setClientes(cs);
     setErrorCarga(errorClientes());
     setCargando(false);
   };
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const keySync = `club_sync_dev_oficial_${grupoConsultado || "all"}`;
-        if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(keySync)) {
-          sessionStorage.setItem(keySync, "1");
-          await aplicarParametrosOficialesDevolucion(grupoConsultado || undefined);
-          limpiarCacheClientes();
-        }
-      } catch {
-        /* ignore */
-      }
-      await recargar(grupoConsultado);
-    })();
+    void recargar(grupoConsultado);
 
     const handleActualizar = () => {
       limpiarCacheClientes();
@@ -580,10 +530,8 @@ export function ClientesModule() {
                       )}
                     </td>
                     <td className={td}>
-                      {obtenerNombreSocio(c, clientes) ? (
-                        <span className="truncate block font-bold text-amber-700" title={`Socio: ${obtenerNombreSocio(c, clientes)}`}>
-                          {obtenerNombreSocio(c, clientes)}
-                        </span>
+                      {c.socio_asignado ? (
+                        <span className="truncate block font-bold text-amber-700">{c.socio_asignado}</span>
                       ) : c.es_socio ? (
                         <span className="text-[10px] text-slate-400">
                           Agencia <span className="text-[9px]">👥</span> {afiliadosDe(c, clientes)}

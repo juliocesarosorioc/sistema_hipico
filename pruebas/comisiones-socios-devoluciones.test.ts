@@ -7,6 +7,7 @@ import {
   buscarReglaDevolucionCliente,
   calcularComisionesSocioPorClientes,
   calcularReporteDestinatariosDevolucion,
+  esClienteAfiliadoAlSocio,
   formatearReporteDestinatariosTexto,
 } from "../src/features/clientes/lib/comisiones-socios";
 
@@ -204,5 +205,73 @@ assert(textoWhatsApp.includes("🔀 MEMPHIS"), "MEMPHIS presente");
 assert(textoWhatsApp.includes("• (1,00%) por NEWCASTLE"), "NEWCASTLE presente con (1,00%)");
 
 console.log("  OK: Formateo de texto WhatsApp coincide exactamente con la solicitud.");
+
+// 5. Resolución de socio por ID canónico, nombre y seudónimo (compatibilidad legacy)
+console.log("5. Resolución de socio_asignado por ID / nombre / seudónimo...");
+const clienteSocio = { id: 10, nombre: "EDDIE", seudonimo: "EDDIE" };
+
+assert(
+  esClienteAfiliadoAlSocio({ id: 20, socio_asignado: "10" }, clienteSocio, []),
+  "socio_asignado con el ID del socio debe considerarse afiliado"
+);
+assert(
+  esClienteAfiliadoAlSocio({ id: 20, socio_asignado: "EDDIE" }, clienteSocio, []),
+  "socio_asignado con el nombre del socio debe considerarse afiliado"
+);
+assert(
+  esClienteAfiliadoAlSocio(
+    { id: 20, socio_asignado: "El Jefe" },
+    { id: 10, nombre: "EDDIE", seudonimo: "El Jefe" },
+    []
+  ),
+  "socio_asignado con el seudónimo del socio debe considerarse afiliado"
+);
+assert(
+  !esClienteAfiliadoAlSocio({ id: 20, socio_asignado: "PARTNER" }, clienteSocio, []),
+  "socio_asignado de otro socio no debe considerarse afiliado"
+);
+
+const clientesConId = [
+  { id: 10, nombre: "EDDIE", seudonimo: "EDDIE", es_socio: true },
+  {
+    id: 20,
+    nombre: "GAETANO",
+    socio_asignado: "10", // ID canónico
+    comision_socio_pct: 1.25,
+    fecha_inicio_comision_socio: "2026-10-29",
+  },
+  {
+    id: 30,
+    nombre: "RUCIO",
+    socio_asignado: "EDDIE", // valor legacy por nombre
+    comision_socio_pct: 1.0,
+    fecha_inicio_comision_socio: "2026-10-29",
+  },
+];
+
+const resEddiePorId = calcularComisionesSocioPorClientes({
+  socioNombre: "EDDIE",
+  socioId: 10,
+  fechaDesde: "2026-10-29",
+  fechaHasta: "2026-10-30",
+  tickets: ticketsPrueba,
+  clientes: clientesConId,
+});
+
+assertIgual(
+  resEddiePorId.totalComisionesClientes,
+  5.5,
+  "Con socio_asignado por ID y por nombre la comisión de EDDIE debe ser $5.50"
+);
+assert(
+  resEddiePorId.desglosePorCliente.some((d) => d.clienteNombre === "GAETANO"),
+  "GAETANO (afiliado por ID) debe aparecer en el desglose"
+);
+assert(
+  resEddiePorId.desglosePorCliente.some((d) => d.clienteNombre === "RUCIO"),
+  "RUCIO (afiliado legacy por nombre) debe aparecer en el desglose"
+);
+
+console.log("  OK: Resolución de socio por ID, nombre y seudónimo validada.");
 
 console.log("=== TODAS LAS PRUEBAS DE COMISIONES Y DEVOLUCIONES PASARON EXITOSAMENTE ===");

@@ -5,6 +5,7 @@ import {
   procesarMensajeSalaJugadas,
   asegurarSaldoJugador,
   formatearMonto,
+  normalizarNombre,
   type EstadoSalaJugadas,
   type MensajeSalaWhatsApp,
   type ReferenciaRespuesta,
@@ -30,20 +31,51 @@ const JUGADORES_DEFECTO = [
   "JUAN",
 ];
 
+/** Cliente real del grupo activo con su saldo disponible para jugar. */
+export interface JugadorSalaCliente {
+  id?: string | number | null;
+  nombre?: string | null;
+  seudonimo?: string | null;
+  saldo_actual?: number | string | null;
+  disponible?: number | string | null;
+}
+
+function nombreVisibleCliente(c: JugadorSalaCliente): string {
+  return String(c.seudonimo || c.nombre || "").trim();
+}
+
+function saldoDisponibleCliente(c: JugadorSalaCliente): number {
+  const raw = c.disponible ?? c.saldo_actual ?? 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
 export function TabSalaJugadasIa({
   hipodromoInicial = "LA RINCONADA",
   carreraInicial = 1,
+  clientes = [],
 }: {
   hipodromoInicial?: string;
   carreraInicial?: number;
+  /** Clientes reales del grupo: habilitan los saldos y jugadores de la sala. */
+  clientes?: JugadorSalaCliente[];
 }) {
+  const clientesConNombre = clientes.filter((c) => nombreVisibleCliente(c) !== "");
+  const nombresReales = clientesConNombre.map((c) => nombreVisibleCliente(c).toUpperCase());
+  const jugadoresIniciales =
+    nombresReales.length > 0
+      ? Array.from(new Set(nombresReales))
+      : JUGADORES_DEFECTO;
+
   const [hipodromo, setHipodromo] = useState(hipodromoInicial);
   const [carrera, setCarrera] = useState(carreraInicial);
   const [estadoCarrera, setEstadoCarrera] = useState<EstadoOperativoCarrera>("ABIERTA");
 
-  const [jugadorActivo, setJugadorActivo] = useState<string>("PEDRO");
+  const [jugadorActivo, setJugadorActivo] = useState<string>(
+    jugadoresIniciales[0] ?? "PEDRO"
+  );
   const [nuevoJugadorNombre, setNuevoJugadorNombre] = useState("");
-  const [listaJugadores, setListaJugadores] = useState<string[]>(JUGADORES_DEFECTO);
+  const [listaJugadores, setListaJugadores] = useState<string[]>(jugadoresIniciales);
 
   const [textoInput, setTextoInput] = useState("");
   const [mensajeRespondiendo, setMensajeRespondiendo] = useState<MensajeSalaWhatsApp | null>(null);
@@ -53,8 +85,15 @@ export function TabSalaJugadasIa({
   // Estado centralizado de la sala
   const [estadoSala, setEstadoSala] = useState<EstadoSalaJugadas>(() => {
     const saldosIni: EstadoSalaJugadas["saldos"] = {};
-    for (const j of JUGADORES_DEFECTO) {
-      asegurarSaldoJugador(saldosIni, j, 200);
+    if (clientesConNombre.length > 0) {
+      for (const c of clientesConNombre) {
+        const nombre = nombreVisibleCliente(c);
+        asegurarSaldoJugador(saldosIni, nombre, saldoDisponibleCliente(c));
+      }
+    } else {
+      for (const j of JUGADORES_DEFECTO) {
+        asegurarSaldoJugador(saldosIni, j, 200);
+      }
     }
     return {
       hipodromo: hipodromoInicial,
@@ -65,7 +104,7 @@ export function TabSalaJugadasIa({
           id: "bienvenida-sala",
           autor: "🤖 Agente IA",
           texto:
-            "👋 **¡Bienvenidos a la Sala de Jugadas de Puestos en Vivo!**\nLos jugadores pueden proponer puestos (ej. `consigo 1p del 5 con 50` o `juego 1p del 2 con 40`).\nPara concretar, **respondan sobre el mensaje** diciendo `voy`, `te doy`, `jugaste`, etc.",
+            "👋 **¡Bienvenidos a la Sala de Jugadas de Puestos en Vivo!**\nLos jugadores pueden proponer puestos (ej. `consigo 1p del 5 con 50` o `juego 1p del 2 con 40`).\nPara concretar, **respondan sobre el mensaje** diciendo `voy`, `te doy`, `jugaste`, etc.\nSolo se aceptan jugadas con **saldo disponible** y con la **carrera abierta**.",
           fecha: new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
           esIa: true,
         },
@@ -74,6 +113,38 @@ export function TabSalaJugadasIa({
       concrecionesConfirmadas: [],
     };
   });
+
+  // Sincronizar saldos reales cuando el administrador carga los clientes.
+  useEffect(() => {
+    if (clientesConNombre.length === 0) return;
+
+    setListaJugadores((prev) => {
+      const previos = new Set(prev);
+      const nuevos = nombresReales.filter((n) => !previos.has(n));
+      return nuevos.length > 0 ? [...prev, ...nuevos] : prev;
+    });
+    setJugadorActivo((prev) => {
+      if (nombresReales.includes(prev.toUpperCase())) return prev;
+      return nombresReales[0] ?? prev;
+    });
+    setEstadoSala((prev) => {
+      const saldos: EstadoSalaJugadas["saldos"] = { ...prev.saldos };
+      for (const c of clientesConNombre) {
+        const nombre = nombreVisibleCliente(c);
+        const key = normalizarNombre(nombre);
+        const total = saldoDisponibleCliente(c);
+        const bloqueado = saldos[key]?.bloqueado ?? 0;
+        saldos[key] = {
+          nombre,
+          total,
+          bloqueado,
+          disponible: Math.max(0, Math.round((total - bloqueado) * 100) / 100),
+        };
+      }
+      return { ...prev, saldos };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientes]);
 
   // Escuchar cambios de apertura/cierre de carreras desde cualquier parte de la plataforma
   useEffect(() => {

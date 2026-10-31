@@ -33,6 +33,11 @@ import {
   USUARIOS_SISTEMA_MODALIDADES,
 } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
+import {
+  calcularComisionesSocioPorClientes,
+  esClienteAfiliadoAlSocio,
+  type ClienteSocioLike,
+} from "@/features/clientes/lib/comisiones-socios";
 
 export interface ResultadoLiquidacionClienteCarrera {
   clienteId: string;
@@ -61,6 +66,8 @@ export type ResumenContableCliente = {
   comisionesCobradas: number;
   jugadasGanadasNeto: number;
   devolucionIncentivo: number;
+  /** Comisiones devengadas por sus clientes afiliados (socio/agencia), imputadas al saldo. */
+  comisionSocioDevengada: number;
   jugadasPerdidas: number;
   netoJugadasCarrera: number;
   incentivoCarrera: number;
@@ -213,6 +220,11 @@ export function calcularResumenContableCliente(params: {
   retiros?: number;
   devolucionIncentivo?: number | string | null;
   devolucionPct?: number | string | null;
+  /**
+   * Comisión ya calculada que el cliente devenga como socio por las jugadas de
+   * sus afiliados. Es un crédito a favor independiente del ticket nominal.
+   */
+  comisionSocioDevengada?: number | string | null;
   tickets?: TicketContableRaw[];
   modalidadCruces?: ModalidadCruceCarrera | boolean;
   comisionPctDefault?: number;
@@ -475,6 +487,13 @@ export function calcularResumenContableCliente(params: {
         ? calcularComisionExacta(deCentavos(montoDecididoParaIncentivoCentavos), devPct)
         : 0;
 
+  // Comisión de socio: crédito a favor por jugadas de clientes afiliados.
+  // No modifica el cobro/pago nominal del ticket; sólo el saldo del socio.
+  const comisionSocioDevengada =
+    params.comisionSocioDevengada != null
+      ? Math.max(0, redondearCentavos(params.comisionSocioDevengada))
+      : 0;
+
   const saldoInicial = redondearCentavos(params.saldoInicial ?? 0);
 
   const netoJugadasCarrera = restarDinero(jugadasGanadasNeto, jugadasPerdidas);
@@ -482,7 +501,8 @@ export function calcularResumenContableCliente(params: {
   const impactoSaldoTotalCarrera = sumarDinero(netoJugadasCarrera, incentivoCarrera);
 
   // Fórmula contable única auditable:
-  // saldoContable = saldoInicial + depositos - retiros + impactoSaldoTotalCarrera - riesgoEnCurso (saldos comprometidos en jugadas en curso)
+  // saldoContable = saldoInicial + depositos - retiros + impactoSaldoTotalCarrera
+  //                 - riesgoEnCurso (saldos comprometidos) + comisión de socio devengada
   let saldoContable = restarDinero(
     sumarDinero(
       sumarDinero(saldoInicial, restarDinero(depositos, retiros)),
@@ -490,6 +510,7 @@ export function calcularResumenContableCliente(params: {
     ),
     riesgoEnCurso
   );
+  saldoContable = sumarDinero(saldoContable, comisionSocioDevengada);
 
   let reparadoAutomaticamente = false;
   const saldoBaseNum = redondearCentavos(params.saldoEnBase ?? 0);
@@ -504,7 +525,7 @@ export function calcularResumenContableCliente(params: {
     (nombreNorm === "SAM" || nombreNorm.includes("SAM")) && ticketsValidosNoAnulados === 0;
 
   if (esPedroCorrupto || esSamCorrupto) {
-    saldoContable = devolucionIncentivo;
+    saldoContable = sumarDinero(devolucionIncentivo, comisionSocioDevengada);
     reparadoAutomaticamente = true;
   } else if (
     participoEnTickets === 0 &&
@@ -517,10 +538,13 @@ export function calcularResumenContableCliente(params: {
     // Si no hay historial de tickets cargados en memoria y no es el saldo corrupto de Pedro (-6000) ni SAM,
     // respeta el saldo inicial salvo que sea el caso Pedro -6000 o SAM sin jugadas válidas
     if ((nombreNorm.includes("PEDRO") && saldoBaseNum === -6000) || (nombreNorm === "SAM" || nombreNorm.includes("SAM"))) {
-      saldoContable = devolucionIncentivo;
+      saldoContable = sumarDinero(devolucionIncentivo, comisionSocioDevengada);
       reparadoAutomaticamente = true;
     } else {
-      saldoContable = restarDinero(sumarDinero(saldoBaseNum, devolucionIncentivo), riesgoEnCurso);
+      saldoContable = sumarDinero(
+        restarDinero(sumarDinero(saldoBaseNum, devolucionIncentivo), riesgoEnCurso),
+        comisionSocioDevengada
+      );
     }
   }
 
@@ -543,6 +567,7 @@ export function calcularResumenContableCliente(params: {
     incentivoCarrera,
     impactoSaldoTotalCarrera,
     devolucionIncentivo,
+    comisionSocioDevengada,
     jugadasPerdidas,
     saldoContable,
     avalVigente,
@@ -850,6 +875,43 @@ export async function sincronizarSaldosRealesClientes<
     presentes.add(sysName);
   }
 
+  // Comisiones de socios: se calculan una vez por socio y se imputan a su saldo.
+  // El ticket nominal no se toca; es un crédito independiente a favor del socio.
+  const comisionesPorCliente = new Map<string, number>();
+  if (tickets.length > 0) {
+    try {
+      const clientesSocio = listaBase as unknown as ClienteSocioLike[];
+      for (const c of clientesSocio) {
+        if (c.id == null) continue;
+        const id = String(c.id);
+        const nombre = String(c.nombre ?? c.seudonimo ?? "").trim();
+        if (!nombre) continue;
+        const esSocio = Boolean(c.es_socio);
+        const tieneAfiliados = clientesSocio.some(
+          (x) =>
+            String(x.id ?? "") !== id &&
+            esClienteAfiliadoAlSocio(
+              { id: x.id, socio_asignado: x.socio_asignado },
+              { id: c.id, nombre: c.nombre, seudonimo: c.seudonimo },
+              clientesSocio
+            )
+        );
+        if (!esSocio && !tieneAfiliados) continue;
+        const res = calcularComisionesSocioPorClientes({
+          socioNombre: nombre,
+          socioId: c.id,
+          tickets,
+          clientes: clientesSocio,
+        });
+        if (res.totalComisionesClientes > 0) {
+          comisionesPorCliente.set(id, res.totalComisionesClientes);
+        }
+      }
+    } catch {
+      /* cálculo best-effort: nunca rompe la carga de saldos */
+    }
+  }
+
   const resultado = listaBase.map((c) => {
     const nombre = String(c.nombre ?? "").trim();
     const nombreNorm = normalizarNombreCliente(nombre);
@@ -862,6 +924,7 @@ export async function sincronizarSaldosRealesClientes<
       (c as Record<string, unknown>).devolucion_porcentaje ??
       0;
     const devolucionPct = Math.max(0, Number(devolucionRaw) || 0);
+    const comisionSocio = comisionesPorCliente.get(String(c.id)) ?? 0;
 
     const resumen = calcularResumenContableCliente({
       clienteId: c.id,
@@ -870,6 +933,7 @@ export async function sincronizarSaldosRealesClientes<
       aval: c.aval,
       saldoEnBase: saldoNum,
       devolucionPct,
+      comisionSocioDevengada: comisionSocio,
       tickets,
     });
 
@@ -913,22 +977,25 @@ export async function sincronizarSaldosRealesClientes<
       const telInfo = telefonosMap.get(String(c.id));
       const copia: Record<string, unknown> = {
         ...c,
-        saldo_actual: 0,
+        saldo_actual: comisionSocio,
+        comision_socio_devengada: comisionSocio,
         telefono: c.telefono ?? telInfo?.telefono ?? null,
         codigo_pais: c.codigo_pais ?? telInfo?.codigo_pais ?? null,
       };
-      if ("saldo" in c) copia.saldo = 0;
+      if ("saldo" in c) copia.saldo = comisionSocio;
       return copia as T;
     }
 
     const telInfo = telefonosMap.get(String(c.id));
     const riesgoDadorPendiente = !esUsuarioModalidad ? (resumen.riesgoDadorEnCurso ?? 0) : 0;
-    const saldoEfectivoEnMemoria =
+    const saldoBaseEnMemoria =
       riesgoDadorPendiente > 0 ? restarDinero(saldoNum, riesgoDadorPendiente) : saldoNum;
+    const saldoEfectivoEnMemoria = sumarDinero(saldoBaseEnMemoria, comisionSocio);
 
     const copiaCliente: Record<string, unknown> = {
       ...c,
       saldo_actual: saldoEfectivoEnMemoria,
+      comision_socio_devengada: comisionSocio,
       resultado: resumen.impactoSaldoTotalCarrera,
       resultado_acumulado: resumen.impactoSaldoTotalCarrera,
       disponible: resumen.disponibleParaJugar,
@@ -982,6 +1049,7 @@ export function calcularEstadoCuentaCliente(params: {
   comisionPct?: number | string | null;
   devolucionIncentivo?: number | string | null;
   devolucionPct?: number | string | null;
+  comisionSocioDevengada?: number | string | null;
   libre?: boolean | null;
   depositos?: number;
   retiros?: number;
@@ -1018,6 +1086,7 @@ export function calcularEstadoCuentaCliente(params: {
     retiros: params.retiros,
     devolucionIncentivo: params.devolucionIncentivo,
     devolucionPct: params.devolucionPct,
+    comisionSocioDevengada: params.comisionSocioDevengada,
     tickets: ticketsCombinados,
     comisionPctDefault: Number(params.comisionPct ?? 5),
   });
@@ -1052,6 +1121,8 @@ export interface FichaEstadoCuentaUnificada {
   jugadasGanadasNeto: number;
   /** 6. 🎁 Devolución / Incentivo a favor: +[Monto] */
   devolucionIncentivo: number;
+  /** 6b. 🤝 Comisiones devengadas como socio por jugadas de afiliados (+) */
+  comisionSocioDevengada: number;
   /** 7. Jugadas Perdidas (-) */
   jugadasPerdidas: number;
   /** 8. Riesgo en Curso (-) */
@@ -1078,6 +1149,7 @@ export function construirFichaEstadoCuentaUnificada(
     reembolsoCruce: est.reembolsoCruce,
     jugadasGanadasNeto: est.jugadasGanadasNeto,
     devolucionIncentivo: est.devolucionIncentivo,
+    comisionSocioDevengada: est.comisionSocioDevengada,
     jugadasPerdidas: est.jugadasPerdidas,
     riesgoEnCurso: est.riesgoEnCurso,
     saldoContable: est.saldoContable,

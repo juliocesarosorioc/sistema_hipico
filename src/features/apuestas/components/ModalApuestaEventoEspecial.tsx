@@ -49,6 +49,9 @@ export function ModalApuestaEventoEspecial({
   const [filtroEstado, setFiltroEstado] = useState<"TODOS" | "PENDIENTE" | "GANADOR">("TODOS");
   const [busquedaReporte, setBusquedaReporte] = useState("");
 
+  /** Apuesta seleccionada para el modal compacto de confirmación de ganador. */
+  const [apuestaGanadora, setApuestaGanadora] = useState<ApuestaEventoEspecial | null>(null);
+
   const cargarDatos = async () => {
     setCargando(true);
     try {
@@ -171,6 +174,26 @@ export function ModalApuestaEventoEspecial({
     await eliminarApuestaEventoEspecial(id);
     emitirToast("🗑️ Apuesta eliminada.", "info");
     await cargarDatos();
+  };
+
+  /** Abre el formulario independiente de nueva apuesta limpio. */
+  const handleNuevaApuesta = () => {
+    setEvento("");
+    setClienteId("");
+    setClienteNombre("");
+    setMonto("");
+    setLogroCuota("");
+    setPagoManual("");
+    setNota("");
+    setTab("nueva");
+  };
+
+  /** Confirma desde el modal compacto que la apuesta seleccionada es ganadora. */
+  const confirmarGanador = async () => {
+    if (!apuestaGanadora) return;
+    const ap = apuestaGanadora;
+    setApuestaGanadora(null);
+    await handleCambiarEstado(ap.id, "GANADOR");
   };
 
   // Filtrado de apuestas para el reporte
@@ -509,7 +532,7 @@ export function ModalApuestaEventoEspecial({
                         {ap.estado !== "GANADOR" && (
                           <button
                             type="button"
-                            onClick={() => void handleCambiarEstado(ap.id, "GANADOR")}
+                            onClick={() => setApuestaGanadora(ap)}
                             title="Seleccionar como ganador de este evento"
                             className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1 text-xs font-black text-white hover:bg-emerald-500 active:scale-95 shadow-sm shadow-emerald-950/40 transition-all"
                           >
@@ -548,6 +571,14 @@ export function ModalApuestaEventoEspecial({
                       </div>
                     </div>
                   ))}
+                  {/* Fila final: abre el formulario independiente de nueva apuesta */}
+                  <button
+                    type="button"
+                    onClick={handleNuevaApuesta}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-purple-500/50 bg-purple-950/20 py-2.5 text-xs font-black uppercase tracking-wide text-purple-200 transition-all hover:border-purple-400 hover:bg-purple-900/30 hover:text-white active:scale-[0.99]"
+                  >
+                    ＋ Nueva apuesta (formulario independiente)
+                  </button>
                 </div>
               )}
             </div>
@@ -567,6 +598,81 @@ export function ModalApuestaEventoEspecial({
             Cerrar
           </button>
         </div>
+
+        {/* MODAL COMPACTO DE SELECCIÓN DE GANADOR */}
+        {apuestaGanadora && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-ganador-evento-title"
+            className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setApuestaGanadora(null);
+            }}
+          >
+            <div className="w-full max-w-sm rounded-2xl border border-emerald-500/50 bg-slate-900 p-4 shadow-2xl shadow-emerald-950/50">
+              <div className="flex items-center justify-between">
+                <h3
+                  id="modal-ganador-evento-title"
+                  className="text-sm font-black uppercase tracking-wide text-emerald-300"
+                >
+                  🏆 Confirmar ganador
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setApuestaGanadora(null)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+                  aria-label="Cancelar"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mt-3 space-y-1.5 rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs">
+                <div className="truncate font-black text-white">{apuestaGanadora.evento}</div>
+                <div className="flex items-center justify-between text-slate-300">
+                  <span>👤 Cliente</span>
+                  <span className="font-bold text-purple-300">{apuestaGanadora.cliente_nombre}</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-300">
+                  <span>Jugó</span>
+                  <span className="font-mono font-bold text-emerald-300">
+                    ${apuestaGanadora.monto.toFixed(2)}
+                  </span>
+                </div>
+                {apuestaGanadora.logro_cuota && (
+                  <div className="flex items-center justify-between text-slate-300">
+                    <span>Cuota / Logro</span>
+                    <span className="font-bold text-amber-300">{apuestaGanadora.logro_cuota}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between border-t border-slate-800 pt-1.5 text-slate-300">
+                  <span>Paga al ganador</span>
+                  <span className="font-mono font-black text-cyan-300">
+                    ${apuestaGanadora.pago_potencial.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setApuestaGanadora(null)}
+                  className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void confirmarGanador()}
+                  className="rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-black text-white shadow-sm shadow-emerald-950/40 hover:bg-emerald-500 active:scale-95"
+                >
+                  🏆 Confirmar ganador
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
