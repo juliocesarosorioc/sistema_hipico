@@ -189,7 +189,7 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
   /** Refresca el balance y el libro de asientos (después de registrar o revertir). */
   const recargarBalance = useCallback(async () => {
     setBalance(await obtenerBalanceComprobacionNIIF(rango));
-    setAsientos(await listarAsientosNIIF(50));
+    setAsientos(await listarAsientosNIIF(500));
   }, [rango]);
 
   useEffect(() => {
@@ -200,7 +200,7 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
         silencioso: true,
       });
       setBalance(await obtenerBalanceComprobacionNIIF({}));
-      setAsientos(await listarAsientosNIIF(50));
+      setAsientos(await listarAsientosNIIF(500));
     })();
   }, [cargar, grupoActivo, grupoSeleccionado]);
 

@@ -2847,17 +2847,20 @@ export function TabLibroDiarioMayor({ grupoId }: { grupoId?: string | null } = {
           <select
             value={filtroEvento}
             onChange={(e) => setFiltroEvento(e.target.value)}
-            className={`${inp} w-48 py-1.5 font-bold`}
+            className={`${inp} w-56 py-1.5 font-bold`}
           >
             <option value="TODOS">Todos los eventos</option>
-            <option value="LIQUIDACION_APUESTAS">Liquidación de Apuestas</option>
+            <option value="LIQUIDACION_APUESTAS">Liquidación de Carreras y Apuestas</option>
+            <option value="COMPROMISO_JUGADA">Jugadas en Riesgo / Curso</option>
+            <option value="LIBERACION_COMPROMISO_JUGADA">Liberación Retiros / Anuladas</option>
             <option value="REEMBOLSO_CRUCE">Reembolso por Cruce (🔀)</option>
-            <option value="DEVOLUCION_INCENTIVO">Devolución de Incentivos</option>
+            <option value="DEVOLUCION_INCENTIVO">Devolución Incentivos y Socios</option>
+            <option value="COBRO_CLIENTE_AVALADO">Cuentas por Cobrar (Deudores)</option>
+            <option value="AVAL_OTORGADO">Cartera de Avales Otorgados</option>
+            <option value="VENTA_INTERGRUPO_ARGENTINA">Respaldo Inter-Grupos (Argentina)</option>
             <option value="DEPOSITO_CLIENTE">Depósitos de Clientes</option>
             <option value="RETIRO_CLIENTE">Retiros de Clientes</option>
             <option value="TRASLADO_CLIENTES">Traslados entre Clientes</option>
-            <option value="AVAL_OTORGADO">Aval Otorgado</option>
-            <option value="AVAL_PAGADO">Aval Pagado</option>
             <option value="REVERSION_LIQUIDACION">Reversiones / Contra-asientos</option>
           </select>
 
@@ -3089,6 +3092,14 @@ export function TabEstadoResultadosSemana({ grupoId }: { grupoId?: string | null
                 <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.comisionTercios)}</span>
               </div>
               <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-slate-700">Comisión Tablas Fijas (4.1.01.002)</span>
+                <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.comisionTablasFijas)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-slate-700">Comisión Marcas (4.1.01.003)</span>
+                <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.comisionMarcas)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
                 <span className="font-semibold text-slate-700">Comisión Remates Hípicos (4.1.02.001)</span>
                 <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.comisionRemates)}</span>
               </div>
@@ -3097,7 +3108,7 @@ export function TabEstadoResultadosSemana({ grupoId }: { grupoId?: string | null
                 <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.comisionPollas)}</span>
               </div>
               <div className="flex justify-between items-center py-1 border-b border-line/60">
-                <span className="font-semibold text-slate-700">Comisión Dupletas (4.1.04.001)</span>
+                <span className="font-semibold text-slate-700">Comisión Dupletas (4.1.01.004 / 4.1.04.001)</span>
                 <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.comisionDupletas)}</span>
               </div>
               <div className="flex justify-between items-center py-1 border-b border-line/60">
@@ -3115,6 +3126,10 @@ export function TabEstadoResultadosSemana({ grupoId }: { grupoId?: string | null
               <div className="flex justify-between items-center py-1 border-b border-line/60">
                 <span className="font-semibold text-slate-700">Ingresos por Convenios Inter-Grupos (4.3.01.001)</span>
                 <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.convenios)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-line/60">
+                <span className="font-semibold text-slate-700">Ingresos Venta Neta Inter-Grupos Argentina (4.3.01.002)</span>
+                <span className="font-mono font-bold text-slate-900">{formatearMontoSinMoneda(r.ingresos.ventaInterGruposArgentina)}</span>
               </div>
               <div className="flex justify-between items-center pt-2 font-black text-emerald-800 text-sm">
                 <span>Subtotal Ingresos Brutos de la Casa:</span>

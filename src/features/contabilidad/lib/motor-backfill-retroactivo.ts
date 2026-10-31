@@ -6,14 +6,12 @@
  *
  * Garantiza que TODAS las transacciones de la semana actual (y el histórico)
  * tengan su asiento contable de Partida Doble cuadrado (`Debe === Haber`):
- *  1. Carreras liquidadas y jugadas en curso (`tickets_apuestas`).
- *  2. Devoluciones de incentivos a jugadores (`5.1.02.001`) y comisiones a socios (`5.1.03.001`).
- *  3. Tablas Fijas (`4.2.01.001`, `4.1.01.002`, `5.2.01.001`).
- *  4. Marcas y Dupletas (`4.2.02.001`, `4.1.01.003`, `4.1.01.004`, `5.2.02.001`).
- *  5. Remates (`4.1.02.001`) y Pollas (`4.1.03.001`).
- *  6. Depósitos y Avales (`depositos`: `1.1.02.001`, `2.1.01.001`, `1.2.02.001`, `3.1.02.001`).
- *  7. Retiros y Traslados entre Clientes (`transacciones`).
- *  8. Eventos Libres / Sportsbook P2P (`4.1.01.007`).
+ *  1. Carreras liquidadas, jugadas en riesgo/curso y anuladas/retiradas (`tickets_apuestas`).
+ *  2. Reembolsos de comisión por cruces (`5.1.01.001`).
+ *  3. Devoluciones de incentivos a jugadores (`5.1.02.001`) y comisiones a socios (`5.1.03.001`).
+ *  4. Cuentas por Cobrar de clientes con saldo deudor (`1.2.01.001`) y Cartera de Avales (`1.2.02.001`).
+ *  5. Respaldo inter-grupos Argentina (`1.2.03.001` / `4.3.01.002`).
+ *  6. Tablas Fijas, Marcas, Dupletas, Remates, Pollas, Depósitos, Retiros, Traslados y Eventos Libres.
  */
 
 import { supabase } from "@/core/supabase";
@@ -22,12 +20,15 @@ import { emitirMensajePaso } from "@/features/liquidacion/lib/liquidacion-incent
 import {
   generarAsientoPartidaDoble,
   generarAsientoLiquidacionCarrera,
+  generarAsientoReembolsoCruce,
   generarAsientoDepositoCliente,
   generarAsientoRetiroCliente,
   generarAsientoTrasladoClientes,
-  generarAsientoAval,
   generarAsientoDevolucionIncentivo,
   generarAsientoCompromisoJugada,
+  generarAsientoLiberacionCompromisoJugada,
+  generarAsientoImputacionArgentina,
+  hidratarAsientosDesdeSupabase,
   obtenerAsientosMemoria,
 } from "@/features/contabilidad/lib/plan-cuentas";
 import {
@@ -68,6 +69,55 @@ export function obtenerRangoSemanaActual(fechaRef?: Date): { desde: string; hast
   return { desde: fmt(lunes), hasta: fmt(domingo) };
 }
 
+/** Calcula el riesgo potencial de la contraparte (Da) en un ticket */
+export function calcularRiesgoContraparteTicket(t: Record<string, any>): number {
+  const monto = redondearCentavos(Number(t.monto_jugado || 0));
+  const mod = String(t.nombre_jugada || t.jugada || "")
+    .trim()
+    .toUpperCase();
+
+  if (mod === "TABLA FIJA" || mod === "TABLAS FIJAS") {
+    const cant = Number(t.cantidad_tablas || 0);
+    const premioPorTabla = Number(t.premio_por_tabla || 0);
+    if (cant > 0 && premioPorTabla > 0) {
+      return redondearCentavos(cant * premioPorTabla);
+    }
+    if (t.nota_auditoria) {
+      try {
+        const parsed =
+          typeof t.nota_auditoria === "string"
+            ? JSON.parse(t.nota_auditoria)
+            : t.nota_auditoria;
+        if (Number(parsed?.premio_congelado) > 0) {
+          return redondearCentavos(Number(parsed.premio_congelado));
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const premioPagar = Number(t.premio_pagar || 0);
+    if (premioPagar > monto) {
+      return redondearCentavos(premioPagar - monto);
+    }
+    return monto;
+  }
+
+  if (mod === "MARCA" || mod === "MARCAS") {
+    return redondearCentavos((monto * 5) / 6);
+  }
+
+  if (mod === "1/2") {
+    return redondearCentavos(monto * 0.5);
+  }
+
+  const logroMatch = mod.match(/^10\s*[\/A]\s*(\d+(?:\.\d+)?)$/i);
+  if (logroMatch) {
+    return redondearCentavos(monto * (Number(logroMatch[1]) / 10));
+  }
+
+  return monto;
+}
+
 /**
  * Barrido y Registro de Todas las Transacciones de la Semana Actual (y Backfill Histórico)
  * en Partida Doble estricta (`Debe === Haber`).
@@ -99,10 +149,13 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
   let totalDebeCentavos = 0;
   let totalHaberCentavos = 0;
 
-  const registrarEstadisticaAsiento = (res?: {
-    ok?: boolean;
-    asiento?: { id: string; total_debe: number; total_haber: number };
-  }, eraExistente = false) => {
+  const registrarEstadisticaAsiento = (
+    res?: {
+      ok?: boolean;
+      asiento?: { id: string; total_debe: number; total_haber: number };
+    },
+    eraExistente = false
+  ) => {
     if (res?.ok && res.asiento) {
       if (eraExistente) {
         asientosPreexistentes += 1;
@@ -133,35 +186,60 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
   }
 
   const sdb = supabase;
+  await hidratarAsientosDesdeSupabase();
   const asientosPrevios = obtenerAsientosMemoria(params?.grupoId || null);
   const clavesPrevias = new Set(
     asientosPrevios.map((a) => a.clave_idempotencia || a.referencia_id || "")
   );
 
   try {
-    logPaso("⚙️ [Paso 2/4] Procesando jugadas de la semana, incentivos, socios, tablas, marcas y tesorería...", "info");
+    logPaso(
+      "⚙️ [Paso 2/4] Procesando jugadas de la semana, incentivos, socios, cuentas por cobrar y jugadas en riesgo...",
+      "info"
+    );
 
-    // 0. Cargar mapa de clientes para identificar clientes avalados y socios
+    // 0. Cargar clientes completos para avales, cuentas por cobrar y socios
     const mapaClientes = new Map<
       string,
-      { id: string; nombre: string; esAvalado: boolean; devolucionPct: number; socioNombre?: string | null; socioPct: number }
+      {
+        id: string;
+        nombre: string;
+        saldoActual: number;
+        aval: number;
+        esAvalado: boolean;
+        devolucionPct: number;
+        socioNombre?: string | null;
+        socioPct: number;
+        grupoId?: string | null;
+      }
     >();
+    let cliRows: any[] = [];
     try {
-      const { data: cliRows } = await sdb
+      const { data: rows } = await sdb
         .from("clientes")
-        .select("id, nombre, seudonimo, aval, devolucion, es_socio, socio_asignado");
-      for (const c of cliRows ?? []) {
+        .select(
+          "id, nombre, seudonimo, saldo_actual, aval, devolucion, es_socio, socio_asignado, comision_socio_pct, fecha_inicio_comision_socio, grupo_id"
+        );
+      cliRows = rows ?? [];
+      for (const c of cliRows) {
         const nom = String(c.seudonimo || c.nombre || "").trim().toUpperCase();
         const paramOf = PARAMETROS_PREDETERMINADOS_DEVOLUCION.find(
-          (p) => p.nombre.toUpperCase() === nom || String(c.nombre || "").trim().toUpperCase() === p.nombre.toUpperCase()
+          (p) =>
+            p.nombre.toUpperCase() === nom ||
+            String(c.nombre || "").trim().toUpperCase() === p.nombre.toUpperCase()
         );
         const info = {
           id: String(c.id),
           nombre: nom || String(c.nombre || "Cliente"),
+          saldoActual: redondearCentavos(Number(c.saldo_actual || 0)),
+          aval: redondearCentavos(Number(c.aval || 0)),
           esAvalado: Number(c.aval || 0) > 0,
           devolucionPct: Number(c.devolucion || paramOf?.devolucionPropiaPct || 0),
           socioNombre: String(c.socio_asignado || paramOf?.socioAsignado || "").trim() || null,
-          socioPct: Number(paramOf?.comisionSocioPct ?? (c.socio_asignado ? 1 : 0)),
+          socioPct: Number(
+            c.comision_socio_pct ?? paramOf?.comisionSocioPct ?? (c.socio_asignado ? 1 : 0)
+          ),
+          grupoId: c.grupo_id ? String(c.grupo_id) : null,
         };
         mapaClientes.set(String(c.id), info);
         if (c.nombre) mapaClientes.set(String(c.nombre).trim().toUpperCase(), info);
@@ -171,39 +249,101 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
       /* ignore */
     }
 
-    logPaso("📘 [Paso 3/4] Registrando asientos contables NIIF de todas las transacciones de la semana...", "info");
+    logPaso(
+      "📘 [Paso 3/4] Registrando asientos contables NIIF de todas las transacciones de la semana...",
+      "info"
+    );
 
     // =========================================================================
-    // 1. APUESTAS ENTRE TERCIOS Y TAQUILLA (`tickets_apuestas`)
-    //    (Tanto liquidadas como en curso de la semana actual)
+    // 1. APUESTAS ENTRE TERCIOS, TABLAS FIJAS, MARCAS Y TAQUILLA (`tickets_apuestas`)
     // =========================================================================
     const { data: ticketsData, error: errTickets } = await sdb
       .from("tickets_apuestas")
-      .select(
-        "id, hipodromo, carrera, fecha_carrera, fecha_registro, estado, jugada, ejemplar_numero, monto_jugado, premio_pagar, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, comision_porcentaje, comision_pagada, anulada, grupo_id"
-      )
+      .select("*")
       .order("id", { ascending: true })
       .limit(5000);
+
+    const clientesActivosSemana = new Set<string>();
 
     if (!errTickets && ticketsData) {
       const gruposCarreras = new Map<string, typeof ticketsData>();
 
       for (const t of ticketsData) {
-        if (t.anulada) continue;
-        if (params?.grupoId && t.grupo_id && String(t.grupo_id) !== String(params.grupoId)) continue;
+        const grpTicket = t.grupo_cobro_id || t.grupo_comision_id || t.grupo_id || null;
+        if (params?.grupoId && grpTicket && String(grpTicket) !== String(params.grupoId)) continue;
 
-        const dia = String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10) || semanaActual.desde;
+        const dia =
+          String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10) || semanaActual.desde;
         const hipo = String(t.hipodromo ?? "USA").trim().toUpperCase();
         const numC = Number(t.carrera ?? 1);
-        const est = String(t.estado || "").toUpperCase();
+        const est = String(t.estado || "").trim().toUpperCase();
+        const jugadaNombre = String(t.nombre_jugada || t.jugada || "PUESTO").trim();
+        const caballoStr = String(t.caballo || t.ejemplar_numero || "1").trim();
+        const monto = redondearCentavos(Number(t.monto_jugado || 0));
+        const riesgoDa = calcularRiesgoContraparteTicket(t);
 
-        // 1A. Si el ticket está PENDIENTE / EN CURSO en la semana actual -> Asiento de Compromiso
-        if (
-          (est === "PENDIENTE" || est === "ACTIVA" || est === "EN_CURSO") &&
-          dia >= semanaActual.desde &&
-          dia <= semanaActual.hasta
-        ) {
-          const monto = redondearCentavos(Number(t.monto_jugado || 0));
+        if (t.cliente_juega_id) clientesActivosSemana.add(String(t.cliente_juega_id));
+        if (t.cliente_consigue_id) clientesActivosSemana.add(String(t.cliente_consigue_id));
+        if (t.cliente_juega_nombre)
+          clientesActivosSemana.add(String(t.cliente_juega_nombre).trim().toUpperCase());
+        if (t.cliente_consigue_nombre)
+          clientesActivosSemana.add(String(t.cliente_consigue_nombre).trim().toUpperCase());
+
+        // 1A. Tickets ANULADOS o RETIRADOS -> Asiento de Compromiso + Asiento de Liberación (impacto neto 0.00)
+        if (Boolean(t.anulada) || est === "RETIRADO" || est === "ANULADO" || est === "CANCELADO") {
+          if (monto > 0) {
+            transaccionesAnalizadas += 1;
+            const claveComp = `COMPROMISO:${t.id}`;
+            const eraPrevComp = clavesPrevias.has(claveComp);
+            const resComp = await generarAsientoCompromisoJugada({
+              ticketId: t.id,
+              clienteId: t.cliente_juega_id,
+              clienteNombre: String(t.cliente_juega_nombre || "Jugador 1"),
+              contraparteId: t.cliente_consigue_id,
+              contraparteNombre: t.cliente_consigue_nombre
+                ? String(t.cliente_consigue_nombre)
+                : null,
+              montoJugador: monto,
+              montoContraparte: riesgoDa,
+              esAdelantada: Boolean(t.es_adelantada),
+              hipodromo: hipo,
+              carrera: numC,
+              fecha: dia,
+              jugada: jugadaNombre,
+              caballo: caballoStr,
+              grupoId: params?.grupoId || (grpTicket ? String(grpTicket) : null),
+              usuario: params?.usuario || "SISTEMA_SEMANA_ACTUAL",
+            });
+            registrarEstadisticaAsiento(resComp, eraPrevComp);
+
+            const motivoLib: "ANULACION" | "RETIRO" = Boolean(t.anulada) || est === "ANULADO" ? "ANULACION" : "RETIRO";
+            const claveLib = `LIBERACION:${motivoLib}:${t.id}`;
+            const eraPrevLib = clavesPrevias.has(claveLib);
+            const resLib = await generarAsientoLiberacionCompromisoJugada({
+              ticketId: t.id,
+              clienteId: t.cliente_juega_id,
+              clienteNombre: String(t.cliente_juega_nombre || "Jugador 1"),
+              montoLiberado: monto,
+              contraparteId: t.cliente_consigue_id,
+              contraparteNombre: t.cliente_consigue_nombre
+                ? String(t.cliente_consigue_nombre)
+                : null,
+              montoContraparte: riesgoDa,
+              motivo: motivoLib,
+              hipodromo: hipo,
+              carrera: numC,
+              fecha: dia,
+              esAdelantada: Boolean(t.es_adelantada),
+              grupoId: params?.grupoId || (grpTicket ? String(grpTicket) : null),
+              usuario: params?.usuario || "SISTEMA_SEMANA_ACTUAL",
+            });
+            registrarEstadisticaAsiento(resLib, eraPrevLib);
+          }
+          continue;
+        }
+
+        // 1B. Tickets PENDIENTES / EN RIESGO -> Asiento de Compromiso (Juega + Da + Cuentas de Orden)
+        if (est === "PENDIENTE" || est === "ACTIVA" || est === "EN_CURSO") {
           if (monto > 0) {
             transaccionesAnalizadas += 1;
             const claveComp = `COMPROMISO:${t.id}`;
@@ -213,22 +353,49 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
               clienteId: t.cliente_juega_id,
               clienteNombre: String(t.cliente_juega_nombre || "Jugador 1"),
               contraparteId: t.cliente_consigue_id,
-              contraparteNombre: t.cliente_consigue_nombre ? String(t.cliente_consigue_nombre) : null,
+              contraparteNombre: t.cliente_consigue_nombre
+                ? String(t.cliente_consigue_nombre)
+                : null,
               montoJugador: monto,
+              montoContraparte: riesgoDa,
+              esAdelantada: Boolean(t.es_adelantada),
               hipodromo: hipo,
               carrera: numC,
               fecha: dia,
-              jugada: String(t.jugada || "PUESTO"),
-              caballo: String(t.ejemplar_numero || "1"),
-              grupoId: params?.grupoId || (t.grupo_id ? String(t.grupo_id) : null),
+              jugada: jugadaNombre,
+              caballo: caballoStr,
+              grupoId: params?.grupoId || (grpTicket ? String(grpTicket) : null),
               usuario: params?.usuario || "SISTEMA_SEMANA_ACTUAL",
             });
             registrarEstadisticaAsiento(resComp, eraPrevio);
+
+            // Si la jugada de Tabla Fija o Marca fue vendida en otro grupo (ej. MADRID) y respaldada por ARGENTINA
+            const modUp = jugadaNombre.toUpperCase();
+            const grupoNombre = String(t.grupo || "").trim().toUpperCase();
+            if (
+              (modUp === "TABLA FIJA" || modUp === "MARCA") &&
+              grupoNombre &&
+              grupoNombre !== "ARGENTINA"
+            ) {
+              const claveArg = `ARG:${t.id}`;
+              const eraPrevArg = clavesPrevias.has(claveArg);
+              const resArg = await generarAsientoImputacionArgentina({
+                referenciaId: String(t.id),
+                fecha: dia,
+                grupoOrigenNombre: grupoNombre,
+                modalidad: modUp === "TABLA FIJA" ? "TABLAS_FIJAS" : "MARCAS",
+                montoCobrado: monto,
+                premioPagar: 0,
+                huboGanador: false,
+                usuario: params?.usuario || "SISTEMA_SEMANA_ACTUAL",
+              });
+              registrarEstadisticaAsiento(resArg, eraPrevArg);
+            }
           }
           continue;
         }
 
-        // 1B. Tickets decididos -> agrupar por carrera
+        // 1C. Tickets decididos -> agrupar por carrera
         if (["GANADOR", "PERDEDOR", "GANO", "PERDIO", "SOLUCIONADO"].includes(est)) {
           transaccionesAnalizadas += 1;
           const key = `${dia}::${hipo}::${numC}`;
@@ -238,19 +405,43 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
         }
       }
 
-      // Generar asiento de liquidación por cada carrera decidida
+      // Generar asiento de liquidación y cruces por cada carrera decidida
       for (const [key, tickets] of gruposCarreras) {
         const [dia, hipo, numCStr] = key.split("::");
         const numC = Number(numCStr);
         const claveIdemp = `LIQ:${hipo}:${numC}:${dia || "hoy"}`;
-        const eraPrevio = clavesPrevias.has(claveIdemp);
+        const claveIdempAlt = `LIQ:CARRERA:${hipo}-C${numC}`;
+        const eraPrevio = clavesPrevias.has(claveIdemp) || clavesPrevias.has(claveIdempAlt);
 
-        const perdedores: Array<{ clienteId: string; clienteNombre: string; montoPerdido: number; esAvalado?: boolean }> = [];
-        const ganadores: Array<{ clienteId: string; clienteNombre: string; montoGanadoNeto: number; esAvalado?: boolean }> = [];
+        const perdedores: Array<{
+          clienteId: string;
+          clienteNombre: string;
+          montoPerdido: number;
+          esAvalado?: boolean;
+        }> = [];
+        const ganadores: Array<{
+          clienteId: string;
+          clienteNombre: string;
+          montoGanadoNeto: number;
+          esAvalado?: boolean;
+        }> = [];
         let totalComisionCentavos = 0;
+        const comisionesMod = {
+          entreTercios: 0,
+          tablasFijas: 0,
+          marcas: 0,
+          dupletas: 0,
+          wps: 0,
+        };
+
+        // Mapa para detección de cruces en jugadas entre tercios de la carrera
+        const balanceBrutoTercios = new Map<
+          string,
+          { id: string; nombre: string; ganadoBruto: number; perdidoBruto: number; pctMax: number }
+        >();
 
         for (const t of tickets) {
-          const est = String(t.estado).toUpperCase();
+          const est = String(t.estado).trim().toUpperCase();
           const monto = redondearCentavos(Number(t.monto_jugado || 0));
           const premio = redondearCentavos(Number(t.premio_pagar || 0));
           const cliJuegaId = String(t.cliente_juega_id || "cli-juega");
@@ -258,11 +449,37 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
           const cliConsigueId = String(t.cliente_consigue_id || "cli-da");
           const cliConsigueNom = String(t.cliente_consigue_nombre || "Jugador 2");
           const pctCom = Number(t.comision_porcentaje ?? 5);
+          const mod = String(t.nombre_jugada || t.jugada || "PUESTO")
+            .trim()
+            .toUpperCase();
 
           const infoJuega =
             mapaClientes.get(cliJuegaId) || mapaClientes.get(cliJuegaNom.trim().toUpperCase());
           const infoConsigue =
-            mapaClientes.get(cliConsigueId) || mapaClientes.get(cliConsigueNom.trim().toUpperCase());
+            mapaClientes.get(cliConsigueId) ||
+            mapaClientes.get(cliConsigueNom.trim().toUpperCase());
+
+          const acumularComisionModalidad = (comMonto: number) => {
+            if (comMonto <= 0) return;
+            if (mod === "TABLA FIJA" || mod === "TABLAS FIJAS") {
+              comisionesMod.tablasFijas = redondearCentavos(comisionesMod.tablasFijas + comMonto);
+            } else if (mod === "MARCA" || mod === "MARCAS") {
+              comisionesMod.marcas = redondearCentavos(comisionesMod.marcas + comMonto);
+            } else if (mod.startsWith("DUPLETA")) {
+              comisionesMod.dupletas = redondearCentavos(comisionesMod.dupletas + comMonto);
+            } else if (mod === "WIN" || mod === "PLACE" || mod === "SHOW" || mod === "WPS") {
+              comisionesMod.wps = redondearCentavos(comisionesMod.wps + comMonto);
+            } else {
+              comisionesMod.entreTercios = redondearCentavos(comisionesMod.entreTercios + comMonto);
+            }
+          };
+
+          const esTercios =
+            mod !== "TABLA FIJA" &&
+            mod !== "TABLAS FIJAS" &&
+            mod !== "MARCA" &&
+            mod !== "MARCAS" &&
+            !mod.startsWith("DUPLETA");
 
           if ((est === "GANADOR" || est === "GANO") && monto > 0) {
             const ganBruto = premio > monto ? redondearCentavos(premio - monto) : monto;
@@ -289,14 +506,40 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
                 });
               }
               totalComisionCentavos += Math.round(com * 100);
+              acumularComisionModalidad(com);
+
+              if (esTercios && pctCom > 0) {
+                const regG = balanceBrutoTercios.get(cliJuegaNom.toUpperCase()) || {
+                  id: cliJuegaId,
+                  nombre: cliJuegaNom,
+                  ganadoBruto: 0,
+                  perdidoBruto: 0,
+                  pctMax: pctCom,
+                };
+                regG.ganadoBruto = redondearCentavos(regG.ganadoBruto + ganBruto);
+                balanceBrutoTercios.set(cliJuegaNom.toUpperCase(), regG);
+
+                const regP = balanceBrutoTercios.get(cliConsigueNom.toUpperCase()) || {
+                  id: cliConsigueId,
+                  nombre: cliConsigueNom,
+                  ganadoBruto: 0,
+                  perdidoBruto: 0,
+                  pctMax: pctCom,
+                };
+                regP.perdidoBruto = redondearCentavos(regP.perdidoBruto + perdidoContraparte);
+                balanceBrutoTercios.set(cliConsigueNom.toUpperCase(), regP);
+              }
             }
           } else if ((est === "PERDEDOR" || est === "PERDIO") && monto > 0) {
+            // Manejo exacto de pérdidas parciales de Ninis (ej. 2Y3N donde premio_pagar > 0 && premio_pagar < monto_jugado)
+            const perdidaBase =
+              premio > 0 && premio < monto ? redondearCentavos(monto - premio) : monto;
             const com = redondearCentavos(
               Number(t.comision_pagada) > 0
                 ? Number(t.comision_pagada)
-                : (monto * pctCom) / 100
+                : (perdidaBase * pctCom) / 100
             );
-            const ganNeto = redondearCentavos(Math.max(0, monto - com));
+            const ganNeto = redondearCentavos(Math.max(0, perdidaBase - com));
             const perdido = redondearCentavos(ganNeto + com);
             if (perdido > 0) {
               perdedores.push({
@@ -314,6 +557,29 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
                 });
               }
               totalComisionCentavos += Math.round(com * 100);
+              acumularComisionModalidad(com);
+
+              if (esTercios && pctCom > 0) {
+                const regP = balanceBrutoTercios.get(cliJuegaNom.toUpperCase()) || {
+                  id: cliJuegaId,
+                  nombre: cliJuegaNom,
+                  ganadoBruto: 0,
+                  perdidoBruto: 0,
+                  pctMax: pctCom,
+                };
+                regP.perdidoBruto = redondearCentavos(regP.perdidoBruto + perdido);
+                balanceBrutoTercios.set(cliJuegaNom.toUpperCase(), regP);
+
+                const regG = balanceBrutoTercios.get(cliConsigueNom.toUpperCase()) || {
+                  id: cliConsigueId,
+                  nombre: cliConsigueNom,
+                  ganadoBruto: 0,
+                  perdidoBruto: 0,
+                  pctMax: pctCom,
+                };
+                regG.ganadoBruto = redondearCentavos(regG.ganadoBruto + perdidaBase);
+                balanceBrutoTercios.set(cliConsigueNom.toUpperCase(), regG);
+              }
             }
           }
         }
@@ -321,18 +587,52 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
         if (perdedores.length === 0 && ganadores.length === 0) continue;
 
         try {
-          const resAsiento = await generarAsientoLiquidacionCarrera({
-            grupoId: params?.grupoId || null,
-            fecha: dia,
-            carreraId: `${hipo}-C${numC}`,
-            carreraNumero: numC,
-            hipodromo: hipo,
-            perdedores,
-            ganadores,
-            totalComisionCasa: totalComisionCentavos / 100,
-            usuario: params?.usuario || "SISTEMA_AUTO_BACKFILL",
-          });
-          registrarEstadisticaAsiento(resAsiento, eraPrevio);
+          if (!eraPrevio) {
+            const resAsiento = await generarAsientoLiquidacionCarrera({
+              grupoId: params?.grupoId || null,
+              fecha: dia,
+              carreraId: `${hipo}-C${numC}`,
+              carreraNumero: numC,
+              hipodromo: hipo,
+              perdedores,
+              ganadores,
+              totalComisionCasa: totalComisionCentavos / 100,
+              comisionesPorModalidad: comisionesMod,
+              usuario: params?.usuario || "SISTEMA_AUTO_BACKFILL",
+            });
+            registrarEstadisticaAsiento(resAsiento, false);
+          } else {
+            asientosPreexistentes += 1;
+          }
+
+          // Registrar reembolsos de comisión por cruce (5.1.01.001) en la carrera
+          for (const [, bal] of balanceBrutoTercios) {
+            if (bal.ganadoBruto > 0 && bal.perdidoBruto > 0) {
+              const montoCruzado = Math.min(bal.ganadoBruto, bal.perdidoBruto);
+              const reembolso = redondearCentavos((montoCruzado * bal.pctMax) / 100);
+              if (reembolso > 0) {
+                const claveCruce = `CRUCE:${hipo}:${numC}:${bal.id}:${dia || "hoy"}`;
+                const claveCruceAlt = `CRUCE:${hipo}-C${numC}:${bal.id}`;
+                const eraPrevCruce = clavesPrevias.has(claveCruce) || clavesPrevias.has(claveCruceAlt);
+                if (!eraPrevCruce) {
+                  const resCruce = await generarAsientoReembolsoCruce({
+                    grupoId: params?.grupoId || null,
+                    fecha: dia,
+                    carreraId: `${hipo}-C${numC}`,
+                    carreraNumero: numC,
+                    hipodromo: hipo,
+                    clienteId: bal.id,
+                    clienteNombre: bal.nombre,
+                    montoReembolso: reembolso,
+                    usuario: params?.usuario || "SISTEMA_AUTO_BACKFILL",
+                  });
+                  registrarEstadisticaAsiento(resCruce, false);
+                } else {
+                  asientosPreexistentes += 1;
+                }
+              }
+            }
+          }
         } catch {
           /* ignore non-blocking */
         }
@@ -348,6 +648,7 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
         fechaDesde: semanaActual.desde,
         fechaHasta: semanaActual.hasta,
         tickets: ticketsData ?? [],
+        clientes: cliRows,
       });
 
       for (const dest of repSemana.items) {
@@ -356,18 +657,23 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
           transaccionesAnalizadas += 1;
           const refInc = `SEMANA:${semanaActual.desde}:${dest.socio}:PROPIA`;
           const claveInc = `INC:${refInc}:${dest.socio}`;
-          const eraPrevio = clavesPrevias.has(claveInc);
-          const resInc = await generarAsientoDevolucionIncentivo({
-            grupoId: params?.grupoId || null,
-            fecha: semanaActual.hasta,
-            clienteId: dest.socio,
-            clienteNombre: dest.socio,
-            montoIncentivo: dest.totalDevolucionPropia,
-            referenciaId: refInc,
-            esAvalador: false,
-            usuario: params?.usuario || "SISTEMA_SEMANA_ACTUAL",
-          });
-          registrarEstadisticaAsiento(resInc, eraPrevio);
+          const claveIncAlt = `INCENTIVO:CLIENTE:${refInc}:${dest.socio}`;
+          const eraPrevio = clavesPrevias.has(claveInc) || clavesPrevias.has(claveIncAlt);
+          if (!eraPrevio) {
+            const resInc = await generarAsientoDevolucionIncentivo({
+              grupoId: params?.grupoId || null,
+              fecha: semanaActual.hasta,
+              clienteId: dest.socio,
+              clienteNombre: dest.socio,
+              montoIncentivo: dest.totalDevolucionPropia,
+              referenciaId: refInc,
+              esAvalador: false,
+              usuario: params?.usuario || "SISTEMA_SEMANA_ACTUAL",
+            });
+            registrarEstadisticaAsiento(resInc, false);
+          } else {
+            asientosPreexistentes += 1;
+          }
         }
 
         // 2B. Asiento de Comisión Confidencial al Socio por sus Afiliados (5.1.03.001)
@@ -376,18 +682,23 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
             transaccionesAnalizadas += 1;
             const refSoc = `SEMANA:${semanaActual.desde}:SOCIO:${dest.socio}:POR:${af.cliente}`;
             const claveSoc = `INC:${refSoc}:${dest.socio}`;
-            const eraPrevio = clavesPrevias.has(claveSoc);
-            const resSoc = await generarAsientoDevolucionIncentivo({
-              grupoId: params?.grupoId || null,
-              fecha: semanaActual.hasta,
-              clienteId: dest.socio,
-              clienteNombre: `${dest.socio} (Socio por ${af.cliente})`,
-              montoIncentivo: af.comisionSocio,
-              referenciaId: refSoc,
-              esAvalador: true,
-              usuario: params?.usuario || "SISTEMA_SEMANA_ACTUAL",
-            });
-            registrarEstadisticaAsiento(resSoc, eraPrevio);
+            const claveSocAlt = `INCENTIVO:SOCIO:${refSoc}:${dest.socio}`;
+            const eraPrevio = clavesPrevias.has(claveSoc) || clavesPrevias.has(claveSocAlt);
+            if (!eraPrevio) {
+              const resSoc = await generarAsientoDevolucionIncentivo({
+                grupoId: params?.grupoId || null,
+                fecha: semanaActual.hasta,
+                clienteId: dest.socio,
+                clienteNombre: `${dest.socio} (Socio por ${af.cliente})`,
+                montoIncentivo: af.comisionSocio,
+                referenciaId: refSoc,
+                esAvalador: true,
+                usuario: params?.usuario || "SISTEMA_SEMANA_ACTUAL",
+              });
+              registrarEstadisticaAsiento(resSoc, false);
+            } else {
+              asientosPreexistentes += 1;
+            }
           }
         }
       }
@@ -396,74 +707,92 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
     }
 
     // =========================================================================
-    // 3. TABLAS FIJAS (`tablas_fijas` / `tablas_fijas_jugadas`) DE LA SEMANA
+    // 3. CUENTAS POR COBRAR DE CLIENTES DEUDORES (`1.2.01.001`) Y
+    //    CARTERA DE AVALES ACTIVOS DE LA SEMANA (`1.2.02.001` / `3.1.02.001`)
     // =========================================================================
     try {
-      const { data: tablasRows } = await sdb
-        .from("tablas_fijas")
-        .select("id, fecha, hipodromo, carrera, estado, total_vendido, premio_total, comision_casa, grupo_id")
-        .gte("fecha", semanaActual.desde)
-        .lte("fecha", semanaActual.hasta)
-        .limit(500);
+      for (const c of cliRows) {
+        if (params?.grupoId && c.grupo_id && String(c.grupo_id) !== String(params.grupoId)) continue;
+        const cliId = String(c.id);
+        const cliNom = String(c.seudonimo || c.nombre || "Cliente").trim().toUpperCase();
+        const saldo = redondearCentavos(Number(c.saldo_actual || 0));
+        const avalMonto = redondearCentavos(Number(c.aval || 0));
 
-      for (const tf of tablasRows ?? []) {
-        if (params?.grupoId && tf.grupo_id && String(tf.grupo_id) !== String(params.grupoId)) continue;
-        const vendido = redondearCentavos(Number(tf.total_vendido || 0));
-        const premio = redondearCentavos(Number(tf.premio_total || 0));
-        const com = redondearCentavos(Number(tf.comision_casa || 0));
-        if (vendido <= 0 && premio <= 0 && com <= 0) continue;
-
-        transaccionesAnalizadas += 1;
-        const claveTf = `TF:SEMANA:${tf.id}`;
-        const eraPrevio = clavesPrevias.has(claveTf);
-        const fechaTf = String(tf.fecha || semanaActual.desde).slice(0, 10);
-
-        const lineasTf = [];
-        if (vendido > 0) {
-          lineasTf.push(
-            {
-              cuenta_codigo: "2.1.01.001",
-              debe: vendido,
-              haber: 0,
-              concepto: `Recaudación Tablas Fijas ${tf.hipodromo || ""} C${tf.carrera || ""}`,
-            },
-            {
-              cuenta_codigo: "4.2.01.001",
-              debe: 0,
-              haber: vendido,
-              concepto: `Ingreso Ventas Tablas Fijas ${tf.hipodromo || ""} C${tf.carrera || ""}`,
-            }
-          );
-        }
-        if (premio > 0) {
-          lineasTf.push(
-            {
-              cuenta_codigo: "5.2.01.001",
-              debe: premio,
-              haber: 0,
-              concepto: `Premio pagado Tablas Fijas ${tf.hipodromo || ""} C${tf.carrera || ""}`,
-            },
-            {
-              cuenta_codigo: "2.1.01.001",
-              debe: 0,
-              haber: premio,
-              concepto: `Acreditación premio Tablas Fijas ${tf.hipodromo || ""} C${tf.carrera || ""}`,
-            }
-          );
+        // 3A. Si el cliente tiene saldo deudor (saldo_actual < 0), reclasificar a Cuentas por Cobrar (1.2.01.001)
+        if (saldo < 0) {
+          const deuda = redondearCentavos(Math.abs(saldo));
+          if (deuda > 0) {
+            transaccionesAnalizadas += 1;
+            const claveCxc = `CXC:DEUDOR:${semanaActual.desde}:${cliId}`;
+            const eraPrevCxc = clavesPrevias.has(claveCxc);
+            const resCxc = await generarAsientoPartidaDoble({
+              grupo_id: params?.grupoId || (c.grupo_id ? String(c.grupo_id) : null),
+              fecha_contable: semanaActual.hasta,
+              tipo_evento: "COBRO_CLIENTE_AVALADO",
+              referencia_id: cliId,
+              clave_idempotencia: claveCxc,
+              descripcion: `Cuentas por Cobrar — Saldo deudor exigible de ${cliNom} (${semanaActual.desde} al ${semanaActual.hasta})`,
+              creado_por: params?.usuario || "SISTEMA_SEMANA_ACTUAL",
+              lineas: [
+                {
+                  cuenta_codigo: "1.2.01.001",
+                  cliente_id: cliId,
+                  cliente_nombre: cliNom,
+                  debe: deuda,
+                  haber: 0,
+                  concepto: `Reconocimiento de Cuenta por Cobrar (Saldo Deudor) · ${cliNom}`,
+                },
+                {
+                  cuenta_codigo: "2.1.01.001",
+                  cliente_id: cliId,
+                  cliente_nombre: cliNom,
+                  debe: 0,
+                  haber: deuda,
+                  concepto: `Reclasificación NIIF de descubierto en cuenta corriente a CxC · ${cliNom}`,
+                },
+              ],
+            });
+            registrarEstadisticaAsiento(resCxc, eraPrevCxc);
+          }
         }
 
-        if (lineasTf.length > 0) {
-          const resTf = await generarAsientoPartidaDoble({
-            grupo_id: params?.grupoId || (tf.grupo_id ? String(tf.grupo_id) : null),
-            fecha_contable: fechaTf,
-            tipo_evento: "LIQUIDACION_APUESTAS",
-            referencia_id: String(tf.id),
-            clave_idempotencia: claveTf,
-            descripcion: `Tablas Fijas ${tf.hipodromo || ""} C${tf.carrera || ""} (${fechaTf})`,
-            creado_por: "SISTEMA_SEMANA_ACTUAL",
-            lineas: lineasTf,
+        // 3B. Si el cliente tiene Aval activo y operó en la semana o mantiene saldo activo
+        const estuvoActivo =
+          clientesActivosSemana.has(cliId) ||
+          clientesActivosSemana.has(cliNom) ||
+          saldo !== 0;
+        if (avalMonto > 0 && estuvoActivo) {
+          transaccionesAnalizadas += 1;
+          const claveAval = `AVAL:CARTERA:${semanaActual.desde}:${cliId}`;
+          const eraPrevAval = clavesPrevias.has(claveAval);
+          const resAval = await generarAsientoPartidaDoble({
+            grupo_id: params?.grupoId || (c.grupo_id ? String(c.grupo_id) : null),
+            fecha_contable: semanaActual.desde,
+            tipo_evento: "AVAL_OTORGADO",
+            referencia_id: cliId,
+            clave_idempotencia: claveAval,
+            descripcion: `Garantía / Límite de Aval activo de ${cliNom} ($${avalMonto.toFixed(2)})`,
+            creado_por: params?.usuario || "SISTEMA_SEMANA_ACTUAL",
+            lineas: [
+              {
+                cuenta_codigo: "1.2.02.001",
+                cliente_id: cliId,
+                cliente_nombre: cliNom,
+                debe: avalMonto,
+                haber: 0,
+                concepto: `Cartera de Avales Otorgados en vigencia · ${cliNom}`,
+              },
+              {
+                cuenta_codigo: "3.1.02.001",
+                cliente_id: cliId,
+                cliente_nombre: cliNom,
+                debe: 0,
+                haber: avalMonto,
+                concepto: `Fondo de Respaldo Banco Aval · ${cliNom}`,
+              },
+            ],
           });
-          registrarEstadisticaAsiento(resTf, eraPrevio);
+          registrarEstadisticaAsiento(resAval, eraPrevAval);
         }
       }
     } catch {
@@ -476,14 +805,14 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
     try {
       const { data: rematesRows } = await sdb
         .from("remates")
-        .select("id, fecha, hipodromo, carrera, total_pozo, comision_casa, monto_premio, grupo_id")
+        .select("*")
         .gte("fecha", semanaActual.desde)
         .lte("fecha", semanaActual.hasta)
         .limit(500);
 
       for (const rem of rematesRows ?? []) {
         if (params?.grupoId && rem.grupo_id && String(rem.grupo_id) !== String(params.grupoId)) continue;
-        const pozo = redondearCentavos(Number(rem.total_pozo || 0));
+        const pozo = redondearCentavos(Number(rem.total_pozo || rem.pozo_acumulado || 0));
         const com = redondearCentavos(Number(rem.comision_casa || pozo * 0.1));
         const premio = redondearCentavos(Math.max(0, pozo - com));
         if (pozo <= 0) continue;
@@ -503,7 +832,7 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
           creado_por: "SISTEMA_SEMANA_ACTUAL",
           lineas: [
             {
-              cuenta_codigo: "2.1.04.001",
+              cuenta_codigo: "2.1.03.001",
               debe: redondearCentavos(premio + com),
               haber: 0,
               concepto: `Liberación de pozo de remate ${rem.hipodromo || ""} C${rem.carrera || ""}`,
@@ -539,14 +868,14 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
     try {
       const { data: pollasRows } = await sdb
         .from("pollas")
-        .select("id, fecha, hipodromo, total_recaudado, comision_casa, grupo_id")
+        .select("*")
         .gte("fecha", semanaActual.desde)
         .lte("fecha", semanaActual.hasta)
         .limit(500);
 
       for (const po of pollasRows ?? []) {
         if (params?.grupoId && po.grupo_id && String(po.grupo_id) !== String(params.grupoId)) continue;
-        const rec = redondearCentavos(Number(po.total_recaudado || 0));
+        const rec = redondearCentavos(Number(po.total_recaudado || po.pozo_total || 0));
         const com = redondearCentavos(Number(po.comision_casa || rec * 0.1));
         const premio = redondearCentavos(Math.max(0, rec - com));
         if (rec <= 0) continue;
@@ -605,7 +934,7 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
     try {
       const { data: deps } = await sdb
         .from("depositos")
-        .select("id, fecha, cliente_id, cliente_nombre, tipo_operacion, monto, monto_usd, referencia")
+        .select("*")
         .order("id", { ascending: true })
         .limit(1000);
 
@@ -698,12 +1027,12 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
     }
 
     // =========================================================================
-    // 6. RETIROS Y TRASLADOS ENTRE CLIENTES (`transacciones`)
+    // 6. RETIROS Y TRASLADOS ENTRE CLIENTES (`transacciones` / `transacciones_financieras`)
     // =========================================================================
     try {
       const { data: trans } = await sdb
-        .from("transacciones")
-        .select("id, fecha, tipo_operacion, cliente_origen_id, cliente_origen_nombre, cliente_destino_id, cliente_destino_nombre, monto, monto_usd, referencia")
+        .from("transacciones_financieras")
+        .select("*")
         .order("id", { ascending: true })
         .limit(1000);
 
@@ -713,7 +1042,7 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
         transaccionesAnalizadas += 1;
         const refId = `TR-HIST-${tr.id}`;
         const fechaTr = String(tr.fecha || "").slice(0, 10) || semanaActual.desde;
-        const tipoOp = String(tr.tipo_operacion || "TRANSFERENCIA").toUpperCase();
+        const tipoOp = String(tr.tipo_operacion || tr.tipo || "TRANSFERENCIA").toUpperCase();
 
         let resTr;
         if (tipoOp === "RETIRO") {
@@ -721,8 +1050,8 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
           resTr = await generarAsientoRetiroCliente({
             grupoId: params?.grupoId || null,
             fecha: fechaTr,
-            clienteId: String(tr.cliente_origen_id || "cli"),
-            clienteNombre: String(tr.cliente_origen_nombre || "Cliente"),
+            clienteId: String(tr.cliente_origen_id || tr.cliente_id || "cli"),
+            clienteNombre: String(tr.cliente_origen_nombre || tr.cliente_nombre || "Cliente"),
             monto: montoUsd,
             referencia: refId,
             usuario: "SISTEMA_AUTO_BACKFILL",

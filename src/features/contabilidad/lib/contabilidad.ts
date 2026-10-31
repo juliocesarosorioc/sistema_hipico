@@ -1119,7 +1119,7 @@ export async function registrarContraAsientoNIIF(
 }
 
 /** Lista los asientos registrados (los más recientes primero). */
-export async function listarAsientosNIIF(limite = 50): Promise<AsientoNIIFResumen[]> {
+export async function listarAsientosNIIF(limite = 500): Promise<AsientoNIIFResumen[]> {
   const deMemoria: AsientoNIIFResumen[] = obtenerAsientosMemoria().slice(0, limite).map((a) => ({
     id: a.id,
     clave: a.clave_idempotencia || a.referencia_id || `AS-${a.numero_asiento}`,

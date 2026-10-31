@@ -203,9 +203,12 @@ export function calcularComisionesSocioPorClientes(params: {
   let montoJugadoPropio = 0;
   for (const t of tickets) {
     if (t.anulada) continue;
+    const estT = String(t.estado || "").trim().toUpperCase();
+    if (estT === "RETIRADO" || estT === "ANULADO") continue;
     const tCli = normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre);
-    const fechaT = String(t.fecha_carrera || t.fecha || "").slice(0, 10);
-    if (tCli === socioNorm) {
+    const tCliConsigue = normalizar(t.cliente_consigue_nombre || t.clienteConsigue || t.tercio || t.contraparte);
+    const fechaT = String(t.fecha_carrera || t.fecha || t.fecha_registro || "").slice(0, 10);
+    if (tCli === socioNorm || tCliConsigue === socioNorm) {
       if (params.fechaDesde && fechaT < params.fechaDesde) continue;
       if (params.fechaHasta && fechaT > params.fechaHasta) continue;
       const m = Number(t.monto_jugado ?? t.monto ?? t.monto_decidido ?? 0);
@@ -225,10 +228,13 @@ export function calcularComisionesSocioPorClientes(params: {
 
     for (const t of tickets) {
       if (t.anulada) continue;
+      const estT = String(t.estado || "").trim().toUpperCase();
+      if (estT === "RETIRADO" || estT === "ANULADO") continue;
       const tCli = normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre);
-      const fechaT = String(t.fecha_carrera || t.fecha || "").slice(0, 10);
+      const tCliConsigue = normalizar(t.cliente_consigue_nombre || t.clienteConsigue || t.tercio || t.contraparte);
+      const fechaT = String(t.fecha_carrera || t.fecha || t.fecha_registro || "").slice(0, 10);
 
-      if (tCli === afNorm) {
+      if (tCli === afNorm || tCliConsigue === afNorm) {
         // Validación de fecha inicio de cálculo para el socio
         if (fechaT < af.fechaInicio) continue;
         if (params.fechaDesde && fechaT < params.fechaDesde) continue;

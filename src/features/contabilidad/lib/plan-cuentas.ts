@@ -324,23 +324,34 @@ export async function generarAsientoPartidaDoble(
 
   if (supabase) {
     try {
-      const { data, error } = await supabase.rpc("rpc_registrar_asiento_contable_v2", {
-        p_grupo_id: param.grupo_id || null,
+      const claveNiif =
+        param.clave_idempotencia ||
+        param.referencia_id ||
+        `AS:${param.tipo_evento}:${fecha}:${asientoId}`;
+      const { data: dNiif, error: errNiif } = await supabase.rpc("rpc_registrar_asiento_niif", {
+        p_clave: claveNiif,
         p_fecha: fecha,
-        p_tipo_evento: param.tipo_evento,
-        p_referencia_id: param.referencia_id || null,
-        p_clave_idempotencia: param.clave_idempotencia || null,
-        p_descripcion: param.descripcion,
-        p_creado_por: param.creado_por || "sistema",
-        p_lineas: lineasNormalizadas,
+        p_concepto: param.descripcion,
+        p_moneda_operacion: "USD",
+        p_moneda_presentacion: "USD",
+        p_tasa_cambio: 1,
+        p_lineas: lineasNormalizadas
+          .filter((l) => l.debe > 0 || l.haber > 0)
+          .map((l) => ({
+            cuenta: l.cuenta_codigo,
+            nombre_cuenta: l.cuenta_nombre || obtenerCuentaPorCodigo(l.cuenta_codigo)?.nombre || "",
+            debe: l.debe,
+            haber: l.haber,
+          })),
+        p_es_contra_asiento: param.tipo_evento === "REVERSION_LIQUIDACION",
+        p_asiento_origen: null,
+        p_usuario: param.creado_por || "sistema",
       });
-
-      if (!error && data && data.ok) {
-        asientoId = String(data.asiento_id || asientoId);
-        if (data.numero_asiento) numeroAsiento = Number(data.numero_asiento);
+      if (!errNiif && dNiif && dNiif.id) {
+        asientoId = String(dNiif.id);
       }
     } catch {
-      // Fallback a almacenamiento en memoria si Supabase no tiene la RPC
+      // Fallback a almacenamiento en memoria si Supabase no tiene la RPC NIIF
     }
   }
 
@@ -1063,6 +1074,22 @@ export async function generarAsientoCompromisoJugada(params: {
         debe: 0,
         haber: monto2,
         concepto: `Saldo comprometido en tránsito (Da): ${params.jugada} (#${params.caballo}) · ${params.hipodromo} C${params.carrera}`,
+      },
+      {
+        cuenta_codigo: "7.1.01.001",
+        cliente_id: params.contraparteId != null ? String(params.contraparteId) : null,
+        cliente_nombre: params.contraparteNombre,
+        debe: monto2,
+        haber: 0,
+        concepto: `Exposición en curso Contraparte (${params.contraparteNombre})`,
+      },
+      {
+        cuenta_codigo: "7.1.01.002",
+        cliente_id: params.contraparteId != null ? String(params.contraparteId) : null,
+        cliente_nombre: params.contraparteNombre,
+        debe: 0,
+        haber: monto2,
+        concepto: `Contra-cuenta exposición en curso Contraparte (${params.contraparteNombre})`,
       }
     );
   }
@@ -1087,6 +1114,9 @@ export async function generarAsientoLiberacionCompromisoJugada(params: {
   clienteId?: string | number | null;
   clienteNombre: string;
   montoLiberado: number;
+  contraparteId?: string | number | null;
+  contraparteNombre?: string | null;
+  montoContraparte?: number | null;
   motivo: "ANULACION" | "RETIRO" | "LIQUIDACION";
   hipodromo?: string;
   carrera?: number | string;
@@ -1096,16 +1126,12 @@ export async function generarAsientoLiberacionCompromisoJugada(params: {
   usuario?: string | null;
 }) {
   const monto = deCentavos(Math.max(0, aCentavos(params.montoLiberado)));
+  const monto2 = deCentavos(Math.max(0, aCentavos(params.montoContraparte || 0)));
   const cuentaBolsa = params.esAdelantada ? "2.1.02.002" : "2.1.02.003";
-  return generarAsientoPartidaDoble({
-    grupo_id: params.grupoId ?? null,
-    fecha_contable: params.fecha,
-    tipo_evento: "LIBERACION_COMPROMISO_JUGADA",
-    referencia_id: params.ticketId != null ? String(params.ticketId) : undefined,
-    clave_idempotencia: params.ticketId != null ? `LIBERACION:${params.motivo}:${params.ticketId}` : undefined,
-    descripcion: `Liberación de saldo comprometido (${params.motivo}) · ${params.clienteNombre}`,
-    creado_por: params.usuario ?? "sistema",
-    lineas: [
+  const lineas: LineaAsientoContable[] = [];
+
+  if (monto > 0) {
+    lineas.push(
       {
         cuenta_codigo: cuentaBolsa,
         cliente_id: params.clienteId != null ? String(params.clienteId) : null,
@@ -1137,8 +1163,56 @@ export async function generarAsientoLiberacionCompromisoJugada(params: {
         debe: 0,
         haber: monto,
         concepto: `Cierre de exposición en curso (${params.motivo})`,
+      }
+    );
+  }
+
+  if (monto2 > 0 && params.contraparteNombre) {
+    lineas.push(
+      {
+        cuenta_codigo: cuentaBolsa,
+        cliente_id: params.contraparteId != null ? String(params.contraparteId) : null,
+        cliente_nombre: params.contraparteNombre,
+        debe: monto2,
+        haber: 0,
+        concepto: `Liberación de retención transitoria Da (${params.motivo})`,
       },
-    ],
+      {
+        cuenta_codigo: "2.1.01.001",
+        cliente_id: params.contraparteId != null ? String(params.contraparteId) : null,
+        cliente_nombre: params.contraparteNombre,
+        debe: 0,
+        haber: monto2,
+        concepto: `Restitución de saldo comprometido Da (${params.motivo})`,
+      },
+      {
+        cuenta_codigo: "7.1.01.002",
+        cliente_id: params.contraparteId != null ? String(params.contraparteId) : null,
+        cliente_nombre: params.contraparteNombre,
+        debe: monto2,
+        haber: 0,
+        concepto: `Cierre de contra-cuenta de exposición Da (${params.motivo})`,
+      },
+      {
+        cuenta_codigo: "7.1.01.001",
+        cliente_id: params.contraparteId != null ? String(params.contraparteId) : null,
+        cliente_nombre: params.contraparteNombre,
+        debe: 0,
+        haber: monto2,
+        concepto: `Cierre de exposición en curso Da (${params.motivo})`,
+      }
+    );
+  }
+
+  return generarAsientoPartidaDoble({
+    grupo_id: params.grupoId ?? null,
+    fecha_contable: params.fecha,
+    tipo_evento: "LIBERACION_COMPROMISO_JUGADA",
+    referencia_id: params.ticketId != null ? String(params.ticketId) : undefined,
+    clave_idempotencia: params.ticketId != null ? `LIBERACION:${params.motivo}:${params.ticketId}` : undefined,
+    descripcion: `Liberación de saldo comprometido (${params.motivo}) · ${params.clienteNombre}${params.contraparteNombre ? ` vs ${params.contraparteNombre}` : ""}`,
+    creado_por: params.usuario ?? "sistema",
+    lineas,
   });
 }
 
@@ -1153,9 +1227,118 @@ export function obtenerAsientosMemoria(grupoId?: string | null): AsientoContable
   return [...ASIENTOS_MEMORIA];
 }
 
+function inferirTipoEventoDesdeClave(clave: string, concepto: string): TipoEventoContable {
+  const c = String(clave || "").toUpperCase();
+  const desc = String(concepto || "").toUpperCase();
+  if (c.startsWith("LIQ:") || desc.includes("LIQUIDACIÓN DE CARRERA")) return "LIQUIDACION_APUESTAS";
+  if (c.startsWith("CRUCE:") || desc.includes("REEMBOLSO DE COMISIÓN POR CRUCE")) return "REEMBOLSO_CRUCE";
+  if (c.startsWith("COMPROMISO:") || desc.includes("COMPROMISO INMEDIATO")) return "COMPROMISO_JUGADA";
+  if (c.startsWith("LIBERACION:") || desc.includes("LIBERACIÓN DE SALDO COMPROMETIDO")) return "LIBERACION_COMPROMISO_JUGADA";
+  if (c.startsWith("INCENTIVO:") || c.startsWith("INC:") || desc.includes("INCENTIVO") || desc.includes("COMISIÓN CONFIDENCIAL A SOCIO")) return "DEVOLUCION_INCENTIVO";
+  if (c.startsWith("ARG:") || desc.includes("INTER-GRUPO")) return "VENTA_INTERGRUPO_ARGENTINA";
+  if (c.startsWith("CXC:") || desc.includes("CUENTAS POR COBRAR")) return "COBRO_CLIENTE_AVALADO";
+  if (c.startsWith("AVAL:PAGAR:")) return "AVAL_PAGADO";
+  if (c.startsWith("AVAL:") || desc.includes("AVAL")) return "AVAL_OTORGADO";
+  if (c.startsWith("DEP:") || desc.includes("DEPÓSITO")) return "DEPOSITO_CLIENTE";
+  if (c.startsWith("RET:") || desc.includes("RETIRO")) return "RETIRO_CLIENTE";
+  if (c.startsWith("TRAS:") || desc.includes("TRASLADO")) return "TRASLADO_CLIENTES";
+  if (c.startsWith("TF:") || c.startsWith("REM:") || c.startsWith("POLLA:") || c.startsWith("EVENTO:")) return "LIQUIDACION_APUESTAS";
+  if (c.startsWith("HONORARIOS:") || desc.includes("HONORARIOS")) return "HONORARIOS_EQUIPO";
+  return "AJUSTE_AUDITORIA";
+}
+
+/**
+ * Hidrata ASIENTOS_MEMORIA desde las tablas `asientos_niif` y `asientos_niif_lineas` de Supabase
+ * para que todas las vistas del frontend (PUC, Libro Diario, Estado de Resultados, Balance NIIF)
+ * reflejen siempre el 100% de los asientos persistidos en el backend.
+ */
+export async function hidratarAsientosDesdeSupabase(): Promise<number> {
+  if (!supabase) return ASIENTOS_MEMORIA.length;
+  try {
+    const { data: cabeceras, error: errCab } = await supabase
+      .from("asientos_niif")
+      .select("*")
+      .order("fecha", { ascending: false })
+      .order("creado_at", { ascending: false })
+      .limit(1000);
+    if (errCab || !cabeceras || cabeceras.length === 0) return ASIENTOS_MEMORIA.length;
+
+    const ids = cabeceras.map((c: any) => c.id);
+    const { data: lineas, error: errLin } = await supabase
+      .from("asientos_niif_lineas")
+      .select("*")
+      .in("asiento_id", ids);
+    if (errLin) return ASIENTOS_MEMORIA.length;
+
+    const porAsiento = new Map<string, any[]>();
+    for (const l of lineas ?? []) {
+      const k = String((l as any).asiento_id);
+      if (!porAsiento.has(k)) porAsiento.set(k, []);
+      porAsiento.get(k)!.push(l);
+    }
+
+    const clavesExistentes = new Set(
+      ASIENTOS_MEMORIA.map((a) => a.clave_idempotencia).filter(Boolean) as string[]
+    );
+    const idsExistentes = new Set(ASIENTOS_MEMORIA.map((a) => String(a.id)));
+
+    let agregados = 0;
+    for (const r of cabeceras as any[]) {
+      const clave = String(r.clave || "");
+      const idStr = String(r.id || "");
+      if ((clave && clavesExistentes.has(clave)) || idsExistentes.has(idStr)) continue;
+
+      const lsRaw = porAsiento.get(idStr) ?? [];
+      const ls: LineaAsientoContable[] = lsRaw.map((l: any) => ({
+        cuenta_codigo: String(l.cuenta),
+        cuenta_nombre: String(l.nombre_cuenta || obtenerCuentaPorCodigo(String(l.cuenta))?.nombre || ""),
+        debe: Number(l.debe ?? 0),
+        haber: Number(l.haber ?? 0),
+        concepto: String(r.concepto || ""),
+      }));
+
+      const totalDebe = ls.reduce((s, x) => sumarDinero(s, x.debe), 0);
+      const totalHaber = ls.reduce((s, x) => sumarDinero(s, x.haber), 0);
+      const tipoEvento = r.es_contra_asiento
+        ? "REVERSION_LIQUIDACION"
+        : inferirTipoEventoDesdeClave(clave, String(r.concepto || ""));
+
+      ASIENTOS_MEMORIA.push({
+        id: idStr,
+        grupo_id: null,
+        numero_asiento: ASIENTOS_MEMORIA.length + 1,
+        fecha_contable: String(r.fecha),
+        tipo_evento: tipoEvento,
+        referencia_id: clave || idStr,
+        clave_idempotencia: clave || null,
+        descripcion: String(r.concepto || ""),
+        estado: "PUBLICADO",
+        total_debe: totalDebe,
+        total_haber: totalHaber,
+        lineas: ls,
+        creado_el: String(r.creado_at || r.creado_en || new Date().toISOString()),
+      });
+      if (clave) clavesExistentes.add(clave);
+      idsExistentes.add(idStr);
+      agregados++;
+    }
+
+    if (agregados > 0 && typeof window !== "undefined") {
+      try {
+        window.dispatchEvent(new CustomEvent("contabilidad:asiento-registrado"));
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return ASIENTOS_MEMORIA.length;
+}
+
 /**
  * Calcula los saldos acumulados de todas las cuentas del PUC (Debe - Haber según naturaleza)
- * Soporta filtrado individual por grupo.
+ * Soporta filtrado individual por grupo y acumula jerárquicamente hacia las cuentas padre (Niveles 3 -> 2 -> 1).
  */
 export function calcularSaldosPlanCuentas(
   asientos: AsientoContableRegistrado[] = ASIENTOS_MEMORIA,
@@ -1190,6 +1373,25 @@ export function calcularSaldosPlanCuentas(
       }
 
       mapa.set(l.cuenta_codigo, reg);
+    }
+  }
+
+  // Acumular jerárquicamente de niveles hijos (4 -> 3 -> 2 -> 1) hacia sus cuentas padre
+  for (const nivel of [4, 3, 2] as const) {
+    for (const cta of PLAN_CUENTAS_HIPICO) {
+      if (cta.nivel !== nivel || !cta.codigo_padre) continue;
+      const hijo = mapa.get(cta.codigo);
+      if (!hijo || (hijo.totalDebe === 0 && hijo.totalHaber === 0)) continue;
+      const padreDef = obtenerCuentaPorCodigo(cta.codigo_padre);
+      const padre = mapa.get(cta.codigo_padre) || { saldo: 0, totalDebe: 0, totalHaber: 0 };
+      padre.totalDebe = sumarDinero(padre.totalDebe, hijo.totalDebe);
+      padre.totalHaber = sumarDinero(padre.totalHaber, hijo.totalHaber);
+      if (padreDef?.naturaleza === "DEUDORA") {
+        padre.saldo = restarDinero(padre.totalDebe, padre.totalHaber);
+      } else {
+        padre.saldo = restarDinero(padre.totalHaber, padre.totalDebe);
+      }
+      mapa.set(cta.codigo_padre, padre);
     }
   }
 
