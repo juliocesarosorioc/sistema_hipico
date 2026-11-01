@@ -237,7 +237,6 @@ declare
   v_saldo   numeric;
   v_aval    numeric;
   v_limite  numeric;
-  v_modo    text;
   v_grupo_id uuid;
 begin
   if p_cliente_id is null then
@@ -289,12 +288,11 @@ begin
   v_combos := jsonb_array_length(p_combinaciones);
   v_total  := v_combos * v_precio;
 
-  -- TOPE DE JUEGO: saldo + aval (modo 'libre' no topa). Idéntico a la Dupleta.
+  -- TOPE DE JUEGO: siempre saldo + aval; ningún modo exime del tope.
   v_saldo  := coalesce(v_cliente.saldo_actual, 0);
   v_aval   := coalesce(v_cliente.aval, 0);
   v_limite := v_saldo + v_aval;
-  v_modo   := lower(btrim(coalesce(v_cliente.modo_juego, 'aval')));
-  if v_modo <> 'libre' and v_limite < v_total then
+  if v_limite < v_total then
     raise exception
       'Saldo insuficiente. % tiene % de saldo y % de aval (disponible %) y la Polla cuesta %.',
       v_cliente.nombre,

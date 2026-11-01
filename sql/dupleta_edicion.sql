@@ -37,7 +37,6 @@ declare
     v_saldo   numeric;
     v_aval    numeric;
     v_limite  numeric;
-    v_modo    text;
     v_ant     text;
 begin
     if p_ticket_id is null then
@@ -92,12 +91,11 @@ begin
         raise exception 'El cliente % no pertenece al grupo de la venta.', v_nuevo.nombre;
     end if;
 
-    -- Tope de juego: saldo + aval (modo 'libre' no topa).
+    -- Tope de juego: siempre saldo + aval; ningún modo exime del tope.
     v_saldo  := coalesce(v_nuevo.saldo_actual, 0);
     v_aval   := coalesce(v_nuevo.aval, 0);
     v_limite := v_saldo + v_aval;
-    v_modo   := lower(btrim(coalesce(v_nuevo.modo_juego, 'aval')));
-    if v_modo <> 'libre' and v_limite < v_monto then
+    if v_limite < v_monto then
         raise exception
             'Saldo insuficiente. % tiene % de saldo y % de aval (disponible %) y la jugada es de %.',
             v_nuevo.nombre,

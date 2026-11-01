@@ -44,8 +44,7 @@
  *  El aval NO se descuenta al jugar: se topa contra `saldo + aval`, y es el
  *  saldo el que baja. Por eso no hace falta rebajar `aval` en cada ticket.
  *
- *  Excepción: modo de juego "libre" → el cliente puede jugar por encima de su
- *  saldo y no actúa como tope.
+ *  No hay excepción por modo de juego: toda jugada queda limitada al disponible.
  */
 
 import { parsearNomenclatura } from "@/features/taquilla/lib/nomenclatura";
@@ -136,9 +135,9 @@ export function explicarDisponible(c: ClienteRiesgo | null | undefined): string 
 }
 
 
-/** Modo "libre": el cliente puede jugar por encima de su saldo. */
-export function esSinTope(c: ClienteRiesgo | null | undefined): boolean {
-  return String(c?.modo_juego ?? "").trim().toLowerCase() === "libre";
+/** El modo "libre" no autoriza a exceder saldo + aval. */
+export function esSinTope(_c: ClienteRiesgo | null | undefined): boolean {
+  return false;
 }
 
 /** Fila mínima de `clientes` para el lookup de disponible del reporte. */
@@ -151,8 +150,7 @@ export type ClienteDisponible = {
 
 /**
  * Ítem 10: lookup "nombre → disponible (saldo + aval)" para el Reporte de
- * Liquidación. Devuelve `undefined` para quien no está en la cartera o juega en
- * modo `libre` (sin tope): así el reporte no lo marca con asterisco.
+ * Liquidación. Devuelve `undefined` para quien no está en la cartera.
  *
  * El nombre se compara normalizado (trim + mayúsculas + espacios colapsados)
  * porque el ticket guarda el nombre como texto libre.
@@ -168,7 +166,6 @@ export function lookupDisponible(clientes: ClienteDisponible[]): (nombre: string
   return (nombre: string) => {
     const c = porNombre.get(norm(nombre));
     if (!c) return undefined;
-    if (String(c.modo_juego ?? "").trim().toLowerCase() === "libre") return undefined;
     return num(c.saldo_actual) + num(c.aval);
   };
 }

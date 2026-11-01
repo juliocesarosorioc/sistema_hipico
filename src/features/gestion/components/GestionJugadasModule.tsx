@@ -1643,12 +1643,11 @@ const hipodromosDelDia = useMemo(() => {
   /**
    * Saldo ajustado (disponible = saldo + aval) por cliente, para el aviso del
    * preliminar: el mensaje lo imprime en *negrita* o como `S/S` si quedó en 0.
-   * Se omiten los clientes LIBRES (sin tope): no tiene sentido marcarlos.
+   * Todos los clientes quedan sujetos al saldo + aval disponible.
    */
   const saldosAjustados = useMemo(() => {
     const m: Record<string, number> = {};
     for (const c of clientesDelGrupo) {
-      if (esClienteLibre(c)) continue;
       const d = limiteDeJugar(c);
       if (Number.isFinite(d)) m[c.nombre] = d;
     }

@@ -9,7 +9,6 @@ import { liquidarWps, tipoWps } from "@/features/motores/lib/wps";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import {
   calcularReparto,
-  disponibleParaJugar,
   extraerProporcion,
   buscarExpresionEjemplares,
   parsearEjemplaresPorCliente,
@@ -393,23 +392,17 @@ export function proyectarFila(opts: {
     cliente1: opts.cliente1 ?? null,
     cliente2: opts.cliente2 ?? null,
   });
-  /* El monto efectivo es el AUTORIZADO: lo que queda en riesgo de verdad. Solo
-     se cae al monto pedido cuando NO hay datos de cliente (proyección
-     informativa, sin a quién topar). Con un cliente presente un autorizado 0 es
-     un 0 REAL. Cuando ese 0 viene de que el CLIENTE 1 ya no tiene disponible
-     —el caso "en orden" en que sus filas anteriores agotaron el saldo: ver
-     saldosEnCurso.ts— la fila no se puede cobrar: se rechaza con el motivo del
-     reparto en vez de caer al monto pedido. Si no, la vista previa y el cobro
-     creerían que hay saldo y la RPC rechazaría la venta por saldo. */
+  /* Solo se cae al monto pedido cuando no hay ningún cliente identificado para
+     limitar la proyección. Si el reparto autoriza 0, nunca se sustituye por el
+     monto pedido: hacerlo convertiría la falta de saldo en una venta excesiva. */
   if (
     reparto.montoAutorizado <= 0 &&
     montoPedido > 0 &&
-    opts.cliente1 &&
-    disponibleParaJugar(opts.cliente1) <= 0
+    (opts.cliente1 || opts.cliente2)
   ) {
     return {
       ok: false,
-      motivo: `${reparto.avisos[0] ?? "El CLIENTE 1 no tiene saldo disponible para esta jugada."} S/S = Sin saldo.`,
+      motivo: `${reparto.avisos[0] ?? "Ningún cliente tiene saldo disponible para esta jugada."} S/S = Sin saldo.`,
     };
   }
   const monto = reparto.montoAutorizado > 0 ? reparto.montoAutorizado : montoPedido;

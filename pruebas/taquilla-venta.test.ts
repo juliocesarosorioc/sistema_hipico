@@ -55,6 +55,8 @@ ok("declara la función de venta", /function public\.club_vender_jugada\s*\(/.te
 ok("declara la función de anulación", /function public\.club_anular_jugada\s*\(/.test(sql));
 ok("la venta registra origen TAQUILLA", /'origen',\s*'TAQUILLA'/.test(sql));
 ok("la venta guarda la modalidad para el banquero", /'modalidad',/.test(sql));
+ok("la RPC siempre aplica saldo + aval", /if v_limite < p_monto then/.test(sql));
+ok("la RPC no deja el modo libre sin tope", !/v_modo\s*<>\s*'libre'/.test(sql));
 ok("inserta en tickets_apuestas", /insert into public\.tickets_apuestas/i.test(sql));
 ok("descuenta saldo (update clientes)", /update public\.clientes/i.test(sql));
 ok("tiene índice único de idempotencia", /create unique index if not exists tickets_taquilla_idem_unico/.test(sql));
@@ -79,8 +81,27 @@ console.log("\nBetSlip (Taquilla) persiste en tickets_apuestas");
   ok("tiene fecha/hipódromo/carrera", /const \[fecha/.test(slip) && /const \[hipodromo/.test(slip) && /const \[carrera/.test(slip));
   ok("carga el catálogo de clientes", /listarClientesVenta\(\)/.test(slip));
   ok("respeta el tope mostrando el disponible", /textoDisponible\(/.test(slip));
+  ok("calcula el monto autorizado antes de cobrar", /calcularReparto\(/.test(slip) && /montoAutorizado/.test(slip));
+  ok("registra observación al recortar una jugada", /Observación: pidió/.test(slip));
+  ok("conserva la observación en el ticket de la sesión", /observacion:\s*montoRecortado/.test(slip));
   // Un import roto de la venta no debe quedar silencioso.
   ok("no usa ya el registro solo-sesión sin contexto", /carrerasDe\(hipodromo\)/.test(slip));
+}
+
+console.log("\nPortal (ventas transaccionales y tope de saldo)");
+{
+  const portal = readFileSync(
+    join(process.cwd(), "src", "features", "portal", "lib", "portal.ts"),
+    "utf8"
+  );
+  const edge = readFileSync(
+    join(process.cwd(), "supabase", "functions", "portal-auth", "index.ts"),
+    "utf8"
+  );
+  ok("Puestos usa la RPC transaccional de Taquilla", /rpc = "club_vender_jugada"/.test(portal));
+  ok("un error de saldo en RPC no cae a inserción directa", /if \(errRpc\) return \{ ok: false, error: errRpc\.message \}/.test(portal));
+  ok("Portal no inserta tickets_apuestas directamente", !/from\("tickets_apuestas"\)\.insert/.test(portal));
+  ok("Edge Portal también procesa Puestos por RPC transaccional", /tipo === "PUESTOS"[\s\S]{0,800}rpc = "club_vender_jugada"/.test(edge));
 }
 
 console.log(`\n${pasan} pasaron, ${fallan} fallaron`);

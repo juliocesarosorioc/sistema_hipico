@@ -192,7 +192,6 @@ export function SeccionJugadasPortal({
   const metaActual = MODALIDADES_PORTAL_META.find((m) => m.id === modalidad)!;
   const estaBloqueada = Boolean(bloqueos[modalidad]);
   const disponible = sesion.resumen.disponible;
-  const esLibre = String(sesion.cliente.modo_juego ?? "").toLowerCase().trim() === "libre";
 
   const pedirDesbloqueo = async (hipodromo?: string, carrera?: number | string) => {
     setSolicitandoDesbloqueo(true);
@@ -255,7 +254,7 @@ export function SeccionJugadasPortal({
                 Disponible para jugar
               </div>
               <div className="text-sm font-black font-mono text-emerald-300">
-                {esLibre ? "LIBRE" : formatoMoneda("USD", disponible)}
+                {formatoMoneda("USD", disponible)}
               </div>
             </div>
           </div>
@@ -890,7 +889,13 @@ function ModalidadMarcasMultiplo6({
       return toast("Seleccioná tu ejemplar y el ejemplar rival.", "warning");
     }
     const { ajustado } = calculoMultiplo6;
-    setMontoInput(String(ajustado));
+    const disponibleActual = Math.max(0, Number(sesion.resumen.disponible ?? 0));
+    const montoAutorizado = Math.min(ajustado, Math.floor(disponibleActual / 6) * 6);
+    if (montoAutorizado <= 0) {
+      return toast("No se registró la Marca: no tienes saldo disponible para el mínimo de $6.", "error");
+    }
+    const recortado = montoAutorizado < ajustado;
+    setMontoInput(String(montoAutorizado));
     setEnviando(true);
     const r = await realizarJugada({
       tipo: "MARCA",
@@ -899,14 +904,15 @@ function ModalidadMarcasMultiplo6({
       carrera,
       caballo,
       rival,
-      monto: ajustado,
+      monto: montoAutorizado,
     });
     setEnviando(false);
     if (!r.ok) {
       return toast(r.error ?? "No se pudo registrar la marca.", "error");
     }
     toast(
-      `✅ Tu jugada de Marca (#${caballo} vs #${rival}) es registrada por $${ajustado} (múltiplo de 6) y cobrada a tu grupo.`,
+      `✅ Tu jugada de Marca (#${caballo} vs #${rival}) es registrada por $${montoAutorizado} (múltiplo de 6) y cobrada a tu grupo.` +
+        (recortado ? ` Observación: solicitaste $${ajustado}; se autorizaron $${montoAutorizado} por saldo disponible.` : ""),
       "success"
     );
     void sesion;
@@ -1260,27 +1266,21 @@ function ModalidadPuestosPortal({
     setModalidadPuesto(res.datos.jugada);
     setCaballos(res.datos.caballos);
     const disp = Number(sesion.resumen.disponible ?? 0);
-    const esLibre = String(sesion.cliente.modo_juego ?? "").toLowerCase().trim() === "libre";
     const nombreJugador = sesion.cliente.nombre || "Jugador";
-    if (!esLibre) {
-      const mesa = crearMesa({ [nombreJugador]: disp });
-      const p = proponer(mesa, {
-        autor: nombreJugador,
-        rol: res.datos.rol,
-        jugada: res.datos.jugada,
-        caballos: res.datos.caballos,
-        monto: res.datos.monto,
-      });
-      if (!p.ok) {
-        setAlertaGramaticaPuesto(p.mensajes[0] ?? "Sin saldo disponible.");
-        return;
-      }
-      setMonto(String(p.monto ?? res.datos.monto));
-      setAlertaGramaticaPuesto(p.mensajes[0] ?? null);
-    } else {
-      setMonto(String(res.datos.monto));
-      setAlertaGramaticaPuesto(null);
+    const mesa = crearMesa({ [nombreJugador]: disp });
+    const p = proponer(mesa, {
+      autor: nombreJugador,
+      rol: res.datos.rol,
+      jugada: res.datos.jugada,
+      caballos: res.datos.caballos,
+      monto: res.datos.monto,
+    });
+    if (!p.ok) {
+      setAlertaGramaticaPuesto(p.mensajes[0] ?? "Sin saldo disponible.");
+      return;
     }
+    setMonto(String(p.monto ?? res.datos.monto));
+    setAlertaGramaticaPuesto(p.mensajes[0] ?? null);
   };
 
   const registrarPuesto = async () => {
@@ -1294,6 +1294,13 @@ function ModalidadPuestosPortal({
     if (!caballos.trim() || !(m > 0)) {
       return toast("Indicá el/los ejemplar(es) y un monto mayor a cero.", "warning");
     }
+    const disponibleActual = Math.max(0, Number(sesion.resumen.disponible ?? 0));
+    const montoAutorizado = Math.min(m, disponibleActual);
+    if (montoAutorizado <= 0) {
+      return toast("No se registró la jugada: no tienes saldo disponible.", "error");
+    }
+    const recortado = montoAutorizado < m;
+    if (recortado) setMonto(String(montoAutorizado));
     const ejNorm = normalizarEjemplaresCombinados(caballos);
     const caballoCan = ejNorm.ok ? ejNorm.caballos : caballos.trim().toUpperCase();
     const bNorm = normalizarBloquePuestos(modalidadPuesto);
@@ -1306,14 +1313,21 @@ function ModalidadPuestosPortal({
       fecha: hoyIso(),
       carrera,
       caballo: caballoCan,
-      monto: m,
+      monto: montoAutorizado,
     });
     setEnviando(false);
     if (!r.ok) return toast(r.error ?? "No se pudo registrar la jugada.", "error");
     setCaballos("");
     setTextoRapidoPuesto("");
-    setAlertaGramaticaPuesto(null);
-    toast(`✅ Jugada ${modalidadCan} (#${caballoCan}) por $${m} registrada y cargada a tu grupo.`, "success");
+    const observacion = recortado
+      ? `Observación: solicitaste $${m} y se autorizaron $${montoAutorizado} por saldo disponible.`
+      : null;
+    setAlertaGramaticaPuesto(observacion);
+    toast(
+      `✅ Jugada ${modalidadCan} (#${caballoCan}) por $${montoAutorizado} registrada y cargada a tu grupo.` +
+        (observacion ? ` ${observacion}` : ""),
+      "success"
+    );
     await onRealizada();
   };
 
@@ -1635,6 +1649,7 @@ function ModalidadRematesPortal({
 // ============================================================================
 
 function ModalidadDupletasPortal({
+  sesion,
   dupletas,
   bloqueada,
   enviando,
@@ -1675,6 +1690,13 @@ function ModalidadDupletasPortal({
     if (!num1 || !num2 || !(m > 0)) {
       return toast("Seleccioná un ejemplar en la 1ª pata, uno en la 2ª pata y el monto.", "warning");
     }
+    const disponibleActual = Math.max(0, Number(sesion.resumen.disponible ?? 0));
+    const montoAutorizado = Math.min(m, disponibleActual);
+    if (montoAutorizado <= 0) {
+      return toast("No se registró la Dupleta: no tienes saldo disponible.", "error");
+    }
+    const recortado = montoAutorizado < m;
+    if (recortado) setMonto(String(montoAutorizado));
     setEnviando(true);
     const r = await realizarJugada({
       tipo: "DUPLETA",
@@ -1684,11 +1706,15 @@ function ModalidadDupletasPortal({
       carrera2: actual.carrera2,
       numero1: num1,
       numero2: num2,
-      monto: m,
+      monto: montoAutorizado,
     });
     setEnviando(false);
     if (!r.ok) return toast(r.error ?? "No se pudo comprar la dupleta.", "error");
-    toast(`✅ Dupleta registrada (C${actual.carrera1}: #${num1} × C${actual.carrera2}: #${num2}) por $${m}.`, "success");
+    toast(
+      `✅ Dupleta registrada (C${actual.carrera1}: #${num1} × C${actual.carrera2}: #${num2}) por $${montoAutorizado}.` +
+        (recortado ? ` Observación: solicitaste $${m}; se autorizaron $${montoAutorizado} por saldo disponible.` : ""),
+      "success"
+    );
     await onRealizada();
   };
 

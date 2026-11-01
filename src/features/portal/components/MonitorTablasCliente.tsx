@@ -721,9 +721,8 @@ function ModalEjemplarCliente({
   if (!abierto || !tabla || !ejemplar) return null;
 
   // Control de saldo y límites autorizados por el grupo
-  const esLibre = Boolean(sesion.cliente?.libre);
   const disponible = Number(sesion.resumen?.disponible ?? 0);
-  const maxMonto = esLibre ? Number.POSITIVE_INFINITY : Math.max(0, disponible);
+  const maxMonto = Math.max(0, disponible);
 
   // Cupo máximo por ejemplar (si se configuró en la tabla)
   const maxCaballo = typeof (ejemplar as Record<string, unknown>).max_tablas === "number"
@@ -738,7 +737,7 @@ function ModalEjemplarCliente({
   if (cupoRestanteCaballo !== null) limitesEfectivos.push(cupoRestanteCaballo);
   if (cupoRestanteGrupo !== null) limitesEfectivos.push(cupoRestanteGrupo);
   if (maxPorJugador !== null) limitesEfectivos.push(maxPorJugador);
-  if (!esLibre && valorUnitario > 0) limitesEfectivos.push(Math.floor(disponible / valorUnitario));
+  if (valorUnitario > 0) limitesEfectivos.push(Math.floor(disponible / valorUnitario));
 
   const limiteEfectivoTablas = limitesEfectivos.length > 0 ? Math.max(0, Math.min(...limitesEfectivos)) : 999;
   const caballoAgotado = cupoRestanteCaballo !== null && cupoRestanteCaballo <= 0;
@@ -758,7 +757,7 @@ function ModalEjemplarCliente({
     }
   }, [caballoAgotado, notificadoAgotado, tabla, num, ejemplar.nombre, sesion.grupo?.id, sesion.grupo?.nombre]);
 
-  const superaLimiteSaldo = !esLibre && costoTotal > maxMonto;
+  const superaLimiteSaldo = costoTotal > maxMonto;
   const superaLimiteCupo = cantNum > limiteEfectivoTablas;
   const bloqueado = caballoAgotado || grupoAgotado || superaLimiteSaldo || superaLimiteCupo || cantNum <= 0;
 
@@ -934,7 +933,7 @@ function ModalEjemplarCliente({
               <div className="flex items-center justify-between">
                 <span className="text-slate-600 font-semibold">Disponible financiero:</span>
                 <span className="font-mono font-black text-slate-900">
-                  {esLibre ? "LIBRE (Sin límite)" : formatoMoneda("USD", disponible)}
+                  {formatoMoneda("USD", disponible)}
                 </span>
               </div>
 

@@ -2,7 +2,7 @@
 //
 // El aval es credito negado, NO efectivo: autoriza a jugar por encima del saldo,
 // y el saldo queda debitado en negativo (esa deuda se cobra). El tope de juego
-// es `saldo + aval`. Un cliente en mora con aval NO esta bloqueado.
+// es `saldo + aval`. Ningun modo de juego exime del disponible.
 //
 // Modulo PURO a proposito: `taquilla/reparto.ts` no importa Supabase ni React,
 // asi que node lo corre directo (el runner lo compila antes). `lib/grupos.ts`
@@ -26,6 +26,14 @@ import { join } from "node:path";
  * repo, y desde ahi `__dirname` no alcanza ningun fuente.
  */
 const libGrupos = readFileSync(join(process.cwd(), "src", "features", "grupos", "lib", "grupos.ts"), "utf8");
+const sqlVentas = [
+  "taquilla_venta.sql",
+  "marcas_venta.sql",
+  "tablas_venta.sql",
+  "dupleta_venta.sql",
+  "dupleta_edicion.sql",
+  "portal_jugadas_reclamos.sql",
+].map((archivo) => [archivo, readFileSync(join(process.cwd(), "sql", archivo), "utf8")] as const);
 
 let pasan = 0;
 let fallan = 0;
@@ -77,12 +85,12 @@ eq("un aval de 500 no crea saldo", disponibleParaJugar({ saldo_actual: 0, aval: 
 eq("el aval entra una sola vez", disponibleParaJugar({ saldo_actual: 0, aval: 500 }), 500);
 
 // ---------------------------------------------------------------------------
-console.log("\n[3] modo LIBRE: sin tope");
+console.log("\n[3] modo LIBRE: respeta saldo + aval");
 // ---------------------------------------------------------------------------
 const libre = { saldo_actual: 0, aval: 0, modo_juego: "libre" };
-ok("esSinTope con 'libre'", esSinTope(libre));
-ok("'LIBRE' en mayusculas tambien", esSinTope({ modo_juego: "LIBRE" }));
-ok("' libre ' con espacios", esSinTope({ modo_juego: " libre " }));
+ok("'libre' no omite el tope", !esSinTope(libre));
+ok("'LIBRE' en mayusculas tampoco", !esSinTope({ modo_juego: "LIBRE" }));
+ok("' libre ' con espacios tampoco", !esSinTope({ modo_juego: " libre " }));
 ok("modo 'aval' NO es libre", !esSinTope({ modo_juego: "aval" }));
 ok("modo 'pozo' NO es libre (topa)", !esSinTope({ modo_juego: "pozo" }));
 ok("sin modo NO es libre (topa)", !esSinTope({}));
@@ -141,18 +149,18 @@ console.log("\n[4] el reparto TOPA por saldo + aval, no por saldo");
   eq("topa en el aval (0)", r.montoAutorizado, 0);
 }
 {
-  // Cliente LIBRE con saldo 0: la exception manda sobre el aval y sobre el saldo.
+  // El modo "libre" no permite superar saldo + aval.
   const r = calcularReparto({
     jugada: "5",
     ejemplares: "",
     monto: 10000,
-    cliente1: { nombre: "Caro", saldo_actual: 0, aval: 0, modo_juego: "libre" },
+    cliente1: { nombre: "Caro", saldo_actual: 100, aval: 50, modo_juego: "libre" },
     cliente2: null,
   });
-  eq("libre no recorta", r.recortado, false);
-  eq("libre autoriza todo", r.montoAutorizado, 10000);
-  eq("libre marca sinTope", r.lado1.sinTope, true);
-  eq("libre nunca excedido", r.lado1.excedido, false);
+  eq("modo libre recorta al saldo + aval", r.montoAutorizado, 150);
+  eq("marca el recorte", r.recortado, true);
+  eq("modo libre sigue teniendo tope", r.lado1.sinTope, false);
+  eq("riesgo aceptado no excede el disponible", r.lado1.excedido, false);
 }
 {
   // Pareja: manda el MENOR disponible. Ana tiene 400, Beto en mora sin aval -30.
@@ -209,6 +217,10 @@ console.log("\n[7] lib/grupos.ts DELEGA, no reimplementa");
     "grupos.ts NO suma saldo + aval por su cuenta",
     !/saldoDeCliente\([^)]*\)\s*\+\s*avalDeCliente/.test(libGrupos)
   );
+  for (const [archivo, sql] of sqlVentas) {
+    ok(`${archivo} bloquea jugadas sobre saldo + aval`, /if\s+v_limite\s*<\s*(p_monto|v_monto|v_total)\s+then/i.test(sql));
+    ok(`${archivo} no excluye el modo libre del tope`, !/v_modo\s*<>\s*'libre'|modo_juego[^;\n]*<>\s*'libre'/i.test(sql));
+  }
 }
 
 eq("respaldoAval devuelve el aval", respaldoAval({ aval: 300 }), 300);

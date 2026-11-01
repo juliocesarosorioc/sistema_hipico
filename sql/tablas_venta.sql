@@ -300,7 +300,7 @@ begin
   -- TOPE = saldo + aval (misma regla que club_vender_marca): el aval es
   -- credito negado, no efectivo, asi que autoriza a jugar por encima del
   -- saldo pero el saldo queda debitado en negativo y esa deuda se cobra. Un
-  -- cliente "libre" juega sin tope.
+  -- Ningún modo de juego exime del tope.
   --
   -- Antes esta RPC NO validaba nada: cualquier monto, y el cliente podia
   -- quedar en negativo sin limite. El navegador recortaba por saldo, pero la
@@ -309,7 +309,7 @@ begin
   v_aval   := coalesce(v_cliente.aval, 0);
   v_limite := coalesce(v_cliente.saldo_actual, 0) + v_aval;
 
-  if lower(btrim(coalesce(v_cliente.modo_juego, 'aval'))) <> 'libre' and v_limite < p_monto then
+  if v_limite < p_monto then
     raise exception
       'Saldo insuficiente. % tiene % de saldo mas % de aval (disponible %) y la tabla es de %.',
       v_cliente.nombre,

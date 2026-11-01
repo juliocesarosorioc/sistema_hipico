@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { validarComando, detectarModalidad } from "@/features/taquilla/lib/validar";
+import { calcularReparto } from "@/features/taquilla/lib/reparto";
 import { venderJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
 import { Input } from "@/shared/components/ui/Input";
 import { DateInput } from "@/shared/components/ui/DateInput";
@@ -160,7 +161,32 @@ export function BetSlip() {
     [comando, caballoOk, comisionNum]
   );
 
-  const puedeRegistrar = validacion.ok && !!caballoOk && !!c1 && !registrando;
+  const reparto = useMemo(
+    () =>
+      validacion.ok
+        ? calcularReparto({
+            jugada: validacion.tipo,
+            ejemplares: caballoOk ?? "",
+            monto: validacion.monto,
+            cliente1: c1,
+            cliente2: c2,
+          })
+        : null,
+    [validacion, caballoOk, c1, c2]
+  );
+  const montoAutorizado = validacion.ok
+    ? reparto?.montoAutorizado ?? validacion.monto
+    : 0;
+  const montoRecortado = validacion.ok && montoAutorizado < validacion.monto;
+  const validacionAutorizada = useMemo(
+    () =>
+      validacion.ok && montoRecortado
+        ? validarComando(`${montoAutorizado} ${validacion.tipo}`, comisionNum, caballoOk ?? undefined)
+        : validacion,
+    [validacion, montoAutorizado, montoRecortado, comisionNum, caballoOk]
+  );
+  const puedeRegistrar =
+    validacion.ok && validacionAutorizada.ok && !!caballoOk && !!c1 && montoAutorizado > 0 && !registrando;
 
   const registrar = async () => {
     setError("");
@@ -171,6 +197,14 @@ export function BetSlip() {
     }
     if (!c1) {
       setError("Elegí el CLIENTE 1 (a quien se le cobra) del catálogo.");
+      return;
+    }
+    if (montoAutorizado <= 0) {
+      setError("No se puede registrar la jugada: ningún cliente tiene saldo disponible.");
+      return;
+    }
+    if (!validacionAutorizada.ok) {
+      setError(validacionAutorizada.motivo);
       return;
     }
     const nCarrera = Number(String(carrera).replace(/[^0-9]/g, "")) || 1;
@@ -184,7 +218,7 @@ export function BetSlip() {
         carrera: nCarrera,
         jugada: validacion.tipo,
         caballo: caballoOk,
-        monto: validacion.monto,
+        monto: montoAutorizado,
         clienteId: String(c1.id),
         grupoId,
         clienteDador: cliente2.trim() || c2?.nombre || null,
@@ -199,11 +233,14 @@ export function BetSlip() {
         return;
       }
       agregarTicket({
-        comando,
-        monto: validacion.monto,
+        comando: montoRecortado ? `${montoAutorizado} ${validacion.tipo}` : comando,
+        monto: montoAutorizado,
+        observacion: montoRecortado
+          ? `Solicitó $${validacion.monto}; se autorizaron $${montoAutorizado} por saldo disponible.`
+          : undefined,
         caballo: caballoOk,
-        gananciaProyectada: validacion.proyeccion.gananciaProyectada,
-        comision: validacion.proyeccion.comision,
+        gananciaProyectada: validacionAutorizada.proyeccion.gananciaProyectada,
+        comision: validacionAutorizada.proyeccion.comision,
         cliente1: c1.nombre,
         cliente2: cliente2.trim() || c2?.nombre || undefined,
         fecha,
@@ -241,13 +278,17 @@ export function BetSlip() {
         }
       }
       setComando("");
+      const observacionRecorte = montoRecortado
+        ? ` · Observación: pidió $${validacion.monto}; se cargaron $${montoAutorizado} por saldo disponible`
+        : "";
       setMensaje(
-        `✅ Jugada #${venta.ticketId ?? "?"} registrada: $${validacion.monto} ${validacion.tipo} · ${c1.nombre}` +
+        `✅ Jugada #${venta.ticketId ?? "?"} registrada: $${montoAutorizado} ${validacion.tipo} · ${c1.nombre}` +
           (venta.yaExistia ? " (ya existía)" : "") +
+          observacionRecorte +
           marca +
           enrutado
       );
-      setTimeout(() => setMensaje(""), 3500);
+      if (!montoRecortado) setTimeout(() => setMensaje(""), 3500);
     } finally {
       setRegistrando(false);
     }
@@ -406,7 +447,18 @@ export function BetSlip() {
         </p>
       </div>
 
-      <DesgloseProyectado validacion={comando.trim() ? validacion : null} />
+      <DesgloseProyectado validacion={comando.trim() ? validacionAutorizada : null} />
+      {montoRecortado && reparto ? (
+        <p className="rounded-xl bg-amber-500/10 p-3 text-center text-[11px] font-bold text-amber-700">
+          ⚠️ {reparto.avisos[0] ?? `Solo se autoriza $${montoAutorizado} de $${validacion.ok ? validacion.monto : 0}.`}
+          {" "}La observación quedará en el mensaje de registro.
+        </p>
+      ) : null}
+      {validacion.ok && c1 && montoAutorizado <= 0 ? (
+        <p className="rounded-xl bg-danger-500/10 p-3 text-center text-[11px] font-bold text-danger-600">
+          🟥 Sin saldo disponible: no se puede registrar esta jugada.
+        </p>
+      ) : null}
 
       <Button
         variant={puedeRegistrar ? "success" : "default"}

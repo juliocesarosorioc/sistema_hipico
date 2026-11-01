@@ -101,6 +101,9 @@ export function ListaTickets() {
                     <p className="text-[10px] text-slate-500">
                       Gana {COP.format(t.gananciaProyectada)} · casa {COP.format(t.comision)}
                     </p>
+                    {t.observacion ? (
+                      <p className="text-[10px] font-semibold text-amber-700">{t.observacion}</p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">

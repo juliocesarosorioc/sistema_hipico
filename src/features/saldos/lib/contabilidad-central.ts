@@ -985,6 +985,7 @@ export function calcularEstadoCuentaCliente(params: {
   devolucionIncentivo?: number | string | null;
   devolucionPct?: number | string | null;
   comisionSocioDevengada?: number | string | null;
+  /** Campo histórico; se conserva por compatibilidad y no elimina el tope. */
   libre?: boolean | null;
   depositos?: number;
   retiros?: number;
@@ -1029,7 +1030,7 @@ export function calcularEstadoCuentaCliente(params: {
   return {
     ...r,
     aval: r.avalVigente,
-    disponibleParaJugar: params.libre ? Number.POSITIVE_INFINITY : r.disponibleParaJugar,
+    disponibleParaJugar: r.disponibleParaJugar,
     fueSaneado: Boolean(r.reparadoAutomaticamente),
   };
 }

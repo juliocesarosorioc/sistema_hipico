@@ -72,7 +72,6 @@ declare
     v_saldo    numeric;
     v_aval     numeric;
     v_limite   numeric;
-    v_modo     text;
     v_moneda   text;
     v_comision numeric;
     v_ins      public.tickets_apuestas%rowtype;
@@ -167,15 +166,13 @@ begin
     end if;
 
     -- ------------------------------------------------------------------
-    -- TOPE DE JUEGO: saldo + aval (modo 'libre' no topa). El aval NO se
-    -- descuenta; se topa contra saldo + aval y es el saldo el que baja.
+    -- TOPE DE JUEGO: siempre saldo + aval. El modo 'libre' no exime del tope.
+    -- El aval NO se descuenta; se topa contra saldo + aval y es el saldo el que baja.
     -- ------------------------------------------------------------------
     v_saldo := coalesce(v_cliente.saldo_actual, 0);
     v_aval  := coalesce(v_cliente.aval, 0);
     v_limite := v_saldo + v_aval;
-    v_modo := lower(btrim(coalesce(v_cliente.modo_juego, 'aval')));
-
-    if v_modo <> 'libre' and v_limite < p_monto then
+    if v_limite < p_monto then
         raise exception
             'Saldo insuficiente. % tiene % de saldo y % de aval (disponible %) y la jugada es de %.',
             v_cliente.nombre,

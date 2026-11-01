@@ -17,6 +17,8 @@ export type TicketTaquilla = {
   cliente1?: string;
   /** Nombre del CLIENTE 2 (el que "da") — para la Pre-visualización. */
   cliente2?: string;
+  /** Observación persistida en sesión cuando el monto se recortó por saldo. */
+  observacion?: string;
   /** Cobro neto proyectado del CLIENTE 1 (PREMIO/SALDO por jugador). */
   cobro1?: number;
   /** Cobro neto proyectado del CLIENTE 2 (PREMIO/SALDO por jugador). */

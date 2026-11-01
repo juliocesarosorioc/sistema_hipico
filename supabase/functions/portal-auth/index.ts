@@ -630,11 +630,8 @@ Deno.serve(async (req: Request) => {
   // los detalles sí vienen del body, y las RPC de venta los revalidan otra vez
   // (saldo + aval, cupo, jerarquía de cruces, participantes que corren).
   //
-  // Se reutilizan las RPC de taquilla —`club_vender_tabla_fija`,
-  // `club_vender_marca`, `club_vender_dupleta`— y la variante de Polla del
-  // portal (`club_portal_vender_polla`). Si la migración aún no está aplicada en
-  // la base, la RPC no existe y esto devuelve un mensaje claro en vez de un
-  // ticket a medias.
+  // Se reutilizan las RPC transaccionales de venta. Si falta una migración o
+  // el saldo no alcanza, devuelve el error sin insertar un ticket alternativo.
   if (accion === "vender") {
     const grupoId = texto(cliente?.grupo_id, 64);
     if (!grupoId) {
@@ -710,6 +707,26 @@ Deno.serve(async (req: Request) => {
         p_cliente_id: cid,
         p_grupo_id: grupoId,
         p_texto_original: texto(e.texto_original, 400) || null,
+      };
+    } else if (tipo === "PUESTOS") {
+      const hipo = texto(e.hipodromo, 80).toUpperCase();
+      const jugada = texto(e.modalidad, 40).toUpperCase();
+      const caballo = texto(e.caballo, 120);
+      if (!hipo || !jugada || !caballo) {
+        return json({ ok: false, error: "Faltan datos de la jugada (hipódromo, modalidad o ejemplar)." }, 400);
+      }
+      rpc = "club_vender_jugada";
+      args = {
+        p_hipodromo: hipo,
+        p_fecha: texto(e.fecha, 10) || new Date().toISOString().slice(0, 10),
+        p_carrera: Math.max(1, Math.floor(numero(e.carrera) || 1)),
+        p_jugada: jugada,
+        p_caballo: caballo,
+        p_monto: monto,
+        p_cliente_id: cid,
+        p_grupo_id: grupoId,
+        p_cliente_dador: texto(e.banquero_nombre, 120) || null,
+        p_usuario: "portal",
       };
     } else {
       return json({ ok: false, error: "Ese tipo de jugada no existe." }, 400);

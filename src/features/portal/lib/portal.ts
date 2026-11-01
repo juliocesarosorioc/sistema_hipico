@@ -487,7 +487,7 @@ async function construirSesion(clienteParam: ClienteRow): Promise<SesionPortal |
     comisionPct: cliente.comision ?? 5,
     devolucionPct: pct,
     devolucionIncentivo: arbolTickets.dec,
-    libre: String(cliente.modo_juego ?? "").toLowerCase().trim() === "libre",
+    libre: false,
     movimientos: tickets.map((t) => ({
       id: t.id,
       cliente_juega_id: t.cliente_juega_id ?? null,
@@ -967,9 +967,9 @@ export async function solicitarCompraTabla(d: CompraTabla): Promise<{ ok: boolea
 // ---------------------------------------------------------------------------
 
 /**
- * Registra una jugada directa del jugador cobrando al grupo al que pertenece.
- * Intenta primero vía RPC directa de Supabase (o inserción en `tickets_apuestas` + descuento de saldo)
- * y mantiene fallback a `portal-auth`.
+ * Registra una jugada cobrando al grupo del jugador. Toda venta se procesa por
+ * una RPC transaccional o por `portal-auth`; nunca inserta tickets directamente
+ * ni hace descuentos separados desde el navegador.
  */
 export async function realizarJugada(cuerpo: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
   const c = cacheGuardada();
@@ -977,16 +977,9 @@ export async function realizarJugada(cuerpo: Record<string, unknown>): Promise<{
     const cli = c.cliente;
     const cid = cli.id;
     let grupoId = cli.grupo_id ? String(cli.grupo_id) : "";
-    let grupoNombre = "GENERAL";
     if (!grupoId) {
-      const { data: gList } = await supabase.from("grupos_venta").select("id, nombre").limit(1);
-      if (gList?.length) {
-        grupoId = String(gList[0].id);
-        grupoNombre = String(gList[0].nombre ?? "GENERAL");
-      }
-    } else {
-      const { data: gRow } = await supabase.from("grupos_venta").select("nombre").eq("id", grupoId).maybeSingle();
-      if (gRow?.nombre) grupoNombre = String(gRow.nombre);
+      const { data: gList } = await supabase.from("grupos_venta").select("id").limit(1);
+      if (gList?.length) grupoId = String(gList[0].id);
     }
 
     const tipo = String(cuerpo.tipo ?? "").trim().toUpperCase();
@@ -1042,104 +1035,33 @@ export async function realizarJugada(cuerpo: Record<string, unknown>): Promise<{
         p_grupo_id: grupoId,
         p_texto_original: cuerpo.texto_original ? String(cuerpo.texto_original) : null,
       };
+    } else if (tipo === "PUESTOS" && grupoId) {
+      rpc = "club_vender_jugada";
+      args = {
+        p_hipodromo: String(cuerpo.hipodromo ?? "").trim().toUpperCase(),
+        p_fecha: cuerpo.fecha ? String(cuerpo.fecha).slice(0, 10) : new Date().toISOString().slice(0, 10),
+        p_carrera: Math.max(1, Math.floor(Number(cuerpo.carrera) || 1)),
+        p_jugada: String(cuerpo.modalidad ?? "").trim().toUpperCase(),
+        p_caballo: String(cuerpo.caballo ?? "").trim(),
+        p_monto: monto,
+        p_cliente_id: cid,
+        p_grupo_id: grupoId,
+        p_cliente_dador: cuerpo.banquero_nombre ? String(cuerpo.banquero_nombre) : null,
+        p_usuario: "portal",
+      };
     }
 
     if (rpc) {
       const { error: errRpc } = await supabase.rpc(rpc, args);
-      if (!errRpc) return { ok: true };
-    }
-
-    // Fallback directo en `tickets_apuestas` cobrando al cliente y asignando su grupo_cobro_id
-    const hoyIso = new Date().toISOString().slice(0, 10);
-    const fechaCarrera = String(cuerpo.fecha ?? hoyIso).slice(0, 10);
-    const hipo = String(cuerpo.hipodromo ?? "HIPÓDROMO").trim().toUpperCase();
-    const carreraNum = Math.max(1, Math.floor(Number(cuerpo.carrera ?? cuerpo.carrera1 ?? 1)));
-    let nombreJugada = tipo;
-    let caballoDesc = String(cuerpo.caballo ?? cuerpo.ejemplar ?? "");
-    let cantidadTablas = Math.max(1, Math.floor(Number(cuerpo.cantidad) || 1));
-    let premioPorTabla = Number(cuerpo.premio_por_tabla ?? 0);
-    let premioPagar = Number(cuerpo.premio_pagar ?? monto * 2);
-
-    if (tipo === "MARCA") {
-      nombreJugada = "MARCA";
-      caballoDesc = `${cuerpo.caballo ?? ""}x${cuerpo.rival ?? ""}`;
-      premioPagar = Math.round(monto * (5 / 6) * 100) / 100;
-    } else if (tipo === "TABLA_FIJA") {
-      nombreJugada = "TABLA FIJA";
-      caballoDesc = `#${cuerpo.ejemplar ?? ""} ${cuerpo.ejemplar_nombre ?? ""}`.trim();
-      if (premioPorTabla > 0) premioPagar = premioPorTabla * cantidadTablas;
-    } else if (tipo === "DUPLETA") {
-      nombreJugada = "DUPLETA";
-      caballoDesc = `C${cuerpo.carrera1}:${cuerpo.numero1} / C${cuerpo.carrera2}:${cuerpo.numero2}`;
-    } else if (tipo === "POLLA") {
-      nombreJugada = "POLLA";
-      caballoDesc = String(cuerpo.texto_original ?? "Combinación Polla");
-    } else if (tipo === "PUESTOS" || tipo === "ENTRE_TERCIOS") {
-      nombreJugada = String(cuerpo.modalidad ?? "1P").toUpperCase();
-      caballoDesc = String(cuerpo.caballo ?? "");
-    } else if (tipo === "REMATE") {
-      nombreJugada = "REMATE";
-      caballoDesc = `#${cuerpo.caballo ?? ""} ${cuerpo.ejemplar_nombre ?? ""}`.trim();
-    }
-
-    const contrapartePorTipo =
-      tipo === "MARCA"
-        ? "Marcas"
-        : tipo === "TABLA_FIJA"
-          ? "TF"
-          : tipo === "DUPLETA"
-            ? "Dupleta"
-            : tipo === "POLLA"
-              ? "Polla"
-              : tipo === "REMATE"
-                ? "Remate"
-                : /^(?:WIN|W|GANADOR)$/i.test(nombreJugada)
-                  ? "Win"
-                  : /^(?:PLACE|P)$/i.test(nombreJugada)
-                    ? "Place"
-                    : /^(?:SHOW|S)$/i.test(nombreJugada)
-                      ? "Show"
-                      : String(cuerpo.banquero_nombre ?? "CASA");
-
-    const filaTicket: Record<string, unknown> = {
-      fecha_registro: new Date().toISOString(),
-      fecha_carrera: fechaCarrera,
-      hipodromo: hipo,
-      carrera: carreraNum,
-      cliente_juega_id: cid,
-      cliente_juega_nombre: cli.seudonimo || cli.nombre || "CLIENTE",
-      cliente_consigue_nombre: contrapartePorTipo,
-      banquero_nombre: contrapartePorTipo,
-      grupo_cobro_id: grupoId || null,
-      grupo_cobro_nombre: grupoNombre,
-      nombre_jugada: nombreJugada,
-      caballo: caballoDesc,
-      cantidad_tablas: cantidadTablas,
-      monto_jugado: monto,
-      monto_decidido: 0,
-      premio_por_tabla: premioPorTabla,
-      premio_pagar: premioPagar,
-      moneda: String(cuerpo.moneda ?? "USD"),
-      estado: "PENDIENTE",
-    };
-
-    const { error: errIns } = await supabase.from("tickets_apuestas").insert([filaTicket]);
-    if (!errIns) {
-      // Descontar del saldo_actual del cliente si no es libre
-      const { data: cliActual } = await supabase
-        .from("clientes")
-        .select("saldo_actual, monto_total_jugado")
-        .eq("id", cid)
-        .maybeSingle();
-      if (cliActual) {
-        const nuevoSaldo = redondearCentavos(num(cliActual.saldo_actual) - monto);
-        const nuevoJugado = redondearCentavos(num(cliActual.monto_total_jugado) + monto);
-        await supabase
-          .from("clientes")
-          .update({ saldo_actual: nuevoSaldo, monto_total_jugado: nuevoJugado })
-          .eq("id", cid);
-      }
+      if (errRpc) return { ok: false, error: errRpc.message };
       return { ok: true };
+    }
+
+    if (tipo === "REMATE") {
+      return {
+        ok: false,
+        error: "No se registró la puja: el Portal requiere una operación de Remate transaccional.",
+      };
     }
   }
 

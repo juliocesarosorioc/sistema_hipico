@@ -97,10 +97,13 @@ por cada `$1` (win/place/show/puestos/marcas), editable en la Taquilla antes de 
 
 ### AVAL: se activa, pero hay saldos inflados que reparar a mano
 
-**La regla que quedo implementada.** El aval es crédito negado, **no efectivo**:
+**Regla operativa vigente.** El aval es crédito negado, **no efectivo**:
 autoriza a jugar por encima del saldo y el saldo queda debitado en negativo (esa
 deuda se cobra). El tope de juego es `saldo + aval`, o sea: un cliente con saldo
-`-200` y aval `300` tiene `$100` disponibles, no `$0`. Modo `libre` = sin tope.
+`-200` y aval `300` tiene `$100` disponibles, no `$0`. El modo histórico `libre`
+ya no exime de ese tope: si la jugada supera el disponible, Taquilla y Gestión
+solo registran el monto autorizado y dejan una observación; si el disponible es
+cero, no se registra.
 
 Repartida en los tres lados, porque si el navegador topa distinto que la RPC el
 caja autoriza de más (la RPC lo rechaza y se pierde la venta) o topa donde sí
@@ -112,8 +115,8 @@ había crédito (no se vende):
   **delegan** en el anterior; no lo reimplementan.
 - Modales: `ModalMarcas`, `MonitorTablas`, `EjemplarModal`, `GestionJugadasModule`
   y el selector de `DupletaModule`.
-- SQL: `club_vender_marca` y `club_vender_tabla` topan contra `saldo + aval` y
-  eximen al modo `libre`.
+- SQL: las RPC de Taquilla, marcas, tablas, dupletas y pollas verifican siempre
+  `saldo + aval`, sin excepción por `modo_juego`.
 
 **Tres bugs que aparecieron de paso, y que ya están corregidos:**
 
@@ -121,8 +124,8 @@ había crédito (no se vende):
    y el cliente podía quedar en negativo sin límite. Además leía el cliente sin
    `for update`, así que dos cajas leían el mismo saldo y la segunda `UPDATE` se
    lo pisaba a la primera.
-2. El modo `libre` solo existía en el navegador: la RPC rechazaba la venta, así
-   que un cliente libre no podía comprar ni una marca.
+2. El modo histórico `libre` permitía omitir el tope en algunas rutas. Ahora
+   todas las rutas de venta aplican el mismo máximo autorizado.
 3. `club_registrar_deposito` sumaba el aval a `saldo_actual` **y** a `aval` en
    `Otorgar Aval`, y `Pagar Aval` abonaba el saldo. Eso hacía tres cosas malas:
    el aval contaba **dos veces** como poder de compra (dar `$500` de aval concedía
@@ -1210,8 +1213,9 @@ Dos arreglos sobre la carga de jugadas, sin tocar el motor:
   saldo 1000 → 600 · 400 · …), la fila sin saldo ya no cae al monto pedido: la
   proyección la rechaza con el motivo del reparto (`lib/taquilla/validar.ts`), así
   la vista previa y el cobro coinciden y no se intenta una venta que la RPC
-  rechazaría. Sin datos de cliente y en modo «libre» la proyección sigue
-  autorizando el monto pedido (comportamiento intacto).
+  rechazaría. Sin datos de cliente la proyección sigue siendo informativa, pero
+  con cualquier cliente identificado nunca sustituye una autorización de cero
+  por el monto pedido.
 - `pruebas/saldos-en-curso.test.ts` — 24 aserciones (dos jugadas del mismo
   cliente, clientes distintos, dador sin descuento, fila ilegible que no
   descuenta, el aval que no baja, el borde del disponible agotado —600 · 400 ·
@@ -1674,7 +1678,7 @@ todos los jugadores": quien jugó por encima de su disponible queda señalado en
 el propio mensaje.
 
 **Regla ya existente:** `disponibleParaJugar` (`src/features/taquilla/lib/reparto.ts`)
-= `saldo + aval`; el modo `libre` no topa. El reporte debe **mostrar** lo
+= `saldo + aval`; el modo histórico `libre` tampoco supera ese límite. El reporte debe **mostrar** lo
 arriesgado y compararlo con el disponible del cliente (saldo/aval de `clientes`),
 sin re-validar la venta.
 

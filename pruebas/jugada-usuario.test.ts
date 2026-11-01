@@ -60,7 +60,7 @@ si(validarJugada({ tipo: "TABLA_FIJA", hipodromo: "X", carrera: 1, tablaId: "t",
 // Tope saldo + aval.
 si(!validarJugada({ tipo: "TABLA_FIJA", hipodromo: "X", carrera: 1, tablaId: "t", cantidad: 1, monto: 150 }, { montoDisponible: 100 }).ok, "monto > disponible → inválido");
 si(validarJugada({ tipo: "TABLA_FIJA", hipodromo: "X", carrera: 1, tablaId: "t", cantidad: 1, monto: 100 }, { montoDisponible: 100 }).ok, "monto = disponible → ok");
-si(validarJugada({ tipo: "TABLA_FIJA", hipodromo: "X", carrera: 1, tablaId: "t", cantidad: 1, monto: 9999 }, { montoDisponible: null }).ok, "disponible null (modo libre) → sin tope");
+si(validarJugada({ tipo: "TABLA_FIJA", hipodromo: "X", carrera: 1, tablaId: "t", cantidad: 1, monto: 9999 }, { montoDisponible: null }).ok, "sin límite informado: validación estructural sin tope local");
 
 // ---------------------------------------------------------------------------
 console.log("\nBLOQUE 3 — Tabla Fija");

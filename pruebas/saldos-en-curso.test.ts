@@ -11,6 +11,7 @@
 import {
   clienteConSaldoDescontado,
   proyectarFilasEnOrden,
+  calcularEstadoCuentaCliente,
   type FilaDeCarga,
 } from "../src/features/taquilla/lib/saldosEnCurso";
 import { proyectarFila } from "../src/features/taquilla/lib/validar";
@@ -182,20 +183,43 @@ console.log("\n== Sin datos de cliente la proyección NO se topa ==");
   si(p[0].proyeccion.ok && p[0].proyeccion.monto === 100,
     "cliente desconocido → autoriza el monto pedido (no hay a quién topar)",
     JSON.stringify(p[0].proyeccion));
-  const solo = proyectarFila({ jugada: "2n", monto: "150" });
+  const solo = proyectarFila({ jugada: "2n", caballo: "3", monto: "150" });
   si(solo.ok && solo.monto === 150,
     "proyectarFila SIN clientes conserva el monto pedido", JSON.stringify(solo));
 }
 
-console.log("\n== Modo libre no se topa ==");
+console.log("\n== Modo libre respeta el saldo autorizado ==");
 {
-  const cat = [{ id: "lib", nombre: "Lulo", saldo_actual: 0, aval: 0, modo_juego: "libre" }];
+  const estado = calcularEstadoCuentaCliente({
+    id: "lib",
+    nombre: "Lulo",
+    saldoBaseBd: 100,
+    aval: 50,
+    libre: true,
+  });
+  si(estado.disponibleParaJugar === 150, "el estado contable no convierte el disponible en infinito");
+
+  const cat = [{ id: "lib", nombre: "Lulo", saldo_actual: 100, aval: 50, modo_juego: "libre" }];
   const r = (t: string) => cat.find((c) => c.nombre.toLowerCase() === t.trim().toLowerCase()) ?? null;
   const p = proyectarFilasEnOrden(
     [{ jugada: "2p", caballo: "3", monto: "999", cliente1: "Lulo", cliente2: "" }],
     r
   );
-  si(p[0].proyeccion.ok && p[0].proyeccion.monto === 999, "libre autoriza los 999");
+  si(p[0].proyeccion.ok && p[0].proyeccion.monto === 150, "libre recorta al saldo + aval");
+  si(p[0].montoExcedido === 849, "calcula el monto excedido");
+  si(p[0].observacionExceso === "Excedido 849", "registra la observación de exceso");
+}
+
+console.log("\n== No se restaura el monto pedido cuando el reparto autoriza cero ==");
+{
+  const p = proyectarFila({
+    jugada: "2p",
+    caballo: "3",
+    monto: "100",
+    cliente1: { nombre: "Ana", saldo_actual: 100, aval: 0 },
+    cliente2: { nombre: "Beto", saldo_actual: 0, aval: 0 },
+  });
+  si(!p.ok && /saldo|S\/S/i.test(p.motivo), "rechaza en vez de volver a los 100 pedidos");
 }
 
 console.log(`\n${pasan} pasan, ${fallan} fallan.`);

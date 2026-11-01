@@ -277,12 +277,10 @@ export function avalDeCliente(c: ClienteVenta | null | undefined): number {
 }
 
 /**
- * Modo "libre": el cliente juega por encima de su saldo y sin tope.
+ * Compatibilidad con el campo histórico `modo_juego = libre`.
  *
  * Delega en el modulo PURO de la taquilla porque la regla tiene que ser UNA
- * sola: si aqui se reimplementa, un dia cambia en un lado y el navegador topa
- * con un numero distinto al de la RPC, y el caja autoriza de mas (la RPC lo
- * rechaza y se pierde la venta) o topa donde si habia credito (no se vende).
+ * sola. Ningún modo autoriza a superar el disponible `saldo + aval`.
  */
 export function esClienteLibre(c: ClienteVenta | null | undefined): boolean {
   return esSinTope(c);
@@ -295,8 +293,8 @@ export function esClienteLibre(c: ClienteVenta | null | undefined): boolean {
  * saldo, pero el saldo queda debitado en negativo y esa deuda se cobra. Un
  * cliente con saldo -200 y aval 300 tiene $100 disponibles, no $0.
  *
- * Misma regla que aplican `club_vender_marca` y `club_vender_tabla`.
- * Un cliente "libre" no tiene tope, asi que devuelve Infinity.
+ * Misma regla que aplican las RPC de venta. El campo histórico "libre" no
+ * exime del tope, por lo que nunca devuelve Infinity.
  */
 export function limiteDeJugar(c: ClienteVenta | null | undefined): number {
   return esSinTope(c) ? Number.POSITIVE_INFINITY : disponibleParaJugar(c);
