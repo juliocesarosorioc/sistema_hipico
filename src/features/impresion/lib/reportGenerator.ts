@@ -749,11 +749,8 @@ export function relacionResultados(
   // Asiento contable interno "Bono por Cruce de jugadas": no se muestra en el detalle
   // de jugadas pero se contabiliza en el cierre de POSITIVOS (+) y NEGATIVOS (-).
   const { porCliente: reembolsosCruce } = _reembolsosCruce(lineasCruce, "con_cruces", 5);
-  for (const [clave, info] of reembolsosCruce.entries()) {
-    if (info.reembolsoCruce > 0) {
-      balances.set(clave, round2((balances.get(clave) ?? 0) + info.reembolsoCruce));
-    }
-  }
+  // El bono por cruce es informativo: NO se suma a los balances del consolidado.
+  // (se mantiene el cálculo de reembolsosCruce por si se quiere mostrar aparte)
 
   const positivos = [...balances.entries()]
     .map(([clave, v]) => [nombreVisiblePorClave.get(clave) ?? clave, v] as [string, number])

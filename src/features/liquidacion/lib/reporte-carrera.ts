@@ -425,8 +425,8 @@ export function armarReporteCarrera(
     const { porCliente } = _reembolsosCruce(lineasCruce, "con_cruces", comPct);
     for (const [clave, info] of porCliente) {
       if (info.reembolsoCruce > 0) {
-        const actual = netoPorCliente.get(clave) ?? 0;
-        netoPorCliente.set(clave, sumarDinero(actual, info.reembolsoCruce));
+        // El bono por cruce es informativo: NO se suma al neto del cliente en el
+        // consolidado (evita doble contabilización de la comisión devuelta).
         asientosBonoCruce.push({
           concepto: "Bono por Cruce de jugadas",
           cliente: nombreVisiblePorClave.get(clave) ?? info.cliente,
