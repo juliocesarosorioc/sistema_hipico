@@ -178,9 +178,9 @@ export function liquidarTabla(
     ok: true,
     motivo: `TABLA gana: ${ejemplar ? "ejemplar " + ejemplar : "tabla completa"} 1º. ${t.monto} × premio $${round2(porTabla)} → bruto $${round2(bruto)}` +
       (comision > 0 ? ` · comisión casa $${round2(comision)}` : ""),
-    totalClienteNeto: round2(bruto - comision),
-    balanceBanca: round2(t.monto - bruto + comision),
-    gananciaCasa: comision,
+    totalClienteNeto: bruto,
+    balanceBanca: round2(t.monto - bruto),
+    gananciaCasa: 0,
   };
 }
 
@@ -264,9 +264,9 @@ export function liquidarOficial(
     ok: true,
     motivo: `${base.motivo ?? "Gana"} · dividendo oficial ${mult}x → bruto $${round2(bruto)}` +
       (comision > 0 ? ` · comisión casa $${round2(comision)}` : ""),
-    totalClienteNeto: round2(bruto - comision),
-    balanceBanca: round2(t.monto - bruto + comision),
-    gananciaCasa: comision,
+    totalClienteNeto: bruto,
+    balanceBanca: round2(t.monto - bruto),
+    gananciaCasa: 0,
   };
 }
 

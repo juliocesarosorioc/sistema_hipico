@@ -422,6 +422,16 @@ export function armarReporteCarrera(
   const asientosBonoCruce: AsientoBonoCruceCarrera[] = [];
   if (conCruces) {
     const comPct = opciones?.comisionPct ?? 5;
+
+    // Comisión sobre la ganancia neta agregada por cliente en esta carrera:
+    // se aplica sobre (ganancias - pérdidas), no sobre cada ganancia individual.
+    for (const [clave, neto] of netoPorCliente.entries()) {
+      if (neto > 0.004) {
+        const comision = Math.round(neto * (comPct / 100) * 100) / 100;
+        netoPorCliente.set(clave, Math.round((neto - comision) * 100) / 100);
+      }
+    }
+
     const { porCliente } = _reembolsosCruce(lineasCruce, "con_cruces", comPct);
     for (const [clave, info] of porCliente) {
       if (info.reembolsoCruce > 0) {

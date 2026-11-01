@@ -303,7 +303,7 @@ export function ReporteModule() {
     filtroTipoJugador !== "TODOS";
 
   const mapaInfoClientes = useMemo(() => {
-    const map = new Map<string, { id: string; modo: TipoJugadorSaldo; libre: boolean; aval: number; saldoActual: number; icono: string; etiqueta: string; devolucionPct: number }>();
+    const map = new Map<string, { id: string; modo: TipoJugadorSaldo; libre: boolean; aval: number; saldoActual: number; icono: string; etiqueta: string; devolucionPct: number; comisionPct: number }>();
     for (const c of clientesGrupo) {
       const tipo = obtenerTipoJugador(c);
       const meta = infoTipoJugador(tipo);
@@ -317,6 +317,7 @@ export function ReporteModule() {
         icono: meta.icono,
         etiqueta: meta.etiqueta,
         devolucionPct: devPct,
+        comisionPct: Number(c.comision) || 5,
       };
       const keySeud = String(c.seudonimo ?? "").trim().toUpperCase();
       const keyNom = String(c.nombre ?? "").trim().toUpperCase();
@@ -565,9 +566,14 @@ export function ReporteModule() {
       .map(([cliente, porCarrera]) => {
         const porNeto = clientesNetoMap.get(cliente) ?? {};
         const porDev = clientesDevMap.get(cliente) ?? {};
-        const netoCarreras = redondearCentavos(
+        const netoCarrerasBruto = redondearCentavos(
           Object.values(porNeto).reduce((acc, v) => acc + v, 0)
         );
+        const comPct = mapaInfoClientes.get(cliente)?.comisionPct ?? 5;
+        // Comisión sobre la ganancia neta agregada (no por ticket individual).
+        const netoCarreras = netoCarrerasBruto > 0.004
+          ? redondearCentavos(netoCarrerasBruto - Math.round(netoCarrerasBruto * (comPct / 100) * 100) / 100)
+          : netoCarrerasBruto;
         const totalDevolucion = redondearCentavos(
           Object.values(porDev).reduce((acc, v) => acc + v, 0)
         );

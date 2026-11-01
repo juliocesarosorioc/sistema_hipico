@@ -500,13 +500,18 @@ function evaluar(
   // reporte trabaja internamente con el NETO del ganador (lo que recibe) y con
   // la COMISIÓN retenida sobre la ganancia bruta, así el "da" (Consigue) y el
   // resumen Ganan/Pierden cuadran con la relación de WhatsApp.
+  // Comisión sobre la GANANCIA NETA del ticket (bruto - monto). Se mantiene
+  // por ticket; la consolidación por cliente/carrera aplica la comisión sobre
+  // la ganancia neta agregada (ver reporte-carrera / ReporteModule).
   const desglosar = (brutoGuardado: number): { neto: number; comision: number } => {
     if (brutoGuardado <= 0) return { neto: 0, comision: 0 };
     if (monto <= 0) return { neto: brutoGuardado, comision: 0 };
     const gananciaBruta = brutoGuardado - monto;
     if (gananciaBruta <= 0) return { neto: brutoGuardado, comision: 0 };
-    const comision = Math.round(gananciaBruta * (tasaEfectiva / 100) * 100) / 100;
-    return { neto: Math.round((brutoGuardado - comision) * 100) / 100, comision };
+    // Comisión se aplica sobre la ganancia neta agregada por cliente/carrera,
+    // no por ticket individual. Aquí solo se devuelve el bruto; la comisión
+    // se resta a nivel de carrera/cliente (ver reporte-carrera / ReporteModule).
+    return { neto: brutoGuardado, comision: 0 };
   };
   const esEspecialPersistencia = /^(DUPLETA|REMATE|POLLA)\b/i.test(nombreJugada);
   const esRemate = /^REMATE\b/i.test(nombreJugada);
