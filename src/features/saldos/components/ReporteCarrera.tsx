@@ -208,17 +208,11 @@ function TablaJugadas({
       </colgroup>
       <thead>
         <tr className="border-b border-slate-300 h-[22px]">
-          <th className={TH} title="Columna 1: Quien Juega (Rol: Juega)">
-            <span className="inline-block rounded bg-blue-100 px-1 py-0.5 text-[8px] font-black text-blue-800 mr-1 uppercase">Juega</span>
-            Quien Juega
-          </th>
+          <th className={TH} title="Columna 1: Quien Juega (Rol: Juega)">Quien Juega</th>
           <th className={`${TH} text-right`} title="Columna 2: Monto que arriesga el que juega">Apostó</th>
           <th className={`${TH} text-right pl-1`} title="Columna 3: Resultado Jugador 1 (Riesgo negativo por decidir / Decidido)">Resultado</th>
           <th className={`${TH} pl-2`} title="Columna 4: Modalidad y ejemplar(es)">Jugada</th>
-          <th className={`${TH} pl-2`} title="Columna 5: Quien Da (Rol: Da)">
-            <span className="inline-block rounded bg-amber-100 px-1 py-0.5 text-[8px] font-black text-amber-800 mr-1 uppercase">Da</span>
-            Quien Da
-          </th>
+          <th className={`${TH} pl-2`} title="Columna 5: Quien Da (Rol: Da)">Quien Da</th>
           <th className={`${TH} text-right`} title="Columna 6: Monto que arriesga el que da">Apostó</th>
           <th className={`${TH} text-right pl-1`} title="Columna 7: Resultado Jugador 2 (Riesgo negativo por decidir / Decidido)">Resultado</th>
         </tr>
@@ -496,6 +490,12 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
 
   const seccionesAdelantadas = agruparAdelantadasPorSeccion(jugadasAdelantadasFiltradas);
   const totalAdelantadas = jugadasAdelantadasFiltradas.length;
+  const llegadaRaya = encabezado.llegadaRaya ?? [];
+  const hayOrdenDiferente =
+    llegadaRaya.length > 0 &&
+    encabezado.llegada.length > 0 &&
+    llegadaRaya.map((x) => String(x.numero)).join(",") !==
+      encabezado.llegada.map((x) => String(x.numero)).join(",");
 
   return (
     <div className="max-w-5xl mx-auto bg-white shadow-lg overflow-hidden text-[11px] leading-tight reporte-tipografia-nitida" id="reporte-imprimible">
@@ -520,32 +520,40 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
           <h3 className="text-blue-200 text-[9px] font-bold tracking-widest uppercase">
             {liquidada ? "Reporte de Liquidación" : "Reporte Preliminar de Jugadas (En Riesgo)"}
           </h3>
-          <div className="flex flex-wrap items-center gap-2 mt-0.5">
+          <div className="flex flex-wrap items-center gap-2 mt-1">
             <h1 className="text-lg font-extrabold leading-tight truncate">
               {encabezado.hipodromo} <span className="font-normal text-blue-200">•</span> {encabezado.carrera}
             </h1>
-            {/* Pizarra en la misma línea con su contenedor oficial */}
             {encabezado.llegada && encabezado.llegada.length > 0 ? (
-              <div className="inline-flex items-center gap-1.5 rounded-lg bg-blue-950/85 border border-blue-400/50 px-2 py-0.5 text-xs shadow-inner">
-                <span className="text-[9px] font-black uppercase tracking-wider text-amber-300">Pizarra:</span>
-                <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-300/50 bg-blue-950/70 px-3 py-1.5 shadow-inner">
+                <div className="flex flex-col">
+                  <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-amber-300">
+                    <span>🏁</span> Pizarra Oficial
+                  </span>
+                  <span className="text-[8px] font-semibold uppercase tracking-wider text-blue-200">
+                    Orden Oficial de Llegada
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5 border-l border-blue-400/40 pl-3">
                   {encabezado.llegada.map((ll, idx) => (
-                    <span
-                      key={idx}
-                      className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-black shadow-sm border ${colorDiscoNumero(String(ll.numero))}`}
-                      title={`${idx + 1}º lugar: #${ll.numero}`}
-                    >
-                      {ll.numero}
-                    </span>
+                    <div key={idx} className="flex flex-col items-center">
+                      <span
+                        className={`flex h-9 w-9 items-center justify-center rounded-lg border text-lg font-black shadow-sm ${colorDiscoNumero(String(ll.numero))}`}
+                        title={`${idx + 1}º lugar: #${ll.numero}`}
+                      >
+                        {ll.numero}
+                      </span>
+                      <span className="mt-0.5 text-[9px] font-black uppercase text-blue-100">{ll.puesto}</span>
+                    </div>
                   ))}
                 </div>
                 {encabezado.retirados && encabezado.retirados.length > 0 && (
-                  <div className="flex items-center gap-1 pl-1.5 border-l border-blue-400/40">
+                  <div className="flex items-center gap-1.5 border-l border-rose-300/40 pl-3">
                     <span className="text-[9px] font-black text-rose-300">RET:</span>
                     {encabezado.retirados.map((r, rIdx) => (
                       <span
                         key={rIdx}
-                        className={`inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-black shadow-sm border ${colorDiscoNumero(String(r))}`}
+                        className={`flex h-8 w-8 items-center justify-center rounded-lg border text-base font-black shadow-sm ${colorDiscoNumero(String(r))}`}
                       >
                         {r}
                       </span>
@@ -595,110 +603,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
         </div>
       </div>
 
-      {/* 2. PIZARRA DE LLEGADA */}
-      {(() => {
-        const llegadaRaya = encabezado.llegadaRaya ?? [];
-        const retiradosLista = (encabezado.retirados ?? [])
-          .map((x) => String(x ?? "").trim())
-          .filter(Boolean);
-        const hayOrdenDiferente =
-          llegadaRaya.length > 0 &&
-          encabezado.llegada.length > 0 &&
-          llegadaRaya.map((x) => String(x.numero)).join(",") !==
-            encabezado.llegada.map((x) => String(x.numero)).join(",");
-
-        return (
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 border-b-2 border-blue-800/40 bg-gradient-to-r from-slate-50 via-white to-slate-50">
-            <div className="flex flex-wrap items-center gap-4">
-              {/* Pizarra Oficial (siempre visible) */}
-              <div className="flex items-center gap-3">
-                <div className="flex flex-col">
-                  <span className="text-[9px] font-black tracking-widest text-blue-900 uppercase flex items-center gap-1">
-                    <span>🏁</span> Pizarra Oficial
-                  </span>
-                  <span className="text-[8px] font-semibold text-slate-400 uppercase tracking-wider">
-                    {hayOrdenDiferente ? "Puestos · Marcas · WPS" : "Orden Oficial de Llegada"}
-                  </span>
-                </div>
-                {encabezado.llegada.length > 0 ? (
-                  <div className="flex items-center gap-2.5 pl-2 border-l border-slate-200">
-                    {encabezado.llegada.map((caballo, idx) => (
-                      <div key={idx} className="flex flex-col items-center">
-                        <div
-                          className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg font-black shadow-sm border ${colorDiscoNumero(caballo.numero)}`}
-                          title={`Puesto Oficial ${caballo.puesto}: Ejemplar #${caballo.numero}`}
-                        >
-                          {caballo.numero}
-                        </div>
-                        <span className="text-[9px] text-slate-600 mt-0.5 font-black uppercase">{caballo.puesto}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[9.5px] font-bold text-amber-800 border border-amber-200">
-                    <span>⏳</span> En espera de resultado oficial de pizarra
-                  </span>
-                )}
-                {retiradosLista.length > 0 && (
-                  <div className="flex items-center gap-1.5 pl-2.5 border-l border-rose-200">
-                    <span className="text-[10px] font-black tracking-wider text-rose-700 uppercase">
-                      RET:
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {retiradosLista.map((num, idx) => (
-                        <div
-                          key={`ret-${idx}-${num}`}
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-base font-black shadow-sm border ${colorDiscoNumero(num)}`}
-                          title={`Retirado: Ejemplar #${num}`}
-                        >
-                          {num}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Orden de Llegada en Raya (solo cuando difiere de la Pizarra Oficial por distanciamiento) */}
-              {hayOrdenDiferente && (
-                <div className="flex items-center gap-3 rounded-lg bg-amber-50/80 border border-amber-200 px-3 py-1.5">
-                  <div className="flex flex-col">
-                    <span className="text-[9px] font-black tracking-widest text-amber-900 uppercase flex items-center gap-1">
-                      <span>🏇</span> Orden de Llegada (Raya)
-                    </span>
-                    <span className="text-[8px] font-bold text-amber-700 uppercase tracking-wider">
-                      ⚖️ Distanciamiento · Tablas Fijas / Remates
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 pl-2 border-l border-amber-200">
-                    {llegadaRaya.map((caballo, idx) => (
-                      <div key={idx} className="flex flex-col items-center">
-                        <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-base font-black shadow-sm border ${colorDiscoNumero(caballo.numero)}`}
-                          title={`Cruza la Raya ${caballo.puesto}: Ejemplar #${caballo.numero}`}
-                        >
-                          {caballo.numero}
-                        </div>
-                        <span className="text-[8.5px] text-amber-800 mt-0.5 font-black uppercase">{caballo.puesto}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-500">
-              {hayOrdenDiferente && (
-                <span className="rounded-md bg-amber-100 text-amber-900 px-2 py-0.5 border border-amber-300 font-black">
-                  ⚖️ Distanciamiento Oficial
-                </span>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* 3. TABLA DE 7 COLUMNAS (JUGADAS EN VIVO — SIN ADELANTADAS) */}
+      {/* 2. TABLA DE 7 COLUMNAS (JUGADAS EN VIVO — SIN ADELANTADAS) */}
       {jugadasEnVivoFiltradas.length > 0 && (
         <div className="px-4 pt-2 pb-1">
           <div className="bg-slate-800 text-white text-[9px] font-bold tracking-widest px-2 py-1 uppercase rounded-t flex items-center justify-between">
@@ -754,7 +659,36 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
               })}
             </div>
           )}
+          {hayOrdenDiferente && (
+            <div className="flex flex-wrap items-center gap-2 border-l border-amber-300/40 pl-3">
+              <div className="flex flex-col">
+                <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-amber-300">
+                  <span>🏇</span> Orden en Raya
+                </span>
+                <span className="text-[8px] font-bold uppercase text-amber-100">
+                  Distanciamiento · Tablas / Remates
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {llegadaRaya.map((caballo, idx) => (
+                  <div key={idx} className="flex flex-col items-center">
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-lg border text-base font-black shadow-sm ${colorDiscoNumero(String(caballo.numero))}`}
+                      title={`Cruza la Raya ${caballo.puesto}: Ejemplar #${caballo.numero}`}
+                    >
+                      {caballo.numero}
+                    </span>
+                    <span className="mt-0.5 text-[8px] font-black uppercase text-amber-100">{caballo.puesto}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded border border-amber-300/40 bg-amber-400/20 px-2 py-1 text-[10px] font-bold text-amber-200">
+          ⏳ Pizarra pendiente
+        </span>
       )}
 
       {/* 5. RESUMEN: GANAN (POSITIVOS) / PIERDEN (NEGATIVOS) */}
