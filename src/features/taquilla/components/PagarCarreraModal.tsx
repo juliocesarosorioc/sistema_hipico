@@ -6,7 +6,12 @@ import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla } from "@/features/liquidacion/lib/pagarYCerrar";
 import { reversarLiquidacionCarrera } from "@/features/liquidacion/lib/reversar";
 import { leerResultadoOficial, jornadaDeCarrera } from "@/features/carreras/lib/carreras-dia";
-import { tieneCapacidad, usuarioVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
+import {
+  tieneCapacidad,
+  usuarioVigente,
+  grupoActivoVigente,
+  grupoVigente,
+} from "@/features/seguridad/lib/vigente";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
 import { dividendosDePizarra as dividendosDe } from "@/features/liquidacion/lib/posiciones";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
@@ -230,6 +235,7 @@ export function PagarCarreraModal() {
     const res = await liquidarCarreraYCerrarTabla({
       hipodromo: hipodromo.trim().toUpperCase(),
       carrera: Number(carrera),
+      grupoId: grupoActivoVigente() || grupoVigente() || undefined,
       fecha: dia,
       pizarra: r.pizarra,
       dividendos: divs,
@@ -253,16 +259,19 @@ export function PagarCarreraModal() {
       const s = await aplicarLiquidacionSaldos({
         hipodromo: hipodromo.trim().toUpperCase(),
         carrera: Number(carrera),
+        grupoId: grupoActivoVigente() || grupoVigente() || undefined,
         fecha: dia,
         pizarra: r.pizarra,
         dividendos: divs,
         premio_por_tabla: r.premio_por_tabla ?? tabla?.premio_recalculado ?? tabla?.premio_original ?? null,
       });
-      if (!s.ok && s.errores.length) {
-        // Un fallo de saldos ya no puede pasar como simple «aviso»: si la
-        // carrera tenía jugadas archivadas en otra jornada, hay que verlo.
-        toast("⚠️ Saldos: " + s.errores[0], "error");
+      if (!s.ok) {
+        const error = s.errores[0] ?? s.motivo;
+        toast("Liquidación de saldos detenida: " + error, "error");
         setTablaMensaje("⚠️ " + s.motivo);
+        setResultado(`❌ Liquidación incompleta: ${error}`);
+        setTrabajando(false);
+        return;
       }
       if (s.motivo.includes("PENDIENTES")) {
         setTablaMensaje("Aviso: " + s.motivo);

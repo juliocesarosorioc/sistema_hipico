@@ -61,6 +61,43 @@ assert.equal(
 );
 assert.equal(sinCruces.asientosBonoCruce?.length, 0, "Sin cruces no se acredita reembolso");
 
+const partnerConIdsDuplicados = armarReporteCarrera(
+  {
+    ...carreraPartner,
+    filas: [
+      {
+        id: "partner-id-a",
+        rol: "Juega",
+        cliente: "PARTNER",
+        clienteId: "partner-a",
+        jugada: "1P",
+        caballo: "1",
+        monto: 200,
+        resultado: 190,
+      },
+      {
+        id: "partner-id-b",
+        rol: "Juega",
+        cliente: "PARTNER",
+        clienteId: "partner-b",
+        jugada: "1P",
+        caballo: "2",
+        monto: 50,
+        resultado: -50,
+      },
+    ],
+  },
+  undefined,
+  undefined,
+  { modalidadCruce: false, comisionPct: 5 }
+);
+assert.equal(
+  partnerConIdsDuplicados.resumen.ganan.length,
+  1,
+  "PARTNER debe aparecer una sola vez aunque sus jugadas lleguen con IDs distintos"
+);
+assert.equal(partnerConIdsDuplicados.resumen.ganan[0].monto, 140);
+
 const reporteModule = fs.readFileSync(
   path.join(process.cwd(), "src/features/saldos/components/ReporteModule.tsx"),
   "utf8"
@@ -71,4 +108,4 @@ assert.ok(
   "La totalización semanal debe sumar el asiento a la cuenta del cliente"
 );
 
-console.log("4 pasaron, 0 fallaron");
+console.log("6 pasaron, 0 fallaron");

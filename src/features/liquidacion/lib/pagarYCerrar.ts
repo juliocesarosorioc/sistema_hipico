@@ -26,6 +26,8 @@ import {
   type EntradaCrucePuestos,
   type OpcionesCrucesPuestos,
 } from "@/features/motores/lib/puestos";
+import { cargarOpcionesCrucesPuestosPorGrupos } from "@/features/gestion/lib/cruces-carrera";
+import { grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 
 /**
  * Suma de todos los tickets de la carrera. El comando puede traer el monto al
@@ -51,6 +53,7 @@ export type TicketPagar = {
   cliente1?: string;
   /** Nombre del CLIENTE 2 (el que "da") — referencia de la operación. */
   cliente2?: string;
+  grupoId?: string;
   /** Jerarquía de permisos resuelta por el caller (Carrera → Cliente → Grupo).
    *  false ⇒ el cruce financiero NO recibe descuento de comisión neta
    *  (factura comisión por ticket). undefined ⇒ se permite el neteo. */
@@ -117,6 +120,7 @@ function liquidacionVacia(e: Error): ResLiquidarCarrera {
 export async function liquidarCarreraYCerrarTabla(opts: {
   hipodromo: string;
   carrera: number | string;
+  grupoId?: string | number | null;
   pizarra: PizarraCarrera;
   tickets: TicketPagar[];
   tasaComision?: number | null;
@@ -146,6 +150,61 @@ export async function liquidarCarreraYCerrarTabla(opts: {
       return liquidacionVacia(e as Error);
     }
     const { hipodromo, carrera, pizarra, tickets, tasaComision } = opts;
+  let crucesPuestos = opts.crucesPuestos;
+  let grupoPuestoRespaldo = String(opts.grupoId ?? grupoActivoVigente() ?? grupoVigente() ?? "").trim();
+    const hayPuestos = tickets.some((ticket) => {
+      const comando = String(ticket.comando ?? "").trim();
+      const tipo = /^(\d+(?:\.\d+)?)\s+(.+?)\s*$/i.exec(comando)?.[2] ?? comando;
+      return esJugadaDePuestos(tipo);
+    });
+    if (hayPuestos) {
+    const gruposExplicitos = [
+      ...new Set(tickets.map((ticket) => String(ticket.grupoId ?? "").trim()).filter(Boolean)),
+    ];
+    if (!grupoPuestoRespaldo && gruposExplicitos.length === 1) {
+      grupoPuestoRespaldo = gruposExplicitos[0];
+    }
+    if (tickets.some((ticket) => !String(ticket.grupoId ?? "").trim()) && !grupoPuestoRespaldo) {
+      const error = "Liquidación detenida: no se pudo determinar el grupo de todas las jugadas de puestos.";
+      return {
+        ok: false,
+        motivo: error,
+        procesados: [],
+        totalInvertido: 0,
+        totalClienteNeto: 0,
+        balanceBanca: 0,
+        gananciaCasa: 0,
+      };
+    }
+    const grupoIds = [
+      ...new Set(
+        tickets
+          .map((ticket) => String(ticket.grupoId ?? grupoPuestoRespaldo).trim())
+          .filter(Boolean)
+      ),
+    ];
+    const reglas = await cargarOpcionesCrucesPuestosPorGrupos({
+      grupoIds,
+      fecha: opts.fecha || hoyLocal(),
+      hipodromo,
+      carrera,
+    });
+    if (!reglas.ok) {
+      return {
+        ok: false,
+        motivo: `Liquidación detenida: ${reglas.error ?? "no se pudieron cargar las reglas de cruce."}`,
+        procesados: [],
+        totalInvertido: 0,
+        totalClienteNeto: 0,
+        balanceBanca: 0,
+        gananciaCasa: 0,
+      };
+    }
+    crucesPuestos = {
+      ...crucesPuestos,
+      porGrupo: reglas.opciones.porGrupo,
+    };
+  }
   // La jornada que se liquida, NO necesariamente hoy. Se usa para retiros, para
   // leer dividendos y para escribir el resultado CENTRAL: con `hoyLocal()` fijo,
   // liquidar una jornada que no es la de hoy guardaba el resultado en el día
@@ -192,7 +251,13 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   }
 
   const procesados: ResLiquidarCarrera["procesados"] = [];
-  const metadatos: Array<{ cliente1?: string; caballo: string; monto: number; tipo: string }> = [];
+  const metadatos: Array<{
+    cliente1?: string;
+    grupoId?: string;
+    caballo: string;
+    monto: number;
+    tipo: string;
+  }> = [];
   let totalInvertido = 0;
 
   for (const t of tickets) {
@@ -232,7 +297,13 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     const res = liquidarOficial(ticketMotor, tasaComision);
     procesados.push({ comando: t.comando, resultado: res });
     t.permiteCruces = opts.permiteCruces !== false;
-    metadatos.push({ cliente1: t.cliente1, caballo: String(t.caballo ?? "").trim(), monto, tipo });
+    metadatos.push({
+      cliente1: t.cliente1,
+      grupoId: t.grupoId ?? (grupoPuestoRespaldo || undefined),
+      caballo: String(t.caballo ?? "").trim(),
+      monto,
+      tipo,
+    });
     totalInvertido += monto;
   }
 
@@ -243,7 +314,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   const agruparPorCliente =
     typeof opts.permiteCruces === "boolean" ? opts.permiteCruces : true;
   let neteados = 0;
-  const usaModalidadesPuestos = opts.crucesPuestos !== undefined;
+  const usaModalidadesPuestos = crucesPuestos !== undefined;
   const indicesLegados = procesados
     .map((_, i) => i)
     .filter((i) => !usaModalidadesPuestos || !esJugadaDePuestos(metadatos[i].tipo))
@@ -301,17 +372,21 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     }
   }
 
-  if (usaModalidadesPuestos && opts.crucesPuestos) {
+  if (usaModalidadesPuestos && crucesPuestos) {
     const indicesPorJugador = new Map<string, number[]>();
     for (let i = 0; i < procesados.length; i++) {
       if (!esJugadaDePuestos(metadatos[i].tipo)) continue;
       const nombre = String(metadatos[i].cliente1 ?? "").trim().toUpperCase();
       if (!nombre) continue;
-      const idxs = indicesPorJugador.get(nombre) ?? [];
+      const grupoId = String(metadatos[i].grupoId ?? "").trim();
+      const claveJugadorGrupo = `${grupoId}::${nombre}`;
+      const idxs = indicesPorJugador.get(claveJugadorGrupo) ?? [];
       idxs.push(i);
-      indicesPorJugador.set(nombre, idxs);
+      indicesPorJugador.set(claveJugadorGrupo, idxs);
     }
-    for (const [jugador, idxs] of indicesPorJugador) {
+    for (const idxs of indicesPorJugador.values()) {
+      const jugador = String(metadatos[idxs[0]].cliente1 ?? "").trim().toUpperCase();
+      const grupoId = String(metadatos[idxs[0]].grupoId ?? "").trim();
       const entradas: EntradaCrucePuestos[] = idxs
         .filter((i) => {
           const r = procesados[i].resultado;
@@ -324,6 +399,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
           const perdidaEfectiva = !r.ok && r.totalClienteNeto > 0 && r.totalClienteNeto < m ? round2(m - r.totalClienteNeto) : m;
           return {
             cliente: jugador,
+            grupoId,
             caballo: metadatos[i].caballo,
             ok: r.ok,
             bruto: r.ok
@@ -332,10 +408,11 @@ export async function liquidarCarreraYCerrarTabla(opts: {
             monto: perdidaEfectiva,
           };
         });
-      const liquidacion = calcularLiquidacionPuestosCarrera(entradas, {
-        ...opts.crucesPuestos,
+      const liquidaciones = calcularLiquidacionPuestosCarrera(entradas, {
+        ...crucesPuestos,
         pctComision: Number(tasaComision ?? 5),
-      })[0];
+      });
+      const liquidacion = liquidaciones.find((x) => x.cliente === jugador && x.grupoId === grupoId);
       if (!liquidacion) continue;
       const ganadores = idxs.filter((i) => procesados[i].resultado.ok);
       const comisionOriginal = ganadores.reduce((suma, i) => suma + procesados[i].resultado.gananciaCasa, 0);
@@ -510,6 +587,7 @@ function round2(n: number): number {
 export async function liquidarPendientesDeCarrera(opts: {
   hipodromo: string;
   carrera: number | string;
+  grupoId?: string | number | null;
   pizarra: PizarraCarrera;
   tasaComision?: number | null;
   dividendos?: Record<string, number> | null;
@@ -532,6 +610,7 @@ export async function liquidarPendientesDeCarrera(opts: {
     pizarra: opts.pizarra,
     dividendos,
     tasaComision: opts.tasaComision,
+    grupoId: opts.grupoId,
     // La JORNADA, no "hoy": la ventana de fecha_registro debe cubrir el día de
     // la carrera que se liquida.
     fecha,

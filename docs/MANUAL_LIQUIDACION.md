@@ -131,6 +131,16 @@ por último, configuración permanente del grupo. En la ficha del jugador,
 la fecha, hipódromo y número de carrera seleccionados. Al liquidar, la excepción
 se conserva también en el registro central de resultados.
 
+La liquidación determina esta política con el grupo contable de cada ticket
+(`grupo_cuenta_id`, con respaldos históricos), no con el primer grupo disponible
+en la sesión. Si una carrera contiene varios grupos, cada cuenta se liquida con
+su propia política. Si no puede determinarse el grupo, la operación se detiene
+con error en vez de asumir «sin cruces». Las excepciones nuevas por jugador se
+guardan por ID estable además del nombre para evitar que un seudónimo o nombre
+legal distinto impida encontrar la regla. El resumen de carrera agrupa también
+las filas por seudónimo normalizado, evitando totales duplicados del mismo
+nombre visible.
+
 Para habilitar la persistencia, ejecutar `sql/permite_cruces_jerarquia.sql` en
 Supabase después de `sql/grupos_usuarios.sql`.
 

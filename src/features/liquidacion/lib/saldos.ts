@@ -29,7 +29,9 @@ import {
   type EntradaCrucePuestos,
   type OpcionesCrucesPuestos,
 } from "@/features/motores/lib/puestos";
-import { cargarOpcionesCrucesPuestos } from "@/features/gestion/lib/cruces-carrera";
+import { cargarOpcionesCrucesPuestosPorGrupos } from "@/features/gestion/lib/cruces-carrera";
+import { grupoDeCuenta } from "@/features/grupos/lib/atribucion-grupo";
+import { grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import { redondearCentavos, sumarDinero, restarDinero, formatearMontoSinMoneda, calcularComisionExacta } from "@/shared/lib/dinero";
 import {
   calcularEstadoCuentaCliente,
@@ -66,6 +68,7 @@ export type LiquidarSaldosInput = {
    */
   agruparPorClientePuestos?: boolean;
   permiteCruces?: boolean;
+  grupoId?: string | number | null;
   crucesPuestos?: OpcionesCrucesPuestos;
 };
 
@@ -241,11 +244,23 @@ export function decidirTickets(
       if (!esPuestos(i)) continue;
       const nombre = String(decisiones[i].fila.cliente_juega_id ?? "").trim().toUpperCase();
       if (!nombre) continue;
-      const lista = porJugador.get(nombre) ?? [];
+      const grupoId = grupoDeCuenta(
+        decisiones[i].fila.grupo_cuenta_id as string | number | null | undefined,
+        decisiones[i].fila.grupo_publicador_id as string | number | null | undefined,
+        decisiones[i].fila.grupo_cobro_id as string | number | null | undefined
+      ) || String(input.grupoId ?? "").trim();
+      const clave = `${grupoId}::${nombre}`;
+      const lista = porJugador.get(clave) ?? [];
       lista.push(i);
-      porJugador.set(nombre, lista);
+      porJugador.set(clave, lista);
     }
-    for (const [jugador, idxs] of porJugador) {
+    for (const idxs of porJugador.values()) {
+      const jugador = String(decisiones[idxs[0]].fila.cliente_juega_id ?? "").trim().toUpperCase();
+      const grupoId = grupoDeCuenta(
+        decisiones[idxs[0]].fila.grupo_cuenta_id as string | number | null | undefined,
+        decisiones[idxs[0]].fila.grupo_publicador_id as string | number | null | undefined,
+        decisiones[idxs[0]].fila.grupo_cobro_id as string | number | null | undefined
+      ) || String(input.grupoId ?? "").trim();
       const entradas: EntradaCrucePuestos[] = idxs
         .filter((i) => {
           const m = NUM(decisiones[i].fila.monto_jugado);
@@ -261,6 +276,7 @@ export function decidirTickets(
               : m;
           return {
             cliente: jugador,
+            grupoId,
             caballo: String(decisiones[i].fila.caballo ?? "").trim(),
             ok: r.ok,
             bruto: r.ok ? r.totalClienteNeto + r.gananciaCasa : 0,
@@ -268,10 +284,11 @@ export function decidirTickets(
           };
         });
       const tasa = tasaComisionDeFila(decisiones[idxs[0]].fila, input.tasaComision);
-      const liquidacion = calcularLiquidacionPuestosCarrera(entradas, {
+      const liquidaciones = calcularLiquidacionPuestosCarrera(entradas, {
         ...input.crucesPuestos,
         pctComision: tasa,
-      })[0];
+      });
+      const liquidacion = liquidaciones.find((x) => x.cliente === jugador && x.grupoId === grupoId);
       if (!liquidacion) continue;
       const ganadores = idxs.filter((i) => decisiones[i].res.ok);
       const comisionOriginal = ganadores.reduce((suma, i) => suma + decisiones[i].res.gananciaCasa, 0);
@@ -473,26 +490,64 @@ export async function aplicarLiquidacionSaldos(
   // el neteo de comisión por cruce. La MISMA función la usa
   // `revertirLiquidacionCarrera` para que el cálculo de reversión y el de
   // re-liquidación empleen exactamente la misma fórmula.
-  let contexto = input;
-  if (!contexto.crucesPuestos) {
-    const reglas = await cargarOpcionesCrucesPuestos({
+  const grupoSesion = String(input.grupoId ?? grupoActivoVigente() ?? grupoVigente() ?? "").trim();
+  const gruposTickets = new Set(
+    filas
+      .map((raw) => {
+        const fila = raw as Record<string, unknown>;
+        return grupoDeCuenta(
+          fila.grupo_cuenta_id as string | number | null | undefined,
+          fila.grupo_publicador_id as string | number | null | undefined,
+          fila.grupo_cobro_id as string | number | null | undefined
+        );
+      })
+      .filter(Boolean)
+  );
+  const hayTicketSinGrupo = filas.some((raw) => {
+    const fila = raw as Record<string, unknown>;
+    return !grupoDeCuenta(
+      fila.grupo_cuenta_id as string | number | null | undefined,
+      fila.grupo_publicador_id as string | number | null | undefined,
+      fila.grupo_cobro_id as string | number | null | undefined
+    );
+  });
+  if (hayTicketSinGrupo) {
+    const grupoInferible = grupoSesion || (gruposTickets.size === 1 ? [...gruposTickets][0] : "");
+    if (!grupoInferible) {
+      const error = "Hay jugadas sin grupo contable y no se puede determinar una política de cruce segura.";
+      return { ok: false, motivo: error, aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [error] };
+    }
+    gruposTickets.add(grupoInferible);
+  }
+  if (!gruposTickets.size && grupoSesion) gruposTickets.add(grupoSesion);
+  if (!gruposTickets.size) {
+    const error = "No se puede liquidar sin identificar el grupo contable de las jugadas.";
+    return { ok: false, motivo: error, aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [error] };
+  }
+  let reglasCruce: Awaited<ReturnType<typeof cargarOpcionesCrucesPuestosPorGrupos>>;
+  try {
+    reglasCruce = await cargarOpcionesCrucesPuestosPorGrupos({
+      grupoIds: [...gruposTickets],
       fecha: dia,
       hipodromo: input.hipodromo,
       carrera: input.carrera,
     });
-    if (!reglas.ok) {
-      return {
-        ok: false,
-        motivo: "No se pudieron cargar las reglas de cruces de la carrera.",
-        aplicados: 0,
-        yaAplicado: false,
-        reembolsos: 0,
-        abonoTotal: 0,
-        errores: [reglas.error ?? "Error desconocido al leer la configuración de cruces."],
-      };
-    }
-    contexto = { ...input, crucesPuestos: reglas.opciones };
+  } catch (e) {
+    const error = `No se pudieron cargar las reglas de cruces: ${(e as Error).message}`;
+    return { ok: false, motivo: error, aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [error] };
   }
+  if (!reglasCruce.ok) {
+    const error = reglasCruce.error ?? "Error desconocido al leer la configuración de cruces.";
+    return { ok: false, motivo: error, aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [error] };
+  }
+  const contexto: LiquidarSaldosInput = {
+    ...input,
+    grupoId: grupoSesion || (gruposTickets.size === 1 ? [...gruposTickets][0] : undefined),
+    crucesPuestos: {
+      ...input.crucesPuestos,
+      porGrupo: reglasCruce.opciones.porGrupo,
+    },
+  };
   const decisiones = decidirTickets(filas, contexto);
   const errores: string[] = [];
 

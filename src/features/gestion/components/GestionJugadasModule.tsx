@@ -658,17 +658,28 @@ const hipodromosDelDia = useMemo(() => {
     const reglasPermanentes: NonNullable<OpcionesCrucesPuestos["porJugadorPermanente"]> = {};
     for (const cliente of clientes) {
       const reglas: Partial<ModalidadesCruce> = {};
-      if (typeof cliente.cruce_mismo_ejemplar === "boolean") reglas.mismoEjemplar = cliente.cruce_mismo_ejemplar;
-      if (typeof cliente.cruce_diferente_ejemplar === "boolean") reglas.diferenteEjemplar = cliente.cruce_diferente_ejemplar;
-      if (Object.keys(reglas).length > 0) reglasPermanentes[cliente.nombre.trim().toUpperCase()] = reglas;
+      const mismo = cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces;
+      const diferente = cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces;
+      if (typeof mismo === "boolean") reglas.mismoEjemplar = mismo;
+      if (typeof diferente === "boolean") reglas.diferenteEjemplar = diferente;
+      if (Object.keys(reglas).length > 0) {
+        for (const nombre of [cliente.nombre, cliente.nombre_real, cliente.seudonimo]) {
+          if (nombre?.trim()) reglasPermanentes[nombre.trim().toUpperCase()] = reglas;
+        }
+      }
     }
+    const jugadores = clientes.map((cliente) => ({
+      id: cliente.id,
+      nombre: cliente.nombre,
+      aliases: [cliente.nombre_real, cliente.seudonimo],
+    }));
     return {
       grupo: grupoReglasCruce,
-      porJugadorPermanente: asociarReglasCrucesPuestosPorJugador(reglasPermanentes, clientes),
+      porJugadorPermanente: asociarReglasCrucesPuestosPorJugador(reglasPermanentes, jugadores),
       carreraTodosOverride: crucesOverrideCarrera.todos,
       carreraPorJugadorOverride: asociarReglasCrucesPuestosPorJugador(
         crucesOverrideCarrera.porJugador,
-        clientes
+        jugadores
       ),
     };
   }, [clientes, crucesOverrideCarrera, grupoReglasCruce]);
@@ -701,10 +712,10 @@ const hipodromosDelDia = useMemo(() => {
     const porJugador = crucesOverrideCarrera.porJugador?.[clave];
     const todos = crucesOverrideCarrera.todos;
     const permanenteMismo = cliente
-      ? cliente.cruce_mismo_ejemplar !== undefined ? cliente.cruce_mismo_ejemplar : cliente.permite_cruces
+      ? cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces
       : undefined;
     const permanenteDiferente = cliente
-      ? cliente.cruce_diferente_ejemplar !== undefined ? cliente.cruce_diferente_ejemplar : cliente.permite_cruces
+      ? cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces
       : undefined;
     setBorradorCruceJugador({
       mismoEjemplar: alcanceCruce === "permanente"
@@ -734,16 +745,28 @@ const hipodromosDelDia = useMemo(() => {
     const clave = jugadorCruce.trim().toUpperCase();
     if (!clave) return;
     if (alcanceCruce === "carrera") {
+      const cliente = clientes.find((c) =>
+        [c.nombre, c.nombre_real, c.seudonimo]
+          .some((nombre) => String(nombre ?? "").trim().toUpperCase() === clave)
+      );
+      if (!cliente) {
+        emitirToast("Seleccione un jugador válido para guardar la excepción de esta carrera.", "error");
+        return;
+      }
       await guardarOverrideActual({
         ...crucesOverrideCarrera,
         porJugador: {
           ...crucesOverrideCarrera.porJugador,
           [clave]: { ...borradorCruceJugador },
+          [String(cliente.id).trim().toUpperCase()]: { ...borradorCruceJugador },
         },
       });
       return;
     }
-    const cliente = clientes.find((c) => c.nombre.trim().toUpperCase() === clave);
+    const cliente = clientes.find((c) =>
+      [c.nombre, c.nombre_real, c.seudonimo]
+        .some((nombre) => String(nombre ?? "").trim().toUpperCase() === clave)
+    );
     if (!cliente) {
       emitirToast("No se encontró el jugador para actualizar su ficha permanente.", "error");
       return;
@@ -2233,6 +2256,7 @@ const hipodromosDelDia = useMemo(() => {
         pizarra: pizarraConRet,
         dividendos: dividendosDePizarra(pizarraEfectiva),
         tasaComision: comisionNum,
+        grupoId: grupoSesion || undefined,
         crucesPuestos: opcionesCrucesPuestos,
         fecha,
       });
@@ -2559,6 +2583,7 @@ const hipodromosDelDia = useMemo(() => {
         pizarra: pizarraConRet,
         dividendos: dividendosDePizarra(piz),
         tasaComision: comisionNum,
+        grupoId: grupoSesion || undefined,
         fecha,
       });
       void registrarAuditoria(
@@ -2611,7 +2636,11 @@ const hipodromosDelDia = useMemo(() => {
           carreraTodosOverride: configuracionCruces.override.todos,
           carreraPorJugadorOverride: asociarReglasCrucesPuestosPorJugador(
             configuracionCruces.override.porJugador,
-            clientes
+            clientes.map((cliente) => ({
+              id: cliente.id,
+              nombre: cliente.nombre,
+              aliases: [cliente.nombre_real, cliente.seudonimo],
+            }))
           ),
         };
       }
@@ -2632,10 +2661,12 @@ const hipodromosDelDia = useMemo(() => {
             caballo: t.caballo,
             cliente1: t.cliente1,
             cliente2: t.cliente2,
+            grupoId: t.grupoId ?? grupoSesion ?? undefined,
             permiteCruces: conCruces ? permiteCrucesDe(t.cliente1 ?? "") : false,
           })),
           crucesPuestos: crucesPuestosLiquidacion,
           tasaComision: comisionNum,
+          grupoId: grupoSesion || undefined,
         }),
         aplicarLiquidacionSaldos({
           hipodromo,
@@ -2645,6 +2676,7 @@ const hipodromosDelDia = useMemo(() => {
           premio_por_tabla:
             piz.premio_por_tabla ?? tablaDeCarrera?.premio_recalculado ?? tablaDeCarrera?.premio_original ?? null,
           tasaComision: comisionNum,
+          grupoId: grupoSesion || undefined,
           crucesPuestos: crucesPuestosLiquidacion,
           fecha,
         }),
@@ -2657,6 +2689,14 @@ const hipodromosDelDia = useMemo(() => {
             ? ` · 🏷️ Marcas: ${r.marcas.liquidados} jugada(s) liquidada(s)`
             : ""
           : ` · ⚠️ Marcas: ${r.marcas.error ?? "no se pudo liquidar"}`;
+      if (!s.ok) {
+        const motivo = s.errores[0] ?? s.motivo;
+        const mensaje = `No se completó la liquidación de saldos: ${motivo}`;
+        setAviso(`❌ ${mensaje}`);
+        emitirToast(mensaje, "error");
+        void recargarJugadasGuardadas();
+        return { ok: false, motivo: mensaje };
+      }
       if (r.ok) {
         for (const t of ticketsDeCarrera) eliminarTicket(t.id);
         setPizarraCentral(piz);
@@ -2671,10 +2711,6 @@ const hipodromosDelDia = useMemo(() => {
         void recargarClientes();
         void recargarJugadasGuardadas();
         recargarRegistroCentral();
-        if (s.errores.length) {
-          setAviso(`✅ ${r.motivo}${avisoMarcas} · ⚠️ aviso de saldos: ${s.errores[0]}`);
-          return { ok: true, motivo: `${r.motivo} · aviso de saldos: ${s.errores[0]}` };
-        }
         const pizarraTxt =
           [piz.pizarra.primero, piz.pizarra.segundo, piz.pizarra.tercero, piz.pizarra.cuarto, piz.pizarra.quinto]
             .filter(Boolean)

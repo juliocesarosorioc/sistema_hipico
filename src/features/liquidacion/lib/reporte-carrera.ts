@@ -304,8 +304,15 @@ export function armarReporteCarrera(
 
   const registrarNombreCliente = (raw: string, clienteId?: string): string => {
     const nombreNormalizado = normalizarNombreCliente(raw);
-    const clave = clienteId ? `id:${clienteId}` : `nombre:${nombreNormalizado}`;
-    if (!clienteId && !nombreNormalizado) return "";
+    const idNormalizado = String(clienteId ?? "").trim();
+    // Los reportes ya resuelven el seudónimo por ID; agrupar por esa etiqueta
+    // visible también une tickets históricos con IDs distintos del mismo alias.
+    const clave = nombreNormalizado
+      ? `nombre:${nombreNormalizado}`
+      : idNormalizado
+        ? `id:${idNormalizado}`
+        : "";
+    if (!clave) return "";
     const existente = nombreVisiblePorClave.get(clave);
     const limpio = String(raw ?? "").trim();
     if (!existente || (existente === existente.toLowerCase() && limpio === limpio.toUpperCase())) {

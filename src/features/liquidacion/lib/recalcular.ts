@@ -38,7 +38,9 @@ import { listarRemates, cerrarRemateLiquidando } from "@/features/remates/lib/re
 import type { Remate } from "@/features/remates/lib/core";
 import { editarJugada, anularJugada, type EditablesJugada } from "@/features/jugadas/lib/jugadas";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
-import { cargarOpcionesCrucesPuestos } from "@/features/gestion/lib/cruces-carrera";
+import { cargarOpcionesCrucesPuestosPorGrupos } from "@/features/gestion/lib/cruces-carrera";
+import { grupoDeCuenta } from "@/features/grupos/lib/atribucion-grupo";
+import { grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import {
   sincronizarSaldosRealesClientes,
   calcularIncentivoCarreraCliente,
@@ -146,7 +148,37 @@ export async function revertirLiquidacionCarrera(opts: {
   }
   if (!filas.length) return { ...vacio, motivo: "No había tickets decididos que revertir." };
 
-  const reglasCruce = await cargarOpcionesCrucesPuestos({
+  const gruposCruce = [
+    ...new Set(
+      filas
+        .map((raw) => {
+          const fila = raw as Record<string, unknown>;
+          return grupoDeCuenta(
+            fila.grupo_cuenta_id as string | number | null | undefined,
+            fila.grupo_publicador_id as string | number | null | undefined,
+            fila.grupo_cobro_id as string | number | null | undefined
+          );
+        })
+        .filter(Boolean)
+    ),
+  ];
+  const hayTicketSinGrupo = filas.some((raw) => {
+    const fila = raw as Record<string, unknown>;
+    return !grupoDeCuenta(
+      fila.grupo_cuenta_id as string | number | null | undefined,
+      fila.grupo_publicador_id as string | number | null | undefined,
+      fila.grupo_cobro_id as string | number | null | undefined
+    );
+  });
+  let grupoRespaldo = grupoActivoVigente() || grupoVigente() || "";
+  if (!grupoRespaldo && gruposCruce.length === 1) grupoRespaldo = gruposCruce[0];
+  if (hayTicketSinGrupo && !grupoRespaldo) {
+    const error = "No se puede revertir: hay tickets sin grupo contable y no se puede determinar la regla de cruce.";
+    return { ...vacio, ok: false, motivo: error, errores: [error] };
+  }
+  if (hayTicketSinGrupo && grupoRespaldo) gruposCruce.push(grupoRespaldo);
+  const reglasCruce = await cargarOpcionesCrucesPuestosPorGrupos({
+    grupoIds: gruposCruce,
     fecha,
     hipodromo: opts.hipodromo,
     carrera: opts.carrera,
@@ -166,6 +198,7 @@ export async function revertirLiquidacionCarrera(opts: {
     dividendos: dividendosDePizarra({ dividendos: oficial?.dividendos ?? null }),
     tasaComision: opts.tasaComision ?? null,
     fecha,
+    grupoId: grupoRespaldo || (gruposCruce.length === 1 ? gruposCruce[0] : undefined),
     crucesPuestos: reglasCruce.opciones,
   });
 

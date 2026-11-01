@@ -148,6 +148,13 @@ const assert = (cond: boolean, msg: string) => {
     { PARTNER: { diferenteEjemplar: true } },
     jugador
   );
+  const idTienePrioridad = asociarReglasCrucesPuestosPorJugador(
+    {
+      PARTNER: { diferenteEjemplar: true },
+      [clienteId.toUpperCase()]: { diferenteEjemplar: false },
+    },
+    jugador
+  );
   const [reglaPermanente] = calcularLiquidacionPuestosCarrera(
     [
       { cliente: clienteId, caballo: "1", ok: true, bruto: 150, monto: 50 },
@@ -172,6 +179,32 @@ const assert = (cond: boolean, msg: string) => {
   );
   assert(reglaPermanente.comision === 5, `Caso 8 la regla permanente por ID debe cruzar; comisión ${reglaPermanente.comision} != 5`);
   assert(reglaCarrera.comision === 5, `Caso 8 la excepción de carrera por ID debe cruzar; comisión ${reglaCarrera.comision} != 5`);
+  assert(
+    resolverReglaCrucePuestos({ carreraPorJugadorOverride: idTienePrioridad }, clienteId, "diferenteEjemplar").activo === false,
+    "Caso 8 una regla explícita por ID debe prevalecer sobre la regla heredada por nombre"
+  );
+}
+
+// Caso 9: el mismo jugador liquidado para dos grupos usa la política de cada cuenta.
+{
+  const liquidaciones = calcularLiquidacionPuestosCarrera(
+    [
+      { cliente: "partner-id", grupoId: "grupo-a", caballo: "1", ok: true, bruto: 150, monto: 50 },
+      { cliente: "partner-id", grupoId: "grupo-a", caballo: "5", ok: false, bruto: 0, monto: 50 },
+      { cliente: "partner-id", grupoId: "grupo-b", caballo: "1", ok: true, bruto: 150, monto: 50 },
+      { cliente: "partner-id", grupoId: "grupo-b", caballo: "5", ok: false, bruto: 0, monto: 50 },
+    ],
+    {
+      pctComision: 10,
+      porGrupo: {
+        "grupo-a": { grupo: { mismoEjemplar: false, diferenteEjemplar: true } },
+        "grupo-b": { grupo: { mismoEjemplar: false, diferenteEjemplar: false } },
+      },
+    }
+  );
+  assert(liquidaciones.length === 2, "Caso 9 debe mantener un resultado por cliente y grupo");
+  assert(liquidaciones.find((x) => x.grupoId === "grupo-a")?.comision === 5, "Caso 9 grupo A debe cruzar");
+  assert(liquidaciones.find((x) => x.grupoId === "grupo-b")?.comision === 10, "Caso 9 grupo B no debe cruzar");
 }
 
 console.log("cruces-puestos:", pasan, "OK /", fallan, "FALLAS");

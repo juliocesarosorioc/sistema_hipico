@@ -1449,6 +1449,8 @@ export function liquidarPuestos(
 export type EntradaCrucePuestos = {
   /** Identidad del cliente (cliente_juega_id / cliente1). Sin cliente no cruza. */
   cliente: string;
+  /** Grupo al que se da cuenta la jugada; mantiene aisladas políticas por grupo. */
+  grupoId?: string;
   /** true = la jugada ganó (bruto > monto). */
   ok: boolean;
   /** Bruto devuelto por la jugada ANTES de comisión (incluye el monto de vuelta). */
@@ -1468,7 +1470,11 @@ export interface ModalidadesCruce {
 
 export function asociarReglasCrucesPuestosPorJugador(
   reglas: Record<string, Partial<ModalidadesCruce>> | undefined,
-  jugadores: Array<{ id?: string | number | null; nombre?: string | null }>
+  jugadores: Array<{
+    id?: string | number | null;
+    nombre?: string | null;
+    aliases?: Array<string | null | undefined>;
+  }>
 ): Record<string, Partial<ModalidadesCruce>> {
   const resultado = { ...(reglas ?? {}) };
   const reglasPorNombre = new Map(
@@ -1479,9 +1485,12 @@ export function asociarReglasCrucesPuestosPorJugador(
   );
   for (const jugador of jugadores) {
     const id = String(jugador.id ?? "").trim().toUpperCase();
-    const nombre = String(jugador.nombre ?? "").trim().toUpperCase();
-    const regla = reglasPorNombre.get(nombre);
-    if (id && regla) resultado[id] = regla;
+    const nombres = [jugador.nombre, ...(jugador.aliases ?? [])]
+      .map((nombre) => String(nombre ?? "").trim().toUpperCase())
+      .filter(Boolean);
+    const regla = nombres.map((nombre) => reglasPorNombre.get(nombre)).find(Boolean);
+    const reglaPorId = Object.keys(resultado).some((clave) => clave.trim().toUpperCase() === id);
+    if (id && regla && !reglaPorId) resultado[id] = regla;
   }
   return resultado;
 }
@@ -1491,6 +1500,7 @@ export interface OpcionesCrucesPuestos {
   porJugadorPermanente?: Record<string, Partial<ModalidadesCruce>>;
   carreraTodosOverride?: Partial<ModalidadesCruce>;
   carreraPorJugadorOverride?: Record<string, Partial<ModalidadesCruce>>;
+  porGrupo?: Record<string, Omit<OpcionesCrucesPuestos, "porGrupo">>;
 }
 
 export type OrigenCrucePuestos = "Grupo" | "Ficha Usuario" | "Solo Carrera - Todos" | "Solo Carrera - Jugador";
@@ -1524,6 +1534,7 @@ export function resolverReglaCrucePuestos(
 
 export type LiquidacionCrucePuestosCliente = {
   cliente: string;
+  grupoId?: string;
   ganadoBruto: number; // suma de (bruto − monto) de tickets ganadores
   perdidoBruto: number; // suma de montos de tickets perdedores
   neto: number; // ganadoBruto − perdidoBruto
@@ -1545,14 +1556,22 @@ export function calcularLiquidacionPuestosCarrera(
   for (const e of participantes) {
     const c = String(e.cliente ?? "").trim();
     if (!c) continue;
-    const arr = porCliente.get(c) ?? [];
+    const grupoId = String(e.grupoId ?? "").trim();
+    const clave = `${grupoId}::${c}`;
+    const arr = porCliente.get(clave) ?? [];
     arr.push(e);
-    porCliente.set(c, arr);
+    porCliente.set(clave, arr);
   }
   const pct = Number(opts.pctComision);
   const esLegacy = "permiteCruces" in opts;
+  const opcionesBase: OpcionesCrucesPuestos = esLegacy ? {} : opts;
   const result: LiquidacionCrucePuestosCliente[] = [];
-  for (const [cliente, arr] of porCliente) {
+  for (const arr of porCliente.values()) {
+    const cliente = String(arr[0].cliente).trim();
+    const grupoId = String(arr[0].grupoId ?? "").trim();
+    const opcionesGrupo = grupoId
+      ? opcionesBase.porGrupo?.[grupoId] ?? opcionesBase
+      : opcionesBase;
     let ganadoBruto = 0;
     let perdidoBruto = 0;
     let perdidaCruzada = 0;
@@ -1582,7 +1601,7 @@ export function calcularLiquidacionPuestosCarrera(
             String(ganancia.entrada.caballo ?? "").trim().toUpperCase();
           const modalidad: keyof ModalidadesCruce = mismo ? "mismoEjemplar" : "diferenteEjemplar";
           if (!String(perdida.caballo ?? "").trim() || !String(ganancia.entrada.caballo ?? "").trim()) continue;
-          const regla = resolverReglaCrucePuestos(opts, cliente, modalidad);
+          const regla = resolverReglaCrucePuestos(opcionesGrupo, cliente, modalidad);
           if (!regla.activo) continue;
           const neteado = Math.min(disponible, ganancia.disponible);
           disponible -= neteado;
@@ -1599,6 +1618,7 @@ export function calcularLiquidacionPuestosCarrera(
     const netoCliente = round2(neto - comision);
     result.push({
       cliente,
+      ...(grupoId ? { grupoId } : {}),
       ganadoBruto: round2(ganadoBruto),
       perdidoBruto: round2(perdidoBruto),
       neto: round2(neto),

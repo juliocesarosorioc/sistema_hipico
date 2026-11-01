@@ -1,5 +1,9 @@
 import { supabase } from "@/core/supabase";
-import { tieneCapacidad } from "@/features/seguridad/lib/vigente";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  tieneCapacidad,
+} from "@/features/seguridad/lib/vigente";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import {
   CAMPOS_POSICION,
@@ -13,7 +17,7 @@ import { leerRetirosCarrera } from "@/features/carreras/lib/retiros";
 import { jornadaDeCarrera, type ResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import type { PizarraResultados } from "@/features/liquidacion/components/CargaResultadosModal";
 import { aplicarLiquidacionSaldos } from "@/features/liquidacion/lib/saldos";
-import { liquidarJugadasDeCarrera, type ResumenJugadas } from "@/features/liquidacion/lib/pagarYCerrar";
+import { liquidarJugadasDeCarrera } from "@/features/liquidacion/lib/pagarYCerrar";
 
 /**
  * Las mismas claves que acepta `upsertResultadoCentral` / la RPC
@@ -91,7 +95,18 @@ export async function guardarPizarraCentral(opts: {
     p_fila: fila,
   });
   if (!res.error) {
-    await liquidarTrasPizarra({ hipodromo: hip, carrera: n, fecha, r: opts.r, liquidar: opts.liquidar, tasaComision: opts.tasaComision, usuario: opts.usuario });
+    const errorLiquidacion = await liquidarTrasPizarra({
+      hipodromo: hip,
+      carrera: n,
+      fecha,
+      r: opts.r,
+      liquidar: opts.liquidar,
+      tasaComision: opts.tasaComision,
+      usuario: opts.usuario,
+    });
+    if (errorLiquidacion) {
+      return { ok: false, error: `Resultado guardado, pero la liquidación se detuvo: ${errorLiquidacion}` };
+    }
     return { ok: true };
   }
 
@@ -110,7 +125,18 @@ export async function guardarPizarraCentral(opts: {
       .from("resultados_carreras")
       .upsert({ fecha, hipodromo: hip, carrera: n, ...prev, ...fila }, { onConflict: "fecha,hipodromo,carrera" });
     if (u.error) return { ok: false, error: String(u.error.message) };
-    await liquidarTrasPizarra({ hipodromo: hip, carrera: n, fecha, r: opts.r, liquidar: opts.liquidar, tasaComision: opts.tasaComision, usuario: opts.usuario });
+    const errorLiquidacion = await liquidarTrasPizarra({
+      hipodromo: hip,
+      carrera: n,
+      fecha,
+      r: opts.r,
+      liquidar: opts.liquidar,
+      tasaComision: opts.tasaComision,
+      usuario: opts.usuario,
+    });
+    if (errorLiquidacion) {
+      return { ok: false, error: `Resultado guardado, pero la liquidación se detuvo: ${errorLiquidacion}` };
+    }
     return { ok: true };
   }
   return { ok: false, error: texto };
@@ -120,8 +146,8 @@ export async function guardarPizarraCentral(opts: {
  * Tras escribir el resultado en el central, LIQUIDA todas las jugadas que
  * dependen de él —por el mismo pipeline que usa la liquidación completa— para
  * que registrar el resultado UNA vez pague tablas fijas, marcas, dupletas y las
- * jugadas de taquilla. Best-effort: un fallo acá no revierte el resultado ya
- * guardado (se podría re-liquidar con el botón de re-apertura).
+ * jugadas de taquilla. Un fallo no revierte el resultado ya guardado, pero se
+ * devuelve al caller para que una carrera sin liquidar no parezca exitosa.
  */
 async function liquidarTrasPizarra(opts: {
   hipodromo: string;
@@ -131,31 +157,36 @@ async function liquidarTrasPizarra(opts: {
   liquidar?: boolean;
   tasaComision?: number | null;
   usuario?: string | null;
-}): Promise<ResumenJugadas | null> {
+}): Promise<string | null> {
   if (opts.liquidar === false) return null;
   try {
     const dividendos = dividendosDePizarra(opts.r);
     // 1) Jugadas de taquilla (GANADOR/PUESTOS/WPS/PAREOS, remates) sobre los
     //    tickets REALES de la carrera, no los de la sesión.
-    await aplicarLiquidacionSaldos({
+    const saldos = await aplicarLiquidacionSaldos({
       hipodromo: opts.hipodromo,
       carrera: opts.carrera,
       pizarra: opts.r.pizarra,
       dividendos,
       premio_por_tabla: opts.r.premio_por_tabla ?? null,
       tasaComision: opts.tasaComision ?? null,
+      grupoId: grupoActivoVigente() || grupoVigente() || undefined,
       fecha: opts.fecha,
     });
+    if (!saldos.ok) {
+      return saldos.errores[0] ?? saldos.motivo;
+    }
     // 2) Tablas fijas + marcas + dupletas.
-    return await liquidarJugadasDeCarrera({
+    await liquidarJugadasDeCarrera({
       hipodromo: opts.hipodromo,
       carrera: opts.carrera,
       fecha: opts.fecha,
       pizarra: opts.r.pizarra,
       usuario: opts.usuario,
     });
-  } catch {
     return null;
+  } catch (e) {
+    return (e as Error).message;
   }
 }
 

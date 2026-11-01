@@ -1,7 +1,10 @@
 import { supabase } from "@/core/supabase";
-import type { ModalidadesCruce } from "@/features/motores/lib/puestos";
-import { listarClientesVenta, listarGruposVenta } from "@/features/grupos/lib/grupos";
-import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
+import {
+  asociarReglasCrucesPuestosPorJugador,
+  type ModalidadesCruce,
+} from "@/features/motores/lib/puestos";
+import { listarGruposVenta } from "@/features/grupos/lib/grupos";
+import { grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import type { OpcionesCrucesPuestos } from "@/features/motores/lib/puestos";
 
 export type CrucesCarreraOverride = {
@@ -10,16 +13,36 @@ export type CrucesCarreraOverride = {
 };
 
 export async function cargarOpcionesCrucesPuestos(opts: {
+  grupoId?: string | number | null;
   fecha: string;
   hipodromo: string;
   carrera: number | string;
 }): Promise<{ ok: boolean; opciones: OpcionesCrucesPuestos; error?: string }> {
-  const [grupos, clientes] = await Promise.all([listarGruposVenta(), listarClientesVenta()]);
-  const grupoActivo = grupoActivoVigente();
-  const grupo = grupos.find((g) => grupoActivo && String(g.id) === String(grupoActivo))
-    ?? grupos.find((g) => clientes.some((c) => c.grupos.some((id) => String(id) === String(g.id))));
+  const grupoId = String(opts.grupoId ?? grupoActivoVigente() ?? grupoVigente() ?? "").trim();
+  if (!grupoId) {
+    return {
+      ok: false,
+      opciones: {},
+      error: "No se puede determinar el grupo contable de la carrera; seleccione un grupo antes de liquidar.",
+    };
+  }
+  let grupos: Awaited<ReturnType<typeof listarGruposVenta>>;
+  let clientes: Awaited<ReturnType<typeof clientesDeGrupo>>;
+  try {
+    [grupos, clientes] = await Promise.all([
+      listarGruposVenta(),
+      clientesDeGrupo(grupoId),
+    ]);
+  } catch (e) {
+    return { ok: false, opciones: {}, error: (e as Error).message };
+  }
+  const grupo = grupos.find((g) => String(g.id) === grupoId);
   if (!grupo) {
-    return { ok: true, opciones: { grupo: { mismoEjemplar: false, diferenteEjemplar: false } } };
+    return {
+      ok: false,
+      opciones: {},
+      error: `No se encontró el grupo ${grupoId}; no se aplicarán reglas de cruce por defecto.`,
+    };
   }
   const leido = await leerCrucesCarrera({
     grupoId: grupo.id,
@@ -34,23 +57,30 @@ export async function cargarOpcionesCrucesPuestos(opts: {
     mismoEjemplar: grupo.cruce_mismo_ejemplar ?? grupoAnterior ?? false,
     diferenteEjemplar: grupo.cruce_diferente_ejemplar ?? grupoAnterior ?? false,
   };
-  const porJugadorPermanente: NonNullable<OpcionesCrucesPuestos["porJugadorPermanente"]> = {};
+  const reglasPorNombre: NonNullable<OpcionesCrucesPuestos["porJugadorPermanente"]> = {};
   for (const cliente of clientes) {
     const reglas: Partial<ModalidadesCruce> = {};
-    const mismo = cliente.cruce_mismo_ejemplar !== undefined ? cliente.cruce_mismo_ejemplar : cliente.permite_cruces;
-    const diferente = cliente.cruce_diferente_ejemplar !== undefined ? cliente.cruce_diferente_ejemplar : cliente.permite_cruces;
+    const mismo = cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces;
+    const diferente = cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces;
     if (typeof mismo === "boolean") reglas.mismoEjemplar = mismo;
     if (typeof diferente === "boolean") reglas.diferenteEjemplar = diferente;
     if (Object.keys(reglas).length > 0) {
-      porJugadorPermanente[claveJugador(cliente.nombre)] = reglas;
-      porJugadorPermanente[String(cliente.id).trim().toUpperCase()] = reglas;
+      for (const nombre of [cliente.nombre, cliente.nombre_real, cliente.seudonimo]) {
+        const clave = claveJugador(nombre);
+        if (clave) reglasPorNombre[clave] = reglas;
+      }
     }
   }
-  const carreraPorJugadorOverride = { ...leido.override.porJugador };
-  for (const cliente of clientes) {
-    const regla = leido.override.porJugador?.[claveJugador(cliente.nombre)];
-    if (regla) carreraPorJugadorOverride[String(cliente.id).trim().toUpperCase()] = regla;
-  }
+  const jugadores = clientes.map((cliente) => ({
+    id: cliente.id,
+    nombre: cliente.nombre,
+    aliases: [cliente.nombre_real, cliente.seudonimo],
+  }));
+  const porJugadorPermanente = asociarReglasCrucesPuestosPorJugador(reglasPorNombre, jugadores);
+  const carreraPorJugadorOverride = asociarReglasCrucesPuestosPorJugador(
+    leido.override.porJugador,
+    jugadores
+  );
   return {
     ok: true,
     opciones: {
@@ -62,7 +92,83 @@ export async function cargarOpcionesCrucesPuestos(opts: {
   };
 }
 
-function claveJugador(nombre: string): string {
+async function clientesDeGrupo(grupoId: string): Promise<Array<{
+  id: string;
+  nombre: string;
+  nombre_real: string;
+  seudonimo: string | null;
+  permite_cruces: boolean | null;
+  cruce_mismo_ejemplar: boolean | null;
+  cruce_diferente_ejemplar: boolean | null;
+}>> {
+  if (!supabase) throw new Error("Sin conexión a Supabase.");
+  const [clientesResult, miembrosResult] = await Promise.all([
+    supabase
+      .from("clientes")
+      .select("id, nombre, seudonimo, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar")
+      .eq("grupo_id", grupoId),
+    supabase.from("clientes_grupos").select("cliente_id").eq("grupo_id", grupoId),
+  ]);
+  if (clientesResult.error) throw new Error(`Clientes del grupo: ${clientesResult.error.message}`);
+  if (miembrosResult.error) throw new Error(`Membresías del grupo: ${miembrosResult.error.message}`);
+  const clientes = (clientesResult.data ?? []) as Array<Record<string, unknown>>;
+  const idsCargados = new Set(clientes.map((cliente) => String(cliente.id)));
+  const idsMembresia = [...new Set(
+    (miembrosResult.data ?? [])
+      .map((m) => String(m.cliente_id))
+      .filter((id) => id && !idsCargados.has(id))
+  )];
+  if (idsMembresia.length) {
+    const adicionales = await supabase
+      .from("clientes")
+      .select("id, nombre, seudonimo, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar")
+      .in("id", idsMembresia);
+    if (adicionales.error) throw new Error(`Clientes asociados al grupo: ${adicionales.error.message}`);
+    clientes.push(...((adicionales.data ?? []) as Array<Record<string, unknown>>));
+  }
+  return clientes.map((cliente) => ({
+      id: String(cliente.id),
+      nombre: String(cliente.seudonimo || cliente.nombre || ""),
+      nombre_real: String(cliente.nombre ?? ""),
+      seudonimo: cliente.seudonimo ? String(cliente.seudonimo) : null,
+      permite_cruces: typeof cliente.permite_cruces === "boolean" ? cliente.permite_cruces : null,
+      cruce_mismo_ejemplar: typeof cliente.cruce_mismo_ejemplar === "boolean" ? cliente.cruce_mismo_ejemplar : null,
+      cruce_diferente_ejemplar: typeof cliente.cruce_diferente_ejemplar === "boolean" ? cliente.cruce_diferente_ejemplar : null,
+    }));
+}
+
+export async function cargarOpcionesCrucesPuestosPorGrupos(opts: {
+  grupoIds: Array<string | number>;
+  fecha: string;
+  hipodromo: string;
+  carrera: number | string;
+}): Promise<{ ok: boolean; opciones: OpcionesCrucesPuestos; error?: string }> {
+  const ids = [...new Set(opts.grupoIds.map((id) => String(id).trim()).filter(Boolean))];
+  if (!ids.length) {
+    const r = await cargarOpcionesCrucesPuestos(opts);
+    return r;
+  }
+  const resultados = await Promise.all(
+    ids.map(async (grupoId) => ({
+      grupoId,
+      resultado: await cargarOpcionesCrucesPuestos({ ...opts, grupoId }),
+    }))
+  );
+  const fallido = resultados.find(({ resultado }) => !resultado.ok);
+  if (fallido) {
+    return {
+      ok: false,
+      opciones: {},
+      error: `Grupo ${fallido.grupoId}: ${fallido.resultado.error ?? "no se pudieron cargar las reglas de cruce."}`,
+    };
+  }
+  const porGrupo = Object.fromEntries(
+    resultados.map(({ grupoId, resultado }) => [grupoId, resultado.opciones])
+  );
+  return { ok: true, opciones: { porGrupo } };
+}
+
+function claveJugador(nombre: unknown): string {
   return String(nombre ?? "").trim().toUpperCase();
 }
 
