@@ -384,7 +384,7 @@ export function extraerEjemplaresMultiples(
   if (!texto) return [];
   const partes = texto
     .replace(/\b(?:por|el|la|los|las|de|del)\b/gi, " ")
-    .split(/[\s,yY\-\/\*xX&]+/)
+    .split(/[\s,yY.\-\/\*xX&]+/)
     .map((s) => s.trim())
     .filter(Boolean);
 
@@ -1464,6 +1464,26 @@ export type EntradaCrucePuestos = {
 export interface ModalidadesCruce {
   mismoEjemplar: boolean;
   diferenteEjemplar: boolean;
+}
+
+export function asociarReglasCrucesPuestosPorJugador(
+  reglas: Record<string, Partial<ModalidadesCruce>> | undefined,
+  jugadores: Array<{ id?: string | number | null; nombre?: string | null }>
+): Record<string, Partial<ModalidadesCruce>> {
+  const resultado = { ...(reglas ?? {}) };
+  const reglasPorNombre = new Map(
+    Object.entries(reglas ?? {}).map(([nombre, regla]) => [
+      nombre.trim().toUpperCase(),
+      regla,
+    ])
+  );
+  for (const jugador of jugadores) {
+    const id = String(jugador.id ?? "").trim().toUpperCase();
+    const nombre = String(jugador.nombre ?? "").trim().toUpperCase();
+    const regla = reglasPorNombre.get(nombre);
+    if (id && regla) resultado[id] = regla;
+  }
+  return resultado;
 }
 
 export interface OpcionesCrucesPuestos {

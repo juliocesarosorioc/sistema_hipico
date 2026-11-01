@@ -8,6 +8,7 @@
 // Caso 4 (Inmunidad de otras jugadas): Marcas no aplican cruce
 // ============================================================================
 import {
+  asociarReglasCrucesPuestosPorJugador,
   calcularLiquidacionPuestosCarrera,
   resolverReglaCrucePuestos,
   type EntradaCrucePuestos,
@@ -133,6 +134,44 @@ const assert = (cond: boolean, msg: string) => {
   });
   assert(conDiferentes.comision === 0, `Caso 7 cruce activo debe dejar comisión 0, recibió ${conDiferentes.comision}`);
   assert(sinDiferentes.comision === 10, `Caso 7 sin cruce debe cobrar comisión completa 10, recibió ${sinDiferentes.comision}`);
+}
+
+// Caso 8: las reglas por nombre también deben resolver al liquidar por ID de cliente.
+{
+  const clienteId = "partner-uuid";
+  const jugador = [{ id: clienteId, nombre: "Partner" }];
+  const permanente = asociarReglasCrucesPuestosPorJugador(
+    { PARTNER: { mismoEjemplar: false, diferenteEjemplar: true } },
+    jugador
+  );
+  const porCarrera = asociarReglasCrucesPuestosPorJugador(
+    { PARTNER: { diferenteEjemplar: true } },
+    jugador
+  );
+  const [reglaPermanente] = calcularLiquidacionPuestosCarrera(
+    [
+      { cliente: clienteId, caballo: "1", ok: true, bruto: 150, monto: 50 },
+      { cliente: clienteId, caballo: "5", ok: false, bruto: 0, monto: 50 },
+    ],
+    {
+      pctComision: 10,
+      grupo: { mismoEjemplar: false, diferenteEjemplar: false },
+      porJugadorPermanente: permanente,
+    }
+  );
+  const [reglaCarrera] = calcularLiquidacionPuestosCarrera(
+    [
+      { cliente: clienteId, caballo: "1", ok: true, bruto: 150, monto: 50 },
+      { cliente: clienteId, caballo: "5", ok: false, bruto: 0, monto: 50 },
+    ],
+    {
+      pctComision: 10,
+      grupo: { mismoEjemplar: false, diferenteEjemplar: false },
+      carreraPorJugadorOverride: porCarrera,
+    }
+  );
+  assert(reglaPermanente.comision === 5, `Caso 8 la regla permanente por ID debe cruzar; comisión ${reglaPermanente.comision} != 5`);
+  assert(reglaCarrera.comision === 5, `Caso 8 la excepción de carrera por ID debe cruzar; comisión ${reglaCarrera.comision} != 5`);
 }
 
 console.log("cruces-puestos:", pasan, "OK /", fallan, "FALLAS");

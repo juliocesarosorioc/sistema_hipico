@@ -8,7 +8,9 @@
  * arquitectónicamente preparado para escalar a plataforma deportiva multideporte:
  *  - Categorías: LIBRE, BEISBOL, FUTBOL, BASKETBALL, HIPISMO_ESPECIAL.
  *  - Logros/Mercados: 10/6, 10A7, 1P, PP, GANADOR, PERDEDOR, EMPATE, 1_GOL, 2_GOLES, 3_GOLES, ALTA, BAJA.
- *  - Cálculo automático de riesgos asimétricos (ej. 10/6 -> 1000 juega / 600 da).
+ *  - Registro manual de mercado y riesgos; se conserva el helper de cálculo
+ *    automático de cuotas para integraciones existentes.
+ *  - Comisión de grupo capturada al registrar y liquidación manual del monto bruto.
  *  - Selección manual de ganador: "🏆 Ganó Quien Juega", "🏆 Ganó Quien Da", "🤝 Empate/Nulo".
  *  - Cobro automático de comisión particular (o grupo).
  *  - Acreditación de incentivo y comisión confidencial al socio.
@@ -65,8 +67,11 @@ export interface EventoLibreRow {
   jugador2Nombre: string;
   riesgoJugador2: number; // Monto que arriesga Jugador 2
 
+  /** Comisión del grupo fijada manualmente al registrar la apuesta. */
+  comisionGrupoPct?: number;
   estado: EstadoEventoLibre;
   ganadorSeleccionado?: "JUGADOR_1" | "JUGADOR_2" | "EMPATE" | null;
+  montoLiquidadoGanador?: number;
   
   // Resultados financieros
   gananciaBrutaGanador?: number;
@@ -76,6 +81,7 @@ export interface EventoLibreRow {
   comisionSocioAcreditada?: number;
 
   creadoPor?: string | null;
+  actualizadoEn?: string;
   fechaLiquidacion?: string | null;
   asientoReferencia?: string | null;
 }
@@ -103,6 +109,78 @@ export function guardarEventosLibresMemoria(lista: EventoLibreRow[]): void {
   } catch {
     /* ignore */
   }
+}
+
+function eventoDesdeNota(nota: unknown): EventoLibreRow | null {
+  const raw = String(nota ?? "");
+  const prefijo = "EVENTO_LIBRE_P2P:";
+  if (!raw.startsWith(prefijo)) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw.slice(prefijo.length));
+    if (!parsed || typeof parsed !== "object") return null;
+    const evento = parsed as Partial<EventoLibreRow>;
+    if (
+      typeof evento.id !== "string" ||
+      typeof evento.concepto !== "string" ||
+      typeof evento.jugador1Nombre !== "string" ||
+      typeof evento.jugador2Nombre !== "string" ||
+      typeof evento.riesgoJugador1 !== "number" ||
+      typeof evento.riesgoJugador2 !== "number" ||
+      !evento.fecha ||
+      !evento.categoria ||
+      !evento.estado
+    ) {
+      return null;
+    }
+    return evento as EventoLibreRow;
+  } catch {
+    return null;
+  }
+}
+
+export async function cargarEventosLibres(): Promise<{
+  eventos: EventoLibreRow[];
+  warning?: string;
+}> {
+  const locales = leerEventosLibresMemoria();
+  if (!supabase) return { eventos: locales };
+
+  const { data, error } = await supabase
+    .from("apuestas_eventos_especiales")
+    .select("nota")
+    .order("creado_en", { ascending: false });
+  if (error) {
+    return { eventos: locales, warning: `No se pudieron sincronizar eventos de la base: ${error.message}` };
+  }
+
+  const porId = new Map<string, EventoLibreRow>();
+  for (const row of data ?? []) {
+    const evento = eventoDesdeNota(row.nota);
+    if (evento) porId.set(evento.id, evento);
+  }
+  for (const local of locales) {
+    const remoto = porId.get(local.id);
+    const localTs = Date.parse(local.actualizadoEn ?? "");
+    const remotoTs = Date.parse(remoto?.actualizadoEn ?? "");
+    if (!remoto || (Number.isFinite(localTs) && localTs > remotoTs)) {
+      porId.set(local.id, local);
+    }
+  }
+  const eventos = [...porId.values()].sort((a, b) =>
+    String(b.actualizadoEn ?? b.fecha).localeCompare(String(a.actualizadoEn ?? a.fecha))
+  );
+  guardarEventosLibresMemoria(eventos);
+  return { eventos };
+}
+
+function nuevoIdEvento(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.floor(Math.random() * 16);
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }
 
 /**
@@ -150,8 +228,9 @@ export async function crearEventoLibre(params: {
   jugador2: { id: string | number; nombre: string; disponible: number };
   riesgo1: number;
   riesgo2: number;
+  comisionGrupoPct?: number;
   creadoPor?: string | null;
-}): Promise<{ ok: boolean; evento?: EventoLibreRow; error?: string }> {
+}): Promise<{ ok: boolean; evento?: EventoLibreRow; error?: string; warning?: string }> {
   emitirMensajePaso("⏳ [Paso 1/4] Validando saldos y reglas del Evento Libre...", "info");
 
   const r1 = redondearCentavos(params.riesgo1);
@@ -161,18 +240,20 @@ export async function crearEventoLibre(params: {
     return { ok: false, error: "Los montos de riesgo deben ser mayores a 0." };
   }
 
-  // Recorte inmediato si excede el disponible
-  const riesgoEfectivo1 = Math.min(r1, Math.max(0, params.jugador1.disponible));
-  const riesgoEfectivo2 = Math.min(r2, Math.max(0, params.jugador2.disponible));
-
-  if (riesgoEfectivo1 <= 0) {
+  const comisionGrupoPct = Number(params.comisionGrupoPct ?? 5);
+  if (!Number.isFinite(comisionGrupoPct) || comisionGrupoPct < 0 || comisionGrupoPct > 100) {
+    return { ok: false, error: "La comisión del grupo debe estar entre 0% y 100%." };
+  }
+  const disponible1 = Math.max(0, redondearCentavos(params.jugador1.disponible));
+  const disponible2 = Math.max(0, redondearCentavos(params.jugador2.disponible));
+  if (r1 > disponible1) {
     return { ok: false, error: `El jugador ${params.jugador1.nombre} no tiene saldo disponible suficiente.` };
   }
-  if (riesgoEfectivo2 <= 0) {
+  if (r2 > disponible2) {
     return { ok: false, error: `El jugador ${params.jugador2.nombre} no tiene saldo disponible suficiente.` };
   }
 
-  const id = `ev-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const id = nuevoIdEvento();
   const fecha = params.fecha || new Date().toISOString().slice(0, 10);
 
   const nuevo: EventoLibreRow = {
@@ -183,13 +264,15 @@ export async function crearEventoLibre(params: {
     mercado: params.mercado,
     jugador1Id: params.jugador1.id,
     jugador1Nombre: params.jugador1.nombre,
-    riesgoJugador1: riesgoEfectivo1,
+    riesgoJugador1: r1,
     jugador2Id: params.jugador2.id,
     jugador2Nombre: params.jugador2.nombre,
-    riesgoJugador2: riesgoEfectivo2,
+    riesgoJugador2: r2,
+    comisionGrupoPct,
     estado: "PENDIENTE",
     ganadorSeleccionado: null,
     creadoPor: params.creadoPor || "OPERADOR",
+    actualizadoEn: new Date().toISOString(),
   };
 
   const lista = [nuevo, ...leerEventosLibresMemoria()];
@@ -198,7 +281,7 @@ export async function crearEventoLibre(params: {
   // Intentar persistir en Supabase si existe tabla
   if (supabase) {
     try {
-      await supabase.from("apuestas_eventos_especiales").insert([{
+      const { error } = await supabase.from("apuestas_eventos_especiales").insert([{
         id,
         fecha,
         evento: `[${params.categoria}] ${nuevo.concepto} (${nuevo.jugador1Nombre} vs ${nuevo.jugador2Nombre})`,
@@ -209,10 +292,15 @@ export async function crearEventoLibre(params: {
         logro_cuota: String(params.mercado),
         estado: "PENDIENTE",
         ganador_seleccionado: false,
+        nota: `EVENTO_LIBRE_P2P:${JSON.stringify(nuevo)}`,
         creado_por: nuevo.creadoPor,
       }]);
-    } catch {
-      /* fallback a memoria seguro */
+      if (error) {
+        return { ok: true, evento: nuevo, warning: `Se guardó localmente, pero no en la base: ${error.message}` };
+      }
+    } catch (error) {
+      const detalle = error instanceof Error ? error.message : String(error);
+      return { ok: true, evento: nuevo, warning: `Se guardó localmente, pero no en la base: ${detalle}` };
     }
   }
 
@@ -226,10 +314,12 @@ export async function crearEventoLibre(params: {
 export async function liquidarEventoLibre(params: {
   eventoId: string;
   ganador: "JUGADOR_1" | "JUGADOR_2" | "EMPATE";
+  /** Ganancia bruta antes de comisión. Necesaria para liquidar a un ganador. */
+  montoGanancia?: number;
   config1: ConfigJugadorLiquidacion;
   config2: ConfigJugadorLiquidacion;
   comisionGrupoDefault?: number;
-}): Promise<{ ok: boolean; resultado?: ResultadoLiquidacionUnificada; error?: string }> {
+}): Promise<{ ok: boolean; resultado?: ResultadoLiquidacionUnificada; error?: string; warning?: string }> {
   emitirMensajePaso("⚙️ [Paso 2/4] Liquidando jugadas, incentivos y socios del Evento Libre...", "info");
 
   const lista = leerEventosLibresMemoria();
@@ -244,11 +334,23 @@ export async function liquidarEventoLibre(params: {
 
   // Monto arriesgado y ganancia bruta según quién ganó
   const montoJuega = ev.riesgoJugador1;
-  const montoDa = ev.riesgoJugador2;
+  const montoGanancia = redondearCentavos(
+    params.montoGanancia ?? (ganoJ1 ? ev.riesgoJugador2 : ev.riesgoJugador1)
+  );
+  if (!esEmpate && (!Number.isFinite(montoGanancia) || montoGanancia <= 0)) {
+    return { ok: false, error: "Indique una ganancia bruta mayor a 0 para liquidar el evento." };
+  }
+  const riesgoDelPerdedor = ganoJ1 ? ev.riesgoJugador2 : ev.riesgoJugador1;
+  if (!esEmpate && montoGanancia > riesgoDelPerdedor) {
+    return {
+      ok: false,
+      error: `La ganancia indicada excede el riesgo acordado del perdedor (${riesgoDelPerdedor.toFixed(2)}).`,
+    };
+  }
 
   let premioBrutoJuega = 0;
   if (ganoJ1) {
-    premioBrutoJuega = sumarDinero(montoJuega, montoDa);
+    premioBrutoJuega = sumarDinero(montoJuega, montoGanancia);
   }
 
   const resUnificado = calcularLiquidacionConIncentivosYSocios(
@@ -258,12 +360,12 @@ export async function liquidarEventoLibre(params: {
       montoDecidido: montoJuega,
       premioBruto: premioBrutoJuega,
       estado: ganoJ1 ? "GANADOR" : ganoJ2 ? "PERDEDOR" : "EMPATE",
-      perdidaEfectiva: ganoJ2 ? montoJuega : 0,
+      perdidaEfectiva: ganoJ2 ? montoGanancia : 0,
       modalidad: "LIBRE",
     },
     params.config1,
     params.config2,
-    params.comisionGrupoDefault ?? 5
+    ev.comisionGrupoPct ?? params.comisionGrupoDefault ?? 5
   );
 
   emitirMensajePaso("📘 [Paso 3/4] Registrando asiento contable NIIF y traza de auditoría...", "info");
@@ -282,14 +384,14 @@ export async function liquidarEventoLibre(params: {
         const { data: c2 } = await supabase.from("clientes").select("saldo_actual").eq("id", params.config2.clienteId).maybeSingle();
         if (c2) {
           const act2 = Number(c2.saldo_actual || 0);
-          await supabase.from("clientes").update({ saldo_actual: restarDinero(act2, montoDa) }).eq("id", params.config2.clienteId as never);
+          await supabase.from("clientes").update({ saldo_actual: restarDinero(act2, montoGanancia) }).eq("id", params.config2.clienteId as never);
         }
       } else if (ganoJ2) {
         // Descontar a J1 su pérdida
         const { data: c1 } = await supabase.from("clientes").select("saldo_actual").eq("id", params.config1.clienteId).maybeSingle();
         if (c1) {
           const act1 = Number(c1.saldo_actual || 0);
-          await supabase.from("clientes").update({ saldo_actual: restarDinero(act1, montoJuega) }).eq("id", params.config1.clienteId as never);
+          await supabase.from("clientes").update({ saldo_actual: restarDinero(act1, montoGanancia) }).eq("id", params.config1.clienteId as never);
         }
         // Acreditar a J2 su ganancia neta + su incentivo
         const { data: c2 } = await supabase.from("clientes").select("saldo_actual").eq("id", params.config2.clienteId).maybeSingle();
@@ -323,7 +425,9 @@ export async function liquidarEventoLibre(params: {
   // Actualizar el estado del evento
   ev.estado = ganoJ1 ? "GANO_JUGADOR_1" : ganoJ2 ? "GANO_JUGADOR_2" : "EMPATE";
   ev.ganadorSeleccionado = params.ganador;
+  ev.montoLiquidadoGanador = esEmpate ? 0 : montoGanancia;
   ev.fechaLiquidacion = new Date().toISOString();
+  ev.actualizadoEn = ev.fechaLiquidacion;
   ev.gananciaBrutaGanador = ganoJ1 ? resUnificado.jugador1.gananciaBruta : (resUnificado.jugador2?.gananciaBruta ?? 0);
   ev.comisionCobrada = resUnificado.totalComisionCasa;
   ev.gananciaNetaGanador = ganoJ1 ? resUnificado.jugador1.gananciaNeta : (resUnificado.jugador2?.gananciaNeta ?? 0);
@@ -331,6 +435,25 @@ export async function liquidarEventoLibre(params: {
   ev.comisionSocioAcreditada = sumarDinero(resUnificado.socioJugador1?.montoAcreditado ?? 0, resUnificado.socioJugador2?.montoAcreditado ?? 0);
 
   guardarEventosLibresMemoria(lista);
+  if (supabase && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ev.id)) {
+    const estadoPersistido = ganoJ1 ? "GANADOR" : ganoJ2 ? "PERDEDOR" : "ANULADA";
+    const { error } = await supabase
+      .from("apuestas_eventos_especiales")
+      .update({
+        estado: estadoPersistido,
+        ganador_seleccionado: true,
+        fecha_liquidacion: ev.fechaLiquidacion,
+        nota: `EVENTO_LIBRE_P2P:${JSON.stringify(ev)}`,
+      })
+      .eq("id", ev.id);
+    if (error) {
+      return {
+        ok: true,
+        resultado: resUnificado,
+        warning: `Los saldos se procesaron y el resultado quedó en este dispositivo, pero no se pudo guardar en la base: ${error.message}`,
+      };
+    }
+  }
 
   emitirMensajePaso(`✅ [Paso 4/4] Evento Libre liquidado con éxito. Ganador: ${params.ganador}.`, "success");
 

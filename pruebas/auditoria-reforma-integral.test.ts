@@ -112,6 +112,7 @@ console.log("=== INICIANDO AUDITORÍA DE REFORMA INTEGRAL (13 REQUERIMIENTOS) ==
   assert.deepEqual(extraerEjemplaresMultiples("3-4"), [3, 4]);
   assert.deepEqual(extraerEjemplaresMultiples("2, 5, 8"), [2, 5, 8]);
   assert.deepEqual(extraerEjemplaresMultiples("1x2"), [1, 2]);
+  assert.deepEqual(extraerEjemplaresMultiples("2.3X7.9"), [2, 3, 7, 9]);
 
   // Ejemplo 1: 1P con "1y2" cuando el #2 llega 1° -> gana Cliente 1
   const pizarraEj1 = construirMapaPosicionesPizarra(["2", "5", "1", "7", "4"]);

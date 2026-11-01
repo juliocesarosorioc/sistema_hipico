@@ -47,7 +47,11 @@ import { fmtMoney, type EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { listarClientesVenta, listarGruposVenta, limpiarCacheClientesVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, telefonoMencionCliente, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { actualizarCliente } from "@/features/clientes/lib/clientes";
 import { guardarCrucesCarrera, leerCrucesCarrera, type CrucesCarreraOverride } from "@/features/gestion/lib/cruces-carrera";
-import type { ModalidadesCruce, OpcionesCrucesPuestos } from "@/features/motores/lib/puestos";
+import {
+  asociarReglasCrucesPuestosPorJugador,
+  type ModalidadesCruce,
+  type OpcionesCrucesPuestos,
+} from "@/features/motores/lib/puestos";
 import { tieneCapacidad, usuarioVigente } from "@/features/seguridad/lib/vigente";
 import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/features/tablas/lib/rpc";
@@ -651,18 +655,21 @@ const hipodromosDelDia = useMemo(() => {
     };
   }, [grupoSesion, gruposVenta]);
   const opcionesCrucesPuestos = useMemo<OpcionesCrucesPuestos>(() => {
-    const porJugadorPermanente: NonNullable<OpcionesCrucesPuestos["porJugadorPermanente"]> = {};
+    const reglasPermanentes: NonNullable<OpcionesCrucesPuestos["porJugadorPermanente"]> = {};
     for (const cliente of clientes) {
       const reglas: Partial<ModalidadesCruce> = {};
       if (typeof cliente.cruce_mismo_ejemplar === "boolean") reglas.mismoEjemplar = cliente.cruce_mismo_ejemplar;
       if (typeof cliente.cruce_diferente_ejemplar === "boolean") reglas.diferenteEjemplar = cliente.cruce_diferente_ejemplar;
-      if (Object.keys(reglas).length > 0) porJugadorPermanente[cliente.nombre.trim().toUpperCase()] = reglas;
+      if (Object.keys(reglas).length > 0) reglasPermanentes[cliente.nombre.trim().toUpperCase()] = reglas;
     }
     return {
       grupo: grupoReglasCruce,
-      porJugadorPermanente,
+      porJugadorPermanente: asociarReglasCrucesPuestosPorJugador(reglasPermanentes, clientes),
       carreraTodosOverride: crucesOverrideCarrera.todos,
-      carreraPorJugadorOverride: crucesOverrideCarrera.porJugador,
+      carreraPorJugadorOverride: asociarReglasCrucesPuestosPorJugador(
+        crucesOverrideCarrera.porJugador,
+        clientes
+      ),
     };
   }, [clientes, crucesOverrideCarrera, grupoReglasCruce]);
 
@@ -2585,6 +2592,29 @@ const hipodromosDelDia = useMemo(() => {
     // AUNQUE no haya jugadas EN SESIÓN, si hay jugadas persistidas o en tablas fijas/marcas se liquidan.
     setLiquidandoCarrera(true);
     try {
+      let crucesPuestosLiquidacion = opcionesCrucesPuestos;
+      if (grupoSesion) {
+        const configuracionCruces = await leerCrucesCarrera({
+          grupoId: grupoSesion,
+          fecha,
+          hipodromo,
+          carrera: Number(carrera),
+        });
+        if (!configuracionCruces.ok) {
+          const motivo = `No se puede liquidar hasta confirmar la configuración de cruces: ${configuracionCruces.error ?? "error desconocido"}`;
+          setAviso(`❌ ${motivo}`);
+          emitirToast(motivo, "error");
+          return { ok: false, motivo };
+        }
+        crucesPuestosLiquidacion = {
+          ...opcionesCrucesPuestos,
+          carreraTodosOverride: configuracionCruces.override.todos,
+          carreraPorJugadorOverride: asociarReglasCrucesPuestosPorJugador(
+            configuracionCruces.override.porJugador,
+            clientes
+          ),
+        };
+      }
       // Ejecución en paralelo de cierre de carrera/tablas/marcas y liquidación de saldos
       // para máxima velocidad de respuesta y apertura inmediata del reporte exclusivo.
       const [r, s] = await Promise.all([
@@ -2604,7 +2634,7 @@ const hipodromosDelDia = useMemo(() => {
             cliente2: t.cliente2,
             permiteCruces: conCruces ? permiteCrucesDe(t.cliente1 ?? "") : false,
           })),
-          crucesPuestos: opcionesCrucesPuestos,
+          crucesPuestos: crucesPuestosLiquidacion,
           tasaComision: comisionNum,
         }),
         aplicarLiquidacionSaldos({
@@ -2615,7 +2645,7 @@ const hipodromosDelDia = useMemo(() => {
           premio_por_tabla:
             piz.premio_por_tabla ?? tablaDeCarrera?.premio_recalculado ?? tablaDeCarrera?.premio_original ?? null,
           tasaComision: comisionNum,
-          crucesPuestos: opcionesCrucesPuestos,
+          crucesPuestos: crucesPuestosLiquidacion,
           fecha,
         }),
       ]);
@@ -3573,7 +3603,7 @@ const hipodromosDelDia = useMemo(() => {
             />
           </div>
           <span className="flex items-center gap-2">
-            <span className="inline-flex min-w-[3.5rem] items-center justify-center rounded-full border-2 border-indigo-200 bg-white px-4 py-1.5 text-2xl font-black uppercase leading-none tracking-widest text-indigo-900 shadow-md md:text-3xl">
+            <span className="ml-1 inline-flex min-w-[3.25rem] items-center justify-center rounded-full border-2 border-indigo-200 bg-white px-3 py-1 text-xl font-black uppercase leading-none tracking-widest text-indigo-900 shadow-md md:text-2xl">
               C{carrera}
             </span>
             <span className="text-[10px] font-semibold text-slate-500">
@@ -5098,23 +5128,6 @@ const hipodromosDelDia = useMemo(() => {
           </button>
           <button
             type="button"
-            disabled={!listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada}
-            onClick={() => void solicitarLiquidarCarrera()}
-            title={
-              !listoParaCargar
-                ? "Elija hipódromo y carrera para liquidar"
-                : carreraLiquidada
-                  ? "Carrera ya liquidada. Para volver a liquidar primero debe reversar la liquidación (🔄 Reversar Liquidación)."
-                  : filasPreview.filter((f) => !f.anulada).length === 0
-                    ? "Sin jugadas cargadas: cargue información de jugadas antes de liquidar"
-                    : "Carga/edita los resultados y liquida (Ctrl+Y o Ctrl+R)"
-            }
-            className={`${BTN_BARRA} bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-sm ring-1 ring-emerald-400/50 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed`}
-          >
-            🏆 Liquidar Carrera
-          </button>
-          <button
-            type="button"
             disabled={bloqueoLiquidacionActivo}
             onClick={() => {
               setModoExclusivoReporte(false);
@@ -5170,15 +5183,6 @@ const hipodromosDelDia = useMemo(() => {
               🔄 Reversar Liquidación
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={() => setModalAgentePizarra(true)}
-            disabled={bloqueoLiquidacionActivo}
-            title="🤖 Agente de Pizarra Oficial (Cambio de Pizarra · Liquidación · Variación · Saldos)"
-            className={`${BTN_BARRA} bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40`}
-          >
-            🤖 Cambio de Pizarra
-          </button>
           <button
             type="button"
             onClick={() => void recalcularCompleta()}

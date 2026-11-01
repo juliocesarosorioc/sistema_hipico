@@ -50,6 +50,20 @@ describe("FASE 2: Contabilidad Retroactiva NIIF, UI Cambio de Pizarra, Evento Li
       fileSemaforo.includes("min-h-[44px]") && fileSemaforo.includes("overflow-y-visible"),
       "La barra de números de carrera debe tener min-h-[44px] y overflow-y-visible para que el resaltador de la carrera 1 no se corte"
     );
+    assert.ok(
+      fileSemaforo.includes("h-8 w-8") && fileSemaforo.includes("ml-2") && fileSemaforo.includes("ring-2 ring-indigo-600 ring-offset-1"),
+      "Los números de carrera deben ser más compactos, con margen izquierdo y resaltado que no se recorte"
+    );
+    assert.equal(
+      (fileGestion.match(/onClick=\{\(\) => void solicitarLiquidarCarrera\(\)\}/g) ?? []).length,
+      1,
+      "El botón Liquidar Carrera debe aparecer solo en la sección superior"
+    );
+    assert.equal(
+      (fileGestion.match(/onClick=\{\(\) => setModalAgentePizarra\(true\)\}/g) ?? []).length,
+      1,
+      "El botón Cambio de Pizarra debe aparecer solo en la sección superior"
+    );
   });
 
   it("3. Ciclo completo de Evento Libre P2P con riesgos asimétricos tipo 10/6 y liquidación", async () => {
@@ -114,6 +128,70 @@ describe("FASE 2: Contabilidad Retroactiva NIIF, UI Cambio de Pizarra, Evento Li
 
     // Asiento contable cuadrado
     assert.equal(resLiq.resultado?.asientoContableSugerido.cuadrado, true);
+
+    // Los eventos manuales guardan el porcentaje al registrarlos y liquidan
+    // la ganancia bruta indicada por el operador, no la cuota estimada.
+    const manual = await crearEventoLibre({
+      categoria: "LIBRE",
+      concepto: "Evento libre con monto acordado",
+      mercado: "LOGRO MANUAL",
+      jugador1: { id: "m1", nombre: "JUGADOR UNO", disponible: 500 },
+      jugador2: { id: "m2", nombre: "JUGADOR DOS", disponible: 500 },
+      riesgo1: 300,
+      riesgo2: 200,
+      comisionGrupoPct: 7,
+    });
+    assert.equal(manual.ok, true);
+    assert.equal(manual.evento?.riesgoJugador1, 300);
+    assert.equal(manual.evento?.riesgoJugador2, 200);
+    assert.equal(manual.evento?.comisionGrupoPct, 7);
+    assert.match(manual.evento!.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+
+    const exceso = await liquidarEventoLibre({
+      eventoId: manual.evento!.id,
+      ganador: "JUGADOR_1",
+      montoGanancia: 201,
+      config1: { clienteId: "m1", clienteNombre: "JUGADOR UNO" },
+      config2: { clienteId: "m2", clienteNombre: "JUGADOR DOS" },
+    });
+    assert.equal(exceso.ok, false, "La ganancia no puede exceder el riesgo acordado del perdedor");
+
+    const liquidacionManual = await liquidarEventoLibre({
+      eventoId: manual.evento!.id,
+      ganador: "JUGADOR_1",
+      montoGanancia: 150,
+      config1: { clienteId: "m1", clienteNombre: "JUGADOR UNO" },
+      config2: { clienteId: "m2", clienteNombre: "JUGADOR DOS" },
+    });
+    assert.equal(liquidacionManual.ok, true);
+    assert.equal(liquidacionManual.resultado?.jugador1.gananciaBruta, 150);
+    assert.equal(liquidacionManual.resultado?.jugador1.comisionCasa, 10.5);
+    assert.equal(liquidacionManual.resultado?.jugador1.gananciaNeta, 139.5);
+    assert.equal(liquidacionManual.resultado?.jugador2?.perdida, 150);
+
+    const manualJ2 = await crearEventoLibre({
+      categoria: "LIBRE",
+      concepto: "Evento libre con ganador jugador dos",
+      mercado: "MERCADO MANUAL",
+      jugador1: { id: "n1", nombre: "NUEVO UNO", disponible: 500 },
+      jugador2: { id: "n2", nombre: "NUEVO DOS", disponible: 500 },
+      riesgo1: 300,
+      riesgo2: 200,
+      comisionGrupoPct: 8,
+    });
+    assert.equal(manualJ2.ok, true);
+    const liquidacionJ2 = await liquidarEventoLibre({
+      eventoId: manualJ2.evento!.id,
+      ganador: "JUGADOR_2",
+      montoGanancia: 120,
+      config1: { clienteId: "n1", clienteNombre: "NUEVO UNO" },
+      config2: { clienteId: "n2", clienteNombre: "NUEVO DOS" },
+    });
+    assert.equal(liquidacionJ2.ok, true);
+    assert.equal(liquidacionJ2.resultado?.jugador1.perdida, 120);
+    assert.equal(liquidacionJ2.resultado?.jugador2?.gananciaBruta, 120);
+    assert.equal(liquidacionJ2.resultado?.jugador2?.comisionCasa, 9.6);
+    assert.equal(liquidacionJ2.resultado?.jugador2?.gananciaNeta, 110.4);
   });
 
   it("4. Perfil Senior Data Analyst & CPA Auditor en IA Copiloto", async () => {
