@@ -560,6 +560,31 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
                     ))}
                   </div>
                 )}
+                {hayOrdenDiferente && (
+                  <div className="flex flex-wrap items-center gap-2 border-l border-amber-300/40 pl-3">
+                    <div className="flex flex-col">
+                      <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-amber-300">
+                        <span>🏇</span> Orden en Raya
+                      </span>
+                      <span className="text-[8px] font-bold uppercase text-amber-100">
+                        Distanciamiento · Tablas / Remates
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {llegadaRaya.map((caballo, idx) => (
+                        <div key={idx} className="flex flex-col items-center">
+                          <span
+                            className={`flex h-8 w-8 items-center justify-center rounded-lg border text-base font-black shadow-sm ${colorDiscoNumero(String(caballo.numero))}`}
+                            title={`Cruza la Raya ${caballo.puesto}: Ejemplar #${caballo.numero}`}
+                          >
+                            {caballo.numero}
+                          </span>
+                          <span className="mt-0.5 text-[8px] font-black uppercase text-amber-100">{caballo.puesto}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <span className="inline-flex items-center gap-1 rounded bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold text-amber-200 border border-amber-300/40">
@@ -659,36 +684,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
               })}
             </div>
           )}
-          {hayOrdenDiferente && (
-            <div className="flex flex-wrap items-center gap-2 border-l border-amber-300/40 pl-3">
-              <div className="flex flex-col">
-                <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-amber-300">
-                  <span>🏇</span> Orden en Raya
-                </span>
-                <span className="text-[8px] font-bold uppercase text-amber-100">
-                  Distanciamiento · Tablas / Remates
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {llegadaRaya.map((caballo, idx) => (
-                  <div key={idx} className="flex flex-col items-center">
-                    <span
-                      className={`flex h-8 w-8 items-center justify-center rounded-lg border text-base font-black shadow-sm ${colorDiscoNumero(String(caballo.numero))}`}
-                      title={`Cruza la Raya ${caballo.puesto}: Ejemplar #${caballo.numero}`}
-                    >
-                      {caballo.numero}
-                    </span>
-                    <span className="mt-0.5 text-[8px] font-black uppercase text-amber-100">{caballo.puesto}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
-      ) : (
-        <span className="inline-flex items-center gap-1 rounded border border-amber-300/40 bg-amber-400/20 px-2 py-1 text-[10px] font-bold text-amber-200">
-          ⏳ Pizarra pendiente
-        </span>
       )}
 
       {/* 5. RESUMEN: GANAN (POSITIVOS) / PIERDEN (NEGATIVOS) */}
