@@ -31,6 +31,7 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { CAMPOS_POSICION, dividendosDePizarra } from "@/features/liquidacion/lib/posiciones";
 import { aplicarLiquidacionSaldos, creditoDeTicket, decidirTickets } from "@/features/liquidacion/lib/saldos";
+import { esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
 import { liquidarJugadasDeCarrera, type ResumenJugadas } from "@/features/liquidacion/lib/pagarYCerrar";
 import { leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
@@ -147,6 +148,19 @@ export async function revertirLiquidacionCarrera(opts: {
     return { ...vacio, ok: false, motivo: "No se pudieron leer los tickets decididos.", errores: [(e as Error).message] };
   }
   if (!filas.length) return { ...vacio, motivo: "No había tickets decididos que revertir." };
+
+  const puestosSinCliente = filas.filter((raw) => {
+    const fila = raw as Record<string, unknown>;
+    return esJugadaDePuestos(String(fila.nombre_jugada ?? fila.tipo_jugada ?? "")) &&
+      !String(fila.cliente_juega_id ?? "").trim();
+  });
+  if (puestosSinCliente.length > 0) {
+    const ids = puestosSinCliente
+      .map((raw) => String((raw as Record<string, unknown>).id ?? "sin ID"))
+      .join(", ");
+    const error = `No se puede revertir la carrera: las jugadas de puestos ${ids} no tienen cliente contable (cliente_juega_id).`;
+    return { ...vacio, ok: false, motivo: error, errores: [error] };
+  }
 
   const gruposCruce = [
     ...new Set(

@@ -151,6 +151,24 @@ si(
   "un seudónimo repetido con IDs distintos mantiene cuentas financieras separadas"
 );
 
+const netoInfiltrado = armarReporteCarrera({
+  ...CARRERA,
+  filas: [
+    { id: "carrera-infiltrado-j-0", rol: "Juega", cliente: "INFILTRADO", clienteId: "infiltrado-id", jugada: "1p", caballo: "1", monto: 100, resultado: 47.5, comisionCobrada: 2.5 },
+    { id: "carrera-infiltrado-j-1", rol: "Juega", cliente: "INFILTRADO", clienteId: "infiltrado-id", jugada: "1p", caballo: "2", monto: 35, resultado: -35 },
+  ],
+}, undefined, undefined, { comisionPct: 5 });
+si(
+  netoInfiltrado.resumen.ganan.length === 1 &&
+    netoInfiltrado.resumen.ganan[0]?.monto === 14.25 &&
+    netoInfiltrado.resumen.pierden.length === 0,
+  "el reporte totaliza INFILTRADO en +15 y cobra 5% solo sobre ese neto"
+);
+si(
+  netoInfiltrado.asientosBonoCruce?.[0]?.bonoCruce === 1.75,
+  "el asiento de cruce devuelve la comisión correspondiente a los 35 cruzados"
+);
+
 // ── 4b. Los PENDIENTES (resultado null) no ensucian el resumen ──
 const conPendiente = armarReporteCarrera({
   ...CARRERA,

@@ -1600,22 +1600,35 @@ export function calcularLiquidacionPuestosCarrera(
         modalidadesAplicadas.push({ modalidad: "mismoEjemplar", origen: "Grupo" });
       }
     } else {
-      for (const perdida of perdidas) {
-        let disponible = Number(perdida.monto) || 0;
-        for (const ganancia of ganancias) {
-          if (disponible <= 0 || ganancia.disponible <= 0) continue;
-          const mismo = String(perdida.caballo ?? "").trim().toUpperCase() ===
-            String(ganancia.entrada.caballo ?? "").trim().toUpperCase();
-          const modalidad: keyof ModalidadesCruce = mismo ? "mismoEjemplar" : "diferenteEjemplar";
-          if (!String(perdida.caballo ?? "").trim() || !String(ganancia.entrada.caballo ?? "").trim()) continue;
-          const regla = resolverReglaCrucePuestos(opcionesGrupo, identidad, modalidad);
-          if (!regla.activo) continue;
-          const neteado = Math.min(disponible, ganancia.disponible);
-          disponible -= neteado;
-          ganancia.disponible -= neteado;
-          perdidaCruzada += neteado;
-          if (!modalidadesAplicadas.some((m) => m.modalidad === modalidad && m.origen === regla.origen)) {
-            modalidadesAplicadas.push({ modalidad, origen: regla.origen });
+      const reglaMismo = resolverReglaCrucePuestos(opcionesGrupo, identidad, "mismoEjemplar");
+      const reglaDiferente = resolverReglaCrucePuestos(opcionesGrupo, identidad, "diferenteEjemplar");
+      if (reglaMismo.activo && reglaDiferente.activo) {
+        perdidaCruzada = Math.min(ganadoBruto, perdidoBruto);
+        if (perdidaCruzada > 0) {
+          modalidadesAplicadas.push(
+            { modalidad: "mismoEjemplar", origen: reglaMismo.origen },
+            { modalidad: "diferenteEjemplar", origen: reglaDiferente.origen }
+          );
+        }
+      } else {
+        for (const perdida of perdidas) {
+          let disponible = Number(perdida.monto) || 0;
+          for (const ganancia of ganancias) {
+            if (disponible <= 0 || ganancia.disponible <= 0) continue;
+            const caballoPerdida = String(perdida.caballo ?? "").trim().toUpperCase();
+            const caballoGanancia = String(ganancia.entrada.caballo ?? "").trim().toUpperCase();
+            if (!caballoPerdida || !caballoGanancia) continue;
+            const modalidad: keyof ModalidadesCruce =
+              caballoPerdida === caballoGanancia ? "mismoEjemplar" : "diferenteEjemplar";
+            const regla = modalidad === "mismoEjemplar" ? reglaMismo : reglaDiferente;
+            if (!regla.activo) continue;
+            const neteado = Math.min(disponible, ganancia.disponible);
+            disponible -= neteado;
+            ganancia.disponible -= neteado;
+            perdidaCruzada += neteado;
+            if (!modalidadesAplicadas.some((m) => m.modalidad === modalidad && m.origen === regla.origen)) {
+              modalidadesAplicadas.push({ modalidad, origen: regla.origen });
+            }
           }
         }
       }

@@ -487,6 +487,27 @@ export async function aplicarLiquidacionSaldos(
     };
   }
 
+  const puestosSinCliente = filas.filter((raw) => {
+    const fila = raw as Record<string, unknown>;
+    const tipo = String(fila.nombre_jugada ?? fila.tipo_jugada ?? "");
+    return esJugadaDePuestos(tipo) && !String(fila.cliente_juega_id ?? "").trim();
+  });
+  if (puestosSinCliente.length > 0) {
+    const ids = puestosSinCliente
+      .map((raw) => String((raw as Record<string, unknown>).id ?? "sin ID"))
+      .join(", ");
+    const error = `Liquidación detenida: las jugadas de puestos ${ids} no tienen cliente contable (cliente_juega_id); no se aplicaron saldos ni cruces.`;
+    return {
+      ok: false,
+      motivo: error,
+      aplicados: 0,
+      yaAplicado: false,
+      reembolsos: 0,
+      abonoTotal: 0,
+      errores: [error],
+    };
+  }
+
   // Decide cada ticket con el motor universal (idempotente por estado) y aplica
   // el neteo de comisión por cruce. La MISMA función la usa
   // `revertirLiquidacionCarrera` para que el cálculo de reversión y el de

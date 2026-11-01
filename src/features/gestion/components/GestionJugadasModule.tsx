@@ -2644,44 +2644,49 @@ const hipodromosDelDia = useMemo(() => {
           ),
         };
       }
-      // Ejecución en paralelo de cierre de carrera/tablas/marcas y liquidación de saldos
-      // para máxima velocidad de respuesta y apertura inmediata del reporte exclusivo.
-      const [r, s] = await Promise.all([
-        liquidarCarreraYCerrarTabla({
-          hipodromo,
-          carrera,
-          pizarra: pizarraConRet,
-          fecha,
-          dividendos: dividendosDePizarra(piz),
-          premio_oficial: tablaDeCarrera?.premio_original ?? null,
-          premio_recalculado: tablaDeCarrera?.premio_recalculado ?? null,
-          tickets: ticketsDeCarrera.map((t) => ({
-            comando: t.comando,
-            monto: t.monto,
-            caballo: t.caballo,
-            cliente1: t.cliente1,
-            cliente1Id: t.cliente1Id,
-            cliente2: t.cliente2,
-            grupoId: t.grupoId ?? grupoSesion ?? undefined,
-            permiteCruces: conCruces ? permiteCrucesDe(t.cliente1 ?? "") : false,
-          })),
-          crucesPuestos: crucesPuestosLiquidacion,
-          tasaComision: comisionNum,
-          grupoId: grupoSesion || undefined,
-        }),
-        aplicarLiquidacionSaldos({
-          hipodromo,
-          carrera,
-          pizarra: pizarraConRet,
-          dividendos: dividendosDePizarra(piz),
-          premio_por_tabla:
-            piz.premio_por_tabla ?? tablaDeCarrera?.premio_recalculado ?? tablaDeCarrera?.premio_original ?? null,
-          tasaComision: comisionNum,
-          grupoId: grupoSesion || undefined,
-          crucesPuestos: crucesPuestosLiquidacion,
-          fecha,
-        }),
-      ]);
+      const r = await liquidarCarreraYCerrarTabla({
+        hipodromo,
+        carrera,
+        pizarra: pizarraConRet,
+        fecha,
+        dividendos: dividendosDePizarra(piz),
+        premio_oficial: tablaDeCarrera?.premio_original ?? null,
+        premio_recalculado: tablaDeCarrera?.premio_recalculado ?? null,
+        tickets: ticketsDeCarrera.map((t) => ({
+          comando: t.comando,
+          monto: t.monto,
+          ticketId: t.ticketId,
+          caballo: t.caballo,
+          cliente1: t.cliente1,
+          cliente1Id: t.cliente1Id,
+          cliente2: t.cliente2,
+          grupoId: t.grupoId ?? grupoSesion ?? undefined,
+          permiteCruces: conCruces ? permiteCrucesDe(t.cliente1 ?? "") : false,
+        })),
+        crucesPuestos: crucesPuestosLiquidacion,
+        tasaComision: comisionNum,
+        grupoId: grupoSesion || undefined,
+      });
+      if (!r.ok) {
+        setResumen(r);
+        setAviso(`❌ ${r.motivo}`);
+        void recargarJugadasGuardadas();
+        recargarRegistroCentral();
+        return { ok: false, motivo: r.motivo };
+      }
+
+      const s = await aplicarLiquidacionSaldos({
+        hipodromo,
+        carrera,
+        pizarra: pizarraConRet,
+        dividendos: dividendosDePizarra(piz),
+        premio_por_tabla:
+          piz.premio_por_tabla ?? tablaDeCarrera?.premio_recalculado ?? tablaDeCarrera?.premio_original ?? null,
+        tasaComision: comisionNum,
+        grupoId: grupoSesion || undefined,
+        crucesPuestos: crucesPuestosLiquidacion,
+        fecha,
+      });
       setResumen(r);
       const avisoMarcas = !r.marcas
         ? ""

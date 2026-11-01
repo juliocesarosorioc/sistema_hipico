@@ -21,6 +21,7 @@ import { redondearCentavos } from "@/shared/lib/dinero";
 import { sincronizarContabilidadCarreraEnSegundoPlano } from "@/features/contabilidad/lib/contabilidad-automatica";
 import { limpiarCacheClientes } from "@/features/clientes/lib/clientes";
 import { limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
+import { reconciliarIdentidadPersistida } from "@/features/liquidacion/lib/identidad-tickets";
 import {
   calcularLiquidacionPuestosCarrera,
   type EntradaCrucePuestos,
@@ -47,6 +48,8 @@ function totalDeTickets(tickets: TicketPagar[]): number {
 export type TicketPagar = {
   comando: string;
   monto: number;
+  /** ID de la fila persistida en `tickets_apuestas`; permite reconciliar la identidad contable. */
+  ticketId?: number;
   /** Número del ejemplar apostado (columna CABALLO) — necesario para NINIS. */
   caballo?: string;
   /** Nombre del CLIENTE 1 (el que "juega") — para el neteo de cruces. */
@@ -116,6 +119,18 @@ function liquidacionVacia(e: Error): ResLiquidarCarrera {
   };
 }
 
+function liquidacionFallida(motivo: string): ResLiquidarCarrera {
+  return {
+    ok: false,
+    procesados: [],
+    motivo,
+    totalInvertido: 0,
+    totalClienteNeto: 0,
+    balanceBanca: 0,
+    gananciaCasa: 0,
+  };
+}
+
 /**
  * Flujo "Pagar Carrera": liquida cada ticket del operador contra el motor
  * UNIVERSAL (líquida NINI, REMATE, PUESTOS, GANADOR, Tablas Fijas con
@@ -155,62 +170,94 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     } catch (e) {
       return liquidacionVacia(e as Error);
     }
-    const { hipodromo, carrera, pizarra, tickets, tasaComision } = opts;
-  let crucesPuestos = opts.crucesPuestos;
-  let grupoPuestoRespaldo = String(opts.grupoId ?? grupoActivoVigente() ?? grupoVigente() ?? "").trim();
-    const hayPuestos = tickets.some((ticket) => {
+    const { hipodromo, carrera, pizarra, tasaComision } = opts;
+    let tickets = opts.tickets;
+    const esTicketPuestos = (ticket: TicketPagar) => {
       const comando = String(ticket.comando ?? "").trim();
       const tipo = /^(\d+(?:\.\d+)?)\s+(.+?)\s*$/i.exec(comando)?.[2] ?? comando;
       return esJugadaDePuestos(tipo);
-    });
-    if (hayPuestos) {
-    const gruposExplicitos = [
-      ...new Set(tickets.map((ticket) => String(ticket.grupoId ?? "").trim()).filter(Boolean)),
-    ];
-    if (!grupoPuestoRespaldo && gruposExplicitos.length === 1) {
-      grupoPuestoRespaldo = gruposExplicitos[0];
-    }
-    if (tickets.some((ticket) => !String(ticket.grupoId ?? "").trim()) && !grupoPuestoRespaldo) {
-      const error = "Liquidación detenida: no se pudo determinar el grupo de todas las jugadas de puestos.";
-      return {
-        ok: false,
-        motivo: error,
-        procesados: [],
-        totalInvertido: 0,
-        totalClienteNeto: 0,
-        balanceBanca: 0,
-        gananciaCasa: 0,
-      };
-    }
-    const grupoIds = [
-      ...new Set(
-        tickets
-          .map((ticket) => String(ticket.grupoId ?? grupoPuestoRespaldo).trim())
-          .filter(Boolean)
-      ),
-    ];
-    const reglas = await cargarOpcionesCrucesPuestosPorGrupos({
-      grupoIds,
-      fecha: opts.fecha || hoyLocal(),
-      hipodromo,
-      carrera,
-    });
-    if (!reglas.ok) {
-      return {
-        ok: false,
-        motivo: `Liquidación detenida: ${reglas.error ?? "no se pudieron cargar las reglas de cruce."}`,
-        procesados: [],
-        totalInvertido: 0,
-        totalClienteNeto: 0,
-        balanceBanca: 0,
-        gananciaCasa: 0,
-      };
-    }
-    crucesPuestos = {
-      ...crucesPuestos,
-      porGrupo: reglas.opciones.porGrupo,
     };
-  }
+    const ticketsPuestos = tickets.filter(esTicketPuestos);
+    const puestosSinRegistro = ticketsPuestos.filter((ticket) => ticket.ticketId == null);
+    if (puestosSinRegistro.length > 0) {
+      return liquidacionFallida(
+        "No se puede liquidar: hay jugadas de puestos sin ticket persistido. Vuelva a cargar esas jugadas desde la venta para asegurar el cruce por cliente."
+      );
+    }
+    const puestosPersistidos = ticketsPuestos.filter((ticket) => ticket.ticketId != null);
+    if (puestosPersistidos.length > 0) {
+      if (!supabase) {
+        return liquidacionFallida("No hay conexión para verificar la identidad contable de los tickets.");
+      }
+      const idsPersistidos = [...new Set(puestosPersistidos.map((ticket) => ticket.ticketId!))];
+      const { data, error } = await supabase
+        .from("tickets_apuestas")
+        .select("id, cliente_juega_id")
+        .in("id", idsPersistidos);
+      if (error) {
+        return liquidacionFallida(`No se pudo verificar la identidad contable de los tickets: ${error.message}`);
+      }
+      const filasPersistidas = (data ?? []) as Array<{ id: number; cliente_juega_id: string | null }>;
+      const clienteIdPorTicket = new Map(
+        filasPersistidas.map((fila) => [String(fila.id), fila.cliente_juega_id])
+      );
+      const idsConIdentidad = new Set(
+        filasPersistidas
+          .filter((fila) => String(fila.cliente_juega_id ?? "").trim())
+          .map((fila) => String(fila.id))
+      );
+      const faltantes = idsPersistidos.filter((id) => !idsConIdentidad.has(String(id)));
+      if (faltantes.length > 0) {
+        return liquidacionFallida(
+          `No se pudo resolver el cliente persistido de los tickets ${faltantes.join(", ")}. No se liquidó para evitar separar sus cruces.`
+        );
+      }
+      tickets = reconciliarIdentidadPersistida(tickets, clienteIdPorTicket);
+    }
+    const puestosSinCliente = tickets.filter(
+      (ticket) => esTicketPuestos(ticket) && !String(ticket.cliente1Id ?? "").trim()
+    );
+    if (puestosSinCliente.length > 0) {
+      return liquidacionFallida(
+        "No se puede liquidar: hay jugadas de puestos sin cliente contable identificado. No se aplicará un cruce por nombre."
+      );
+    }
+    let crucesPuestos = opts.crucesPuestos;
+    let grupoPuestoRespaldo = String(opts.grupoId ?? grupoActivoVigente() ?? grupoVigente() ?? "").trim();
+    const hayPuestos = ticketsPuestos.length > 0;
+    if (hayPuestos) {
+      const gruposExplicitos = [
+        ...new Set(tickets.map((ticket) => String(ticket.grupoId ?? "").trim()).filter(Boolean)),
+      ];
+      if (!grupoPuestoRespaldo && gruposExplicitos.length === 1) {
+        grupoPuestoRespaldo = gruposExplicitos[0];
+      }
+      if (tickets.some((ticket) => !String(ticket.grupoId ?? "").trim()) && !grupoPuestoRespaldo) {
+        return liquidacionFallida("Liquidación detenida: no se pudo determinar el grupo de todas las jugadas de puestos.");
+      }
+      const grupoIds = [
+        ...new Set(
+          tickets
+            .map((ticket) => String(ticket.grupoId ?? grupoPuestoRespaldo).trim())
+            .filter(Boolean)
+        ),
+      ];
+      const reglas = await cargarOpcionesCrucesPuestosPorGrupos({
+        grupoIds,
+        fecha: opts.fecha || hoyLocal(),
+        hipodromo,
+        carrera,
+      });
+      if (!reglas.ok) {
+        return liquidacionFallida(
+          `Liquidación detenida: ${reglas.error ?? "no se pudieron cargar las reglas de cruce."}`
+        );
+      }
+      crucesPuestos = {
+        ...crucesPuestos,
+        porGrupo: reglas.opciones.porGrupo,
+      };
+    }
   // La jornada que se liquida, NO necesariamente hoy. Se usa para retiros, para
   // leer dividendos y para escribir el resultado CENTRAL: con `hoyLocal()` fijo,
   // liquidar una jornada que no es la de hoy guardaba el resultado en el día

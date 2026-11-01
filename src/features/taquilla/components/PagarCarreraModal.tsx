@@ -250,6 +250,7 @@ export function PagarCarreraModal() {
       tickets: tickets.map((t) => ({
         comando: t.comando,
         monto: t.monto,
+        ticketId: t.ticketId,
         caballo: t.caballo,
         cliente1: t.cliente1,
         cliente1Id: t.cliente1Id,

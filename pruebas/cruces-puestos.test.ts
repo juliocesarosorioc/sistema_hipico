@@ -13,6 +13,7 @@ import {
   resolverReglaCrucePuestos,
   type EntradaCrucePuestos,
 } from "../src/features/motores/lib/puestos";
+import { reconciliarIdentidadPersistida } from "../src/features/liquidacion/lib/identidad-tickets";
 import { netearComisionCruce, type NeteoCruceItem } from "../src/features/betting/lib/bettingEngine";
 
 let pasan = 0;
@@ -230,6 +231,45 @@ const assert = (cond: boolean, msg: string) => {
     liquidacion.modalidadesAplicadas.some((modalidad) => modalidad.modalidad === "diferenteEjemplar"),
     "Caso 10 reporta el cruce entre ejemplares distintos"
   );
+}
+
+// Caso 11: el ID persistido reemplaza una identidad de sesión vieja o incorrecta.
+{
+  const reconciliados = reconciliarIdentidadPersistida(
+    [
+      { ticketId: 101, cliente1: "Partner", cliente1Id: "id-antiguo" },
+      { ticketId: 102, cliente1: "PARTNER / alias", cliente1Id: undefined },
+      { ticketId: 103, cliente1: "Otro", cliente1Id: "id-otro" },
+    ],
+    new Map([
+      ["101", "partner-uuid"],
+      ["102", "partner-uuid"],
+      ["103", "otro-uuid"],
+    ])
+  );
+  assert(reconciliados[0].cliente1Id === reconciliados[1].cliente1Id, "Caso 11 IDs persistidos consolidan alias diferentes");
+  assert(reconciliados[0].cliente1Id === "partner-uuid", "Caso 11 prevalece la identidad contable persistida");
+  assert(reconciliados[2].cliente1Id === "otro-uuid", "Caso 11 mantiene separadas cuentas diferentes");
+}
+
+// Caso 12: cruces completos replican la liquidación contable de la carrera sin depender del ejemplar.
+{
+  const [liquidacion] = calcularLiquidacionPuestosCarrera(
+    [
+      { cliente: "INFILTRADO", clienteId: "infiltrado-id", ok: true, bruto: 150, monto: 100 },
+      { cliente: "INFILTRADO", clienteId: "infiltrado-id", ok: false, bruto: 0, monto: 35 },
+    ],
+    {
+      pctComision: 5,
+      grupo: { mismoEjemplar: true, diferenteEjemplar: true },
+    }
+  );
+  assert(liquidacion.ganadoBruto === 50, "Caso 12 contabiliza la ganancia bruta del cliente");
+  assert(liquidacion.perdidoBruto === 35, "Caso 12 contabiliza la pérdida bruta del cliente");
+  assert(liquidacion.neto === 15, "Caso 12 totaliza la cuenta en +15 antes de comisión");
+  assert(liquidacion.baseComision === 15, "Caso 12 calcula comisión solo sobre el neto positivo");
+  assert(liquidacion.comision === 0.75, "Caso 12 cobra 5% de 15");
+  assert(liquidacion.netoCliente === 14.25, "Caso 12 acredita el neto de carrera después de comisión");
 }
 
 console.log("cruces-puestos:", pasan, "OK /", fallan, "FALLAS");

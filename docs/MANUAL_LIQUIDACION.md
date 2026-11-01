@@ -141,6 +141,14 @@ legal distinto impida encontrar la regla. El resumen de carrera agrupa también
 las filas por seudónimo normalizado, evitando totales duplicados del mismo
 nombre visible.
 
+En la liquidación desde Taquilla o Gestión, el ID de cliente de cada ticket de
+puestos persistido se vuelve a leer de `tickets_apuestas` y prevalece sobre la
+copia de sesión. Las jugadas de puestos sin ticket persistido o sin
+`cliente_juega_id` detienen la liquidación: no se agrupan por nombre como
+sustituto de una identidad contable. Gestión espera a que pase esa validación
+antes de aplicar los saldos; ambos procesos no corren en paralelo ni pueden
+dejar un pago contabilizado después de que falle la resolución de identidad.
+
 Para habilitar la persistencia, ejecutar `sql/permite_cruces_jerarquia.sql` en
 Supabase después de `sql/grupos_usuarios.sql`.
 

@@ -92,11 +92,12 @@ const partnerConIdsDuplicados = armarReporteCarrera(
   { modalidadCruce: false, comisionPct: 5 }
 );
 assert.equal(
-  partnerConIdsDuplicados.resumen.ganan.length,
-  1,
-  "PARTNER debe aparecer una sola vez aunque sus jugadas lleguen con IDs distintos"
+  partnerConIdsDuplicados.resumen.ganan.length + partnerConIdsDuplicados.resumen.pierden.length,
+  2,
+  "PARTNER con IDs contables distintos conserva dos cuentas financieras"
 );
-assert.equal(partnerConIdsDuplicados.resumen.ganan[0].monto, 140);
+assert.equal(partnerConIdsDuplicados.resumen.ganan[0].monto, 190);
+assert.equal(partnerConIdsDuplicados.resumen.pierden[0].monto, -50);
 
 const reporteModule = fs.readFileSync(
   path.join(process.cwd(), "src/features/saldos/components/ReporteModule.tsx"),
