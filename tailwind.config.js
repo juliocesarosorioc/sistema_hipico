@@ -11,7 +11,9 @@ module.exports = {
       fontFamily: {
         sans: ["'Inter'", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],
         heading: ["'Outfit'", "'Inter'", "sans-serif"],
-        mono: ["'JetBrains Mono'", "ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
+        // Cifras legibles: Inter no dibuja barras ni puntos dentro del cero.
+        // Se conserva la alineación por columnas con `tabular-nums` global.
+        mono: ["'Inter'", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],
       },
       colors: {
         background: colors.gray[50],

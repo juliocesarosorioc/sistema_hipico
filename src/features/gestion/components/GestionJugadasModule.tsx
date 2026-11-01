@@ -3311,17 +3311,19 @@ const hipodromosDelDia = useMemo(() => {
                     Cruzar a un jugador en esta carrera o guardar permanente
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
-                    <select
+                    <SearchableSelect
+                      options={clientes.map((cliente) => ({
+                        value: cliente.nombre,
+                        label: cliente.nombre,
+                      }))}
                       value={jugadorCruce}
-                      onChange={(e) => setJugadorCruce(e.target.value)}
-                      className="min-w-40 flex-1 rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white outline-none focus:border-amber-400"
-                      aria-label="Jugador para configurar cruces"
-                    >
-                      <option value="">Buscar jugador…</option>
-                      {clientes.map((cliente) => (
-                        <option key={cliente.id} value={cliente.nombre}>{cliente.nombre}</option>
-                      ))}
-                    </select>
+                      onChange={setJugadorCruce}
+                      placeholder="Buscar jugador…"
+                      allowCustom={false}
+                      temaOscuro
+                      className="min-w-40 flex-1"
+                      inputClassName="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white outline-none placeholder:text-slate-400 focus:border-amber-400"
+                    />
                     <label className="flex items-center gap-1 text-[10px] font-bold text-slate-300 cursor-pointer">
                       <input type="radio" name="alcance-cruce" checked={alcanceCruce === "carrera"} onChange={() => setAlcanceCruce("carrera")} className="accent-amber-400" />
                       Solo Carrera {carrera}

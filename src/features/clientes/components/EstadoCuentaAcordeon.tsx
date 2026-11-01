@@ -23,6 +23,7 @@ import {
 } from "@/features/clientes/lib/comisiones-socios";
 import { redondearCentavos } from "@/shared/lib/dinero";
 import { formatoMoneda } from "@/shared/lib/vzla";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 
 /** Nodo acordeón recursivo con el mismo criterio de totales del legacy. */
 function Nodo({ nivel, devPct, nivelProf }: { nivel: NivelAcordeon; devPct: number; nivelProf: number }) {
@@ -125,7 +126,9 @@ function JugadasDesplegables({ nivel, devPct, nivelProf }: { nivel: NivelAcordeo
                     <th className="text-center px-2 py-1 w-14">Rol</th>
                     <th className="text-right px-2 py-1">Jugado</th>
                     <th className="text-right px-2 py-1">Premio</th>
-                    <th className="text-right px-2 py-1 text-purple-700">Devolución</th>
+                    {devPct > 0 ? (
+                      <th className="text-right px-2 py-1 text-purple-700">Devolución</th>
+                    ) : null}
                     <th className="text-center px-2 py-1 w-20">Estado</th>
                     <th className="text-right px-2 py-1 font-black" title="Resultado neto (+ devolución a favor)">Resultado</th>
                   </tr>
@@ -150,9 +153,11 @@ function JugadasDesplegables({ nivel, devPct, nivelProf }: { nivel: NivelAcordeo
                         </td>
                         <td className="px-2 py-1 text-right font-mono font-bold text-slate-800">{formatoMoneda(j.moneda, j.montoJugado)}</td>
                         <td className="px-2 py-1 text-right font-mono font-medium text-slate-600">{formatoMoneda(j.moneda, j.premio)}</td>
-                        <td className="px-2 py-1 text-right font-mono font-black text-purple-700">
-                          {j.devolucion > 0 ? `+${formatoMoneda(j.moneda, j.devolucion)}` : "—"}
-                        </td>
+                        {devPct > 0 ? (
+                          <td className="px-2 py-1 text-right font-mono font-black text-purple-700">
+                            {j.devolucion > 0 ? `+${formatoMoneda(j.moneda, j.devolucion)}` : "—"}
+                          </td>
+                        ) : null}
                         <td className="px-2 py-1 text-center">
                           <span
                             className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
@@ -190,9 +195,13 @@ function JugadasDesplegables({ nivel, devPct, nivelProf }: { nivel: NivelAcordeo
               </table>
             </div>
             <div className="mt-1 flex items-center justify-between text-[10px] font-mono font-bold">
-              <span className="text-purple-600">
-                Devolución / Incentivo en carrera: {formatoMoneda("USD", c.dec ?? 0, 2)}
-              </span>
+              {devPct > 0 ? (
+                <span className="text-purple-600">
+                  Devolución / Incentivo en carrera: {formatoMoneda("USD", c.dec ?? 0, 2)}
+                </span>
+              ) : (
+                <span />
+              )}
               <span
                 className={
                   resultadoTotalCarrera > 0
@@ -215,25 +224,31 @@ function JugadasDesplegables({ nivel, devPct, nivelProf }: { nivel: NivelAcordeo
 
 function ResumenNivel({ nivel, devPct }: { nivel: NivelAcordeon; devPct: number }) {
   const resultadoTotalConDev = Math.round(((nivel.monto ?? 0) + (nivel.dec ?? 0)) * 100) / 100;
+  // Si el cliente no tiene devolución configurada no se muestra esa opción.
+  const tarjetas = [
+    {
+      lbl: "Resultado Neto Carreras",
+      val: nivel.monto,
+      icon: "🏇",
+      color: nivel.monto > 0 ? "text-emerald-700" : nivel.monto < 0 ? "text-rose-700" : "text-slate-800",
+      prefijo: nivel.monto > 0 ? "+" : "",
+    },
+    ...(devPct > 0
+      ? [
+          { lbl: `🎁 Devolución / Incentivo a favor (${devPct}%)`, val: nivel.dec, icon: "🎁", color: "text-emerald-600", prefijo: "+" },
+          {
+            lbl: "Resultado Total (+ Devolución)",
+            val: resultadoTotalConDev,
+            icon: "🤲",
+            color: resultadoTotalConDev > 0 ? "text-emerald-700" : resultadoTotalConDev < 0 ? "text-rose-700" : "text-slate-800",
+            prefijo: resultadoTotalConDev > 0 ? "+" : "",
+          },
+        ]
+      : []),
+  ];
   return (
-    <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2" style={{ marginLeft: 12 }}>
-      {[
-        {
-          lbl: "Resultado Neto Carreras",
-          val: nivel.monto,
-          icon: "🏇",
-          color: nivel.monto > 0 ? "text-emerald-700" : nivel.monto < 0 ? "text-rose-700" : "text-slate-800",
-          prefijo: nivel.monto > 0 ? "+" : "",
-        },
-        { lbl: `🎁 Devolución / Incentivo a favor (${devPct}%)`, val: nivel.dec, icon: "🎁", color: "text-emerald-600", prefijo: "+" },
-        {
-          lbl: "Resultado Total (+ Devolución)",
-          val: resultadoTotalConDev,
-          icon: "🤲",
-          color: resultadoTotalConDev > 0 ? "text-emerald-700" : resultadoTotalConDev < 0 ? "text-rose-700" : "text-slate-800",
-          prefijo: resultadoTotalConDev > 0 ? "+" : "",
-        },
-      ].map((k) => (
+    <div className={`mt-2 grid grid-cols-1 gap-2 ${devPct > 0 ? "md:grid-cols-3" : ""}`} style={{ marginLeft: 12 }}>
+      {tarjetas.map((k) => (
         <div key={k.lbl} className="rounded-xl border border-line bg-white px-4 py-3 flex items-center gap-3">
           <span className={`${k.color} text-lg`}>{k.icon}</span>
           <div>
@@ -280,7 +295,7 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
     setCargando(true);
     setRaiz(null);
     setResumenSocio(null);
-    const pct = parseFloat(String(c.devolucion ?? "")) || 0;
+    const pct = parseFloat(String(c.devolucion ?? c.incentivo_pct ?? "")) || 0;
     setDevolucionPct(pct);
     const tickets = await onCargarTickets(c.id);
     setTicketsBase(tickets);
@@ -320,13 +335,9 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
       }
     }
 
-    // `listarClientes` ya imputa `comision_socio_devengada` en `saldo_actual`.
-    // La descontamos de la base para que `contabilidad-central` la vuelva a
-    // sumar UNA sola vez (fuente única de verdad: la ficha unificada).
-    const comisionYaEnSaldo = Number(
-      (c as unknown as { comision_socio_devengada?: number | string }).comision_socio_devengada ?? 0
-    );
-    const saldoBaseBd = redondearCentavos(Number(c.saldo_actual ?? 0) - comisionYaEnSaldo);
+    // `saldo_actual` es el libro mayor y ya incluye incentivos y comisiones de
+    // socio acreditados. Se pasa tal cual: no se suma ni resta nada dos veces.
+    const saldoBaseBd = redondearCentavos(Number(c.saldo_actual ?? 0));
     const fichaCalc = construirFichaEstadoCuentaUnificada({
       id: c.id,
       nombre: c.nombre ?? c.seudonimo ?? "",
@@ -415,22 +426,20 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
       </div>
 
       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Cliente</label>
-      <select
-        className="w-full max-w-md border border-line rounded-xl px-3 py-2 text-sm font-bold text-slate-800 bg-white outline-none focus:ring-1 focus:ring-primary-500"
+      <SearchableSelect
+        options={clientes.map((c) => ({
+          value: String(c.id),
+          label: `${c.nombre || c.seudonimo || c.id}${c.es_socio ? " ★Socio" : ""}`,
+        }))}
         value={clienteEstado ? String(clienteEstado.id) : ""}
-        onChange={(e) => {
-          const c = clientes.find((x) => String(x.id) === e.target.value) ?? null;
+        onChange={(id) => {
+          const c = clientes.find((x) => String(x.id) === id) ?? null;
           void seleccionar(c);
         }}
-      >
-        <option value="">— Seleccione un cliente —</option>
-        {clientes.map((c) => (
-          <option key={String(c.id)} value={String(c.id)}>
-            {c.nombre || c.seudonimo}
-            {c.es_socio ? " ★Socio" : ""}
-          </option>
-        ))}
-      </select>
+        placeholder="Buscar cliente por nombre…"
+        allowCustom={false}
+        className="w-full max-w-md"
+      />
 
       {/* Cómo se le paga o se le cobra al cliente elegido (PROMPT #7): todas
           sus formas de pago, la ⭐ principal primero. Va acá y no dentro del
@@ -477,11 +486,15 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
               </div>
             </div>
             <div className="text-right">
-              <div className="text-[9px] text-slate-300 uppercase">Totales + Incentivo</div>
-              <div className="text-sm font-black">{formatoMoneda("USD", totales.monto + totales.dec)}</div>
-              <div className="text-[10px] font-bold text-emerald-300">
-                🎁 Devolución / Incentivo a favor: +{formatoMoneda("USD", totales.dec)}
+              <div className="text-[9px] text-slate-300 uppercase">Resultado del Período</div>
+              <div className="text-sm font-black">
+                {formatoMoneda("USD", devolucionPct > 0 ? totales.monto + totales.dec : totales.monto)}
               </div>
+              {devolucionPct > 0 ? (
+                <div className="text-[10px] font-bold text-emerald-300">
+                  🎁 Devolución / Incentivo a favor: +{formatoMoneda("USD", totales.dec)}
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -524,10 +537,12 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
                         {formatoMoneda("USD", ficha.jugadasGanadasBruto)} (-{formatoMoneda("USD", ficha.comisionesCobradas)} / +{formatoMoneda("USD", ficha.reembolsoCruce)})
                       </div>
                     </div>
-                    <div className="rounded-lg bg-emerald-50 p-2">
-                      <div className="text-[9px] font-black uppercase text-emerald-700">6. 🎁 Devolución propia</div>
-                      <div className="font-mono font-black text-emerald-700">+{formatoMoneda("USD", ficha.devolucionIncentivo)}</div>
-                    </div>
+                    {devolucionPct > 0 ? (
+                      <div className="rounded-lg bg-emerald-50 p-2">
+                        <div className="text-[9px] font-black uppercase text-emerald-700">6. 🎁 Devolución / Incentivo</div>
+                        <div className="font-mono font-black text-emerald-700">+{formatoMoneda("USD", ficha.devolucionIncentivo)}</div>
+                      </div>
+                    ) : null}
                     {comisionesSociosTotal > 0 ? (
                       <div className="rounded-lg bg-purple-50 p-2 border border-purple-200">
                         <div className="text-[9px] font-black uppercase text-purple-700">6b. 🤝 Comisiones Afiliados (+)</div>
@@ -543,7 +558,7 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
                       <div className="font-mono font-bold text-amber-700">-{formatoMoneda("USD", ficha.riesgoEnCurso)}</div>
                     </div>
                     <div className="rounded-lg bg-slate-100 p-2">
-                      <div className="text-[9px] font-black uppercase text-slate-600">9. Saldo Contable Neto</div>
+                      <div className="text-[9px] font-black uppercase text-slate-600">9. Saldo Actual (Libro)</div>
                       <div className="font-mono font-black text-slate-900">{formatoMoneda("USD", saldoContableNetoFinal)}</div>
                     </div>
                     <div className="rounded-lg bg-indigo-50 p-2">

@@ -251,8 +251,6 @@ export function calcularResumenContableCliente(params: {
   const lineasPorCarrera = new Map<string, LineaResultadoParaCruce[]>();
   const abiertasPorCarrera = new Map<string, JugadaActivaSimulacion[]>();
 
-  let participoEnTickets = 0;
-  let ticketsValidosNoAnulados = 0;
   let montoDecididoParaIncentivoCentavos = 0;
   let jugadasEnVivoCount = 0;
   let jugadasAdelantadasCount = 0;
@@ -274,12 +272,10 @@ export function calcularResumenContableCliente(params: {
       : Boolean((idStr && cId === idStr) || (nombreNorm && cNom === nombreNorm));
 
     if (!esJugador && !esDador) continue;
-    participoEnTickets++;
 
     if (esJugadaAnuladaOExcluida(t)) {
       continue;
     }
-    ticketsValidosNoAnulados++;
     if (t.es_adelantada) {
       jugadasAdelantadasCount++;
     } else {
@@ -502,57 +498,33 @@ export function calcularResumenContableCliente(params: {
   const incentivoCarrera = devolucionIncentivo;
   const impactoSaldoTotalCarrera = sumarDinero(netoJugadasCarrera, incentivoCarrera);
 
-  // Fórmula contable única auditable:
-  // saldoContable = saldoInicial + depositos - retiros + impactoSaldoTotalCarrera
-  //                 - riesgoEnCurso (saldos comprometidos) + comisión de socio devengada
-  let saldoContable = restarDinero(
-    sumarDinero(
-      sumarDinero(saldoInicial, restarDinero(depositos, retiros)),
-      impactoSaldoTotalCarrera
-    ),
+  // ── SALDO ÚNICO (SSOT) ────────────────────────────────────────────────────
+  // `clientes.saldo_actual` es el libro mayor y ya contiene depósitos, retiros,
+  // resultado de jugadas, incentivos y comisiones de socio acreditados. Cuando
+  // la base lo entrega (`saldoEnBase`), ese valor manda y NO se recalcula: los
+  // importes de tickets/incentivo/comisión calculados arriba quedan como
+  // desglose informativo del período para los reportes.
+  //
+  // Solo cuando no hay saldo de base (simulaciones, auditorías, clientes aún
+  // no persistidos) se reconstruye desde saldo inicial + movimientos.
+  const saldoEnBaseDefinido =
+    params.saldoEnBase !== undefined && params.saldoEnBase !== null;
+  const saldoContable = saldoEnBaseDefinido
+    ? redondearCentavos(params.saldoEnBase)
+    : sumarDinero(
+        sumarDinero(saldoInicial, restarDinero(depositos, retiros)),
+        sumarDinero(impactoSaldoTotalCarrera, comisionSocioDevengada)
+      );
+
+  // El riesgo en curso NO se descuenta del saldo del libro: es un compromiso
+  // aparte. El dinero realmente disponible para jugar = saldo + aval - riesgo.
+  const disponibleParaJugar = restarDinero(
+    sumarDinero(saldoContable, avalVigente),
     riesgoEnCurso
   );
-  saldoContable = sumarDinero(saldoContable, comisionSocioDevengada);
 
-  let reparadoAutomaticamente = false;
-  const saldoBaseNum = redondearCentavos(params.saldoEnBase ?? 0);
-
-  // Si no se suministraron movimientos/tickets (o si tenía tickets y todos fueron anulados)
-  // verificamos auto-curación del caso Pedro (-6000 corrupto con todas sus jugadas anuladas)
-  // y auto-curación de SAM / clientes con saldo heredado sin jugadas en la matriz principal
-  const esPedroCorrupto =
-    (nombreNorm.includes("PEDRO") && saldoBaseNum === -6000 && ticketsValidosNoAnulados === 0) ||
-    (participoEnTickets > 0 && ticketsValidosNoAnulados === 0 && depositos === 0 && retiros === 0 && saldoBaseNum < 0);
-  const esSamCorrupto =
-    (nombreNorm === "SAM" || nombreNorm.includes("SAM")) && ticketsValidosNoAnulados === 0;
-
-  if (esPedroCorrupto || esSamCorrupto) {
-    saldoContable = sumarDinero(devolucionIncentivo, comisionSocioDevengada);
-    reparadoAutomaticamente = true;
-  } else if (
-    participoEnTickets === 0 &&
-    depositos === 0 &&
-    retiros === 0 &&
-    saldoInicial === 0 &&
-    params.saldoEnBase !== undefined &&
-    params.saldoEnBase !== null
-  ) {
-    // Si no hay historial de tickets cargados en memoria y no es el saldo corrupto de Pedro (-6000) ni SAM,
-    // respeta el saldo inicial salvo que sea el caso Pedro -6000 o SAM sin jugadas válidas
-    if ((nombreNorm.includes("PEDRO") && saldoBaseNum === -6000) || (nombreNorm === "SAM" || nombreNorm.includes("SAM"))) {
-      saldoContable = sumarDinero(devolucionIncentivo, comisionSocioDevengada);
-      reparadoAutomaticamente = true;
-    } else {
-      saldoContable = sumarDinero(
-        restarDinero(sumarDinero(saldoBaseNum, devolucionIncentivo), riesgoEnCurso),
-        comisionSocioDevengada
-      );
-    }
-  }
-
-  // Como `saldoContable` ya tiene descontado `riesgoEnCurso` (saldos comprometidos),
-  // el disponible para jugar es `saldoContable + avalVigente` (sin restar dos veces `riesgoEnCurso`).
-  const disponibleParaJugar = sumarDinero(saldoContable, avalVigente);
+  // Ya no se "curan" saldos por nombre ni por heurísticas: el libro manda.
+  const reparadoAutomaticamente = false;
 
   return {
     clienteId: idStr,
@@ -651,12 +623,14 @@ export function calcularResultadoLiquidacionClienteCarrera(params: {
 }
 
 /**
- * Sincroniza y auto-cura en vivo los saldos de una lista de clientes contra `tickets_apuestas`
- * (manejando con fallback transparente cualquier error `42P01` si alguna tabla opcional no existe).
+ * Enriquece una lista de clientes con los importes informativos del período
+ * (resultado de jugadas, incentivo devengado, comisión de socio y disponible)
+ * leyendo `tickets_apuestas` (con fallback si alguna tabla/columna opcional no existe).
  *
- * Cura de inmediato el caso de **Pedro con `-6000` en el grupo Argentina** (o cualquier cliente
- * cuyo saldo en BD haya quedado negativo por jugadas anuladas/reversadas), ejecutando
- * `UPDATE public.clientes SET saldo_actual = 0 WHERE id = ...` y devolviendo la lista saneada.
+ * IMPORTANTE: `saldo_actual` es el libro mayor (SSOT) y se devuelve sin tocar.
+ * Esta función NO reescribe saldos ni aplica "auto-curaciones" por nombre: eso
+ * provocaba que el portal, los reportes y la contabilidad mostraran cifras
+ * distintas para el mismo cliente.
  */
 export async function sincronizarSaldosRealesClientes<
   T extends {
@@ -902,8 +876,6 @@ export async function sincronizarSaldosRealesClientes<
 
   const resultado = listaBase.map((c) => {
     const nombre = String(c.nombre ?? "").trim();
-    const nombreNorm = normalizarNombreCliente(nombre);
-    const esUsuarioModalidad = (USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(nombreNorm);
     const saldoRaw = c.saldo_actual ?? c.saldo ?? 0;
     const saldoNum = redondearCentavos(saldoRaw);
 
@@ -925,72 +897,23 @@ export async function sincronizarSaldosRealesClientes<
       tickets,
     });
 
-    if (esUsuarioModalidad && tickets.length > 0 && (resumen.jugadasGanadasBruto > 0 || resumen.jugadasPerdidas > 0)) {
-      const saldoImputado = resumen.saldoContable;
-      if (Math.abs(saldoImputado - saldoNum) >= 0.01 && supabase && c.id != null && !String(c.id).startsWith("sys-")) {
-        promesasCuracion.push(
-          Promise.resolve(
-            supabase
-              .from("clientes")
-              .update({ saldo_actual: saldoImputado })
-              .eq("id", c.id as never)
-          ).catch(() => null)
-        );
-      }
-      const copiaSys: Record<string, unknown> = {
-        ...c,
-        saldo_actual: saldoImputado,
-      };
-      if ("saldo" in c) copiaSys.saldo = saldoImputado;
-      return copiaSys as T;
-    }
-
-    // Auto-curación inmediata del caso Pedro (-6000), SAM o cliente con todas sus jugadas anuladas/purgadas
-    const debeCurarAPedroCero =
-      resumen.reparadoAutomaticamente ||
-      (nombreNorm.includes("PEDRO") && saldoNum === -6000 && resumen.jugadasPerdidas === 0 && resumen.riesgoEnCurso === 0) ||
-      ((nombreNorm === "SAM" || nombreNorm.includes("SAM")) && saldoNum !== 0 && resumen.jugadasPerdidas === 0 && resumen.riesgoEnCurso === 0);
-
-    if (debeCurarAPedroCero && saldoNum !== 0) {
-      if (supabase && c.id != null) {
-        promesasCuracion.push(
-          Promise.resolve(
-            supabase
-              .from("clientes")
-              .update({ saldo_actual: 0 })
-              .eq("id", c.id as never)
-          ).catch(() => null)
-        );
-      }
-      const telInfo = telefonosMap.get(String(c.id));
-      const copia: Record<string, unknown> = {
-        ...c,
-        saldo_actual: comisionSocio,
-        comision_socio_devengada: comisionSocio,
-        telefono: c.telefono ?? telInfo?.telefono ?? null,
-        codigo_pais: c.codigo_pais ?? telInfo?.codigo_pais ?? null,
-      };
-      if ("saldo" in c) copia.saldo = comisionSocio;
-      return copia as T;
-    }
-
+    // `saldo_actual` es el libro mayor: se devuelve EXACTAMENTE como está en la
+    // base. Ni el riesgo como dador, ni el incentivo, ni la comisión de socio
+    // se suman o restan aquí (ya fueron acreditados/descontados en su momento).
+    // Solo se enriquece la fila con los importes informativos del período.
     const telInfo = telefonosMap.get(String(c.id));
-    const riesgoDadorPendiente = !esUsuarioModalidad ? (resumen.riesgoDadorEnCurso ?? 0) : 0;
-    const saldoBaseEnMemoria =
-      riesgoDadorPendiente > 0 ? restarDinero(saldoNum, riesgoDadorPendiente) : saldoNum;
-    const saldoEfectivoEnMemoria = sumarDinero(saldoBaseEnMemoria, comisionSocio);
-
     const copiaCliente: Record<string, unknown> = {
       ...c,
-      saldo_actual: saldoEfectivoEnMemoria,
-      comision_socio_devengada: comisionSocio,
+      saldo_actual: saldoNum,
+      comision_socio_devengada: resumen.comisionSocioDevengada,
+      incentivo_devengado: resumen.devolucionIncentivo,
       resultado: resumen.impactoSaldoTotalCarrera,
       resultado_acumulado: resumen.impactoSaldoTotalCarrera,
       disponible: resumen.disponibleParaJugar,
       telefono: c.telefono ?? telInfo?.telefono ?? null,
       codigo_pais: c.codigo_pais ?? telInfo?.codigo_pais ?? null,
     };
-    if ("saldo" in c) copiaCliente.saldo = saldoEfectivoEnMemoria;
+    if ("saldo" in c) copiaCliente.saldo = saldoNum;
     return copiaCliente as T;
   });
 

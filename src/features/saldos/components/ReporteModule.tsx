@@ -146,7 +146,11 @@ export function ReporteModule() {
   const [grupos, setGrupos] = useState<GrupoRow[]>([]);
   const [grupoId, setGrupoId] = useState<string>("");
   const [clientesGrupo, setClientesGrupo] = useState<ClienteRow[]>([]);
-  const [fuenteSaldos4Col, setFuenteSaldos4Col] = useState<"JORNADA" | "CARTERA">("JORNADA");
+  // Por defecto se muestra la CARTERA (saldo real del libro), que es la única
+  // cifra comparable con el portal y el estado de cuenta. El resultado del
+  // rango es un dato de período y queda como vista alternativa.
+  const [fuenteSaldos4Col, setFuenteSaldos4Col] = useState<"JORNADA" | "CARTERA">("CARTERA");
+  const [desgloseAbierto, setDesgloseAbierto] = useState(false);
   // Por defecto SIEMPRE el día de hoy (rango de un solo día), no la semana
   // fiscal completa: al abrir el monitor lo que interesa es la jornada en curso.
   const [desde, setDesde] = useState<string>(() => hoyLocal());
@@ -671,6 +675,44 @@ export function ReporteModule() {
     };
   }, [fuenteSaldos4Col, datosTablaDinamica, clientesGrupo, filtroTipoJugador, mapaInfoClientes]);
 
+  // Desglose por cliente: saldo del libro + (si está configurado) devolución
+  // e incentivo. Se calcula sobre la cartera para que coincida exactamente con
+  // el saldo del portal y del estado de cuenta.
+  const desgloseSaldos = useMemo(() => {
+    return clientesGrupo
+      .map((c) => {
+        const tipo = obtenerTipoJugador(c);
+        const saldo = redondearCentavos(Number(c.saldo_actual) || 0);
+        const devPct = Math.max(
+          0,
+          Number(c.devolucion ?? c.incentivo_pct ?? 0) || 0
+        );
+        const incentivo = redondearCentavos(Number(c.incentivo_devengado) || 0);
+        const comision = redondearCentavos(Number(c.comision_socio_devengada) || 0);
+        const aval = redondearCentavos(Number(c.aval) || 0);
+        const disponible = redondearCentavos(Number(c.disponible) || 0);
+        return {
+          id: String(c.id),
+          nombre: String(c.seudonimo ?? c.nombre ?? c.id).trim().toUpperCase(),
+          tipo,
+          saldo,
+          devPct,
+          incentivo,
+          comision,
+          aval,
+          disponible,
+        };
+      })
+      .filter((x) => {
+        if (filtroTipoJugador === "TODOS") return true;
+        if (filtroTipoJugador === "AVAL") return x.tipo === "aval";
+        if (filtroTipoJugador === "LIBRE") return x.tipo === "libre";
+        if (filtroTipoJugador === "POZO") return x.tipo === "pozo" && x.saldo > 0.004;
+        return true;
+      })
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  }, [clientesGrupo, filtroTipoJugador]);
+
   const resumen = resumirReporte(rpt);
   const hoy = hoyLocal();
 
@@ -1087,24 +1129,39 @@ export function ReporteModule() {
                 <button
                   type="button"
                   onClick={() => setFuenteSaldos4Col("JORNADA")}
+                  title="Resultado neto de las jugadas del rango consultado. NO es el saldo actual del cliente."
                   className={`rounded-md px-2.5 py-1 font-bold transition ${
                     !resumenCuatroColumnas.usandoCartera
                       ? "bg-emerald-500 text-slate-950"
                       : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                   }`}
                 >
-                  Saldos del Rango ({datosTablaDinamica.filasClientes.length})
+                  📈 Resultado del Rango ({datosTablaDinamica.filasClientes.length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setFuenteSaldos4Col("CARTERA")}
+                  title="Saldo actual del libro mayor (el mismo que ve el cliente en su portal)."
                   className={`rounded-md px-2.5 py-1 font-bold transition ${
                     resumenCuatroColumnas.usandoCartera
                       ? "bg-emerald-500 text-slate-950"
                       : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                   }`}
                 >
-                  Cartera General ({clientesGrupo.length})
+                  💰 Saldo Actual / Cartera General ({clientesGrupo.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDesgloseAbierto((v) => !v)}
+                  aria-expanded={desgloseAbierto}
+                  title="Mostrar u ocultar el desglose saldo + devoluciones e incentivo por cliente"
+                  className={`rounded-md px-2.5 py-1 font-bold transition ${
+                    desgloseAbierto
+                      ? "bg-sky-400 text-slate-950"
+                      : "bg-slate-800 text-sky-300 hover:bg-slate-700"
+                  }`}
+                >
+                  {desgloseAbierto ? "▲ Ocultar desglose" : "🔎 Desglose: Saldo + Devolución e Incentivo"}
                 </button>
               </div>
 
@@ -1289,6 +1346,79 @@ export function ReporteModule() {
                 </tfoot>
               </table>
             </div>
+
+            {/* DESGLOSE EXPANDIBLE: saldo actual + devoluciones e incentivo */}
+            {desgloseAbierto ? (
+              <div className="mx-3 mb-3 rounded-xl border border-sky-300 bg-sky-50/60 p-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-wider text-sky-700">
+                      🔎 Desglose: Saldo + Devoluciones e Incentivo
+                    </div>
+                    <p className="text-[10px] font-semibold text-slate-500">
+                      El saldo es el mismo del libro mayor (portal y estado de cuenta). La devolución
+                      y el incentivo se muestran solo si el cliente los tiene configurados y ya están
+                      incluidos en ese saldo.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-sky-700 border border-sky-200">
+                    {desgloseSaldos.length} cliente(s)
+                  </span>
+                </div>
+                {desgloseSaldos.length === 0 ? (
+                  <p className="py-3 text-center text-xs font-semibold text-slate-400">
+                    No hay clientes en la selección actual.
+                  </p>
+                ) : (
+                  <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                    {desgloseSaldos.map((x) => {
+                      const meta = infoTipoJugador(x.tipo);
+                      return (
+                        <div
+                          key={x.id}
+                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 shadow-2xs"
+                        >
+                          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span title={meta.etiqueta} className="shrink-0 text-xs">{meta.icono}</span>
+                              <span className="truncate text-[11px] font-black text-slate-800">{x.nombre}</span>
+                            </span>
+                            <span className={`shrink-0 font-mono text-[11px] font-black ${x.saldo > 0.004 ? "text-emerald-700" : x.saldo < -0.004 ? "text-rose-600" : "text-slate-600"}`}>
+                              {x.saldo > 0 ? "+$" : x.saldo < 0 ? "-$" : "$"}
+                              {fmtMonto(Math.abs(x.saldo))}
+                            </span>
+                          </div>
+                          <div className="mt-1 space-y-0.5 text-[10px]">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-slate-500">Saldo actual (libro mayor)</span>
+                              <span className="font-mono font-bold text-slate-700">
+                                {x.saldo < 0 ? "-$" : "$"}{fmtMonto(Math.abs(x.saldo))}
+                              </span>
+                            </div>
+                            {x.devPct > 0 ? (
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-emerald-700">Devolución / incentivo ({x.devPct}%)</span>
+                                <span className="font-mono font-bold text-emerald-700">+${fmtMonto(x.incentivo)}</span>
+                              </div>
+                            ) : null}
+                            {x.comision > 0 ? (
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-purple-700">Comisión de socio</span>
+                                <span className="font-mono font-bold text-purple-700">+${fmtMonto(x.comision)}</span>
+                              </div>
+                            ) : null}
+                            <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-0.5">
+                              <span className="text-slate-500">Disponible (saldo + aval − riesgo)</span>
+                              <span className="font-mono font-black text-indigo-700">${fmtMonto(x.disponible)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : null}
 
             {/* Leyenda de tipos de jugadores */}
             <div className="mt-3.5 rounded-xl border border-slate-700 bg-slate-900/90 p-3.5 text-xs text-slate-300">

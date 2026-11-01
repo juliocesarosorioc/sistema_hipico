@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { DateInput } from "@/shared/components/ui/DateInput";
 import { Guard } from "@/shared/components/ui/Guard";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import {
@@ -217,22 +218,20 @@ export function CuadernoCliente({ clientes, clienteEstado, onActivo }: Props) {
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-64 flex-1">
           <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-500">Cliente</label>
-          <select
-            className="w-full border border-line rounded-xl px-3 py-2 text-sm font-bold text-slate-800 bg-white outline-none focus:ring-1 focus:ring-primary-500"
+          <SearchableSelect
+            options={clientes.map((c) => ({
+              value: String(c.id),
+              label: `${c.nombre || c.seudonimo || c.id}${c.es_socio ? " ★Socio" : ""}`,
+            }))}
             value={clienteEstado ? String(clienteEstado.id) : ""}
-            onChange={(e) => {
-              const c = clientes.find((x) => String(x.id) === e.target.value) ?? null;
+            onChange={(id) => {
+              const c = clientes.find((x) => String(x.id) === id) ?? null;
               onActivo(c);
             }}
-          >
-            <option value="">— Seleccione un cliente —</option>
-            {clientes.map((c) => (
-              <option key={String(c.id)} value={String(c.id)}>
-                {c.nombre || c.seudonimo}
-                {c.es_socio ? " ★Socio" : ""}
-              </option>
-            ))}
-          </select>
+            placeholder="Buscar cliente por nombre…"
+            allowCustom={false}
+            className="w-full"
+          />
         </div>
         {clienteEstado ? (
           <Guard permiso="clientes:fn_guardar_cliente" disabled>

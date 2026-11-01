@@ -477,7 +477,7 @@ async function construirSesion(clienteParam: ClienteRow): Promise<SesionPortal |
   const datos = await datosCliente(cliente);
   if (datos === null) return null;
   const { tickets, grupo } = datos;
-  const pct = num(cliente.devolucion);
+  const pct = num(cliente.devolucion ?? cliente.incentivo_pct);
   const arbolTickets = construirEstadoCuenta(tickets, pct, cliente);
   const paramsContables = {
     id: cliente.id,

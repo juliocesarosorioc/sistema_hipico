@@ -104,11 +104,14 @@ const resumenPedro = calcularResumenContableCliente({
   ],
 });
 
-igual(resumenPedro.saldoContable, 0, "Pedro (Grupo Argentina): saldoContable auto-curado de -6000 a 0");
+// El libro mayor (`saldo_actual`) es la fuente única: NO se "cura" por nombre ni
+// por heurística. Un saldo corrupto se corrige con un movimiento/depuración de
+// datos auditada, no reescribiéndolo silenciosamente al mostrarlo.
+igual(resumenPedro.saldoContable, -6000, "Pedro (Grupo Argentina): saldoContable respeta el libro (-6000), sin auto-curación");
 igual(resumenPedro.avalVigente, 2000, "Pedro (Grupo Argentina): avalVigente = 2000");
 igual(resumenPedro.riesgoEnCurso, 0, "Pedro (Grupo Argentina): riesgoEnCurso = 0 (jugadas anuladas excluidas)");
-igual(resumenPedro.disponibleParaJugar, 2000, "Pedro (Grupo Argentina): disponibleParaJugar = 2000");
-si(resumenPedro.reparadoAutomaticamente === true, "Pedro (Grupo Argentina): marcado como reparadoAutomaticamente");
+igual(resumenPedro.disponibleParaJugar, -4000, "Pedro (Grupo Argentina): disponible = saldo + aval − riesgo (-6000 + 2000)");
+si(resumenPedro.reparadoAutomaticamente === false, "Pedro (Grupo Argentina): NO se marca reparadoAutomaticamente (el libro manda)");
 
 // ---------------------------------------------------------------------------
 console.log("\n[FASE 2] Motor Exacto de Cruces, Tapas y Clusters");

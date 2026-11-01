@@ -42,7 +42,7 @@ export default function RenderizadoFuentesPage() {
             <span>🔤</span> Renderizado Oficial de Fuentes de la Plataforma
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Visualización tipográfica de las fuentes cargadas: <strong>Inter</strong> (interfaz principal), <strong>Outfit</strong> (títulos y marcas) y <strong>JetBrains Mono</strong> (cifras tabulares, cuotas y finanzas).
+            Visualización tipográfica de las fuentes cargadas: <strong>Inter</strong> (interfaz principal y cifras tabulares) y <strong>Outfit</strong> (títulos y marcas).
           </p>
         </div>
 
@@ -147,19 +147,19 @@ export default function RenderizadoFuentesPage() {
         </div>
       </div>
 
-      {/* 3. JETBRAINS MONO (Monospace Financiero y Cuotas) */}
+      {/* 3. INTER (Cifras Tabulares, Saldos y Cuotas) */}
       <div className="rounded-2xl border border-line bg-white p-6 shadow-sm space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>
             <h2 className="text-lg font-black text-slate-900 font-heading">
-              3. JetBrains Mono (Cifras Tabulares, Saldos y Tickets)
+              3. Inter (Cifras Tabulares, Saldos y Tickets)
             </h2>
             <p className="text-xs text-slate-400">
-              Uso: Montos en USD/Bs, pizarras de llegada, hashes, Ray ID y cuotas de dividendos.
+              Uso: Montos en USD/Bs, pizarras de llegada, hashes, Ray ID y cuotas de dividendos. Su cero es limpio (sin barra ni punto interno).
             </p>
           </div>
           <span className="font-mono text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-md">
-            font-mono / &apos;JetBrains Mono&apos;
+            font-mono / &apos;Inter&apos;
           </span>
         </div>
 

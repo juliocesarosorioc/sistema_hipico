@@ -714,22 +714,24 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
         {/* Área central de contenido */}
         <main className="min-w-0 flex-1 space-y-4">
 
-          {/* Totales: saldo, incentivo y disponible (antes vivian en la barra superior) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Totales: saldo, incentivo (si aplica) y disponible */}
+          <div className={`grid grid-cols-1 gap-3 ${num(sesion.cliente.devolucion ?? sesion.cliente.incentivo_pct) > 0 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
             <Kpi
               icon="🪙"
-              lbl="Saldo / Total Decidido"
+              lbl="Saldo Actual"
               val={formatoMoneda("USD", sesion.resumen.saldo)}
               color="text-slate-900"
               bg="bg-white"
             />
-            <Kpi
-              icon="％"
-              lbl={`Incentivo (${num(sesion.cliente.devolucion)}%)`}
-              val={formatoMoneda("USD", sesion.resumen.incentivo)}
-              color="text-amber-600"
-              bg="bg-white"
-            />
+            {num(sesion.cliente.devolucion ?? sesion.cliente.incentivo_pct) > 0 ? (
+              <Kpi
+                icon="％"
+                lbl={`Incentivo / Devolución (${num(sesion.cliente.devolucion ?? sesion.cliente.incentivo_pct)}%)`}
+                val={formatoMoneda("USD", sesion.resumen.incentivo)}
+                color="text-amber-600"
+                bg="bg-white"
+              />
+            ) : null}
             <Kpi
               icon="🤲"
               lbl="Disponible para Jugar"

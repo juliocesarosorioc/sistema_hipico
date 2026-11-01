@@ -94,6 +94,10 @@ export type ClienteRow = {
   resultado_acumulado?: number | string | null;
   /** Saldo disponible total para jugar considerando aval */
   disponible?: number | string | null;
+  /** Incentivo/devolución devengado en el período (informativo, ya está en el saldo). */
+  incentivo_devengado?: number | string | null;
+  /** Comisión devengada como socio en el período (informativo, ya está en el saldo). */
+  comision_socio_devengada?: number | string | null;
   devolucion?: number | string | null;
   socio_asignado?: string | null;
   /** Porcentaje de comisión otorgado al socio por este cliente (ej. 1.25%, 1.00%) */

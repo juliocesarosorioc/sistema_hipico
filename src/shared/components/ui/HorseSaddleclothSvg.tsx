@@ -36,7 +36,7 @@ export function HorseSaddleclothSvg({ numero, studColor = "#f59e0b", className =
         <circle cx="31" cy="15" r="0.8" fill="#111827" />
         <path d="M36 16 L38 16 L38 18 L36 18 Z" fill="#111827" />
         <rect x="24" y="28" width="16" height="10" rx="3" fill={gualdrapa} stroke="#0f172a" strokeWidth="1" />
-        <text x="32" y="35" textAnchor="middle" fontSize="9" fontWeight="800" fill={textColor} style={{ fontFamily: "JetBrains Mono, monospace" }}>
+        <text x="32" y="35" textAnchor="middle" fontSize="9" fontWeight="800" fill={textColor} style={{ fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" }}>
           {n || ""}
         </text>
         <rect x="28" y="38" width="8" height="4" rx="2" fill={studColor} opacity="0.9" />
