@@ -9,7 +9,6 @@ import { ModalCreacionRapidaCliente } from "@/features/clientes/components/Modal
 import { ModalPortalCliente } from "@/features/clientes/components/ModalPortalCliente";
 import { EstadoCuentaAcordeon } from "@/features/clientes/components/EstadoCuentaAcordeon";
 import { ReporteDestinatariosDevolucion } from "@/features/clientes/components/ReporteDestinatariosDevolucion";
-import { aplicarParametrosOficialesDevolucion, PARAMETROS_PREDETERMINADOS_DEVOLUCION } from "@/features/clientes/lib/comisiones-socios";
 import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente";
 import { NotificacionesPortal } from "@/features/clientes/components/NotificacionesPortal";
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
@@ -17,6 +16,8 @@ import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/componen
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import {
   aplicarDevolucionMasiva,
+  actualizarCliente,
+  crearCliente,
   cargarTicketsCliente,
   convertirSocio,
   eliminarCliente,
@@ -28,6 +29,8 @@ import {
   resumenFormaPago,
   type ClienteRow,
 } from "@/features/clientes/lib/clientes";
+import { esClienteAfiliadoAlSocio } from "@/features/clientes/lib/comisiones-socios";
+import { supabase } from "@/core/supabase";
 import { formatoMoneda } from "@/shared/lib/vzla";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { useAuthStore } from "@/shared/store/useAuthStore";
@@ -40,35 +43,15 @@ const num = (v: number | string | null | undefined): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-/** Resuelve el nombre visible de un socio a partir de su id o nombre asignado */
-const obtenerNombreSocio = (c: ClienteRow, todosClientes: ClienteRow[]): string | null => {
-  const ref = c.socio_asignado || c.socio_id;
-  if (!ref) return null;
-  const sRef = String(ref).trim();
-  const socio = todosClientes.find(
-    (s) =>
-      String(s.id) === sRef ||
-      String(s.nombre || "").trim().toUpperCase() === sRef.toUpperCase() ||
-      String(s.seudonimo || "").trim().toUpperCase() === sRef.toUpperCase()
-  );
-  if (socio) {
-    return socio.seudonimo || socio.nombre || String(socio.id);
-  }
-  return sRef;
-};
-
-/** Afiliados de un socio/agencia (clientes cuyo socio_asignado o socio_id coincide con este socio). */
-const afiliadosDe = (socio: ClienteRow, lista: ClienteRow[]): number => {
-  const sId = String(socio.id);
-  const sNom = String(socio.nombre || "").trim().toUpperCase();
-  const sSeud = String(socio.seudonimo || "").trim().toUpperCase();
-
-  return lista.filter((cli) => {
-    const val = String(cli.socio_asignado || cli.socio_id || "").trim();
-    if (!val) return false;
-    return val === sId || (sNom && val.toUpperCase() === sNom) || (sSeud && val.toUpperCase() === sSeud);
-  }).length;
-};
+/** Afiliados de un socio/agencia (socio_asignado puede guardar id, nombre o seudónimo). */
+const afiliadosDe = (c: ClienteRow, lista: ClienteRow[]): number =>
+  lista.filter((s) =>
+    esClienteAfiliadoAlSocio(
+      { id: s.id, socio_asignado: s.socio_asignado },
+      { id: c.id, nombre: c.nombre, seudonimo: c.seudonimo },
+      lista
+    )
+  ).length;
 
 const DIAS = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"];
 
@@ -162,6 +145,12 @@ export function ClientesModule() {
   const [pctDev, setPctDev] = useState("");
   const [afectados, setAfectados] = useState(0);
 
+  const [abrirCargaMasiva, setAbrirCargaMasiva] = useState(false);
+  const [textoCargaMasiva, setTextoCargaMasiva] = useState("");
+  const [procesandoCargaMasiva, setProcesandoCargaMasiva] = useState(false);
+
+  const [solicitudesAbono, setSolicitudesAbono] = useState<Array<Record<string, unknown>>>([]);
+
   const [clienteEstado, setClienteEstado] = useState<ClienteRow | null>(null);
   const [socioConvertir, setSocioConvertir] = useState("");
 
@@ -172,44 +161,25 @@ export function ClientesModule() {
   const recargar = async (gid?: string) => {
     setCargando(true);
     const target = gid !== undefined ? gid : grupoConsultado;
-    let cs = await listarClientes(true, target || null);
-    // Enriquecer en memoria con los parámetros oficiales de devolución/socios si el cliente aún no los tiene cargados
-    cs = cs.map((c) => {
-      const claveNom = String(c.seudonimo || c.nombre || "").trim().toUpperCase();
-      const paramOficial = PARAMETROS_PREDETERMINADOS_DEVOLUCION.find(
-        (p) => p.nombre.toUpperCase() === claveNom || String(c.nombre || "").trim().toUpperCase() === p.nombre.toUpperCase()
-      );
-      if (!paramOficial) return c;
-      return {
-        ...c,
-        devolucion: c.devolucion != null && Number(c.devolucion) > 0 ? c.devolucion : paramOficial.devolucionPropiaPct,
-        incentivo_pct: c.incentivo_pct != null && Number(c.incentivo_pct) > 0 ? c.incentivo_pct : paramOficial.devolucionPropiaPct,
-        es_socio: c.es_socio ?? paramOficial.esSocio,
-        socio_asignado: c.socio_asignado || c.socio_id || paramOficial.socioAsignado || null,
-        socio_id: c.socio_id || c.socio_asignado || paramOficial.socioAsignado || null,
-        socio_comision_pct: c.socio_comision_pct ?? c.comision_socio_pct ?? paramOficial.comisionSocioPct ?? null,
-        comision_socio_pct: c.comision_socio_pct ?? c.socio_comision_pct ?? paramOficial.comisionSocioPct ?? null,
-      };
-    });
+    const cs = await listarClientes(true, target || null);
     setClientes(cs);
     setErrorCarga(errorClientes());
+    // Cargar solicitudes de abono pendientes
+    if (supabase) {
+      try {
+        const { data } = await supabase
+          .from("whatsapp_solicitudes_abono")
+          .select("*")
+          .eq("estado", "PENDIENTE")
+          .order("created_at", { ascending: false });
+        setSolicitudesAbono((data ?? []) as Array<Record<string, unknown>>);
+      } catch { /* ignore */ }
+    }
     setCargando(false);
   };
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const keySync = `club_sync_dev_oficial_${grupoConsultado || "all"}`;
-        if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(keySync)) {
-          sessionStorage.setItem(keySync, "1");
-          await aplicarParametrosOficialesDevolucion(grupoConsultado || undefined);
-          limpiarCacheClientes();
-        }
-      } catch {
-        /* ignore */
-      }
-      await recargar(grupoConsultado);
-    })();
+    void recargar(grupoConsultado);
 
     const handleActualizar = () => {
       limpiarCacheClientes();
@@ -275,6 +245,70 @@ export function ClientesModule() {
     setAbrirDev(false);
     setSeleccion(new Set());
     void recargar();
+  };
+
+  const aprobarAbono = async (sol: Record<string, unknown>) => {
+    if (!supabase) return;
+    try {
+      const monto = Number(sol.monto ?? 0);
+      if (sol.cliente_id) {
+        const { data: cli } = await supabase.from("clientes").select("saldo_actual").eq("id", sol.cliente_id).maybeSingle();
+        const actual = Number((cli as Record<string, unknown>)?.saldo_actual ?? 0);
+        await supabase.from("clientes").update({ saldo_actual: actual + monto }).eq("id", sol.cliente_id);
+      }
+      await supabase.from("whatsapp_solicitudes_abono").update({ estado: "APROBADO" }).eq("id", sol.id);
+      toast(`Abono ${sol.codigo_corto} aprobado.`, "success");
+      void recargar();
+    } catch (e) {
+      toast("Error al aprobar abono.", "error");
+    }
+  };
+
+  const procesarCargaMasiva = async () => {
+    const grupoDestino = grupoConsultado || miGrupoId || grupoActivoVigente() || null;
+    const lineas = textoCargaMasiva
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lineas.length === 0) return toast("Pegue al menos una línea.", "warning");
+
+    setProcesandoCargaMasiva(true);
+    let creados = 0;
+    let actualizados = 0;
+    let errores = 0;
+    const existentes = await listarClientes(true, grupoDestino);
+
+    for (const linea of lineas) {
+      // Formato soportado: "NOMBRE,SALDO" o "NOMBRE SALDO" (saldo opcional, default 0).
+      const partes = linea.split(/[;,|\t]/).map((p) => p.trim()).filter(Boolean);
+      const nombre = (partes[0] || "").toUpperCase();
+      const saldo = num(partes[1] ?? "0");
+      if (!nombre) { errores++; continue; }
+
+      const ya = existentes.find(
+        (c) => String(c.nombre ?? "").trim().toUpperCase() === nombre
+      );
+
+      if (ya?.id != null) {
+        const r = await actualizarCliente(ya.id, { saldo_actual: saldo });
+        if (r.ok) actualizados++;
+        else errores++;
+      } else {
+        const r = await crearCliente({ nombre, saldo_actual: saldo, grupo_id: grupoDestino });
+        if (r.ok) creados++;
+        else errores++;
+      }
+    }
+
+    setProcesandoCargaMasiva(false);
+    setTextoCargaMasiva("");
+    setAbrirCargaMasiva(false);
+    limpiarCacheClientes();
+    await recargar(grupoDestino ?? undefined);
+    toast(
+      `Carga masiva: ${creados} creados, ${actualizados} actualizados, ${errores} error(es).`,
+      errores > 0 ? "warning" : "success"
+    );
   };
 
   const socioAplicar = async () => {
@@ -350,6 +384,15 @@ export function ClientesModule() {
               <span >％</span> Devoluciones Masivas
             </Button>
           </Guard>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAbrirCargaMasiva(true)}
+            className="!border-emerald-400 !bg-emerald-50 !font-black !text-emerald-800 hover:!bg-emerald-100"
+            title="Cargar varios usuarios con sus saldos de una vez (una línea por cliente: NOMBRE,SALDO)"
+          >
+            <span>📥</span> Carga Masiva
+          </Button>
         </div>
       </div>
 
@@ -580,10 +623,8 @@ export function ClientesModule() {
                       )}
                     </td>
                     <td className={td}>
-                      {obtenerNombreSocio(c, clientes) ? (
-                        <span className="truncate block font-bold text-amber-700" title={`Socio: ${obtenerNombreSocio(c, clientes)}`}>
-                          {obtenerNombreSocio(c, clientes)}
-                        </span>
+                      {c.socio_asignado ? (
+                        <span className="truncate block font-bold text-amber-700">{c.socio_asignado}</span>
                       ) : c.es_socio ? (
                         <span className="text-[10px] text-slate-400">
                           Agencia <span className="text-[9px]">👥</span> {afiliadosDe(c, clientes)}
@@ -811,6 +852,43 @@ export function ClientesModule() {
         </div>
       ) : null}
 
+      {/* Carga masiva de usuarios y saldos */}
+      {abrirCargaMasiva ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setAbrirCargaMasiva(false);
+          }}
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl p-5 space-y-4">
+            <h3 className="text-sm font-black text-slate-800">
+              <span className="mr-2 text-emerald-600">📥</span> Carga Masiva de Usuarios y Saldos
+            </h3>
+            <p className="text-xs text-slate-600">
+              Pegue una línea por cliente. Formato: <b>NOMBRE,SALDO</b> (también acepta espacio, tab o `;`). Si el cliente ya existe se actualiza su saldo; si no, se crea en el grupo actual.
+            </p>
+            <textarea
+              autoFocus
+              value={textoCargaMasiva}
+              onChange={(e) => setTextoCargaMasiva(e.target.value)}
+              rows={8}
+              placeholder={"SAM,1500\nEDDIE 2000\nPARTNER;3500"}
+              className="w-full border border-line rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setAbrirCargaMasiva(false)} disabled={procesandoCargaMasiva}>
+                Cancelar
+              </Button>
+              <Button variant="default" size="sm" onClick={() => void procesarCargaMasiva()} disabled={procesandoCargaMasiva}>
+                <span className="mr-1">✅</span> {procesandoCargaMasiva ? "Procesando..." : "Procesar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Devoluciones masivas */}
       {abrirDev ? (
         <div
@@ -867,6 +945,28 @@ export function ClientesModule() {
           void recargar();
         }}
       />
+
+      {/* Solicitudes de abono pendientes (WhatsApp) */}
+      {solicitudesAbono.length > 0 ? (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-2">
+          <h3 className="text-sm font-black text-amber-900">🔔 Solicitudes de Abono Pendientes (WhatsApp)</h3>
+          <div className="space-y-2">
+            {solicitudesAbono.map((s) => (
+              <div key={String(s.id)} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-xs shadow-sm">
+                <div>
+                  <span className="font-bold text-slate-800">{String(s.codigo_corto ?? "")}</span>
+                  <span className="ml-2 text-slate-600">{String(s.cliente_nombre ?? "Cliente")}</span>
+                  <span className="ml-2 font-mono text-emerald-700">${Number(s.monto ?? 0).toFixed(2)}</span>
+                  <span className="ml-2 text-slate-500">{String(s.metodo_pago ?? "")}</span>
+                </div>
+                <Button variant="default" size="sm" onClick={() => void aprobarAbono(s)}>
+                  ✅ Aprobar Abono
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <ToastHost />
     </div>

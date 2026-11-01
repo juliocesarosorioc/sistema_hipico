@@ -1,21 +1,31 @@
 -- ============================================================================
 -- COMISIÓN DE SOCIOS POR CLIENTES Y DEVOLUCIONES DE JUGADAS
 -- ============================================================================
+-- MIGRACIÓN IDEMPOTENTE (se puede ejecutar completa las veces que haga falta).
+--
 -- Permite que un cliente tenga:
 --   1. Devolución por sí mismo (clientes.devolucion, ej. 1.00%, 1.25%, 1.50%).
---   2. Socio asignado (clientes.socio_asignado).
---   3. Comisión que devenga el socio por las jugadas de este cliente (clientes.comision_socio_pct).
+--   2. Socio asignado (clientes.socio_asignado) guardado como ID canónico.
+--   3. Comisión que devenga el socio por las jugadas de este cliente
+--      (clientes.comision_socio_pct).
 --   4. Fecha de inicio de recálculo (clientes.fecha_inicio_comision_socio).
 --
--- Se imputa en el saldo del socio de forma contable, no altera el cobro/pago del ticket.
+-- Se imputa en el saldo del socio de forma contable, no altera el cobro/pago
+-- del ticket nominal.
+--
+-- IMPORTANTE: el bloque ALTER va PRIMERO. Si copias sólo los UPDATE y la
+-- columna no existe, PostgreSQL falla con:
+--   ERROR 42703: column "comision_socio_pct" of relation "clientes" does not exist
 -- ============================================================================
 
 BEGIN;
 
--- 1. Agregar columnas a la tabla clientes si no existen
+-- ----------------------------------------------------------------------------
+-- 1. Columnas imprescindibles (idempotente)
+-- ----------------------------------------------------------------------------
 ALTER TABLE public.clientes
   ADD COLUMN IF NOT EXISTS comision_socio_pct NUMERIC(5,2) DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS fecha_inicio_comision_socio DATE DEFAULT '2026-10-29';
+  ADD COLUMN IF NOT EXISTS fecha_inicio_comision_socio DATE DEFAULT DATE '2026-10-29';
 
 COMMENT ON COLUMN public.clientes.comision_socio_pct IS
   'Porcentaje de comisión que se le otorga al socio_asignado por las jugadas de este cliente.';
@@ -23,99 +33,130 @@ COMMENT ON COLUMN public.clientes.comision_socio_pct IS
 COMMENT ON COLUMN public.clientes.fecha_inicio_comision_socio IS
   'Fecha a partir de la cual se calculan o recalculan las comisiones para el socio.';
 
--- 2. Asegurar que los socios tengan es_socio = true
+-- ----------------------------------------------------------------------------
+-- 2. Socios oficiales
+-- ----------------------------------------------------------------------------
 UPDATE public.clientes
    SET es_socio = true
  WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) IN ('EDDIE', 'MEMPHIS', 'PARTNER', 'THOR');
 
--- 3. Asignación de Parámetros de Devolución por sí mismo
--- 🔀 ARRAEZ: 1.00%
+-- ----------------------------------------------------------------------------
+-- 3. Devolución propia de cada destinatario
+-- ----------------------------------------------------------------------------
 UPDATE public.clientes SET devolucion = 1.00 WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'ARRAEZ';
-
--- 🔀 EDDIE: 1.25%
 UPDATE public.clientes SET devolucion = 1.25 WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'EDDIE';
-
--- 🔀 FORTUNA: 1.00%
 UPDATE public.clientes SET devolucion = 1.00 WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'FORTUNA';
-
--- 🔀 INFANTINO: 1.00%
 UPDATE public.clientes SET devolucion = 1.00 WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'INFANTINO';
-
--- 🔀 MEMPHIS: 1.00%
 UPDATE public.clientes SET devolucion = 1.00 WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'MEMPHIS';
-
--- 🔀 PARTNER: 1.50%
 UPDATE public.clientes SET devolucion = 1.50 WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'PARTNER';
-
--- 🔀 RUSSO: 1.00%
 UPDATE public.clientes SET devolucion = 1.00 WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'RUSSO';
-
--- 🔀 SAM: 1.50%
 UPDATE public.clientes SET devolucion = 1.50 WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'SAM';
-
--- 🔀 THOR: 1.00%
 UPDATE public.clientes SET devolucion = 1.00 WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'THOR';
 
--- 4. Asignación de Socios y Comisión por Cliente (con fecha_inicio_comision_socio = '2026-10-29')
+-- ----------------------------------------------------------------------------
+-- 4. Migrar valores legacy de socio_asignado (nombre/seudónimo) a ID canónico
+-- ----------------------------------------------------------------------------
+-- El frontend guarda el ID (valorSocioAsignado). Las bases antiguas guardaban
+-- el nombre/seudónimo; esta sentencia normaliza ambos casos.
+UPDATE public.clientes c
+   SET socio_asignado = s.id::text
+  FROM public.clientes s
+ WHERE c.socio_asignado IS NOT NULL
+   AND TRIM(c.socio_asignado) <> ''
+   AND s.es_socio = true
+   AND (
+        UPPER(TRIM(c.socio_asignado)) = UPPER(TRIM(COALESCE(s.nombre, '')))
+     OR UPPER(TRIM(c.socio_asignado)) = UPPER(TRIM(COALESCE(s.seudonimo, '')))
+   )
+   AND UPPER(TRIM(COALESCE(c.nombre, c.seudonimo, ''))) <> UPPER(TRIM(COALESCE(s.nombre, s.seudonimo, '')));
 
--- EDDIE:
--- • (1,25%) por GAETANO
-UPDATE public.clientes
-   SET socio_asignado = 'EDDIE',
+-- ----------------------------------------------------------------------------
+-- 5. Asignación de socios y comisiones (socio_asignado = ID del socio)
+--    COALESCE(id, nombre) mantiene compatibilidad si el socio aún no existe.
+-- ----------------------------------------------------------------------------
+
+-- EDDIE: 1,25% por GAETANO; 1,00% por RUCIO
+UPDATE public.clientes c
+   SET socio_asignado = COALESCE(
+         (SELECT s.id::text FROM public.clientes s
+           WHERE UPPER(TRIM(COALESCE(s.nombre, s.seudonimo, ''))) = 'EDDIE'
+           ORDER BY s.id LIMIT 1),
+         'EDDIE'),
        comision_socio_pct = 1.25,
-       fecha_inicio_comision_socio = '2026-10-29'
- WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'GAETANO';
+       fecha_inicio_comision_socio = DATE '2026-10-29'
+ WHERE UPPER(TRIM(COALESCE(c.nombre, c.seudonimo, ''))) = 'GAETANO';
 
--- • (1,00%) por RUCIO
-UPDATE public.clientes
-   SET socio_asignado = 'EDDIE',
+UPDATE public.clientes c
+   SET socio_asignado = COALESCE(
+         (SELECT s.id::text FROM public.clientes s
+           WHERE UPPER(TRIM(COALESCE(s.nombre, s.seudonimo, ''))) = 'EDDIE'
+           ORDER BY s.id LIMIT 1),
+         'EDDIE'),
        comision_socio_pct = 1.00,
-       fecha_inicio_comision_socio = '2026-10-29'
- WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'RUCIO';
+       fecha_inicio_comision_socio = DATE '2026-10-29'
+ WHERE UPPER(TRIM(COALESCE(c.nombre, c.seudonimo, ''))) = 'RUCIO';
 
--- MEMPHIS:
--- • (1,00%) por NEWCASTLE
-UPDATE public.clientes
-   SET socio_asignado = 'MEMPHIS',
+-- MEMPHIS: 1,00% por NEWCASTLE
+UPDATE public.clientes c
+   SET socio_asignado = COALESCE(
+         (SELECT s.id::text FROM public.clientes s
+           WHERE UPPER(TRIM(COALESCE(s.nombre, s.seudonimo, ''))) = 'MEMPHIS'
+           ORDER BY s.id LIMIT 1),
+         'MEMPHIS'),
        comision_socio_pct = 1.00,
-       fecha_inicio_comision_socio = '2026-10-29'
- WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'NEWCASTLE';
+       fecha_inicio_comision_socio = DATE '2026-10-29'
+ WHERE UPPER(TRIM(COALESCE(c.nombre, c.seudonimo, ''))) = 'NEWCASTLE';
 
--- PARTNER:
--- • (1,00%) por ARELY
-UPDATE public.clientes
-   SET socio_asignado = 'PARTNER',
+-- PARTNER: 1,00% por ARELY; 1,00% por AYARI; 1,25% por BG; 1,00% por ROCA
+UPDATE public.clientes c
+   SET socio_asignado = COALESCE(
+         (SELECT s.id::text FROM public.clientes s
+           WHERE UPPER(TRIM(COALESCE(s.nombre, s.seudonimo, ''))) = 'PARTNER'
+           ORDER BY s.id LIMIT 1),
+         'PARTNER'),
        comision_socio_pct = 1.00,
-       fecha_inicio_comision_socio = '2026-10-29'
- WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'ARELY';
+       fecha_inicio_comision_socio = DATE '2026-10-29'
+ WHERE UPPER(TRIM(COALESCE(c.nombre, c.seudonimo, ''))) = 'ARELY';
 
--- • (1,00%) por AYARI
-UPDATE public.clientes
-   SET socio_asignado = 'PARTNER',
+UPDATE public.clientes c
+   SET socio_asignado = COALESCE(
+         (SELECT s.id::text FROM public.clientes s
+           WHERE UPPER(TRIM(COALESCE(s.nombre, s.seudonimo, ''))) = 'PARTNER'
+           ORDER BY s.id LIMIT 1),
+         'PARTNER'),
        comision_socio_pct = 1.00,
-       fecha_inicio_comision_socio = '2026-10-29'
- WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'AYARI';
+       fecha_inicio_comision_socio = DATE '2026-10-29'
+ WHERE UPPER(TRIM(COALESCE(c.nombre, c.seudonimo, ''))) = 'AYARI';
 
--- • (1,25%) por BG
-UPDATE public.clientes
-   SET socio_asignado = 'PARTNER',
+UPDATE public.clientes c
+   SET socio_asignado = COALESCE(
+         (SELECT s.id::text FROM public.clientes s
+           WHERE UPPER(TRIM(COALESCE(s.nombre, s.seudonimo, ''))) = 'PARTNER'
+           ORDER BY s.id LIMIT 1),
+         'PARTNER'),
        comision_socio_pct = 1.25,
-       fecha_inicio_comision_socio = '2026-10-29'
- WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'BG';
+       fecha_inicio_comision_socio = DATE '2026-10-29'
+ WHERE UPPER(TRIM(COALESCE(c.nombre, c.seudonimo, ''))) = 'BG';
 
--- • (1,00%) por ROCA
-UPDATE public.clientes
-   SET socio_asignado = 'PARTNER',
+UPDATE public.clientes c
+   SET socio_asignado = COALESCE(
+         (SELECT s.id::text FROM public.clientes s
+           WHERE UPPER(TRIM(COALESCE(s.nombre, s.seudonimo, ''))) = 'PARTNER'
+           ORDER BY s.id LIMIT 1),
+         'PARTNER'),
        comision_socio_pct = 1.00,
-       fecha_inicio_comision_socio = '2026-10-29'
- WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'ROCA';
+       fecha_inicio_comision_socio = DATE '2026-10-29'
+ WHERE UPPER(TRIM(COALESCE(c.nombre, c.seudonimo, ''))) = 'ROCA';
 
--- THOR:
--- • (1,00%) por SPEEDY
-UPDATE public.clientes
-   SET socio_asignado = 'THOR',
+-- THOR: 1,00% por SPEEDY
+UPDATE public.clientes c
+   SET socio_asignado = COALESCE(
+         (SELECT s.id::text FROM public.clientes s
+           WHERE UPPER(TRIM(COALESCE(s.nombre, s.seudonimo, ''))) = 'THOR'
+           ORDER BY s.id LIMIT 1),
+         'THOR'),
        comision_socio_pct = 1.00,
-       fecha_inicio_comision_socio = '2026-10-29'
- WHERE UPPER(TRIM(COALESCE(nombre, seudonimo, ''))) = 'SPEEDY';
+       fecha_inicio_comision_socio = DATE '2026-10-29'
+ WHERE UPPER(TRIM(COALESCE(c.nombre, c.seudonimo, ''))) = 'SPEEDY';
 
 COMMIT;

@@ -29,6 +29,7 @@ import { BotonIconoReporteSaldosVisual } from "@/features/saldos/components/Repo
 import { etiquetaJugada, caballoPareoLegible, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 import { redondearCentavos } from "@/shared/lib/dinero";
 import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
+import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
 
 const fmtMonto = (n: number) =>
   n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -225,7 +226,14 @@ export function ReporteModule() {
   useEffect(() => {
     if (!grupoId) return;
     listarClientes(true, grupoId)
-      .then((cs) => setClientesGrupo(cs))
+      .then(async (cs) => {
+        try {
+          const sincronizados = await sincronizarSaldosRealesClientes(cs, grupoId);
+          setClientesGrupo(sincronizados as ClienteRow[]);
+        } catch {
+          setClientesGrupo(cs);
+        }
+      })
       .catch(() => setClientesGrupo([]));
   }, [grupoId]);
 
