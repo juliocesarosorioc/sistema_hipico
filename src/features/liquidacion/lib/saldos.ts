@@ -276,6 +276,7 @@ export function decidirTickets(
               : m;
           return {
             cliente: jugador,
+            clienteId: jugador,
             grupoId,
             caballo: String(decisiones[i].fila.caballo ?? "").trim(),
             ok: r.ok,
@@ -288,7 +289,7 @@ export function decidirTickets(
         ...input.crucesPuestos,
         pctComision: tasa,
       });
-      const liquidacion = liquidaciones.find((x) => x.cliente === jugador && x.grupoId === grupoId);
+      const liquidacion = liquidaciones.find((x) => x.clienteId === jugador && x.grupoId === grupoId);
       if (!liquidacion) continue;
       const ganadores = idxs.filter((i) => decisiones[i].res.ok);
       const comisionOriginal = ganadores.reduce((suma, i) => suma + decisiones[i].res.gananciaCasa, 0);

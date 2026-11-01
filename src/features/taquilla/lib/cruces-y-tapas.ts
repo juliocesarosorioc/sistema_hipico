@@ -457,6 +457,7 @@ export function _comprometidoSimuladoCli(
 
 export type LineaResultadoParaCruce = {
   cliente: string;
+  clienteId?: string;
   brutoGanado: number;
   brutoPerdido: number;
   comisionCobrada?: number;
@@ -465,6 +466,7 @@ export type LineaResultadoParaCruce = {
 
 export type ReembolsoCruceCliente = {
   cliente: string;
+  clienteId?: string;
   brutoGanado: number;
   brutoPerdido: number;
   baseCruce: number;
@@ -504,6 +506,7 @@ export function calcularReembolsosCruce(
     string,
     {
       nombreOriginal: string;
+      clienteId?: string;
       ganadoCentavos: number;
       perdidoCentavos: number;
       comisionCobradaCentavos: number;
@@ -511,10 +514,12 @@ export function calcularReembolsosCruce(
   >();
 
   for (const l of lineas) {
-    const clave = normalizarNombreCliente(l.cliente);
+    const clienteId = String(l.clienteId ?? "").trim();
+    const clave = normalizarNombreCliente(clienteId || l.cliente);
     if (!clave) continue;
     const prev = acumulados.get(clave) ?? {
       nombreOriginal: String(l.cliente).trim(),
+      ...(clienteId ? { clienteId } : {}),
       ganadoCentavos: 0,
       perdidoCentavos: 0,
       comisionCobradaCentavos: 0,
@@ -550,6 +555,7 @@ export function calcularReembolsosCruce(
       if (reembolsoCruce > 0) {
         const item: ReembolsoCruceCliente = {
           cliente: acc.nombreOriginal,
+          ...(acc.clienteId ? { clienteId: acc.clienteId } : {}),
           brutoGanado: deCentavos(acc.ganadoCentavos),
           brutoPerdido: deCentavos(acc.perdidoCentavos),
           baseCruce,
@@ -583,6 +589,7 @@ export function calcularReembolsosCruce(
 export function _reembolsosCruce(
   lineas: Array<{
     cliente: string;
+    clienteId?: string;
     brutoGanado?: number;
     brutoPerdido?: number;
     resultado?: number | null;
@@ -613,6 +620,7 @@ export function _reembolsosCruce(
     }
     return {
       cliente: l.cliente,
+      clienteId: l.clienteId,
       brutoGanado,
       brutoPerdido,
       comisionCobrada: l.comisionCobrada,

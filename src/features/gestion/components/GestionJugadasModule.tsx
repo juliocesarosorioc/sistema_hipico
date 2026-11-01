@@ -2660,6 +2660,7 @@ const hipodromosDelDia = useMemo(() => {
             monto: t.monto,
             caballo: t.caballo,
             cliente1: t.cliente1,
+            cliente1Id: t.cliente1Id,
             cliente2: t.cliente2,
             grupoId: t.grupoId ?? grupoSesion ?? undefined,
             permiteCruces: conCruces ? permiteCrucesDe(t.cliente1 ?? "") : false,

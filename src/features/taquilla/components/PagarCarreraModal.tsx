@@ -247,7 +247,15 @@ export function PagarCarreraModal() {
       // con ese campo, no parseándolo del comando (en las W/P/S el comando es
       // solo "100 W"). Sin esto, `pagarYCerrar` liquidaba contra "" y la
       // jugada se guardaba como Perdedor aunque hubiera ganado.
-      tickets: tickets.map((t) => ({ comando: t.comando, monto: t.monto, caballo: t.caballo })),
+      tickets: tickets.map((t) => ({
+        comando: t.comando,
+        monto: t.monto,
+        caballo: t.caballo,
+        cliente1: t.cliente1,
+        cliente1Id: t.cliente1Id,
+        cliente2: t.cliente2,
+        grupoId: t.grupoId,
+      })),
     });
     if (res.ok) {
       // El resultado central (fuente de verdad) y el pago de tablas fijas,

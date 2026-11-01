@@ -51,6 +51,8 @@ export type TicketPagar = {
   caballo?: string;
   /** Nombre del CLIENTE 1 (el que "juega") — para el neteo de cruces. */
   cliente1?: string;
+  /** UUID estable del CLIENTE 1; evita separar una cuenta por cambios de alias/nombre. */
+  cliente1Id?: string;
   /** Nombre del CLIENTE 2 (el que "da") — referencia de la operación. */
   cliente2?: string;
   grupoId?: string;
@@ -59,6 +61,10 @@ export type TicketPagar = {
    *  (factura comisión por ticket). undefined ⇒ se permite el neteo. */
   permiteCruces?: boolean;
 };
+
+function identidadCruceTicket(ticket: Pick<TicketPagar, "cliente1" | "cliente1Id">): string {
+  return String(ticket.cliente1Id ?? "").trim() || String(ticket.cliente1 ?? "").trim();
+}
 
 export type ResLiquidarCarrera = {
   ok: boolean;
@@ -253,6 +259,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   const procesados: ResLiquidarCarrera["procesados"] = [];
   const metadatos: Array<{
     cliente1?: string;
+    cliente1Id?: string;
     grupoId?: string;
     caballo: string;
     monto: number;
@@ -299,6 +306,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     t.permiteCruces = opts.permiteCruces !== false;
     metadatos.push({
       cliente1: t.cliente1,
+      cliente1Id: t.cliente1Id,
       grupoId: t.grupoId ?? (grupoPuestoRespaldo || undefined),
       caballo: String(t.caballo ?? "").trim(),
       monto,
@@ -328,7 +336,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     const m = metadatos[i].monto;
     const perdidaEfectiva = !r.ok && r.totalClienteNeto > 0 && r.totalClienteNeto < m ? round2(m - r.totalClienteNeto) : m;
     return {
-      cliente: metadatos[i].cliente1 ?? "",
+      cliente: identidadCruceTicket(metadatos[i]),
       caballo: metadatos[i].caballo,
       monto: perdidaEfectiva,
       bruto: r.ok ? r.totalClienteNeto + r.gananciaCasa : 0,
@@ -343,11 +351,12 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   for (let i = 0; i < procesados.length; i++) {
     if (usaModalidadesPuestos && esJugadaDePuestos(metadatos[i].tipo)) continue;
     const t = tickets[i];
-    if (!(t.cliente1 ?? "").trim() || (!(t.caballo ?? "").trim() && !(agruparPorCliente !== false))) continue;
+    const identidad = identidadCruceTicket(t);
+    if (!identidad || (!(t.caballo ?? "").trim() && !(agruparPorCliente !== false))) continue;
     const k =
       agruparPorCliente !== false
-        ? [String(carrera ?? "").trim().toUpperCase(), String(t.cliente1!).trim().toUpperCase()].join("::")
-        : claveCruceFinanciero(carrera, t.cliente1!, t.caballo!);
+        ? [String(carrera ?? "").trim().toUpperCase(), identidad.trim().toUpperCase()].join("::")
+        : claveCruceFinanciero(carrera, identidad, t.caballo!);
     const g = gruposNeteo.get(k);
     if (!g || g.conteo < 2) continue;
     const arr = gruposIdx.get(k) ?? [];
@@ -376,16 +385,17 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     const indicesPorJugador = new Map<string, number[]>();
     for (let i = 0; i < procesados.length; i++) {
       if (!esJugadaDePuestos(metadatos[i].tipo)) continue;
-      const nombre = String(metadatos[i].cliente1 ?? "").trim().toUpperCase();
-      if (!nombre) continue;
+      const identidad = identidadCruceTicket(metadatos[i]).trim().toUpperCase();
+      if (!identidad) continue;
       const grupoId = String(metadatos[i].grupoId ?? "").trim();
-      const claveJugadorGrupo = `${grupoId}::${nombre}`;
+      const claveJugadorGrupo = `${grupoId}::${identidad}`;
       const idxs = indicesPorJugador.get(claveJugadorGrupo) ?? [];
       idxs.push(i);
       indicesPorJugador.set(claveJugadorGrupo, idxs);
     }
     for (const idxs of indicesPorJugador.values()) {
-      const jugador = String(metadatos[idxs[0]].cliente1 ?? "").trim().toUpperCase();
+      const jugador = identidadCruceTicket(metadatos[idxs[0]]).trim().toUpperCase();
+      const clienteId = String(metadatos[idxs[0]].cliente1Id ?? "").trim();
       const grupoId = String(metadatos[idxs[0]].grupoId ?? "").trim();
       const entradas: EntradaCrucePuestos[] = idxs
         .filter((i) => {
@@ -398,7 +408,8 @@ export async function liquidarCarreraYCerrarTabla(opts: {
           const m = metadatos[i].monto;
           const perdidaEfectiva = !r.ok && r.totalClienteNeto > 0 && r.totalClienteNeto < m ? round2(m - r.totalClienteNeto) : m;
           return {
-            cliente: jugador,
+            cliente: String(metadatos[i].cliente1 ?? "").trim() || jugador,
+            ...(clienteId ? { clienteId } : {}),
             grupoId,
             caballo: metadatos[i].caballo,
             ok: r.ok,
@@ -412,7 +423,10 @@ export async function liquidarCarreraYCerrarTabla(opts: {
         ...crucesPuestos,
         pctComision: Number(tasaComision ?? 5),
       });
-      const liquidacion = liquidaciones.find((x) => x.cliente === jugador && x.grupoId === grupoId);
+      const liquidacion = liquidaciones.find((x) =>
+        (clienteId ? x.clienteId === clienteId : x.cliente.trim().toUpperCase() === jugador) &&
+        x.grupoId === grupoId
+      );
       if (!liquidacion) continue;
       const ganadores = idxs.filter((i) => procesados[i].resultado.ok);
       const comisionOriginal = ganadores.reduce((suma, i) => suma + procesados[i].resultado.gananciaCasa, 0);

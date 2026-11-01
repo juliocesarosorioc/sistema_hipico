@@ -118,6 +118,39 @@ si(
   "las jugadas 13 y 14 del mismo ID se totalizan una sola vez bajo EDDIE (+150)"
 );
 
+const cruceAliasEddie = armarReporteCarrera({
+  ...CARRERA,
+  filas: [
+    { id: "carrera-alias-eddie-j-0", rol: "Juega", cliente: "EDDIE", clienteId: "cliente-eddie", jugada: "1p", caballo: "1", monto: 200, resultado: 190 },
+    { id: "carrera-alias-eddie-j-1", rol: "Juega", cliente: "DAVID ADONAY CABRERA LEON", clienteId: "cliente-eddie", jugada: "1p", caballo: "2", monto: 50, resultado: -50 },
+  ],
+}, undefined, undefined, { comisionPct: 5 });
+si(
+  cruceAliasEddie.resumen.ganan.length === 1 &&
+    cruceAliasEddie.resumen.ganan[0]?.nombre === "EDDIE" &&
+    cruceAliasEddie.resumen.ganan[0]?.monto === 142.5 &&
+    cruceAliasEddie.resumen.pierden.length === 0,
+  "el reporte agrupa ganancias, pérdidas y cruce por ID aunque cambie el nombre del ticket"
+);
+si(
+  cruceAliasEddie.asientosBonoCruce?.length === 1 &&
+    cruceAliasEddie.asientosBonoCruce[0]?.bonoCruce === 2.5,
+  "el bono de cruce se atribuye al ID y se incluye en el total del reporte"
+);
+
+const cuentasMismoAlias = armarReporteCarrera({
+  ...CARRERA,
+  filas: [
+    { id: "carrera-alias-partner-j-0", rol: "Juega", cliente: "PARTNER", clienteId: "cliente-partner-1", jugada: "1p", caballo: "1", monto: 100, resultado: 100 },
+    { id: "carrera-alias-partner-j-1", rol: "Juega", cliente: "PARTNER", clienteId: "cliente-partner-2", jugada: "1p", caballo: "2", monto: 100, resultado: 100 },
+  ],
+}, undefined, undefined, { modalidadCruce: "sin_cruces" });
+si(
+  cuentasMismoAlias.resumen.ganan.length === 2 &&
+    cuentasMismoAlias.resumen.ganan.every((cuenta) => cuenta.nombre === "PARTNER"),
+  "un seudónimo repetido con IDs distintos mantiene cuentas financieras separadas"
+);
+
 // ── 4b. Los PENDIENTES (resultado null) no ensucian el resumen ──
 const conPendiente = armarReporteCarrera({
   ...CARRERA,

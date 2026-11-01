@@ -293,8 +293,10 @@ export function armarReporteCarrera(
   const riesgoPorCliente = new Map<string, number>();
   const nombreVisiblePorClave = new Map<string, string>();
   const identidadPorNombre = new Map<string, string>();
+  const identidadPorId = new Map<string, string>();
   const lineasCruce: Array<{
     cliente: string;
+    clienteId?: string;
     resultado: number;
     comisionCobrada?: number;
     comisionPct?: number;
@@ -305,12 +307,10 @@ export function armarReporteCarrera(
   const registrarNombreCliente = (raw: string, clienteId?: string): string => {
     const nombreNormalizado = normalizarNombreCliente(raw);
     const idNormalizado = String(clienteId ?? "").trim();
-    // Los reportes ya resuelven el seudónimo por ID; agrupar por esa etiqueta
-    // visible también une tickets históricos con IDs distintos del mismo alias.
-    const clave = nombreNormalizado
-      ? `nombre:${nombreNormalizado}`
-      : idNormalizado
-        ? `id:${idNormalizado}`
+    const clave = idNormalizado
+      ? identidadPorId.get(idNormalizado.toUpperCase()) ?? `id:${idNormalizado.toUpperCase()}`
+      : nombreNormalizado
+        ? identidadPorNombre.get(nombreNormalizado) ?? `nombre:${nombreNormalizado}`
         : "";
     if (!clave) return "";
     const existente = nombreVisiblePorClave.get(clave);
@@ -318,7 +318,8 @@ export function armarReporteCarrera(
     if (!existente || (existente === existente.toLowerCase() && limpio === limpio.toUpperCase())) {
       nombreVisiblePorClave.set(clave, limpio);
     }
-    if (nombreNormalizado) identidadPorNombre.set(nombreNormalizado, clave);
+    if (nombreNormalizado && !idNormalizado) identidadPorNombre.set(nombreNormalizado, clave);
+    if (idNormalizado) identidadPorId.set(idNormalizado.toUpperCase(), clave);
     return clave;
   };
 
@@ -428,6 +429,7 @@ export function armarReporteCarrera(
         netoPorCliente.set(claveCliente, sumarDinero(netoPorCliente.get(claveCliente) ?? 0, resultado));
         lineasCruce.push({
           cliente: nombreVisiblePorClave.get(claveCliente) ?? f.cliente,
+          ...(f.clienteId ? { clienteId: f.clienteId } : {}),
           resultado,
           comisionCobrada: f.comisionCobrada,
           comisionPct: opciones?.comisionPct,
@@ -443,18 +445,21 @@ export function armarReporteCarrera(
   if (conCruces) {
     const comPct = opciones?.comisionPct ?? 5;
     const { porCliente } = _reembolsosCruce(lineasCruce, "con_cruces", comPct);
-    for (const [clave, info] of porCliente) {
+    for (const [claveCruce, info] of porCliente) {
       if (info.reembolsoCruce > 0) {
         // El reembolso reduce la comisión efectiva: se acredita una sola vez al
         // neto consolidado, además de conservarse como asiento auditable.
-        const claveIdentidad = identidadPorNombre.get(normalizarNombreCliente(info.cliente)) ?? `nombre:${clave}`;
+        const claveIdentidad = info.clienteId
+          ? identidadPorId.get(info.clienteId.toUpperCase())
+          : identidadPorNombre.get(normalizarNombreCliente(info.cliente));
+        const destino = claveIdentidad ?? `nombre:${claveCruce}`;
         netoPorCliente.set(
-          claveIdentidad,
-          sumarDinero(netoPorCliente.get(claveIdentidad) ?? 0, info.reembolsoCruce)
+          destino,
+          sumarDinero(netoPorCliente.get(destino) ?? 0, info.reembolsoCruce)
         );
         asientosBonoCruce.push({
           concepto: "Bono por Cruce de jugadas",
-          cliente: nombreVisiblePorClave.get(claveIdentidad) ?? info.cliente,
+          cliente: nombreVisiblePorClave.get(destino) ?? info.cliente,
           brutoGanado: info.brutoGanado,
           brutoPerdido: info.brutoPerdido,
           baseCruce: info.baseCruce,

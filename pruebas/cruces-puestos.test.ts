@@ -207,5 +207,30 @@ const assert = (cond: boolean, msg: string) => {
   assert(liquidaciones.find((x) => x.grupoId === "grupo-b")?.comision === 10, "Caso 9 grupo B no debe cruzar");
 }
 
+// Caso 10: un ID estable une tickets con nombres distintos y resuelve su regla de cruce.
+{
+  const clienteId = "cliente-eddie-uuid";
+  const [liquidacion] = calcularLiquidacionPuestosCarrera(
+    [
+      { cliente: "EDDIE", clienteId, caballo: "1", ok: true, bruto: 150, monto: 50 },
+      { cliente: "DAVID ADONAY CABRERA LEON", clienteId, caballo: "2", ok: false, bruto: 0, monto: 50 },
+    ],
+    {
+      pctComision: 10,
+      grupo: { mismoEjemplar: false, diferenteEjemplar: false },
+      porJugadorPermanente: {
+        [clienteId]: { mismoEjemplar: false, diferenteEjemplar: true },
+      },
+    }
+  );
+  assert(liquidacion.participantes === 2, "Caso 10 agrupa los alias del mismo ID");
+  assert(liquidacion.clienteId === clienteId, "Caso 10 conserva el ID estable");
+  assert(liquidacion.comision === 5, "Caso 10 aplica la regla de cruce por ID");
+  assert(
+    liquidacion.modalidadesAplicadas.some((modalidad) => modalidad.modalidad === "diferenteEjemplar"),
+    "Caso 10 reporta el cruce entre ejemplares distintos"
+  );
+}
+
 console.log("cruces-puestos:", pasan, "OK /", fallan, "FALLAS");
 if (fallan > 0) process.exit(1);

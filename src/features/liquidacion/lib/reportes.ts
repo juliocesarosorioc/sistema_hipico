@@ -1722,6 +1722,7 @@ async function carreraReporte(
     .filter((f) => f.rol !== "CRUCE" && f.resultado !== null && Number.isFinite(f.resultado))
     .map((f) => ({
       cliente: f.cliente,
+      ...(f.clienteId ? { clienteId: f.clienteId } : {}),
       resultado: f.resultado as number,
       comisionCobrada: f.comisionCobrada,
       comisionPct: tasaComision ?? 5,
