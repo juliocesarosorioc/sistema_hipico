@@ -120,7 +120,7 @@ Deno.serve(async (req: Request) => {
             if (ap) {
               await db.from("whatsapp_control_carrera_grupo").upsert(
                 { fecha: hoy, hipodromo: ap.hipodromo, carrera: ap.carrera, estado_carrera: "ABIERTA", grupo_id: groupId },
-                { onConflict: "fecha,hipodromo,carrera" }
+                { onConflict: "fecha,grupo_id,hipodromo,carrera" }
               );
               await enviarWhatsApp(groupId, `🟢 ABIERTA ${ap.hipodromo} - CARRERA ${ap.carrera}. Hagan sus jugadas.`, String(phone_number_id ?? ""));
               continue;
@@ -139,6 +139,7 @@ Deno.serve(async (req: Request) => {
             // Pizarra
             const pz = parsearPizarra(msgText);
             if (pz) {
+              await db.from("whatsapp_control_carrera_grupo").update({ estado_carrera: "PIZARRA", updated_at: ahora }).eq("grupo_id", groupId).eq("fecha", hoy);
               await enviarWhatsApp(groupId, `🏁 Pizarra oficial: ${pz.join("-")}. Procesando liquidación...`, String(phone_number_id ?? ""));
               continue;
             }
@@ -152,51 +153,68 @@ Deno.serve(async (req: Request) => {
               .order("created_at", { ascending: false })
               .limit(1)
               .maybeSingle();
-            if ((carreraActiva as Fila)?.estado_carrera === "CERRADA") {
+            if ((carreraActiva as Fila)?.estado_carrera === "CERRADA" || (carreraActiva as Fila)?.estado_carrera === "PIZARRA") {
               await enviarWhatsApp(groupId, "⛔ Carrera cerrada, no se registran más jugadas.", String(phone_number_id ?? ""));
             }
           } else {
             // DM: consultas, abonos y autorización de admin
             const low = msgText.toLowerCase();
-            const mAuth = low.match(/autorizar\s+#?([a-z0-9]+)/i);
-            if (mAuth) {
-              const codigo = `#${mAuth[1].toUpperCase()}`;
+            // Admin confirma con "SÍ <codigo>" o "autorizar #CODE"
+            const mSi = low.match(/^(s[ií]|si)\s+#?([a-z0-9]+)/i) || low.match(/autorizar\s+#?([a-z0-9]+)/i);
+            const codigoMatch = mSi ? (mSi[2] ?? mSi[1]) : null;
+            if (codigoMatch) {
+              const codigo = `#${String(codigoMatch).toUpperCase()}`;
               const { data: sol } = await db.from("whatsapp_solicitudes_abono").select("*").eq("codigo_corto", codigo).maybeSingle();
               const s = sol as Fila | null;
               if (s && s.estado === "PENDIENTE") {
                 const monto = Number(s.monto ?? 0);
-                // incrementar saldo del cliente
                 if (s.cliente_id) {
-                  const { data: cli } = await db.from("clientes").select("saldo_actual").eq("id", s.cliente_id).maybeSingle();
+                  const { data: cli } = await db.from("clientes").select("saldo_actual, aval").eq("id", s.cliente_id).maybeSingle();
                   const actual = Number((cli as Fila)?.saldo_actual ?? 0);
                   await db.from("clientes").update({ saldo_actual: actual + monto }).eq("id", s.cliente_id);
                 }
                 await db.from("whatsapp_solicitudes_abono").update({ estado: "APROBADO", updated_at: ahora }).eq("codigo_corto", codigo);
-                await enviarWhatsApp(from, `✅ Abono ${codigo} aprobado por ${monto}.`, String(phone_number_id ?? ""));
-                if (s.cliente_nombre) await enviarWhatsApp(String(s.cliente_nombre), `Tu abono ${codigo} fue aprobado. Nuevo saldo disponible.`, String(phone_number_id ?? ""));
+                await enviarWhatsApp(from, `✅ Abono ${codigo} aprobado por ${monto}. Saldo actualizado.`, String(phone_number_id ?? ""));
+                if (s.cliente_id) {
+                  const { data: cli2 } = await db.from("clientes").select("telefono, saldo_actual").eq("id", s.cliente_id).maybeSingle();
+                  const tel = (cli2 as Fila)?.telefono;
+                  if (tel) await enviarWhatsApp(String(tel), `Tu abono ${codigo} fue aprobado. Nuevo saldo: ${ (cli2 as Fila)?.saldo_actual ?? 0}.`, String(phone_number_id ?? ""));
+                }
               } else {
                 await enviarWhatsApp(from, `No se encontró la solicitud ${codigo} o ya fue procesada.`, String(phone_number_id ?? ""));
               }
               continue;
             }
             if (low.includes("saldo")) {
-              const { data: cli } = await db.from("clientes").select("nombre,saldo_actual,disponible").eq("telefono", from).maybeSingle();
+              const { data: cli } = await db.from("clientes").select("nombre,saldo_actual,aval,modo_juego").eq("telefono", from).maybeSingle();
               const c = cli as Fila | null;
-              const resp = c
-                ? `💰 Saldo contable: ${c.saldo_actual ?? 0}\n✨ Disponible: ${c.disponible ?? c.saldo_actual ?? 0}\n¡Éxitos!`
-                : "No encontré tu cuenta. Contacta al administrador.";
-              await enviarWhatsApp(from, resp, String(phone_number_id ?? ""));
-            } else if (low.includes("abonar") || low.includes("recargar")) {
-              // crear solicitud de abono (monto por defecto 0; el admin completa)
-              const codigo = `#${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-              await db.from("whatsapp_solicitudes_abono").insert({
-                codigo_corto: codigo,
-                cliente_nombre: from,
-                monto: 0,
-                metodo_pago: "WhatsApp",
-                estado: "PENDIENTE",
-              });
-              await enviarWhatsApp(from, `Solicitud de abono creada ${codigo}. El administrador la revisará.`, String(phone_number_id ?? ""));
+              if (!c) {
+                await enviarWhatsApp(from, "No encontré tu cuenta. Contacta al administrador.", String(phone_number_id ?? ""));
+              } else {
+                const saldo = Number(c.saldo_actual ?? 0);
+                const aval = Number(c.aval ?? 0);
+                const disponible = String(c.modo_juego ?? "").toLowerCase() === "libre" ? "LIBRE" : (saldo + aval);
+                await enviarWhatsApp(from, `💰 Saldo actual: ${saldo}\n✨ Disponible para jugar: ${disponible}\n¡Éxitos!`, String(phone_number_id ?? ""));
+              }
+            } else {
+              const mAbono = low.match(/(?:abonar|recargar)\s+(\d+(?:[.,]\d+)?)/i);
+              if (mAbono || low.includes("abonar") || low.includes("recargar")) {
+                const monto = mAbono ? Number(String(mAbono[1]).replace(",", ".")) : 0;
+                // identificar cliente por teléfono
+                const { data: cli } = await db.from("clientes").select("id, nombre").eq("telefono", from).maybeSingle();
+                const c = cli as Fila | null;
+                const codigo = `#${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+                await db.from("whatsapp_solicitudes_abono").insert({
+                  codigo_corto: codigo,
+                  cliente_id: c?.id ?? null,
+                  cliente_nombre: c?.nombre ?? from,
+                  monto,
+                  metodo_pago: "WhatsApp",
+                  estado: "PENDIENTE",
+                  grupo_id: null,
+                });
+                await enviarWhatsApp(from, `Solicitud de abono creada ${codigo} por ${monto}. El administrador la aprobará respondiendo SÍ ${codigo}.`, String(phone_number_id ?? ""));
+              }
             }
           }
         }
