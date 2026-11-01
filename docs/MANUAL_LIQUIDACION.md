@@ -108,6 +108,22 @@ la modalidad correspondiente está habilitada:
 - **Mismo Ejemplar:** compensa ganancias y pérdidas del mismo caballo.
 - **Diferentes Ejemplares:** permite compensar tickets de caballos distintos.
 
+Con el cruce habilitado, primero se compensan las ganancias brutas con las
+pérdidas elegibles de esa carrera. La comisión se calcula sobre el saldo positivo
+resultante, nunca sobre las ganancias ganadoras antes de cruzarlas:
+
+```
+baseComision = max(0, gananciasBrutas - perdidasCruzadas)
+comision = baseComision × porcentajeComision
+resultadoCliente = gananciasBrutas - perdidasBrutas - comision
+```
+
+Ejemplo al 5 %: ganar 200 y perder 50 deja una base de comisión de 150,
+comisión de 7,50 y resultado neto de **+142,50**. Si la comisión de 10 ya se
+retuvo por ticket, el reporte acredita una sola devolución de 2,50 por el cruce.
+Sin cruce habilitado, se mantiene la comisión calculada individualmente por cada
+ticket ganador.
+
 La regla se resuelve por modalidad con esta prioridad: excepción del jugador en
 la carrera, excepción para todos en esa carrera, ficha permanente del jugador y,
 por último, configuración permanente del grupo. En la ficha del jugador,

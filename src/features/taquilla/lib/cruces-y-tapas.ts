@@ -477,6 +477,8 @@ export type ReembolsoCruceCliente = {
  * Para cada cliente que participó en la carrera, acumula por separado `brutoGanado` y `brutoPerdido`.
  * Si `brutoGanado > 0` y `brutoPerdido > 0`:
  *   reembolsoCruce = redondearCentavos((comisionPct / 100) * min(brutoGanado, brutoPerdido))
+ * Ese reembolso equivale a recalcular la comisión sobre max(0, ganado - perdido)
+ * cuando la comisión original ya se había retenido individualmente por ticket.
  */
 export function calcularReembolsosCruce(
   lineas: LineaResultadoParaCruce[],

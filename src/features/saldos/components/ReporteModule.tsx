@@ -475,10 +475,20 @@ export function ReporteModule() {
 
           // Agrupar filas de jugadas reales por cliente en esta carrera para calcular la devolución exacta
           const filasPorCliente = new Map<string, FilaReporte[]>();
+          const bonoCrucePorCliente = new Map<string, number>();
 
           for (const f of c.filas) {
             const cli = String(f.cliente ?? "").trim().toUpperCase();
             if (f.rol === "CRUCE" || f.jugada === "Bono por Cruce de jugadas") {
+              if (f.jugada === "Bono por Cruce de jugadas" && cli && cli !== "—" && f.resultado !== null) {
+                bonoCrucePorCliente.set(
+                  cli,
+                  redondearCentavos((bonoCrucePorCliente.get(cli) ?? 0) + f.resultado)
+                );
+                sumaResultadosCarrera = redondearCentavos(sumaResultadosCarrera + f.resultado);
+                ganan = redondearCentavos(ganan + Math.max(0, f.resultado));
+                pierden = redondearCentavos(pierden + Math.min(0, f.resultado));
+              }
               continue;
             }
             if (cli && cli !== "—" && f.resultado !== null) {
@@ -507,7 +517,8 @@ export function ReporteModule() {
           // Para cada cliente en la carrera, calcular su resultado neto y su devolución exacta
           for (const [cli, filasCli] of filasPorCliente.entries()) {
             const netoJugadas = redondearCentavos(
-              filasCli.reduce((acc, f) => acc + (f.resultado ?? 0), 0)
+              filasCli.reduce((acc, f) => acc + (f.resultado ?? 0), 0) +
+                (bonoCrucePorCliente.get(cli) ?? 0)
             );
             const devPct = mapaInfoClientes.get(cli)?.devolucionPct ?? 0;
             const resDev = calcularBaseDecididaCarrera(

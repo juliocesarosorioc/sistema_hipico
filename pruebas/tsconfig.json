@@ -86,6 +86,7 @@
     "./tablas-marcas-grupo.test.ts",
     "./normalizar-carga.test.ts",
     "./reporte-carrera.test.ts",
+    "./reporte-cruce-total.test.ts",
     "./reporte-marcas.test.ts",
     "./mensaje-resultado.test.ts",
     "./preliminar-resultado.test.ts",
