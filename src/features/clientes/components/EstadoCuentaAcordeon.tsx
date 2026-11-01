@@ -486,9 +486,12 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
               </div>
             </div>
             <div className="text-right">
-              <div className="text-[9px] text-slate-300 uppercase">Resultado del Período</div>
+              <div className="text-[9px] text-slate-300 uppercase">Saldo Actual (Libro)</div>
               <div className="text-sm font-black">
-                {formatoMoneda("USD", devolucionPct > 0 ? totales.monto + totales.dec : totales.monto)}
+                {formatoMoneda("USD", ficha ? ficha.saldoContable : Number(clienteEstado.saldo_actual ?? 0))}
+              </div>
+              <div className="text-[9px] text-slate-400 mt-0.5">
+                Resultado del período: {formatoMoneda("USD", devolucionPct > 0 ? totales.monto + totales.dec : totales.monto)}
               </div>
               {devolucionPct > 0 ? (
                 <div className="text-[10px] font-bold text-emerald-300">
