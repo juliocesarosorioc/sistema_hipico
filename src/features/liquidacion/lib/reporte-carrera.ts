@@ -292,18 +292,26 @@ export function armarReporteCarrera(
   const netoPorCliente = new Map<string, number>();
   const riesgoPorCliente = new Map<string, number>();
   const nombreVisiblePorClave = new Map<string, string>();
-  const lineasCruce: Array<{ cliente: string; resultado: number }> = [];
+  const identidadPorNombre = new Map<string, string>();
+  const lineasCruce: Array<{
+    cliente: string;
+    resultado: number;
+    comisionCobrada?: number;
+    comisionPct?: number;
+  }> = [];
   const observacionesOrdenExceso: ObservacionOrdenExceso[] = [];
   const usadoProgresivoPorCliente = new Map<string, number>();
 
-  const registrarNombreCliente = (raw: string): string => {
-    const clave = normalizarNombreCliente(raw);
-    if (!clave) return "";
+  const registrarNombreCliente = (raw: string, clienteId?: string): string => {
+    const nombreNormalizado = normalizarNombreCliente(raw);
+    const clave = clienteId ? `id:${clienteId}` : `nombre:${nombreNormalizado}`;
+    if (!clienteId && !nombreNormalizado) return "";
     const existente = nombreVisiblePorClave.get(clave);
     const limpio = String(raw ?? "").trim();
     if (!existente || (existente === existente.toLowerCase() && limpio === limpio.toUpperCase())) {
       nombreVisiblePorClave.set(clave, limpio);
     }
+    if (nombreNormalizado) identidadPorNombre.set(nombreNormalizado, clave);
     return clave;
   };
 
@@ -322,7 +330,7 @@ export function armarReporteCarrera(
     }
     if (!pasaFiltroModalidad({ es_adelantada: f.esAdelantada }, filtro)) continue;
     const resultado = f.resultado; // number | null (null = pendiente)
-    const claveCliente = registrarNombreCliente(f.cliente);
+    const claveCliente = registrarNombreCliente(f.cliente, f.clienteId);
     if (f.rol !== "Consigue") {
       ordenJuego += 1;
       const i = indiceTicketDe(f.id) ?? `t-${correlativo++}`;
@@ -411,7 +419,12 @@ export function armarReporteCarrera(
 
       if (resultado !== null) {
         netoPorCliente.set(claveCliente, sumarDinero(netoPorCliente.get(claveCliente) ?? 0, resultado));
-        lineasCruce.push({ cliente: nombreVisiblePorClave.get(claveCliente) ?? f.cliente, resultado });
+        lineasCruce.push({
+          cliente: nombreVisiblePorClave.get(claveCliente) ?? f.cliente,
+          resultado,
+          comisionCobrada: f.comisionCobrada,
+          comisionPct: opciones?.comisionPct,
+        });
       }
     }
   }
@@ -427,13 +440,14 @@ export function armarReporteCarrera(
       if (info.reembolsoCruce > 0) {
         // El reembolso reduce la comisión efectiva: se acredita una sola vez al
         // neto consolidado, además de conservarse como asiento auditable.
+        const claveIdentidad = identidadPorNombre.get(normalizarNombreCliente(info.cliente)) ?? `nombre:${clave}`;
         netoPorCliente.set(
-          clave,
-          sumarDinero(netoPorCliente.get(clave) ?? 0, info.reembolsoCruce)
+          claveIdentidad,
+          sumarDinero(netoPorCliente.get(claveIdentidad) ?? 0, info.reembolsoCruce)
         );
         asientosBonoCruce.push({
           concepto: "Bono por Cruce de jugadas",
-          cliente: nombreVisiblePorClave.get(clave) ?? info.cliente,
+          cliente: nombreVisiblePorClave.get(claveIdentidad) ?? info.cliente,
           brutoGanado: info.brutoGanado,
           brutoPerdido: info.brutoPerdido,
           baseCruce: info.baseCruce,

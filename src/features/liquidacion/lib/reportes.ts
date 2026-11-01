@@ -29,7 +29,7 @@ import { rivalesDeNota } from "@/features/marcas/lib/reporte-marcas-nucleo";
 import { calcularEstadoCuentaCliente, aplicarDevolucionIncentivoAFavor } from "@/features/saldos/lib/contabilidad-central";
 
 export { calcularEstadoCuentaCliente, aplicarDevolucionIncentivoAFavor };
-import { _reembolsosCruce } from "@/features/taquilla/lib/cruces-y-tapas";
+import { _reembolsosCruce, normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
 import { liquidarOficial, puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
 import {
   numerosPizarra,
@@ -46,6 +46,8 @@ export type FilaReporte = {
   id: string;
   rol: "Juega" | "Consigue" | "CRUCE";
   cliente: string;
+  /** Identidad estable del cliente; la etiqueta visible puede ser su seudónimo. */
+  clienteId?: string;
   jugada: string;
   caballo: string;
   monto: number;
@@ -55,6 +57,8 @@ export type FilaReporte = {
   riesgo?: number;
   /** Resultado NETO de la casa sobre esa fila; null = pendiente de liquidar. */
   resultado: number | null;
+  /** Comisión efectivamente cobrada sobre la ganancia de esta fila. */
+  comisionCobrada?: number;
   esPareo?: boolean;
   /**
    * Desglose breve del/los ejemplar(es) SIN el tipo de jugada (Bloque 5):
@@ -139,6 +143,44 @@ export type GrupoReporte = {
 function cifra(v: unknown): number {
   const n = parseFloat(String(v ?? "").replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) ? n : 0;
+}
+
+let mapaSeudonimosReporte: Map<string, string> | null = null;
+let mapaSeudonimosReporteTs = 0;
+
+async function cargarMapaSeudonimosReporte(): Promise<Map<string, string>> {
+  if (mapaSeudonimosReporte && Date.now() - mapaSeudonimosReporteTs < 15_000) {
+    return mapaSeudonimosReporte;
+  }
+  if (!supabase) return new Map();
+
+  const { data, error } = await supabase.from("clientes").select("id, nombre, seudonimo");
+  if (error) throw error;
+
+  const mapa = new Map<string, string>();
+  for (const cliente of (data ?? []) as Array<{
+    id?: string | number;
+    nombre?: string | null;
+    seudonimo?: string | null;
+  }>) {
+    const alias = txt(cliente.seudonimo) || txt(cliente.nombre);
+    if (!alias) continue;
+    if (cliente.id != null) mapa.set(String(cliente.id), alias);
+    if (cliente.nombre) mapa.set(normalizarNombreCliente(cliente.nombre), alias);
+    if (cliente.seudonimo) mapa.set(normalizarNombreCliente(cliente.seudonimo), alias);
+  }
+  mapaSeudonimosReporte = mapa;
+  mapaSeudonimosReporteTs = Date.now();
+  return mapa;
+}
+
+function comisionCobradaTicket(f: Record<string, unknown>, calculada: number): number {
+  const registrada = f.comision_pagada;
+  if (registrada == null || String(registrada).trim() === "") return calculada;
+  const monto = Number(registrada);
+  return Number.isFinite(monto) && monto >= 0
+    ? Math.round(monto * 100) / 100
+    : calculada;
 }
 
 function txt(v: unknown): string {
@@ -1299,6 +1341,7 @@ export type FilaTicketUnificada = {
   riesgo: number;
   premio: number;
   resultado: number | null;
+  comisionCobrada: number;
   estado: string;
   anulada: boolean;
 };
@@ -1435,6 +1478,10 @@ export function desglosarTicketEnFilasUnificadas(
     riesgo: monto,
     premio: premioJuega,
     resultado: resultadoJuega,
+    comisionCobrada:
+      resultadoJuega !== null && resultadoJuega > 0
+        ? comisionCobradaTicket(f, ev.comision)
+        : 0,
     estado: estadoJuega,
     anulada,
   };
@@ -1470,6 +1517,10 @@ export function desglosarTicketEnFilasUnificadas(
       riesgo: ev.riesgoDa ?? monto,
       premio: premioConsigue,
       resultado: resConsigue,
+      comisionCobrada:
+        resConsigue !== null && resConsigue > 0
+          ? comisionCobradaTicket(f, ev.comision)
+          : 0,
       estado: estadoConsigue,
       anulada,
     };
@@ -1509,6 +1560,7 @@ async function carreraReporte(
   const tickets = datos ? datos.tickets : await leerTickets(fecha, hipodromo, numero);
   // REGLA ESTRICTA DE REPORTES: Las carreras que NO tengan jugadas no deben aparecer en los reportes.
   if (!tickets.length) return null;
+  const mapaSeudonimos = await cargarMapaSeudonimosReporte();
 
   const filas: FilaReporte[] = [];
   const neteoItems: NeteoCruceItem[] = [];
@@ -1542,15 +1594,24 @@ async function carreraReporte(
     // ganadores del pareo) desaparecía de Ganan. El id del que JUEGA se deja
     // como estaba para no activar el CRUCE financiero (feature pendiente).
     const clienteJuega = txt(f.cliente_juega);
-    const clienteJuegaNombre = txt(f.cliente_juega_nombre) || txt(f.cliente_juega_id) || clienteJuega;
+    const clienteJuegaId = txt(f.cliente_juega_id);
+    const clienteJuegaRaw = txt(f.cliente_juega_nombre) || clienteJuegaId || clienteJuega;
+    const clienteJuegaNombre =
+      mapaSeudonimos.get(clienteJuegaId) ||
+      mapaSeudonimos.get(normalizarNombreCliente(clienteJuegaRaw)) ||
+      clienteJuegaRaw;
+    const clienteConsigueId = txt(f.cliente_consigue_id) || txt(f.banquero_cliente_id);
     const clienteConsigueRaw =
       txt(f.banquero_nombre) ||
       txt(f.cliente_consigue_nombre) ||
-      txt(f.cliente_consigue_id) ||
-      txt(f.banquero_cliente_id);
+      clienteConsigueId;
+    const clienteConsigueVisible =
+      mapaSeudonimos.get(clienteConsigueId) ||
+      mapaSeudonimos.get(normalizarNombreCliente(clienteConsigueRaw)) ||
+      clienteConsigueRaw;
     const clienteConsigueNombre = resolverContraparteModalidad(
       f.nombre_jugada,
-      clienteConsigueRaw,
+      clienteConsigueVisible,
       desglose.tipo
     );
 
@@ -1569,12 +1630,17 @@ async function carreraReporte(
       id: `${fecha}-${hipodromo}-${numero}-j-${i}`,
       rol: "Juega",
       cliente: clienteJuegaNombre || "—",
+      ...(clienteJuegaId ? { clienteId: clienteJuegaId } : {}),
       jugada: desglose.jugada,
       caballo: desglose.caballo,
       monto,
       ...(precioTabla !== undefined ? { precioTabla } : {}),
       riesgo: monto,
       resultado: resultadoJuega,
+      comisionCobrada:
+        resultadoJuega !== null && resultadoJuega > 0
+          ? comisionCobradaTicket(f, ev.comision)
+          : 0,
       esPareo,
       ejemplar: desglose.ejemplar,
       tipoJugada: desglose.tipo,
@@ -1588,12 +1654,17 @@ async function carreraReporte(
         id: `${fecha}-${hipodromo}-${numero}-c-${i}`,
         rol: "Consigue",
         cliente: clienteConsigueNombre,
+        ...(clienteConsigueId ? { clienteId: clienteConsigueId } : {}),
         jugada: desglose.jugada,
         caballo: desglose.caballo,
         monto,
         ...(precioTabla !== undefined ? { precioTabla } : {}),
         riesgo: ev.riesgoDa,
         resultado: resultadoConsigueDe(monto, ev),
+        comisionCobrada:
+          (resultadoConsigueDe(monto, ev) ?? 0) > 0
+            ? comisionCobradaTicket(f, ev.comision)
+            : 0,
         esPareo,
         ejemplar: desglose.ejemplar,
         tipoJugada: desglose.tipo,
@@ -1649,7 +1720,12 @@ async function carreraReporte(
   // 🔀 ASIENTO CONTABLE INTERNO: "Bono por Cruce de jugadas" por carrera y cliente.
   const lineasCruceCarrera = filas
     .filter((f) => f.rol !== "CRUCE" && f.resultado !== null && Number.isFinite(f.resultado))
-    .map((f) => ({ cliente: f.cliente, resultado: f.resultado as number }));
+    .map((f) => ({
+      cliente: f.cliente,
+      resultado: f.resultado as number,
+      comisionCobrada: f.comisionCobrada,
+      comisionPct: tasaComision ?? 5,
+    }));
   const { porCliente: reembolsosCrucePorCliente } = _reembolsosCruce(
     lineasCruceCarrera,
     "con_cruces",

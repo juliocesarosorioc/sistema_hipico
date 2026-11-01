@@ -19,7 +19,7 @@ import {
   colorDiscoNumero,
   esJugadaAdelantadaReporte,
 } from "@/features/liquidacion/lib/reporte-carrera";
-import { etiquetaDia } from "@/features/liquidacion/lib/semana";
+import { cicloSemanalDe, etiquetaDia, rangoSemanaDeGrupo } from "@/features/liquidacion/lib/semana";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
@@ -29,7 +29,8 @@ import { BotonIconoReporteSaldosVisual } from "@/features/saldos/components/Repo
 import { etiquetaJugada, caballoPareoLegible, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 import { redondearCentavos } from "@/shared/lib/dinero";
 import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
-import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
+import { cargarMovimientosSaldoSemanal } from "@/features/saldos/lib/movimientos-saldo-semanal";
+import { calcularSaldoSemana } from "@/features/saldos/lib/saldo-semanal";
 
 const fmtMonto = (n: number) =>
   n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -146,17 +147,21 @@ export function ReporteModule() {
   const [grupos, setGrupos] = useState<GrupoRow[]>([]);
   const [grupoId, setGrupoId] = useState<string>("");
   const [clientesGrupo, setClientesGrupo] = useState<ClienteRow[]>([]);
-  // Por defecto se muestra la CARTERA (saldo real del libro), que es la única
-  // cifra comparable con el portal y el estado de cuenta. El resultado del
-  // rango es un dato de período y queda como vista alternativa.
-  const [fuenteSaldos4Col, setFuenteSaldos4Col] = useState<"JORNADA" | "CARTERA">("CARTERA");
+  const [errorClientesGrupo, setErrorClientesGrupo] = useState<string | null>(null);
+  // La vista principal presenta el saldo semanal reconstruido; la cartera
+  // persistida queda disponible como referencia separada.
+  const [fuenteSaldos4Col, setFuenteSaldos4Col] = useState<"JORNADA" | "CARTERA">("JORNADA");
   const [desgloseAbierto, setDesgloseAbierto] = useState(false);
-  // Por defecto SIEMPRE el día de hoy (rango de un solo día), no la semana
-  // fiscal completa: al abrir el monitor lo que interesa es la jornada en curso.
+  // El saldo semanal debe consultar el ciclo fiscal del grupo, no solo el día
+  // actual ni la cartera acumulada de ciclos anteriores.
   const [desde, setDesde] = useState<string>(() => hoyLocal());
   const [hasta, setHasta] = useState<string>(() => hoyLocal());
   const [planilla, setPlanilla] = useState<PlanillaReporte | null>(null);
   const [cargando, setCargando] = useState(false);
+  const [movimientosCaja, setMovimientosCaja] = useState<Map<string, number>>(new Map());
+  const [advertenciasSaldoSemanal, setAdvertenciasSaldoSemanal] = useState<string[]>([]);
+  const [cargandoMovimientosCaja, setCargandoMovimientosCaja] = useState(false);
+  const [errorMovimientosCaja, setErrorMovimientosCaja] = useState<string | null>(null);
   const [modalPagoGanadorAbierto, setModalPagoGanadorAbierto] = useState(false);
   const [clientePagoSeleccionadoId, setClientePagoSeleccionadoId] = useState<string | null>(null);
   const [pestanaModalPagos, setPestanaModalPagos] = useState<"PAGAR_GANADORES" | "CONCILIAR_PAGOS">("PAGAR_GANADORES");
@@ -228,18 +233,69 @@ export function ReporteModule() {
   }, []);
 
   useEffect(() => {
-    if (!grupoId) return;
+    const grupo = grupos.find((x) => String(x.id) === grupoId);
+    if (!grupo) return;
+    const hoy = hoyLocal();
+    const { inicio } = rangoSemanaDeGrupo(hoy, cicloSemanalDe(grupo));
+    setDesde(inicio);
+    setHasta(hoy);
+  }, [grupoId, grupos]);
+
+  useEffect(() => {
+    if (!grupoId) {
+      setClientesGrupo([]);
+      setErrorClientesGrupo(null);
+      return;
+    }
+    let vigente = true;
+    setClientesGrupo([]);
+    setErrorClientesGrupo(null);
     listarClientes(true, grupoId)
-      .then(async (cs) => {
-        try {
-          const sincronizados = await sincronizarSaldosRealesClientes(cs, grupoId);
-          setClientesGrupo(sincronizados as ClienteRow[]);
-        } catch {
-          setClientesGrupo(cs);
-        }
+      .then((cs) => {
+        if (vigente) setClientesGrupo(cs);
       })
-      .catch(() => setClientesGrupo([]));
+      .catch((error: unknown) => {
+        if (!vigente) return;
+        setClientesGrupo([]);
+        setErrorClientesGrupo(
+          error instanceof Error ? error.message : "No se pudieron cargar los clientes del grupo."
+        );
+      });
+    return () => {
+      vigente = false;
+    };
   }, [grupoId]);
+
+  useEffect(() => {
+    let vigente = true;
+    setCargandoMovimientosCaja(true);
+    setErrorMovimientosCaja(null);
+    setAdvertenciasSaldoSemanal([]);
+    cargarMovimientosSaldoSemanal(
+      clientesGrupo.map((cliente) => cliente.id),
+      desde,
+      hasta
+    )
+      .then((movimientos) => {
+        if (!vigente) return;
+        setMovimientosCaja(movimientos.porCliente);
+        setAdvertenciasSaldoSemanal(movimientos.advertencias);
+      })
+      .catch((error: unknown) => {
+        if (!vigente) return;
+        setMovimientosCaja(new Map());
+        setAdvertenciasSaldoSemanal([]);
+        setErrorMovimientosCaja(
+          error instanceof Error ? error.message : "No se pudieron cargar los movimientos de caja."
+        );
+      })
+      .finally(() => {
+        if (vigente) setCargandoMovimientosCaja(false);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [clientesGrupo, desde, hasta]);
 
   const cargar = useCallback(async () => {
     const g = grupos.find((x) => String(x.id) === grupoId);
@@ -303,13 +359,14 @@ export function ReporteModule() {
     filtroTipoJugador !== "TODOS";
 
   const mapaInfoClientes = useMemo(() => {
-    const map = new Map<string, { id: string; modo: TipoJugadorSaldo; libre: boolean; aval: number; saldoActual: number; icono: string; etiqueta: string; devolucionPct: number }>();
+    const map = new Map<string, { id: string; nombre: string; modo: TipoJugadorSaldo; libre: boolean; aval: number; saldoActual: number; icono: string; etiqueta: string; devolucionPct: number }>();
     for (const c of clientesGrupo) {
       const tipo = obtenerTipoJugador(c);
       const meta = infoTipoJugador(tipo);
       const devPct = Number(c.devolucion || (c as any).porcentaje_devolucion || 0);
       const item = {
         id: String(c.id),
+        nombre: String(c.seudonimo ?? "").trim() || String(c.nombre ?? c.id).trim(),
         modo: tipo,
         libre: Boolean(c.libre || tipo === "libre"),
         aval: Number(c.aval) || 0,
@@ -327,6 +384,99 @@ export function ReporteModule() {
     }
     return map;
   }, [clientesGrupo]);
+
+  const nombreVisibleReporte = useCallback(
+    (nombre: string) => {
+      const limpio = String(nombre ?? "").trim();
+      if (!limpio) return limpio;
+      return mapaInfoClientes.get(limpio.toUpperCase())?.nombre ?? limpio;
+    },
+    [mapaInfoClientes]
+  );
+
+  const saldoSemanalPorCliente = useMemo(() => {
+    const resumen = new Map<string, { netoCarreras: number; totalDevolucion: number }>();
+    for (const dia of rptOriginal?.dias ?? []) {
+      for (const hipodromo of dia.hipodromos) {
+        for (const carrera of hipodromo.carreras) {
+          const filasPorCliente = new Map<string, FilaReporte[]>();
+          const bonosPorCliente = new Map<string, number>();
+          for (const fila of carrera.filas) {
+            const cliente = String(fila.cliente ?? "").trim().toUpperCase();
+            if (!cliente || cliente === "—" || fila.resultado === null) continue;
+            if (fila.rol === "CRUCE" || fila.jugada === "Bono por Cruce de jugadas") {
+              if (fila.jugada === "Bono por Cruce de jugadas") {
+                bonosPorCliente.set(
+                  cliente,
+                  redondearCentavos((bonosPorCliente.get(cliente) ?? 0) + fila.resultado)
+                );
+              }
+              continue;
+            }
+            const filas = filasPorCliente.get(cliente) ?? [];
+            filas.push(fila);
+            filasPorCliente.set(cliente, filas);
+          }
+
+          for (const [cliente, filas] of filasPorCliente) {
+            const info = mapaInfoClientes.get(cliente);
+            if (!info) continue;
+            const netoCarreras = redondearCentavos(
+              filas.reduce((total, fila) => total + (fila.resultado ?? 0), 0) +
+                (bonosPorCliente.get(cliente) ?? 0)
+            );
+            const devolucion = calcularBaseDecididaCarrera(
+              filas.map((fila) => ({
+                nombreJugada: fila.jugada,
+                montoJugado: fila.monto,
+                premioPagar: (fila.resultado ?? 0) > 0 ? fila.monto + (fila.resultado ?? 0) : 0,
+                resultado: fila.resultado,
+                estado:
+                  (fila.resultado ?? 0) > 0
+                    ? "GANADOR"
+                    : (fila.resultado ?? 0) < 0
+                      ? "PERDEDOR"
+                      : "PENDIENTE",
+                rol: fila.rol,
+              })),
+              info.devolucionPct
+            ).devolucion;
+            const previo = resumen.get(info.id) ?? { netoCarreras: 0, totalDevolucion: 0 };
+            resumen.set(info.id, {
+              netoCarreras: redondearCentavos(previo.netoCarreras + netoCarreras),
+              totalDevolucion: redondearCentavos(previo.totalDevolucion + devolucion),
+            });
+          }
+        }
+      }
+    }
+
+    return new Map(
+      clientesGrupo.map((cliente) => {
+        const id = String(cliente.id);
+        const detalle = resumen.get(id) ?? { netoCarreras: 0, totalDevolucion: 0 };
+        const caja = movimientosCaja.get(id) ?? 0;
+        return [
+          id,
+          {
+            ...detalle,
+            movimientosCaja: caja,
+            saldo: calcularSaldoSemana(detalle.netoCarreras, detalle.totalDevolucion, caja),
+          },
+        ];
+      })
+    );
+  }, [rptOriginal, mapaInfoClientes, clientesGrupo, movimientosCaja]);
+
+  const rangoSaldoDentroDeUnaSemana = useMemo(() => {
+    const grupo = grupos.find((item) => String(item.id) === grupoId);
+    if (!grupo || !desde || !hasta || desde > hasta) return false;
+    const ciclo = cicloSemanalDe(grupo);
+    return (
+      rangoSemanaDeGrupo(desde, ciclo).inicio ===
+      rangoSemanaDeGrupo(hasta, ciclo).inicio
+    );
+  }, [grupos, grupoId, desde, hasta]);
 
   // Reporte filtrado dinámicamente según los segmentadores de la Tabla Dinámica
   const rpt: ReporteSemana | null = useMemo(() => {
@@ -603,50 +753,59 @@ export function ReporteModule() {
 
   // Resumen de 4 columnas: Nombre de Usuario (Saldos Positivos) | Saldo | Nombre de Usuario (Saldos Negativos) | Saldo
   const resumenCuatroColumnas = useMemo(() => {
-    const usarCartera =
-      fuenteSaldos4Col === "CARTERA" ||
-      (datosTablaDinamica.filasClientes.length === 0 && clientesGrupo.length > 0);
+    const usarCartera = fuenteSaldos4Col === "CARTERA";
 
     const base: Array<{
       id?: string;
       nombre: string;
       saldo: number;
+      saldoPersistido: number;
       netoCarreras: number;
       totalDevolucion: number;
+      movimientosCaja: number;
       tipo: TipoJugadorSaldo;
       icono: string;
       etiqueta: string;
-    }> = usarCartera
+    }> = errorClientesGrupo || errorMovimientosCaja || cargandoMovimientosCaja || !rptOriginal || !rangoSaldoDentroDeUnaSemana
+      ? []
+      : usarCartera
       ? clientesGrupo.map((c) => {
           const tipo = obtenerTipoJugador(c);
           const meta = infoTipoJugador(tipo);
           const saldo = redondearCentavos(Number(c.saldo_actual) || 0);
           return {
             id: String(c.id),
-            nombre: String(c.seudonimo ?? c.nombre ?? c.id).trim().toUpperCase(),
+            nombre: String(c.seudonimo || c.nombre || c.id).trim().toUpperCase(),
             saldo,
+            saldoPersistido: saldo,
             netoCarreras: saldo,
             totalDevolucion: 0,
+            movimientosCaja: 0,
             tipo,
             icono: meta.icono,
             etiqueta: meta.etiqueta,
           };
         })
-      : datosTablaDinamica.filasClientes.map((fc) => {
-          const cliMeta = mapaInfoClientes.get(fc.cliente);
-          const tipo = cliMeta?.modo ?? "aval";
+      : clientesGrupo
+          .map((cliente) => {
+          const id = String(cliente.id);
+          const detalle = saldoSemanalPorCliente.get(id);
+          const tipo = obtenerTipoJugador(cliente);
           const meta = infoTipoJugador(tipo);
           return {
-            id: cliMeta?.id,
-            nombre: fc.cliente,
-            saldo: fc.netoTotal,
-            netoCarreras: fc.netoCarreras,
-            totalDevolucion: fc.totalDevolucion,
+            id,
+            nombre: String(cliente.seudonimo || cliente.nombre || cliente.id).trim().toUpperCase(),
+            saldo: detalle?.saldo ?? 0,
+            saldoPersistido: redondearCentavos(Number(cliente.saldo_actual) || 0),
+            netoCarreras: detalle?.netoCarreras ?? 0,
+            totalDevolucion: detalle?.totalDevolucion ?? 0,
+            movimientosCaja: detalle?.movimientosCaja ?? 0,
             tipo,
             icono: meta.icono,
             etiqueta: meta.etiqueta,
           };
-        });
+          })
+          .filter((cliente) => Math.abs(cliente.saldo) > 0.004);
 
     const baseFiltrada = base.filter((x) => {
       if (filtroTipoJugador === "TODOS") return true;
@@ -684,7 +843,18 @@ export function ReporteModule() {
       totalJugadores: base.length,
       totalFiltrados: baseFiltrada.length,
     };
-  }, [fuenteSaldos4Col, datosTablaDinamica, clientesGrupo, filtroTipoJugador, mapaInfoClientes]);
+  }, [
+    fuenteSaldos4Col,
+    datosTablaDinamica,
+    clientesGrupo,
+    filtroTipoJugador,
+    errorClientesGrupo,
+    saldoSemanalPorCliente,
+    errorMovimientosCaja,
+    cargandoMovimientosCaja,
+    rptOriginal,
+    rangoSaldoDentroDeUnaSemana,
+  ]);
 
   // Desglose por cliente: saldo del libro + (si está configurado) devolución
   // e incentivo. Se calcula sobre la cartera para que coincida exactamente con
@@ -704,7 +874,7 @@ export function ReporteModule() {
         const disponible = redondearCentavos(Number(c.disponible) || 0);
         return {
           id: String(c.id),
-          nombre: String(c.seudonimo ?? c.nombre ?? c.id).trim().toUpperCase(),
+          nombre: String(c.seudonimo || c.nombre || c.id).trim().toUpperCase(),
           tipo,
           saldo,
           devPct,
@@ -747,7 +917,9 @@ export function ReporteModule() {
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-xl">📊</span>
           <h1 className="font-bold text-lg">Saldos Consolidados — Semana Fiscal</h1>
-          {cargando && <span className="text-blue-200 text-xs animate-pulse">cargando…</span>}
+          {(cargando || cargandoMovimientosCaja) && (
+            <span className="text-blue-200 text-xs animate-pulse">cargando…</span>
+          )}
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <select
               value={grupoId}
@@ -1087,6 +1259,26 @@ export function ReporteModule() {
             Error al generar el reporte: {planilla.error}
           </div>
         )}
+        {errorClientesGrupo && (
+          <div className="mx-2 mt-2 rounded border border-red-300 bg-red-50 px-3 py-2 text-red-700 text-xs">
+            No se puede presentar el saldo semanal: {errorClientesGrupo}
+          </div>
+        )}
+        {errorMovimientosCaja && (
+          <div className="mx-2 mt-2 rounded border border-red-300 bg-red-50 px-3 py-2 text-red-700 text-xs">
+            No se puede presentar un saldo semanal completo: {errorMovimientosCaja}
+          </div>
+        )}
+        {advertenciasSaldoSemanal.length > 0 && (
+          <div className="mx-2 mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900 text-xs">
+            Previsualización incompleta: {advertenciasSaldoSemanal.join(" ")}
+          </div>
+        )}
+        {!rangoSaldoDentroDeUnaSemana && desde && hasta && (
+          <div className="mx-2 mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900 text-xs">
+            El saldo semanal no mezcla ciclos: selecciona fechas que pertenezcan a una sola semana fiscal para ver este resumen.
+          </div>
+        )}
 
         {/* REPORTE RESUMEN DE 4 COLUMNAS (SALDOS POSITIVOS / SALDOS NEGATIVOS + COMISIÓN DE LA SEMANA) */}
         {vistaPivot === "RESUMEN_4_COLUMNAS" && (
@@ -1097,6 +1289,11 @@ export function ReporteModule() {
                 <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
                   📑 Reporte Resumen de Saldos (4 Columnas)
                 </div>
+                {!resumenCuatroColumnas.usandoCartera && (
+                  <p className="mt-1 max-w-2xl text-[10px] font-semibold text-amber-100">
+                    Vista previa semanal: inicia en cero, suma resultados, incentivos y caja del ciclo; no actualiza el libro persistido.
+                  </p>
+                )}
                 <div className="text-base sm:text-lg font-black flex items-center gap-2 mt-0.5">
                   <span>💰 Comisión de la Semana:</span>
                   <span className="rounded-lg bg-amber-400 px-2.5 py-0.5 text-slate-950 font-mono">
@@ -1140,26 +1337,27 @@ export function ReporteModule() {
                 <button
                   type="button"
                   onClick={() => setFuenteSaldos4Col("JORNADA")}
-                  title="Resultado neto de las jugadas del rango consultado. NO es el saldo actual del cliente."
+                  title="Previsualización del resultado de jugadas, incentivos y movimientos de caja del rango. No modifica la base de datos."
                   className={`rounded-md px-2.5 py-1 font-bold transition ${
                     !resumenCuatroColumnas.usandoCartera
                       ? "bg-emerald-500 text-slate-950"
                       : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                   }`}
                 >
-                  📈 Resultado del Rango ({datosTablaDinamica.filasClientes.length})
+                  📈 Saldo semanal reconstruido (
+                  {[...saldoSemanalPorCliente.values()].filter((fila) => Math.abs(fila.saldo) > 0.004).length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setFuenteSaldos4Col("CARTERA")}
-                  title="Saldo actual del libro mayor (el mismo que ve el cliente en su portal)."
+                  title="Saldo persistido actualmente en clientes.saldo_actual; puede diferir de la previsualización semanal."
                   className={`rounded-md px-2.5 py-1 font-bold transition ${
                     resumenCuatroColumnas.usandoCartera
                       ? "bg-emerald-500 text-slate-950"
                       : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                   }`}
                 >
-                  💰 Saldo Actual / Cartera General ({clientesGrupo.length})
+                  💾 Saldo persistido ({clientesGrupo.length})
                 </button>
                 <button
                   type="button"
@@ -1263,11 +1461,13 @@ export function ReporteModule() {
                         <td className="py-1.5 px-3 font-bold text-slate-800 border-r border-slate-200">
                           {par.pos ? (
                             <div className="flex items-center justify-between gap-1.5">
-                              <div className="flex items-center gap-1.5 truncate">
+                              <div className="flex min-w-0 flex-1 items-start gap-1.5">
                                 <span title={par.pos.etiqueta} className="text-sm shrink-0">
                                   {par.pos.icono}
                                 </span>
-                                <span className="truncate">{par.pos.nombre}</span>
+                                <span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">
+                                  {par.pos.nombre}
+                                </span>
                               </div>
                               <button
                                 type="button"
@@ -1276,8 +1476,13 @@ export function ReporteModule() {
                                   setPestanaModalPagos("PAGAR_GANADORES");
                                   setModalPagoGanadorAbierto(true);
                                 }}
-                                className="shrink-0 inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-0.5 text-[10px] font-black text-white hover:bg-emerald-700 transition shadow-xs"
-                                title="Pagar ganancia con comprobante a este cliente"
+                                className="shrink-0 inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-0.5 text-[10px] font-black text-white hover:bg-emerald-700 transition shadow-xs disabled:cursor-not-allowed disabled:opacity-40"
+                                disabled={!resumenCuatroColumnas.usandoCartera}
+                                title={
+                                  resumenCuatroColumnas.usandoCartera
+                                    ? "Pagar ganancia con comprobante a este cliente"
+                                    : "La previsualización no modifica saldos. Cambia a saldo persistido para registrar un pago."
+                                }
                               >
                                 💸 Pagar
                               </button>
@@ -1293,17 +1498,29 @@ export function ReporteModule() {
                                   🏇 ${fmtMonto(par.pos.netoCarreras)} | 🎁 +${fmtMonto(par.pos.totalDevolucion)}
                                 </div>
                               )}
+                              {par.pos.movimientosCaja !== 0 && (
+                                <div className="text-[10px] text-slate-500 font-semibold">
+                                  💵 Caja {par.pos.movimientosCaja > 0 ? "+" : ""}${fmtMonto(par.pos.movimientosCaja)}
+                                </div>
+                              )}
+                              {!resumenCuatroColumnas.usandoCartera && (
+                                <div className="text-[10px] text-amber-700 font-semibold">
+                                  Persistido: ${fmtMonto(par.pos.saldoPersistido)} · Diferencia: ${fmtMonto(par.pos.saldo - par.pos.saldoPersistido)}
+                                </div>
+                              )}
                             </div>
                           ) : "—"}
                         </td>
                         <td className="py-1.5 px-3 font-bold text-slate-800 border-r border-slate-200">
                           {par.neg ? (
                             <div className="flex items-center justify-between gap-1.5">
-                              <div className="flex items-center gap-1.5 truncate">
+                              <div className="flex min-w-0 flex-1 items-start gap-1.5">
                                 <span title={par.neg.etiqueta} className="text-sm shrink-0">
                                   {par.neg.icono}
                                 </span>
-                                <span className="truncate">{par.neg.nombre}</span>
+                                <span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">
+                                  {par.neg.nombre}
+                                </span>
                               </div>
                               <button
                                 type="button"
@@ -1315,8 +1532,13 @@ export function ReporteModule() {
                                   });
                                   setModalCobroAbierto(true);
                                 }}
-                                className="shrink-0 inline-flex items-center gap-1 rounded bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white hover:bg-blue-700 transition shadow-xs"
-                                title="Cobrar saldo deudor o validar reporte de pago de este cliente"
+                                className="shrink-0 inline-flex items-center gap-1 rounded bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white hover:bg-blue-700 transition shadow-xs disabled:cursor-not-allowed disabled:opacity-40"
+                                disabled={!resumenCuatroColumnas.usandoCartera}
+                                title={
+                                  resumenCuatroColumnas.usandoCartera
+                                    ? "Cobrar saldo deudor o validar reporte de pago de este cliente"
+                                    : "La previsualización no modifica saldos. Cambia a saldo persistido para registrar un cobro."
+                                }
                               >
                                 📥 Cobrar
                               </button>
@@ -1330,6 +1552,16 @@ export function ReporteModule() {
                               {par.neg.totalDevolucion > 0 && (
                                 <div className="text-[10px] text-slate-500 font-semibold">
                                   🏇 ${fmtMonto(par.neg.netoCarreras)} | 🎁 +${fmtMonto(par.neg.totalDevolucion)}
+                                </div>
+                              )}
+                              {par.neg.movimientosCaja !== 0 && (
+                                <div className="text-[10px] text-slate-500 font-semibold">
+                                  💵 Caja {par.neg.movimientosCaja > 0 ? "+" : ""}${fmtMonto(par.neg.movimientosCaja)}
+                                </div>
+                              )}
+                              {!resumenCuatroColumnas.usandoCartera && (
+                                <div className="text-[10px] text-amber-700 font-semibold">
+                                  Persistido: ${fmtMonto(par.neg.saldoPersistido)} · Diferencia: ${fmtMonto(par.neg.saldo - par.neg.saldoPersistido)}
                                 </div>
                               )}
                             </div>
@@ -1392,7 +1624,9 @@ export function ReporteModule() {
                           <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1">
                             <span className="flex min-w-0 items-center gap-1.5">
                               <span title={meta.etiqueta} className="shrink-0 text-xs">{meta.icono}</span>
-                              <span className="truncate text-[11px] font-black text-slate-800">{x.nombre}</span>
+                              <span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere] text-[11px] font-black text-slate-800">
+                                {x.nombre}
+                              </span>
                             </span>
                             <span className={`shrink-0 font-mono text-[11px] font-black ${x.saldo > 0.004 ? "text-emerald-700" : x.saldo < -0.004 ? "text-rose-600" : "text-slate-600"}`}>
                               {x.saldo > 0 ? "+$" : x.saldo < 0 ? "-$" : "$"}
@@ -1556,7 +1790,9 @@ export function ReporteModule() {
                             <span title={meta?.etiqueta} className="text-sm shrink-0">
                               {meta?.icono ?? "💎"}
                             </span>
-                            <span className="truncate">{row.cliente}</span>
+                            <span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">
+                              {nombreVisibleReporte(row.cliente)}
+                            </span>
                           </div>
                         );
                       })()}
@@ -1757,7 +1993,9 @@ export function ReporteModule() {
                                           <td className="py-0.5 px-2 text-center font-bold text-gray-700">
                                             {caballoPareoLegible(f.caballo) || "—"}
                                           </td>
-                                          <td className="py-0.5 px-2 text-gray-500 text-xs">{f.cliente}</td>
+                                          <td className="py-0.5 px-2 text-gray-500 text-xs whitespace-normal break-words [overflow-wrap:anywhere]">
+                                            {nombreVisibleReporte(f.cliente)}
+                                          </td>
                                           <td className="py-0.5 px-2 text-right text-gray-600">
                                             {f.monto > 0 ? fmtMonto(f.monto) : ""}
                                           </td>

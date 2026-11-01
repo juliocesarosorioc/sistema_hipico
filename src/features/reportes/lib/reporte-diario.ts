@@ -61,6 +61,7 @@ export type DetalleJugadaReporteDiario = {
   resultadoNeto: number;
   devolucion: number;
   comisionDevuelta: number;
+  comisionCobrada?: number;
   estado: string;
 };
 
@@ -85,6 +86,8 @@ export type JugadaReporte = {
   devolucion: number;
   /** Comisión devuelta explícita (si ya viene calculada). */
   comisionDevuelta?: number;
+  /** Comisión realmente cobrada en la jugada ganadora. */
+  comisionCobrada?: number;
   /** true si la jugada fue anulada: no cuenta como jugado ni como ticket. */
   anulada: boolean;
 };
@@ -256,6 +259,7 @@ export function armarReporteDiario(jugadas: JugadaReporte[]): ReporteDiario {
       resultadoNeto: resNeto,
       devolucion: centavos(dev),
       comisionDevuelta: centavos(Number(j.comisionDevuelta) || 0),
+      ...(j.comisionCobrada != null ? { comisionCobrada: centavos(j.comisionCobrada) } : {}),
       estado,
     };
 
@@ -313,7 +317,11 @@ export function armarReporteDiario(jugadas: JugadaReporte[]): ReporteDiario {
     const dets = f.jugadasDetalle ?? [];
     const lineas = dets
       .filter((d) => d.resultadoNeto !== 0)
-      .map((d) => ({ cliente: d.cliente, resultado: d.resultadoNeto }));
+      .map((d) => ({
+        cliente: d.cliente,
+        resultado: d.resultadoNeto,
+        comisionCobrada: d.comisionCobrada,
+      }));
     const { porCliente, totalReembolsado } = _reembolsosCruce(lineas, "con_cruces", 5);
     if (totalReembolsado > 0) {
       // Asignar la comisión devuelta al cliente correspondiente en su primera jugada ganadora de la carrera
@@ -613,6 +621,7 @@ export function normalizarTickets(
         premio: juega.premio,
         resultadoNeto: juega.resultado ?? 0,
         devolucion: aplicaIncJ ? base * (pctJ / 100) : 0,
+        comisionCobrada: juega.comisionCobrada,
         anulada: juega.anulada,
       });
     }
@@ -652,6 +661,7 @@ export function normalizarTickets(
         premio: consigue.premio,
         resultadoNeto: consigue.resultado ?? 0,
         devolucion: aplicaIncC ? base * (pctC / 100) : 0,
+        comisionCobrada: consigue.comisionCobrada,
         anulada: consigue.anulada,
       });
     }

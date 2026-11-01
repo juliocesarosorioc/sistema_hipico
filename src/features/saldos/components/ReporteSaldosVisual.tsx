@@ -211,10 +211,10 @@ export function ReporteSaldosVisual({
         return (
           <div
             key={`${c.id ?? c.nombre}-${idx}`}
-            className={`grid grid-cols-12 items-center gap-1 px-2.5 py-1.5 text-[10px] ${c.sem.rowCls}`}
+            className={`grid grid-cols-12 items-start gap-1 px-2.5 py-1.5 text-[10px] ${c.sem.rowCls}`}
           >
             <div className="col-span-5 min-w-0">
-              <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex items-start gap-1.5 min-w-0">
                 <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-slate-200 text-[8px] font-black text-slate-700">
                   {offset + idx + 1}
                 </span>
@@ -224,7 +224,9 @@ export function ReporteSaldosVisual({
                 >
                   {infoMod.icono}
                 </span>
-                <span className="truncate font-black text-slate-900">{c.nombre}</span>
+                <span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere] font-black text-slate-900">
+                  {c.nombre}
+                </span>
               </div>
               <div className="mt-0.5 pl-5 flex items-center gap-1 text-[9px] font-mono font-bold text-indigo-700">
                 <span>📱</span>

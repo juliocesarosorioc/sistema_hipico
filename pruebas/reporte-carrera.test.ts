@@ -103,6 +103,21 @@ si(gananEmy?.monto === 100, "Ganan: Emy +100 (mitad Consigue del ticket 0)");
 si(gananMarlene?.monto === 1200, "Ganan: Marlene +1200 (ganancia de la TABLA)");
 si(d.resumen.pierden.length === 1 && buscar(d.resumen.pierden, "Perrito Molinas")?.monto === -100, "Pierden: Perrito Molinas -100");
 
+// ── 4a. Una persona conserva una sola totalización aunque cambie la etiqueta ──
+const identidadEddie = armarReporteCarrera({
+  ...CARRERA,
+  filas: [
+    { id: "carrera-j-13", rol: "Juega", cliente: "EDDIE", clienteId: "cliente-eddie", jugada: "2p", caballo: "7", monto: 100, resultado: 100 },
+    { id: "carrera-j-14", rol: "Juega", cliente: "DAVID ADONAY CABRERA LEON", clienteId: "cliente-eddie", jugada: "2p", caballo: "7", monto: 50, resultado: 50 },
+  ],
+}, undefined, undefined, { modalidadCruce: "sin_cruces" });
+si(
+  identidadEddie.resumen.ganan.length === 1 &&
+    identidadEddie.resumen.ganan[0]?.nombre === "EDDIE" &&
+    identidadEddie.resumen.ganan[0]?.monto === 150,
+  "las jugadas 13 y 14 del mismo ID se totalizan una sola vez bajo EDDIE (+150)"
+);
+
 // ── 4b. Los PENDIENTES (resultado null) no ensucian el resumen ──
 const conPendiente = armarReporteCarrera({
   ...CARRERA,

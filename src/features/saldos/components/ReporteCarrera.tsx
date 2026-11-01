@@ -247,8 +247,8 @@ function TablaJugadas({
             (Boolean(j.sinDecision) || (esMarca(jugoStr) && res1 === 0));
           const esEmpateNoDecidido = mostrarResultado && !involucraRetirado && res1 === 0 && !esMarcaSinDecision;
           return (
-            <tr key={i} className="border-b border-slate-100 bg-white h-[26px]">
-              <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap truncate align-middle">
+            <tr key={i} className="border-b border-slate-100 bg-white">
+              <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-normal break-words [overflow-wrap:anywhere] align-middle">
                 <span className="inline-block rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[8px] font-black text-blue-700 mr-1">
                   Juega
                 </span>
@@ -272,7 +272,7 @@ function TablaJugadas({
                   <span className="text-slate-400">—</span>
                 )}
               </td>
-              <td className="py-[3px] pl-2 text-slate-700 whitespace-nowrap truncate align-middle">
+              <td className="py-[3px] pl-2 text-slate-700 whitespace-normal break-words [overflow-wrap:anywhere] align-middle">
                 {(() => {
                   if (esMarca(jugoStr)) {
                     const pareoCab = extraerPareoMarca({
@@ -303,7 +303,7 @@ function TablaJugadas({
                   );
                 })()}
               </td>
-              <td className="py-[3px] pl-2 text-slate-600 whitespace-nowrap truncate align-middle">
+              <td className="py-[3px] pl-2 text-slate-600 whitespace-normal break-words [overflow-wrap:anywhere] align-middle">
                 {j.da ? (
                   <>
                     <span className="inline-block rounded bg-amber-50 border border-amber-200 px-1 py-0.5 text-[8px] font-black text-amber-700 mr-1">
@@ -380,10 +380,12 @@ function ListaResumen({ filas }: { filas: ResumenFila[] }) {
   return (
     <div className="grid grid-cols-2 gap-x-3 p-2 text-[10px]">
       {filas.map((g, i) => (
-        <div key={i} className="flex items-center justify-between gap-1 py-[2px] border-b border-slate-50">
-          <div className="flex items-center min-w-0">
+        <div key={i} className="flex items-start justify-between gap-1 py-[2px] border-b border-slate-50">
+          <div className="flex min-w-0 flex-1 items-start">
             <span className="bg-slate-200 text-slate-500 rounded w-3.5 h-3.5 flex items-center justify-center text-[8px] mr-1 shrink-0">{g.id}</span>
-            <span className="font-bold text-slate-800 truncate">{g.nombre}</span>
+            <span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere] font-bold text-slate-800">
+              {g.nombre}
+            </span>
             {g.excede && (
               <span className="ml-0.5 shrink-0 font-black text-red-600" title="Arriesgó más de lo que dispone">*</span>
             )}
@@ -396,7 +398,9 @@ function ListaResumen({ filas }: { filas: ResumenFila[] }) {
               </span>
             )}
           </div>
-          <FormatoDinero monto={g.monto} />
+          <span className="shrink-0">
+            <FormatoDinero monto={g.monto} />
+          </span>
         </div>
       ))}
     </div>

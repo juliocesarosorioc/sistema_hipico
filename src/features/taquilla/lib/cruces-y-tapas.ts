@@ -10,7 +10,7 @@
  *     simulando posiciones de llegada (`1..10` y `99` fuera de pizarra) y liberando tapas.
  *  4. `calcularReembolsosCruce`: Reembolso de comisión en modalidad `CON CRUCES` al liquidar
  *     o previsualizar resultados:
- *       reembolsoCruce = redondearCentavos((comisionPct / 100) * min(brutoGanado, brutoPerdido))
+ *       reembolsoCruce = comisión realmente cobrada × min(ganado, perdido) / ganado
  */
 
 import {
@@ -460,6 +460,7 @@ export type LineaResultadoParaCruce = {
   brutoGanado: number;
   brutoPerdido: number;
   comisionCobrada?: number;
+  comisionPct?: number;
 };
 
 export type ReembolsoCruceCliente = {
@@ -476,9 +477,9 @@ export type ReembolsoCruceCliente = {
  * Cuando la modalidad activa sea `CON CRUCES` (`modalidad === 'con_cruces'` o `true`):
  * Para cada cliente que participó en la carrera, acumula por separado `brutoGanado` y `brutoPerdido`.
  * Si `brutoGanado > 0` y `brutoPerdido > 0`:
- *   reembolsoCruce = redondearCentavos((comisionPct / 100) * min(brutoGanado, brutoPerdido))
- * Ese reembolso equivale a recalcular la comisión sobre max(0, ganado - perdido)
- * cuando la comisión original ya se había retenido individualmente por ticket.
+ * La devolución se limita a la comisión realmente cobrada en la parte cruzada.
+ * La comisión de cada ticket ganador se prorratea por la fracción compensada;
+ * los tickets con comisión explícita de 0 nunca generan reembolso.
  */
 export function calcularReembolsosCruce(
   lineas: LineaResultadoParaCruce[],
@@ -495,13 +496,18 @@ export function calcularReembolsosCruce(
 } {
   const activo = modalidad === true || modalidad === "con_cruces";
   const porCliente = new Map<string, ReembolsoCruceCliente>();
-  if (!activo || Number(comisionPct) <= 0) {
+  if (!activo) {
     return { porCliente, totalReembolsado: 0, filasCruce: [] };
   }
 
   const acumulados = new Map<
     string,
-    { nombreOriginal: string; ganadoCentavos: number; perdidoCentavos: number }
+    {
+      nombreOriginal: string;
+      ganadoCentavos: number;
+      perdidoCentavos: number;
+      comisionCobradaCentavos: number;
+    }
   >();
 
   for (const l of lineas) {
@@ -511,9 +517,22 @@ export function calcularReembolsosCruce(
       nombreOriginal: String(l.cliente).trim(),
       ganadoCentavos: 0,
       perdidoCentavos: 0,
+      comisionCobradaCentavos: 0,
     };
-    prev.ganadoCentavos += Math.max(0, aCentavos(l.brutoGanado));
+    const brutoGanadoCentavos = Math.max(0, aCentavos(l.brutoGanado));
+    prev.ganadoCentavos += brutoGanadoCentavos;
     prev.perdidoCentavos += Math.max(0, aCentavos(l.brutoPerdido));
+    if (brutoGanadoCentavos > 0) {
+      const comision = l.comisionCobrada != null
+        ? Math.max(0, aCentavos(l.comisionCobrada))
+        : aCentavos(
+            calcularComisionExacta(
+              deCentavos(brutoGanadoCentavos),
+              l.comisionPct ?? comisionPct
+            )
+          );
+      prev.comisionCobradaCentavos += comision;
+    }
     acumulados.set(clave, prev);
   }
 
@@ -524,7 +543,10 @@ export function calcularReembolsosCruce(
     if (acc.ganadoCentavos > 0 && acc.perdidoCentavos > 0) {
       const baseCentavos = Math.min(acc.ganadoCentavos, acc.perdidoCentavos);
       const baseCruce = deCentavos(baseCentavos);
-      const reembolsoCruce = calcularComisionExacta(baseCruce, comisionPct);
+      const reembolsoCentavos = Math.round(
+        (acc.comisionCobradaCentavos * baseCentavos) / acc.ganadoCentavos
+      );
+      const reembolsoCruce = deCentavos(reembolsoCentavos);
       if (reembolsoCruce > 0) {
         const item: ReembolsoCruceCliente = {
           cliente: acc.nombreOriginal,
@@ -565,18 +587,26 @@ export function _reembolsosCruce(
     brutoPerdido?: number;
     resultado?: number | null;
     comisionCobrada?: number;
+    comisionPct?: number;
   }>,
   modalidad: ModalidadCruceCarrera | boolean = "con_cruces",
   comisionPct = 5
 ) {
-  const factorNeto = 1 - Math.max(0, Number(comisionPct)) / 100;
   const normalizadas: LineaResultadoParaCruce[] = lineas.map((l) => {
     let brutoGanado = Number(l.brutoGanado ?? 0);
     let brutoPerdido = Number(l.brutoPerdido ?? 0);
     if (brutoGanado === 0 && brutoPerdido === 0 && typeof l.resultado === "number") {
       if (l.resultado > 0) {
-        brutoGanado =
-          factorNeto > 0 ? redondearCentavos(l.resultado / factorNeto) : redondearCentavos(l.resultado);
+        if (l.comisionCobrada != null) {
+          brutoGanado = redondearCentavos(l.resultado + Math.max(0, Number(l.comisionCobrada)));
+        } else {
+          const pct = l.comisionPct ?? comisionPct;
+          const factorNeto = 1 - Math.max(0, Number(pct)) / 100;
+          brutoGanado =
+            factorNeto > 0
+              ? redondearCentavos(l.resultado / factorNeto)
+              : redondearCentavos(l.resultado);
+        }
       } else if (l.resultado < 0) {
         brutoPerdido = redondearCentavos(Math.abs(l.resultado));
       }
@@ -586,6 +616,7 @@ export function _reembolsosCruce(
       brutoGanado,
       brutoPerdido,
       comisionCobrada: l.comisionCobrada,
+      comisionPct: l.comisionPct,
     };
   });
   return calcularReembolsosCruce(normalizadas, modalidad, comisionPct);

@@ -344,7 +344,12 @@ export function calcularResumenContableCliente(params: {
         if (esJugador) {
           ganadasBrutoCentavos += aCentavos(pagoTabla);
           const arr = lineasPorCarrera.get(raceKey) ?? [];
-          arr.push({ cliente: params.nombre, brutoGanado: pagoTabla, brutoPerdido: 0 });
+          arr.push({
+            cliente: params.nombre,
+            brutoGanado: pagoTabla,
+            brutoPerdido: 0,
+            comisionCobrada: 0,
+          });
           lineasPorCarrera.set(raceKey, arr);
         }
         if (esDador) {
@@ -362,7 +367,12 @@ export function calcularResumenContableCliente(params: {
         if (esJugador) {
           ganadasBrutoCentavos += aCentavos(pagoMarca);
           const arr = lineasPorCarrera.get(raceKey) ?? [];
-          arr.push({ cliente: params.nombre, brutoGanado: pagoMarca, brutoPerdido: 0 });
+          arr.push({
+            cliente: params.nombre,
+            brutoGanado: pagoMarca,
+            brutoPerdido: 0,
+            comisionCobrada: 0,
+          });
           lineasPorCarrera.set(raceKey, arr);
         }
         if (esDador) {
@@ -378,16 +388,25 @@ export function calcularResumenContableCliente(params: {
       // Ganó el lado Juega
       const premioTotal = redondearCentavos(t.premio_pagar ?? t.monto_decidido ?? monto * 2);
       const gananciaBrutaJuega = Math.max(0, restarDinero(premioTotal, monto));
+      const comisionRegistrada =
+        t.comision_pagada == null || String(t.comision_pagada).trim() === ""
+          ? Number.NaN
+          : Number(t.comision_pagada);
       const comisionJuega =
-        t.comision_pagada != null && Number(t.comision_pagada) > 0
-          ? redondearCentavos(t.comision_pagada)
+        Number.isFinite(comisionRegistrada) && comisionRegistrada >= 0
+          ? redondearCentavos(comisionRegistrada)
           : calcularComisionExacta(gananciaBrutaJuega, comPct);
 
       if (esJugador) {
         ganadasBrutoCentavos += aCentavos(gananciaBrutaJuega);
         comisionesBrutasCentavos += aCentavos(comisionJuega);
         const arr = lineasPorCarrera.get(raceKey) ?? [];
-        arr.push({ cliente: params.nombre, brutoGanado: gananciaBrutaJuega, brutoPerdido: 0 });
+        arr.push({
+          cliente: params.nombre,
+          brutoGanado: gananciaBrutaJuega,
+          brutoPerdido: 0,
+          comisionCobrada: comisionJuega,
+        });
         lineasPorCarrera.set(raceKey, arr);
       }
       if (esDador) {
@@ -421,7 +440,12 @@ export function calcularResumenContableCliente(params: {
         ganadasBrutoCentavos += aCentavos(gananciaBrutaDador);
         comisionesBrutasCentavos += aCentavos(comisionDador);
         const arr = lineasPorCarrera.get(raceKey) ?? [];
-        arr.push({ cliente: params.nombre, brutoGanado: gananciaBrutaDador, brutoPerdido: 0 });
+        arr.push({
+          cliente: params.nombre,
+          brutoGanado: gananciaBrutaDador,
+          brutoPerdido: 0,
+          comisionCobrada: comisionDador,
+        });
         lineasPorCarrera.set(raceKey, arr);
       }
     } else if (est === "PENDIENTE" || est === "ACTIVA" || est === "ABIERTA" || est === "") {
@@ -1175,6 +1199,3 @@ export function aplicarIncrementoODescuentoEnCaliente(params: {
     notificaciones,
   };
 }
-
-
-

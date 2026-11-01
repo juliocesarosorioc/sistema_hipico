@@ -166,6 +166,23 @@ Elegir una carrera fija su hipódromo y su fecha; cambiar el hipódromo reencuad
 las carreras disponibles. La lista de «resultados cargados» permite saltar entre
 carreras recientes o pasadas sin cambiar la fecha.
 
+## 6 · Saldo semanal y previsualización
+
+- Cada resumen semanal se calcula desde cero para el ciclo fiscal configurado
+  en el grupo. No se suma el cierre de una semana anterior.
+- El saldo semanal reconstruido suma el resultado neto de las jugadas liquidadas,
+  incentivos y movimientos de caja aprobados dentro del ciclo seleccionado.
+- El resumen solo se habilita cuando el rango pertenece a una única semana
+  fiscal. Los pagos o cobros se presentan como movimientos de caja y las
+  transferencias entre clientes se compensan.
+- «Saldo semanal reconstruido» es una previsualización: no modifica
+  `clientes.saldo_actual` ni crea, elimina o revierte asientos. «Saldo
+  persistido» continúa mostrando el valor guardado actualmente.
+- Los movimientos de «Pagar Aval» no se incluyen en la previsualización porque
+  el registro existente no separa la parte que reduce una deuda de la parte que
+  amortiza el aval; la pantalla advierte esta limitación en vez de asumir un
+  importe.
+
 ---
 
 _Motor de liquidación · las jugadas de posición se muestran siempre como
