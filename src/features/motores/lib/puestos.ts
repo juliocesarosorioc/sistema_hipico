@@ -656,7 +656,7 @@ export function logicaGanancias(params: {
     const mult = calcularMultiplicadorJugada(codigoNormalizado, p1, { p2 });
 
     if (mult > 0) {
-      const brutoGanado = redondearCentavos(riesgoJugador2 * mult);
+      const brutoGanado = riesgoJugador2;
       const com = calcularComisionExacta(brutoGanado, comPct);
       const neto1 = restarDinero(brutoGanado, com);
       return {
@@ -882,7 +882,7 @@ export function validarPuesto(bet: string, nCorredores?: number | null): Validat
 const TASA_DEFECTO = COMISION_CASA.rate * 100;
 
 function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+  return redondearCentavos(n);
 }
 
 /* ============ Pizarra: ejemplo -> posicion ============ */
@@ -947,8 +947,8 @@ type Bote = { jugador: number; rival: number; total: number };
  */
 function boteDe(monto: number, prop: Proporcion | null): Bote {
   const jugador = monto;
-  const rival = prop ? (monto * prop.rival) / prop.jugador : monto;
-  return { jugador, rival, total: jugador + rival };
+  const rival = prop ? calcularProporcionExacta(monto, prop.rival, prop.jugador) : monto;
+  return { jugador, rival, total: sumarDinero(jugador, rival) };
 }
 
 /* ============ Resolucion de la jugada ============ */
@@ -1164,14 +1164,14 @@ export function finalizar(
   tasa: number,
   totalRival?: number
 ): ResultadoMotor {
-  const gananciaBruta = clienteBruto - monto;
-  const comision = gananciaBruta > 0 ? gananciaBruta * (tasa / 100) : 0;
+  const gananciaBruta = restarDinero(clienteBruto, monto);
+  const comision = gananciaBruta > 0 ? calcularComisionExacta(gananciaBruta, tasa) : 0;
   return {
     ok,
     motivo: motivo + (comision > 0 ? " · comisión casa $" + round2(comision) : ""),
-    totalClienteNeto: round2(clienteBruto - comision),
+    totalClienteNeto: restarDinero(clienteBruto, comision),
     // Inverso bruto del jugador + comision retenida: monto - clienteBruto + comision
-    balanceBanca: round2(monto - clienteBruto + comision),
+    balanceBanca: sumarDinero(restarDinero(monto, clienteBruto), comision),
     gananciaCasa: round2(comision),
     totalRival: round2(totalRival ?? 0),
   };
@@ -1614,8 +1614,8 @@ export function calcularLiquidacionPuestosCarrera(
       }
       baseComision = Math.max(0, ganadoBruto - perdidaCruzada);
     }
-    const comision = baseComision > 0 ? round2(baseComision * (pct / 100)) : 0;
-    const netoCliente = round2(neto - comision);
+    const comision = baseComision > 0 ? calcularComisionExacta(baseComision, pct) : 0;
+    const netoCliente = restarDinero(neto, comision);
     result.push({
       cliente,
       ...(grupoId ? { grupoId } : {}),
@@ -1698,12 +1698,14 @@ export function liquidarPuesto(
   tasaComision: number = TASA_DEFECTO
 ): LiquidationResult {
   const res = evaluarPuestoPorPosicion(bet, posicion, monto, tasaComision, nCorredores);
-  const playerBruto = round2(res.totalClienteNeto + res.gananciaCasa);
-  const netoJugadorBruto = round2(playerBruto - monto);
+  const playerBruto = sumarDinero(res.totalClienteNeto, res.gananciaCasa);
+  const netoJugadorBruto = restarDinero(playerBruto, monto);
   const comision = res.gananciaCasa;
-  const netoJugador = round2(res.totalClienteNeto - monto);
-  const comisionBanquero = netoJugadorBruto < 0 ? round2(-netoJugadorBruto * (tasaComision / 100)) : 0;
-  const netoBanquero = netoJugadorBruto < 0 ? round2(-netoJugadorBruto - comisionBanquero) : round2(-netoJugadorBruto);
+  const netoJugador = restarDinero(res.totalClienteNeto, monto);
+  const comisionBanquero = netoJugadorBruto < 0 ? calcularComisionExacta(-netoJugadorBruto, tasaComision) : 0;
+  const netoBanquero = netoJugadorBruto < 0
+    ? restarDinero(-netoJugadorBruto, comisionBanquero)
+    : round2(-netoJugadorBruto);
   const anuladaPorRiesgo = /ANULADA por falta de riesgo bilateral/i.test(res.motivo ?? "");
   return {
     netoJugadorBruto,
@@ -1720,12 +1722,12 @@ export function liquidarPuesto(
 
 export function aplicarComision(res: LiquidationResult, tasaPct: number = TASA_DEFECTO): LiquidationResult {
   if (res.netoJugadorBruto <= 0) return res;
-  const comision = round2(res.netoJugadorBruto * (tasaPct / 100));
+  const comision = calcularComisionExacta(res.netoJugadorBruto, tasaPct);
   return {
     ...res,
     comision,
-    netoJugador: round2(res.netoJugadorBruto - comision),
-    player: round2(res.playerBruto - comision),
+    netoJugador: restarDinero(res.netoJugadorBruto, comision),
+    player: restarDinero(res.playerBruto, comision),
     banker: round2(res.banker),
   };
 }

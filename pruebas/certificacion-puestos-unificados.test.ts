@@ -333,6 +333,41 @@ assertAprox(riesgoMotores(100, "10a7"), 70.0, "Riesgo Dador en 10a7 de 100 es 70
 assertAprox(riesgoMotores(100, "10/7"), 70.0, "Riesgo Dador en 10/7 de 100 es 70");
 assertAprox(riesgoMotores(100, "10A3.5"), 35.0, "Riesgo Dador en 10A3.5 de 100 es 35");
 assertAprox(riesgoMotores(100, "10/3,5"), 35.0, "Riesgo Dador en 10/3,5 de 100 es 35");
+assertEq(riesgoMotores(250, "10A3.5"), 87.5, "Riesgo Dador en 10A3.5 de 250 es exactamente 87.50");
+
+const ticketPremio250: TicketMotor = {
+  id: "premio-250",
+  hipodromo: "LR",
+  carrera: "1",
+  tipo_jugada: "10A3.5",
+  caballo: "1",
+  monto: 250,
+  cruces: 1,
+  cuota: null,
+  total: 250,
+  addedAt: 0,
+  fechas: [],
+  puesto_final: 1,
+  pizarra: { primero: "1" },
+  dividendos: null,
+};
+const liquidacionPremio250 = liqPuestosMotores(ticketPremio250, 5);
+assertEq(liquidacionPremio250.gananciaCasa, 4.38, "La comisión de 5% sobre 87.50 se redondea una vez a 4.38");
+assertEq(liquidacionPremio250.totalClienteNeto, 333.12, "El neto descuenta la comisión ya redondeada");
+assertEq(
+  liquidacionPremio250.totalClienteNeto + liquidacionPremio250.gananciaCasa,
+  337.5,
+  "Neto más comisión reconcilia con el bruto exacto de 337.50"
+);
+
+const matchupPremio250 = logicaMotores({
+  jugada: "10A3.5",
+  caballo: "4x1",
+  monto: 250,
+  pizarra: { primero: "4", segundo: "1" },
+});
+assertEq(matchupPremio250.riesgoJugador2, 87.5, "El matchup 10A3.5 conserva el riesgo de contraparte 87.50");
+assertEq(matchupPremio250.netoJugador1, 83.12, "El matchup paga el riesgo pactado menos comisión, sin reaplicar la proporción");
 
 // 3.3 Evaluación individual al 1° lugar
 // 10A7 con 1 ejemplar: llega 1° -> gana +pct (+0.70)

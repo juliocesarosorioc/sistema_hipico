@@ -96,7 +96,41 @@ export function calcularProporcionExacta(
   if (!Number.isFinite(num) || !Number.isFinite(den) || den <= 0 || num <= 0) {
     return redondearCentavos(monto);
   }
-  return deCentavos(Math.round((aCentavos(monto) * num) / den));
+  const fraccionDecimal = (valor: number): { numerador: number; denominador: number } | null => {
+    const texto = String(valor).toLowerCase();
+    const match = /^([+-]?)(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/.exec(texto);
+    if (!match) return null;
+    const decimales = match[3] ?? "";
+    const exponente = Number(match[4] ?? 0);
+    let numerador = Number(`${match[2]}${decimales}`);
+    const escala = decimales.length - exponente;
+    let denominador = 1;
+    if (escala > 0) denominador = 10 ** escala;
+    else if (escala < 0) numerador *= 10 ** -escala;
+    if (match[1] === "-") numerador = -numerador;
+    if (!Number.isSafeInteger(numerador) || !Number.isSafeInteger(denominador)) return null;
+    return { numerador, denominador };
+  };
+  const n = fraccionDecimal(num);
+  const d = fraccionDecimal(den);
+  if (!n || !d) return deCentavos(Math.round((aCentavos(monto) * num) / den));
+  const numerador = n.numerador * d.denominador;
+  const divisor = n.denominador * d.numerador;
+  const totalCentavos = aCentavos(monto);
+  const producto = totalCentavos * numerador;
+  if (
+    !Number.isSafeInteger(numerador) ||
+    !Number.isSafeInteger(divisor) ||
+    !Number.isSafeInteger(producto)
+  ) {
+    return deCentavos(Math.round((totalCentavos * num) / den));
+  }
+  const absoluto = Math.abs(producto);
+  let centavos = Math.floor(absoluto / divisor);
+  const resto = absoluto % divisor;
+  if (resto * 2 >= divisor) centavos += 1;
+  if (producto < 0) centavos = -centavos;
+  return deCentavos(centavos);
 }
 
 const FMT_ES_VE_2 = new Intl.NumberFormat("es-VE", {
