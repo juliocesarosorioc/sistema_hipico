@@ -33,6 +33,7 @@ import {
   USUARIOS_SISTEMA_MODALIDADES,
 } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
+import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
 
 export interface ResultadoLiquidacionClienteCarrera {
   clienteId: string;
@@ -124,6 +125,7 @@ export type TicketContableRaw = {
   estado?: string | null;
   anulada?: boolean | null;
   es_adelantada?: boolean | null;
+  resultado_neto?: number | string | null;
 };
 
 export type MovimientoCajaRaw = {
@@ -566,35 +568,21 @@ export function calcularIncentivoCarreraCliente(
   const pct = Math.max(0, Number(devolucionPct) || 0);
   if (pct <= 0 || !ticketsDeCarrera?.length) return 0;
 
-  let montoDecididoCentavos = 0;
-  for (const t of ticketsDeCarrera) {
-    if (esJugadaAnuladaOExcluida(t)) continue;
-    const est = String(t.estado ?? "").trim().toUpperCase();
-    const esDecidida =
-      est === "GANADOR" ||
-      est === "GANO" ||
-      est === "SOLUCIONADO" ||
-      est === "PERDEDOR" ||
-      est === "PERDIO";
-    if (!esDecidida) continue;
+  const validos = ticketsDeCarrera.filter((t) => !esJugadaAnuladaOExcluida(t));
+  if (!validos.length) return 0;
 
-    const nombreJugRaw = String(t.nombre_jugada ?? t.jugada ?? "").trim().toUpperCase();
-    if (
-      !esJugadaPuestosParaIncentivo(
-        nombreJugRaw,
-        (t as Record<string, unknown>).modalidad as string,
-        (t as Record<string, unknown>).origen as string
-      )
-    ) {
-      continue;
-    }
+  const res = calcularBaseDecididaCarrera(
+    validos.map((t) => ({
+      nombreJugada: String(t.nombre_jugada ?? t.jugada ?? ""),
+      montoJugado: redondearCentavos(t.monto_jugado ?? t.monto ?? 0),
+      premioPagar: redondearCentavos(t.premio_pagar ?? 0),
+      resultado: t.resultado_neto != null ? Number(t.resultado_neto) : null,
+      estado: String(t.estado ?? "").trim().toUpperCase(),
+    })),
+    pct
+  );
 
-    const monto = redondearCentavos(t.monto_jugado ?? t.monto ?? 0);
-    const baseDecidida = monto > 0 ? monto : redondearCentavos(t.monto_decidido ?? 0);
-    montoDecididoCentavos += aCentavos(baseDecidida);
-  }
-
-  return calcularComisionExacta(deCentavos(montoDecididoCentavos), pct);
+  return res.devolucion;
 }
 
 /**

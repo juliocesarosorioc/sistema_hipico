@@ -28,6 +28,7 @@ import { ModalCobroYValidacionCliente } from "@/features/contabilidad/components
 import { BotonIconoReporteSaldosVisual } from "@/features/saldos/components/ReporteSaldosVisual";
 import { etiquetaJugada, caballoPareoLegible, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
 import { redondearCentavos } from "@/shared/lib/dinero";
+import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
 
 const fmtMonto = (n: number) =>
   n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -290,12 +291,12 @@ export function ReporteModule() {
     filtroTipoJugador !== "TODOS";
 
   const mapaInfoClientes = useMemo(() => {
-    const map = new Map<string, { id: string; modo: TipoJugadorSaldo; libre: boolean; aval: number; saldoActual: number; icono: string; etiqueta: string }>();
+    const map = new Map<string, { id: string; modo: TipoJugadorSaldo; libre: boolean; aval: number; saldoActual: number; icono: string; etiqueta: string; devolucionPct: number }>();
     for (const c of clientesGrupo) {
-      const key = String(c.seudonimo ?? c.nombre ?? c.id).trim().toUpperCase();
       const tipo = obtenerTipoJugador(c);
       const meta = infoTipoJugador(tipo);
-      map.set(key, {
+      const devPct = Number(c.devolucion || (c as any).porcentaje_devolucion || 0);
+      const item = {
         id: String(c.id),
         modo: tipo,
         libre: Boolean(c.libre || tipo === "libre"),
@@ -303,7 +304,14 @@ export function ReporteModule() {
         saldoActual: redondearCentavos(Number(c.saldo_actual) || 0),
         icono: meta.icono,
         etiqueta: meta.etiqueta,
-      });
+        devolucionPct: devPct,
+      };
+      const keySeud = String(c.seudonimo ?? "").trim().toUpperCase();
+      const keyNom = String(c.nombre ?? "").trim().toUpperCase();
+      const keyId = String(c.id ?? "").trim().toUpperCase();
+      if (keySeud) map.set(keySeud, item);
+      if (keyNom && !map.has(keyNom)) map.set(keyNom, item);
+      if (keyId && !map.has(keyId)) map.set(keyId, item);
     }
     return map;
   }, [clientesGrupo]);
@@ -437,6 +445,8 @@ export function ReporteModule() {
     }> = [];
 
     const clientesMap = new Map<string, Record<string, number>>();
+    const clientesNetoMap = new Map<string, Record<string, number>>();
+    const clientesDevMap = new Map<string, Record<string, number>>();
     let comisionSemanaAcum = 0;
 
     for (const d of rpt?.dias ?? []) {
@@ -451,16 +461,21 @@ export function ReporteModule() {
           let pierden = 0;
           let sumaResultadosCarrera = 0;
 
+          // Agrupar filas de jugadas reales por cliente en esta carrera para calcular la devolución exacta
+          const filasPorCliente = new Map<string, FilaReporte[]>();
+
           for (const f of c.filas) {
             const cli = String(f.cliente ?? "").trim().toUpperCase();
+            if (f.rol === "CRUCE" || f.jugada === "Bono por Cruce de jugadas") {
+              continue;
+            }
             if (cli && cli !== "—" && f.resultado !== null) {
-              const actual = clientesMap.get(cli) ?? {};
-              actual[clave] = redondearCentavos((actual[clave] ?? 0) + f.resultado);
-              clientesMap.set(cli, actual);
+              const list = filasPorCliente.get(cli) ?? [];
+              list.push(f);
+              filasPorCliente.set(cli, list);
               sumaResultadosCarrera = redondearCentavos(sumaResultadosCarrera + f.resultado);
             }
 
-            if (f.jugada === "Bono por Cruce de jugadas") continue;
             if (f.rol === "Juega") {
               jugadasVisibles++;
               apostado = redondearCentavos(apostado + (f.monto || 0));
@@ -475,6 +490,40 @@ export function ReporteModule() {
             } else if ((f.resultado ?? 0) < 0) {
               pierden = redondearCentavos(pierden + (f.resultado ?? 0));
             }
+          }
+
+          // Para cada cliente en la carrera, calcular su resultado neto y su devolución exacta
+          for (const [cli, filasCli] of filasPorCliente.entries()) {
+            const netoJugadas = redondearCentavos(
+              filasCli.reduce((acc, f) => acc + (f.resultado ?? 0), 0)
+            );
+            const devPct = mapaInfoClientes.get(cli)?.devolucionPct ?? 0;
+            const resDev = calcularBaseDecididaCarrera(
+              filasCli.map((f) => ({
+                nombreJugada: f.jugada,
+                montoJugado: f.monto,
+                premioPagar: (f.resultado ?? 0) > 0 ? (f.monto + (f.resultado ?? 0)) : 0,
+                resultado: f.resultado,
+                estado: (f.resultado ?? 0) > 0 ? "GANADOR" : (f.resultado ?? 0) < 0 ? "PERDEDOR" : "PENDIENTE",
+                rol: f.rol,
+              })),
+              devPct
+            );
+            const devCarrera = resDev.devolucion;
+            // La devolución al cliente debe sumarle a su saldo, no restarle
+            const totalCarreraConDev = redondearCentavos(netoJugadas + devCarrera);
+
+            const actualTot = clientesMap.get(cli) ?? {};
+            actualTot[clave] = totalCarreraConDev;
+            clientesMap.set(cli, actualTot);
+
+            const actualNeto = clientesNetoMap.get(cli) ?? {};
+            actualNeto[clave] = netoJugadas;
+            clientesNetoMap.set(cli, actualNeto);
+
+            const actualDev = clientesDevMap.get(cli) ?? {};
+            actualDev[clave] = devCarrera;
+            clientesDevMap.set(cli, actualDev);
           }
 
           // En las jugadas liquidadas, la diferencia entre lo que pierden y lo que ganan los jugadores es la comisión retenida por la casa/grupo
@@ -502,10 +551,16 @@ export function ReporteModule() {
 
     let filasClientes = [...clientesMap.entries()]
       .map(([cliente, porCarrera]) => {
-        const netoTotal = redondearCentavos(
-          Object.values(porCarrera).reduce((acc, v) => acc + v, 0)
+        const porNeto = clientesNetoMap.get(cliente) ?? {};
+        const porDev = clientesDevMap.get(cliente) ?? {};
+        const netoCarreras = redondearCentavos(
+          Object.values(porNeto).reduce((acc, v) => acc + v, 0)
         );
-        return { cliente, porCarrera, netoTotal };
+        const totalDevolucion = redondearCentavos(
+          Object.values(porDev).reduce((acc, v) => acc + v, 0)
+        );
+        const netoTotal = redondearCentavos(netoCarreras + totalDevolucion);
+        return { cliente, porCarrera, netoCarreras, totalDevolucion, netoTotal };
       })
       .sort((a, b) => b.netoTotal - a.netoTotal || a.cliente.localeCompare(b.cliente, "es"));
 
@@ -533,6 +588,8 @@ export function ReporteModule() {
       id?: string;
       nombre: string;
       saldo: number;
+      netoCarreras: number;
+      totalDevolucion: number;
       tipo: TipoJugadorSaldo;
       icono: string;
       etiqueta: string;
@@ -540,10 +597,13 @@ export function ReporteModule() {
       ? clientesGrupo.map((c) => {
           const tipo = obtenerTipoJugador(c);
           const meta = infoTipoJugador(tipo);
+          const saldo = redondearCentavos(Number(c.saldo_actual) || 0);
           return {
             id: String(c.id),
             nombre: String(c.seudonimo ?? c.nombre ?? c.id).trim().toUpperCase(),
-            saldo: redondearCentavos(Number(c.saldo_actual) || 0),
+            saldo,
+            netoCarreras: saldo,
+            totalDevolucion: 0,
             tipo,
             icono: meta.icono,
             etiqueta: meta.etiqueta,
@@ -557,6 +617,8 @@ export function ReporteModule() {
             id: cliMeta?.id,
             nombre: fc.cliente,
             saldo: fc.netoTotal,
+            netoCarreras: fc.netoCarreras,
+            totalDevolucion: fc.totalDevolucion,
             tipo,
             icono: meta.icono,
             etiqueta: meta.etiqueta,
@@ -618,7 +680,7 @@ export function ReporteModule() {
     clavesCarreras.length > 0 && clavesCarreras.every((k) => carrerasAbiertas.has(k));
 
   return (
-    <div className="p-4 max-w-6xl mx-auto min-h-screen bg-gray-100 font-sans text-sm">
+    <div className="p-4 max-w-6xl mx-auto min-h-screen bg-gray-100 font-sans text-sm reporte-tipografia-nitida">
       {/* CABECERA */}
       <div className="bg-blue-800 text-white p-3 rounded-t-lg shadow">
         <div className="flex flex-wrap items-center gap-3">
@@ -1147,7 +1209,16 @@ export function ReporteModule() {
                           ) : "—"}
                         </td>
                         <td className="py-1.5 px-3 text-right font-mono font-black text-emerald-700 border-r-2 border-slate-300">
-                          {par.pos ? `+${fmtMonto(par.pos.saldo)}` : "—"}
+                          {par.pos ? (
+                            <div>
+                              <div>+${fmtMonto(par.pos.saldo)}</div>
+                              {par.pos.totalDevolucion > 0 && (
+                                <div className="text-[10px] text-emerald-800 font-semibold">
+                                  🏇 ${fmtMonto(par.pos.netoCarreras)} | 🎁 +${fmtMonto(par.pos.totalDevolucion)}
+                                </div>
+                              )}
+                            </div>
+                          ) : "—"}
                         </td>
                         <td className="py-1.5 px-3 font-bold text-slate-800 border-r border-slate-200">
                           {par.neg ? (
@@ -1177,7 +1248,16 @@ export function ReporteModule() {
                           ) : "—"}
                         </td>
                         <td className="py-1.5 px-3 text-right font-mono font-black text-rose-600">
-                          {par.neg ? fmtMonto(par.neg.saldo) : "—"}
+                          {par.neg ? (
+                            <div>
+                              <div>${fmtMonto(par.neg.saldo)}</div>
+                              {par.neg.totalDevolucion > 0 && (
+                                <div className="text-[10px] text-slate-500 font-semibold">
+                                  🏇 ${fmtMonto(par.neg.netoCarreras)} | 🎁 +${fmtMonto(par.neg.totalDevolucion)}
+                                </div>
+                              )}
+                            </div>
+                          ) : "—"}
                         </td>
                       </tr>
                     ))

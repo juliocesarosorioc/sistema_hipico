@@ -13,6 +13,7 @@
  */
 
 import { supabase } from "@/core/supabase";
+import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
 
 export interface ReglaDevolucionCliente {
   nombre: string;
@@ -199,8 +200,11 @@ export function calcularComisionesSocioPorClientes(params: {
   const socioClienteObj = clientes.find((c) => normalizar(c.seudonimo || c.nombre) === socioNorm);
   const devPropiaPct = Number(socioClienteObj?.devolucion ?? socioRegla?.devolucionPropiaPct ?? 1.00);
 
-  // Calcular jugadas propias del socio para su devolución propia
+  // Calcular jugadas propias del socio para su devolución propia (por carrera con regla de monto decidido y cruces)
   let montoJugadoPropio = 0;
+  let totalDevPropia = 0;
+
+  const ticketsPropiosPorCarrera = new Map<string, any[]>();
   for (const t of tickets) {
     if (t.anulada) continue;
     const estT = String(t.estado || "").trim().toUpperCase();
@@ -211,21 +215,42 @@ export function calcularComisionesSocioPorClientes(params: {
     if (tCli === socioNorm || tCliConsigue === socioNorm) {
       if (params.fechaDesde && fechaT < params.fechaDesde) continue;
       if (params.fechaHasta && fechaT > params.fechaHasta) continue;
-      const m = Number(t.monto_jugado ?? t.monto ?? t.monto_decidido ?? 0);
-      montoJugadoPropio += m;
+      const k = `${fechaT}::${t.hipodromo || "USA"}::${t.carrera || 1}`;
+      const list = ticketsPropiosPorCarrera.get(k) ?? [];
+      list.push(t);
+      ticketsPropiosPorCarrera.set(k, list);
     }
   }
-  const totalDevPropia = Math.round(montoJugadoPropio * (devPropiaPct / 100) * 100) / 100;
 
-  // Calcular comisiones por cada cliente afiliado
+  for (const [, listT] of ticketsPropiosPorCarrera) {
+    const resC = calcularBaseDecididaCarrera(
+      listT.map((t) => ({
+        nombreJugada: t.nombre_jugada || t.modalidad,
+        montoJugado: Number(t.monto_jugado ?? t.monto ?? 0),
+        premioPagar: Number(t.premio_pagar ?? 0),
+        resultado: t.resultado != null ? Number(t.resultado) : null,
+        estado: t.estado,
+        rol: normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre) === socioNorm ? "Juega" : "Consigue",
+      })),
+      devPropiaPct
+    );
+    montoJugadoPropio += resC.baseDecididaTotal;
+    totalDevPropia += resC.devolucion;
+  }
+  totalDevPropia = Math.round(totalDevPropia * 100) / 100;
+  montoJugadoPropio = Math.round(montoJugadoPropio * 100) / 100;
+
+  // Calcular comisiones por cada cliente afiliado (por carrera con regla de monto decidido y cruces)
   const desglosePorCliente: ComisionClienteParaSocio[] = [];
   let totalComisionesClientes = 0;
 
   for (const af of clientesAfiliados) {
     const afNorm = normalizar(af.nombre);
     let totalJugadoAf = 0;
+    let totalComisionAf = 0;
     const jugadas: DetalleJugadaComisionSocio[] = [];
 
+    const ticketsAfPorCarrera = new Map<string, any[]>();
     for (const t of tickets) {
       if (t.anulada) continue;
       const estT = String(t.estado || "").trim().toUpperCase();
@@ -235,32 +260,54 @@ export function calcularComisionesSocioPorClientes(params: {
       const fechaT = String(t.fecha_carrera || t.fecha || t.fecha_registro || "").slice(0, 10);
 
       if (tCli === afNorm || tCliConsigue === afNorm) {
-        // Validación de fecha inicio de cálculo para el socio
         if (fechaT < af.fechaInicio) continue;
         if (params.fechaDesde && fechaT < params.fechaDesde) continue;
         if (params.fechaHasta && fechaT > params.fechaHasta) continue;
-
-        const montoJ = Number(t.monto_jugado ?? t.monto ?? t.monto_decidido ?? 0);
-        if (montoJ > 0) {
-          const comisionMonto = Math.round(montoJ * (af.comisionPct / 100) * 100) / 100;
-          totalJugadoAf += montoJ;
-          jugadas.push({
-            id: t.id || `t-${Math.random()}`,
-            fecha: fechaT,
-            hipodromo: t.hipodromo || "USA",
-            carrera: t.carrera || 1,
-            nombreJugada: t.nombre_jugada || t.modalidad || "Jugada",
-            caballo: t.caballo || t.ejemplar || "",
-            montoJugado: montoJ,
-            comisionPct: af.comisionPct,
-            montoComision: comisionMonto,
-            estado: t.estado || "Vigente",
-          });
-        }
+        const k = `${fechaT}::${t.hipodromo || "USA"}::${t.carrera || 1}`;
+        const list = ticketsAfPorCarrera.get(k) ?? [];
+        list.push(t);
+        ticketsAfPorCarrera.set(k, list);
       }
     }
 
-    const totalComisionAf = Math.round(totalJugadoAf * (af.comisionPct / 100) * 100) / 100;
+    for (const [, listT] of ticketsAfPorCarrera) {
+      const resC = calcularBaseDecididaCarrera(
+        listT.map((t) => ({
+          nombreJugada: t.nombre_jugada || t.modalidad,
+          montoJugado: Number(t.monto_jugado ?? t.monto ?? 0),
+          premioPagar: Number(t.premio_pagar ?? 0),
+          resultado: t.resultado != null ? Number(t.resultado) : null,
+          estado: t.estado,
+          rol: normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre) === afNorm ? "Juega" : "Consigue",
+        })),
+        af.comisionPct
+      );
+
+      totalJugadoAf += resC.baseDecididaTotal;
+      totalComisionAf += resC.devolucion;
+
+      for (let i = 0; i < listT.length; i++) {
+        const t = listT[i];
+        const fechaT = String(t.fecha_carrera || t.fecha || t.fecha_registro || "").slice(0, 10);
+        const cuotaComision = listT.length === 1 ? resC.devolucion : Math.round((resC.devolucion / listT.length) * 100) / 100;
+        const cuotaBase = listT.length === 1 ? resC.baseDecididaTotal : Math.round((resC.baseDecididaTotal / listT.length) * 100) / 100;
+        jugadas.push({
+          id: t.id || `t-${Math.random()}`,
+          fecha: fechaT,
+          hipodromo: t.hipodromo || "USA",
+          carrera: t.carrera || 1,
+          nombreJugada: t.nombre_jugada || t.modalidad || "Jugada",
+          caballo: t.caballo || t.ejemplar || "",
+          montoJugado: cuotaBase,
+          comisionPct: af.comisionPct,
+          montoComision: cuotaComision,
+          estado: t.estado || "Vigente",
+        });
+      }
+    }
+
+    totalComisionAf = Math.round(totalComisionAf * 100) / 100;
+    totalJugadoAf = Math.round(totalJugadoAf * 100) / 100;
     totalComisionesClientes += totalComisionAf;
 
     desglosePorCliente.push({

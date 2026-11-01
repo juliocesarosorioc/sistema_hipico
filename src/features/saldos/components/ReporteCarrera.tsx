@@ -208,11 +208,17 @@ function TablaJugadas({
       </colgroup>
       <thead>
         <tr className="border-b border-slate-300 h-[22px]">
-          <th className={TH} title="Columna 1: Quien Juega (Jugador 1)">Quien Juega</th>
+          <th className={TH} title="Columna 1: Quien Juega (Rol: Juega)">
+            <span className="inline-block rounded bg-blue-100 px-1 py-0.5 text-[8px] font-black text-blue-800 mr-1 uppercase">Juega</span>
+            Quien Juega
+          </th>
           <th className={`${TH} text-right`} title="Columna 2: Monto que arriesga el que juega">Apostó</th>
           <th className={`${TH} text-right pl-1`} title="Columna 3: Resultado Jugador 1 (Riesgo negativo por decidir / Decidido)">Resultado</th>
           <th className={`${TH} pl-2`} title="Columna 4: Modalidad y ejemplar(es)">Jugada</th>
-          <th className={`${TH} pl-2`} title="Columna 5: Quien Da (Jugador 2)">Quien Da</th>
+          <th className={`${TH} pl-2`} title="Columna 5: Quien Da (Rol: Da)">
+            <span className="inline-block rounded bg-amber-100 px-1 py-0.5 text-[8px] font-black text-amber-800 mr-1 uppercase">Da</span>
+            Quien Da
+          </th>
           <th className={`${TH} text-right`} title="Columna 6: Monto que arriesga el que da">Apostó</th>
           <th className={`${TH} text-right pl-1`} title="Columna 7: Resultado Jugador 2 (Riesgo negativo por decidir / Decidido)">Resultado</th>
         </tr>
@@ -249,6 +255,9 @@ function TablaJugadas({
           return (
             <tr key={i} className="border-b border-slate-100 bg-white h-[26px]">
               <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-nowrap truncate align-middle">
+                <span className="inline-block rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[8px] font-black text-blue-700 mr-1">
+                  Juega
+                </span>
                 <span>{j.juega}</span>
               </td>
               <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap align-middle">{j.aposto}</td>
@@ -300,7 +309,18 @@ function TablaJugadas({
                   );
                 })()}
               </td>
-              <td className="py-[3px] pl-2 text-slate-600 whitespace-nowrap truncate align-middle">{j.da || '—'}</td>
+              <td className="py-[3px] pl-2 text-slate-600 whitespace-nowrap truncate align-middle">
+                {j.da ? (
+                  <>
+                    <span className="inline-block rounded bg-amber-50 border border-amber-200 px-1 py-0.5 text-[8px] font-black text-amber-700 mr-1">
+                      Da
+                    </span>
+                    <span>{j.da}</span>
+                  </>
+                ) : (
+                  '—'
+                )}
+              </td>
               <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap align-middle">
                 {j.apostoDa === null || j.apostoDa === undefined ? '—' : j.apostoDa}
               </td>
@@ -478,7 +498,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
   const totalAdelantadas = jugadasAdelantadasFiltradas.length;
 
   return (
-    <div className="max-w-5xl mx-auto bg-white shadow-lg overflow-hidden text-[11px] leading-tight font-sans" id="reporte-imprimible">
+    <div className="max-w-5xl mx-auto bg-white shadow-lg overflow-hidden text-[11px] leading-tight reporte-tipografia-nitida" id="reporte-imprimible">
 
       {/* 1. ENCABEZADO (Logos sin borde ni margen) */}
       <div className="bg-gradient-to-r from-blue-900 via-blue-700 to-blue-600 text-white border-b border-blue-500/30 shadow-md px-4 py-2.5 flex items-center gap-3">
@@ -500,10 +520,46 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
           <h3 className="text-blue-200 text-[9px] font-bold tracking-widest uppercase">
             {liquidada ? "Reporte de Liquidación" : "Reporte Preliminar de Jugadas (En Riesgo)"}
           </h3>
-          <h1 className="text-lg font-extrabold leading-tight truncate">
-            {encabezado.hipodromo} <span className="font-normal text-blue-200">•</span> {encabezado.carrera}
-          </h1>
-          <p className="text-blue-100 text-[10px]">{encabezado.fecha}</p>
+          <div className="flex flex-wrap items-center gap-2 mt-0.5">
+            <h1 className="text-lg font-extrabold leading-tight truncate">
+              {encabezado.hipodromo} <span className="font-normal text-blue-200">•</span> {encabezado.carrera}
+            </h1>
+            {/* Pizarra en la misma línea con su contenedor oficial */}
+            {encabezado.llegada && encabezado.llegada.length > 0 ? (
+              <div className="inline-flex items-center gap-1.5 rounded-lg bg-blue-950/85 border border-blue-400/50 px-2 py-0.5 text-xs shadow-inner">
+                <span className="text-[9px] font-black uppercase tracking-wider text-amber-300">Pizarra:</span>
+                <div className="flex items-center gap-1">
+                  {encabezado.llegada.map((ll, idx) => (
+                    <span
+                      key={idx}
+                      className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-black shadow-sm border ${colorDiscoNumero(String(ll.numero))}`}
+                      title={`${idx + 1}º lugar: #${ll.numero}`}
+                    >
+                      {ll.numero}
+                    </span>
+                  ))}
+                </div>
+                {encabezado.retirados && encabezado.retirados.length > 0 && (
+                  <div className="flex items-center gap-1 pl-1.5 border-l border-blue-400/40">
+                    <span className="text-[9px] font-black text-rose-300">RET:</span>
+                    {encabezado.retirados.map((r, rIdx) => (
+                      <span
+                        key={rIdx}
+                        className={`inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-black shadow-sm border ${colorDiscoNumero(String(r))}`}
+                      >
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold text-amber-200 border border-amber-300/40">
+                ⏳ Pizarra pendiente
+              </span>
+            )}
+          </div>
+          <p className="text-blue-100 text-[10px] mt-0.5">{encabezado.fecha}</p>
           {datos.filtroModalidad && datos.filtroModalidad !== "TODAS" ? (
             <p
               className="mt-0.5 inline-flex w-fit items-center gap-1 rounded bg-white/15 px-1.5 py-px text-[9px] font-black uppercase tracking-wide text-amber-200 ring-1 ring-amber-300/40"

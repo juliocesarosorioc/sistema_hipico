@@ -52,7 +52,7 @@ export type DetalleJugadaReporteDiario = {
   id: string;
   fecha: string;
   horaCarga?: string | null;
-  rol?: "Juega" | "Consigue";
+  rol?: "Juega" | "Consigue" | "Da";
   cliente: string;
   jugada: string;
   caballo: string;
@@ -69,7 +69,7 @@ export type JugadaReporte = {
   id?: string | number;
   fecha?: string;
   horaCarga?: string | null;
-  rol?: "Juega" | "Consigue";
+  rol?: "Juega" | "Consigue" | "Da";
   cliente?: string;
   jugada?: string;
   caballo?: string;

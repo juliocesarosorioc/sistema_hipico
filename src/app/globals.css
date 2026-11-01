@@ -936,3 +936,19 @@ body {
   color: #047857;
   font-size: 12px;
 }
+
+/* ============================================================================
+   TIPOGRAFÍA NÍTIDA PARA REPORTES (Legibilidad óptima en cualquier dispositivo)
+   ============================================================================ */
+.reporte-tipografia-nitida {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum" 1;
+  letter-spacing: -0.011em;
+}
+
+.reporte-tipografia-nitida table {
+  font-variant-numeric: tabular-nums;
+}

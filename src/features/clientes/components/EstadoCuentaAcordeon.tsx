@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import {
   construirEstadoCuenta,
   formasPagoDe,
@@ -116,24 +117,55 @@ function JugadasDesplegables({ nivel, devPct, nivelProf }: { nivel: NivelAcordeo
             <div className="mt-2 overflow-x-auto">
               <table className="w-full text-[10px]">
                 <thead>
-                  <tr className="text-slate-400 uppercase tracking-wider">
-                    <th className="text-left font-black px-2 py-1">Caballo</th>
-                    <th className="text-left font-black px-2 py-1">Jugada</th>
-                    <th className="text-right font-black px-2 py-1">Jugado</th>
-                    <th className="text-right font-black px-2 py-1" title="Monto total ganador o perdedor en la carrera con la devolución incluida a quien aplique">Resultado</th>
-                    <th className="text-right font-black px-2 py-1 text-purple-600">Devolución</th>
-                    <th className="text-right font-black px-2 py-1">Premio</th>
-                    <th className="text-left font-black px-2 py-1">Estado</th>
+                  <tr className="text-slate-500 uppercase tracking-wider border-b border-slate-200 text-[9px] font-black">
+                    <th className="text-left px-2 py-1">Caballo</th>
+                    <th className="text-left px-2 py-1">Jugada</th>
+                    <th className="text-center px-2 py-1 w-14">Rol</th>
+                    <th className="text-right px-2 py-1">Jugado</th>
+                    <th className="text-right px-2 py-1">Premio</th>
+                    <th className="text-right px-2 py-1 text-purple-700">Devolución</th>
+                    <th className="text-center px-2 py-1 w-20">Estado</th>
+                    <th className="text-right px-2 py-1 font-black" title="Resultado neto (+ devolución a favor)">Resultado</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-slate-100">
                   {c.jugadas.map((j) => {
                     const resJugadaConDev = Math.round(((j.resultadoNeto ?? 0) + (j.devolucion ?? 0)) * 100) / 100;
                     return (
-                      <tr key={j.id} className="border-t border-line">
-                        <td className="px-2 py-1 font-bold text-slate-700">{j.caballo}</td>
-                        <td className="px-2 py-1">{j.jugada}</td>
-                        <td className="px-2 py-1 text-right font-mono">{formatoMoneda(j.moneda, j.montoJugado)}</td>
+                      <tr key={j.id} className="hover:bg-slate-50/70">
+                        <td className="px-2 py-1 font-bold text-slate-800">{j.caballo}</td>
+                        <td className="px-2 py-1 text-slate-700">{j.jugada}</td>
+                        <td className="px-2 py-1 text-center">
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[8.5px] font-black uppercase ${
+                              j.rol === "Consigue" || j.rol === "Da"
+                                ? "bg-amber-100 text-amber-800 border border-amber-300"
+                                : "bg-blue-100 text-blue-800 border border-blue-300"
+                            }`}
+                          >
+                            {j.rol === "Consigue" || j.rol === "Da" ? "Da" : "Juega"}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1 text-right font-mono font-bold text-slate-800">{formatoMoneda(j.moneda, j.montoJugado)}</td>
+                        <td className="px-2 py-1 text-right font-mono font-medium text-slate-600">{formatoMoneda(j.moneda, j.premio)}</td>
+                        <td className="px-2 py-1 text-right font-mono font-black text-purple-700">
+                          {j.devolucion > 0 ? `+${formatoMoneda(j.moneda, j.devolucion)}` : "—"}
+                        </td>
+                        <td className="px-2 py-1 text-center">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
+                              String(j.estado).toUpperCase() === "GANADOR" || String(j.estado).toUpperCase() === "GANO"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : String(j.estado).toUpperCase() === "PERDEDOR" || String(j.estado).toUpperCase() === "PERDIO"
+                                  ? "bg-red-100 text-red-700"
+                                  : String(j.estado).toUpperCase() === "PENDIENTE"
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {j.estado}
+                          </span>
+                        </td>
                         <td
                           className={`px-2 py-1 text-right font-mono font-black ${
                             String(j.estado ?? "").toUpperCase().startsWith("RETIR")
@@ -148,23 +180,6 @@ function JugadasDesplegables({ nivel, devPct, nivelProf }: { nivel: NivelAcordeo
                           {String(j.estado ?? "").toUpperCase().startsWith("RETIR")
                             ? "RETIRADO"
                             : `${resJugadaConDev > 0 ? "+" : ""}${formatoMoneda(j.moneda, resJugadaConDev)}`}
-                        </td>
-                        <td className="px-2 py-1 text-right font-mono font-bold text-purple-600">{formatoMoneda(j.moneda, j.devolucion)}</td>
-                        <td className="px-2 py-1 text-right font-mono">{formatoMoneda(j.moneda, j.premio)}</td>
-                        <td className="px-2 py-1">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
-                              j.estado === "Ganador"
-                                ? "bg-emerald-100 text-emerald-700"
-                                : j.estado === "Perdedor"
-                                  ? "bg-red-100 text-red-700"
-                                  : j.estado === "Pendiente"
-                                    ? "bg-amber-100 text-amber-700"
-                                    : "bg-slate-100 text-slate-600"
-                            }`}
-                          >
-                            {j.estado}
-                          </span>
                         </td>
                       </tr>
                     );
@@ -248,6 +263,9 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
   const [ficha, setFicha] = useState<FichaEstadoCuentaUnificada | null>(null);
   const [resumenSocio, setResumenSocio] = useState<ResumenComisionesSocio | null>(null);
   const [desplegadosClientes, setDesplegadosClientes] = useState<Record<string, boolean>>({});
+  const [desde, setDesde] = useState<string>("");
+  const [hasta, setHasta] = useState<string>("");
+  const [ticketsBase, setTicketsBase] = useState<TicketApuesta[]>([]);
 
   const seleccionar = async (c: ClienteRow | null) => {
     onActivo(c);
@@ -263,7 +281,14 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
     const pct = parseFloat(String(c.devolucion ?? "")) || 0;
     setDevolucionPct(pct);
     const tickets = await onCargarTickets(c.id);
-    const tree = construirEstadoCuenta(tickets, pct, c);
+    setTicketsBase(tickets);
+    const ticketsFiltrados = tickets.filter((t) => {
+      const f = String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10);
+      if (desde && f < desde) return false;
+      if (hasta && f > hasta) return false;
+      return true;
+    });
+    const tree = construirEstadoCuenta(ticketsFiltrados, pct, c);
     const fichaCalc = construirFichaEstadoCuentaUnificada({
       id: c.id,
       nombre: c.nombre ?? c.seudonimo ?? "",
@@ -273,7 +298,7 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
       devolucionPct: pct,
       devolucionIncentivo: tree.dec,
       libre: String(c.modo_juego ?? "").toLowerCase().trim() === "libre",
-      movimientos: tickets.map((t) => ({
+      movimientos: ticketsFiltrados.map((t) => ({
         id: t.id,
         cliente_juega_id: t.cliente_juega_id ?? null,
         cliente_juega_nombre: t.cliente_juega_nombre ?? "",
@@ -325,12 +350,52 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
   useEffect(() => {
     void seleccionar(clienteEstado ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clienteEstado?.id ?? null]);
+  }, [clienteEstado?.id ?? null, desde, hasta]);
 
   const formasPago = useMemo(() => formasPagoDe(clienteEstado), [clienteEstado]);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 reporte-tipografia-nitida">
+      {/* Barra de Filtro de Fechas para Simetría Total con Saldos Consolidados */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-slate-300 bg-slate-50 p-2.5 text-xs shadow-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1">
+            <span>📅</span> Filtro de Fechas (Semana Fiscal / Rango):
+          </span>
+          <DateInput
+            value={desde}
+            onFechaChange={(v) => setDesde(v)}
+            placeholder="Desde"
+            className="w-32 py-1 text-xs bg-white border-slate-300"
+          />
+          <span className="text-slate-400 font-bold">→</span>
+          <DateInput
+            value={hasta}
+            onFechaChange={(v) => setHasta(v)}
+            placeholder="Hasta"
+            className="w-32 py-1 text-xs bg-white border-slate-300"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          {(desde || hasta) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDesde("");
+                setHasta("");
+              }}
+              className="rounded-md bg-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-300 transition"
+              title="Mostrar todo el historial"
+            >
+              ✕ Quitar filtro
+            </button>
+          )}
+          <span className="text-[10px] font-mono text-slate-500">
+            {desde && hasta ? `${desde} a ${hasta}` : "Todo el historial"}
+          </span>
+        </div>
+      </div>
+
       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Cliente</label>
       <select
         className="w-full max-w-md border border-line rounded-xl px-3 py-2 text-sm font-bold text-slate-800 bg-white outline-none focus:ring-1 focus:ring-primary-500"

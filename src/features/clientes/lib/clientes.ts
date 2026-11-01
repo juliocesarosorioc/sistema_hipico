@@ -51,6 +51,7 @@ export {
 };
 import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { extraerFechaCarreraTicket } from "@/features/liquidacion/lib/fecha";
+import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
 import {
   buscarPizarraEnMapa,
   desglosarTicketEnFilasUnificadas,
@@ -1220,7 +1221,7 @@ export type JugadaItem = {
   /** Hora de carga de la jugada (HH:mm). */
   horaCarga?: string | null;
   /** Rol del jugador en la jugada ("Juega" o "Consigue"). */
-  rol?: "Juega" | "Consigue";
+  rol?: "Juega" | "Consigue" | "Da";
   /** Fecha de la carrera (YYYY-MM-DD), para el reporte diario. */
   fechaCarrera: string | null;
   hipodromo: string;
@@ -1463,6 +1464,57 @@ export function construirEstadoCuenta(
     g.jugadas.sort(compararJugadaPorCarrera);
   }
   raiz.jugadas.sort(compararJugadaPorCarrera);
+  // Recálculo exacto de devoluciones por carrera (ganancias odds 10/5, cruces netos, bloque/dividida)
+  for (const c of construir.carreras.values()) {
+    const resC = calcularBaseDecididaCarrera(
+      c.jugadas.map((j) => ({
+        nombreJugada: j.jugada,
+        montoJugado: j.montoJugado,
+        premioPagar: j.premio,
+        resultado: j.resultadoNeto,
+        estado: j.estado,
+        rol: j.rol,
+      })),
+      devolucionPct
+    );
+    c.dec = resC.devolucion;
+    if (c.jugadas.length === 1) {
+      c.jugadas[0].devolucion = c.dec;
+    } else if (c.jugadas.length > 1 && c.dec > 0) {
+      const sumaBases = c.jugadas.reduce((acc, j) => {
+        const val = typeof j.resultadoNeto === "number" ? Math.abs(j.resultadoNeto) : j.montoJugado;
+        return acc + val;
+      }, 0);
+      let rem = c.dec;
+      for (let i = 0; i < c.jugadas.length; i++) {
+        if (i === c.jugadas.length - 1) {
+          c.jugadas[i].devolucion = Math.round(rem * 100) / 100;
+        } else {
+          const val = typeof c.jugadas[i].resultadoNeto === "number" ? Math.abs(c.jugadas[i].resultadoNeto!) : c.jugadas[i].montoJugado;
+          const cuota = sumaBases > 0 ? Math.round((val / sumaBases) * c.dec * 100) / 100 : 0;
+          c.jugadas[i].devolucion = cuota;
+          rem -= cuota;
+        }
+      }
+    } else {
+      for (const j of c.jugadas) j.devolucion = 0;
+    }
+  }
+
+  // Recalcular niveles superiores garantizando que la devolución sume (+) al saldo
+  for (const h of construir.hipodromos.values()) {
+    h.dec = Math.round(h.hijos.reduce((acc, c) => acc + (c.dec || 0), 0) * 100) / 100;
+  }
+  for (const d of construir.dias.values()) {
+    d.dec = Math.round(d.hijos.reduce((acc, h) => acc + (h.dec || 0), 0) * 100) / 100;
+  }
+  for (const s of construir.semanas.values()) {
+    s.dec = Math.round(s.hijos.reduce((acc, d) => acc + (d.dec || 0), 0) * 100) / 100;
+  }
+  for (const g of construir.grupos.values()) {
+    g.dec = Math.round(g.hijos.reduce((acc, s) => acc + (s.dec || 0), 0) * 100) / 100;
+  }
+  raiz.dec = Math.round([...construir.grupos.values()].reduce((acc, g) => acc + (g.dec || 0), 0) * 100) / 100;
 
   raiz.hijos = [...construir.grupos.values()];
   return raiz;
