@@ -3,7 +3,7 @@
 // ============================================================================
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const VERIFY = Deno.env.get("WHATSAPP_VERIFY_TOKEN") ?? "";
 const WHATSAPP_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN") ?? "";
@@ -76,6 +76,7 @@ function parsearPizarra(t: string): number[] | null {
 }
 
 Deno.serve(async (req: Request) => {
+  try {
   const url = new URL(req.url);
   if (req.method === "GET") {
     const mode = url.searchParams.get("hub.mode");
@@ -93,7 +94,7 @@ Deno.serve(async (req: Request) => {
   let evento: Fila;
   try { evento = JSON.parse(cuerpo); } catch { return json({ ok: true }); }
 
-  const db = createClient(URL, SERVICE, { auth: { persistSession: false } });
+  const db = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
   const ahora = new Date().toISOString();
   const hoy = ahora.slice(0, 10);
 
@@ -204,4 +205,7 @@ Deno.serve(async (req: Request) => {
   }
 
   return json({ ok: true });
+  } catch (e) {
+    return json({ ok: false, error: String(e) }, 500);
+  }
 });
