@@ -701,7 +701,7 @@ export function ReporteVentasModal({
         />
       )}
 
-      <div className="rt-imprimible flex max-h-[97vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl">
+      <div className="rt-imprimible flex max-h-[97vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl reporte-tipografia-nitida">
         {/* Cabecera */}
         <div className={`rt-no-print flex items-center justify-between gap-3 border-b border-black/20 bg-gradient-to-r ${tema.cabecera} px-4 py-2.5 text-white`}>
           <div className="flex min-w-0 items-center gap-2">

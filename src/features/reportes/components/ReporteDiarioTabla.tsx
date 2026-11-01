@@ -405,7 +405,7 @@ export function ReporteDiarioTabla({
       ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 reporte-tipografia-nitida">
       <div className={`grid grid-cols-1 gap-2 sm:grid-cols-2 ${kpis.length >= 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         {kpis.map((k) => (
           <Kpi key={k.etiqueta} etiqueta={k.etiqueta} valor={k.valor} acento={k.acento} />
@@ -583,7 +583,7 @@ export function GraficosReporteDiario({
   }, [diasArbol, esCliente]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 reporte-tipografia-nitida">
       {/* GRÁFICO 1: RESULTADOS POR HIPÓDROMO */}
       <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 p-3 text-white shadow-md">
         <div className="mb-3 flex items-center justify-between">

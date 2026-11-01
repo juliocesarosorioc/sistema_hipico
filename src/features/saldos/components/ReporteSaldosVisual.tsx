@@ -278,7 +278,7 @@ export function ReporteSaldosVisual({
   );
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 reporte-tipografia-nitida">
       {/* Barra de controles: filtros por modalidad y botones de exportación */}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50/70 p-2.5">
         <div className="flex flex-wrap items-center gap-1.5">
