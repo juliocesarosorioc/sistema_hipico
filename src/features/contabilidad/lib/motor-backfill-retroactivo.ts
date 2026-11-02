@@ -15,7 +15,7 @@
  */
 
 import { supabase } from "@/core/supabase";
-import { redondearCentavos } from "@/shared/lib/dinero";
+import { redondearCentavos, sumarDinero, restarDinero } from "@/shared/lib/dinero";
 import { emitirMensajePaso } from "@/features/liquidacion/lib/liquidacion-incentivos-socios";
 import {
   generarAsientoPartidaDoble,
@@ -35,7 +35,7 @@ import {
   calcularReporteDestinatariosDevolucion,
   PARAMETROS_PREDETERMINADOS_DEVOLUCION,
 } from "@/features/clientes/lib/comisiones-socios";
-import { leerEventosLibresMemoria } from "@/features/eventos-libres/lib/eventos-libres";
+import { leerEventosLibresMemoria, eventoDesdeNota, type EventoLibreRow } from "@/features/eventos-libres/lib/eventos-libres";
 
 export interface ResumenAuditoriaContableCompleta {
   ok: boolean;
@@ -1074,7 +1074,26 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
     // 7. EVENTOS LIBRES / SPORTSBOOK P2P DE LA SEMANA ACTUAL
     // =========================================================================
     try {
-      const eventosLibres = leerEventosLibresMemoria();
+      let eventosLibres = leerEventosLibresMemoria();
+      if (supabase) {
+        try {
+          const { data: dbEvs } = await supabase
+            .from("apuestas_eventos_especiales")
+            .select("nota");
+          if (dbEvs && dbEvs.length > 0) {
+            const mapEv = new Map<string, EventoLibreRow>();
+            for (const ev of eventosLibres) mapEv.set(ev.id, ev);
+            for (const row of dbEvs) {
+              const parsed = eventoDesdeNota(row.nota);
+              if (parsed) mapEv.set(parsed.id, parsed);
+            }
+            eventosLibres = [...mapEv.values()];
+          }
+        } catch {
+          /* best effort */
+        }
+      }
+
       for (const ev of eventosLibres) {
         transaccionesAnalizadas += 1;
         const fechaEv = String(ev.fecha || "").slice(0, 10) || semanaActual.desde;
@@ -1120,10 +1139,70 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
             });
             registrarEstadisticaAsiento(resEv, eraPrevio);
           }
+        } else {
+          // Evento liquidado
+          const claveLiq = `EVLIBRE:LIQ:${ev.id}`;
+          const eraPrevio = clavesPrevias.has(claveLiq);
+          const ganoJ1 = ev.estado === "GANO_JUGADOR_1" || (ev.estado as string) === "GANADOR";
+          const ganoJ2 = ev.estado === "GANO_JUGADOR_2";
+          const montoGanancia = redondearCentavos(ev.montoLiquidadoGanador ?? (ganoJ1 ? ev.riesgoJugador2 : ev.riesgoJugador1));
+          const comisionCobrada = redondearCentavos(ev.comisionCobrada ?? (montoGanancia * (Number(ev.comisionGrupoPct || 5) / 100)));
+          const premioNeto = restarDinero(montoGanancia, comisionCobrada);
+
+          if (montoGanancia > 0 && (ganoJ1 || ganoJ2)) {
+            const perdedor = ganoJ1
+              ? { id: String(ev.jugador2Id), nombre: ev.jugador2Nombre }
+              : { id: String(ev.jugador1Id), nombre: ev.jugador1Nombre };
+            const ganador = ganoJ1
+              ? { id: String(ev.jugador1Id), nombre: ev.jugador1Nombre }
+              : { id: String(ev.jugador2Id), nombre: ev.jugador2Nombre };
+
+            const lineasEv = [
+              {
+                cuenta_codigo: "2.1.01.001",
+                cliente_id: perdedor.id,
+                cliente_nombre: perdedor.nombre,
+                debe: montoGanancia,
+                haber: 0,
+                concepto: `Pérdida en Evento Libre (${ev.concepto}) - ${perdedor.nombre}`,
+              },
+              {
+                cuenta_codigo: "2.1.01.001",
+                cliente_id: ganador.id,
+                cliente_nombre: ganador.nombre,
+                debe: 0,
+                haber: premioNeto,
+                concepto: `Premio neto ganado en Evento Libre (${ev.concepto}) - ${ganador.nombre}`,
+              },
+            ];
+
+            if (comisionCobrada > 0) {
+              lineasEv.push({
+                cuenta_codigo: "4.1.01.001",
+                cliente_id: undefined as any,
+                cliente_nombre: undefined as any,
+                debe: 0,
+                haber: comisionCobrada,
+                concepto: `Comisión Evento Libre (${ev.comisionGrupoPct || 5}%) - ${ev.concepto}`,
+              });
+            }
+
+            const resLiq = await generarAsientoPartidaDoble({
+              grupo_id: params?.grupoId || null,
+              fecha_contable: fechaEv,
+              tipo_evento: "LIQUIDACION_APUESTAS",
+              referencia_id: ev.id,
+              clave_idempotencia: claveLiq,
+              descripcion: `Liquidación Evento Libre (${ev.categoria}): ${ev.concepto}`,
+              creado_por: "SISTEMA_SEMANA_ACTUAL",
+              lineas: lineasEv,
+            });
+            registrarEstadisticaAsiento(resLiq, eraPrevio);
+          }
         }
       }
-    } catch {
-      /* ignore */
+    } catch (errEv) {
+      console.warn("Fallo en sincronización contable de eventos libres:", errEv);
     }
   } catch (err: any) {
     console.error("Error en sincronizarYAuditarContabilidadCompleta:", err);

@@ -19,6 +19,7 @@
 
 import { supabase } from "@/core/supabase";
 import { redondearCentavos, sumarDinero, restarDinero, calcularComisionExacta } from "@/shared/lib/dinero";
+import { generarAsientoPartidaDoble } from "@/features/contabilidad/lib/plan-cuentas";
 import {
   calcularLiquidacionConIncentivosYSocios,
   emitirMensajePaso,
@@ -111,7 +112,7 @@ export function guardarEventosLibresMemoria(lista: EventoLibreRow[]): void {
   }
 }
 
-function eventoDesdeNota(nota: unknown): EventoLibreRow | null {
+export function eventoDesdeNota(nota: unknown): EventoLibreRow | null {
   const raw = String(nota ?? "");
   const prefijo = "EVENTO_LIBRE_P2P:";
   if (!raw.startsWith(prefijo)) return null;
@@ -298,6 +299,31 @@ export async function crearEventoLibre(params: {
       if (error) {
         return { ok: true, evento: nuevo, warning: `Se guardó localmente, pero no en la base: ${error.message}` };
       }
+
+      // Sincronizar en tickets_apuestas para que aparezca en el estado de cuenta y reportes
+      try {
+        await supabase.from("tickets_apuestas").insert([{
+          hipodromo: "EVENTOS LIBRES",
+          carrera: 1,
+          fecha_carrera: fecha,
+          nombre_jugada: "LIBRE",
+          caballo: `[${params.categoria}] ${nuevo.concepto} (${params.mercado || "10/6"})`,
+          monto_jugado: nuevo.riesgoJugador1,
+          monto_decidido: nuevo.riesgoJugador2,
+          premio_pagar: 0,
+          comision_porcentaje: nuevo.comisionGrupoPct,
+          comision_pagada: 0,
+          cliente_juega_id: String(nuevo.jugador1Id),
+          cliente_juega_nombre: nuevo.jugador1Nombre,
+          cliente_consigue_id: String(nuevo.jugador2Id),
+          cliente_consigue_nombre: nuevo.jugador2Nombre,
+          estado: "Pendiente",
+          anulada: false,
+          nota_auditoria: `EVENTO_LIBRE_P2P:${JSON.stringify(nuevo)}`,
+        }]);
+      } catch (errTk) {
+        console.warn("No se pudo insertar ticket libre en tickets_apuestas:", errTk);
+      }
     } catch (error) {
       const detalle = error instanceof Error ? error.message : String(error);
       return { ok: true, evento: nuevo, warning: `Se guardó localmente, pero no en la base: ${detalle}` };
@@ -452,6 +478,69 @@ export async function liquidarEventoLibre(params: {
         resultado: resUnificado,
         warning: `Los saldos se procesaron y el resultado quedó en este dispositivo, pero no se pudo guardar en la base: ${error.message}`,
       };
+    }
+
+    // Actualizar tickets_apuestas con el resultado, premio y comisión
+    try {
+      const estTk = ganoJ1 ? "Ganador" : ganoJ2 ? "Perdedor" : "Anulada";
+      const premioTk = ganoJ1 ? sumarDinero(ev.riesgoJugador1, montoGanancia) : 0;
+      const comTk = resUnificado.totalComisionCasa;
+      await supabase.from("tickets_apuestas")
+        .update({
+          estado: estTk,
+          monto_decidido: montoGanancia,
+          premio_pagar: premioTk,
+          comision_pagada: comTk,
+        })
+        .ilike("nota_auditoria", `%"id":"${ev.id}"%`);
+    } catch (eTk) {
+      console.warn("Fallo actualizando tickets_apuestas de Evento Libre:", eTk);
+    }
+
+    // Registrar Asiento Contable NIIF para registrar la comisión y partida doble
+    try {
+      if (resUnificado.totalComisionCasa > 0 && !esEmpate) {
+        const perdedor = ganoJ1
+          ? { id: String(ev.jugador2Id), nombre: ev.jugador2Nombre, monto: montoGanancia }
+          : { id: String(ev.jugador1Id), nombre: ev.jugador1Nombre, monto: montoGanancia };
+        const ganador = ganoJ1
+          ? { id: String(ev.jugador1Id), nombre: ev.jugador1Nombre, monto: restarDinero(montoGanancia, resUnificado.totalComisionCasa) }
+          : { id: String(ev.jugador2Id), nombre: ev.jugador2Nombre, monto: restarDinero(montoGanancia, resUnificado.totalComisionCasa) };
+
+        await generarAsientoPartidaDoble({
+          fecha_contable: ev.fecha,
+          tipo_evento: "LIQUIDACION_APUESTAS",
+          referencia_id: ev.id,
+          clave_idempotencia: `EVLIBRE:LIQ:${ev.id}`,
+          descripcion: `Liquidación Evento Libre (${ev.categoria}): ${ev.concepto}`,
+          lineas: [
+            {
+              cuenta_codigo: "2.1.01.001",
+              cliente_id: perdedor.id,
+              cliente_nombre: perdedor.nombre,
+              debe: perdedor.monto,
+              haber: 0,
+              concepto: `Pérdida en Evento Libre - ${perdedor.nombre}`,
+            },
+            {
+              cuenta_codigo: "2.1.01.001",
+              cliente_id: ganador.id,
+              cliente_nombre: ganador.nombre,
+              debe: 0,
+              haber: ganador.monto,
+              concepto: `Premio neto ganado en Evento Libre - ${ganador.nombre}`,
+            },
+            {
+              cuenta_codigo: "4.1.01.001",
+              debe: 0,
+              haber: resUnificado.totalComisionCasa,
+              concepto: `Comisión Evento Libre (${ev.comisionGrupoPct || 5}%) - ${ev.concepto}`,
+            },
+          ],
+        });
+      }
+    } catch (eAsiento) {
+      console.warn("Fallo registrando asiento NIIF de Evento Libre:", eAsiento);
     }
   }
 

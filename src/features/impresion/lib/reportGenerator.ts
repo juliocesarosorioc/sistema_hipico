@@ -548,6 +548,7 @@ export function relacionResultados(
     if (!opts?.saldos) return "";
     const saldo = saldoAjustadoDe(opts.saldos, j.clienteJuega);
     if (saldo === undefined) return "";
+    if (!Number.isFinite(saldo)) return " · Disp *LIBRE*";
     if (saldo > 0) return ` · Disp *${fmtMonto(saldo)}*`;
     const n = String(j.clienteJuega).trim();
     if (n && !sinSaldo.includes(n)) sinSaldo.push(n);

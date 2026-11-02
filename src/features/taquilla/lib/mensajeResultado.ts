@@ -513,7 +513,9 @@ export function mensajePreliminarDeCarrera(opts: OpcionesPreliminarResultado): s
     if (opts.saldos) {
       const saldo = saldoAjustadoDe(opts.saldos, relacion.clienteJuega);
       if (saldo !== undefined) {
-        if (saldo > 0) {
+        if (!Number.isFinite(saldo)) {
+          sufijo += ` · Disp *LIBRE*`;
+        } else if (saldo > 0) {
           sufijo += ` · Disp *${fmtMonto(saldo)}*`;
         } else {
           sufijo += ` · Disp *S/S*`;

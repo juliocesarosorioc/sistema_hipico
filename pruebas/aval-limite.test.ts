@@ -85,12 +85,14 @@ eq("un aval de 500 no crea saldo", disponibleParaJugar({ saldo_actual: 0, aval: 
 eq("el aval entra una sola vez", disponibleParaJugar({ saldo_actual: 0, aval: 500 }), 500);
 
 // ---------------------------------------------------------------------------
-console.log("\n[3] modo LIBRE: respeta saldo + aval");
+console.log("\n[3] modo LIBRE: no tiene limitaciones de saldo");
 // ---------------------------------------------------------------------------
 const libre = { saldo_actual: 0, aval: 0, modo_juego: "libre" };
-ok("'libre' no omite el tope", !esSinTope(libre));
-ok("'LIBRE' en mayusculas tampoco", !esSinTope({ modo_juego: "LIBRE" }));
-ok("' libre ' con espacios tampoco", !esSinTope({ modo_juego: " libre " }));
+ok("'libre' es sin tope", esSinTope(libre));
+ok("'LIBRE' en mayusculas es libre", esSinTope({ modo_juego: "LIBRE" }));
+ok("' libre ' con espacios es libre", esSinTope({ modo_juego: " libre " }));
+ok("'libre: true' es sin tope", esSinTope({ libre: true }));
+ok("disponible de libre es infinito", disponibleParaJugar(libre) === Number.POSITIVE_INFINITY);
 ok("modo 'aval' NO es libre", !esSinTope({ modo_juego: "aval" }));
 ok("modo 'pozo' NO es libre (topa)", !esSinTope({ modo_juego: "pozo" }));
 ok("sin modo NO es libre (topa)", !esSinTope({}));
@@ -149,7 +151,7 @@ console.log("\n[4] el reparto TOPA por saldo + aval, no por saldo");
   eq("topa en el aval (0)", r.montoAutorizado, 0);
 }
 {
-  // El modo "libre" no permite superar saldo + aval.
+  // El modo "libre" no tiene limitaciones de saldo: puede jugar lo que quiera.
   const r = calcularReparto({
     jugada: "5",
     ejemplares: "",
@@ -157,9 +159,9 @@ console.log("\n[4] el reparto TOPA por saldo + aval, no por saldo");
     cliente1: { nombre: "Caro", saldo_actual: 100, aval: 50, modo_juego: "libre" },
     cliente2: null,
   });
-  eq("modo libre recorta al saldo + aval", r.montoAutorizado, 150);
-  eq("marca el recorte", r.recortado, true);
-  eq("modo libre sigue teniendo tope", r.lado1.sinTope, false);
+  eq("modo libre autoriza los 10000 completos", r.montoAutorizado, 10000);
+  eq("no marca recorte", r.recortado, false);
+  eq("modo libre es sin tope", r.lado1.sinTope, true);
   eq("riesgo aceptado no excede el disponible", r.lado1.excedido, false);
 }
 {

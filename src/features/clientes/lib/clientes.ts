@@ -1554,10 +1554,68 @@ export async function cargarTicketsCliente(
       .order("fecha_registro", { ascending: false })
       .limit(10000);
     if (error) throw error;
-    const filas = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    const filas: any[] = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
       ...(r as unknown as TicketApuesta),
       fecha_carrera: extraerFechaCarreraTicket(r) || (r.fecha_carrera as string | null) || null,
     }));
+
+    // Cargar también eventos libres / sportsbook P2P para el estado de cuenta
+    try {
+      const { data: dataEv } = await supabase
+        .from("apuestas_eventos_especiales")
+        .select("*")
+        .order("creado_en", { ascending: false });
+      if (dataEv && dataEv.length > 0) {
+        for (const evRow of dataEv) {
+          let parsed: any;
+          try {
+            const idx = String(evRow.nota ?? "").indexOf("EVENTO_LIBRE_P2P:");
+            if (idx >= 0) parsed = JSON.parse(String(evRow.nota).slice(idx + 17));
+          } catch {
+            /* ignore */
+          }
+          if (parsed) {
+            const ganoJ1 = parsed.estado === "GANO_JUGADOR_1" || String(evRow.estado).toUpperCase() === "GANADOR";
+            const ganoJ2 = parsed.estado === "GANO_JUGADOR_2";
+            const montoJuega = Number(parsed.riesgoJugador1) || Number(evRow.monto) || 0;
+            const montoDa = Number(parsed.riesgoJugador2) || 0;
+            const montoGanancia = Number(parsed.montoLiquidadoGanador ?? (ganoJ1 ? montoDa : montoJuega)) || 0;
+            const comisionCobrada = Number(parsed.comisionCobrada ?? (montoGanancia * 0.05)) || 0;
+            const premioPagar = ganoJ1 ? (montoJuega + montoGanancia) : 0;
+            const estadoTicket = ganoJ1 ? "Ganador" : ganoJ2 ? "Perdedor" : "Pendiente";
+
+            filas.push({
+              id: `ev-libre-${evRow.id}`,
+              fecha_registro: evRow.creado_en || `${evRow.fecha}T12:00:00Z`,
+              fecha_carrera: evRow.fecha || null,
+              hipodromo: "EVENTOS LIBRES",
+              carrera: 1,
+              nombre_jugada: "LIBRE",
+              caballo: `${parsed.concepto} (${parsed.mercado || evRow.logro_cuota || "10/6"})`,
+              monto_jugado: montoJuega,
+              monto_decidido: montoGanancia,
+              premio_pagar: premioPagar,
+              comision_porcentaje: Number(parsed.comisionGrupoPct || 5),
+              comision_pagada: comisionCobrada,
+              cliente_juega_id: String(parsed.jugador1Id || evRow.cliente_id || ""),
+              cliente_juega_nombre: String(parsed.jugador1Nombre || evRow.cliente_nombre || ""),
+              cliente_consigue_id: String(parsed.jugador2Id || ""),
+              cliente_consigue_nombre: String(parsed.jugador2Nombre || ""),
+              estado: estadoTicket,
+              anulada: false,
+              grupo: "ARGENTINA",
+              grupo_cobro_id: "d290daa1-a44b-4ed4-bb8a-03db4ecc32b0",
+              grupo_cobro_nombre: "ARGENTINA",
+              grupo_comision_id: "d290daa1-a44b-4ed4-bb8a-03db4ecc32b0",
+              grupo_comision_nombre: "ARGENTINA",
+              nota_auditoria: evRow.nota,
+            } as unknown as TicketApuesta);
+          }
+        }
+      }
+    } catch {
+      /* best-effort */
+    }
     const filtrados = filas.filter((t) => {
       // Si el cliente pertenece a un grupo específico, no mezclar con tickets de otros grupos
       if (grupoCliente) {

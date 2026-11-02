@@ -52,9 +52,10 @@ import { parsearNomenclatura } from "@/features/taquilla/lib/nomenclatura";
 /** Datos de cliente mínimos para calcular riesgo (compatible con ClienteVenta). */
 export type ClienteRiesgo = {
   nombre?: string | null;
-  saldo_actual?: number | null;
-  aval?: number | null;
+  saldo_actual?: number | string | null;
+  aval?: number | string | null;
   modo_juego?: string | null;
+  libre?: boolean | null;
 };
 
 export type EstructuraJugada = "DADOR" | "PP" | "A_PREMIO";
@@ -104,6 +105,7 @@ function round2(n: number): number {
  * Un cliente inexistente o sin saldo informado devuelve 0.
  */
 export function disponibleParaJugar(c: ClienteRiesgo | null | undefined): number {
+  if (esSinTope(c)) return Number.POSITIVE_INFINITY;
   const saldo = c && c.saldo_actual != null ? Number(c.saldo_actual) : 0;
   const aval = c && c.aval != null ? Number(c.aval) : 0;
   const total = (Number.isFinite(saldo) ? saldo : 0) + (Number.isFinite(aval) ? aval : 0);
@@ -135,9 +137,12 @@ export function explicarDisponible(c: ClienteRiesgo | null | undefined): string 
 }
 
 
-/** El modo "libre" no autoriza a exceder saldo + aval. */
-export function esSinTope(_c: ClienteRiesgo | null | undefined): boolean {
-  return false;
+/** Los jugadores con estatus LIBRE no tienen limitaciones de saldo para jugar. */
+export function esSinTope(c: ClienteRiesgo | null | undefined): boolean {
+  if (!c) return false;
+  if (c.libre === true) return true;
+  const modo = String(c.modo_juego ?? "").trim().toLowerCase();
+  return modo === "libre";
 }
 
 /** Fila mínima de `clientes` para el lookup de disponible del reporte. */
@@ -146,6 +151,7 @@ export type ClienteDisponible = {
   saldo_actual?: number | string | null;
   aval?: number | string | null;
   modo_juego?: string | null;
+  libre?: boolean | null;
 };
 
 /**
@@ -166,6 +172,7 @@ export function lookupDisponible(clientes: ClienteDisponible[]): (nombre: string
   return (nombre: string) => {
     const c = porNombre.get(norm(nombre));
     if (!c) return undefined;
+    if (esSinTope(c)) return Number.POSITIVE_INFINITY;
     return num(c.saldo_actual) + num(c.aval);
   };
 }
@@ -357,7 +364,7 @@ function armarLado(
     caballos,
     riesgo: round2(riesgo),
     porCaballo: n > 0 ? round2(riesgo / n) : 0,
-    disponible: round2(disponible),
+    disponible: sinTope ? Number.POSITIVE_INFINITY : round2(disponible),
     sinTope,
     excedido: !sinTope && riesgo > disponible + 0.005,
   };

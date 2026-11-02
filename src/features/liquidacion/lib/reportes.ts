@@ -981,6 +981,71 @@ export async function leerJugadasModulosExtrasHipodromo(
     /* best-effort */
   }
 
+  // 3) Eventos Libres de la fecha `dia` (tabla `apuestas_eventos_especiales`)
+  try {
+    const hipoNorm = txt(hipodromo).toUpperCase();
+    if (!hipodromo || hipoNorm.includes("EVENTO") || hipoNorm.includes("LIBRE")) {
+      const { data: dataEv } = await supabase
+        .from("apuestas_eventos_especiales")
+        .select("*")
+        .eq("fecha", dia);
+      for (const evRow of (dataEv ?? []) as Array<Record<string, unknown>>) {
+        let parsed: any;
+        try {
+          const idx = String(evRow.nota ?? "").indexOf("EVENTO_LIBRE_P2P:");
+          if (idx >= 0) parsed = JSON.parse(String(evRow.nota).slice(idx + 17));
+        } catch {
+          /* ignore */
+        }
+        if (!parsed) continue;
+
+        const ganoJ1 = parsed.estado === "GANO_JUGADOR_1" || String(evRow.estado).toUpperCase() === "GANADOR";
+        const ganoJ2 = parsed.estado === "GANO_JUGADOR_2";
+        const montoJuega = Number(parsed.riesgoJugador1) || Number(evRow.monto) || 0;
+        const montoDa = Number(parsed.riesgoJugador2) || 0;
+        const montoGanancia = Number(parsed.montoLiquidadoGanador ?? (ganoJ1 ? montoDa : montoJuega)) || 0;
+        const comisionCobrada = Number(parsed.comisionCobrada ?? (montoGanancia * 0.05)) || 0;
+        const premioPagar = ganoJ1 ? (montoJuega + montoGanancia) : 0;
+        const estadoTicket = ganoJ1 ? "Ganador" : ganoJ2 ? "Perdedor" : "Pendiente";
+        const k = "1";
+        if (carreraFiltro && claveCarrera(carreraFiltro) !== k) continue;
+
+        const sint: Record<string, unknown> = {
+          id: `ev-esp-${evRow.id}`,
+          fecha_registro: evRow.creado_en ?? `${dia}T12:00:00.000Z`,
+          fecha_carrera: dia,
+          hipodromo: "EVENTOS LIBRES",
+          carrera: 1,
+          nombre_jugada: "LIBRE",
+          caballo: `${parsed.concepto} (${parsed.mercado || evRow.logro_cuota || "10/6"})`,
+          monto_jugado: montoJuega,
+          monto_decidido: montoGanancia,
+          premio_pagar: premioPagar,
+          comision_porcentaje: Number(parsed.comisionGrupoPct || 5),
+          comision_pagada: comisionCobrada,
+          cliente_juega_id: String(parsed.jugador1Id || evRow.cliente_id || ""),
+          cliente_juega_nombre: String(parsed.jugador1Nombre || evRow.cliente_nombre || ""),
+          cliente_consigue_id: String(parsed.jugador2Id || ""),
+          cliente_consigue_nombre: String(parsed.jugador2Nombre || ""),
+          estado: estadoTicket,
+          anulada: false,
+          grupo: "ARGENTINA",
+          grupo_cobro_id: "d290daa1-a44b-4ed4-bb8a-03db4ecc32b0",
+          grupo_cobro_nombre: "ARGENTINA",
+          grupo_comision_id: "d290daa1-a44b-4ed4-bb8a-03db4ecc32b0",
+          grupo_comision_nombre: "ARGENTINA",
+          nota_auditoria: evRow.nota,
+        };
+
+        const arr = extras.get(k);
+        if (arr) arr.push(sint);
+        else extras.set(k, [sint]);
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+
   return extras;
 }
 
@@ -1048,6 +1113,11 @@ async function hipodromosDelDia(fecha: string): Promise<string[]> {
       const { data: dups } = await supabase.from("dupletas").select("hipodromo").eq("fecha", dia);
       for (const r of (dups ?? []) as Array<{ hipodromo?: unknown }>) {
         if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+      }
+      // Eventos Libres del día
+      const { data: evEsp } = await supabase.from("apuestas_eventos_especiales").select("id").eq("fecha", dia).limit(1);
+      if (evEsp && evEsp.length > 0) {
+        set.add("EVENTOS LIBRES");
       }
       // Pollas del día
       const { data: pols } = await supabase.from("pollas").select("carreras").eq("fecha", dia);
