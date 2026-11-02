@@ -316,17 +316,19 @@ export function armarReporteDiario(jugadas: JugadaReporte[]): ReporteDiario {
   const calcularCruceCarrera = (f: FilaReporteDiario) => {
     const dets = f.jugadasDetalle ?? [];
     const lineas = dets
-      .filter((d) => d.resultadoNeto !== 0)
+      .filter((d) => d.resultadoNeto !== 0 && d.rol === "Juega")
       .map((d) => ({
         cliente: d.cliente,
         resultado: d.resultadoNeto,
         comisionCobrada: d.comisionCobrada,
+        rol: d.rol,
       }));
     const { porCliente, totalReembolsado } = _reembolsosCruce(lineas, "con_cruces", 5);
     if (totalReembolsado > 0) {
       // Asignar la comisión devuelta al cliente correspondiente en su primera jugada ganadora de la carrera
       const asignados = new Set<string>();
       for (const d of dets) {
+        if (d.rol !== "Juega") continue;
         const claveCli = d.cliente.trim().toUpperCase();
         const info = porCliente.get(claveCli);
         if (info && info.reembolsoCruce > 0 && !asignados.has(claveCli) && d.resultadoNeto > 0) {
@@ -660,7 +662,7 @@ export function normalizarTickets(
         montoJugado: consigue.monto,
         premio: consigue.premio,
         resultadoNeto: consigue.resultado ?? 0,
-        devolucion: aplicaIncC ? base * (pctC / 100) : 0,
+        devolucion: 0, // Consigue es el dador/contraparte: nunca recibe devolución de apostador
         comisionCobrada: consigue.comisionCobrada,
         anulada: consigue.anulada,
       });

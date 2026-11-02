@@ -868,7 +868,7 @@ export function ReporteModule() {
           0,
           Number(c.devolucion ?? c.incentivo_pct ?? 0) || 0
         );
-        const incentivo = redondearCentavos(Number(c.incentivo_devengado) || 0);
+        const incentivo = devPct > 0 ? redondearCentavos(Number(c.incentivo_devengado) || 0) : 0;
         const comision = redondearCentavos(Number(c.comision_socio_devengada) || 0);
         const aval = redondearCentavos(Number(c.aval) || 0);
         const disponible = redondearCentavos(Number(c.disponible) || 0);

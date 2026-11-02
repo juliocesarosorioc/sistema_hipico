@@ -1483,20 +1483,22 @@ export function construirEstadoCuenta(
     );
     c.dec = resC.devolucion;
     if (c.jugadas.length === 1) {
-      c.jugadas[0].devolucion = c.dec;
+      c.jugadas[0].devolucion = c.jugadas[0].rol === "Consigue" ? 0 : c.dec;
     } else if (c.jugadas.length > 1 && c.dec > 0) {
-      const sumaBases = c.jugadas.reduce((acc, j) => {
+      const jugadasJuega = c.jugadas.filter((j) => j.rol !== "Consigue");
+      for (const j of c.jugadas) { if (j.rol === "Consigue") j.devolucion = 0; }
+      const sumaBases = jugadasJuega.reduce((acc, j) => {
         const val = typeof j.resultadoNeto === "number" ? Math.abs(j.resultadoNeto) : j.montoJugado;
         return acc + val;
       }, 0);
       let rem = c.dec;
-      for (let i = 0; i < c.jugadas.length; i++) {
-        if (i === c.jugadas.length - 1) {
-          c.jugadas[i].devolucion = Math.round(rem * 100) / 100;
+      for (let i = 0; i < jugadasJuega.length; i++) {
+        if (i === jugadasJuega.length - 1) {
+          jugadasJuega[i].devolucion = Math.round(rem * 100) / 100;
         } else {
-          const val = typeof c.jugadas[i].resultadoNeto === "number" ? Math.abs(c.jugadas[i].resultadoNeto!) : c.jugadas[i].montoJugado;
+          const val = typeof jugadasJuega[i].resultadoNeto === "number" ? Math.abs(jugadasJuega[i].resultadoNeto!) : jugadasJuega[i].montoJugado;
           const cuota = sumaBases > 0 ? Math.round((val / sumaBases) * c.dec * 100) / 100 : 0;
-          c.jugadas[i].devolucion = cuota;
+          jugadasJuega[i].devolucion = cuota;
           rem -= cuota;
         }
       }

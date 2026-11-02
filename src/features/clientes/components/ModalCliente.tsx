@@ -299,16 +299,15 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
     setComision(cliente.comision != null ? String(cliente.comision) : "");
     setEsSocio(cliente.es_socio === true);
     setAval(cliente.aval != null ? String(cliente.aval) : "");
-    const reglaPre = buscarReglaDevolucionCliente(cliente.seudonimo || cliente.nombre || "");
     const devPropia = cliente.devolucion != null 
       ? String(cliente.devolucion) 
-      : (reglaPre?.devolucionPropiaPct != null ? String(reglaPre.devolucionPropiaPct) : "");
+      : "";
     setDevolucion(devPropia);
     const comSoc = cliente.comision_socio_pct != null 
       ? String(cliente.comision_socio_pct) 
-      : (reglaPre?.comisionSocioPct != null ? String(reglaPre.comisionSocioPct) : "");
+      : "";
     setComisionSocio(comSoc);
-    setFechaInicioComisionSocio(cliente.fecha_inicio_comision_socio || reglaPre?.fechaInicioComision || "2026-10-29");
+    setFechaInicioComisionSocio(cliente.fecha_inicio_comision_socio || "2026-10-29");
     setModo(cliente.modo_juego || (cliente.libre ? "libre" : "aval"));
     setMostrarS(Boolean(cliente.mostrar_saldo_socio));
     const cruceLegado = cliente.permite_cruces ?? null;

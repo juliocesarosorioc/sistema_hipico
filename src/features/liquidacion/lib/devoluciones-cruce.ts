@@ -59,6 +59,7 @@ export interface ResultadoBaseDecididaCarrera {
  */
 export function esJugadaElegibleParaDevolucion(j: JugadaEntradaBaseDecidida): boolean {
   if (j.anulada === true) return false;
+  if (j.rol && String(j.rol).trim().toUpperCase() === "CONSIGUE") return false;
   const est = String(j.estado ?? "").trim().toUpperCase();
   if (
     est === "RETIRADO" ||

@@ -462,6 +462,7 @@ export type LineaResultadoParaCruce = {
   brutoPerdido: number;
   comisionCobrada?: number;
   comisionPct?: number;
+  rol?: string | null;
 };
 
 export type ReembolsoCruceCliente = {
@@ -513,17 +514,38 @@ export function calcularReembolsosCruce(
     }
   >();
 
+  const canonicoPorNombre = new Map<string, string>();
+  const canonicoPorId = new Map<string, string>();
+
+  const obtenerClaveCanonica = (cliente: string, clienteId?: string): string => {
+    const nom = normalizarNombreCliente(cliente);
+    const id = String(clienteId ?? "").trim().toUpperCase();
+    let clave = (id ? canonicoPorId.get(id) : undefined) || (nom ? canonicoPorNombre.get(nom) : undefined);
+    if (!clave) {
+      clave = nom || id;
+    }
+    if (nom) canonicoPorNombre.set(nom, clave);
+    if (id) canonicoPorId.set(id, clave);
+    return clave;
+  };
+
   for (const l of lineas) {
+    if (l.rol && String(l.rol).trim().toUpperCase() === "CONSIGUE") {
+      continue;
+    }
     const clienteId = String(l.clienteId ?? "").trim();
-    const clave = normalizarNombreCliente(clienteId || l.cliente);
+    const clave = obtenerClaveCanonica(l.cliente, clienteId);
     if (!clave) continue;
     const prev = acumulados.get(clave) ?? {
-      nombreOriginal: String(l.cliente).trim(),
+      nombreOriginal: String(l.cliente).trim() || clienteId,
       ...(clienteId ? { clienteId } : {}),
       ganadoCentavos: 0,
       perdidoCentavos: 0,
       comisionCobradaCentavos: 0,
     };
+    if (clienteId && !prev.clienteId) {
+      prev.clienteId = clienteId;
+    }
     const brutoGanadoCentavos = Math.max(0, aCentavos(l.brutoGanado));
     prev.ganadoCentavos += brutoGanadoCentavos;
     prev.perdidoCentavos += Math.max(0, aCentavos(l.brutoPerdido));
@@ -595,11 +617,14 @@ export function _reembolsosCruce(
     resultado?: number | null;
     comisionCobrada?: number;
     comisionPct?: number;
+    rol?: string | null;
   }>,
   modalidad: ModalidadCruceCarrera | boolean = "con_cruces",
   comisionPct = 5
 ) {
-  const normalizadas: LineaResultadoParaCruce[] = lineas.map((l) => {
+  const normalizadas: LineaResultadoParaCruce[] = lineas
+    .filter((l) => !l.rol || String(l.rol).trim().toUpperCase() !== "CONSIGUE")
+    .map((l) => {
     let brutoGanado = Number(l.brutoGanado ?? 0);
     let brutoPerdido = Number(l.brutoPerdido ?? 0);
     if (brutoGanado === 0 && brutoPerdido === 0 && typeof l.resultado === "number") {

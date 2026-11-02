@@ -1556,10 +1556,25 @@ export function calcularLiquidacionPuestosCarrera(
 ): LiquidacionCrucePuestosCliente[] {
   const participantes: EntradaCrucePuestos[] = (entradas ?? []).filter((e) => !e.anulada);
   const porCliente = new Map<string, EntradaCrucePuestos[]>();
+  const canonicoPorNombre = new Map<string, string>();
+  const canonicoPorId = new Map<string, string>();
+
+  const obtenerClaveCanonica = (cliente: string, clienteId?: string): string => {
+    const nom = String(cliente ?? "").trim().toUpperCase();
+    const id = String(clienteId ?? "").trim().toUpperCase();
+    let clave = (id ? canonicoPorId.get(id) : undefined) || (nom ? canonicoPorNombre.get(nom) : undefined);
+    if (!clave) {
+      clave = id || nom;
+    }
+    if (nom) canonicoPorNombre.set(nom, clave);
+    if (id) canonicoPorId.set(id, clave);
+    return clave;
+  };
+
   for (const e of participantes) {
     const c = String(e.cliente ?? "").trim();
     const clienteId = String(e.clienteId ?? "").trim();
-    const identidad = clienteId || c;
+    const identidad = obtenerClaveCanonica(c, clienteId);
     if (!identidad) continue;
     const grupoId = String(e.grupoId ?? "").trim();
     const clave = `${grupoId}::${identidad.toUpperCase()}`;
@@ -1573,8 +1588,8 @@ export function calcularLiquidacionPuestosCarrera(
   const result: LiquidacionCrucePuestosCliente[] = [];
   for (const arr of porCliente.values()) {
     const cliente = String(arr[0].cliente ?? "").trim();
-    const clienteId = String(arr[0].clienteId ?? "").trim();
-    const identidad = clienteId || cliente;
+    const clienteId = String(arr.find((x) => x.clienteId)?.clienteId ?? "").trim();
+    const identidad = cliente || clienteId;
     const grupoId = String(arr[0].grupoId ?? "").trim();
     const opcionesGrupo = grupoId
       ? opcionesBase.porGrupo?.[grupoId] ?? opcionesBase
@@ -1600,8 +1615,9 @@ export function calcularLiquidacionPuestosCarrera(
         modalidadesAplicadas.push({ modalidad: "mismoEjemplar", origen: "Grupo" });
       }
     } else {
-      const reglaMismo = resolverReglaCrucePuestos(opcionesGrupo, identidad, "mismoEjemplar");
-      const reglaDiferente = resolverReglaCrucePuestos(opcionesGrupo, identidad, "diferenteEjemplar");
+      const reglaIdentidad = clienteId || identidad;
+      const reglaMismo = resolverReglaCrucePuestos(opcionesGrupo, reglaIdentidad, "mismoEjemplar");
+      const reglaDiferente = resolverReglaCrucePuestos(opcionesGrupo, reglaIdentidad, "diferenteEjemplar");
       if (reglaMismo.activo && reglaDiferente.activo) {
         perdidaCruzada = Math.min(ganadoBruto, perdidoBruto);
         if (perdidaCruzada > 0) {

@@ -25,7 +25,7 @@ console.log("=== INICIO PRUEBAS COMISIONES SOCIOS Y DEVOLUCIONES ===");
 
 // 1. Verificación de configuración predeterminada oficial
 console.log("1. Parámetros predeterminados oficiales...");
-assert(PARAMETROS_PREDETERMINADOS_DEVOLUCION.length >= 17, "Debe contener al menos 17 configuraciones oficiales");
+assert(PARAMETROS_PREDETERMINADOS_DEVOLUCION.length >= 16, "Debe contener al menos 16 configuraciones oficiales (sin Arely)");
 
 const reglaPartner = buscarReglaDevolucionCliente("partner");
 assert(Boolean(reglaPartner), "PARTNER debe existir");
@@ -152,12 +152,12 @@ assertIgual(desgloseRucio?.jugadas.length, 1, "Debe tener 1 jugada válida de RU
 
 console.log("  OK: Cálculo de EDDIE validado correctamente.");
 
-// 3. Cálculo de comisiones para PARTNER con BG (1.25%), ARELY (1%), AYARI (1%), ROCA (1%)
+// 3. Cálculo de comisiones para PARTNER con BG (1.25%), AYARI (1%), ROCA (1%) (ARELY sin comisión/incentivo según regla de perfil)
 console.log("3. Cálculo de comisiones para PARTNER...");
 const ticketsPartner = [
   { id: "tp1", cliente_juega_nombre: "PARTNER", fecha_carrera: "2026-10-29", monto_jugado: 200 }, // 1.50% = $3.00
   { id: "tp2", cliente_juega_nombre: "BG", fecha_carrera: "2026-10-29", monto_jugado: 400 }, // 1.25% = $5.00
-  { id: "tp3", cliente_juega_nombre: "ARELY", fecha_carrera: "2026-10-30", monto_jugado: 100 }, // 1.00% = $1.00
+  { id: "tp3", cliente_juega_nombre: "ARELY", fecha_carrera: "2026-10-30", monto_jugado: 100 }, // Sin comisión en perfil = $0.00
   { id: "tp4", cliente_juega_nombre: "AYARI", fecha_carrera: "2026-10-30", monto_jugado: 150 }, // 1.00% = $1.50
   { id: "tp5", cliente_juega_nombre: "ROCA", fecha_carrera: "2026-10-30", monto_jugado: 250 }, // 1.00% = $2.50
 ];
@@ -170,8 +170,8 @@ const resPartner = calcularComisionesSocioPorClientes({
 });
 
 assertIgual(resPartner.totalDevolucionPropia, 3.0, "PARTNER propia debe ser $3.00 (1.50% de $200)");
-assertIgual(resPartner.totalComisionesClientes, 10.0, "Comisión total de clientes PARTNER debe ser $5 + $1 + $1.50 + $2.50 = $10.00");
-assertIgual(resPartner.totalGeneralDevoluciones, 13.0, "Total general PARTNER debe ser $13.00");
+assertIgual(resPartner.totalComisionesClientes, 9.0, "Comisión total de clientes PARTNER debe ser $5 + $1.50 + $2.50 = $9.00 (ARELY sin comisión)");
+assertIgual(resPartner.totalGeneralDevoluciones, 12.0, "Total general PARTNER debe ser $12.00");
 
 console.log("  OK: Cálculo de PARTNER validado.");
 
@@ -196,7 +196,6 @@ assert(textoWhatsApp.includes("• (1,25%) por GAETANO:"), "GAETANO presente con
 assert(textoWhatsApp.includes("• (1,00%) por RUCIO"), "RUCIO presente con (1,00%)");
 assert(textoWhatsApp.includes("🔀 PARTNER"), "PARTNER presente");
 assert(textoWhatsApp.includes("• (1,25%) por BG"), "BG presente con (1,25%)");
-assert(textoWhatsApp.includes("• (1,00%) por ARELY"), "ARELY presente con (1,00%)");
 assert(textoWhatsApp.includes("• (1,00%) por AYARI"), "AYARI presente con (1,00%)");
 assert(textoWhatsApp.includes("• (1,00%) por ROCA"), "ROCA presente con (1,00%)");
 assert(textoWhatsApp.includes("🔀 THOR"), "THOR presente");

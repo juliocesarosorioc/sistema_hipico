@@ -1719,13 +1719,14 @@ async function carreraReporte(
 
   // 🔀 ASIENTO CONTABLE INTERNO: "Bono por Cruce de jugadas" por carrera y cliente.
   const lineasCruceCarrera = filas
-    .filter((f) => f.rol !== "CRUCE" && f.resultado !== null && Number.isFinite(f.resultado))
+    .filter((f) => f.rol === "Juega" && f.resultado !== null && Number.isFinite(f.resultado))
     .map((f) => ({
       cliente: f.cliente,
       ...(f.clienteId ? { clienteId: f.clienteId } : {}),
       resultado: f.resultado as number,
       comisionCobrada: f.comisionCobrada,
       comisionPct: tasaComision ?? 5,
+      rol: f.rol,
     }));
   const { porCliente: reembolsosCrucePorCliente } = _reembolsosCruce(
     lineasCruceCarrera,

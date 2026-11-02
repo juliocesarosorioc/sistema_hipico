@@ -166,7 +166,8 @@ export function esJugadaAnuladaOExcluida(t: TicketContableRaw): boolean {
   // Si no tiene anulación administrativa explícita, nunca excluir una jugada activa
   // (combinadas 2Y3N, puestos, o cualquier jugada con caballo no retirado).
   if (est === "ANULADA" || est === "ANULADO") {
-    return false;
+    if (t.anulada === false) return false;
+    return true;
   }
   return ["CANCELADA", "CANCELADO", "ELIMINADA", "ELIMINADO", "RETIRADO", "RECHAZADO"].includes(
     est
@@ -202,7 +203,7 @@ export function esJugadaPuestosParaIncentivo(
 
   // Inclusión de Puestos
   if (esJugadaDePuestos(nom)) return true;
-  if (/\b(?:[1-8]P|PP|[1-8]N|\d+Y\d+N|\d+X\d+|\d+A\d+)\b/i.test(nom)) return true;
+  if (/\b(?:PUESTOS?|[1-8]P|PP|[1-8]N|\d+Y\d+N|\d+X\d+|\d+A\d+)\b/i.test(nom)) return true;
 
   return false;
 }
@@ -313,6 +314,7 @@ export function calcularResumenContableCliente(params: {
         est === "PERDEDOR" ||
         est === "PERDIO");
     if (
+      esJugador &&
       esDecidida &&
       esJugadaPuestosParaIncentivo(
         nombreJugRaw,
@@ -406,6 +408,7 @@ export function calcularResumenContableCliente(params: {
           brutoGanado: gananciaBrutaJuega,
           brutoPerdido: 0,
           comisionCobrada: comisionJuega,
+          rol: "Juega",
         });
         lineasPorCarrera.set(raceKey, arr);
       }
@@ -413,7 +416,7 @@ export function calcularResumenContableCliente(params: {
         const perdidaDador = gananciaBrutaJuega > 0 ? gananciaBrutaJuega : monto;
         perdidasCentavos += aCentavos(perdidaDador);
         const arr = lineasPorCarrera.get(raceKey) ?? [];
-        arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaDador });
+        arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaDador, rol: "Consigue" });
         lineasPorCarrera.set(raceKey, arr);
       }
     } else if (est === "PERDEDOR" || est === "PERDIO") {
@@ -431,7 +434,7 @@ export function calcularResumenContableCliente(params: {
       if (esJugador) {
         perdidasCentavos += aCentavos(perdidaEfectiva);
         const arr = lineasPorCarrera.get(raceKey) ?? [];
-        arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaEfectiva });
+        arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaEfectiva, rol: "Juega" });
         lineasPorCarrera.set(raceKey, arr);
       }
       if (esDador) {
@@ -445,6 +448,7 @@ export function calcularResumenContableCliente(params: {
           brutoGanado: gananciaBrutaDador,
           brutoPerdido: 0,
           comisionCobrada: comisionDador,
+          rol: "Consigue",
         });
         lineasPorCarrera.set(raceKey, arr);
       }
@@ -503,11 +507,11 @@ export function calcularResumenContableCliente(params: {
   // Si se pasa monto explícito `devolucionIncentivo`, se usa; si se pasa `devolucionPct`, se calcula sobre el monto decidido/jugado.
   const devPct = params.devolucionPct != null ? Math.max(0, Number(params.devolucionPct) || 0) : 0;
   const devolucionIncentivo =
-    params.devolucionIncentivo != null
-      ? Math.max(0, redondearCentavos(params.devolucionIncentivo))
-      : devPct > 0
-        ? calcularComisionExacta(deCentavos(montoDecididoParaIncentivoCentavos), devPct)
-        : 0;
+    devPct > 0
+      ? (params.devolucionIncentivo != null
+          ? Math.max(0, redondearCentavos(params.devolucionIncentivo))
+          : calcularComisionExacta(deCentavos(montoDecididoParaIncentivoCentavos), devPct))
+      : 0;
 
   // Comisión de socio: crédito a favor por jugadas de clientes afiliados.
   // No modifica el cobro/pago nominal del ticket; sólo el saldo del socio.

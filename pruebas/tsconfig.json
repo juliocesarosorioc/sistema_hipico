@@ -28,6 +28,7 @@
     "../src/features/liquidacion/lib/posiciones.ts",
     "../src/features/liquidacion/lib/etiquetas-reporte.ts",
     "../src/features/taquilla/lib/nomenclatura.ts",
+    "../src/features/reportes/lib/reporte-diario.ts",
     "../src/features/taquilla/lib/reparto.ts",
     "../src/features/taquilla/lib/caballos.ts",
     "../src/features/taquilla/lib/normalizar.ts",
@@ -179,6 +180,7 @@
     "../src/features/contabilidad/lib/contabilidad-automatica.ts",
     "./contabilidad-automatizada-grupos-honorarios.test.ts",
     "./sala-jugadas-whatsapp.test.ts",
-    "./whatsapp-grupo-carrera-y-abono-admin.test.ts"
+    "./whatsapp-grupo-carrera-y-abono-admin.test.ts",
+    "./auditoria-saldos-contabilidad-incentivos.test.ts"
   ]
 }

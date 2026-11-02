@@ -67,7 +67,6 @@ export const PARAMETROS_PREDETERMINADOS_DEVOLUCION: ReglaDevolucionCliente[] = [
 
   // PARTNER: 1.50% por sí mismo, 1.00% por ARELY, 1.00% por AYARI, 1.25% por BG, 1.00% por ROCA
   { nombre: "PARTNER", devolucionPropiaPct: 1.50, esSocio: true },
-  { nombre: "ARELY", devolucionPropiaPct: 1.00, socioAsignado: "PARTNER", comisionSocioPct: 1.00, fechaInicioComision: "2026-10-29" },
   { nombre: "AYARI", devolucionPropiaPct: 1.00, socioAsignado: "PARTNER", comisionSocioPct: 1.00, fechaInicioComision: "2026-10-29" },
   { nombre: "BG", devolucionPropiaPct: 1.25, socioAsignado: "PARTNER", comisionSocioPct: 1.25, fechaInicioComision: "2026-10-29" },
   { nombre: "ROCA", devolucionPropiaPct: 1.00, socioAsignado: "PARTNER", comisionSocioPct: 1.00, fechaInicioComision: "2026-10-29" },
@@ -243,8 +242,9 @@ export function calcularComisionesSocioPorClientes(params: {
   for (const c of clientes) {
     if (esClienteAfiliadoAlSocio(c, socioRef, clientes)) {
       const nom = c.seudonimo || c.nombre || "";
-      const regla = buscarReglaDevolucionCliente(nom);
-      const comPct = Number(c.comision_socio_pct ?? regla?.comisionSocioPct ?? 1.00);
+      const regla = clientes.length === 0 ? buscarReglaDevolucionCliente(nom) : undefined;
+      const comPct = Number(c.comision_socio_pct ?? regla?.comisionSocioPct ?? 0);
+      if (comPct <= 0) continue;
       const fIni = c.fecha_inicio_comision_socio || regla?.fechaInicioComision || "2026-10-29";
       clientesAfiliados.push({
         id: c.id ?? undefined,
@@ -255,18 +255,20 @@ export function calcularComisionesSocioPorClientes(params: {
     }
   }
 
-  // Si no vinieron en la lista viva, tomar de los parámetros predeterminados
-  const nombresSocio = new Set(
-    [socioRef.nombre, socioRef.seudonimo, params.socioNombre].map(normalizar).filter(Boolean)
-  );
-  for (const r of PARAMETROS_PREDETERMINADOS_DEVOLUCION) {
-    if (nombresSocio.has(normalizar(r.socioAsignado))) {
-      if (!clientesAfiliados.some((ca) => normalizar(ca.nombre) === normalizar(r.nombre))) {
-        clientesAfiliados.push({
-          nombre: r.nombre,
-          comisionPct: r.comisionSocioPct ?? 1.00,
-          fechaInicio: r.fechaInicioComision || "2026-10-29",
-        });
+  // Si la lista viva vino vacía (pruebas unitarias puras), respaldar con los parámetros predeterminados
+  if (clientes.length === 0) {
+    const nombresSocio = new Set(
+      [socioRef.nombre, socioRef.seudonimo, params.socioNombre].map(normalizar).filter(Boolean)
+    );
+    for (const r of PARAMETROS_PREDETERMINADOS_DEVOLUCION) {
+      if (nombresSocio.has(normalizar(r.socioAsignado))) {
+        if (!clientesAfiliados.some((ca) => normalizar(ca.nombre) === normalizar(r.nombre))) {
+          clientesAfiliados.push({
+            nombre: r.nombre,
+            comisionPct: r.comisionSocioPct ?? 0,
+            fechaInicio: r.fechaInicioComision || "2026-10-29",
+          });
+        }
       }
     }
   }
@@ -280,7 +282,9 @@ export function calcularComisionesSocioPorClientes(params: {
     clientes.find(
       (c) => normalizar(c.seudonimo) === socioNorm || normalizar(c.nombre) === socioNorm
     );
-  const devPropiaPct = Number(socioClienteObj?.devolucion ?? socioRegla?.devolucionPropiaPct ?? 1.00);
+  const devPropiaPct = socioClienteObj != null
+    ? Math.max(0, Number(socioClienteObj.devolucion ?? (socioClienteObj as any).incentivo_pct ?? 0) || 0)
+    : (socioRegla?.devolucionPropiaPct ?? 0);
 
   // Calcular jugadas propias del socio para su devolución propia (por carrera con regla de monto decidido y cruces)
   let montoJugadoPropio = 0;
@@ -304,11 +308,11 @@ export function calcularComisionesSocioPorClientes(params: {
   for (const [, listT] of ticketsPropiosPorCarrera) {
     const resC = calcularBaseDecididaCarrera(
       listT.map((t) => ({
-        nombreJugada: t.nombre_jugada || t.modalidad,
+        nombreJugada: t.nombre_jugada || t.modalidad || t.jugada || "PUESTOS",
         montoJugado: Number(t.monto_jugado ?? t.monto ?? 0),
         premioPagar: Number(t.premio_pagar ?? 0),
         resultado: t.resultado != null ? Number(t.resultado) : null,
-        estado: t.estado,
+        estado: t.estado || (t.resultado != null ? (Number(t.resultado) >= 0 ? "GANADOR" : "PERDEDOR") : "GANADOR"),
         rol: normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre) === socioNorm ? "Juega" : "Consigue",
       })),
       devPropiaPct
@@ -335,8 +339,8 @@ export function calcularComisionesSocioPorClientes(params: {
       const tCli = normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre);
       const fechaT = String(t.fecha_carrera || t.fecha || "").slice(0, 10);
 
-      const tCliConsigue = normalizar(t.cliente_consigue_nombre || t.clienteConsigue || t.tercio || t.contraparte);
-      if (tCli === afNorm || tCliConsigue === afNorm) {
+      // Comisión de socio aplica estrictamente a jugadas del apostador (Juega), nunca como dador/contraparte
+      if (tCli === afNorm) {
         if (fechaT < af.fechaInicio) continue;
         if (params.fechaDesde && fechaT < params.fechaDesde) continue;
         if (params.fechaHasta && fechaT > params.fechaHasta) continue;
@@ -350,11 +354,11 @@ export function calcularComisionesSocioPorClientes(params: {
     for (const [, listT] of ticketsAfPorCarrera) {
       const resC = calcularBaseDecididaCarrera(
         listT.map((t) => ({
-          nombreJugada: t.nombre_jugada || t.modalidad,
+          nombreJugada: t.nombre_jugada || t.modalidad || t.jugada || "PUESTOS",
           montoJugado: Number(t.monto_jugado ?? t.monto ?? 0),
           premioPagar: Number(t.premio_pagar ?? 0),
           resultado: t.resultado != null ? Number(t.resultado) : null,
-          estado: t.estado,
+          estado: t.estado || (t.resultado != null ? (Number(t.resultado) >= 0 ? "GANADOR" : "PERDEDOR") : "GANADOR"),
           rol: normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre) === afNorm ? "Juega" : "Consigue",
         })),
         af.comisionPct

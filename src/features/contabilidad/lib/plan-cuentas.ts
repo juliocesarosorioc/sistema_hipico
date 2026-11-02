@@ -14,7 +14,7 @@
  */
 
 import { supabase } from "@/core/supabase";
-import { aCentavos, deCentavos, sumarDinero, restarDinero } from "@/shared/lib/dinero";
+import { aCentavos, deCentavos, sumarDinero, restarDinero, redondearCentavos } from "@/shared/lib/dinero";
 
 export type ClaseCuenta =
   | "ACTIVO"
@@ -743,7 +743,8 @@ export async function generarAsientoReembolsoCruce(p: {
   montoReembolso: number;
   usuario?: string | null;
 }) {
-  const monto = Math.abs(p.montoReembolso);
+  const monto = redondearCentavos(Math.abs(p.montoReembolso));
+  if (monto <= 0) return { ok: true };
 
   return generarAsientoPartidaDoble({
     grupo_id: p.grupoId,
@@ -783,7 +784,8 @@ export async function generarAsientoDevolucionIncentivo(p: {
   esAvalador?: boolean;
   usuario?: string | null;
 }) {
-  const monto = Math.abs(p.montoIncentivo);
+  const monto = redondearCentavos(Math.abs(p.montoIncentivo));
+  if (monto <= 0) return { ok: true };
   const ctaCosto = p.esAvalador ? "5.1.03.001" : "5.1.02.001"; // Devolución de Incentivos
 
   return generarAsientoPartidaDoble({

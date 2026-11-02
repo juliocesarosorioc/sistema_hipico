@@ -505,8 +505,8 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
     <div className="max-w-5xl mx-auto bg-white shadow-lg overflow-hidden text-[11px] leading-tight reporte-tipografia-nitida" id="reporte-imprimible">
 
       {/* 1. ENCABEZADO (Logos sin borde ni margen) */}
-      <div className="bg-gradient-to-r from-blue-900 via-blue-700 to-blue-600 text-white border-b border-blue-500/30 shadow-md px-4 py-2.5 flex items-center gap-3">
-        <div className="w-14 h-14 shrink-0 rounded-xl border-0 p-0 m-0 bg-transparent shadow-none flex items-center justify-center overflow-hidden">
+      <div className="bg-gradient-to-r from-blue-900 via-blue-700 to-blue-600 text-white border-b border-blue-500/30 shadow-md px-3 py-1.5 flex items-center gap-2">
+        <div className="w-10 h-10 shrink-0 rounded-lg border-0 p-0 m-0 bg-transparent shadow-none flex items-center justify-center overflow-hidden">
           {encabezado.logoHipodromo ? (
             <img
               src={encabezado.logoHipodromo}
@@ -516,97 +516,97 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
               className="h-full w-full object-contain border-0 p-0 m-0 bg-transparent shadow-none"
             />
           ) : (
-            <span className="text-2xl leading-none" aria-hidden="true">🏇</span>
+            <span className="text-xl leading-none" aria-hidden="true">🏇</span>
           )}
         </div>
 
-        <div className="min-w-0 flex-1">
-          <h3 className="text-blue-200 text-[9px] font-bold tracking-widest uppercase">
-            {liquidada ? "Reporte de Liquidación" : "Reporte Preliminar de Jugadas (En Riesgo)"}
-          </h3>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            <h1 className="text-lg font-extrabold leading-tight truncate">
+        <div className="min-w-0 flex-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+          <div className="min-w-0 text-center">
+            <h3 className="text-blue-200 text-[8px] font-bold leading-tight tracking-wide uppercase">
+              {liquidada ? "Reporte de Liquidación" : "Reporte Preliminar de Jugadas (En Riesgo)"}
+            </h3>
+            <h1 className="text-base font-extrabold leading-tight">
               {encabezado.hipodromo} <span className="font-normal text-blue-200">•</span> {encabezado.carrera}
             </h1>
-            {encabezado.llegada && encabezado.llegada.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-300/50 bg-blue-950/70 px-3 py-1.5 shadow-inner">
-                <div className="flex flex-col">
-                  <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-amber-300">
-                    <span>🏁</span> Pizarra Oficial
-                  </span>
-                  <span className="text-[8px] font-semibold uppercase tracking-wider text-blue-200">
-                    Orden Oficial de Llegada
-                  </span>
-                </div>
-                <div className="flex items-center gap-2.5 border-l border-blue-400/40 pl-3">
-                  {encabezado.llegada.map((ll, idx) => (
-                    <div key={idx} className="flex flex-col items-center">
-                      <span
-                        className={`flex h-9 w-9 items-center justify-center rounded-lg border text-lg font-black shadow-sm ${colorDiscoNumero(String(ll.numero))}`}
-                        title={`${idx + 1}º lugar: #${ll.numero}`}
-                      >
-                        {ll.numero}
-                      </span>
-                      <span className="mt-0.5 text-[9px] font-black uppercase text-blue-100">{ll.puesto}</span>
-                    </div>
+            <p className="text-blue-100 text-[9px] leading-tight">{encabezado.fecha}</p>
+            {datos.filtroModalidad && datos.filtroModalidad !== "TODAS" ? (
+              <p
+                className="mt-0.5 inline-flex w-fit items-center gap-1 rounded bg-white/15 px-1.5 py-px text-[9px] font-black uppercase tracking-wide text-amber-200 ring-1 ring-amber-300/40"
+                title="Filtro de modalidad de tiempo aplicado al reporte"
+              >
+                {datos.filtroModalidad === "ADELANTADA"
+                  ? `⏳ Solo jugadas adelantadas · ${jugadasVivo.length} visibles`
+                  : `⚡ Solo jugadas en vivo · ${jugadasVivo.length} visibles`}
+              </p>
+            ) : null}
+          </div>
+          {encabezado.llegada && encabezado.llegada.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-300/50 bg-blue-950/70 px-2 py-1 shadow-inner">
+              <div className="flex flex-col">
+                <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-amber-300">
+                  <span>🏁</span> Pizarra Oficial
+                </span>
+                <span className="text-[8px] font-semibold uppercase tracking-wider text-blue-200">
+                  Orden Oficial de Llegada
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 border-l border-blue-400/40 pl-2">
+                {encabezado.llegada.map((ll, idx) => (
+                  <div key={idx} className="flex flex-col items-center">
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-lg border text-base font-black shadow-sm ${colorDiscoNumero(String(ll.numero))}`}
+                      title={`${idx + 1}º lugar: #${ll.numero}`}
+                    >
+                      {ll.numero}
+                    </span>
+                    <span className="mt-0.5 text-[8px] font-black uppercase text-blue-100">{ll.puesto}</span>
+                  </div>
+                ))}
+              </div>
+              {encabezado.retirados && encabezado.retirados.length > 0 && (
+                <div className="flex items-center gap-1 border-l border-rose-300/40 pl-2">
+                  <span className="text-[9px] font-black text-rose-300">RET:</span>
+                  {encabezado.retirados.map((r, rIdx) => (
+                    <span
+                      key={rIdx}
+                      className={`flex h-7 w-7 items-center justify-center rounded-lg border text-sm font-black shadow-sm ${colorDiscoNumero(String(r))}`}
+                    >
+                      {r}
+                    </span>
                   ))}
                 </div>
-                {encabezado.retirados && encabezado.retirados.length > 0 && (
-                  <div className="flex items-center gap-1.5 border-l border-rose-300/40 pl-3">
-                    <span className="text-[9px] font-black text-rose-300">RET:</span>
-                    {encabezado.retirados.map((r, rIdx) => (
-                      <span
-                        key={rIdx}
-                        className={`flex h-8 w-8 items-center justify-center rounded-lg border text-base font-black shadow-sm ${colorDiscoNumero(String(r))}`}
-                      >
-                        {r}
-                      </span>
+              )}
+              {hayOrdenDiferente && (
+                <div className="flex flex-wrap items-center gap-1.5 border-l border-amber-300/40 pl-2">
+                  <div className="flex flex-col">
+                    <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-amber-300">
+                      <span>🏇</span> Orden en Raya
+                    </span>
+                    <span className="text-[8px] font-bold uppercase text-amber-100">
+                      Distanciamiento · Tablas / Remates
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {llegadaRaya.map((caballo, idx) => (
+                      <div key={idx} className="flex flex-col items-center">
+                        <span
+                          className={`flex h-7 w-7 items-center justify-center rounded-lg border text-sm font-black shadow-sm ${colorDiscoNumero(String(caballo.numero))}`}
+                          title={`Cruza la Raya ${caballo.puesto}: Ejemplar #${caballo.numero}`}
+                        >
+                          {caballo.numero}
+                        </span>
+                        <span className="mt-0.5 text-[8px] font-black uppercase text-amber-100">{caballo.puesto}</span>
+                      </div>
                     ))}
                   </div>
-                )}
-                {hayOrdenDiferente && (
-                  <div className="flex flex-wrap items-center gap-2 border-l border-amber-300/40 pl-3">
-                    <div className="flex flex-col">
-                      <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-amber-300">
-                        <span>🏇</span> Orden en Raya
-                      </span>
-                      <span className="text-[8px] font-bold uppercase text-amber-100">
-                        Distanciamiento · Tablas / Remates
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {llegadaRaya.map((caballo, idx) => (
-                        <div key={idx} className="flex flex-col items-center">
-                          <span
-                            className={`flex h-8 w-8 items-center justify-center rounded-lg border text-base font-black shadow-sm ${colorDiscoNumero(String(caballo.numero))}`}
-                            title={`Cruza la Raya ${caballo.puesto}: Ejemplar #${caballo.numero}`}
-                          >
-                            {caballo.numero}
-                          </span>
-                          <span className="mt-0.5 text-[8px] font-black uppercase text-amber-100">{caballo.puesto}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold text-amber-200 border border-amber-300/40">
-                ⏳ Pizarra pendiente
-              </span>
-            )}
-          </div>
-          <p className="text-blue-100 text-[10px] mt-0.5">{encabezado.fecha}</p>
-          {datos.filtroModalidad && datos.filtroModalidad !== "TODAS" ? (
-            <p
-              className="mt-0.5 inline-flex w-fit items-center gap-1 rounded bg-white/15 px-1.5 py-px text-[9px] font-black uppercase tracking-wide text-amber-200 ring-1 ring-amber-300/40"
-              title="Filtro de modalidad de tiempo aplicado al reporte"
-            >
-              {datos.filtroModalidad === "ADELANTADA"
-                ? `⏳ Solo jugadas adelantadas · ${jugadasVivo.length} visibles`
-                : `⚡ Solo jugadas en vivo · ${jugadasVivo.length} visibles`}
-            </p>
-          ) : null}
+                </div>
+              )}
+            </div>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold text-amber-200 border border-amber-300/40">
+              ⏳ Pizarra pendiente
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
@@ -616,7 +616,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
             </p>
             <p className="text-[8px] font-semibold uppercase tracking-widest text-blue-300">Grupo</p>
           </div>
-          <div className="w-14 h-14 shrink-0 rounded-xl border-0 p-0 m-0 bg-transparent shadow-none flex items-center justify-center overflow-hidden">
+          <div className="w-10 h-10 shrink-0 rounded-lg border-0 p-0 m-0 bg-transparent shadow-none flex items-center justify-center overflow-hidden">
             {encabezado.logoGrupo ? (
               <img
                 src={encabezado.logoGrupo}
@@ -626,7 +626,7 @@ export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos 
                 className="h-full w-full object-contain border-0 p-0 m-0 bg-transparent shadow-none"
               />
             ) : (
-              <span className="text-2xl leading-none" aria-hidden="true">🏇</span>
+              <span className="text-xl leading-none" aria-hidden="true">🏇</span>
             )}
           </div>
         </div>

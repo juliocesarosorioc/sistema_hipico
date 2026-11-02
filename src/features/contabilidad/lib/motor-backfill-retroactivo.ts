@@ -223,22 +223,15 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
       cliRows = rows ?? [];
       for (const c of cliRows) {
         const nom = String(c.seudonimo || c.nombre || "").trim().toUpperCase();
-        const paramOf = PARAMETROS_PREDETERMINADOS_DEVOLUCION.find(
-          (p) =>
-            p.nombre.toUpperCase() === nom ||
-            String(c.nombre || "").trim().toUpperCase() === p.nombre.toUpperCase()
-        );
         const info = {
           id: String(c.id),
           nombre: nom || String(c.nombre || "Cliente"),
           saldoActual: redondearCentavos(Number(c.saldo_actual || 0)),
           aval: redondearCentavos(Number(c.aval || 0)),
           esAvalado: Number(c.aval || 0) > 0,
-          devolucionPct: Number(c.devolucion || paramOf?.devolucionPropiaPct || 0),
-          socioNombre: String(c.socio_asignado || paramOf?.socioAsignado || "").trim() || null,
-          socioPct: Number(
-            c.comision_socio_pct ?? paramOf?.comisionSocioPct ?? (c.socio_asignado ? 1 : 0)
-          ),
+          devolucionPct: Math.max(0, Number(c.devolucion || (c as any).incentivo_pct || 0)),
+          socioNombre: String(c.socio_asignado || "").trim() || null,
+          socioPct: Number(c.comision_socio_pct ?? 0),
           grupoId: c.grupo_id ? String(c.grupo_id) : null,
         };
         mapaClientes.set(String(c.id), info);

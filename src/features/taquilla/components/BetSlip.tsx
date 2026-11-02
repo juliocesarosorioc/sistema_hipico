@@ -222,6 +222,7 @@ export function BetSlip() {
         clienteId: String(c1.id),
         grupoId,
         clienteDador: cliente2.trim() || c2?.nombre || null,
+        clienteDadorId: c2?.id ? String(c2.id) : null,
         comision: comisionNum,
         // El banquero se negocia por modalidad: las americanas W/P/S van como 'WPS'.
         modalidad: auto === "AMERICANAS" ? "WPS" : auto,

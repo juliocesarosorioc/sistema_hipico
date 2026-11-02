@@ -41,6 +41,8 @@ export type VentaJugada = {
   grupoId?: string | null;
   /** Nombre del cliente que "da" (dador), solo informativo. */
   clienteDador?: string | null;
+  /** UUID del cliente que "da" (dador) cuando es un cliente registrado. */
+  clienteDadorId?: string | null;
   moneda?: string | null;
   /** Comisión del grupo / de la jugada, en porcentaje. */
   comision?: number | null;
@@ -125,14 +127,23 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
   }
   const r = (data ?? {}) as Record<string, unknown>;
   const fechaCarrera = String(v.fecha ?? "").trim().slice(0, 10);
-  if (r.ticket_id != null && /^\d{4}-\d{2}-\d{2}$/.test(fechaCarrera)) {
-    try {
-      await supabase
-        .from("tickets_apuestas")
-        .update({ fecha_carrera: fechaCarrera } as never)
-        .eq("id", r.ticket_id as never);
-    } catch {
-      /* best-effort si la columna fecha_carrera aún no existe */
+  if (r.ticket_id != null) {
+    const patchTicket: Record<string, unknown> = {};
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fechaCarrera)) {
+      patchTicket.fecha_carrera = fechaCarrera;
+    }
+    if (v.clienteDadorId) {
+      patchTicket.cliente_consigue_id = v.clienteDadorId;
+    }
+    if (Object.keys(patchTicket).length > 0) {
+      try {
+        await supabase
+          .from("tickets_apuestas")
+          .update(patchTicket as never)
+          .eq("id", r.ticket_id as never);
+      } catch {
+        /* best-effort si las columnas aún no existen */
+      }
     }
   }
   limpiarCacheClientes();
