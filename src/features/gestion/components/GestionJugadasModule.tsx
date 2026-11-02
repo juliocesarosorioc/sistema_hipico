@@ -3606,7 +3606,7 @@ const hipodromosDelDia = useMemo(() => {
             </button>
             <button
               type="button"
-              onClick={() => setModalEventoEspecial(true)}
+              onClick={() => setModalEventoLibre(true)}
               disabled={bloqueoLiquidacionActivo}
               title="🎯 Evento Libre / Sportsbook P2P (MLB, NBA, NFL, Fútbol, Boxeo/UFC, Logros 10/6, 10A7, etc.)"
               className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl border border-purple-300 bg-purple-700 px-2.5 sm:px-3 py-1.5 text-xs font-black text-white shadow-2xs transition-all hover:bg-purple-600 disabled:opacity-40 shrink-0 whitespace-nowrap"
@@ -5262,15 +5262,24 @@ const hipodromosDelDia = useMemo(() => {
         </div>
       </div>
 
-      {/* Modal 🎯 Apuesta Especial / Evento Libre P2P & Sportsbook */}
-      {modalEventoEspecial && (
+      {/* Modal 🎯 Evento Libre P2P entre clientes */}
+      {modalEventoLibre && (
         <ModalEventoLibre
           clientes={clientes}
           onClose={() => {
-            setModalEventoEspecial(false);
+            setModalEventoLibre(false);
             void recargarClientes();
           }}
           comisionGrupoDefault={comisionNum}
+        />
+      )}
+
+      {/* Modal 🎯 Apuesta Libre individual imputada a la cuenta del cliente */}
+      {modalEventoEspecial && (
+        <ModalApuestaEventoEspecial
+          abierto={modalEventoEspecial}
+          onCerrar={() => setModalEventoEspecial(false)}
+          clientes={clientes}
         />
       )}
 

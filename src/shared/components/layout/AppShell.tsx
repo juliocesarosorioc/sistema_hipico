@@ -14,6 +14,7 @@ import { esRutaPublica, esRolOperadorExclusivo, esRutaPermitidaOperador } from "
 import { sincronizarYAuditarContabilidadCompleta } from "@/features/contabilidad/lib/motor-backfill-retroactivo";
 
 const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
+const ES_SALA = (p: string) => p === "/sala" || p.startsWith("/sala/");
 // Las rutas públicas salen de `PUERTAS` (ver `esRutaPublica`). La lista fija
 // "/login | /" que estaba acá se quedó corta cuando se agregó
 // `/reset-password`: esa páginaighted quedaba envuelta con el menú lateral, que
@@ -82,16 +83,16 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!inicializada) return;
-    if (!usuario && !ES_LOGIN(pathname) && !ES_PORTAL(pathname)) {
+    if (!usuario && !ES_LOGIN(pathname) && !ES_PORTAL(pathname) && !ES_SALA(pathname)) {
       router.replace("/login");
       return;
     }
-    if (usuario && !ES_PORTAL(pathname) && esRolCliente(perfiles, permisos)) {
+    if (usuario && !ES_PORTAL(pathname) && !ES_SALA(pathname) && esRolCliente(perfiles, permisos)) {
       router.replace("/portal");
       return;
     }
     const esOperador = esRolOperadorExclusivo(perfiles, modoOperador);
-    if (usuario && esOperador && !ES_LOGIN(pathname) && !ES_PORTAL(pathname) && !esRutaPermitidaOperador(pathname)) {
+    if (usuario && esOperador && !ES_LOGIN(pathname) && !ES_PORTAL(pathname) && !ES_SALA(pathname) && !esRutaPermitidaOperador(pathname)) {
       router.replace("/apuestas");
     }
   }, [inicializada, usuario, pathname, perfiles, permisos, modoOperador, router]);
@@ -195,6 +196,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (ES_PORTAL(pathname)) {
     return (
       <div className="min-h-screen bg-slate-100 font-sans text-sm text-slate-800">
+        {children}
+      </div>
+    );
+  }
+
+  if (ES_SALA(pathname)) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-[#efeae2]">
         {children}
       </div>
     );

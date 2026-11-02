@@ -241,6 +241,46 @@ export type TicketApuesta = {
   _pizarra?: PizarraCarrera | null;
 };
 
+/** Convierte una apuesta individual de evento libre al formato del estado de cuenta. */
+export function apuestaEventoEspecialATicket(apuesta: {
+  id: string | number;
+  fecha: string;
+  creado_en?: string | null;
+  evento: string;
+  cliente_id?: string | number | null;
+  cliente_nombre: string;
+  monto: number | string;
+  pago_potencial: number | string;
+  logro_cuota?: string | null;
+  estado: string;
+}): TicketApuesta {
+  const estado = String(apuesta.estado ?? "").toUpperCase();
+  const estadoTicket =
+    estado === "GANADOR" ? "Ganador" :
+    estado === "PERDEDOR" ? "Perdedor" :
+    estado === "ANULADA" ? "Anulada" : "Pendiente";
+  const pago = estado === "GANADOR" ? num(apuesta.pago_potencial) : 0;
+
+  return {
+    id: `apuesta-libre-${apuesta.id}`,
+    fecha_registro: apuesta.creado_en ?? `${apuesta.fecha}T12:00:00`,
+    fecha_carrera: apuesta.fecha,
+    hipodromo: "Apuestas Libres",
+    carrera: 0,
+    nombre_jugada: "APUESTA LIBRE",
+    caballo: `${apuesta.evento}${apuesta.logro_cuota ? ` (${apuesta.logro_cuota})` : ""}`,
+    monto_jugado: num(apuesta.monto),
+    monto_decidido: num(apuesta.monto),
+    premio_pagar: pago,
+    comision_porcentaje: 0,
+    comision_pagada: 0,
+    cliente_juega_id: apuesta.cliente_id ?? null,
+    cliente_juega_nombre: apuesta.cliente_nombre,
+    estado: estadoTicket,
+    anulada: estado === "ANULADA",
+  };
+}
+
 export type NotificacionRow = {
   id: string | number;
   created_at?: string | null;
@@ -1356,7 +1396,11 @@ export function construirEstadoCuenta(
     const refFecha = isoCarrera ? `${isoCarrera}T12:00:00` : t.fecha_registro;
     const semana = claveSemana(refFecha);
     const dia = refFecha ? new Date(refFecha).toLocaleDateString("es-VE", { dateStyle: "short" }) : "—";
-    const hipodromo = String(t.hipodromo ?? "—").toUpperCase();
+    const hipodromoRaw = String(t.hipodromo ?? "—");
+    const hipodromo =
+      hipodromoRaw.trim().toUpperCase() === "APUESTAS LIBRES"
+        ? "Apuestas Libres"
+        : hipodromoRaw.toUpperCase();
     const carrera = num(t.carrera) || 0;
 
     const pizarra =
@@ -1554,12 +1598,14 @@ export async function cargarTicketsCliente(
       .order("fecha_registro", { ascending: false })
       .limit(10000);
     if (error) throw error;
-    const filas: any[] = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
-      ...(r as unknown as TicketApuesta),
-      fecha_carrera: extraerFechaCarreraTicket(r) || (r.fecha_carrera as string | null) || null,
-    }));
+    const filas: any[] = ((data ?? []) as Array<Record<string, unknown>>)
+      .filter((r) => !String(r.nota_auditoria ?? "").includes("EVENTO_LIBRE_P2P:"))
+      .map((r) => ({
+        ...(r as unknown as TicketApuesta),
+        fecha_carrera: extraerFechaCarreraTicket(r) || (r.fecha_carrera as string | null) || null,
+      }));
 
-    // Cargar también eventos libres / sportsbook P2P para el estado de cuenta
+    // Cargar eventos libres individuales y P2P para el estado de cuenta.
     try {
       const { data: dataEv } = await supabase
         .from("apuestas_eventos_especiales")
@@ -1588,7 +1634,7 @@ export async function cargarTicketsCliente(
               id: `ev-libre-${evRow.id}`,
               fecha_registro: evRow.creado_en || `${evRow.fecha}T12:00:00Z`,
               fecha_carrera: evRow.fecha || null,
-              hipodromo: "EVENTOS LIBRES",
+              hipodromo: "Apuestas Libres",
               carrera: 1,
               nombre_jugada: "LIBRE",
               caballo: `${parsed.concepto} (${parsed.mercado || evRow.logro_cuota || "10/6"})`,
@@ -1610,6 +1656,26 @@ export async function cargarTicketsCliente(
               grupo_comision_nombre: "ARGENTINA",
               nota_auditoria: evRow.nota,
             } as unknown as TicketApuesta);
+          } else {
+            const apuestaClienteId = String(evRow.cliente_id ?? "").trim();
+            const apuestaClienteNombre = String(evRow.cliente_nombre ?? "").trim().toUpperCase();
+            if (
+              (idStr && apuestaClienteId === idStr) ||
+              (apuestaClienteNombre && nombresCliente.has(apuestaClienteNombre))
+            ) {
+              filas.push(apuestaEventoEspecialATicket({
+                id: evRow.id,
+                fecha: String(evRow.fecha ?? "").slice(0, 10),
+                creado_en: evRow.creado_en ? String(evRow.creado_en) : null,
+                evento: String(evRow.evento ?? ""),
+                cliente_id: apuestaClienteId || null,
+                cliente_nombre: String(evRow.cliente_nombre ?? ""),
+                monto: Number(evRow.monto) || 0,
+                pago_potencial: Number(evRow.pago_potencial) || 0,
+                logro_cuota: evRow.logro_cuota ? String(evRow.logro_cuota) : null,
+                estado: String(evRow.estado ?? "PENDIENTE"),
+              }));
+            }
           }
         }
       }

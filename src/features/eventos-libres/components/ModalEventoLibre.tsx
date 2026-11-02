@@ -12,6 +12,7 @@ import {
 import type { ClienteVenta } from "@/features/grupos/lib/grupos";
 import { formatoMoneda } from "@/shared/lib/vzla";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
+import { hoyLocal } from "@/core/utils/fechas";
 
 interface Props {
   clientes: ClienteVenta[];
@@ -22,6 +23,7 @@ interface Props {
 export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }: Props) {
   const [eventos, setEventos] = useState<EventoLibreRow[]>(() => leerEventosLibresMemoria());
   const [categoria, setCategoria] = useState<CategoriaDeporte>("LIBRE");
+  const [fechaEvento, setFechaEvento] = useState(hoyLocal());
   const [concepto, setConcepto] = useState("");
   const [logro, setLogro] = useState("");
   const [j1Id, setJ1Id] = useState("");
@@ -72,6 +74,7 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
   }, []);
 
   const registrar = async () => {
+    if (!fechaEvento) return setMensaje("Seleccione la fecha del evento.");
     if (!concepto.trim()) return setMensaje("Escriba el concepto de la apuesta.");
     if (!logro.trim()) return setMensaje("Escriba el logro o mercado manualmente.");
     if (!cli1) return setMensaje("Seleccione quién juega (Jugador 1).");
@@ -90,6 +93,7 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
 
     setGuardando(true);
     const r = await crearEventoLibre({
+      fecha: fechaEvento,
       categoria,
       concepto,
       mercado: logro,
@@ -107,6 +111,7 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
     }
 
     setEventos(leerEventosLibresMemoria());
+    setFechaEvento(hoyLocal());
     setConcepto("");
     setLogro("");
     setRiesgoJuega("");
@@ -183,7 +188,18 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
               <span>✍️</span> Registrar Nueva Apuesta Deportiva / Evento Libre
             </div>
 
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Fecha del evento</label>
+                <input
+                  type="date"
+                  required
+                  value={fechaEvento}
+                  onChange={(e) => setFechaEvento(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold text-slate-800"
+                />
+              </div>
+
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Categoría</label>
                 <select

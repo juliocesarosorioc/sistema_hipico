@@ -77,6 +77,7 @@ const BLOQUEAR = (p: string) => {
  * lo único que se saltea acá es el requisito de sesión de Supabase.
  */
 const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
+const ES_SALA = (p: string) => p === "/sala" || p.startsWith("/sala/");
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -100,7 +101,7 @@ export function middleware(req: NextRequest) {
   // se le exige la sesión de Supabase. Va ANTES del chequeo de cookies: si no,
   // un jugador que llega por el enlace `?c=&k=` caería en `/login` y perdería
   // el enlace (ver el comentario de ES_PORTAL).
-  if (ES_PORTAL(pathname)) return NextResponse.next();
+  if (ES_PORTAL(pathname) || ES_SALA(pathname)) return NextResponse.next();
 
   const usuario = req.cookies.get("hipico_usuario")?.value ?? "";
   const perfil = req.cookies.get("hipico_perfil")?.value;

@@ -74,6 +74,7 @@ describe("FASE 2: Contabilidad Retroactiva NIIF, UI Cambio de Pizarra, Evento Li
 
     // Crear Evento Libre
     const resCrear = await crearEventoLibre({
+      fecha: "2026-11-15",
       categoria: "BEISBOL",
       concepto: "Yankees vs Dodgers - Yankees Ganador",
       mercado: "10/6",
@@ -85,6 +86,7 @@ describe("FASE 2: Contabilidad Retroactiva NIIF, UI Cambio de Pizarra, Evento Li
 
     assert.equal(resCrear.ok, true);
     assert.ok(resCrear.evento);
+    assert.equal(resCrear.evento!.fecha, "2026-11-15");
     const evId = resCrear.evento!.id;
 
     // Liquidar: Gana Jugador 1 (Pedro)

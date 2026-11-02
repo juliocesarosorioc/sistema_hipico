@@ -37,6 +37,7 @@ export function ModalApuestaEventoEspecial({
 
   // Formulario Nueva Apuesta
   const [evento, setEvento] = useState("");
+  const [fechaEvento, setFechaEvento] = useState(hoyLocal());
   const [clienteNombre, setClienteNombre] = useState("");
   const [clienteId, setClienteId] = useState<string>("");
   const [monto, setMonto] = useState<string>("");
@@ -105,6 +106,10 @@ export function ModalApuestaEventoEspecial({
       emitirToast("Escribe el nombre o descripción del evento.", "warning");
       return;
     }
+    if (!fechaEvento) {
+      emitirToast("Indica la fecha del evento.", "warning");
+      return;
+    }
     if (!clienteNombre.trim()) {
       emitirToast("Indica el cliente o jugador.", "warning");
       return;
@@ -117,7 +122,7 @@ export function ModalApuestaEventoEspecial({
     setGuardando(true);
     try {
       const res = await registrarApuestaEventoEspecial({
-        fecha: hoyLocal(),
+        fecha: fechaEvento,
         evento: evento.trim(),
         cliente_id: clienteId || undefined,
         cliente_nombre: clienteNombre.trim(),
@@ -130,6 +135,7 @@ export function ModalApuestaEventoEspecial({
       if (res.ok) {
         emitirToast(`✅ Apuesta registrada: ${evento} · $${mNum}`, "success");
         setEvento("");
+        setFechaEvento(hoyLocal());
         setMonto("");
         setLogroCuota("");
         setPagoManual("");
@@ -179,6 +185,7 @@ export function ModalApuestaEventoEspecial({
   /** Abre el formulario independiente de nueva apuesta limpio. */
   const handleNuevaApuesta = () => {
     setEvento("");
+    setFechaEvento(hoyLocal());
     setClienteId("");
     setClienteNombre("");
     setMonto("");
@@ -288,6 +295,19 @@ export function ModalApuestaEventoEspecial({
                   onChange={(e) => setEvento(e.target.value)}
                   placeholder="ej. 10/6 Milwaukee Brewers campeon serie mundial"
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-purple-400 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-purple-300 mb-1">
+                  Fecha del Evento <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={fechaEvento}
+                  onChange={(e) => setFechaEvento(e.target.value)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-purple-400 focus:outline-none"
                 />
               </div>
 

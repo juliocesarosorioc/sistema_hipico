@@ -20,6 +20,7 @@ import {
   eliminarApuestaEventoEspecial,
   listarApuestasEventosEspeciales,
 } from "../src/features/apuestas/lib/eventos-especiales";
+import { apuestaEventoEspecialATicket, construirEstadoCuenta } from "../src/features/clientes/lib/clientes";
 
 let pasan = 0;
 let fallan = 0;
@@ -70,7 +71,9 @@ async function ejecutarPruebas() {
   console.log("\n[2] REGISTRO DE APUESTA DE EVENTO LIBRE");
 
   const eventoTest = "10/6 Milwaukee Brewers campeon serie mundial";
+  const fechaEventoTest = "2026-11-15";
   const resReg = await registrarApuestaEventoEspecial({
+    fecha: fechaEventoTest,
     evento: eventoTest,
     cliente_nombre: "JULIO_PRO",
     monto: 60,
@@ -81,6 +84,7 @@ async function ejecutarPruebas() {
   ok("Registro de apuesta devuelve ok: true", resReg.ok === true);
   ok("Apuesta generada tiene id único", Boolean(resReg.apuesta?.id));
   ok("Apuesta tiene evento exacto", resReg.apuesta?.evento === eventoTest);
+  ok("Apuesta guarda la fecha del evento", resReg.apuesta?.fecha === fechaEventoTest);
   ok("Apuesta tiene cliente JULIO_PRO", resReg.apuesta?.cliente_nombre === "JULIO_PRO");
   ok("Apuesta tiene monto 60", resReg.apuesta?.monto === 60);
   ok("Apuesta tiene pago potencial 160", resReg.apuesta?.pago_potencial === 160);
@@ -88,6 +92,26 @@ async function ejecutarPruebas() {
   ok("Apuesta inicia sin ganador seleccionado", resReg.apuesta?.ganador_seleccionado === false);
 
   const apuestaId = resReg.apuesta!.id;
+  const ticketCuenta = apuestaEventoEspecialATicket({
+    id: apuestaId,
+    fecha: fechaEventoTest,
+    evento: eventoTest,
+    cliente_id: "cliente-1",
+    cliente_nombre: "JULIO_PRO",
+    monto: 60,
+    pago_potencial: 160,
+    logro_cuota: "10/6",
+    estado: "PERDEDOR",
+  });
+  const cuentaCliente = construirEstadoCuenta([ticketCuenta], 0, {
+    id: "cliente-1",
+    nombre: "JULIO_PRO",
+  });
+  const apuestaEnCuenta = cuentaCliente.hijos[0]?.hijos[0]?.hijos[0]?.hijos[0]?.hijos[0]?.jugadas[0];
+  ok("Apuesta libre aparece en la cuenta del cliente", Boolean(apuestaEnCuenta));
+  ok("La cuenta agrupa el evento bajo Apuestas Libres", apuestaEnCuenta?.hipodromo === "Apuestas Libres");
+  ok("La cuenta usa la fecha del evento", apuestaEnCuenta?.fechaCarrera === fechaEventoTest);
+  ok("La cuenta refleja la pérdida de la apuesta", apuestaEnCuenta?.resultadoNeto === -60);
 
   // --------------------------------------------------------------------------
   // [3] SELECCIÓN DE GANADOR EN EL REPORTE
@@ -136,6 +160,11 @@ async function ejecutarPruebas() {
   ok("GestionJugadasModule tiene el botón Evento Libre en la barra de botones", gestionSrc.includes("🎯 Evento Libre"));
   ok("GestionJugadasModule activa el modal al hacer clic en el botón", gestionSrc.includes("setModalEventoEspecial(true)"));
   ok("GestionJugadasModule renderiza ModalApuestaEventoEspecial con props abiertos", gestionSrc.includes("<ModalApuestaEventoEspecial"));
+  const modalSrc = readFileSync(join(process.cwd(), "src/features/apuestas/components/ModalApuestaEventoEspecial.tsx"), "utf8");
+  ok("El formulario solicita la fecha del evento", modalSrc.includes("Fecha del Evento"));
+  const modalP2PSrc = readFileSync(join(process.cwd(), "src/features/eventos-libres/components/ModalEventoLibre.tsx"), "utf8");
+  ok("El formulario P2P solicita la fecha del evento", modalP2PSrc.includes("Fecha del evento"));
+  ok("El formulario P2P registra la fecha elegida", modalP2PSrc.includes("fecha: fechaEvento"));
 
   // --------------------------------------------------------------------------
   // RESUMEN FINAL
