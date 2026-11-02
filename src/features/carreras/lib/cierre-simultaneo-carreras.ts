@@ -123,7 +123,6 @@ export async function ejecutarCierreCarrera(opts: {
   const f = opts.fecha || new Date().toISOString().slice(0, 10);
   const hip = opts.hipodromo.trim().toUpperCase();
   const num = Number(opts.carrera);
-  const timestamp = new Date().toISOString();
   const actor = opts.operadorNombre || opts.fuente;
 
   // 1. Actualizar memoria global y disparar CustomEvent
@@ -254,4 +253,56 @@ export async function evaluarCierreMultiFuente(opts: {
   }
 
   return { debeCerrar: false };
+}
+
+/**
+ * Centinela Automático en segundo plano para monitorear carreras abiertas.
+ * Cada `intervaloMs` segundos evalúa DRF, TVG, TwinSpires y Post Time.
+ * Si alguna fuente cierra, ejecuta el cierre simultáneo inmediatamente.
+ */
+export function activarCentinelaCierreSimultaneo(opts: {
+  hipodromo: string;
+  carrera: number;
+  fecha?: string;
+  horaPartida?: string | null;
+  intervaloMs?: number;
+  onCierreDetectado?: (fuente: TipoFuenteCierre, detalle: string) => void;
+}): () => void {
+  const intervalo = opts.intervaloMs || 20000;
+  let cancelado = false;
+
+  const verificar = async () => {
+    if (cancelado) return;
+    try {
+      const evalRes = await evaluarCierreMultiFuente({
+        hipodromo: opts.hipodromo,
+        carrera: opts.carrera,
+        fecha: opts.fecha,
+        horaPartida: opts.horaPartida,
+      });
+
+      if (evalRes.debeCerrar && evalRes.fuente) {
+        await ejecutarCierreCarrera({
+          hipodromo: opts.hipodromo,
+          carrera: opts.carrera,
+          fecha: opts.fecha,
+          fuente: evalRes.fuente,
+          motivo: evalRes.detalle || `Cierre automático detectado vía ${evalRes.fuente}`,
+        });
+        if (opts.onCierreDetectado) {
+          opts.onCierreDetectado(evalRes.fuente, evalRes.detalle || "");
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const timer = setInterval(verificar, intervalo);
+  verificar();
+
+  return () => {
+    cancelado = true;
+    clearInterval(timer);
+  };
 }

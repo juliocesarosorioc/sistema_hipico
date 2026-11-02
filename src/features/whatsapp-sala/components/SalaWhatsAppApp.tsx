@@ -16,6 +16,7 @@ import {
   consultarEstadoCarreraActual,
   ejecutarCierreCarrera,
   ejecutarAperturaCarrera,
+  activarCentinelaCierreSimultaneo,
 } from "@/features/carreras/lib/cierre-simultaneo-carreras";
 
 export interface ClienteSesionSala {
@@ -40,6 +41,14 @@ export interface MensajeChatSala {
   esMio: boolean;
   esIa: boolean;
   esConcrecion?: boolean;
+  esPropuestaAbierta?: boolean;
+  propuestaData?: {
+    jugador: string;
+    rol: "JUEGA" | "DA";
+    monto: number;
+    jugada: string;
+    caballo: string;
+  };
   concrecionData?: {
     juega: string;
     da: string;
@@ -51,6 +60,29 @@ export interface MensajeChatSala {
 }
 
 const STORAGE_KEY = "hipico_sala_session_v1";
+
+// Sintetizador Web Audio para feedback de WhatsApp (sin archivos externos)
+function reproducirBeepWhatsApp() {
+  if (typeof window === "undefined") return;
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(850, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.05, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.08);
+  } catch {
+    /* ignore audio policy */
+  }
+}
 
 export function SalaWhatsAppApp() {
   const [sesion, setSesion] = useState<ClienteSesionSala | null>(null);
@@ -67,13 +99,16 @@ export function SalaWhatsAppApp() {
   // Estado del Chat y Carrera Activa
   const [mensajes, setMensajes] = useState<MensajeChatSala[]>([]);
   const [inputTexto, setInputTexto] = useState("");
+  const [grabandoVoz, setGrabandoVoz] = useState(false);
   const [carreraActiva, setCarreraActiva] = useState({
     hipodromo: "LA RINCONADA",
     carrera: 7,
     estado: "ABIERTA" as "ABIERTA" | "CERRADA",
+    horaPartida: null as string | null,
   });
   const [enviando, setEnviando] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const canalRealtimeRef = useRef<any>(null);
 
   // 1. Cargar sesión previa guardada en el dispositivo
   useEffect(() => {
@@ -101,7 +136,7 @@ export function SalaWhatsAppApp() {
         const hoy = new Date().toISOString().slice(0, 10);
         const { data } = await supabase
           .from("carreras")
-          .select("hipodromo, carrera, estado, hora")
+          .select("hipodromo, carrera, estado, hora, hora_partida")
           .eq("fecha", hoy)
           .order("carrera", { ascending: true });
 
@@ -114,6 +149,7 @@ export function SalaWhatsAppApp() {
             hipodromo: cElegida.hipodromo || "LA RINCONADA",
             carrera: Number(cElegida.carrera) || 1,
             estado: cerrada ? "CERRADA" : "ABIERTA",
+            horaPartida: cElegida.hora_partida || cElegida.hora || null,
           });
         }
       } catch {
@@ -123,7 +159,61 @@ export function SalaWhatsAppApp() {
     sincronizarCarreraActiva();
   }, []);
 
-  // 3. Escuchar cambios de apertura/cierre de carrera en tiempo real (Simultáneo / Admin / Operador)
+  // 3. Centinela Automático de Cierre Simultáneo (DRF / TVG / TwinSpires / Hora Partida)
+  useEffect(() => {
+    if (carreraActiva.estado !== "ABIERTA") return;
+
+    const cancelarCentinela = activarCentinelaCierreSimultaneo({
+      hipodromo: carreraActiva.hipodromo,
+      carrera: carreraActiva.carrera,
+      horaPartida: carreraActiva.horaPartida,
+      intervaloMs: 20000,
+      onCierreDetectado: (fuente, detalle) => {
+        console.log(`[Centinela] Carrera cerrada automáticamente por ${fuente}: ${detalle}`);
+      },
+    });
+
+    return () => {
+      cancelarCentinela();
+    };
+  }, [carreraActiva.hipodromo, carreraActiva.carrera, carreraActiva.estado, carreraActiva.horaPartida]);
+
+  // 4. Canal de Tiempo Real Multi-Dispositivo (Supabase Realtime Broadcast)
+  useEffect(() => {
+    if (!supabase) return;
+    const canal = supabase
+      .channel("sala-whatsapp-realtime")
+      .on("broadcast", { event: "mensaje_sala" }, ({ payload }) => {
+        if (!payload) return;
+        // Si el mensaje es de otro usuario o del bot para todos
+        if (payload.autorId !== sesion?.id) {
+          reproducirBeepWhatsApp();
+          setMensajes((prev) => {
+            if (prev.some((m) => m.id === payload.id)) return prev;
+            return [...prev, { ...payload, esMio: false }];
+          });
+        }
+      })
+      .on("broadcast", { event: "cierre_carrera" }, ({ payload }) => {
+        if (payload) {
+          setCarreraActiva((prev) => ({
+            ...prev,
+            hipodromo: payload.hipodromo || prev.hipodromo,
+            carrera: Number(payload.carrera) || prev.carrera,
+            estado: "CERRADA",
+          }));
+        }
+      })
+      .subscribe();
+
+    canalRealtimeRef.current = canal;
+
+    return () => {
+      canal.unsubscribe();
+    };
+  }, [sesion?.id]);
+
+  // 5. Escuchar cambios de apertura/cierre de carrera en tiempo real (Simultáneo / Admin / Operador)
   useEffect(() => {
     const handlerEstado = (e: any) => {
       const detail = e.detail;
@@ -253,7 +343,6 @@ export function SalaWhatsAppApp() {
       return;
     }
 
-    // Generar código OTP de 4 dígitos
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     setCodigoGenerado(otp);
     setPasoOtp(true);
@@ -277,7 +366,7 @@ export function SalaWhatsAppApp() {
       telefono: telLimpio,
       saldo_actual: 0,
       aval: 0,
-      libre: true, // Default libre para jugadores directos
+      libre: true,
       modo_juego: "libre",
       grupo_id: "d290daa1-a44b-4ed4-bb8a-03db4ecc32b0",
       esOperadorOAdmin: esAdminOperador,
@@ -296,7 +385,43 @@ export function SalaWhatsAppApp() {
     setFormTelefono("");
   };
 
-  // Enviar mensaje en el chat
+  // Dictado por voz (Micrófono nativo)
+  const alternarDictadoVoz = () => {
+    if (typeof window === "undefined") return;
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      alert("Tu dispositivo no soporta dictado de voz nativo en este navegador. Puedes escribir el texto directamente.");
+      return;
+    }
+
+    if (grabandoVoz) {
+      setGrabandoVoz(false);
+      return;
+    }
+
+    try {
+      const rec = new SpeechRec();
+      rec.lang = "es-VE";
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+
+      rec.onstart = () => setGrabandoVoz(true);
+      rec.onresult = (evt: any) => {
+        const trans = evt.results?.[0]?.[0]?.transcript;
+        if (trans) {
+          setInputTexto(trans);
+        }
+        setGrabandoVoz(false);
+      };
+      rec.onerror = () => setGrabandoVoz(false);
+      rec.onend = () => setGrabandoVoz(false);
+      rec.start();
+    } catch {
+      setGrabandoVoz(false);
+    }
+  };
+
+  // Enviar mensaje en el chat y emitir broadcast
   const enviarMensaje = async (textoPersonalizado?: string) => {
     const texto = (textoPersonalizado ?? inputTexto).trim();
     if (!texto || !sesion || enviando) return;
@@ -317,6 +442,15 @@ export function SalaWhatsAppApp() {
     setMensajes((prev) => [...prev, msgUsuario]);
     setInputTexto("");
     setEnviando(true);
+
+    // Emitir broadcast a otros dispositivos
+    if (canalRealtimeRef.current) {
+      canalRealtimeRef.current.send({
+        type: "broadcast",
+        event: "mensaje_sala",
+        payload: msgUsuario,
+      });
+    }
 
     // Procesar con el Agente IA de forma autónoma
     setTimeout(async () => {
@@ -359,38 +493,36 @@ export function SalaWhatsAppApp() {
         ? `⭐ @${cli.nombre}: Tu cuenta tiene **Estatus LIBRE** (puedes jugar lo que quieras sin limitaciones de saldo ni topes).`
         : `💰 @${cli.nombre}: Tu saldo es **$${cli.saldo_actual.toFixed(2)}** y cuentas con aval de **$${cli.aval.toFixed(2)}** (Disponible total: **$${dispTotal.toFixed(2)}**).`;
 
-      setMensajes((prev) => [
-        ...prev,
-        {
-          id: `ia-${Date.now()}`,
-          autor: "Agente IA Oficial",
-          texto: resp,
-          hora,
-          esMio: false,
-          esIa: true,
-        },
-      ]);
+      const msgIa: MensajeChatSala = {
+        id: `ia-${Date.now()}`,
+        autor: "Agente IA Oficial",
+        texto: resp,
+        hora,
+        esMio: false,
+        esIa: true,
+      };
+
+      setMensajes((prev) => [...prev, msgIa]);
       return;
     }
 
     // 2. Consulta de carrera
     if (/carrera|abierta|programa|que corre/i.test(tLower)) {
       const estColor = carreraActiva.estado === "ABIERTA" ? "🟢 ABIERTA" : "🔴 CERRADA";
-      setMensajes((prev) => [
-        ...prev,
-        {
-          id: `ia-${Date.now()}`,
-          autor: "Agente IA Oficial",
-          texto: `📍 Carrera Activa: **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})**.\nEstado: **${estColor}**.\n${
-            carreraActiva.estado === "ABIERTA"
-              ? "Hagan sus jugadas antes de la partida."
-              : "⛔ Carrera cerrada. No se admiten más jugadas."
-          }`,
-          hora,
-          esMio: false,
-          esIa: true,
-        },
-      ]);
+      const msgIa: MensajeChatSala = {
+        id: `ia-${Date.now()}`,
+        autor: "Agente IA Oficial",
+        texto: `📍 Carrera Activa: **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})**.\nEstado: **${estColor}**.\n${
+          carreraActiva.estado === "ABIERTA"
+            ? "Hagan sus jugadas antes de la partida."
+            : "⛔ Carrera cerrada. No se admiten más jugadas."
+        }`,
+        hora,
+        esMio: false,
+        esIa: true,
+      };
+
+      setMensajes((prev) => [...prev, msgIa]);
       return;
     }
 
@@ -399,17 +531,15 @@ export function SalaWhatsAppApp() {
     if (parsed.ok && parsed.datos) {
       // 🚨 VALIDACIÓN ESTRICTA: SI LA CARRERA ESTÁ CERRADA, RECHAZAR DE INMEDIATO
       if (carreraActiva.estado === "CERRADA") {
-        setMensajes((prev) => [
-          ...prev,
-          {
-            id: `ia-${Date.now()}`,
-            autor: "Agente IA Oficial",
-            texto: `⛔ @${cli.nombre}: La carrera **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})** está **CERRADA** por el Operador/Administrador o por cierre oficial simultáneo (DRF/TVG/TwinSpires).\n\nNo se admiten más jugadas para esta carrera.`,
-            hora,
-            esMio: false,
-            esIa: true,
-          },
-        ]);
+        const msgIa: MensajeChatSala = {
+          id: `ia-${Date.now()}`,
+          autor: "Agente IA Oficial",
+          texto: `⛔ @${cli.nombre}: La carrera **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})** está **CERRADA** por el Operador/Administrador o por cierre oficial simultáneo (DRF/TVG/TwinSpires).\n\nNo se admiten más jugadas para esta carrera.`,
+          hora,
+          esMio: false,
+          esIa: true,
+        };
+        setMensajes((prev) => [...prev, msgIa]);
         return;
       }
 
@@ -419,17 +549,15 @@ export function SalaWhatsAppApp() {
 
       // Validación de fondos (omite completamente si es LIBRE)
       if (!libre && disponible < d.monto) {
-        setMensajes((prev) => [
-          ...prev,
-          {
-            id: `ia-${Date.now()}`,
-            autor: "Agente IA Oficial",
-            texto: `⚠️ @${cli.nombre}: Tu disponible es $${disponible.toFixed(2)}, no cubre el monto pedido de $${d.monto.toFixed(2)}.`,
-            hora,
-            esMio: false,
-            esIa: true,
-          },
-        ]);
+        const msgIa: MensajeChatSala = {
+          id: `ia-${Date.now()}`,
+          autor: "Agente IA Oficial",
+          texto: `⚠️ @${cli.nombre}: Tu disponible es $${disponible.toFixed(2)}, no cubre el monto pedido de $${d.monto.toFixed(2)}.`,
+          hora,
+          esMio: false,
+          esIa: true,
+        };
+        setMensajes((prev) => [...prev, msgIa]);
         return;
       }
 
@@ -460,6 +588,16 @@ export function SalaWhatsAppApp() {
         };
 
         setMensajes((prev) => [...prev, msgConcrecion]);
+        reproducirBeepWhatsApp();
+
+        // Broadcast a todos
+        if (canalRealtimeRef.current) {
+          canalRealtimeRef.current.send({
+            type: "broadcast",
+            event: "mensaje_sala",
+            payload: msgConcrecion,
+          });
+        }
 
         // Registrar en Supabase en tiempo real
         if (supabase) {
@@ -492,34 +630,46 @@ export function SalaWhatsAppApp() {
           }
         }
       } else {
-        // Propuesta abierta a la sala
-        setMensajes((prev) => [
-          ...prev,
-          {
-            id: `ia-${Date.now()}`,
-            autor: "Agente IA Oficial",
-            texto: `📢 Propuesta Abierta: **@${cli.nombre}** ${rolTexto} **${d.jugada}** al **${d.caballos}** por **$${d.monto.toFixed(2)}**.\n¿Quién la toma? (Responde "Voy" o "Doy" para concretar).`,
-            hora,
-            esMio: false,
-            esIa: true,
+        // Propuesta abierta a la sala con botón de acción para la contraparte
+        const msgPropuesta: MensajeChatSala = {
+          id: `ia-${Date.now()}`,
+          autor: "Agente IA Oficial",
+          texto: `📢 Propuesta Abierta: **@${cli.nombre}** ${rolTexto} **${d.jugada}** al **${d.caballos}** por **$${d.monto.toFixed(2)}**.\n¿Quién la toma?`,
+          hora,
+          esMio: false,
+          esIa: true,
+          esPropuestaAbierta: true,
+          propuestaData: {
+            jugador: cli.nombre,
+            rol: d.rol === "JUEGA" ? "JUEGA" : "DA",
+            monto: d.monto,
+            jugada: d.jugada,
+            caballo: d.caballos,
           },
-        ]);
+        };
+
+        setMensajes((prev) => [...prev, msgPropuesta]);
+        if (canalRealtimeRef.current) {
+          canalRealtimeRef.current.send({
+            type: "broadcast",
+            event: "mensaje_sala",
+            payload: msgPropuesta,
+          });
+        }
       }
       return;
     }
 
     // 4. Conversación general
-    setMensajes((prev) => [
-      ...prev,
-      {
-        id: `ia-${Date.now()}`,
-        autor: "Agente IA Oficial",
-        texto: `🤖 Hola @${cli.nombre}, estoy atento a las jugadas. Puedes enviar jugadas como "100 al 5 con @SAM", consultar "Mi saldo" o "Carrera actual".`,
-        hora,
-        esMio: false,
-        esIa: true,
-      },
-    ]);
+    const msgGen: MensajeChatSala = {
+      id: `ia-${Date.now()}`,
+      autor: "Agente IA Oficial",
+      texto: `🤖 Hola @${cli.nombre}, estoy atento a las jugadas. Puedes enviar jugadas como "100 al 5 con @SAM", consultar "Mi saldo" o "Carrera actual".`,
+      hora,
+      esMio: false,
+      esIa: true,
+    };
+    setMensajes((prev) => [...prev, msgGen]);
   };
 
   // Toggle rápido de Operador / Administrador
@@ -755,6 +905,25 @@ export function SalaWhatsAppApp() {
                     <span className="text-xs">✓</span>
                   </div>
                   <div className="whitespace-pre-wrap leading-relaxed">{m.texto}</div>
+
+                  {/* Botón de acción interactiva si es una propuesta abierta de otro jugador */}
+                  {m.esPropuestaAbierta && m.propuestaData && m.propuestaData.jugador !== sesion.nombre && !esCerrada && (
+                    <div className="mt-2.5 pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() =>
+                          enviarMensaje(
+                            `${m.propuestaData!.rol === "JUEGA" ? "Doy" : "Juego"} ${m.propuestaData!.monto} al ${
+                              m.propuestaData!.caballo
+                            } con @${m.propuestaData!.jugador}`
+                          )
+                        }
+                        className="w-full rounded-xl bg-[#00a884] py-1.5 px-3 text-xs font-bold text-white shadow-sm hover:bg-[#02906f] active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <span>🛡️ Tomar jugada de @{m.propuestaData.jugador} (${m.propuestaData.monto})</span>
+                      </button>
+                    </div>
+                  )}
+
                   <div className="pt-1 text-right text-[10px] text-[#667781] font-mono">{m.hora}</div>
                 </div>
               </div>
@@ -818,7 +987,7 @@ export function SalaWhatsAppApp() {
         </button>
       </div>
 
-      {/* ── 4. BARRA DE INPUT ESTILO WHATSAPP ── */}
+      {/* ── 4. BARRA DE INPUT ESTILO WHATSAPP CON MICRÓFONO ── */}
       <div className="flex items-center gap-2 bg-[#f0f2f5] px-3 py-2 border-t border-[#e9edef]">
         <input
           type="text"
@@ -831,12 +1000,28 @@ export function SalaWhatsAppApp() {
             }
           }}
           placeholder={
-            esCerrada
-              ? "⛔ Carrera cerrada (no se aceptan jugadas)..."
-              : "Escribe una jugada (ej. 100 al 5 con @SAM)..."
+            grabandoVoz
+              ? "🎙️ Escuchando dictado de jugada..."
+              : esCerrada
+                ? "⛔ Carrera cerrada (no se aceptan jugadas)..."
+                : "Escribe una jugada (ej. 100 al 5 con @SAM)..."
           }
-          className="flex-1 rounded-2xl bg-white px-4 py-2.5 text-sm text-[#111b21] placeholder-[#8696a0] border border-transparent shadow-sm focus:border-[#00a884] focus:outline-none"
+          className={`flex-1 rounded-2xl bg-white px-4 py-2.5 text-sm text-[#111b21] placeholder-[#8696a0] border shadow-sm focus:border-[#00a884] focus:outline-none transition-all ${
+            grabandoVoz ? "border-red-500 bg-red-50 ring-2 ring-red-400 animate-pulse" : "border-transparent"
+          }`}
         />
+
+        {/* Botón de Dictado de Voz / Micrófono */}
+        <button
+          onClick={alternarDictadoVoz}
+          title={grabandoVoz ? "Detener dictado" : "Dictar jugada por voz"}
+          className={`flex h-10 w-10 items-center justify-center rounded-full text-white shadow-md active:scale-95 transition-all ${
+            grabandoVoz ? "bg-red-500 animate-bounce" : "bg-[#128c7e] hover:bg-[#008069]"
+          }`}
+        >
+          🎙️
+        </button>
+
         <button
           onClick={() => enviarMensaje()}
           disabled={!inputTexto.trim() || enviando}
