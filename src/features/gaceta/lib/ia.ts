@@ -94,60 +94,72 @@ const HIPODROMOS_USA = [
   "SUNLAND PARK", "TAMPA BAY DOWNS", "TURF PARADISE", "WOODBINE", "DEL MAR",
 ];
 
-const SYS = `Eres el transcriptor oficial de máxima precisión para gacetas hípicas (Venezuela y Estados Unidos).
-Recibes páginas escaneadas, texto o imágenes del programa oficial de carreras.
+const SYS = `Eres el transcriptor oficial de MÁXIMA PRECISIÓN, RIGOR Y DISCIPLINA para gacetas hípicas internacionales y retrospectos (Daily Racing Form, Equibase, Brisnet, Gaceta Hípica).
 
-REGLAS CRÍTICAS DE ORDENAMIENTO, VERIFICACIÓN MINUCIOSA DE NÚMEROS/NOMBRES Y COMPLETITUD:
-1. ORDEN SECUENCIAL ESTRICTO DE CARRERAS:
-   - Las carreras DEBEN devolverse ordenadas de forma estrictamente secuencial y correlativa: Carrera 1, Carrera 2, Carrera 3, ..., Carrera N.
-   - NUNCA devuelvas carreras salteadas, desordenadas ni repetidas.
-2. VERIFICACIÓN MINUCIOSA DEL NÚMERO DE EJEMPLAR ("numero"):
-   - "numero" es ÚNICAMENTE el número oficial de dorsal/gualdrapa/programa con el que corre el caballo (1, 1A, 2, 2A, 3, 4, ..., 16).
-   - PROHIBIDO confundir "numero" con:
-     * El peso en kilos o libras (ej. 50, 52, 53, 54, 55, 56, 118, 120, 122, 124). Un dorsal NUNCA es > 24.
-     * La edad del caballo (2a, 3a, 4a, 5a).
-     * Llegadas de carreras anteriores (1º, 2º, 3º) ni dividendos Morning Line (5/2, 3-1).
-     * El Puesto de Partida / Puesto de Pista ("pp") cuando difiere del dorsal (ej. en llaves 1/1A o elegibles AE/MTO).
-   - Verifica la secuencia correlativa 1, 2, 3, ..., N dentro de cada carrera. Si pasas del 3 al 5, busca minuciosamente el ejemplar #4 en el texto/imagen antes de continuar.
-3. VERIFICACIÓN MINUCIOSA DEL NOMBRE DEL EJEMPLAR ("nombre"):
-   - Transcribe letra por letra el nombre oficial exacto del caballo en MAYÚSCULAS (ej: "MAXIMUM SECURITY", "EL GRAN SOL", "MI QUERIDA EMMA").
-   - PROHIBIDO incluir dentro de "nombre":
-     * El número de dorsal o PP al inicio (NO pongas "1 MAXIMUM SECURITY" ni "#3 EL GRAN SOL").
-     * El país entre paréntesis (NO pongas "GRAN SOL (VEN)" ni "STAR (USA)"; pon el país en "nacionalidad").
-     * Medicamentos o implementos como "(L)", "(L1)", "(B)", "BB, V, Gr" (esos van en "medicamento" / "implementos").
-     * El pedigrí (padre, madre, abuelo), sexo/edad ("C.A. 4a"), peso ("53 Kg"), ni el nombre del jinete o entrenador.
-   - NUNCA inventes, abrevies ni sustituyas letras del nombre del caballo.
-4. ORDEN ASCENDENTE ESTRICTO DE EJEMPLARES:
-   - Dentro del array "ejemplares" de cada carrera, los caballos DEBEN listarse rigurosamente ordenados por su número oficial de dorsal/gualdrapa de menor a mayor (1, 1A, 2, 2A, 3, 4, ..., 12, 13, 14).
-5. COMPLETITUD TOTAL (CERO OMISIONES):
-   - Extrae ABSOLUTAMENTE TODOS los ejemplares participantes de cada carrera sin omitir ninguno.
-   - Si una carrera tiene 12 inscritos, el array de ejemplares debe contener exactamente los 12 participantes.
-   - Incluye ejemplares elegibles (AE - Also Eligible), sólo pista principal (MTO - Main Track Only) y retirados (SCR).
-6. EXTRACCIÓN Y NORMALIZACIÓN DE DISTANCIAS:
-   - Purasangres (Thoroughbreds): 1000m, 1100m, 1200m, 1300m, 1400m, 1500m, 1600m, 1700m, 1800m, 1900m, 2000m, 2200m, 2400m. Si viene en Furlongs (f): 5f=1000m, 5.5f=1100m, 6f=1200m, 6.5f=1300m, 7f=1400m, 8f/1m=1600m, 8.5f=1700m, 9f=1800m, 10f=2000m, 12f=2400m.
-   - Quarter Horses (Cuarto de Milla): 200m (220y), 228m (250y), 272m (300y), 300m (330y), 318m (350y), 364m (400y), 400m (440y), 500m (550y).
-7. EXTRACCIÓN AUTOMÁTICA DE FECHA DEL ENCABEZADO:
-   - Extrae la fecha de la reunión del encabezado de la página (ej: "04Nov26", "November 4, 2026", "Miércoles 4 de Noviembre 2026") y devuélvela en formato ISO YYYY-MM-DD.
-8. VENEZUELA (LA RINCONADA / VALENCIA - 5 Y 6):
-   - Las carreras válidas del 5 y 6 (tituladas "1ª VÁLIDA", "2ª VÁLIDA", ..., "6ª VÁLIDA") NO reinician la numeración en 1.
-   - Mapea siempre al número correlativo general de la reunión (ej: Carrera 5 a 10, o Carrera 7 a 12 según las no válidas previas).
+REGLAS DE ORO SUPREMAS E INVIOLABLES:
+
+1. REGLA SUPREMA: ¡PROHIBIDO TERMINANTEMENTE PONER EL NOMBRE DEL JINETE (JOCKEY) COMO NOMBRE DEL EJEMPLAR!
+   - En las gacetas y retrospectos de EE.UU. y Venezuela, los jinetes suelen tener INICIALES CON PUNTO Y APELLIDO, y sufijos como "Jr.":
+     * Ejemplos de JINETES: "I. Ortiz, Jr.", "J. Rosario", "F. Prat", "L. Saez", "T. Gaffalione", "J. R. Velazquez", "K. Carmouche", "M. Franco", "B. Hernandez, Jr.", "C. Lanerie", "R. Santana, Jr.", "E. J. Zayas", "J. Bravo", "P. Lopez", "A. Gallardo", "J. C. Rodriguez", "C. J. Hernandez".
+     * ¡NINGÚN CABALLO EN EL MUNDO TIENE INICIALES CON PUNTO COMO "I. Ortiz" O "J. Rosario"! Si una cadena empieza con inicial y punto (ej. "I. Ortiz") es un ser humano (Jinete o Entrenador), ¡NUNCA UN CABALLO!
+   - El campo "nombre" del caballo DEBE SER ÚNICAMENTE el nombre equino sustantivo completo, oficial y en MAYÚSCULAS:
+     * Ejemplos de NOMBRES DE CABALLO: "FLIGHTLINE", "UNCLE CHARLIE", "MEDINA SPIRIT", "FORTE", "EPICENTER", "WHITE ABARRIO", "LIFE IS GOOD", "GOLDEN PAL", "CODY'S WISH", "SIMPLIFICATION", "TAIBA", "EL GRAN SOL", "WATER JET", "SANDOVALERA".
+   - El jinete debe ir OBLIGATORIAMENTE en el campo "jockey" (o "jinete").
+
+2. EXTRACTO OBLIGATORIO DEL ENTRENADOR (TRAINER):
+   - El entrenador debe ir OBLIGATORIAMENTE en el campo "entrenador".
+   - Ejemplos de ENTRENADORES: "B. H. Cox", "B. Baffert", "C. C. Brown", "S. M. Asmussen", "T. A. Pletcher", "W. I. Mott", "M. J. Maker", "D. Gargan", "K. G. McPeek", "R. E. Dutrow, Jr.", "R. Garcia".
+
+3. EXTRACTO OBLIGATORIO DEL MORNING LINE ("ml"):
+   - El dividendo previo oficial (Morning Line / M/L) debe ir OBLIGATORIAMENTE en el campo "ml".
+   - Ejemplos de MORNING LINE: "3-1", "9-5", "5-2", "8-1", "10-1", "12-1", "15-1", "20-1", "7-2", "9-2", "4-5", "7-5", "8-5", "EVEN".
+   - NUNCA lo dejes en blanco o null si aparece impreso en la gaceta o retrospecto.
+
+4. NÚMERO OFICIAL DE DORSAL/GUALDRAPA ("numero") Y PUESTO DE PISTA ("pp"):
+   - "numero" es el dorsal oficial de carrera (1, 1A, 2, 2B, 3, 4, ..., 16).
+   - "pp" es el puesto de partida en el partidor (1, 2, 3...).
+   - Identifica también la condición si es elegible ("AE" - Also Eligible) o solo pista principal ("MTO" - Main Track Only).
+
+5. PESO ("peso"):
+   - Extrae el peso asignado (en libras ej. 118, 120, 122, 124, 126 o kilos ej. 53, 54, 55). Si tiene coma decimal (ej. 54,4) conviértela a punto (54.4).
+
+6. HORA DE PARTIDA ("hora"):
+   - Extrae la hora de partida si aparece en la cabecera (ej: "1:00 PM", "7:00 PM", "13:30").
+
+7. COMPLETITUD Y ORDEN:
+   - Extrae rigurosamente TODOS los ejemplares participantes de cada carrera sin omitir ninguno.
+   - Devuelve las carreras ordenadas secuencialmente: Carrera 1, Carrera 2, Carrera 3...
 
 Estructura de salida JSON para cada carrera:
-- carrera: número entero de la carrera (1, 2, 3...)
-- hipodromo: nombre oficial en MAYÚSCULAS (ej: "CHURCHILL DOWNS", "CHARLES TOWN", "DELTA DOWNS", "LA RINCONADA", "VALENCIA")
-- fecha: YYYY-MM-DD si es legible en el encabezado, si no null
-- distancia: distancia en metros (entero, ej: 1200, 1400, 1600, 300, 364)
-- superficie: ARENA, CESPED, FANGO o TAPETA
-- premio: número si aparece, si no 0
-- ejemplares: lista de objetos con:
-  - numero: dorsal del caballo (1, 2, 3, 1A, 13, 14...)
-  - pp: puesto de pista (entero o null)
-  - nombre: nombre exacto en MAYÚSCULAS limpio (ej: "MAXIMUM SECURITY")
-  - nacionalidad: USA, VE, etc.
-  - valor: 0
-  - jockey, entrenador, peso, medicamento, implementos si aparecen legibles (si no, null).
+{
+  "carreras": [
+    {
+      "carrera": 1,
+      "hipodromo": "CHURCHILL DOWNS",
+      "fecha": "2026-11-04",
+      "hora": "1:00 PM",
+      "distancia": 1200,
+      "superficie": "ARENA",
+      "premio": 25000,
+      "ejemplares": [
+        {
+          "numero": "1",
+          "pp": 1,
+          "nombre": "FLIGHTLINE",
+          "jockey": "I. Ortiz, Jr.",
+          "entrenador": "B. Baffert",
+          "peso": 122,
+          "ml": "3-1",
+          "nacionalidad": "USA",
+          "retirado": false,
+          "condicionElegibilidad": null
+        }
+      ]
+    }
+  ]
+}
 
-Si el documento no tiene carreras, devuelve {"carreras":[]}. Responde ÚNICAMENTE con JSON válido.`;
+Responde ÚNICAMENTE con JSON válido, sin markdown ni explicaciones adicionales.`;
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

@@ -17,6 +17,7 @@ import {
 import {
   parsearPaginaRetrospectosNativo,
   parsearGacetaRetrospectosNativo,
+  esNombreJockeyPersona,
   type CarreraParseadaNativa,
 } from "@/features/gaceta/lib/segmentar";
 import type { CarreraCatalogo, EjemplarCarreraCentral } from "@/features/carreras/lib/maestro-nucleo";
@@ -316,8 +317,18 @@ export async function importarYExtraerGacetaPdf(
       })),
     }));
 
-    // Si el parser determinístico extrajo carreras y no quedaron páginas dudosas, ¡listo instantáneo!
-    if (carrerasNativas.length > 0 && (nativoRes.paginasParaFallback.length === 0 || !claveGemini.trim())) {
+    // Control estricto de calidad: Si algún ejemplar tiene nombre que parece jinete o persona con iniciales,
+    // o faltan entrenadores/ML y hay clave Gemini, delegar al modelo multimodal de IA con el prompt reforzado.
+    const tieneNombresJockey = carrerasNativas.some((c) =>
+      c.ejemplares.some((e) => esNombreJockeyPersona(e.nombre))
+    );
+    const esDeterministaConfiable =
+      carrerasNativas.length > 0 &&
+      !tieneNombresJockey &&
+      nativoRes.paginasParaFallback.length === 0;
+
+    // Si el parser determinístico extrajo carreras 100% limpias (cero jockeys como nombres), ¡listo instantáneo!
+    if (esDeterministaConfiable || (carrerasNativas.length > 0 && !claveGemini.trim())) {
       onProgreso?.({
         fase: "listo",
         mensaje: `¡Éxito! ${carrerasNativas.length} carrera(s) extraídas instantáneamente por motor nativo.`,
@@ -330,17 +341,16 @@ export async function importarYExtraerGacetaPdf(
       };
     }
 
-    // Si hay páginas que necesitan fallback IA y el usuario configuró clave Gemini:
-    if (nativoRes.paginasParaFallback.length > 0 && claveGemini.trim()) {
+    // Si hay páginas que necesitan IA o se detectó ambigüedad entre jockeys y caballos, procesar con Gemini:
+    if (claveGemini.trim()) {
       onProgreso?.({
         fase: "extrayendo",
-        mensaje: `Analizando ${nativoRes.paginasParaFallback.length} página(s) con fallback IA (timeout 25s)...`,
+        mensaje: `Extrayendo con IA Gemini y reglas de precisión (diferenciación estricta de Caballos, Jockeys, Entrenadores y M/L)...`,
       });
 
-      const textoFallback = nativoRes.paginasParaFallback.map((p) => p.texto).join("\n\n");
       const resIa = await transformarGacetaTexto(
         claveGemini,
-        textoFallback,
+        paginasTexto.join("\n\n"),
         (hecho: number, tot: number) =>
           onProgreso?.({
             fase: "extrayendo",
@@ -348,26 +358,19 @@ export async function importarYExtraerGacetaPdf(
             paginaActual: hecho,
             totalPaginas: tot,
           }),
-        (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s })
+        (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s }),
+        file.name
       );
 
       if (resIa.ok && resIa.carreras.length > 0) {
-        // Fusionar sin duplicar
-        const mapa = new Map<number, CarreraExtraida>();
-        for (const c of carrerasNativas) {
-          mapa.set(Number(c.carrera), c);
-        }
-        for (const c of resIa.carreras) {
-          const num = Number(c.carrera);
-          if (!mapa.has(num)) {
-            mapa.set(num, { ...c, archivoOrigen: file.name });
-          }
-        }
-        const todas = Array.from(mapa.values()).sort((a, b) => Number(a.carrera) - Number(b.carrera));
         return {
           nombreArchivo: file.name,
           ok: true,
-          carreras: todas,
+          carreras: resIa.carreras.map((c) => ({
+            ...c,
+            archivoOrigen: file.name,
+            fecha: fechaEfectiva || c.fecha,
+          })),
           modo: "texto",
           aviso: resIa.avisoNumeracion,
         };

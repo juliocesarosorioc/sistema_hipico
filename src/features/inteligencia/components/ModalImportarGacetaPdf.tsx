@@ -213,6 +213,19 @@ export function ModalImportarGacetaPdf({
     );
   };
 
+  // Modificar un ejemplar específico de la carrera actual
+  const modificarEjemplarActual = (numEjemplar: string, patch: Partial<EjemplarCarreraCentral>) => {
+    setCarrerasCatalogo((prev) =>
+      prev.map((c) => {
+        if (Number(c.carrera) !== carreraSeleccionada) return c;
+        const ejs = (c.caballos || []).map((cb) =>
+          cb.numero === numEjemplar ? { ...cb, ...patch } : cb
+        );
+        return { ...c, caballos: ejs };
+      })
+    );
+  };
+
   // Agregar ejemplar a la carrera actual
   const agregarEjemplarActual = () => {
     if (!nuevoNombreCaballo.trim()) return;
@@ -772,7 +785,7 @@ export function ModalImportarGacetaPdf({
                               key={`${ej.numero}-${ej.nombre}`}
                               className={ej.retirado ? "bg-rose-950/20 opacity-50" : "hover:bg-slate-800/40"}
                             >
-                              <td className="py-2 px-3 align-middle">
+                              <td className="py-2 px-2 align-middle w-14">
                                 <span
                                   className="inline-grid h-6 w-6 place-items-center rounded font-black text-[11px]"
                                   style={{ backgroundColor: gualdrapa.bg, color: gualdrapa.text }}
@@ -780,37 +793,90 @@ export function ModalImportarGacetaPdf({
                                   {ej.numero}
                                 </span>
                               </td>
-                              <td className="py-2 px-3 align-middle font-bold text-white">
-                                <span className={ej.retirado ? "line-through text-slate-400" : ""}>
-                                  {ej.nombre}
-                                </span>
-                                {ej.condicionElegibilidad && (
-                                  <span className="ml-1 text-[9px] font-black text-amber-400 bg-amber-400/10 px-1 rounded">
-                                    {ej.condicionElegibilidad}
-                                  </span>
-                                )}
+                              <td className="py-2 px-2 align-middle">
+                                <input
+                                  type="text"
+                                  value={ej.nombre || ""}
+                                  onChange={(e) =>
+                                    modificarEjemplarActual(ej.numero, {
+                                      nombre: e.target.value.toUpperCase(),
+                                    })
+                                  }
+                                  placeholder="Nombre del Caballo..."
+                                  className={`w-full bg-slate-900 border rounded px-2 py-1 text-xs font-bold text-white ${
+                                    ej.retirado ? "line-through text-slate-400 border-rose-900" : "border-slate-700 focus:border-amber-400"
+                                  }`}
+                                />
                               </td>
-                              <td className="py-2 px-3 align-middle text-slate-300">{ej.jockey || "—"}</td>
-                              <td className="py-2 px-3 align-middle text-slate-400">{ej.entrenador || "—"}</td>
-                              <td className="py-2 px-3 align-middle font-mono text-slate-300">{ej.peso || "—"}</td>
-                              <td className="py-2 px-3 align-middle font-mono text-amber-300">{ej.ml || "—"}</td>
-                              <td className="py-2 px-3 align-middle text-right space-x-2">
+                              <td className="py-2 px-2 align-middle">
+                                <input
+                                  type="text"
+                                  value={ej.jockey || ""}
+                                  onChange={(e) =>
+                                    modificarEjemplarActual(ej.numero, {
+                                      jockey: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Jinete..."
+                                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:border-amber-400"
+                                />
+                              </td>
+                              <td className="py-2 px-2 align-middle">
+                                <input
+                                  type="text"
+                                  value={ej.entrenador || ""}
+                                  onChange={(e) =>
+                                    modificarEjemplarActual(ej.numero, {
+                                      entrenador: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Entrenador..."
+                                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 focus:border-amber-400"
+                                />
+                              </td>
+                              <td className="py-2 px-1 align-middle w-16">
+                                <input
+                                  type="text"
+                                  value={ej.peso != null ? String(ej.peso) : ""}
+                                  onChange={(e) =>
+                                    modificarEjemplarActual(ej.numero, {
+                                      peso: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Peso"
+                                  className="w-full bg-slate-900 border border-slate-700 rounded px-1 py-1 text-xs text-center font-mono text-slate-200 focus:border-amber-400"
+                                />
+                              </td>
+                              <td className="py-2 px-1 align-middle w-16">
+                                <input
+                                  type="text"
+                                  value={ej.ml || ""}
+                                  onChange={(e) =>
+                                    modificarEjemplarActual(ej.numero, {
+                                      ml: e.target.value,
+                                    })
+                                  }
+                                  placeholder="M/L"
+                                  className="w-full bg-slate-900 border border-slate-700 rounded px-1 py-1 text-xs text-center font-mono text-amber-300 font-bold focus:border-amber-400"
+                                />
+                              </td>
+                              <td className="py-2 px-2 align-middle text-right space-x-1.5 whitespace-nowrap">
                                 <button
                                   type="button"
                                   onClick={() => alternarRetiradoEjemplar(ej.numero)}
-                                  className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                  className={`text-[10px] font-bold px-2 py-1 rounded transition-colors ${
                                     ej.retirado
-                                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                                      : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
+                                      : "bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30"
                                   }`}
-                                  title={ej.retirado ? "Reactivar ejemplar" : "Marcar como retirado"}
+                                  title={ej.retirado ? "Habilitar ejemplar" : "Retirar ejemplar"}
                                 >
                                   {ej.retirado ? "Habilitar" : "⛔ Retirar"}
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => eliminarEjemplar(ej.numero)}
-                                  className="text-slate-500 hover:text-rose-400 text-xs font-bold"
+                                  className="text-slate-500 hover:text-rose-400 text-xs font-bold p-1"
                                   title="Eliminar de la carrera"
                                 >
                                   ✕

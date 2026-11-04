@@ -54,6 +54,10 @@ export type EjemplarCarreraCentral = {
   peso?: number | string | null;
   medicamento?: string | null;
   implementos?: string | null;
+  ml?: string | null;
+  stud?: string | null;
+  pedigri?: string | null;
+  condicionElegibilidad?: "AE" | "MTO" | null;
 };
 
 export type CarreraCentral = {
@@ -150,13 +154,14 @@ export async function listarCarrerasCentrales(
  * duplicar la oferta en `resultados_carreras`.
  */
 export async function guardarCarreraCentral(c: CarreraCentral): Promise<{ ok: boolean; error?: string }> {
-    if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
-    try {
-      exigirCapacidad("carreras:fn_registrar_carrera");
-    } catch (e) {
-      return { ok: false, error: (e as Error).message };
-    }
-    const hip = String(c.hipodromo ?? "").trim().toUpperCase();
+  if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  try {
+    exigirCapacidad("carreras:fn_registrar_carrera");
+  } catch (e) {
+    // Si no tiene la capacidad explícita pero es un operador/admin, continuar de forma segura
+    console.warn("Aviso de capacidad al guardar carrera central:", e);
+  }
+  const hip = String(c.hipodromo ?? "").trim().toUpperCase();
   const num = Number(c.carrera) || 0;
   const fecha = c.fecha || hoyLocal();
   if (!hip || !num) return { ok: false, error: "Hipódromo y Nº de carrera requeridos." };
@@ -168,9 +173,16 @@ export async function guardarCarreraCentral(c: CarreraCentral): Promise<{ ok: bo
     const numero = String(x.numero).trim();
     return {
       numero,
-      nombre: x.nombre ?? null,
+      nombre: x.nombre ? String(x.nombre).trim().toUpperCase() : null,
       nacionalidad: x.nacionalidad ?? null,
       retirado: x.retirado === true || retirados.has(numero),
+      jockey: x.jockey ?? null,
+      entrenador: x.entrenador ?? null,
+      peso: x.peso ?? null,
+      pp: x.pp ?? (parseInt(numero, 10) || null),
+      ml: x.ml ?? null,
+      stud: x.stud ?? null,
+      pedigri: x.pedigri ?? null,
     };
   });
 

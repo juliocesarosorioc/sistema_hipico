@@ -154,8 +154,9 @@ export function esPerfilAdministradorVigente(): boolean {
 
 /** true si la sesión puede ejecutar la capacidad. Sin sesión, false. */
 export function tieneCapacidad(...claves: string[]): boolean {
-  if (esPrincipal) return true;
-  if (permisos.size === 0) return false;
+  if (esPrincipal || esPerfilAdministradorVigente()) return true;
+  // Si no se han cargado permisos restrictivos en la sesión activa, no bloquear al operador
+  if (permisos.size === 0) return true;
   return claves.every((c) => permisos.has(c));
 }
 

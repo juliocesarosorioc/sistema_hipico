@@ -283,10 +283,22 @@ export function extraerFechaCabecera(texto: string): string | null {
 }
 
 /**
- * Resuelve el Hipódromo Oficial canónico buscando en el texto de la página:
- * 1. Códigos oficiales en la línea maestra (ej. CDX, CTX, DED, EVD, FLX, IND, MNR, MVR, PRX)
- * 2. Nombres impresos en el encabezado
+ * Verifica si un texto tiene la estructura inconfundible de un Jockey o Entrenador
+ * (iniciales con punto, sufijos personales como Jr., etc.), para NUNCA colocarlo como nombre de caballo.
  */
+export function esNombreJockeyPersona(str: string | null | undefined): boolean {
+  if (!str) return false;
+  const s = String(str).trim();
+  if (s.length < 2) return true;
+  // Iniciales con punto: "I. Ortiz", "I. Ortiz, Jr.", "J. Rosario", "F. Prat", "B. H. Cox", "J. R. Velazquez"
+  if (/^[A-Z]\.\s*[A-Z]/i.test(s)) return true;
+  if (/^[A-Z]\.\s*[A-Z]\.\s*[A-Z]/i.test(s)) return true;
+  if (/,\s*Jr\.?$/i.test(s) || /\bJr\.?$/i.test(s) || /\bIII\b/i.test(s) || /\bII\b/i.test(s)) return true;
+  if (/^[A-Z]\.\s*[A-Z]\.?$/i.test(s)) return true;
+  if (/^(?:JOCKEY|TRAINER|OWNER|SIRE|DAM|TR:|JK:|TRAIN:|JOCK:)[\s:]/i.test(s)) return true;
+  return false;
+}
+
 export function resolverHipodromoTexto(texto: string, trackCodeDetectado?: string | null): string {
   if (trackCodeDetectado) {
     const cod = trackCodeDetectado.toUpperCase().trim();
@@ -427,21 +439,39 @@ export function parsearPaginaRetrospectosNativo(
       let nombre = m[2].trim().replace(/\s*\((?:L|AE|MTO)\)/gi, "").trim();
       const condicion = (m[3]?.toUpperCase() as "AE" | "MTO") ||
                         (l.includes("(AE)") ? "AE" : l.includes("(MTO)") ? "MTO" : null);
-      const jockey = m[4]?.trim();
+      let jockey = m[4]?.trim();
       let pesoStr = m[5]?.trim()?.replace(",", ".");
       let pesoNum: number | string | undefined = pesoStr ? parseFloat(pesoStr) : undefined;
       if (typeof pesoNum === "number" && isNaN(pesoNum)) pesoNum = undefined;
 
       const ml = m[6]?.trim();
 
+      // PROTECCIÓN CRÍTICA: Si el nombre capturado es en realidad un Jockey (ej: "I. Ortiz, Jr." o "J. Rosario")
+      if (esNombreJockeyPersona(nombre)) {
+        if (jockey && !esNombreJockeyPersona(jockey)) {
+          // El orden en la línea venía invertido (Jockey primero, Caballo después)
+          const temp = nombre;
+          nombre = jockey;
+          jockey = temp;
+        } else {
+          // Descartar falso positivo de jockey como nombre de caballo
+          nombre = "";
+        }
+      }
+
       const nombreKey = nombre.toUpperCase();
-      if (nombreKey.length >= 2 && !nombresVistos.has(nombreKey) && !/^(?:PURSE|RACE|TRACK|POST)/.test(nombreKey)) {
+      if (
+        nombreKey.length >= 2 &&
+        !esNombreJockeyPersona(nombre) &&
+        !nombresVistos.has(nombreKey) &&
+        !/^(?:PURSE|RACE|TRACK|POST|EXACTA|TRIFECTA|SUPERFECTA)/.test(nombreKey)
+      ) {
         nombresVistos.add(nombreKey);
         ejemplares.push({
           numero: numProg,
           nombre,
           pp: parseInt(numProg.replace(/[^0-9]/g, ""), 10) || undefined,
-          jinete: jockey,
+          jinete: jockey || undefined,
           peso: pesoNum,
           ml: ml || undefined,
           retirado: false,
@@ -462,10 +492,11 @@ export function parsearPaginaRetrospectosNativo(
       const nombre = mBlock[2].trim();
       const nombreKey = nombre.toUpperCase();
 
-      // Descartar falsos positivos comunes
+      // Descartar falsos positivos comunes y jockeys con iniciales
       if (
         /^(?:PURSE|RACE|CARRERA|FURLONG|CLAIMING|MAIDEN|ALLOWANCE|STAKES|POST|TRACK|COPYRIGHT|PAGE|DAILY)/i.test(nombreKey) ||
         nombreKey.length < 2 ||
+        esNombreJockeyPersona(nombre) ||
         nombresVistos.has(nombreKey)
       ) {
         continue;
@@ -490,7 +521,9 @@ export function parsearPaginaRetrospectosNativo(
     }
   }
 
-  if (ejemplares.length === 0) {
+  // Si no se extrajeron al menos 2 ejemplares limpios o si se coló algún jockey como nombre de caballo,
+  // devolver null para delegar la página al LLM Gemini con el prompt fuerte.
+  if (ejemplares.length < 2 || ejemplares.some((e) => esNombreJockeyPersona(e.nombre))) {
     return null;
   }
 

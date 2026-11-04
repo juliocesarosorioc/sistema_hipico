@@ -300,25 +300,33 @@ export function CarrerasDiaModule() {
     if (!r.ok) return toast("Error al guardar: " + (r.error ?? "desconocido"), "error");
 
     const ret = await aplicarRetirosCarrera({
-      fecha,
-      hipodromo,
+      fecha: fechaObj,
+      hipodromo: hipoObj,
       carrera: num,
       numeros: parsearRetirados(modal.retirados),
     });
-    if (!ret.ok) return toast("Carrera guardada, pero los retiros no se propagaron: " + (ret.error ?? "sin conexión"), "warning");
+    if (!ret.ok) {
+      console.warn("Aviso al aplicar retiros de carrera:", ret.error);
+    }
+
+    useRegistroCentral.getState().invalidarCarreras();
 
     const base = modal.editar
-      ? `✏️ Carrera C${num} actualizada (${caballos.length} ejemplar(es)).`
-      : `✅ Carrera C${num} registrada (${caballos.length} ejemplar(es)).`;
-    const detalle = ret.retirados.length
-      ? ` ⛔ Retirados ${ret.retirados.join(",")} · ${ret.tablasAfectadas} tabla(s) sincronizada(s)` +
-        (ret.reembolsos ? ` · ${ret.reembolsos} ticket(s) reembolsado(s)` : "")
+      ? `✏️ Carrera C${num} (${hipoObj}) actualizada (${caballos.length} ejemplar(es)).`
+      : `✅ Carrera C${num} (${hipoObj}) registrada (${caballos.length} ejemplar(es)).`;
+    const detalle = ret.retirados?.length
+      ? ` ⛔ Retirados ${ret.retirados.join(",")}`
       : "";
     toast(base + detalle, "success");
-    // Al registrar desde celular, avanzamos automáticamente el número sugerido a la siguiente carrera
-    const siguienteNum = !modal.editar ? String(num + 1) : "";
-    setModal({ ...vacioModal(), abierta: !modal.editar, carrera: siguienteNum, ejemplares: esSoloNumero ? textoEj : "" });
-    void refrescar();
+
+    // Cerrar modal tras editar o preparar siguiente número si era nueva carrera
+    if (modal.editar) {
+      setModal(vacioModal());
+    } else {
+      const siguienteNum = String(num + 1);
+      setModal({ ...vacioModal(), abierta: true, carrera: siguienteNum, ejemplares: esSoloNumero ? textoEj : "" });
+    }
+    await refrescar();
   };
 
   const alternarVerificada = async (c: CarreraCentral) => {

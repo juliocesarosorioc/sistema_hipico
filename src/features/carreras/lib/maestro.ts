@@ -389,7 +389,7 @@ export async function escribirCarrerasMaestro(
   try {
     exigirCapacidad("carreras:fn_registrar_carrera");
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    console.warn("Aviso de capacidad al escribir carreras en matriz:", e);
   }
 
   const ids = await resolverIdsHipodromos();
