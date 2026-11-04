@@ -64,6 +64,8 @@ export type CarrerasDiaState = {
    * de negocio que la Gaceta no conoce y no puede reconstituir.
    */
   fusionarLote: (carreras: CarreraDelDia[]) => void;
+  /** Sincroniza exactamente las carreras de una fecha desde Supabase (si viene vacío, limpia esa fecha). */
+  reemplazarDia: (fecha: string, carrerasDelDia: CarreraDelDia[]) => void;
   /** Inserta o actualiza por (fecha, hipodromo, carrera). */
   upsert: (c: CarreraDelDia) => void;
   /** Registra la venta de tablas de un ejemplar en la carrera. */
@@ -83,12 +85,22 @@ function clave(h: string, c: number | string): string {
 }
 
 function hoy(): string {
-  // Día de la JORNADA (Caracas, UTC-4): no el día local de la máquina ni el
-  // día UTC. Con `toISOString()` se usaba la zona UTC y desde las 20:00 (VET)
-  // el ledger empezaba a registrar "mañana" mientras todos los filtros de la
-  // UI muestran hoy → carreras de un día en otro. Ahora la regla vive en
-  // `src/core/utils/fechas.ts` y aquí solo se delega.
   return fechaJornadaCaracas();
+}
+
+// Purga automática de cachés locales antiguos de carreras en el navegador
+if (typeof window !== "undefined") {
+  try {
+    localStorage.removeItem("sistema-hipico:carreras-dia");
+    localStorage.removeItem("gaceta_registro");
+    localStorage.removeItem("ensamblaje_carreras");
+    localStorage.removeItem("gaceta_prellenado");
+    sessionStorage.removeItem("gaceta_registro");
+    sessionStorage.removeItem("ensamblaje_carreras");
+    sessionStorage.removeItem("gaceta_prellenado");
+  } catch {
+    /* ignore */
+  }
 }
 
 export const useCarrerasDiaStore = create<CarrerasDiaState>()(
@@ -111,6 +123,25 @@ export const useCarrerasDiaStore = create<CarrerasDiaState>()(
        * que la carga de gaceta no conoce), y las demás NO se tocan. Así un
        * lote parcial nunca borra las carreras de otro hipódromo.
        */
+      reemplazarDia: (fecha, carrerasDelDia) =>
+        set((s) => {
+          const f = fecha || hoy();
+          const otrosDias = s.carreras.filter((x) => x.fecha !== f);
+          const nuevos = carrerasDelDia.map((c) => {
+            const k = clave(c.hipodromo, c.carrera);
+            const previa = s.carreras.find((x) => x.fecha === f && clave(x.hipodromo, x.carrera) === k);
+            return {
+              ...previa,
+              ...c,
+              fecha: f,
+              ventas: c.ventas?.length ? c.ventas : (previa?.ventas ?? []),
+              pago: c.pago ?? previa?.pago ?? null,
+              updatedAt: new Date().toISOString(),
+            };
+          });
+          return { carreras: [...otrosDias, ...nuevos] };
+        }),
+
       fusionarLote: (carreras) =>
         set((s) => {
           if (!carreras.length) return {};
@@ -227,7 +258,7 @@ export const useCarrerasDiaStore = create<CarrerasDiaState>()(
       },
     }),
     {
-      name: "sistema-hipico:carreras-dia",
+      name: "sistema-hipico:carreras-dia:v2",
       partialize: (s) => ({ carreras: s.carreras, fechaSeleccionada: s.fechaSeleccionada }),
     }
   )

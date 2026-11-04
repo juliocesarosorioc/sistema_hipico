@@ -54,9 +54,9 @@ export const HIPODROMOS_USA = [
 ] as const;
 
 // Registro persistente del día (igual que el legacy).
-export const REGISTRO_KEY = "gaceta_registro";
-export const ENSAMBLAJE_CARRERAS_KEY = "ensamblaje_carreras";
-export const GACETA_PRELLENADO_KEY = "gaceta_prellenado";
+export const REGISTRO_KEY = "gaceta_registro_v2";
+export const ENSAMBLAJE_CARRERAS_KEY = "ensamblaje_carreras_v2";
+export const GACETA_PRELLENADO_KEY = "gaceta_prellenado_v2";
 
 export type EjemplarEditable = {
   numero: string | number;

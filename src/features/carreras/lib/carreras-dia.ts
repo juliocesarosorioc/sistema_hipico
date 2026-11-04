@@ -352,7 +352,7 @@ export async function cargarCarrerasDelDia(fecha?: string): Promise<CarreraDelDi
   // `setCarreras` (que reemplaza el ledger entero) cargar un día borraba las
   // carreras ya registradas de los demás días — y un lote PARCIAL de gaceta
   // (Belmont 1-3, luego Charles Town 4-6) se comía el hipódromo anterior.
-  if (res.length) useCarrerasDiaStore.getState().fusionarLote(res);
+  useCarrerasDiaStore.getState().reemplazarDia(f, res);
   return res;
 }
 

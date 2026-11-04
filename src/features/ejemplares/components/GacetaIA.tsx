@@ -631,9 +631,7 @@ export function GacetaIA() {
       });
     // Registro CENTRAL: las carreras recuperadas del registro local pueden venir
     // de una sesión previa a la centralización; se publican igual en la matriz.
-    void sincronizarCarrerasAlCentral(lista, "gaceta-ia").catch((e) =>
-      console.warn("Registro central (recuperación de la gaceta):", e?.message || e)
-    );
+    // No auto-publicar borradores locales al central al montar
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
