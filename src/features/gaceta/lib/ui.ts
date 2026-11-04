@@ -429,14 +429,22 @@ export function eliminarDelRegistroGaceta(hipodromo: string | null | undefined, 
   );
   if (filtrados.length !== reg.length) {
     escribirRegistro(filtrados);
-    limpiarBuzonEnsamblaje();
+    const arr = leerArr<CarreraRegistro>(ENSAMBLAJE_CARRERAS_KEY);
+    if (arr) {
+      const resto = arr.filter(
+        (item) => String(item.hipodromo || "").trim().toUpperCase() !== h || String(item.carrera ?? "") !== c
+      );
+      if (resto.length !== arr.length) escribirArr(ENSAMBLAJE_CARRERAS_KEY, resto);
+    }
   }
 }
 
-/** Borra el registro del día + buzón (paridad limpiarRegistro de js/gaceta.js). */
-export function limpiarTodoRegistro(): void {
+/** Borra el borrador temporal de la gaceta. Por defecto NO borra el buzón de ensamblaje ni carreras guardadas. */
+export function limpiarTodoRegistro(incluirEnsamblaje = false): void {
   quitarClave(REGISTRO_KEY);
-  limpiarBuzonEnsamblaje();
+  if (incluirEnsamblaje) {
+    limpiarBuzonEnsamblaje();
+  }
 }
 
 /** Convierte una carrera de la Gaceta en una card del Ensamblaje (DraftCarrera),

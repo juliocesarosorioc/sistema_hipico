@@ -693,17 +693,10 @@ export function TablasModule(props: Props) {
       toast(`No se pudo eliminar la tabla: ${r.error ?? "Error"}.`, "error");
       return;
     }
-    const fechaElim = String(tabla.fecha || tabla.fecha_creacion || fechaPrograma || hoyLocal()).slice(0, 10);
-    const hipoElim = String(tabla.hipodromo ?? "").trim().toUpperCase();
-    const numElim = Number(tabla.carrera) || 0;
-    if (hipoElim && numElim > 0) {
-      await eliminarCarreraCentral(fechaElim, hipoElim, numElim).catch(() => {});
-      useRegistroCentral.getState().eliminarCarrera(fechaElim, hipoElim, numElim);
-      useCarrerasDiaStore.getState().eliminarCarrera(hipoElim, numElim, fechaElim);
-      eliminarDelRegistroGaceta(hipoElim, numElim);
-    }
+    // NOTA ARQUITECTÓNICA: Al eliminar una tabla fija publicada, solo se retira la tabla comercial de venta.
+    // La carrera y sus ejemplares en Carreras del Día, Apuestas y Proyecciones PERMANECEN INTACTOS.
     setTablas(tablas.filter((t) => String(t.id) !== String(tabla.id)));
-    toast(`🗑️ Tabla y carrera ${nombreHipodromoParaMostrar(tabla.hipodromo)} C${tabla.carrera} eliminadas permanentemente.`, "success");
+    toast(`🗑️ Tabla comercial ${nombreHipodromoParaMostrar(tabla.hipodromo)} C${tabla.carrera} retirada (la carrera sigue en el programa oficial).`, "success");
   };
 
   return (
@@ -869,19 +862,9 @@ export function TablasModule(props: Props) {
                   onChange={(nd) => setDrafts((ds) => ds.map((x) => (x.uid === d.uid ? nd : x)))}
                   onPublicar={publicarDraft}
                   onQuitar={(uid) => {
-                    const quitable = drafts.find((x) => x.uid === uid);
-                    if (quitable) {
-                      const fElim = String(quitable.fecha || fechaPrograma || hoyLocal()).slice(0, 10);
-                      const hElim = quitable.hipodromo.toUpperCase();
-                      const nElim = Number(quitable.carrera) || 0;
-                      eliminarDelRegistroGaceta(hElim, quitable.carrera);
-                      if (hElim && nElim > 0) {
-                        void eliminarCarreraCentral(fElim, hElim, nElim);
-                        useRegistroCentral.getState().eliminarCarrera(fElim, hElim, nElim);
-                        useCarrerasDiaStore.getState().eliminarCarrera(hElim, nElim, fElim);
-                      }
-                    }
+                    // Quitar solo del ensamblaje (draft), NO borrar la carrera central del día ni de la base de datos
                     setDrafts((ds) => ds.filter((x) => x.uid !== uid));
+                    toast("Carrera retirada del ensamblaje. (La carrera oficial permanece en Carreras del Día)", "info");
                   }}
                 />
               ))

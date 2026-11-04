@@ -601,7 +601,7 @@ export function GacetaIA() {
     });
 
     if (!guardadasHoy.length) {
-      limpiarTodoRegistro();
+      limpiarTodoRegistro(false);
       // Fallback: cargar las carreras centrales del día para que el operador pueda ordenarlas, buscarlas o corregirlas con IA
       void listarCarrerasCentrales(diaActual, "").then((r) => {
         if (r.ok && r.datos && r.datos.length > 0) {
@@ -1130,32 +1130,23 @@ export function GacetaIA() {
 
   const limpiar = useCallback(() => {
     const pendientes = carreras.filter((c) => !c.enviada).length;
-    const msj = pendientes > 0 ? `Hay ${pendientes} carrera(s) pendientes de ensamblar. ` : "El registro no tiene carreras pendientes. ";
+    const msj = pendientes > 0 ? `Hay ${pendientes} carrera(s) pendientes de ensamblar. ` : "";
     void confirmar({
-      titulo: "Limpiar registro del día",
-      mensaje: `${msj}Esta acción borra el registro guardado y las carreras listadas de la jornada.`,
-      tipo: "warning",
-      textoConfirmar: "Limpiar",
-      destructivo: true,
+      titulo: "Limpiar mesa de trabajo de extracción",
+      mensaje: `${msj}Esta acción limpia la pantalla de edición y el borrador de extracción para permitir cargar un nuevo documento. Las carreras ya guardadas en Carreras del Día, la base de datos y el ensamblaje NO se eliminarán.`,
+      tipo: "info",
+      textoConfirmar: "Limpiar Mesa de Trabajo",
+      destructivo: false,
     }).then(async (ok) => {
       if (!ok) return;
-      const aBorrar = [...carreras];
-      limpiarTodoRegistro();
+      limpiarTodoRegistro(false);
       setCarreras([]);
+      setPaginas([]);
+      setSeleccionadas(new Set());
       setResumen({ nuevos: 0, vinculados: 0 });
-      for (const c of aBorrar) {
-        const fElim = String(c.fecha || fechaJornadaRef.current || hoyLocal()).slice(0, 10);
-        const hElim = String(c.hipodromo ?? "").trim().toUpperCase();
-        const nElim = Number(c.carrera) || 0;
-        if (hElim && nElim > 0) {
-          useRegistroCentral.getState().eliminarCarrera(fElim, hElim, nElim);
-          useCarrerasDiaStore.getState().eliminarCarrera(hElim, nElim, fElim);
-          await eliminarCarreraCentral(fElim, hElim, nElim).catch(() => {});
-        }
-      }
       refrescarContadores();
-      setEstado("Registro limpiado. Cargue un nuevo documento para empezar.");
-      toast("Registro del día limpiado permanentemente.", "success");
+      setEstado("Mesa de trabajo limpia. Cargue un nuevo documento para empezar. (Las carreras guardadas permanecen en la base de datos)");
+      toast("Mesa de trabajo limpiada. Las carreras guardadas permanecen en el sistema.", "success");
     });
   }, [carreras, refrescarContadores, toast, confirmar]);
 
