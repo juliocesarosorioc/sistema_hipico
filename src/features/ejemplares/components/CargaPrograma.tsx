@@ -24,6 +24,12 @@ import {
 import { ModalSincronizadorUsa } from "@/features/carreras/components/ModalSincronizadorUsa";
 import { ModalImportarGacetaPdf } from "@/features/inteligencia/components/ModalImportarGacetaPdf";
 import {
+  HIPODROMOS_USA_DISPONIBLES,
+  CATALOGO_DRF_OFICIAL,
+  parsearUrlDrf,
+  formatearFechaDrf,
+  detectarHipodromosActivosDia,
+  sincronizarCarrerasAmericanasDia,
   iniciarAutoActualizadorRetirados,
   detenerAutoActualizadorRetirados,
   estaAutoActualizadorActivo,
@@ -159,6 +165,18 @@ export function CargaPrograma() {
   const [modalGacetaPdf, setModalGacetaPdf] = useState(false);
   const [autoSyncActivo, setAutoSyncActivo] = useState(() => estaAutoActualizadorActivo());
 
+  // Panel Integrado DRF (Sincronizador USA Directo)
+  const [urlDrfDirecta, setUrlDrfDirecta] = useState("");
+  const [sincronizandoDrf, setSincronizandoDrf] = useState(false);
+  const [detectandoTracksDrf, setDetectandoTracksDrf] = useState(false);
+  const [panelDrfAbierto, setPanelDrfAbierto] = useState(true);
+  const [tracksDrfSeleccionados, setTracksDrfSeleccionados] = useState<string[]>(["CD", "GP", "AQU", "CT", "FL", "RP"]);
+  const [filtroDrfSigla, setFiltroDrfSigla] = useState("");
+
+  const metaDrfDirecto = useMemo(() => {
+    return urlDrfDirecta.trim() ? parsearUrlDrf(urlDrfDirecta.trim()) : null;
+  }, [urlDrfDirecta]);
+
   const alternarAutoSync = useCallback(() => {
     if (autoSyncActivo) {
       detenerAutoActualizadorRetirados();
@@ -201,6 +219,99 @@ export function CargaPrograma() {
     const res = await leerProgramaPorFecha(f);
     setPrograma(res.ok ? (res.data ?? null) : null);
   }, []);
+
+  const handleImportarDrfDirecto = async (urlCustom?: string) => {
+    const raw = (urlCustom || urlDrfDirecta).trim();
+    if (!raw) {
+      toast("Pega un enlace oficial de DRF primero.", "warning");
+      return;
+    }
+    const meta = parsearUrlDrf(raw);
+    if (!meta) {
+      toast("Estructura DRF inválida. Debe ser https://www.drf.com/race-entries/track/{TRACK}/country/{COUNTRY}/date/{MM-DD-YYYY}", "warning");
+      return;
+    }
+
+    setSincronizandoDrf(true);
+    toast(`⚡ Importando DRF: ${meta.trackCode} (${meta.hipodromo}) · Fecha ${meta.fechaDRF}...`, "info");
+    try {
+      const res = await sincronizarCarrerasAmericanasDia({
+        fechaISO: meta.fechaISO,
+        tracksFiltro: [meta.trackCode],
+        urlDirectaDrf: meta.urlPublica,
+        fuentePreferida: "DRF",
+      });
+
+      if (res.ok) {
+        setFecha(meta.fechaISO);
+        setHipodromo(meta.hipodromo.toUpperCase());
+        await cargarPrograma(meta.fechaISO);
+        toast(`✅ Importado ${meta.hipodromo} con éxito (${res.totalCarreras} carreras, ${res.totalEjemplares} ejemplares).`, "success");
+        setUrlDrfDirecta("");
+      } else {
+        toast(`⚠️ Importación: ${res.error || "Sin carreras devueltas"}`, "warning");
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast(`❌ Error al importar DRF: ${msg}`, "error");
+    } finally {
+      setSincronizandoDrf(false);
+    }
+  };
+
+  const handleSincronizarTracksDrf = async () => {
+    if (!tracksDrfSeleccionados.length) {
+      toast("Selecciona al menos un hipódromo DRF por su sigla.", "warning");
+      return;
+    }
+    const fechaEfectiva = fecha || hoyLocal();
+    setSincronizandoDrf(true);
+    toast(`🏇 Sincronizando ${tracksDrfSeleccionados.length} hipódromos DRF para ${fechaEfectiva}...`, "info");
+    try {
+      const res = await sincronizarCarrerasAmericanasDia({
+        fechaISO: fechaEfectiva,
+        tracksFiltro: tracksDrfSeleccionados,
+        fuentePreferida: "DRF",
+      });
+
+      if (res.ok) {
+        if (!fecha) setFecha(fechaEfectiva);
+        await cargarPrograma(res.fecha || fechaEfectiva);
+        toast(`✅ Sincronizados ${res.tracksProcesados.length} hipódromos (${res.totalCarreras} carreras, ${res.totalEjemplares} ejemplares).`, "success");
+      } else {
+        toast(`⚠️ Sincronización: ${res.error || "Verificar"}`, "warning");
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast(`❌ Error en sincronización DRF: ${msg}`, "error");
+    } finally {
+      setSincronizandoDrf(false);
+    }
+  };
+
+  const handleDetectarTracksDrf = async () => {
+    const f = fecha || hoyLocal();
+    setDetectandoTracksDrf(true);
+    try {
+      const tracks = await detectarHipodromosActivosDia(f);
+      if (tracks.length > 0) {
+        setTracksDrfSeleccionados(tracks);
+        toast(`🔍 Detectados ${tracks.length} hipódromos activos en DRF para ${f} (${formatearFechaDrf(f)}): ${tracks.join(", ")}`, "success");
+      } else {
+        toast(`No se detectaron hipódromos automáticos para ${f}. Puedes marcarlos manualmente.`, "warning");
+      }
+    } catch {
+      toast("Error al detectar hipódromos del día.", "error");
+    } finally {
+      setDetectandoTracksDrf(false);
+    }
+  };
+
+  const toggleTrackDrf = (codigo: string) => {
+    setTracksDrfSeleccionados((prev) =>
+      prev.includes(codigo) ? prev.filter((c) => c !== codigo) : [...prev, codigo]
+    );
+  };
 
   // Catálogo de ejemplares (una sola vez).
   useEffect(() => {
@@ -402,6 +513,185 @@ export function CargaPrograma() {
           </button>
         </div>
       </div>
+
+      {/* Panel Oficial de Sincronización Directa DRF (Daily Racing Form) */}
+      <Card className="w-full border-amber-500/40 bg-gradient-to-r from-amber-950/10 via-surface to-slate-900/5 p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/20 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🎯</span>
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wider text-amber-600">
+                Sincronizador Oficial DRF (Daily Racing Form · USA & CAN)
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Pega cualquier URL oficial de DRF o marca los hipódromos por su sigla para importar la programación completa al instante.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPanelDrfAbierto(!panelDrfAbierto)}
+              className="rounded-lg border border-line bg-surfaceAlt px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:text-slate-900"
+            >
+              {panelDrfAbierto ? "Ocultar panel ▲" : "Mostrar panel ▼"}
+            </button>
+          </div>
+        </div>
+
+        {panelDrfAbierto && (
+          <div className="mt-3 space-y-3">
+            {/* Opción A: Pegar Link Directo DRF */}
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-1">
+                <label htmlFor="input-url-drf-carga" className="text-[11px] font-black uppercase tracking-wider text-amber-700">
+                  🔗 1. Pegar Enlace Directo Oficial de DRF (Cualquier Hipódromo y Fecha)
+                </label>
+                {urlDrfDirecta && (
+                  <button
+                    type="button"
+                    onClick={() => setUrlDrfDirecta("")}
+                    className="text-[10px] text-slate-400 hover:text-slate-700"
+                  >
+                    Limpiar
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  id="input-url-drf-carga"
+                  type="url"
+                  placeholder="https://www.drf.com/race-entries/track/CD/country/USA/date/11-04-2026"
+                  value={urlDrfDirecta}
+                  onChange={(e) => setUrlDrfDirecta(e.target.value)}
+                  className="flex-1 rounded-xl border border-line bg-surface px-3 py-2 text-xs font-mono font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <Button
+                  variant="default"
+                  size="md"
+                  disabled={!urlDrfDirecta.trim() || sincronizandoDrf}
+                  onClick={() => void handleImportarDrfDirecto()}
+                  className="!bg-amber-500 hover:!bg-amber-400 !text-slate-950 font-black"
+                >
+                  {sincronizandoDrf ? "Importando…" : "⚡ Importar DRF al Instante"}
+                </Button>
+              </div>
+
+              {metaDrfDirecto ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-300 px-2.5 py-1.5 text-xs text-emerald-800">
+                  <span className="font-black">✓ URL DRF Válida:</span>
+                  <span className="rounded bg-emerald-200 px-1.5 py-0.5 font-mono font-black text-emerald-950">
+                    {metaDrfDirecto.trackCode} ({metaDrfDirecto.hipodromo})
+                  </span>
+                  <span>· País: <b>{metaDrfDirecto.country}</b></span>
+                  <span>· Fecha DRF: <b>{metaDrfDirecto.fechaDRF}</b> (ISO: {metaDrfDirecto.fechaISO})</span>
+                </div>
+              ) : (
+                <p className="text-[10px] text-slate-400 font-mono">
+                  Formato admitido: https://www.drf.com/race-entries/track/{`{TRACK_CODE}`}/country/{`{COUNTRY}`}/date/{`{MM-DD-YYYY}`}
+                </p>
+              )}
+            </div>
+
+            {/* Opción B: Selección Rápida por Siglas con Checkboxes */}
+            <div className="rounded-xl border border-line bg-surface p-3 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-700">
+                  🏇 2. Marcar Hipódromos por su Sigla DRF ({tracksDrfSeleccionados.length} seleccionados)
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={detectandoTracksDrf}
+                    onClick={() => void handleDetectarTracksDrf()}
+                    className="rounded-lg bg-cyan-600 hover:bg-cyan-500 px-2.5 py-1 text-[10px] font-black uppercase text-white shadow-sm transition-all disabled:opacity-50"
+                    title="Consultar en DRF qué hipódromos tienen carreras hoy"
+                  >
+                    {detectandoTracksDrf ? "Detectando…" : "🔍 Detectar Hipódromos del Día"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTracksDrfSeleccionados(HIPODROMOS_USA_DISPONIBLES.map((t) => t.codigo))}
+                    className="rounded-lg border border-line bg-surfaceAlt px-2 py-1 text-[10px] font-bold text-slate-600 hover:text-slate-900"
+                  >
+                    Marcar Todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTracksDrfSeleccionados([])}
+                    className="rounded-lg border border-line bg-surfaceAlt px-2 py-1 text-[10px] font-bold text-slate-600 hover:text-slate-900"
+                  >
+                    Desmarcar
+                  </button>
+                  <Button
+                    variant="success"
+                    size="sm"
+                    disabled={!tracksDrfSeleccionados.length || sincronizandoDrf}
+                    onClick={() => void handleSincronizarTracksDrf()}
+                    className="font-black text-xs"
+                  >
+                    {sincronizandoDrf ? "Sincronizando…" : "📥 Sincronizar Siglas"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Filtro rápido de siglas */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Filtrar por sigla (ej. CD, FL, RP, CT, DED, EVD, IND, MNR, MVR, PRX, PEN, GP)..."
+                  value={filtroDrfSigla}
+                  onChange={(e) => setFiltroDrfSigla(e.target.value)}
+                  className="w-full rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-mono placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+                {filtroDrfSigla && (
+                  <button
+                    type="button"
+                    onClick={() => setFiltroDrfSigla("")}
+                    className="text-xs text-slate-400 hover:text-slate-700 px-1"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Grilla de Checkboxes de Hipódromos por Sigla */}
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 md:grid-cols-6 max-h-48 overflow-y-auto pr-1">
+                {HIPODROMOS_USA_DISPONIBLES.filter((t) => {
+                  if (!filtroDrfSigla.trim()) return true;
+                  const f = filtroDrfSigla.trim().toUpperCase();
+                  return t.codigo.includes(f) || t.nombre.toUpperCase().includes(f);
+                }).map((t) => {
+                  const check = tracksDrfSeleccionados.includes(t.codigo);
+                  return (
+                    <label
+                      key={t.codigo}
+                      className={`flex items-center gap-2 rounded-lg border p-1.5 text-left cursor-pointer transition-colors select-none text-xs ${
+                        check
+                          ? "border-amber-400 bg-amber-50 text-amber-950 font-bold"
+                          : "border-line bg-surfaceAlt/50 text-slate-600 hover:border-slate-300 hover:bg-surfaceAlt"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={check}
+                        onChange={() => toggleTrackDrf(t.codigo)}
+                        className="h-3.5 w-3.5 rounded border-line text-amber-600 focus:ring-amber-500 shrink-0"
+                      />
+                      <span className="rounded bg-white px-1.5 py-0.5 font-mono font-black text-amber-700 border border-amber-300 text-[10px] shrink-0">
+                        {t.codigo}
+                      </span>
+                      <span className="truncate flex-1 text-[11px]" title={t.nombre}>
+                        {t.nombre}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </Card>
 
       {/* Filtros principales */}
       <Card className="w-full p-4">

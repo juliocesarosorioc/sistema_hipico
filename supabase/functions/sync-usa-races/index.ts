@@ -106,41 +106,78 @@ export function formatearFechaDrf(iso: string): string {
 export function normalizarDistanciaM(val: unknown): number {
   if (typeof val === "number" && !Number.isNaN(val)) {
     if (val >= 200 && val <= 4000) return Math.round(val);
-    if (val > 0 && val <= 20) return Math.round(val * 201.168);
-    if (val > 100 && val < 1000) return Math.round(val * 0.9144);
+    if (val > 0 && val <= 20) return normalizarDistanciaM(`${val} Furlongs`);
+    if (val > 100 && val < 1000) return normalizarDistanciaM(`${val} Yards`);
   }
-  const s = String(val ?? "").trim();
-  if (!s) return 1200;
+  const raw = String(val ?? "").trim();
+  if (!raw) return 1200;
+  const s = raw.toLowerCase().replace(/\s+/g, " ");
 
-  const mMetros = s.match(/(\d+)\s*(?:m|metros|meters)\b/i);
+  // 1. Casos exactos requeridos DRF
+  if (s.includes("1 mile 70 yards") || s.includes("1 m 70 y") || s.includes("1m70y") || s.includes("1 mi 70 yd")) return 1664;
+  if (s.includes("1 1/16") && (s.includes("m") || s.includes("mile"))) return 1700;
+  if (s.includes("1 1/8") && (s.includes("m") || s.includes("mile"))) return 1800;
+  if (s.includes("1 3/16") && (s.includes("m") || s.includes("mile"))) return 1900;
+  if (s.includes("1 1/4") && (s.includes("m") || s.includes("mile"))) return 2000;
+  if (s.includes("1 1/2") && (s.includes("m") || s.includes("mile"))) return 2400;
+  if ((s === "1 mile" || s === "1 m" || s === "1 mi" || s.startsWith("1 mile ")) && !s.includes("70")) return 1600;
+
+  // Furlongs clásicos
+  if (s.includes("4 1/2 f") || s.includes("4.5 f") || s.includes("4 1/2 furlongs")) return 900;
+  if (s.includes("5 1/2 f") || s.includes("5.5 f") || s.includes("5 1/2 furlongs")) return 1100;
+  if (s.includes("6 1/2 f") || s.includes("6.5 f") || s.includes("6 1/2 furlongs")) return 1300;
+  if (s.includes("7 1/2 f") || s.includes("7.5 f") || s.includes("7 1/2 furlongs")) return 1500;
+  if (s.includes("8 1/2 f") || s.includes("8.5 f") || s.includes("8 1/2 furlongs")) return 1700;
+
+  if (s.match(/\b6\s*(?:furlongs?|f)\b/)) return 1200;
+  if (s.match(/\b5\s*(?:furlongs?|f)\b/)) return 1000;
+  if (s.match(/\b7\s*(?:furlongs?|f)\b/)) return 1400;
+  if (s.match(/\b8\s*(?:furlongs?|f)\b/)) return 1600;
+  if (s.match(/\b4\s*(?:furlongs?|f)\b/)) return 800;
+
+  // Yardas Quarter Horse específicas
+  if (s.match(/\b350\s*(?:yards?|yds?|y)\b/)) return 318;
+  if (s.match(/\b220\s*(?:yards?|yds?|y)\b/)) return 201;
+  if (s.match(/\b250\s*(?:yards?|yds?|y)\b/)) return 228;
+  if (s.match(/\b300\s*(?:yards?|yds?|y)\b/)) return 274;
+  if (s.match(/\b330\s*(?:yards?|yds?|y)\b/)) return 301;
+  if (s.match(/\b400\s*(?:yards?|yds?|y)\b/)) return 365;
+  if (s.match(/\b440\s*(?:yards?|yds?|y)\b/)) return 402;
+  if (s.match(/\b550\s*(?:yards?|yds?|y)\b/)) return 502;
+  if (s.match(/\b870\s*(?:yards?|yds?|y)\b/)) return 795;
+
+  // Metros explícitos
+  const mMetros = s.match(/(\d+)\s*(?:m|metros|meters)\b/);
   if (mMetros) return parseInt(mMetros[1], 10);
 
-  const mF = s.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*(?:furlongs?|f)\b/i);
+  // Furlongs fraccionados genéricos
+  const mF = s.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*(?:furlongs?|f)\b/);
   if (mF) {
     let f = parseFloat(mF[1]);
     if (mF[2] && mF[3]) f += parseFloat(mF[2]) / parseFloat(mF[3]);
-    return Math.round(f * 201.168);
+    return Math.round(f * 200);
   }
 
-  const mMY = s.match(/(\d+)\s*(?:mile|miles?|m)\s+(\d+)\s*(?:yards?|y)\b/i);
+  // Millas fraccionadas genéricas
+  const mMY = s.match(/(\d+)\s*(?:mile|miles?|m)\s+(\d+)\s*(?:yards?|y)\b/);
   if (mMY) {
-    return Math.round(parseFloat(mMY[1]) * 1609.34 + parseFloat(mMY[2]) * 0.9144);
+    return Math.round(parseFloat(mMY[1]) * 1600 + parseFloat(mMY[2]) * 0.9144);
   }
 
-  const mM = s.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*(?:miles?|m)\b/i);
+  const mM = s.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*(?:miles?|m)\b/);
   if (mM) {
     let m = parseFloat(mM[1]);
     if (mM[2] && mM[3]) m += parseFloat(mM[2]) / parseFloat(mM[3]);
-    return Math.round(m * 1609.34);
+    return Math.round(m * 1600);
   }
 
-  const mY = s.match(/(\d+)\s*(?:yards?|yds?|y)\b/i);
+  const mY = s.match(/(\d+)\s*(?:yards?|yds?|y)\b/);
   if (mY) return Math.round(parseFloat(mY[1]) * 0.9144);
 
   const n = parseFloat(s);
   if (!Number.isNaN(n)) {
     if (n >= 200) return Math.round(n);
-    if (n > 0 && n <= 16) return Math.round(n * 201.168);
+    if (n > 0 && n <= 16) return Math.round(n * 200);
   }
   return 1200;
 }
@@ -180,6 +217,7 @@ export type EjemplarNormalizadoUsa = {
   ml?: string;
   jockey?: string;
   entrenador?: string;
+  owner?: string;
   peso?: number | string;
   medicamento?: string;
   implementos?: string;
@@ -574,7 +612,7 @@ Deno.serve(async (req) => {
           const races = jsonOficial?.entryDetails?.races || jsonOficial?.races || jsonOficial?.data?.races || [];
           if (Array.isArray(races) && races.length > 0) {
             for (const r of races) {
-              const numCarrera = Number(r.raceNumber || r.race_number || r.carrera) || 1;
+              const numCarrera = Number(r.raceNumber ?? r.raceKey?.raceNumber ?? r.race_number ?? r.carrera) || 1;
               const runners = r.runners || r.horses || r.entries || [];
               const caballos: EjemplarNormalizadoUsa[] = [];
               const retirados: string[] = [];
@@ -599,6 +637,13 @@ Deno.serve(async (req) => {
                     entrenador = String(h.trainerName || h.trainer || "").trim();
                   }
 
+                  let owner = "";
+                  if (typeof h.owner === "object" && h.owner) {
+                    owner = h.owner.ownerName || h.owner.fullName || h.owner.name || "";
+                  } else {
+                    owner = String(h.ownerName || h.owner || "").trim();
+                  }
+
                   caballos.push({
                     numero: num,
                     nombre,
@@ -606,6 +651,7 @@ Deno.serve(async (req) => {
                     ml: h.morningLineOdds || h.ml_odds || undefined,
                     jockey: jockey || undefined,
                     entrenador: entrenador || undefined,
+                    owner: owner || undefined,
                     peso: normalizarPeso(h.weight || h.assignedWeight),
                     medicamento: h.medication || undefined,
                     retirado: isScr,

@@ -427,52 +427,92 @@ export function convertirHoraACaracas(rawTime: unknown): string | null {
 
 /**
  * Normaliza y convierte distancias hípicas americanas a metros
- * Soporta Furlongs (ej. 6F -> 1200), Millas (1 Mile 70 Yards -> 1664, 1 1/16 M -> 1700),
- * y Yardas de Quarter Horses (220, 250, 300, 330, 350, 400, 550, 870 Yards).
+ * Casos específicos DRF requeridos:
+ * - 6 Furlongs -> 1200
+ * - 1 Mile 70 Yards -> 1664
+ * - 1 1/16 Miles -> 1700
+ * - 350 Yards -> 318
+ * Soporta también Furlongs fraccionados, Millas y Yardas de Quarter Horses.
  */
 export function normalizarDistanciaAMetros(textoOValor: unknown): number {
   if (typeof textoOValor === "number" && !Number.isNaN(textoOValor)) {
     if (textoOValor >= 200 && textoOValor <= 4000) return Math.round(textoOValor);
-    if (textoOValor > 0 && textoOValor <= 20) return Math.round(textoOValor * 201.168);
-    if (textoOValor > 100 && textoOValor < 1000) return Math.round(textoOValor * 0.9144);
+    if (textoOValor > 0 && textoOValor <= 20) return normalizarDistanciaAMetros(`${textoOValor} Furlongs`);
+    if (textoOValor > 100 && textoOValor < 1000) return normalizarDistanciaAMetros(`${textoOValor} Yards`);
   }
 
-  const s = String(textoOValor ?? "").trim();
-  if (!s) return 1200;
+  const raw = String(textoOValor ?? "").trim();
+  if (!raw) return 1200;
+  const s = raw.toLowerCase().replace(/\s+/g, " ");
 
-  // 1. Metros explícitos
-  const mMetros = s.match(/(\d+)\s*(?:m|metros|meters)\b/i);
+  // 1. Casos exactos y distancias maestras DRF
+  if (s.includes("1 mile 70 yards") || s.includes("1 m 70 y") || s.includes("1m70y") || s.includes("1 mi 70 yd")) return 1664;
+  if (s.includes("1 1/16") && (s.includes("m") || s.includes("mile"))) return 1700;
+  if (s.includes("1 1/8") && (s.includes("m") || s.includes("mile"))) return 1800;
+  if (s.includes("1 3/16") && (s.includes("m") || s.includes("mile"))) return 1900;
+  if (s.includes("1 1/4") && (s.includes("m") || s.includes("mile"))) return 2000;
+  if (s.includes("1 1/2") && (s.includes("m") || s.includes("mile"))) return 2400;
+  if (s.includes("1 5/8") && (s.includes("m") || s.includes("mile"))) return 2600;
+  if (s.includes("1 3/4") && (s.includes("m") || s.includes("mile"))) return 2800;
+  if ((s === "1 mile" || s === "1 m" || s === "1 mi" || s.startsWith("1 mile ")) && !s.includes("70")) return 1600;
+
+  // Furlongs clásicos
+  if (s.includes("4 1/2 f") || s.includes("4.5 f") || s.includes("4 1/2 furlongs")) return 900;
+  if (s.includes("5 1/2 f") || s.includes("5.5 f") || s.includes("5 1/2 furlongs")) return 1100;
+  if (s.includes("6 1/2 f") || s.includes("6.5 f") || s.includes("6 1/2 furlongs")) return 1300;
+  if (s.includes("7 1/2 f") || s.includes("7.5 f") || s.includes("7 1/2 furlongs")) return 1500;
+  if (s.includes("8 1/2 f") || s.includes("8.5 f") || s.includes("8 1/2 furlongs")) return 1700;
+
+  if (s.match(/\b6\s*(?:furlongs?|f)\b/)) return 1200;
+  if (s.match(/\b5\s*(?:furlongs?|f)\b/)) return 1000;
+  if (s.match(/\b7\s*(?:furlongs?|f)\b/)) return 1400;
+  if (s.match(/\b8\s*(?:furlongs?|f)\b/)) return 1600;
+  if (s.match(/\b4\s*(?:furlongs?|f)\b/)) return 800;
+
+  // Yardas Quarter Horse específicas
+  if (s.match(/\b350\s*(?:yards?|yds?|y)\b/)) return 318;
+  if (s.match(/\b220\s*(?:yards?|yds?|y)\b/)) return 201;
+  if (s.match(/\b250\s*(?:yards?|yds?|y)\b/)) return 228;
+  if (s.match(/\b300\s*(?:yards?|yds?|y)\b/)) return 274;
+  if (s.match(/\b330\s*(?:yards?|yds?|y)\b/)) return 301;
+  if (s.match(/\b400\s*(?:yards?|yds?|y)\b/)) return 365;
+  if (s.match(/\b440\s*(?:yards?|yds?|y)\b/)) return 402;
+  if (s.match(/\b550\s*(?:yards?|yds?|y)\b/)) return 502;
+  if (s.match(/\b870\s*(?:yards?|yds?|y)\b/)) return 795;
+
+  // Metros explícitos
+  const mMetros = s.match(/(\d+)\s*(?:m|metros|meters)\b/);
   if (mMetros) return parseInt(mMetros[1], 10);
 
-  // 2. Furlongs fraccionados (ej. "6 1/2 F", "4 1/2 Furlongs", "7 F")
-  const mFurlongs = s.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*(?:furlongs?|f)\b/i);
+  // Furlongs fraccionados genéricos
+  const mFurlongs = s.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*(?:furlongs?|f)\b/);
   if (mFurlongs) {
     let f = parseFloat(mFurlongs[1]);
     if (mFurlongs[2] && mFurlongs[3]) {
       f += parseFloat(mFurlongs[2]) / parseFloat(mFurlongs[3]);
     }
-    return Math.round(f * 201.168);
+    return Math.round(f * 200);
   }
 
-  // 3. Millas + Yardas (ej. "1 Mile 70 Yards" -> ~1664m, "1 1/16 Miles" -> ~1700m)
-  const mMilesYards = s.match(/(\d+)\s*(?:mile|miles?|m)\s+(\d+)\s*(?:yards?|y)\b/i);
+  // Millas fraccionadas genéricas
+  const mMilesYards = s.match(/(\d+)\s*(?:mile|miles?|m)\s+(\d+)\s*(?:yards?|y)\b/);
   if (mMilesYards) {
     const miles = parseFloat(mMilesYards[1]);
     const yards = parseFloat(mMilesYards[2]);
-    return Math.round(miles * 1609.34 + yards * 0.9144);
+    return Math.round(miles * 1600 + yards * 0.9144);
   }
 
-  const mMiles = s.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*(?:miles?|m)\b/i);
+  const mMiles = s.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*(?:miles?|m)\b/);
   if (mMiles) {
     let m = parseFloat(mMiles[1]);
     if (mMiles[2] && mMiles[3]) {
       m += parseFloat(mMiles[2]) / parseFloat(mMiles[3]);
     }
-    return Math.round(m * 1609.34);
+    return Math.round(m * 1600);
   }
 
-  // 4. Yardas (Quarter Horses: 220, 250, 300, 318, 350, 400, 440, 550, 870)
-  const mYards = s.match(/(\d+)\s*(?:yards?|yds?|y)\b/i);
+  // Yardas genéricas
+  const mYards = s.match(/(\d+)\s*(?:yards?|yds?|y)\b/);
   if (mYards) {
     return Math.round(parseFloat(mYards[1]) * 0.9144);
   }
@@ -480,7 +520,7 @@ export function normalizarDistanciaAMetros(textoOValor: unknown): number {
   const num = parseFloat(s);
   if (!Number.isNaN(num)) {
     if (num >= 200) return Math.round(num);
-    if (num > 0 && num <= 16) return Math.round(num * 201.168);
+    if (num > 0 && num <= 16) return Math.round(num * 200);
   }
 
   return 1200;
@@ -543,14 +583,14 @@ export function parsearDrfJsonRaces(
   const carreras: CarreraSincronizadaUsa[] = [];
 
   for (const r of races) {
-    const numC = Number(r.raceNumber || r.race_number || r.carrera) || 1;
+    const numC = Number(r.raceNumber ?? r.raceKey?.raceNumber ?? r.race_number ?? r.carrera) || 1;
     const runners = r.runners || r.horses || r.entries || [];
     const caballos: EjemplarSincronizadoUsa[] = [];
     const retirados: string[] = [];
 
     for (const h of runners) {
       const num = String(
-        h.programNumber || h.program_number || h.postPosition || h.cloth || ""
+        h.programNumber || h.program_number || h.cloth || h.postPosition || ""
       ).trim().toUpperCase();
       const nombre = String(
         h.horseName || h.horse_name || h.name || ""
@@ -650,7 +690,13 @@ export async function detectarHipodromosActivosDia(fechaISO: string): Promise<st
 
   // 2. Consulta pública de tracks en DRF
   try {
-    const resp = await fetch(`https://entries.drf.com/data/tracks/${fecha}`);
+    const resp = await fetch(`https://entries.drf.com/data/tracks/${fecha}`, {
+      headers: {
+        "Accept": "application/json, text/plain, */*",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": "https://www.drf.com/",
+      },
+    });
     if (resp.ok) {
       const d = await resp.json();
       const tracksList = d?.tracks || d?.activeTracks || d?.trackList || [];
@@ -1272,6 +1318,9 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
           const resp = await fetch(apiDrf, {
             headers: {
               "Accept": "application/json, text/plain, */*",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Referer": `https://www.drf.com/race-entries/track/${codeNorm}/country/${country}/date/${fechaDrf}`,
+              "Accept-Language": "en-US,en;q=0.9",
             },
           });
           if (resp.ok) {
@@ -1289,7 +1338,12 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
         // Si no respondió, intentar endpoint secundario entries.drf.com
         if (!parseadoTrack) {
           try {
-            const resp2 = await fetch(`https://entries.drf.com/data/racecards/${fecha}/${codeNorm}`);
+            const resp2 = await fetch(`https://entries.drf.com/data/racecards/${fecha}/${codeNorm}`, {
+              headers: {
+                "Accept": "application/json, text/plain, */*",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              },
+            });
             if (resp2.ok) {
               const data2 = await resp2.json();
               const carrs2 = parsearDrfJsonRaces(data2, nom, fecha);
@@ -1397,46 +1451,67 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
         /* best-effort */
       }
     }
+  }
 
-    // 5. Almacén Analítico `ih_carreras_programa` e `ih_inscripciones_carrera`
-    if (supabase) {
-      try {
-        const { data: progRow } = await supabase
-          .from("ih_carreras_programa")
-          .upsert(
-            [
-              {
-                fecha: c.fecha,
-                hipodromo: c.hipodromo.toUpperCase(),
-                carrera_numero: c.carrera,
-                distancia_metros: c.distancia || 1200,
-                superficie: c.superficie || "ARENA",
-                hora_programada: c.hora ? `${c.hora}:00` : null,
-                estado_carrera: "PROGRAMADA",
-              },
-            ],
-            { onConflict: "fecha,hipodromo,carrera_numero" }
-          )
-          .select("id")
-          .maybeSingle();
+  // 5. Almacén Analítico en Lote Masivo (Upsert sin colgar la interfaz)
+  if (supabase && carrerasObtenidas.length > 0) {
+    try {
+      const carrerasBatch = carrerasObtenidas.map((c) => ({
+        fecha: c.fecha,
+        hipodromo: c.hipodromo.toUpperCase(),
+        carrera_numero: c.carrera,
+        distancia_metros: c.distancia || 1200,
+        superficie: c.superficie || "ARENA",
+        hora_programada: c.hora ? `${c.hora}:00` : null,
+        estado_carrera: "PROGRAMADA",
+      }));
 
-        if (progRow?.id) {
-          const inscripciones = c.caballos.map((e) => ({
-            carrera_id: progRow.id,
-            numero_gualdrapa: e.numero,
-            nombre_ejemplar: e.nombre,
-            puesto_pista: e.pp || Number(e.numero) || 1,
-            jinete_nombre: e.jockey || null,
-            entrenador_nombre: e.entrenador || null,
-            retirado: Boolean(e.retirado),
-          }));
+      const { data: progRows } = await supabase
+        .from("ih_carreras_programa")
+        .upsert(carrerasBatch, { onConflict: "fecha,hipodromo,carrera_numero" })
+        .select("id, fecha, hipodromo, carrera_numero");
+
+      if (progRows && progRows.length > 0) {
+        const idMap = new Map<string, string>();
+        for (const pr of progRows) {
+          idMap.set(`${pr.fecha}|${pr.hipodromo}|${pr.carrera_numero}`, pr.id);
+        }
+
+        const inscripcionesBatch: Array<{
+          carrera_id: string;
+          numero_gualdrapa: string;
+          nombre_ejemplar: string;
+          puesto_pista: number;
+          jinete_nombre: string | null;
+          entrenador_nombre: string | null;
+          retirado: boolean;
+        }> = [];
+
+        for (const c of carrerasObtenidas) {
+          const cid = idMap.get(`${c.fecha}|${c.hipodromo.toUpperCase()}|${c.carrera}`);
+          if (cid) {
+            for (const e of c.caballos) {
+              inscripcionesBatch.push({
+                carrera_id: cid,
+                numero_gualdrapa: e.numero,
+                nombre_ejemplar: e.nombre,
+                puesto_pista: e.pp || Number(e.numero) || 1,
+                jinete_nombre: e.jockey || null,
+                entrenador_nombre: e.entrenador || null,
+                retirado: Boolean(e.retirado),
+              });
+            }
+          }
+        }
+
+        if (inscripcionesBatch.length > 0) {
           await supabase
             .from("ih_inscripciones_carrera")
-            .upsert(inscripciones, { onConflict: "carrera_id,numero_gualdrapa" });
+            .upsert(inscripcionesBatch, { onConflict: "carrera_id,numero_gualdrapa" });
         }
-      } catch {
-        /* best-effort si no están las tablas analíticas */
       }
+    } catch {
+      /* best-effort si no están las tablas analíticas */
     }
   }
 

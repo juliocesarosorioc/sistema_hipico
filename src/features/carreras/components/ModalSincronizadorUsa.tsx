@@ -71,6 +71,7 @@ export function ModalSincronizadorUsa({
   const [urlDrf, setUrlDrf] = useState<string>("");
   const [metaDrf, setMetaDrf] = useState<ReturnType<typeof parsearUrlDrf>>(null);
   const [detectandoTracks, setDetectandoTracks] = useState(false);
+  const [filtroSigla, setFiltroSigla] = useState<string>("");
 
   // Tab Pegar
   const [hipodromoPegado, setHipodromoPegado] = useState<string>("Gulfstream Park");
@@ -531,12 +532,17 @@ export function ModalSincronizadorUsa({
 
           {tab === "auto" ? (
             <>
-              {/* Selector de Hipódromos */}
+              {/* Selector de Hipódromos con Checkboxes por Sigla */}
               <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-black uppercase tracking-wider text-slate-300">
-                    🏇 Hipódromos Americanos a Sincronizar
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-300">
+                      🏇 Hipódromos DRF por Sigla ({HIPODROMOS_USA_DISPONIBLES.length})
+                    </span>
+                    <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-300 border border-amber-500/30">
+                      {seleccionTodos ? "Todos" : `${seleccionados.length} seleccionados`}
+                    </span>
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
@@ -569,25 +575,55 @@ export function ModalSincronizadorUsa({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-                  {HIPODROMOS_USA_DISPONIBLES.map((t) => {
+                {/* Filtro rápido por sigla DRF */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={filtroSigla}
+                    onChange={(e) => setFiltroSigla(e.target.value)}
+                    placeholder="Filtrar por sigla (ej. CD, FL, RP, CT, GP, PRX) o nombre..."
+                    className="w-full rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-1.5 text-xs font-mono text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none"
+                  />
+                  {filtroSigla && (
+                    <button
+                      type="button"
+                      onClick={() => setFiltroSigla("")}
+                      className="rounded-lg bg-slate-800 px-2 py-1 text-xs text-slate-400 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Grilla de Checkboxes por Sigla */}
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 max-h-64 overflow-y-auto pr-1">
+                  {HIPODROMOS_USA_DISPONIBLES.filter((t) => {
+                    if (!filtroSigla.trim()) return true;
+                    const f = filtroSigla.trim().toUpperCase();
+                    return t.codigo.includes(f) || t.nombre.toUpperCase().includes(f);
+                  }).map((t) => {
                     const esta = seleccionTodos || seleccionados.includes(t.nombre);
                     return (
-                      <button
+                      <label
                         key={t.codigo}
-                        type="button"
-                        onClick={() => toggleTrack(t.nombre)}
-                        className={`flex items-center justify-between rounded-xl border p-2 text-left transition-all ${
+                        className={`flex items-center gap-2 rounded-xl border p-2 text-left cursor-pointer transition-all select-none ${
                           esta
-                            ? "border-amber-500/50 bg-amber-500/10 text-white font-bold"
-                            : "border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700"
+                            ? "border-amber-400 bg-amber-500/15 text-white font-bold shadow-sm"
+                            : "border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-slate-200"
                         }`}
                       >
-                        <span className="truncate text-xs">{t.nombre}</span>
-                        <span className="ml-1 rounded bg-slate-800 px-1 py-0.5 text-[9px] font-mono text-amber-300">
+                        <input
+                          type="checkbox"
+                          checked={esta}
+                          onChange={() => toggleTrack(t.nombre)}
+                          className="h-4 w-4 rounded border-slate-700 bg-slate-800 text-amber-500 focus:ring-amber-400 focus:ring-offset-slate-900 shrink-0"
+                        />
+                        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-mono font-black text-amber-300 border border-amber-500/20 shrink-0">
                           {t.codigo}
                         </span>
-                      </button>
+                        <span className="truncate text-xs flex-1" title={t.nombre}>{t.nombre}</span>
+                        <span className="text-[9px] text-slate-500 font-mono shrink-0">{t.pais}</span>
+                      </label>
                     );
                   })}
                 </div>
