@@ -9,6 +9,7 @@ import {
   reverificarCarreraConIA,
   buscarCarreraFaltanteConIA,
   ejecutarOrdenParticularConIA,
+  PROMPT_EXTRACTOR_AUDITOR_HIPICO,
   type CarreraExtraida,
 } from "@/features/gaceta/lib/ia";
 import {
@@ -311,6 +312,7 @@ export function GacetaIA() {
   const [progreso, setProgreso] = useState<{ hecho: number; total: number } | null>(null);
   const [rango, setRango] = useState("");
   const [topePaginas, setTopePaginas] = useState("");
+  const [mostrarPromptAuditor, setMostrarPromptAuditor] = useState(false);
   /**
    * Capa de TEXTO del documento (si el PDF la trae).
    *
@@ -1807,6 +1809,33 @@ export function GacetaIA() {
           >
             ✨ Transformar con IA y Registrar en el Día
           </Button>
+
+          <div className="mt-3 flex items-center justify-between border-t border-line pt-2.5">
+            <button
+              type="button"
+              onClick={() => setMostrarPromptAuditor((prev) => !prev)}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+            >
+              <span>🤖 {mostrarPromptAuditor ? "Ocultar Prompt Auditor IA" : "Ver Prompt Auditor Quirúrgico IA"}</span>
+            </button>
+            {mostrarPromptAuditor && (
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(PROMPT_EXTRACTOR_AUDITOR_HIPICO);
+                  toast("Prompt de precisión quirúrgica copiado al portapapeles", "success");
+                }}
+                className="text-[10px] font-bold text-slate-500 hover:text-slate-800 underline"
+              >
+                📋 Copiar Prompt
+              </button>
+            )}
+          </div>
+          {mostrarPromptAuditor && (
+            <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-indigo-200 bg-slate-900 p-2.5 font-mono text-[10px] leading-relaxed text-slate-200 select-all">
+              <pre className="whitespace-pre-wrap">{PROMPT_EXTRACTOR_AUDITOR_HIPICO}</pre>
+            </div>
+          )}
           {trabajando && (
             <div className="mt-3 rounded-lg border border-primary-200 bg-primary-500/5 p-3">
               <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-black uppercase tracking-wide text-primary-700">

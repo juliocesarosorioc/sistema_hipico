@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { DateInput } from "@/shared/components/ui/DateInput";
 import { Button } from "@/shared/components/ui/Button";
-import { CLAVE_GEMINI_KEY } from "@/features/gaceta/lib/ia";
+import { CLAVE_GEMINI_KEY, PROMPT_EXTRACTOR_AUDITOR_HIPICO } from "@/features/gaceta/lib/ia";
 import {
   importarLoteGacetasPdf,
   convertirCarrerasExtraidasACatalogo,
@@ -41,6 +41,7 @@ export function ModalImportarGacetaPdf({
   const [hipodromo, setHipodromo] = useState(hipodromoDefault || "CHURCHILL DOWNS");
   const [claveGemini, setClaveGemini] = useState("");
   const [mostrarClave, setMostrarClave] = useState(false);
+  const [mostrarPromptAuditor, setMostrarPromptAuditor] = useState(false);
   const [archivos, setArchivos] = useState<File[]>([]);
 
   // Estados de proceso
@@ -365,17 +366,61 @@ export function ModalImportarGacetaPdf({
                 Importador de Gacetas PDF Ultra-Rápido (Multi-Archivo / Lote)
               </h2>
               <p className="text-[11px] text-slate-400 font-medium">
-                Extracción determinística nativa sin bloqueos, soporte multi-hipódromo, previsualización editable y guardado masivo en 1 transacción.
+                Extracción con Motor Auditor y Extractor Quirúrgico (USA + Venezuela), soporte multi-hipódromo, previsualización editable y guardado masivo en 1 transacción.
               </p>
             </div>
           </div>
-          <button
-            onClick={onCerrar}
-            className="text-slate-400 hover:text-white text-lg font-bold p-1 rounded-lg hover:bg-slate-800"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMostrarPromptAuditor((v) => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-950/80 border border-indigo-500/40 text-indigo-300 text-xs font-bold hover:bg-indigo-900/90 transition-all shadow-sm"
+              title="Ver o copiar el Prompt Oficial del Motor Auditor y Extractor Quirúrgico IA"
+            >
+              <span>🤖</span>
+              <span>{mostrarPromptAuditor ? "Ocultar Prompt Auditor" : "Ver Prompt Auditor IA"}</span>
+            </button>
+            <button
+              onClick={onCerrar}
+              className="text-slate-400 hover:text-white text-lg font-bold p-1 rounded-lg hover:bg-slate-800"
+            >
+              ✕
+            </button>
+          </div>
         </div>
+
+        {/* Modal / Card Desplegable del Prompt Auditor */}
+        {mostrarPromptAuditor && (
+          <div className="my-3 p-4 rounded-xl bg-slate-950 border border-indigo-500/40 text-xs space-y-2.5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-indigo-900/60 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🧠</span>
+                <span className="font-black text-indigo-300 uppercase tracking-wide">
+                  Motor Auditor y Extractor Hípico de Precisión Quirúrgica (USA + Venezuela)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof navigator !== "undefined" && navigator.clipboard) {
+                    void navigator.clipboard.writeText(PROMPT_EXTRACTOR_AUDITOR_HIPICO);
+                    emitirToast("Prompt copiado al portapapeles.", "success");
+                  }
+                }}
+                className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] transition-all flex items-center gap-1 shadow-sm"
+              >
+                <span>📋</span>
+                <span>Copiar Prompt</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Prompt oficial activo en el motor de Gemini para transcribir gacetas, reconstruir columnas izquierdas desplazadas en retrospectos de EE.UU. y validar N° vs PP en Venezuela:
+            </p>
+            <pre className="max-h-60 overflow-y-auto p-3 bg-slate-900/95 rounded-lg border border-slate-800 text-[11px] text-slate-300 whitespace-pre-wrap font-mono select-all">
+              {PROMPT_EXTRACTOR_AUDITOR_HIPICO}
+            </pre>
+          </div>
+        )}
 
         {/* ============================================================== */}
         {/* FASE 1: CONFIGURACIÓN Y SUBIDA MULTI-ARCHIVO                   */}

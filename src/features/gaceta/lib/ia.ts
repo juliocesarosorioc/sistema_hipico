@@ -30,7 +30,7 @@ export type EjemplarExtraido = {
   numero: string | number;
   nombre: string;
   nacionalidad?: string;
-  pp?: number | string;
+  pp?: number | string | null;
   valor?: number;
   jockey?: string;
   entrenador?: string;
@@ -42,6 +42,13 @@ export type EjemplarExtraido = {
   pedigri?: string;
   retirado?: boolean;
   condicionElegibilidad?: "AE" | "MTO" | null;
+  // Campos del Motor Auditor y Extractor Quirúrgico
+  ratingUltimo?: number | null;
+  ratingMaximo?: number | null;
+  esElegible?: boolean;
+  comentario?: string | null;
+  pesoBaseKg?: number | null;
+  descargoKg?: number | null;
 };
 
 export type CarreraExtraida = {
@@ -54,6 +61,12 @@ export type CarreraExtraida = {
   premio?: number;
   archivoOrigen?: string;
   ejemplares: EjemplarExtraido[];
+  // Campos del Motor Auditor y Extractor Quirúrgico
+  condicionLote?: string;
+  raza?: string;
+  favoritosGaceta?: string[];
+  codigoAnual?: string | null;
+  valida5y6?: number | null;
 };
 
 export type ResultadoGaceta = {
@@ -94,72 +107,129 @@ const HIPODROMOS_USA = [
   "SUNLAND PARK", "TAMPA BAY DOWNS", "TURF PARADISE", "WOODBINE", "DEL MAR",
 ];
 
-const SYS = `Eres el transcriptor oficial de MÁXIMA PRECISIÓN, RIGOR Y DISCIPLINA para gacetas hípicas internacionales y retrospectos (Daily Racing Form, Equibase, Brisnet, Gaceta Hípica).
+export const PROMPT_EXTRACTOR_AUDITOR_HIPICO = `# ROL DEL SISTEMA
+Eres un Motor Auditor y Extractor Hípico de Precisión Quirúrgica especializado en procesar gacetas de Estados Unidos ("Sistema Profesional de Retrospectos") y de Venezuela ("Gaceta Hípica" - La Rinconada / Valencia).
+Tu objetivo es extraer el 100% de las carreras y ejemplares sin omitir un solo caballo, reconstruyendo columnas desplazadas y auditando cada campo antes de responder.
+Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional ni bloques markdown.
 
-REGLAS DE ORO SUPREMAS E INVIOLABLES:
+---
 
-1. REGLA SUPREMA: ¡PROHIBIDO TERMINANTEMENTE PONER EL NOMBRE DEL JINETE (JOCKEY) COMO NOMBRE DEL EJEMPLAR!
-   - En las gacetas y retrospectos de EE.UU. y Venezuela, los jinetes suelen tener INICIALES CON PUNTO Y APELLIDO, y sufijos como "Jr.":
-     * Ejemplos de JINETES: "I. Ortiz, Jr.", "J. Rosario", "F. Prat", "L. Saez", "T. Gaffalione", "J. R. Velazquez", "K. Carmouche", "M. Franco", "B. Hernandez, Jr.", "C. Lanerie", "R. Santana, Jr.", "E. J. Zayas", "J. Bravo", "P. Lopez", "A. Gallardo", "J. C. Rodriguez", "C. J. Hernandez".
-     * ¡NINGÚN CABALLO EN EL MUNDO TIENE INICIALES CON PUNTO COMO "I. Ortiz" O "J. Rosario"! Si una cadena empieza con inicial y punto (ej. "I. Ortiz") es un ser humano (Jinete o Entrenador), ¡NUNCA UN CABALLO!
-   - El campo "nombre" del caballo DEBE SER ÚNICAMENTE el nombre equino sustantivo completo, oficial y en MAYÚSCULAS:
-     * Ejemplos de NOMBRES DE CABALLO: "FLIGHTLINE", "UNCLE CHARLIE", "MEDINA SPIRIT", "FORTE", "EPICENTER", "WHITE ABARRIO", "LIFE IS GOOD", "GOLDEN PAL", "CODY'S WISH", "SIMPLIFICATION", "TAIBA", "EL GRAN SOL", "WATER JET", "SANDOVALERA".
-   - El jinete debe ir OBLIGATORIAMENTE en el campo "jockey" (o "jinete").
+# REGLAS DE EXTRACCIÓN Y AUDITORÍA PARA ESTADOS UNIDOS (USA)
 
-2. EXTRACTO OBLIGATORIO DEL ENTRENADOR (TRAINER):
-   - El entrenador debe ir OBLIGATORIAMENTE en el campo "entrenador".
-   - Ejemplos de ENTRENADORES: "B. H. Cox", "B. Baffert", "C. C. Brown", "S. M. Asmussen", "T. A. Pletcher", "W. I. Mott", "M. J. Maker", "D. Gargan", "K. G. McPeek", "R. E. Dutrow, Jr.", "R. Garcia".
+1. **DETECCIÓN DE CABECERA (ARRIBA O ABAJO DE LA PÁGINA):**
+   - El encabezado de la carrera puede estar al principio O al final del texto de la página.
+   - Busca siempre la línea maestra de validación:
+     \`Purse <MONTO> <PREFIJO>ENTRIES <NUM_CARRERA>(ST|ND|RD|TH) <TRACK_CODE> <MES> <DIA> <DISTANCIA>\`
+     (Ejemplo: \`Purse 31.000 TCENTRIES 1ST RPX NOVEMBER 4 8.5F\` o \`DCENTRIES 1ST DED NOVEMBER 4\`).
+   - **Fecha:** Convierte el código de fecha (ej. \`04Nov26\` o \`NOVEMBER 4\`) a formato ISO \`YYYY-MM-DD\` (\`2026-11-04\`). Si el usuario envió \`fechaOverride\`, respeta \`fechaOverride\`.
+   - **Hipódromo (Fuente de Verdad):** Usa SIEMPRE el nombre del hipódromo y el \`<TRACK_CODE>\` impresos dentro de la página (\`CHURCHILL DOWNS\` [CD], \`HOLLYWOOD AT CHARLES TOWN\` [CT], \`DELTA DOWNS\` [DED], \`EVANGELINE DOWNS\` [EVD], \`FINGER LAKES\` [FL], \`HORSESHOE INDIANAPOLIS\` [IND], \`MOUNTAINEER\` [MNR], \`MAHONING VALLEY\` [MVR], \`PARX RACING\` [PRX], \`REMINGTON PARK\` [RP], \`PENN NATIONAL\` [PEN], etc.). Ignora el nombre del archivo PDF si contradice el texto interno.
+   - **Distancia y Superficie:** Extrae los metros exactos (\`200\` a \`2400\` metros) y la superficie (\`Arena\` / \`DIRT\`, \`Grama\` / \`TURF\`, \`Sintética\`). Detecta si es \`THOROUGHBRED\` o \`QUARTER HORSE\`.
 
-3. EXTRACTO OBLIGATORIO DEL MORNING LINE ("ml"):
-   - El dividendo previo oficial (Morning Line / M/L) debe ir OBLIGATORIAMENTE en el campo "ml".
-   - Ejemplos de MORNING LINE: "3-1", "9-5", "5-2", "8-1", "10-1", "12-1", "15-1", "20-1", "7-2", "9-2", "4-5", "7-5", "8-5", "EVEN".
-   - NUNCA lo dejes en blanco o null si aparece impreso en la gaceta o retrospecto.
+2. **RECONSTRUCCIÓN OBLIGATORIA DE COLUMNA IZQUIERDA DESPLAZADA (CRÍTICO):**
+   - En muchas páginas de PDFs americanos, la columna izquierda (\`N°\`, \`ML\`, \`Stud:\` y la primera parte del nombre del ejemplar) aparece agrupada al final del texto de la página (ejemplo: \`Stud: 1 8-1 CT7a-Race Day...\` o \`Stud: 5 This 6-1 CC3a...\`), mientras que en la tabla superior quedó el resto del nombre (\`Is The Life\`) junto al \`PP\` y \`Jin/Kgs/Ent\`.
+   - **PROTOCOLO DE EMPAREJAMIENTO:**
+     a) Identifica cuántos ejemplares hay en la carrera guiándote por la secuencia de números \`1, 2, 3... N\` y la columna \`PP\`.
+     b) Si el bloque \`N/ML\` y \`Stud:\` está al pie de la página, empareja el bloque \`1\` del pie con la fila \`1\` de la tabla, el bloque \`2\` con la fila \`2\`, y así sucesivamente.
+     c) **Reconstrucción del Nombre del Caballo:** Une cualquier palabra del nombre que haya quedado junto al bloque \`Stud:\` con la parte del nombre que quedó en la fila de la tabla. Verifica que el nombre reconstruido NO sea el nombre del Stud (descarta lo que sigue a \`Stud:\`), NI el pedigrí (descarta lo que empieza por \`CC2a-\`, \`CZ3a-\`, \`YA4a-\`, \`YT3a-\`, \`CA5a-\`, \`CT6a-\`, \`Y2a-\`, \`C3a-\` o contiene \` en \`), NI el abuelo materno (descarta lo que empieza por \`p.\`).
+     d) **Morning Line (ML):** Extrae la cotización con guion (\`3-1\`, \`9-2\`, \`9-5\`, \`8-5\`, \`6-5\`, \`7-2\`, \`15-1\`, \`20-1\`, \`30-1\`, \`50-1\`, \`1-1\`) correspondiente a ese número de ejemplar. Jamás confundas el dividendo pasado con el Morning Line.
 
-4. NÚMERO OFICIAL DE DORSAL/GUALDRAPA ("numero") Y PUESTO DE PISTA ("pp"):
-   - "numero" es el dorsal oficial de carrera (1, 1A, 2, 2B, 3, 4, ..., 16).
-   - "pp" es el puesto de partida en el partidor (1, 2, 3...).
-   - Identifica también la condición si es elegible ("AE" - Also Eligible) o solo pista principal ("MTO" - Main Track Only).
+3. **EXTRACCIÓN EXACTA DE JINETE, PESO Y ENTRENADOR DE HOY (\`Jin/Kgs/Ent\`):**
+   - Cada ejemplar tiene un bloque de 3 datos exclusivos para la carrera de HOY ubicado inmediatamente después de su \`PP\` y ANTES de las fechas de sus carreras pasadas (\`DD/MM\`):
+     1. **Jinete (\`jinete\` / \`jockey\`):** Inicial(es) con punto y apellido (ej. \`T. Gaffalione\`, \`J.L. Ortiz\`, \`I. Ortiz Jr\`, \`F.De La Cruz\`, \`R.Pina Rolando Del\`). PROHIBIDO tomar jinetes que tengan una coma y un dividendo al lado (ej. \`L. Saez, 10,24\` es de una carrera pasada).
+     2. **Peso (\`peso_kg\` / \`peso\`):** Número decimal entre \`45.0\` y \`62.0\` que en el PDF viene con coma (ej. \`54,4\`, \`55,3\`, \`56,2\`). Conviértelo siempre a punto decimal (\`54.4\`, \`55.3\`, \`56.2\`). Si está en libras (ej. \`120\`), consérvalo como número entero.
+     3. **Entrenador (\`entrenador\` / \`trainer\`):** Inicial(es) y apellido ubicado justo debajo del peso de hoy y antes de \`Od S/C\`, \`XXd S/C\` o \`Act: (...)\` (ej. \`S.M. Asmussen\`, \`B.H. Cox\`, \`W.I. Mott\`, \`R. Diodoro\`).
 
-5. PESO ("peso"):
-   - Extrae el peso asignado (en libras ej. 118, 120, 122, 124, 126 o kilos ej. 53, 54, 55). Si tiene coma decimal (ej. 54,4) conviértela a punto (54.4).
+4. **ELEGIBLES (\`AE\` / \`MTO\`) Y CONTINUACIÓN DE PÁGINA:**
+   - Si el ejemplar tiene la marca \`AE\` o \`MTO\`, conserva su número de programa (\`11\`, \`12\`, \`13\`, \`14\`, \`15\`, \`16\`) y marca \`"es_elegible": true\` y \`condicionElegibilidad: "AE" | "MTO"\`.
+   - Si dos páginas consecutivas tienen el mismo hipódromo y el mismo número de carrera, FUSIONA sus ejemplares en una sola carrera.
 
-6. HORA DE PARTIDA ("hora"):
-   - Extrae la hora de partida si aparece en la cabecera (ej: "1:00 PM", "7:00 PM", "13:30").
+---
 
-7. COMPLETITUD Y ORDEN:
-   - Extrae rigurosamente TODOS los ejemplares participantes de cada carrera sin omitir ninguno.
-   - Devuelve las carreras ordenadas secuencialmente: Carrera 1, Carrera 2, Carrera 3...
+# REGLAS DE EXTRACCIÓN Y AUDITORÍA PARA VENEZUELA (LA RINCONADA / VALENCIA)
 
-Estructura de salida JSON para cada carrera:
+1. **CLASIFICACIÓN DE PÁGINAS:**
+   - Portadas, anuncios publicitarios o el índice alfabético \`"CORREN ESTA SEMANA"\`: ignóralos (\`"tipo_pagina": "IGNORAR"\`).
+   - Páginas de \`"TRAQUEOS LA RINCONADA"\`: extráelas en el bloque \`"traqueos"\`.
+
+2. **CABECERA VENEZOLANA:**
+   - Hipódromo: \`LA RINCONADA\` o \`VALENCIA\`.
+   - Fecha: Convierte \`DD/MM/YY\` (ej. \`08/11/26\`) a \`YYYY-MM-DD\`.
+   - Hora: Convierte \`01:00 p.m.\` a formato 24h (\`13:00\`).
+   - Número de Carrera: Convierte \`Primera Carrera\` -> \`1\` ... \`Décimatercera Carrera\` -> \`13\`. Extrae también el código anual entre paréntesis (ej. \`(521)\` a \`(533)\`).
+   - Válida 5y6: Si dice \`PRIMERA VÁLIDA\` a \`SEXTA VÁLIDA\`, asigna \`1\` a \`6\` en \`"valida_5y6"\`.
+
+3. **DIFERENCIACIÓN ESTRICTA ENTRE \`N°\` Y \`PP\` (CRÍTICO EN 1600 METROS):**
+   - \`numero_programa\` (\`numero\`): Es SIEMPRE el número grande en el extremo izquierdo del ejemplar (\`1, 2, 3...\`).
+   - \`puesto_partida\` (\`pp\`): Es el número en la columna \`PP\` (que en 1600 metros en La Rinconada va del \`9 al 14\` o del \`4 al 14\`). JAMÁS uses la columna \`PP\` como número del ejemplar.
+
+4. **LIMPIEZA DE NOMBRES, JINETES, ENTRENADORES, PESOS Y MORNING LINE:**
+   - **Nombre del Ejemplar:** Está en MAYÚSCULAS debajo de la divisa \`Stud "..."\` y encima de \`ML\`. Conserva el sufijo de país si es importado, ej. \`QUEEN MARGARITA (USA)\`, \`JE SUIS PRET (CHI)\`, \`INOCHI (ARG)\`.
+   - **Morning Line (\`morning_line\` / \`ml\`):** Está debajo de la sigla \`ML\` con barra inclinada (ej. \`5/1\`, \`30/1\`, \`8/5\`, \`6/5\`, \`9/5\`, \`1/3\`).
+   - **Jinete (\`jinete\` / \`jockey\`):** Es el primer nombre en la columna \`Jinete, Ks, Implementos, Prep.\` ANTES del peso. Elimina el número de estadística entre paréntesis: \`L.Funez.Jr.(20)\` -> \`"L. Funez Jr."\`, \`R.Capriles(28)\` -> \`"R. Capriles"\`.
+   - **Peso y Descargo (\`peso_kg\` y \`descargo_kg\`):** Está debajo del jinete. Si tiene guion (ej. \`57-2\`, \`53-3\`, \`57.5-3\`), el primer número es el \`peso_base\`, el segundo es el \`descargo_kg\` y la resta (\`55.0\`, \`50.0\`, \`54.5\`) es el \`peso_kg\` efectivo.
+   - **Entrenador (\`entrenador\`):** Está debajo de la línea de implementos (\`L.CC.V.BB.La.\`), al lado de la fecha de nacimiento del ejemplar. Elimina el número entre paréntesis: \`C.L.Uzcátegui(22)\` -> \`"C.L. Uzcátegui"\`, \`R.D'Angelo(30)\` -> \`"R. D'Angelo"\`.
+
+---
+
+# CHECKLIST DE AUTO-AUDITORÍA ANTES DE EMITIR EL JSON
+Antes de cerrar el JSON de cada carrera, verifica internamente:
+1. ¿La secuencia de \`numero_programa\` está completa (\`1, 2, 3... N\`) sin saltos?
+2. ¿Ningún \`nombre_ejemplar\` está vacío, cortado a una sola sílaba final ni contiene palabras como \`Stud:\`, \`CC3a-\`, \`YC4a-\` o \`p.\`?
+3. ¿Todos los ejemplares tienen \`jinete\`, \`entrenador\`, \`peso\` numérico (entre \`45.0\` y \`62.0\` kg o \`110-130\` lbs) y \`morning_line\` válido?
+4. ¿El \`rating_ultimo\` y \`rating_maximo\` fueron tomados de las actuaciones del ejemplar?
+
+# ESQUEMA JSON DE SALIDA OBLIGATORIO:
 {
+  "origen": "USA | VENEZUELA",
+  "hipodromo": "NOMBRE OFICIAL EN MAYÚSCULAS",
+  "codigo_hipodromo": "CD | CT | DED | EVD | FL | IND | MNR | MVR | PRX | RP | LR | VAL",
+  "fecha": "YYYY-MM-DD",
   "carreras": [
     {
       "carrera": 1,
-      "hipodromo": "CHURCHILL DOWNS",
-      "fecha": "2026-11-04",
-      "hora": "1:00 PM",
+      "numero_carrera": 1,
+      "codigo_anual": null,
+      "valida_5y6": null,
+      "hora": "13:00",
       "distancia": 1200,
-      "superficie": "ARENA",
-      "premio": 25000,
+      "distancia_m": 1200,
+      "superficie": "Arena",
+      "raza": "THOROUGHBRED",
+      "condicion_lote": "Alw 50000s / Allowance",
+      "bolsa_usd": 83000,
+      "premio": 83000,
+      "favoritos_gaceta": ["3", "1", "5"],
       "ejemplares": [
         {
           "numero": "1",
+          "numero_programa": "1",
           "pp": 1,
-          "nombre": "FLIGHTLINE",
-          "jockey": "I. Ortiz, Jr.",
-          "entrenador": "B. Baffert",
-          "peso": 122,
+          "puesto_partida": 1,
+          "nombre": "NOMBRE COMPLETO AUDITADO",
+          "jockey": "Nombre Jinete",
+          "jinete": "Nombre Jinete",
+          "peso": 54.4,
+          "peso_base_kg": 54.4,
+          "descargo_kg": 0,
+          "peso_kg": 54.4,
+          "entrenador": "Nombre Entrenador",
           "ml": "3-1",
-          "nacionalidad": "USA",
+          "morning_line": "3-1",
+          "rating_ultimo": 58,
+          "rating_maximo": 83,
+          "es_elegible": false,
+          "condicionElegibilidad": null,
           "retirado": false,
-          "condicionElegibilidad": null
+          "nacionalidad": "USA"
         }
       ]
     }
   ]
 }
 
-Responde ÚNICAMENTE con JSON válido, sin markdown ni explicaciones adicionales.`;
+Responde ÚNICAMENTE con JSON válido, sin bloques markdown ni explicaciones adicionales.`;
+
+const SYS = PROMPT_EXTRACTOR_AUDITOR_HIPICO;
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -184,13 +254,117 @@ function nacEjemplar(ej?: { nacionalidad?: string } | null, hipo?: string): stri
   return paisHipodromo(hipo) || "VE";
 }
 
-function coaccionarCarreras(v: unknown): CarreraExtraida[] {
-  if (Array.isArray(v)) return v as CarreraExtraida[];
-  if (v && typeof v === "object") {
+function coaccionarUnaCarrera(raw: unknown, hipodromoContexto?: string): CarreraExtraida {
+  if (!raw || typeof raw !== "object") {
+    return { carrera: 1, ejemplares: [] };
+  }
+  const r = raw as Record<string, unknown>;
+  const hip = String(r.hipodromo || r.codigo_hipodromo || hipodromoContexto || "").trim().toUpperCase();
+  const num = r.carrera ?? r.numero_carrera ?? r.carrera_numero ?? r.numero ?? 1;
+  const dist = r.distancia ?? r.distancia_m ?? r.distancia_metros;
+  const premio = r.premio ?? r.bolsa_usd ?? r.premiacion_total_usd;
+  const hora = r.hora ?? r.hora_carrera ?? null;
+  const sup = r.superficie;
+  const fecha = r.fecha;
+  const condLote = r.condicion_lote ?? r.condicionLote;
+  const raza = r.raza;
+  const favsGaceta = Array.isArray(r.favoritos_gaceta)
+    ? (r.favoritos_gaceta as unknown[]).map(String)
+    : undefined;
+  const codAnual = r.codigo_anual ? String(r.codigo_anual) : null;
+  const val5y6 = r.valida_5y6 != null ? Number(r.valida_5y6) : null;
+
+  const rawEjemplares = Array.isArray(r.ejemplares)
+    ? r.ejemplares
+    : Array.isArray(r.caballos)
+    ? r.caballos
+    : [];
+
+  const ejemplares: EjemplarExtraido[] = rawEjemplares
+    .filter((e): e is Record<string, unknown> => e != null && typeof e === "object")
+    .map((e, idx) => {
+      const numEj = e.numero ?? e.numero_programa ?? e.dorsal ?? idx + 1;
+      const ppEj = e.pp ?? e.puesto_partida ?? e.puesto_pista ?? null;
+      const nom = e.nombre ?? e.nombre_ejemplar ?? e.horse ?? "";
+      const jok = e.jockey ?? e.jinete ?? e.rider ?? null;
+      const ent = e.entrenador ?? e.trainer ?? null;
+      const pesoRaw = e.peso ?? e.peso_kg ?? e.peso_base_kg ?? null;
+      const mlRaw = e.ml ?? e.morning_line ?? e.odds ?? null;
+      const condEleg = e.condicionElegibilidad ?? (e.es_elegible ? "AE" : null);
+      const ratUlt = e.rating_ultimo != null ? Number(e.rating_ultimo) : (e.ratingUltimo != null ? Number(e.ratingUltimo) : null);
+      const ratMax = e.rating_maximo != null ? Number(e.rating_maximo) : (e.ratingMaximo != null ? Number(e.ratingMaximo) : null);
+      const descargo = e.descargo_kg != null ? Number(e.descargo_kg) : null;
+      const pesoBase = e.peso_base_kg != null ? Number(e.peso_base_kg) : null;
+
+      return {
+        numero: String(numEj),
+        nombre: String(nom).trim(),
+        pp: ppEj != null ? (typeof ppEj === "number" ? ppEj : parseInt(String(ppEj), 10) || null) : null,
+        jockey: jok ? String(jok).trim() : undefined,
+        entrenador: ent ? String(ent).trim() : undefined,
+        peso: pesoRaw != null ? String(pesoRaw).replace(",", ".") : undefined,
+        ml: mlRaw ? String(mlRaw).trim() : undefined,
+        condicionElegibilidad: (condEleg as "AE" | "MTO") || null,
+        retirado: Boolean(e.retirado),
+        nacionalidad: e.nacionalidad ? String(e.nacionalidad).trim().toUpperCase() : undefined,
+        medicamento: e.medicamento ? String(e.medicamento).trim() : undefined,
+        implementos: e.implementos ? String(e.implementos).trim() : undefined,
+        stud: e.stud ? String(e.stud).trim() : undefined,
+        pedigri: e.pedigri ? String(e.pedigri).trim() : undefined,
+        ratingUltimo: ratUlt,
+        ratingMaximo: ratMax,
+        esElegible: Boolean(e.es_elegible || condEleg === "AE"),
+        comentario: e.comentario ? String(e.comentario).trim() : null,
+        pesoBaseKg: pesoBase,
+        descargoKg: descargo,
+      };
+    });
+
+  return {
+    carrera: typeof num === "number" ? num : parseInt(String(num), 10) || 1,
+    hipodromo: hip || undefined,
+    fecha: fecha ? String(fecha).trim() : null,
+    hora: hora ? String(hora).trim() : null,
+    distancia: dist != null ? (typeof dist === "number" ? dist : parseInt(String(dist), 10) || undefined) : undefined,
+    superficie: sup ? String(sup).trim() : undefined,
+    premio: premio != null ? (typeof premio === "number" ? premio : parseFloat(String(premio)) || undefined) : undefined,
+    condicionLote: condLote ? String(condLote).trim() : undefined,
+    raza: raza ? String(raza).trim() : undefined,
+    favoritosGaceta: favsGaceta,
+    codigoAnual: codAnual,
+    valida5y6: val5y6,
+    ejemplares,
+  };
+}
+
+function coaccionarCarreras(v: unknown, hipodromoContexto?: string): CarreraExtraida[] {
+  if (!v) return [];
+  if (Array.isArray(v)) {
+    return v.map((x) => coaccionarUnaCarrera(x, hipodromoContexto));
+  }
+  if (typeof v === "object") {
     const o = v as Record<string, unknown>;
-    if (Array.isArray(o.carrera)) return o.carrera as CarreraExtraida[];
+    const hip = String(o.hipodromo || o.codigo_hipodromo || hipodromoContexto || "");
+    if (Array.isArray(o.carreras)) {
+      return o.carreras.map((x) => coaccionarUnaCarrera(x, hip));
+    }
+    if (Array.isArray(o.hipodromos)) {
+      const res: CarreraExtraida[] = [];
+      for (const h of o.hipodromos as Array<Record<string, unknown>>) {
+        if (h && Array.isArray(h.carreras)) {
+          const hipSub = String(h.hipodromo || h.codigo_hipodromo || hip);
+          res.push(...h.carreras.map((x) => coaccionarUnaCarrera(x, hipSub)));
+        }
+      }
+      if (res.length) return res;
+    }
+    if (Array.isArray(o.carrera)) {
+      return o.carrera.map((x) => coaccionarUnaCarrera(x, hip));
+    }
     const vals = Object.values(o);
-    if (vals.length && typeof vals[0] === "object") return vals as CarreraExtraida[];
+    if (vals.length && typeof vals[0] === "object") {
+      return vals.map((x) => coaccionarUnaCarrera(x, hip));
+    }
   }
   return [];
 }
@@ -254,14 +428,8 @@ function parsearJSON(texto: string): CarreraExtraida[] {
     if (recuperado) intentos.push(recuperado);
   }
   for (const obj of intentos) {
-    if (Array.isArray(obj)) return obj as CarreraExtraida[];
-    if (obj && typeof obj === "object") {
-      const o = obj as Record<string, unknown>;
-      const c = coaccionarCarreras(o.carreras);
-      if (c.length) return c;
-      const c2 = coaccionarCarreras(o.carrera);
-      if (c2.length) return c2;
-    }
+    const res = coaccionarCarreras(obj);
+    if (res.length) return res;
   }
   return [];
 }
