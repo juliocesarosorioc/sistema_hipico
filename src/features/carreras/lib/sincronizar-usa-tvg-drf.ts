@@ -32,49 +32,252 @@ import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
 import { NOMBRES_CANONICOS_HIPODROMOS } from "@/features/hipodromos/lib/tipos";
 
 // ----------------------------------------------------------------------------
-// Catálogo de Hipódromos Americanos Soportados
+// Catálogo Maestro y Oficial de Hipódromos DRF (Daily Racing Form)
 // ----------------------------------------------------------------------------
 export type HipodromoUsaMeta = {
   codigo: string;
   nombre: string;
   drfCode: string;
+  pais: "USA" | "CAN";
   tvgSlug: string;
   estadoDefecto: string;
 };
 
-export const HIPODROMOS_USA_DISPONIBLES: HipodromoUsaMeta[] = [
-  { codigo: "GP", nombre: "Gulfstream Park", drfCode: "GP", tvgSlug: "gulfstream-park", estadoDefecto: "FL" },
-  { codigo: "SA", nombre: "Santa Anita", drfCode: "SA", tvgSlug: "santa-anita-park", estadoDefecto: "CA" },
-  { codigo: "TAM", nombre: "Tampa Bay Downs", drfCode: "TAM", tvgSlug: "tampa-bay-downs", estadoDefecto: "FL" },
-  { codigo: "AQU", nombre: "Aqueduct", drfCode: "AQU", tvgSlug: "aqueduct", estadoDefecto: "NY" },
-  { codigo: "BEL", nombre: "Belmont Park", drfCode: "BEL", tvgSlug: "belmont-park", estadoDefecto: "NY" },
-  { codigo: "SAR", nombre: "Saratoga", drfCode: "SAR", tvgSlug: "saratoga", estadoDefecto: "NY" },
-  { codigo: "KEE", nombre: "Keeneland", drfCode: "KEE", tvgSlug: "keeneland", estadoDefecto: "KY" },
-  { codigo: "CD", nombre: "Churchill Downs", drfCode: "CD", tvgSlug: "churchill-downs", estadoDefecto: "KY" },
-  { codigo: "OP", nombre: "Oaklawn Park", drfCode: "OP", tvgSlug: "oaklawn-park", estadoDefecto: "AR" },
-  { codigo: "PRX", nombre: "Parx Racing", drfCode: "PRX", tvgSlug: "parx-racing", estadoDefecto: "PA" },
-  { codigo: "DMR", nombre: "Del Mar", drfCode: "DMR", tvgSlug: "del-mar", estadoDefecto: "CA" },
-  { codigo: "MTH", nombre: "Monmouth Park", drfCode: "MTH", tvgSlug: "monmouth-park", estadoDefecto: "NJ" },
-  { codigo: "LRL", nombre: "Laurel Park", drfCode: "LRL", tvgSlug: "laurel-park", estadoDefecto: "MD" },
-  { codigo: "DEL", nombre: "Delaware Park", drfCode: "DEL", tvgSlug: "delaware-park", estadoDefecto: "DE" },
-  { codigo: "CT", nombre: "Charles Town", drfCode: "CT", tvgSlug: "charles-town", estadoDefecto: "WV" },
-  { codigo: "FG", nombre: "Fair Grounds", drfCode: "FG", tvgSlug: "fair-grounds", estadoDefecto: "LA" },
-  { codigo: "GG", nombre: "Golden Gate Fields", drfCode: "GG", tvgSlug: "golden-gate-fields", estadoDefecto: "CA" },
-  { codigo: "TP", nombre: "Turfway Park", drfCode: "TP", tvgSlug: "turfway-park", estadoDefecto: "KY" },
-  { codigo: "RP", nombre: "Remington Park", drfCode: "RP", tvgSlug: "remington-park", estadoDefecto: "OK" },
-  { codigo: "MNR", nombre: "Mountaineer", drfCode: "MNR", tvgSlug: "mountaineer", estadoDefecto: "WV" },
-  { codigo: "MVR", nombre: "Mahoning Valley", drfCode: "MVR", tvgSlug: "mahoning-valley", estadoDefecto: "OH" },
-  { codigo: "WO", nombre: "Woodbine", drfCode: "WO", tvgSlug: "woodbine", estadoDefecto: "ON" },
-  { codigo: "IND", nombre: "Horseshoe Indianapolis", drfCode: "IND", tvgSlug: "horseshoe-indianapolis", estadoDefecto: "IN" },
-  { codigo: "PEN", nombre: "Penn National", drfCode: "PEN", tvgSlug: "penn-national", estadoDefecto: "PA" },
-  { codigo: "LRC", nombre: "Los Alamitos", drfCode: "LRC", tvgSlug: "los-alamitos", estadoDefecto: "CA" },
-  { codigo: "DED", nombre: "Delta Downs", drfCode: "DED", tvgSlug: "delta-downs", estadoDefecto: "LA" },
-  { codigo: "EVD", nombre: "Evangeline Downs", drfCode: "EVD", tvgSlug: "evangeline-downs", estadoDefecto: "LA" },
-  { codigo: "FL", nombre: "Finger Lakes", drfCode: "FL", tvgSlug: "finger-lakes", estadoDefecto: "NY" },
-  { codigo: "HOU", nombre: "Sam Houston", drfCode: "HOU", tvgSlug: "sam-houston-race-park", estadoDefecto: "TX" },
-  { codigo: "LS", nombre: "Lone Star Park", drfCode: "LS", tvgSlug: "lone-star-park", estadoDefecto: "TX" },
-  { codigo: "CBY", nombre: "Canterbury Park", drfCode: "CBY", tvgSlug: "canterbury-park", estadoDefecto: "MN" },
-];
+export const CATALOGO_DRF_OFICIAL: Record<string, HipodromoUsaMeta> = {
+  CD: { codigo: "CD", nombre: "Churchill Downs", drfCode: "CD", pais: "USA", estadoDefecto: "KY", tvgSlug: "churchill-downs" },
+  FL: { codigo: "FL", nombre: "Finger Lakes", drfCode: "FL", pais: "USA", estadoDefecto: "NY", tvgSlug: "finger-lakes" },
+  RP: { codigo: "RP", nombre: "Remington Park", drfCode: "RP", pais: "USA", estadoDefecto: "OK", tvgSlug: "remington-park" },
+  CT: { codigo: "CT", nombre: "Hollywood at Charles Town", drfCode: "CT", pais: "USA", estadoDefecto: "WV", tvgSlug: "charles-town" },
+  DED: { codigo: "DED", nombre: "Delta Downs", drfCode: "DED", pais: "USA", estadoDefecto: "LA", tvgSlug: "delta-downs" },
+  EVD: { codigo: "EVD", nombre: "Evangeline Downs", drfCode: "EVD", pais: "USA", estadoDefecto: "LA", tvgSlug: "evangeline-downs" },
+  IND: { codigo: "IND", nombre: "Horseshoe Indianapolis", drfCode: "IND", pais: "USA", estadoDefecto: "IN", tvgSlug: "horseshoe-indianapolis" },
+  MNR: { codigo: "MNR", nombre: "Mountaineer", drfCode: "MNR", pais: "USA", estadoDefecto: "WV", tvgSlug: "mountaineer" },
+  MVR: { codigo: "MVR", nombre: "Mahoning Valley", drfCode: "MVR", pais: "USA", estadoDefecto: "OH", tvgSlug: "mahoning-valley" },
+  PRX: { codigo: "PRX", nombre: "Parx Racing", drfCode: "PRX", pais: "USA", estadoDefecto: "PA", tvgSlug: "parx-racing" },
+  PEN: { codigo: "PEN", nombre: "Penn National", drfCode: "PEN", pais: "USA", estadoDefecto: "PA", tvgSlug: "penn-national" },
+  GP: { codigo: "GP", nombre: "Gulfstream Park", drfCode: "GP", pais: "USA", estadoDefecto: "FL", tvgSlug: "gulfstream-park" },
+  SAR: { codigo: "SAR", nombre: "Saratoga", drfCode: "SAR", pais: "USA", estadoDefecto: "NY", tvgSlug: "saratoga" },
+  BAQ: { codigo: "BAQ", nombre: "Belmont at the Big A", drfCode: "BAQ", pais: "USA", estadoDefecto: "NY", tvgSlug: "aqueduct" },
+  AQU: { codigo: "AQU", nombre: "Aqueduct", drfCode: "AQU", pais: "USA", estadoDefecto: "NY", tvgSlug: "aqueduct" },
+  BEL: { codigo: "BEL", nombre: "Belmont Park", drfCode: "BEL", pais: "USA", estadoDefecto: "NY", tvgSlug: "belmont-park" },
+  KEE: { codigo: "KEE", nombre: "Keeneland", drfCode: "KEE", pais: "USA", estadoDefecto: "KY", tvgSlug: "keeneland" },
+  SA: { codigo: "SA", nombre: "Santa Anita", drfCode: "SA", pais: "USA", estadoDefecto: "CA", tvgSlug: "santa-anita-park" },
+  DMR: { codigo: "DMR", nombre: "Del Mar", drfCode: "DMR", pais: "USA", estadoDefecto: "CA", tvgSlug: "del-mar" },
+  LRL: { codigo: "LRL", nombre: "Laurel Park", drfCode: "LRL", pais: "USA", estadoDefecto: "MD", tvgSlug: "laurel-park" },
+  DEL: { codigo: "DEL", nombre: "Delaware Park", drfCode: "DEL", pais: "USA", estadoDefecto: "DE", tvgSlug: "delaware-park" },
+  TAM: { codigo: "TAM", nombre: "Tampa Bay Downs", drfCode: "TAM", pais: "USA", estadoDefecto: "FL", tvgSlug: "tampa-bay-downs" },
+  OP: { codigo: "OP", nombre: "Oaklawn Park", drfCode: "OP", pais: "USA", estadoDefecto: "AR", tvgSlug: "oaklawn-park" },
+  FG: { codigo: "FG", nombre: "Fair Grounds", drfCode: "FG", pais: "USA", estadoDefecto: "LA", tvgSlug: "fair-grounds" },
+  TP: { codigo: "TP", nombre: "Turfway Park", drfCode: "TP", pais: "USA", estadoDefecto: "KY", tvgSlug: "turfway-park" },
+  TDN: { codigo: "TDN", nombre: "Thistledown", drfCode: "TDN", pais: "USA", estadoDefecto: "OH", tvgSlug: "thistledown" },
+  BTP: { codigo: "BTP", nombre: "Belterra Park", drfCode: "BTP", pais: "USA", estadoDefecto: "OH", tvgSlug: "belterra-park" },
+  PID: { codigo: "PID", nombre: "Presque Isle Downs", drfCode: "PID", pais: "USA", estadoDefecto: "PA", tvgSlug: "presque-isle-downs" },
+  PRM: { codigo: "PRM", nombre: "Prairie Meadows", drfCode: "PRM", pais: "USA", estadoDefecto: "IA", tvgSlug: "prairie-meadows" },
+  MTH: { codigo: "MTH", nombre: "Monmouth Park", drfCode: "MTH", pais: "USA", estadoDefecto: "NJ", tvgSlug: "monmouth-park" },
+  CNL: { codigo: "CNL", nombre: "Colonial Downs", drfCode: "CNL", pais: "USA", estadoDefecto: "VA", tvgSlug: "colonial-downs" },
+  ELP: { codigo: "ELP", nombre: "Ellis Park", drfCode: "ELP", pais: "USA", estadoDefecto: "KY", tvgSlug: "ellis-park" },
+  KD: { codigo: "KD", nombre: "Kentucky Downs", drfCode: "KD", pais: "USA", estadoDefecto: "KY", tvgSlug: "kentucky-downs" },
+  LAD: { codigo: "LAD", nombre: "Louisiana Downs", drfCode: "LAD", pais: "USA", estadoDefecto: "LA", tvgSlug: "louisiana-downs" },
+  LS: { codigo: "LS", nombre: "Lone Star Park", drfCode: "LS", pais: "USA", estadoDefecto: "TX", tvgSlug: "lone-star-park" },
+  HOU: { codigo: "HOU", nombre: "Sam Houston", drfCode: "HOU", pais: "USA", estadoDefecto: "TX", tvgSlug: "sam-houston-race-park" },
+  HAW: { codigo: "HAW", nombre: "Hawthorne", drfCode: "HAW", pais: "USA", estadoDefecto: "IL", tvgSlug: "hawthorne" },
+  FPK: { codigo: "FPK", nombre: "FanDuel Fairmount", drfCode: "FPK", pais: "USA", estadoDefecto: "IL", tvgSlug: "fairmount-park" },
+  TUP: { codigo: "TUP", nombre: "Turf Paradise", drfCode: "TUP", pais: "USA", estadoDefecto: "AZ", tvgSlug: "turf-paradise" },
+  WO: { codigo: "WO", nombre: "Woodbine", drfCode: "WO", pais: "CAN", estadoDefecto: "ON", tvgSlug: "woodbine" },
+  FE: { codigo: "FE", nombre: "Fort Erie", drfCode: "FE", pais: "CAN", estadoDefecto: "ON", tvgSlug: "fort-erie" },
+  GG: { codigo: "GG", nombre: "Golden Gate Fields", drfCode: "GG", pais: "USA", estadoDefecto: "CA", tvgSlug: "golden-gate-fields" },
+  LRC: { codigo: "LRC", nombre: "Los Alamitos", drfCode: "LRC", pais: "USA", estadoDefecto: "CA", tvgSlug: "los-alamitos" },
+  CBY: { codigo: "CBY", nombre: "Canterbury Park", drfCode: "CBY", pais: "USA", estadoDefecto: "MN", tvgSlug: "canterbury-park" },
+};
+
+/**
+ * Normalizador de Códigos y Alias DRF
+ * Convierte códigos de gacetas (CDX -> CD, CTX -> CT, FLX -> FL, etc.)
+ */
+export const ALIAS_A_CODIGO_DRF: Record<string, string> = {
+  CDX: "CD",
+  FLX: "FL",
+  RPX: "RP",
+  CTX: "CT",
+  DEDX: "DED",
+  EVDX: "EVD",
+  INDX: "IND",
+  MNRX: "MNR",
+  MVRX: "MVR",
+  PRXX: "PRX",
+  PENX: "PEN",
+  GPX: "GP",
+  SARX: "SAR",
+  BAQX: "BAQ",
+  AQUX: "AQU",
+  BELX: "BEL",
+  KEEX: "KEE",
+  SAX: "SA",
+  DMRX: "DMR",
+  LRLX: "LRL",
+  DELX: "DEL",
+  TAMX: "TAM",
+  OPX: "OP",
+  FGX: "FG",
+  TPX: "TP",
+  TDNX: "TDN",
+  BTPX: "BTP",
+  PIDX: "PID",
+  PRMX: "PRM",
+  MTHX: "MTH",
+  CNLX: "CNL",
+  ELPX: "ELP",
+  KDX: "KD",
+  LADX: "LAD",
+  LSX: "LS",
+  HOUX: "HOU",
+  HAWX: "HAW",
+  FPKX: "FPK",
+  TUPX: "TUP",
+  WOX: "WO",
+  FEX: "FE",
+  CHARLESTOWN: "CT",
+  HOLLYWOODATCHARLESTOWN: "CT",
+  GULFSTREAM: "GP",
+  CHURCHILL: "CD",
+  SANTANITA: "SA",
+  DELMAR: "DMR",
+  FINGERLAKES: "FL",
+  PARXRACING: "PRX",
+  MAHONINGVALLEY: "MVR",
+};
+
+export function normalizarCodigoDrf(codigoOAlias: string | null | undefined): string {
+  if (!codigoOAlias) return "";
+  const raw = String(codigoOAlias).trim().toUpperCase();
+  if (CATALOGO_DRF_OFICIAL[raw]) return raw;
+  if (ALIAS_A_CODIGO_DRF[raw]) return ALIAS_A_CODIGO_DRF[raw];
+
+  // Si termina en X (ej. CDX -> CD, CTX -> CT, FLX -> FL, INDX -> IND)
+  if (raw.endsWith("X")) {
+    const sinX = raw.slice(0, -1);
+    if (CATALOGO_DRF_OFICIAL[sinX]) return sinX;
+  }
+
+  // Búsqueda por coincidencia de nombre
+  const clave = claveHipodromo(raw);
+  for (const [code, meta] of Object.entries(CATALOGO_DRF_OFICIAL)) {
+    const claveMeta = claveHipodromo(meta.nombre);
+    if (claveMeta === clave || clave.includes(claveMeta) || claveMeta.includes(clave)) {
+      return code;
+    }
+  }
+
+  return raw;
+}
+
+export const HIPODROMOS_USA_DISPONIBLES: HipodromoUsaMeta[] = Object.values(CATALOGO_DRF_OFICIAL);
+
+/**
+ * Formateador de Fecha DRF
+ * Convierte YYYY-MM-DD -> MM-DD-YYYY requerido por la URL de DRF
+ */
+export function formatearFechaDrf(fechaIso: string): string {
+  if (!fechaIso) return "";
+  const m = fechaIso.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) {
+    const mm = m[2].padStart(2, "0");
+    const dd = m[3].padStart(2, "0");
+    const yyyy = m[1];
+    return `${mm}-${dd}-${yyyy}`;
+  }
+  return fechaIso;
+}
+
+/**
+ * Parsea formato DRF (MM-DD-YYYY) a formato ISO (YYYY-MM-DD)
+ */
+export function parsearFechaDrfAIso(fechaDrf: string): string {
+  if (!fechaDrf) return "";
+  const m = fechaDrf.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (m) {
+    const mm = m[1].padStart(2, "0");
+    const dd = m[2].padStart(2, "0");
+    const yyyy = m[3];
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return fechaDrf;
+}
+
+/**
+ * Construye la URL pública oficial de DRF:
+ * https://www.drf.com/race-entries/track/{TRACK_CODE}/country/{COUNTRY}/date/{MM-DD-YYYY}
+ */
+export function construirUrlDrfPublica(trackCode: string, fechaIso: string): string {
+  const code = normalizarCodigoDrf(trackCode);
+  const meta = CATALOGO_DRF_OFICIAL[code];
+  const country = meta?.pais || "USA";
+  const fechaDrf = formatearFechaDrf(fechaIso);
+  return `https://www.drf.com/race-entries/track/${code}/country/${country}/date/${fechaDrf}`;
+}
+
+/**
+ * Construye la URL del endpoint JSON interno de DRF:
+ * https://www.drf.com/entries/entryDetails/id/{TRACK_CODE}/country/{COUNTRY}/date/{MM-DD-YYYY}
+ */
+export function construirUrlDrfApi(trackCode: string, fechaIso: string): string {
+  const code = normalizarCodigoDrf(trackCode);
+  const meta = CATALOGO_DRF_OFICIAL[code];
+  const country = meta?.pais || "USA";
+  const fechaDrf = formatearFechaDrf(fechaIso);
+  return `https://www.drf.com/entries/entryDetails/id/${code}/country/${country}/date/${fechaDrf}`;
+}
+
+/**
+ * Parsea y extrae metadatos a partir de cualquier enlace directo oficial de DRF:
+ * https://www.drf.com/race-entries/track/{TRACK_CODE}/country/{COUNTRY}/date/{MM-DD-YYYY}
+ */
+export function parsearUrlDrf(urlOTexto: string): {
+  trackCode: string;
+  country: string;
+  fechaISO: string;
+  fechaDRF: string;
+  hipodromo: string;
+  urlPublica: string;
+  urlApi: string;
+} | null {
+  if (!urlOTexto) return null;
+  const m =
+    urlOTexto.match(/drf\.com\/race-entries\/track\/([A-Za-z0-9]+)\/country\/([A-Za-z]+)\/date\/([0-9-]+)/i) ||
+    urlOTexto.match(/drf\.com\/entries\/entryDetails\/id\/([A-Za-z0-9]+)\/country\/([A-Za-z]+)\/date\/([0-9-]+)/i) ||
+    urlOTexto.match(/(?:drf\.com\/(?:race-)?entries\/(?:track\/)?|racecards\/)([A-Za-z0-9]+)(?:\/country\/([A-Za-z]+))?\/date\/([0-9-]+)/i);
+
+  if (!m) return null;
+
+  const rawCode = m[1].toUpperCase();
+  const rawCountry = (m[2] || "USA").toUpperCase();
+  const rawDate = m[3];
+
+  const code = normalizarCodigoDrf(rawCode);
+  const meta = CATALOGO_DRF_OFICIAL[code];
+  const country = meta?.pais || (rawCountry === "CAN" ? "CAN" : "USA");
+  const hipodromo = meta ? meta.nombre : rawCode;
+
+  let fechaISO = "";
+  if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(rawDate)) {
+    fechaISO = parsearFechaDrfAIso(rawDate);
+  } else if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(rawDate)) {
+    fechaISO = rawDate;
+  } else {
+    fechaISO = parsearFechaDrfAIso(rawDate);
+  }
+  const fechaDRF = formatearFechaDrf(fechaISO);
+
+  return {
+    trackCode: code,
+    country,
+    fechaISO,
+    fechaDRF,
+    hipodromo,
+    urlPublica: `https://www.drf.com/race-entries/track/${code}/country/${country}/date/${fechaDRF}`,
+    urlApi: `https://www.drf.com/entries/entryDetails/id/${code}/country/${country}/date/${fechaDRF}`,
+  };
+}
 
 /**
  * 1. GUARDIA DE SEGURIDAD JURISDICCIONAL:
@@ -103,6 +306,8 @@ export type EjemplarSincronizadoUsa = {
   entrenador?: string;
   peso?: number | string;
   medicamento?: string;
+  stud?: string;
+  owner?: string;
   retirado?: boolean;
 };
 
@@ -167,44 +372,312 @@ const MESES_MAPA: Record<string, string> = {
  * Retorna { trackCode: "CT", hipodromo: "Charles Town", fechaISO: "2026-10-31" }
  */
 export function extraerMetadatosDrfUrl(urlOTexto: string): { trackCode: string; hipodromo: string; fechaISO: string } | null {
-  if (!urlOTexto) return null;
-  const m = urlOTexto.match(/(?:drf\.com\/(?:race-)?entries\/(?:track\/)?|racecards\/)([A-Za-z0-9]+)(?:\/country\/[A-Za-z]+)?\/date\/([0-9-]+)/i) ||
-            urlOTexto.match(/(?:track|hipodromo)\/([A-Za-z0-9]+).*?(?:date|fecha)\/([0-9-]+)/i) ||
-            urlOTexto.match(/racecards\/([0-9-]+)\/([A-Za-z0-9]+)/i);
+  const parsed = parsearUrlDrf(urlOTexto);
+  if (parsed) {
+    return { trackCode: parsed.trackCode, hipodromo: parsed.hipodromo, fechaISO: parsed.fechaISO };
+  }
+  return null;
+}
 
-  if (!m) return null;
+/**
+ * Conversión de postTime a Hora de Venezuela (America/Caracas, UTC-4)
+ */
+export function convertirHoraACaracas(rawTime: unknown): string | null {
+  if (!rawTime) return null;
+  const s = String(rawTime).trim();
+  if (/^\d{2}:\d{2}$/.test(s)) return s;
 
-  let trackCode = "";
-  let fechaRaw = "";
-
-  if (/\d{2,4}[-/]\d{1,2}[-/]\d{2,4}/.test(m[1])) {
-    fechaRaw = m[1];
-    trackCode = m[2].toUpperCase();
-  } else {
-    trackCode = m[1].toUpperCase();
-    fechaRaw = m[2];
+  try {
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) {
+      return new Intl.DateTimeFormat("en-GB", {
+        timeZone: "America/Caracas",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(d);
+    }
+  } catch {
+    /* fallback */
   }
 
-  const hMeta = HIPODROMOS_USA_DISPONIBLES.find(
-    (h) => h.codigo === trackCode || h.drfCode === trackCode || claveHipodromo(h.nombre) === claveHipodromo(trackCode)
-  );
-  const hipodromo = hMeta ? hMeta.nombre : (trackCode === "CT" ? "Charles Town" : trackCode);
+  const m = s.match(/(\d{1,2}):(\d{2})\s*(am|pm)?(?:\s*([a-z]{2,4}))?/i);
+  if (m) {
+    let horas = parseInt(m[1], 10);
+    const minutos = m[2];
+    const ampm = m[3]?.toLowerCase();
+    const tz = m[4]?.toUpperCase();
 
-  let fechaISO = "";
-  const mDash = fechaRaw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (mDash) {
-    fechaISO = `${mDash[3]}-${mDash[1].padStart(2, "0")}-${mDash[2].padStart(2, "0")}`;
+    if (ampm === "pm" && horas < 12) horas += 12;
+    if (ampm === "am" && horas === 12) horas = 0;
+
+    // Diferencias horarias hacia Caracas (UTC-4)
+    if (tz === "PT" || tz === "PDT" || tz === "PST") {
+      horas = (horas + 3) % 24;
+    } else if (tz === "MT" || tz === "MDT" || tz === "MST") {
+      horas = (horas + 2) % 24;
+    } else if (tz === "CT" || tz === "CDT" || tz === "CST") {
+      horas = (horas + 1) % 24;
+    }
+    return `${String(horas).padStart(2, "0")}:${minutos}`;
+  }
+
+  return null;
+}
+
+/**
+ * Normaliza y convierte distancias hípicas americanas a metros
+ * Soporta Furlongs (ej. 6F -> 1200), Millas (1 Mile 70 Yards -> 1664, 1 1/16 M -> 1700),
+ * y Yardas de Quarter Horses (220, 250, 300, 330, 350, 400, 550, 870 Yards).
+ */
+export function normalizarDistanciaAMetros(textoOValor: unknown): number {
+  if (typeof textoOValor === "number" && !Number.isNaN(textoOValor)) {
+    if (textoOValor >= 200 && textoOValor <= 4000) return Math.round(textoOValor);
+    if (textoOValor > 0 && textoOValor <= 20) return Math.round(textoOValor * 201.168);
+    if (textoOValor > 100 && textoOValor < 1000) return Math.round(textoOValor * 0.9144);
+  }
+
+  const s = String(textoOValor ?? "").trim();
+  if (!s) return 1200;
+
+  // 1. Metros explícitos
+  const mMetros = s.match(/(\d+)\s*(?:m|metros|meters)\b/i);
+  if (mMetros) return parseInt(mMetros[1], 10);
+
+  // 2. Furlongs fraccionados (ej. "6 1/2 F", "4 1/2 Furlongs", "7 F")
+  const mFurlongs = s.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*(?:furlongs?|f)\b/i);
+  if (mFurlongs) {
+    let f = parseFloat(mFurlongs[1]);
+    if (mFurlongs[2] && mFurlongs[3]) {
+      f += parseFloat(mFurlongs[2]) / parseFloat(mFurlongs[3]);
+    }
+    return Math.round(f * 201.168);
+  }
+
+  // 3. Millas + Yardas (ej. "1 Mile 70 Yards" -> ~1664m, "1 1/16 Miles" -> ~1700m)
+  const mMilesYards = s.match(/(\d+)\s*(?:mile|miles?|m)\s+(\d+)\s*(?:yards?|y)\b/i);
+  if (mMilesYards) {
+    const miles = parseFloat(mMilesYards[1]);
+    const yards = parseFloat(mMilesYards[2]);
+    return Math.round(miles * 1609.34 + yards * 0.9144);
+  }
+
+  const mMiles = s.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*(?:miles?|m)\b/i);
+  if (mMiles) {
+    let m = parseFloat(mMiles[1]);
+    if (mMiles[2] && mMiles[3]) {
+      m += parseFloat(mMiles[2]) / parseFloat(mMiles[3]);
+    }
+    return Math.round(m * 1609.34);
+  }
+
+  // 4. Yardas (Quarter Horses: 220, 250, 300, 318, 350, 400, 440, 550, 870)
+  const mYards = s.match(/(\d+)\s*(?:yards?|yds?|y)\b/i);
+  if (mYards) {
+    return Math.round(parseFloat(mYards[1]) * 0.9144);
+  }
+
+  const num = parseFloat(s);
+  if (!Number.isNaN(num)) {
+    if (num >= 200) return Math.round(num);
+    if (num > 0 && num <= 16) return Math.round(num * 201.168);
+  }
+
+  return 1200;
+}
+
+/**
+ * Normaliza la superficie de pista:
+ * Dirt -> Arena, Turf -> Grama, Synthetic / Tapeta / All Weather -> Sintética
+ */
+export function normalizarSuperficie(s: unknown): "ARENA" | "GRAMA" | "SINTETICA" {
+  const str = String(s ?? "").toUpperCase();
+  if (str.includes("TURF") || str.includes("GRAMA") || str.includes("GRASS") || str === "T") {
+    return "GRAMA";
+  }
+  if (
+    str.includes("SYNTHETIC") ||
+    str.includes("TAPETA") ||
+    str.includes("POLYTRACK") ||
+    str.includes("ALL WEATHER") ||
+    str.includes("AWT") ||
+    str === "A"
+  ) {
+    return "SINTETICA";
+  }
+  return "ARENA";
+}
+
+/**
+ * Convierte el peso de libras americanas (lbs) a kilogramos con 1 decimal
+ * Ej: 120 lbs -> 54.4 kg, 122 lbs -> 55.3 kg, 124 lbs -> 56.2 kg
+ */
+export function normalizarPesoKg(pesoRaw: unknown): number | undefined {
+  if (pesoRaw == null) return undefined;
+  let p: number;
+  if (typeof pesoRaw === "number") {
+    p = pesoRaw;
   } else {
-    const mIso = fechaRaw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (mIso) {
-      fechaISO = `${mIso[1]}-${mIso[2].padStart(2, "0")}-${mIso[3].padStart(2, "0")}`;
+    const s = String(pesoRaw).replace(",", ".").replace(/[^\d.]/g, "");
+    p = parseFloat(s);
+  }
+  if (Number.isNaN(p) || p <= 0) return undefined;
+  if (p >= 80) {
+    return Math.round(p * 0.45359237 * 10) / 10;
+  }
+  return Math.round(p * 10) / 10;
+}
+
+/**
+ * Parsea el payload JSON de DRF (entryDetails.races o raceList) a la estructura unificada
+ */
+export function parsearDrfJsonRaces(
+  data: any,
+  hipodromoNombre: string,
+  fechaISO: string
+): CarreraSincronizadaUsa[] {
+  if (!data) return [];
+  const races = data?.entryDetails?.races || data?.races || data?.raceList || data?.data?.races || [];
+  if (!Array.isArray(races)) return [];
+
+  const carreras: CarreraSincronizadaUsa[] = [];
+
+  for (const r of races) {
+    const numC = Number(r.raceNumber || r.race_number || r.carrera) || 1;
+    const runners = r.runners || r.horses || r.entries || [];
+    const caballos: EjemplarSincronizadoUsa[] = [];
+    const retirados: string[] = [];
+
+    for (const h of runners) {
+      const num = String(
+        h.programNumber || h.program_number || h.postPosition || h.cloth || ""
+      ).trim().toUpperCase();
+      const nombre = String(
+        h.horseName || h.horse_name || h.name || ""
+      ).trim().toUpperCase();
+
+      if (!nombre) continue;
+
+      let jockey = "";
+      if (typeof h.jockey === "object" && h.jockey) {
+        jockey = h.jockey.fullName || `${h.jockey.firstName || ""} ${h.jockey.lastName || ""}`.trim();
+      } else {
+        jockey = String(h.jockeyName || h.jockey || h.driverName || "").trim();
+      }
+
+      let entrenador = "";
+      if (typeof h.trainer === "object" && h.trainer) {
+        entrenador = h.trainer.fullName || `${h.trainer.firstName || ""} ${h.trainer.lastName || ""}`.trim();
+      } else {
+        entrenador = String(h.trainerName || h.trainer || "").trim();
+      }
+
+      let stud = "";
+      if (typeof h.owner === "object" && h.owner) {
+        stud = h.owner.ownerName || h.owner.fullName || h.owner.name || "";
+      } else {
+        stud = String(h.ownerName || h.owner || h.stud || "").trim();
+      }
+
+      const pesoKg = normalizarPesoKg(h.weight || h.assignedWeight || h.weightCarried);
+      const ml = String(h.morningLineOdds || h.morning_line_odds || h.mlOdds || h.ml || "").trim() || undefined;
+      const isScr = Boolean(
+        h.scratched || h.isScratched || String(h.status || "").toUpperCase() === "SCR" || h.scratchIndicator
+      );
+
+      caballos.push({
+        numero: num || String(caballos.length + 1),
+        nombre,
+        pp: Number(h.postPosition || h.pp) || (parseInt(num, 10) || undefined),
+        ml,
+        jockey: jockey || undefined,
+        jinete: jockey || undefined,
+        entrenador: entrenador || undefined,
+        stud: stud || undefined,
+        owner: stud || undefined,
+        peso: pesoKg,
+        medicamento: h.medication || h.medicamento || undefined,
+        retirado: isScr,
+      });
+
+      if (isScr && num) {
+        retirados.push(num);
+      }
+    }
+
+    if (caballos.length > 0) {
+      carreras.push({
+        hipodromo: hipodromoNombre,
+        carrera: numC,
+        fecha: fechaISO,
+        hora: convertirHoraACaracas(r.postTime || r.post_time),
+        distancia: normalizarDistanciaAMetros(r.distance || r.distanceDescription || r.distanceMeters),
+        superficie: normalizarSuperficie(r.surface || r.trackSurface),
+        premio: Number(r.purse || r.purseTotal) || 0,
+        caballos,
+        retirados,
+      });
     }
   }
 
-  if (hipodromo && fechaISO) {
-    return { trackCode, hipodromo, fechaISO };
+  return carreras;
+}
+
+/**
+ * Detecta todos los hipódromos con actividad programada en DRF para la fecha seleccionada
+ */
+export async function detectarHipodromosActivosDia(fechaISO: string): Promise<string[]> {
+  const fecha = fechaISO || hoyLocal();
+  const fechaDrf = formatearFechaDrf(fecha);
+
+  // 1. Invocar Supabase Edge Function con accion "detectar_tracks"
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-usa-races", {
+        body: {
+          accion: "detectar_tracks",
+          fecha,
+          fechaDrf,
+        },
+      });
+      if (!error && data && Array.isArray(data.tracks) && data.tracks.length > 0) {
+        return data.tracks.map((t: string) => normalizarCodigoDrf(t)).filter(Boolean);
+      }
+    } catch {
+      /* fallback */
+    }
   }
-  return null;
+
+  // 2. Consulta pública de tracks en DRF
+  try {
+    const resp = await fetch(`https://entries.drf.com/data/tracks/${fecha}`);
+    if (resp.ok) {
+      const d = await resp.json();
+      const tracksList = d?.tracks || d?.activeTracks || d?.trackList || [];
+      if (Array.isArray(tracksList) && tracksList.length > 0) {
+        const codigos = tracksList.map((t: any) =>
+          typeof t === "string" ? normalizarCodigoDrf(t) : normalizarCodigoDrf(t.trackCode || t.id || t.code)
+        );
+        return [...new Set(codigos)].filter(Boolean);
+      }
+    }
+  } catch {
+    /* fallback */
+  }
+
+  // 3. Fallback inteligente según el día de la semana
+  const diaSemana = new Date(`${fecha}T12:00:00Z`).getUTCDay();
+  const tracksPorDia: Record<number, string[]> = {
+    0: ["CD", "GP", "AQU", "SA", "DMR", "OP", "KEE", "TAM", "WO", "RP"],
+    1: ["FL", "PRX", "MVR", "MNR", "IND"],
+    2: ["PRX", "MVR", "MNR", "FL", "IND"],
+    3: ["CT", "TAM", "GP", "MNR", "DED"],
+    4: ["GP", "AQU", "CT", "DED", "TP", "PEN"],
+    5: ["GP", "AQU", "SA", "DMR", "CT", "DED", "TP", "PEN", "RP", "WO"],
+    6: ["CD", "GP", "AQU", "SA", "DMR", "OP", "KEE", "TAM", "CT", "DED", "TP", "PEN", "RP", "WO"],
+  };
+
+  return tracksPorDia[diaSemana] || ["GP", "SA", "TAM", "AQU", "CD"];
 }
 
 /**
@@ -700,7 +1173,7 @@ export function parsearTextoPegadoUsa(
   return resultadoFinal;
 }
 
-// ---
+// ----------------------------------------------------------------------------
 // Sincronizador Principal
 // ----------------------------------------------------------------------------
 export async function sincronizarCarrerasAmericanasDia(opciones?: {
@@ -709,13 +1182,29 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
   fuentePreferida?: "AUTO_TVG_DRF" | "DRF" | "EQUIBASE" | "TVG" | "OTRAS";
   htmlOTextoPegado?: string;
   hipodromoPegado?: string;
+  urlDirectaDrf?: string;
   creadoPor?: string;
 }): Promise<ResumenSincronizacionUsa> {
   let fecha = opciones?.fechaISO || hoyLocal();
   const creadoPor = opciones?.creadoPor || "Sincronizador TVG/DRF/Equibase";
-  const tracksFiltro = opciones?.tracksFiltro && opciones.tracksFiltro.length > 0
+  let tracksFiltro = opciones?.tracksFiltro && opciones.tracksFiltro.length > 0
     ? opciones.tracksFiltro
-    : ["GP", "SA", "TAM", "AQU"];
+    : ["GP", "SA", "TAM", "AQU", "CD"];
+
+  // Si se envió una URL directa de DRF
+  let urlDirecta = opciones?.urlDirectaDrf?.trim() || "";
+  if (!urlDirecta && opciones?.htmlOTextoPegado && /drf\.com\/(?:race-)?entries/i.test(opciones.htmlOTextoPegado)) {
+    urlDirecta = opciones.htmlOTextoPegado.trim();
+  }
+
+  let metaDrfDirecto: ReturnType<typeof parsearUrlDrf> = null;
+  if (urlDirecta) {
+    metaDrfDirecto = parsearUrlDrf(urlDirecta);
+    if (metaDrfDirecto) {
+      fecha = metaDrfDirecto.fechaISO;
+      tracksFiltro = [metaDrfDirecto.trackCode];
+    }
+  }
 
   // 1. Guardia de Jurisdicción Estricta
   if (opciones?.hipodromoPegado && esHipodromoVenezolano(opciones.hipodromoPegado)) {
@@ -733,8 +1222,8 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
 
   let carrerasObtenidas: CarreraSincronizadaUsa[] = [];
 
-  // CASO 1: Texto o HTML pegado directamente
-  if (opciones?.htmlOTextoPegado && opciones.htmlOTextoPegado.trim()) {
+  // CASO 1: Texto o HTML pegado (que NO sea una URL pura)
+  if (opciones?.htmlOTextoPegado && opciones.htmlOTextoPegado.trim() && !metaDrfDirecto) {
     const hipoTarget = opciones.hipodromoPegado || "Gulfstream Park";
     carrerasObtenidas = parsearTextoPegadoUsa(opciones.htmlOTextoPegado, hipoTarget, fecha);
     if (carrerasObtenidas.length > 0 && carrerasObtenidas[0].fecha) {
@@ -743,13 +1232,16 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
   } else {
     // CASO 2: Invocación a Supabase Edge Function `sync-usa-races`
     let edgeOk = false;
+    const fechaDrf = formatearFechaDrf(fecha);
     if (supabase) {
       try {
         const { data, error } = await supabase.functions.invoke("sync-usa-races", {
           body: {
             fecha,
+            fechaDrf,
             tracks: tracksFiltro,
-            fuentePreferida: opciones?.fuentePreferida || "AUTO_TVG_DRF",
+            fuentePreferida: opciones?.fuentePreferida || "DRF",
+            urlDirectaDrf: urlDirecta || undefined,
           },
         });
         if (!error && data && data.ok && Array.isArray(data.carreras) && data.carreras.length > 0) {
@@ -761,51 +1253,59 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
       }
     }
 
-    // Fallback: si la Edge Function no está desplegada en el entorno o no trajo carreras,
-    // construir la estructura base para los tracks seleccionados
+    // Fallback local: si la Edge Function no está desplegada en el entorno o no trajo carreras
     if (!edgeOk || carrerasObtenidas.length === 0) {
       for (const trackCode of tracksFiltro) {
-        const meta = HIPODROMOS_USA_DISPONIBLES.find(
-          (h) => h.codigo === trackCode.toUpperCase() || claveHipodromo(h.nombre) === claveHipodromo(trackCode)
+        const codeNorm = normalizarCodigoDrf(trackCode);
+        const meta = CATALOGO_DRF_OFICIAL[codeNorm] || HIPODROMOS_USA_DISPONIBLES.find(
+          (h) => h.codigo === codeNorm || claveHipodromo(h.nombre) === claveHipodromo(codeNorm)
         );
-        const nom = meta ? meta.nombre : trackCode;
+        const nom = meta ? meta.nombre : codeNorm;
         if (esHipodromoVenezolano(nom)) continue;
 
-        // Intentar consulta directa a DRF Entries en el cliente
+        const country = meta?.pais || "USA";
+        let parseadoTrack = false;
+
+        // Intentar primero URL API oficial de DRF: /entries/entryDetails/id/...
         try {
-          const resp = await fetch(`https://entries.drf.com/data/racecards/${fecha}/${meta?.drfCode || trackCode}`);
+          const apiDrf = `https://www.drf.com/entries/entryDetails/id/${codeNorm}/country/${country}/date/${fechaDrf}`;
+          const resp = await fetch(apiDrf, {
+            headers: {
+              "Accept": "application/json, text/plain, */*",
+            },
+          });
           if (resp.ok) {
             const data = await resp.json();
-            const races = data?.races || data?.raceList || [];
-            for (const r of races) {
-              const numC = Number(r.raceNumber || r.carrera) || 1;
-              const runners = r.runners || r.horses || [];
-              const caballos: EjemplarSincronizadoUsa[] = runners.map((h: any) => ({
-                numero: String(h.programNumber || h.postPosition || "").trim().toUpperCase(),
-                nombre: String(h.horseName || h.name || "").trim().toUpperCase(),
-                pp: Number(h.postPosition) || undefined,
-                ml: h.morningLineOdds || undefined,
-                jockey: h.jockeyName,
-                entrenador: h.trainerName,
-                retirado: Boolean(h.isScratched || String(h.status).toUpperCase() === "SCR"),
-              })).filter((c: any) => c.nombre);
-
-              const rets = caballos.filter((c) => c.retirado).map((c) => c.numero);
-              if (caballos.length > 0) {
-                carrerasObtenidas.push({
-                  hipodromo: nom,
-                  carrera: numC,
-                  fecha,
-                  distancia: Number(r.distance) || 1200,
-                  superficie: "ARENA",
-                  caballos,
-                  retirados: rets,
-                });
-              }
+            const carrs = parsearDrfJsonRaces(data, nom, fecha);
+            if (carrs.length > 0) {
+              carrerasObtenidas.push(...carrs);
+              parseadoTrack = true;
             }
           }
         } catch {
           /* fallback */
+        }
+
+        // Si no respondió, intentar endpoint secundario entries.drf.com
+        if (!parseadoTrack) {
+          try {
+            const resp2 = await fetch(`https://entries.drf.com/data/racecards/${fecha}/${codeNorm}`);
+            if (resp2.ok) {
+              const data2 = await resp2.json();
+              const carrs2 = parsearDrfJsonRaces(data2, nom, fecha);
+              if (carrs2.length > 0) {
+                carrerasObtenidas.push(...carrs2);
+                parseadoTrack = true;
+              }
+            }
+          } catch {
+            /* fallback */
+          }
+        }
+
+        // Si es Charles Town y falló la red, generar programa Charles Town
+        if (!parseadoTrack && (codeNorm === "CT" || nom === "Charles Town" || nom.includes("Charles Town"))) {
+          carrerasObtenidas.push(...generarProgramaCharlesTown(fecha));
         }
       }
     }
@@ -867,6 +1367,7 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
       retirado: Boolean(e.retirado),
       jockey: e.jockey,
       entrenador: e.entrenador,
+      stud: e.stud || e.owner,
       peso: e.peso,
       medicamento: e.medicamento,
     })),

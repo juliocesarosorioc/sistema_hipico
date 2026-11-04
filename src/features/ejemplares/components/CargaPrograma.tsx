@@ -364,15 +364,15 @@ export function CargaPrograma() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* MODO 1: Sincronizar USA en Vivo (Automático) */}
+          {/* MODO 1: Sincronizar USA / DRF Oficial (Automático) */}
           <button
             type="button"
             onClick={() => setModalSincUsa(true)}
             className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-95 px-3 py-1.5 text-xs font-black uppercase text-slate-950 shadow-md transition-all"
-            title="Sincronizar directamente desde feeds USA (DRF / TVG / TwinSpires) para cualquier fecha sin PDFs"
+            title="Sincronizar directamente desde feeds oficiales de DRF (Daily Racing Form) / TVG / TwinSpires para cualquier fecha o pegando el enlace de DRF"
           >
             <span>🇺🇸</span>
-            <span>Sincronizar USA en Vivo (Automático)</span>
+            <span>Sincronizar USA / DRF Oficial</span>
           </button>
 
           {/* MODO 2: Importar Gacetas PDF (Multi-Fecha / Lote) */}

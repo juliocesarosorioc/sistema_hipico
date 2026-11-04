@@ -3,12 +3,18 @@
 import { useState, useId, useTransition } from "react";
 import {
   HIPODROMOS_USA_DISPONIBLES,
+  CATALOGO_DRF_OFICIAL,
   parsearTextoPegadoUsa,
   sincronizarCarrerasAmericanasDia,
   iniciarAutoActualizadorRetirados,
   detenerAutoActualizadorRetirados,
   extraerFechaDeTexto,
   extraerHipodromoDeTexto,
+  formatearFechaDrf,
+  parsearUrlDrf,
+  detectarHipodromosActivosDia,
+  construirUrlDrfPublica,
+  normalizarCodigoDrf,
   type ResumenSincronizacionUsa,
   type FuenteSincronizacionUsa,
   generarReporteTextoWhatsApp,
@@ -61,6 +67,11 @@ export function ModalSincronizadorUsa({
   const [mostrarInformeModal, setMostrarInformeModal] = useState(false);
   const [autoRetiros, setAutoRetiros] = useState(false);
 
+  // Enlace Directo Oficial DRF
+  const [urlDrf, setUrlDrf] = useState<string>("");
+  const [metaDrf, setMetaDrf] = useState<ReturnType<typeof parsearUrlDrf>>(null);
+  const [detectandoTracks, setDetectandoTracks] = useState(false);
+
   // Tab Pegar
   const [hipodromoPegado, setHipodromoPegado] = useState<string>("Gulfstream Park");
   const [textoPegado, setTextoPegado] = useState<string>("");
@@ -71,6 +82,83 @@ export function ModalSincronizadorUsa({
   const [resumen, setResumen] = useState<ResumenSincronizacionUsa | null>(null);
 
   if (!abierto) return null;
+
+  const handleCambioUrlDrf = (valor: string) => {
+    setUrlDrf(valor);
+    const parsed = parsearUrlDrf(valor);
+    setMetaDrf(parsed);
+    if (parsed) {
+      if (parsed.fechaISO && parsed.fechaISO !== fecha) {
+        setFecha(parsed.fechaISO);
+      }
+      if (parsed.hipodromo) {
+        setSeleccionTodos(false);
+        setSeleccionados([parsed.hipodromo]);
+      }
+      emitirToast(`🎯 Detectado enlace DRF: ${parsed.trackCode} (${parsed.hipodromo}) · ${parsed.fechaDRF}`, "info");
+    }
+  };
+
+  const handleDetectarHipodromosDelDia = async () => {
+    setDetectandoTracks(true);
+    try {
+      const codigos = await detectarHipodromosActivosDia(fecha);
+      if (codigos.length > 0) {
+        const nombres = codigos.map((c) => {
+          const meta = CATALOGO_DRF_OFICIAL[c] || HIPODROMOS_USA_DISPONIBLES.find((h) => h.codigo === c);
+          return meta ? meta.nombre : c;
+        });
+        setSeleccionTodos(false);
+        setSeleccionados(nombres);
+        emitirToast(
+          `🔍 Detectados ${codigos.length} hipódromos con carreras para ${fecha} (DRF: ${formatearFechaDrf(fecha)}): ${codigos.join(", ")}`,
+          "success"
+        );
+      } else {
+        emitirToast("No se detectaron hipódromos activos automáticamente para esta fecha. Puedes seleccionar manualmente.", "warning");
+      }
+    } catch {
+      emitirToast("Error al detectar hipódromos del día.", "error");
+    } finally {
+      setDetectandoTracks(false);
+    }
+  };
+
+  const ejecutarSincronizacionUrlDirecta = async () => {
+    if (!metaDrf) {
+      emitirToast("Ingresa o pega un enlace válido de DRF primero.", "warning");
+      return;
+    }
+    setCargando(true);
+    setResumen(null);
+    try {
+      const res = await sincronizarCarrerasAmericanasDia({
+        fechaISO: metaDrf.fechaISO,
+        tracksFiltro: [metaDrf.trackCode],
+        urlDirectaDrf: metaDrf.urlPublica,
+        fuentePreferida: "DRF",
+      });
+      setResumen(res);
+      if (res.ok) {
+        setMostrarInformeModal(true);
+        useCarrerasDiaStore.getState().setFecha(res.fecha || metaDrf.fechaISO);
+        emitirToast(
+          `✅ Importado ${metaDrf.hipodromo} (${res.totalCarreras} carreras, ${res.totalEjemplares} ejemplares) desde DRF.`,
+          "success"
+        );
+        startTransition(() => {
+          onActualizado?.();
+        });
+      } else {
+        emitirToast(`⚠️ Importación completada con advertencias: ${res.error ?? "Verificar log"}`, "warning");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      emitirToast(`❌ Error al importar desde DRF: ${msg}`, "error");
+    } finally {
+      setCargando(false);
+    }
+  };
 
   const toggleTrack = (nombre: string) => {
     if (seleccionTodos) setSeleccionTodos(false);
@@ -268,9 +356,14 @@ export function ModalSincronizadorUsa({
           {/* Selector de Fecha y Fuente */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label htmlFor="fecha-sinc-usa" className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                📅 Fecha de Jornada (Hora Venezuela UTC-4)
-              </label>
+              <div className="flex items-center justify-between">
+                <label htmlFor="fecha-sinc-usa" className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  📅 Fecha de Jornada (Hora Venezuela UTC-4)
+                </label>
+                <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-300">
+                  DRF: {formatearFechaDrf(fecha)}
+                </span>
+              </div>
               <input
                 id="fecha-sinc-usa"
                 type="date"
@@ -358,8 +451,8 @@ export function ModalSincronizadorUsa({
                 onChange={(e) => setFuente(e.target.value as FuenteSincronizacionUsa)}
                 className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-bold text-white focus:border-amber-400 focus:outline-none"
               >
+                <option value="DRF">🎯 Daily Racing Form Oficial (URL / API / JSON)</option>
                 <option value="AUTO_TVG_DRF">⚡ Multi-Fuente: DRF + TVG + Equibase (Recomendado)</option>
-                <option value="DRF">🎯 Daily Racing Form (DRF Entries)</option>
                 <option value="EQUIBASE">🏇 Equibase (Entries & Fast Entries)</option>
                 <option value="TVG">📺 TVG / FanDuel Racing</option>
                 <option value="OTRAS">🌐 TwinSpires / Brisnet / Otras Páginas</option>
@@ -367,13 +460,67 @@ export function ModalSincronizadorUsa({
             </div>
           </div>
 
-                    {/* Alerta de Jornada Futura */}
+          {/* Sección Enlace Oficial DRF (Pegar Link Directo) */}
+          <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-950/20 via-slate-900 to-slate-950 p-4 space-y-2.5 shadow-inner">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🔗</span>
+                <label htmlFor="url-drf-directa-input" className="text-xs font-black uppercase tracking-wider text-amber-300">
+                  Pegar Enlace Directo de DRF (Daily Racing Form)
+                </label>
+              </div>
+              {urlDrf && (
+                <button
+                  type="button"
+                  onClick={() => { setUrlDrf(""); setMetaDrf(null); }}
+                  className="text-[11px] text-slate-400 hover:text-white"
+                >
+                  Limpiar
+                </button>
+              )}
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                id="url-drf-directa-input"
+                type="url"
+                placeholder="https://www.drf.com/race-entries/track/CD/country/USA/date/11-04-2026"
+                value={urlDrf}
+                onChange={(e) => handleCambioUrlDrf(e.target.value)}
+                className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-mono text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none"
+              />
+              <button
+                type="button"
+                disabled={!metaDrf || cargando}
+                onClick={() => void ejecutarSincronizacionUrlDirecta()}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-400 px-4 py-2 text-xs font-black uppercase text-slate-950 hover:bg-amber-300 active:scale-95 disabled:opacity-40 transition-all shadow-md"
+              >
+                <span>⚡</span>
+                <span>{cargando ? "Importando..." : "Importar DRF al Instante"}</span>
+              </button>
+            </div>
+            {metaDrf ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl bg-emerald-950/50 border border-emerald-500/40 px-3 py-2 text-xs">
+                <span className="font-bold text-emerald-300">✓ Enlace Detectado:</span>
+                <span className="rounded bg-emerald-900/60 px-2 py-0.5 font-mono font-bold text-white">
+                  {metaDrf.trackCode} ({metaDrf.hipodromo})
+                </span>
+                <span className="text-slate-300">· País: <strong>{metaDrf.country}</strong></span>
+                <span className="text-slate-300">· Fecha DRF: <strong>{metaDrf.fechaDRF}</strong> (ISO: {metaDrf.fechaISO})</span>
+              </div>
+            ) : (
+              <p className="text-[10px] text-slate-500 font-mono">
+                Estructura admitida: https://www.drf.com/race-entries/track/[TRACK]/country/[COUNTRY]/date/[MM-DD-YYYY]
+              </p>
+            )}
+          </div>
+
+          {/* Alerta de Jornada Futura */}
           {fecha > hoyLocal() && (
             <div className="flex items-center gap-2.5 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs font-semibold text-amber-200">
               <span className="text-xl">🗓️</span>
               <div>
                 <span className="font-black text-white uppercase tracking-wider">
-                  Programación para Jornada Futura: {fecha}
+                  Programación para Jornada Futura: {fecha} (DRF: {formatearFechaDrf(fecha)})
                 </span>
                 <p className="text-[11px] text-amber-100/90 font-normal">
                   Las carreras importadas para este día venidero quedarán registradas en el catálogo central y disponibles al instante en Apuestas, Tablas, Marcas y Reportes de esa fecha.
@@ -390,7 +537,17 @@ export function ModalSincronizadorUsa({
                   <span className="text-xs font-black uppercase tracking-wider text-slate-300">
                     🏇 Hipódromos Americanos a Sincronizar
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={detectandoTracks}
+                      onClick={() => void handleDetectarHipodromosDelDia()}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 active:scale-95 px-2.5 py-1 text-[11px] font-black uppercase text-white shadow transition-all disabled:opacity-50"
+                      title="Consultar en DRF qué hipódromos tienen carreras en esta fecha"
+                    >
+                      <span>{detectandoTracks ? "🔄" : "🔍"}</span>
+                      <span>{detectandoTracks ? "Detectando..." : "Detectar Hipódromos del Día"}</span>
+                    </button>
                     <button
                       type="button"
                       onClick={seleccionarTodosLosTracks}
