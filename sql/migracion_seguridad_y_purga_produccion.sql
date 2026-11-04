@@ -669,4 +669,41 @@ BEGIN
   END IF;
 END $$;
 
+-- ============================================================================
+-- PARTE 3: BLINDAJE DE PERMISOS RLS PARA CARRERAS, SEMANA ACTIVA Y CIERRES
+-- ============================================================================
+DO $$
+DECLARE
+  t TEXT;
+  tablas_operativas TEXT[] := ARRAY[
+    'carreras',
+    'programa_dia',
+    'tablas_fijas',
+    'resultados_carreras',
+    'cierres_jornada',
+    'grupos_venta',
+    'hipodromos'
+  ];
+BEGIN
+  IF to_regclass('public.grupos_venta') IS NOT NULL THEN
+    ALTER TABLE public.grupos_venta ADD COLUMN IF NOT EXISTS semana_vigente_inicio DATE;
+    ALTER TABLE public.grupos_venta ADD COLUMN IF NOT EXISTS dia_inicio_semana INT DEFAULT 1;
+    ALTER TABLE public.grupos_venta ADD COLUMN IF NOT EXISTS dia_fin_semana INT DEFAULT 7;
+  END IF;
+
+  FOREACH t IN ARRAY tablas_operativas
+  LOOP
+    IF to_regclass('public.' || quote_ident(t)) IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_acceso_total_prod', t);
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true)',
+        t || '_acceso_total_prod',
+        t
+      );
+      EXECUTE format('GRANT ALL ON TABLE public.%I TO anon, authenticated, service_role', t);
+    END IF;
+  END LOOP;
+END $$;
+
 COMMIT;
