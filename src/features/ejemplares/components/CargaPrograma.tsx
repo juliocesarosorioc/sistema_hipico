@@ -21,6 +21,13 @@ import {
   type CarreraPrograma,
   type ProgramaDia,
 } from "@/features/gaceta/lib/programa";
+import { ModalSincronizadorUsa } from "@/features/carreras/components/ModalSincronizadorUsa";
+import { ModalImportarGacetaPdf } from "@/features/inteligencia/components/ModalImportarGacetaPdf";
+import {
+  iniciarAutoActualizadorRetirados,
+  detenerAutoActualizadorRetirados,
+  estaAutoActualizadorActivo,
+} from "@/features/carreras/lib/sincronizar-usa-tvg-drf";
 
 const SUPERFICIES = ["ARENA", "CESPED", "FANGO", "TAPETA", "OTRA"];
 
@@ -148,6 +155,41 @@ export function CargaPrograma() {
   const [modo, setModo] = useState<"rapida" | "manual">("rapida");
   const [textoRapida, setTextoRapida] = useState("");
   const [destino, setDestino] = useState(-1);
+  const [modalSincUsa, setModalSincUsa] = useState(false);
+  const [modalGacetaPdf, setModalGacetaPdf] = useState(false);
+  const [autoSyncActivo, setAutoSyncActivo] = useState(() => estaAutoActualizadorActivo());
+
+  const alternarAutoSync = useCallback(() => {
+    if (autoSyncActivo) {
+      detenerAutoActualizadorRetirados();
+      setAutoSyncActivo(false);
+      window.dispatchEvent(
+        new CustomEvent("toast", {
+          detail: { msg: "⏸️ Auto-Sync 24/7 pausado.", tipo: "info" },
+        })
+      );
+    } else {
+      iniciarAutoActualizadorRetirados(15, (res) => {
+        window.dispatchEvent(
+          new CustomEvent("toast", {
+            detail: {
+              msg: `🔄 Auto-Sync: ${res.totalRetirados} retiros procesados en vivo.`,
+              tipo: "info",
+            },
+          })
+        );
+      });
+      setAutoSyncActivo(true);
+      window.dispatchEvent(
+        new CustomEvent("toast", {
+          detail: {
+            msg: "⚡ Auto-Sync 24/7 activado: carreras y retiros se sincronizan cada 15 min.",
+            tipo: "success",
+          },
+        })
+      );
+    }
+  }, [autoSyncActivo]);
   const areaRapida = useRef<HTMLTextAreaElement>(null);
   const usuario = useAuthStore((s) => s.usuario);
 
@@ -313,12 +355,52 @@ export function CargaPrograma() {
 
   return (
     <section className="flex w-full min-w-0 flex-col gap-4">
-      {/* Cabecera */}
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-700">📅 Carga de Programa</h2>
-        <p className="text-[11px] text-slate-500">
-          Cree las carreras del día y sus ejemplares (vinculados al padrón); se persisten en la tabla compartida <b>programa_dia</b>.
-        </p>
+      {/* Cabecera y Barra de Modos Unificada */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-3.5 shadow-sm">
+        <div>
+          <h2 className="text-sm font-extrabold uppercase tracking-wide text-slate-800">📅 Carga de Carreras y Programa</h2>
+          <p className="text-[11px] text-slate-500">
+            Alimenta la matriz de carreras, Apuestas, Tablas y Dupletas con sincronización directa y gacetas.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* MODO 1: Sincronizar USA en Vivo (Automático) */}
+          <button
+            type="button"
+            onClick={() => setModalSincUsa(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-95 px-3 py-1.5 text-xs font-black uppercase text-slate-950 shadow-md transition-all"
+            title="Sincronizar directamente desde feeds USA (DRF / TVG / TwinSpires) para cualquier fecha sin PDFs"
+          >
+            <span>🇺🇸</span>
+            <span>Sincronizar USA en Vivo (Automático)</span>
+          </button>
+
+          {/* MODO 2: Importar Gacetas PDF (Multi-Fecha / Lote) */}
+          <button
+            type="button"
+            onClick={() => setModalGacetaPdf(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 px-3 py-1.5 text-xs font-black uppercase text-white shadow-md transition-all border border-purple-300/40"
+            title="Importar uno o múltiples PDFs de gacetas y retrospectos con previsualización editable"
+          >
+            <span>📄</span>
+            <span>Importar Gacetas PDF (Multi-Fecha / Lote)</span>
+          </button>
+
+          {/* MODO 3: Auto-Sync 24/7 Activo (Toggle / Indicador) */}
+          <button
+            type="button"
+            onClick={alternarAutoSync}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black uppercase shadow-md transition-all border ${
+              autoSyncActivo
+                ? "bg-emerald-600 text-white border-emerald-400/60 hover:bg-emerald-500"
+                : "bg-slate-800/90 text-slate-300 border-slate-700 hover:bg-slate-800"
+            }`}
+            title="Sincronización en segundo plano cada 15 min"
+          >
+            <span className={`inline-block h-2 w-2 rounded-full ${autoSyncActivo ? "bg-emerald-300 animate-pulse" : "bg-slate-500"}`} />
+            <span>{autoSyncActivo ? "🔄 Auto-Sync 24/7 Activo" : "⏸️ Auto-Sync Inactivo"}</span>
+          </button>
+        </div>
       </div>
 
       {/* Filtros principales */}
@@ -718,6 +800,26 @@ export function CargaPrograma() {
           </div>
         </>
       )}
+
+      {/* Modales de Sincronización Directa USA y Gacetas PDF Lote */}
+      <ModalSincronizadorUsa
+        abierto={modalSincUsa}
+        onCerrar={() => setModalSincUsa(false)}
+        fechaDefecto={fecha || hoyLocal()}
+        onActualizado={() => {
+          if (fecha) void cargarPrograma(fecha);
+        }}
+      />
+
+      <ModalImportarGacetaPdf
+        abierto={modalGacetaPdf}
+        onCerrar={() => setModalGacetaPdf(false)}
+        fechaDefault={fecha || hoyLocal()}
+        hipodromoDefault={hipodromo}
+        onCarrerasImportadas={() => {
+          if (fecha) void cargarPrograma(fecha);
+        }}
+      />
 
       <ToastHost />
     </section>

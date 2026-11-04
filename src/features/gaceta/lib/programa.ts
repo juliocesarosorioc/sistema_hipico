@@ -21,12 +21,16 @@ export type CaballoPrograma = {
   peso?: number | string;
   medicamento?: string;
   implementos?: string;
+  pp?: number | string | null;
+  ml?: string;
+  retirado?: boolean;
 };
 
 export type CarreraPrograma = {
   hipodromo: string;
   fecha?: string | null;
   carrera: number | null;
+  hora?: string | null;
   estado?: string;
   distancia?: number;
   superficie?: string;
@@ -75,6 +79,9 @@ function norm(c: unknown): CarreraPrograma {
           peso: cb.peso !== undefined ? (cb.peso as string | number) : undefined,
           medicamento: cb.medicamento ? String(cb.medicamento) : undefined,
           implementos: cb.implementos ? String(cb.implementos) : undefined,
+          pp: cb.pp != null ? (cb.pp as number | string) : undefined,
+          ml: cb.ml ? String(cb.ml) : undefined,
+          retirado: Boolean(cb.retirado),
         }))
       : []
   );
@@ -82,6 +89,7 @@ function norm(c: unknown): CarreraPrograma {
     hipodromo: String(x.hipodromo ?? "").toUpperCase(),
     fecha: x.fecha ? String(x.fecha) : null,
     carrera: x.carrera != null ? Number(x.carrera) || null : null,
+    hora: x.hora ? String(x.hora) : null,
     estado: x.estado ? String(x.estado) : undefined,
     distancia: Number(x.distancia) || 0,
     superficie: String(x.superficie ?? "ARENA").toUpperCase() || "ARENA",

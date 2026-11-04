@@ -451,6 +451,22 @@ export async function escribirCarrerasMaestro(
   if (aFusionar.length) await fusionarEjemplaresGuardados(filas, aFusionar);
 
   try {
+    // 1. Intentar Bulk Upsert en 1 Sola Transacción vía RPC `upsert_lote_carreras_completo`
+    try {
+      const viaRpc = await supabase.rpc("upsert_lote_carreras_completo", {
+        p_carreras: filas,
+        p_origen: String(filas[0]?.origen ?? "ia"),
+        p_usuario: usuarioVigente() || "sistema",
+      });
+      if (!viaRpc.error && viaRpc.data && (viaRpc.data as { ok?: boolean }).ok) {
+        maestroDisponible = true;
+        return { ok: true, guardadas: filas.length };
+      }
+    } catch {
+      /* Fallback directo a upsert masivo en 1 llamada si la RPC aún no está aplicada */
+    }
+
+    // 2. Fallback Bulk Upsert directo en 1 sola petición HTTP a PostgREST
     const { error } = await supabase
       .from("carreras")
       .upsert(filas, { onConflict: "fecha,hipodromo,carrera" });

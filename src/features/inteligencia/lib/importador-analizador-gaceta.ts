@@ -14,6 +14,11 @@ import {
   type CarreraExtraida,
   type EjemplarExtraido,
 } from "@/features/gaceta/lib/ia";
+import {
+  parsearPaginaRetrospectosNativo,
+  parsearGacetaRetrospectosNativo,
+  type CarreraParseadaNativa,
+} from "@/features/gaceta/lib/segmentar";
 import type { CarreraCatalogo, EjemplarCarreraCentral } from "@/features/carreras/lib/maestro-nucleo";
 import {
   simularCarreraV4,
@@ -51,9 +56,14 @@ async function cargarPdfJs(): Promise<PdfLib> {
 }
 
 /**
- * Extrae la capa de texto digital del PDF si existe (Gaceta nativa).
+ * Extrae la capa de texto digital del PDF página por página de forma no bloqueante,
+ * cediendo el event loop con setTimeout(r, 0) para no congelar la UI de Next.js.
  */
-export async function extraerTextoPdf(file: File, topePaginas?: number): Promise<string> {
+export async function extraerPaginasTextoPdf(
+  file: File,
+  onProgreso?: (paginaActual: number, totalPaginas: number) => void,
+  topePaginas?: number
+): Promise<string[]> {
   const lib = await cargarPdfJs();
   const buffer = await file.arrayBuffer();
   let doc: PdfDoc;
@@ -67,6 +77,10 @@ export async function extraerTextoPdf(file: File, topePaginas?: number): Promise
   const paginas: string[] = [];
   try {
     for (let i = 1; i <= total; i++) {
+      onProgreso?.(i, total);
+      // Ceder el event loop de JavaScript para que el navegador responda a eventos y redibuje
+      await new Promise((r) => setTimeout(r, 0));
+
       const page = await doc.getPage(i);
       try {
         const contenido = await page.getTextContent();
@@ -90,6 +104,18 @@ export async function extraerTextoPdf(file: File, topePaginas?: number): Promise
       /* noop */
     }
   }
+  return paginas;
+}
+
+/**
+ * Extrae la capa de texto digital del PDF como un solo string concatenado
+ */
+export async function extraerTextoPdf(
+  file: File,
+  topePaginas?: number,
+  onProgreso?: (paginaActual: number, totalPaginas: number) => void
+): Promise<string> {
+  const paginas = await extraerPaginasTextoPdf(file, onProgreso, topePaginas);
   return paginas.join("\n\n");
 }
 
@@ -164,55 +190,52 @@ export type ProgresoExtraccion = {
 
 export type OpcionesExtraccionGaceta = {
   file: File;
-  claveGemini: string;
+  claveGemini?: string;
   hipodromoDestino?: string;
   fechaJornada?: string;
+  fechaOverride?: string;
   topePaginas?: number;
   onProgreso?: (progreso: ProgresoExtraccion) => void;
 };
 
+export type ResultadoArchivoGaceta = {
+  nombreArchivo: string;
+  ok: boolean;
+  carreras: CarreraExtraida[];
+  modo: "determinista" | "texto" | "imagenes";
+  error?: string;
+  aviso?: string;
+};
+
 /**
- * Orquestador principal: Lee el PDF, extrae con IA y devuelve las carreras estructuradas
+ * Orquestador principal de archivo único:
+ * 1. Extrae página por página no bloqueante.
+ * 2. Aplica Parser Determinístico Nativo instantáneo (Cero cuelgues, Cero gasto innecesario de tokens).
+ * 3. Fallback inteligente a IA Gemini con timeout de 25s sólo si quedan páginas sin resolver.
  */
 export async function importarYExtraerGacetaPdf(
   opciones: OpcionesExtraccionGaceta
-): Promise<{
-  ok: boolean;
-  carreras: CarreraExtraida[];
-  modo: "texto" | "imagenes";
-  error?: string;
-  aviso?: string;
-}> {
-  const { file, claveGemini, topePaginas, onProgreso } = opciones;
-
-  if (!claveGemini || !claveGemini.trim()) {
-    return {
-      ok: false,
-      carreras: [],
-      modo: "texto",
-      error: "Se requiere la clave API de Gemini para la transcripción inteligente.",
-    };
-  }
-
+): Promise<ResultadoArchivoGaceta> {
+  const { file, claveGemini = "", hipodromoDestino, fechaJornada, fechaOverride, topePaginas, onProgreso } = opciones;
+  const fechaEfectiva = fechaOverride || fechaJornada;
   const esPdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
 
   // -------------------------------------------------------------
   // CASO 1: Es un archivo de imagen directo (JPG, PNG, WEBP)
   // -------------------------------------------------------------
   if (!esPdf) {
-    if (onProgreso) {
-      onProgreso({
-        fase: "leyendo",
-        mensaje: "Cargando imagen de la Gaceta...",
-      });
+    if (!claveGemini.trim()) {
+      return {
+        nombreArchivo: file.name,
+        ok: false,
+        carreras: [],
+        modo: "imagenes",
+        error: "Se requiere la clave API de Gemini para transcribir imágenes de gaceta escaneada.",
+      };
     }
+    onProgreso?.({ fase: "leyendo", mensaje: "Cargando imagen de la Gaceta..." });
     const dataUrl = await leerImagenComoDataUrl(file);
-    if (onProgreso) {
-      onProgreso({
-        fase: "extrayendo",
-        mensaje: "Transcribiendo carreras y participantes con IA Gemini...",
-      });
-    }
+    onProgreso?.({ fase: "extrayendo", mensaje: "Transcribiendo carreras con IA Gemini (timeout 25s)..." });
     const res = await transformarGaceta(
       claveGemini,
       [dataUrl],
@@ -220,6 +243,7 @@ export async function importarYExtraerGacetaPdf(
       (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s })
     );
     return {
+      nombreArchivo: file.name,
       ok: res.ok,
       carreras: res.carreras,
       modo: "imagenes",
@@ -231,56 +255,188 @@ export async function importarYExtraerGacetaPdf(
   // -------------------------------------------------------------
   // CASO 2: Es un archivo PDF
   // -------------------------------------------------------------
-  if (onProgreso) {
-    onProgreso({
-      fase: "leyendo",
-      mensaje: "Verificando capa de texto del PDF...",
-    });
-  }
+  onProgreso?.({
+    fase: "leyendo",
+    mensaje: "Leyendo páginas del PDF de forma no bloqueante...",
+  });
 
-  let textoPdf = "";
+  let paginasTexto: string[] = [];
   try {
-    textoPdf = await extraerTextoPdf(file, topePaginas);
+    paginasTexto = await extraerPaginasTextoPdf(
+      file,
+      (pag, tot) => {
+        onProgreso?.({
+          fase: "leyendo",
+          mensaje: `Procesando página ${pag} de ${tot}...`,
+          paginaActual: pag,
+          totalPaginas: tot,
+        });
+      },
+      topePaginas
+    );
   } catch (e) {
-    console.warn("Fallo lectura de capa de texto PDF, recurriendo a renderizado:", e);
+    console.warn("Fallo lectura de texto PDF:", e);
   }
 
-  // Si tiene capa de texto sustancial (> 300 caracteres), usamos transcripción por bloques de texto
-  if (textoPdf && textoPdf.trim().length > 300) {
-    if (onProgreso) {
-      onProgreso({
-        fase: "extrayendo",
-        mensaje: `Extrayendo carreras desde texto digital (${textoPdf.length} caracteres)...`,
+  // Si tiene texto digital:
+  if (paginasTexto.length > 0 && paginasTexto.some((p) => p.trim().length > 100)) {
+    onProgreso?.({
+      fase: "extrayendo",
+      mensaje: "Ejecutando motor determinístico nativo ultra-rápido (Sistema Profesional)...",
+    });
+
+    // 1. Ejecutar Parser Determinístico Nativo
+    const nativoRes = parsearGacetaRetrospectosNativo(paginasTexto, {
+      fechaOverride: fechaEfectiva,
+      hipodromoOverride: hipodromoDestino,
+    });
+
+    const carrerasNativas: CarreraExtraida[] = nativoRes.carreras.map((c) => ({
+      carrera: c.carrera,
+      hipodromo: c.hipodromo,
+      fecha: c.fecha,
+      hora: c.hora,
+      distancia: c.distancia,
+      superficie: c.superficie,
+      premio: c.premio,
+      archivoOrigen: file.name,
+      ejemplares: c.ejemplares.map((e) => ({
+        numero: e.numero,
+        nombre: e.nombre,
+        nacionalidad: "USA",
+        pp: e.pp,
+        jockey: e.jinete,
+        entrenador: e.entrenador,
+        peso: e.peso,
+        ml: e.ml,
+        stud: e.stud,
+        pedigri: e.pedigri,
+        retirado: e.retirado ?? false,
+        condicionElegibilidad: e.condicionElegibilidad,
+      })),
+    }));
+
+    // Si el parser determinístico extrajo carreras y no quedaron páginas dudosas, ¡listo instantáneo!
+    if (carrerasNativas.length > 0 && (nativoRes.paginasParaFallback.length === 0 || !claveGemini.trim())) {
+      onProgreso?.({
+        fase: "listo",
+        mensaje: `¡Éxito! ${carrerasNativas.length} carrera(s) extraídas instantáneamente por motor nativo.`,
       });
+      return {
+        nombreArchivo: file.name,
+        ok: true,
+        carreras: carrerasNativas,
+        modo: "determinista",
+      };
     }
-    const res = await transformarGacetaTexto(
-      claveGemini,
-      textoPdf,
-      (hecho: number, tot: number) =>
-        onProgreso?.({
-          fase: "extrayendo",
-          mensaje: `Procesando bloque ${hecho} de ${tot}...`,
-          paginaActual: hecho,
-          totalPaginas: tot,
-        }),
-      (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s })
-    );
+
+    // Si hay páginas que necesitan fallback IA y el usuario configuró clave Gemini:
+    if (nativoRes.paginasParaFallback.length > 0 && claveGemini.trim()) {
+      onProgreso?.({
+        fase: "extrayendo",
+        mensaje: `Analizando ${nativoRes.paginasParaFallback.length} página(s) con fallback IA (timeout 25s)...`,
+      });
+
+      const textoFallback = nativoRes.paginasParaFallback.map((p) => p.texto).join("\n\n");
+      const resIa = await transformarGacetaTexto(
+        claveGemini,
+        textoFallback,
+        (hecho: number, tot: number) =>
+          onProgreso?.({
+            fase: "extrayendo",
+            mensaje: `Procesando bloque IA ${hecho} de ${tot}...`,
+            paginaActual: hecho,
+            totalPaginas: tot,
+          }),
+        (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s })
+      );
+
+      if (resIa.ok && resIa.carreras.length > 0) {
+        // Fusionar sin duplicar
+        const mapa = new Map<number, CarreraExtraida>();
+        for (const c of carrerasNativas) {
+          mapa.set(Number(c.carrera), c);
+        }
+        for (const c of resIa.carreras) {
+          const num = Number(c.carrera);
+          if (!mapa.has(num)) {
+            mapa.set(num, { ...c, archivoOrigen: file.name });
+          }
+        }
+        const todas = Array.from(mapa.values()).sort((a, b) => Number(a.carrera) - Number(b.carrera));
+        return {
+          nombreArchivo: file.name,
+          ok: true,
+          carreras: todas,
+          modo: "texto",
+          aviso: resIa.avisoNumeracion,
+        };
+      }
+    }
+
+    if (carrerasNativas.length > 0) {
+      return {
+        nombreArchivo: file.name,
+        ok: true,
+        carreras: carrerasNativas,
+        modo: "determinista",
+      };
+    }
+
+    // Si el parser determinístico no encontró nada pero hay clave, enviar todo el texto a transformarGacetaTexto
+    if (claveGemini.trim()) {
+      onProgreso?.({
+        fase: "extrayendo",
+        mensaje: "Procesando texto completo con IA Gemini...",
+      });
+      const res = await transformarGacetaTexto(
+        claveGemini,
+        paginasTexto.join("\n\n"),
+        (hecho: number, tot: number) =>
+          onProgreso?.({
+            fase: "extrayendo",
+            mensaje: `Procesando bloque ${hecho} de ${tot}...`,
+            paginaActual: hecho,
+            totalPaginas: tot,
+          }),
+        (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s })
+      );
+      return {
+        nombreArchivo: file.name,
+        ok: res.ok,
+        carreras: res.carreras.map((c) => ({ ...c, archivoOrigen: file.name })),
+        modo: "texto",
+        error: res.error,
+        aviso: res.avisoNumeracion,
+      };
+    }
+
     return {
-      ok: res.ok,
-      carreras: res.carreras,
+      nombreArchivo: file.name,
+      ok: false,
+      carreras: [],
       modo: "texto",
-      error: res.error,
-      aviso: res.avisoNumeracion,
+      error: "No se pudieron extraer carreras con el parser nativo y no hay clave Gemini configurada.",
     };
   }
 
-  // Si no tiene capa de texto (PDF escaneado / fotocopiado), renderizamos las páginas a imágenes
-  if (onProgreso) {
-    onProgreso({
-      fase: "leyendo",
-      mensaje: "PDF escaneado detectado: renderizando páginas de alta definición...",
-    });
+  // -------------------------------------------------------------
+  // CASO 3: PDF escaneado / sin texto digital
+  // -------------------------------------------------------------
+  if (!claveGemini.trim()) {
+    return {
+      nombreArchivo: file.name,
+      ok: false,
+      carreras: [],
+      modo: "imagenes",
+      error: "El PDF es una imagen escaneada y requiere clave API Gemini para el reconocimiento visual.",
+    };
   }
+
+  onProgreso?.({
+    fase: "leyendo",
+    mensaje: "PDF escaneado: renderizando páginas de alta definición...",
+  });
 
   const imagenes = await renderizarPdfAImagenes(
     file,
@@ -296,6 +452,7 @@ export async function importarYExtraerGacetaPdf(
 
   if (!imagenes.length) {
     return {
+      nombreArchivo: file.name,
       ok: false,
       carreras: [],
       modo: "imagenes",
@@ -303,12 +460,10 @@ export async function importarYExtraerGacetaPdf(
     };
   }
 
-  if (onProgreso) {
-    onProgreso({
-      fase: "extrayendo",
-      mensaje: `Analizando ${imagenes.length} páginas con visión multimodal Gemini...`,
-    });
-  }
+  onProgreso?.({
+    fase: "extrayendo",
+    mensaje: `Analizando ${imagenes.length} páginas con visión multimodal Gemini...`,
+  });
 
   const res = await transformarGaceta(
     claveGemini,
@@ -324,12 +479,101 @@ export async function importarYExtraerGacetaPdf(
   );
 
   return {
+    nombreArchivo: file.name,
     ok: res.ok,
-    carreras: res.carreras,
+    carreras: res.carreras.map((c) => ({ ...c, archivoOrigen: file.name })),
     modo: "imagenes",
     error: res.error,
     aviso: res.avisoNumeracion,
   };
+}
+
+/**
+ * Procesa un lote multi-archivo de gacetas PDF con concurrencia controlada
+ * (máximo 2 archivos en paralelo con Promise.allSettled) para no colgar la UI.
+ */
+export async function importarLoteGacetasPdf(params: {
+  files: File[];
+  claveGemini?: string;
+  fechaOverride?: string;
+  onProgresoLote?: (progreso: {
+    archivoActual: number;
+    totalArchivos: number;
+    nombreArchivo: string;
+    mensaje: string;
+  }) => void;
+}): Promise<{
+  exitosas: ResultadoArchivoGaceta[];
+  fallidas: Array<{ nombreArchivo: string; error: string }>;
+  todasLasCarreras: CarreraExtraida[];
+}> {
+  const { files, claveGemini, fechaOverride, onProgresoLote } = params;
+  const exitosas: ResultadoArchivoGaceta[] = [];
+  const fallidas: Array<{ nombreArchivo: string; error: string }> = [];
+
+  const maxConcurrencia = 2;
+  const cola = [...files];
+  let procesados = 0;
+
+  async function procesarArchivo(file: File): Promise<ResultadoArchivoGaceta> {
+    const idx = ++procesados;
+    onProgresoLote?.({
+      archivoActual: idx,
+      totalArchivos: files.length,
+      nombreArchivo: file.name,
+      mensaje: `Iniciando ${file.name}...`,
+    });
+
+    const res = await importarYExtraerGacetaPdf({
+      file,
+      claveGemini,
+      fechaOverride,
+      onProgreso: (p) => {
+        onProgresoLote?.({
+          archivoActual: idx,
+          totalArchivos: files.length,
+          nombreArchivo: file.name,
+          mensaje: p.mensaje,
+        });
+      },
+    });
+
+    return res;
+  }
+
+  // Ejecución en grupos de tamaño maxConcurrencia
+  for (let i = 0; i < cola.length; i += maxConcurrencia) {
+    const grupo = cola.slice(i, i + maxConcurrencia);
+    const resultados = await Promise.allSettled(grupo.map(procesarArchivo));
+
+    for (let j = 0; j < resultados.length; j++) {
+      const r = resultados[j];
+      const f = grupo[j];
+      if (r.status === "fulfilled") {
+        if (r.value.ok && r.value.carreras.length > 0) {
+          exitosas.push(r.value);
+        } else {
+          fallidas.push({
+            nombreArchivo: f.name,
+            error: r.value.error || "No se detectaron carreras válidas en el documento.",
+          });
+        }
+      } else {
+        fallidas.push({
+          nombreArchivo: f.name,
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        });
+      }
+    }
+  }
+
+  // Agrupar todas las carreras extraídas
+  const todasLasCarreras: CarreraExtraida[] = [];
+  for (const ex of exitosas) {
+    todasLasCarreras.push(...ex.carreras);
+  }
+
+  return { exitosas, fallidas, todasLasCarreras };
 }
 
 /**
@@ -345,19 +589,37 @@ export function convertirCarrerasExtraidasACatalogo(
     const numCarrera = Number(ce.carrera) || 1;
     // Si la carrera extrajo su fecha del encabezado, usarla; si no, la fecha objetivo
     const fechaCarrera = (ce.fecha && ce.fecha.length >= 8) ? ce.fecha : fecha;
-    const caballos: EjemplarCarreraCentral[] = (ce.ejemplares || []).map((ej, idx) => ({
-      numero: String(ej.numero ?? idx + 1),
-      nombre: String(ej.nombre || "").trim().toUpperCase(),
-      nacionalidad: ej.nacionalidad ?? "VE",
-      pp: ej.pp ?? null,
-      puestoPista: ej.pp ?? null,
-      retirado: false,
-      jockey: ej.jockey ?? null,
-      entrenador: ej.entrenador ?? null,
-      peso: ej.peso ?? null,
-      medicamento: ej.medicamento ?? null,
-      implementos: ej.implementos ?? null,
-    }));
+    const caballos: EjemplarCarreraCentral[] = (ce.ejemplares || []).map((ej, idx) => {
+      // Normalizar peso coma decimal ej: "54,4" -> "54.4" o número 54.4
+      let pesoNorm: number | string | null = null;
+      if (ej.peso != null) {
+        if (typeof ej.peso === "number") {
+          pesoNorm = ej.peso;
+        } else {
+          const s = String(ej.peso).trim().replace(",", ".");
+          const n = parseFloat(s);
+          pesoNorm = isNaN(n) ? s : n;
+        }
+      }
+
+      return {
+        numero: String(ej.numero ?? idx + 1),
+        nombre: String(ej.nombre || "").trim().toUpperCase(),
+        nacionalidad: ej.nacionalidad ?? "USA",
+        pp: ej.pp ?? null,
+        puestoPista: ej.pp ?? null,
+        retirado: ej.retirado ?? false,
+        jockey: ej.jockey ?? null,
+        entrenador: ej.entrenador ?? null,
+        peso: pesoNorm,
+        ml: ej.ml ?? null,
+        stud: ej.stud ?? null,
+        pedigri: ej.pedigri ?? null,
+        condicionElegibilidad: ej.condicionElegibilidad ?? null,
+        medicamento: ej.medicamento ?? null,
+        implementos: ej.implementos ?? null,
+      };
+    });
 
     return {
       fecha: fechaCarrera,
@@ -366,8 +628,9 @@ export function convertirCarrerasExtraidasACatalogo(
       distancia: ce.distancia ? String(ce.distancia) : "1200",
       superficie: ce.superficie || "ARENA",
       premio: ce.premio ?? 0,
+      hora: ce.hora ?? null,
       caballos,
-      retirados: [],
+      retirados: caballos.filter((c) => c.retirado).map((c) => c.numero),
       estado: "ABIERTA",
       origen: "gaceta-ia-pdf",
     };

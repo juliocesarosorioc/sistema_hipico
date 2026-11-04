@@ -69,6 +69,8 @@ export const HIPODROMOS_USA_DISPONIBLES: HipodromoUsaMeta[] = [
   { codigo: "PEN", nombre: "Penn National", drfCode: "PEN", tvgSlug: "penn-national", estadoDefecto: "PA" },
   { codigo: "LRC", nombre: "Los Alamitos", drfCode: "LRC", tvgSlug: "los-alamitos", estadoDefecto: "CA" },
   { codigo: "DED", nombre: "Delta Downs", drfCode: "DED", tvgSlug: "delta-downs", estadoDefecto: "LA" },
+  { codigo: "EVD", nombre: "Evangeline Downs", drfCode: "EVD", tvgSlug: "evangeline-downs", estadoDefecto: "LA" },
+  { codigo: "FL", nombre: "Finger Lakes", drfCode: "FL", tvgSlug: "finger-lakes", estadoDefecto: "NY" },
   { codigo: "HOU", nombre: "Sam Houston", drfCode: "HOU", tvgSlug: "sam-houston-race-park", estadoDefecto: "TX" },
   { codigo: "LS", nombre: "Lone Star Park", drfCode: "LS", tvgSlug: "lone-star-park", estadoDefecto: "TX" },
   { codigo: "CBY", nombre: "Canterbury Park", drfCode: "CBY", tvgSlug: "canterbury-park", estadoDefecto: "MN" },
@@ -854,11 +856,15 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
     distancia: c.distancia || 1200,
     superficie: c.superficie || "ARENA",
     premio: c.premio || 0,
+    hora: c.hora || null,
     caballos: c.caballos.map((e) => ({
       numero: e.numero,
       nombre: e.nombre,
       nacionalidad: "USA",
-      pts: e.ml ? 0 : 0,
+      pts: 0,
+      pp: e.pp,
+      ml: e.ml,
+      retirado: Boolean(e.retirado),
       jockey: e.jockey,
       entrenador: e.entrenador,
       peso: e.peso,
@@ -1002,4 +1008,8 @@ export function detenerAutoActualizadorRetirados(): void {
     clearInterval(timerScratches);
     timerScratches = null;
   }
+}
+
+export function estaAutoActualizadorActivo(): boolean {
+  return timerScratches !== null;
 }

@@ -30,6 +30,513 @@
  */
 import { numeroDeCarrera, numeroDeValida } from "@/features/gaceta/lib/numeros";
 
+/**
+ * Catálogo Canónico de Códigos de Pista y Nombres de Hipódromos
+ * Fuente de verdad por encima del nombre del archivo PDF.
+ */
+export const CATALOGO_TRACKS_GACETA: Record<string, string> = {
+  CDX: "CHURCHILL DOWNS",
+  CD: "CHURCHILL DOWNS",
+  CTX: "CHARLES TOWN",
+  CT: "CHARLES TOWN",
+  DED: "DELTA DOWNS",
+  EVD: "EVANGELINE DOWNS",
+  FLX: "FINGER LAKES",
+  FL: "FINGER LAKES",
+  IND: "HORSESHOE INDIANAPOLIS",
+  IG: "HORSESHOE INDIANAPOLIS",
+  MNR: "MOUNTAINEER",
+  MVR: "MAHONING VALLEY",
+  PRX: "PARX RACING",
+  PHA: "PARX RACING",
+  AQU: "AQUEDUCT",
+  BEL: "BELMONT PARK",
+  BAQ: "BELMONT AT THE BIG A",
+  SAR: "SARATOGA",
+  GP: "GULFSTREAM PARK",
+  TAM: "TAMPA BAY DOWNS",
+  OP: "OAKLAWN PARK",
+  KEE: "KEENELAND",
+  DMR: "DEL MAR",
+  SA: "SANTA ANITA",
+  LRL: "LAUREL PARK",
+  PIM: "PIMLICO",
+  MTH: "MONMOUTH PARK",
+  FG: "FAIR GROUNDS",
+  HAW: "HAWTHORNE",
+  PEN: "PENN NATIONAL",
+  WO: "WOODBINE",
+  TUP: "TURF PARADISE",
+  TP: "TURFWAY PARK",
+  LRC: "LOS ALAMITOS",
+  ALB: "ALBUQUERQUE",
+  SUN: "SUNLAND PARK",
+  RP: "REMINGTON PARK",
+  RUI: "RUIDOSO DOWNS",
+  ZIA: "ZIA PARK",
+  WRD: "WILL ROGERS DOWNS",
+  ASD: "ASSINIBOIA DOWNS",
+  CBY: "CANTERBURY PARK",
+  ELP: "ELLIS PARK",
+  KD: "KENTUCKY DOWNS",
+  KDX: "KENTUCKY DOWNS",
+  CNL: "COLONIAL DOWNS",
+  PID: "PRESQUE ISLE DOWNS",
+  RDM: "RED MILE",
+  LRIN: "LA RINCONADA",
+  VAL: "VALENCIA",
+};
+
+export const NOMBRES_HIPODROMOS_GACETA: Record<string, string> = {
+  "CHURCHILL DOWNS": "CHURCHILL DOWNS",
+  "HOLLYWOOD CASINO AT CHARLES TOWN": "CHARLES TOWN",
+  "HOLLYWOOD AT CHARLES TOWN": "CHARLES TOWN",
+  "CHARLES TOWN": "CHARLES TOWN",
+  "DELTA DOWNS": "DELTA DOWNS",
+  "EVANGELINE DOWNS": "EVANGELINE DOWNS",
+  "FINGER LAKES": "FINGER LAKES",
+  "HORSESHOE INDIANAPOLIS": "HORSESHOE INDIANAPOLIS",
+  "INDIANA GRAND": "HORSESHOE INDIANAPOLIS",
+  "MOUNTAINEER CASINO, RACES & RESORT": "MOUNTAINEER",
+  "MOUNTAINEER": "MOUNTAINEER",
+  "MAHONING VALLEY RACE COURSE": "MAHONING VALLEY",
+  "MAHONING VALLEY": "MAHONING VALLEY",
+  "PARX RACING": "PARX RACING",
+  "PARX": "PARX RACING",
+  "PHILADELPHIA PARK": "PARX RACING",
+  "AQUEDUCT": "AQUEDUCT",
+  "BELMONT PARK": "BELMONT PARK",
+  "SARATOGA": "SARATOGA",
+  "GULFSTREAM PARK": "GULFSTREAM PARK",
+  "TAMPA BAY DOWNS": "TAMPA BAY DOWNS",
+  "OAKLAWN PARK": "OAKLAWN PARK",
+  "KEENELAND": "KEENELAND",
+  "DEL MAR": "DEL MAR",
+  "SANTA ANITA": "SANTA ANITA",
+  "SANTA ANITA PARK": "SANTA ANITA",
+  "LAUREL PARK": "LAUREL PARK",
+  "PIMLICO": "PIMLICO",
+  "MONMOUTH PARK": "MONMOUTH PARK",
+  "FAIR GROUNDS": "FAIR GROUNDS",
+  "HAWTHORNE": "HAWTHORNE",
+  "PENN NATIONAL": "PENN NATIONAL",
+  "WOODBINE": "WOODBINE",
+  "TURF PARADISE": "TURF PARADISE",
+  "TURFWAY PARK": "TURFWAY PARK",
+  "LOS ALAMITOS": "LOS ALAMITOS",
+  "ALBUQUERQUE": "ALBUQUERQUE",
+  "SUNLAND PARK": "SUNLAND PARK",
+  "REMINGTON PARK": "REMINGTON PARK",
+  "RUIDOSO DOWNS": "RUIDOSO DOWNS",
+  "ZIA PARK": "ZIA PARK",
+  "WILL ROGERS DOWNS": "WILL ROGERS DOWNS",
+  "ASSINIBOIA DOWNS": "ASSINIBOIA DOWNS",
+  "CANTERBURY PARK": "CANTERBURY PARK",
+  "ELLIS PARK": "ELLIS PARK",
+  "KENTUCKY DOWNS": "KENTUCKY DOWNS",
+  "COLONIAL DOWNS": "COLONIAL DOWNS",
+  "PRESQUE ISLE DOWNS": "PRESQUE ISLE DOWNS",
+  "LA RINCONADA": "LA RINCONADA",
+  "HIPODROMO LA RINCONADA": "LA RINCONADA",
+  "VALENCIA": "VALENCIA",
+  "HIPODROMO DE VALENCIA": "VALENCIA",
+};
+
+/** Meses en inglés a 2 dígitos */
+const MESES_MAP: Record<string, string> = {
+  JAN: "01", JANUARY: "01",
+  FEB: "02", FEBRUARY: "02",
+  MAR: "03", MARCH: "03",
+  APR: "04", APRIL: "04",
+  MAY: "05",
+  JUN: "06", JUNE: "06",
+  JUL: "07", JULY: "07",
+  AUG: "08", AUGUST: "08",
+  SEP: "09", SEPTEMBER: "09",
+  OCT: "10", OCTOBER: "10",
+  NOV: "11", NOVEMBER: "11",
+  DEC: "12", DECEMBER: "12",
+  ENE: "01", ENERO: "01",
+  ABR: "04", ABRIL: "04",
+  AGO: "08", AGOSTO: "08",
+  DIC: "12", DICIEMBRE: "12",
+};
+
+/** Convierte distancia en texto americano a metros */
+export function convertirDistanciaAMetros(distStr: string): number {
+  const d = String(distStr ?? "").trim().toUpperCase();
+  if (!d) return 1200;
+
+  // Si ya es un número directo en metros o yardas de Quarter Horse
+  const soloNum = parseInt(d.replace(/[^0-9]/g, ""), 10);
+  if (d.includes("YDS") || d.includes("Y") || d.includes("YD")) {
+    if (soloNum === 220) return 200;
+    if (soloNum === 250) return 228;
+    if (soloNum === 300) return 272;
+    if (soloNum === 330) return 300;
+    if (soloNum === 350) return 318;
+    if (soloNum === 400) return 364;
+    if (soloNum === 440) return 400;
+    if (soloNum === 550) return 500;
+    if (soloNum > 100 && soloNum < 900) return Math.round(soloNum * 0.9144);
+  }
+
+  // Quarter Horse direct metros
+  if ([200, 228, 272, 300, 318, 364, 400, 500].includes(soloNum)) {
+    return soloNum;
+  }
+
+  // Furlongs
+  if (d.includes("F") || d.includes("FUR")) {
+    if (d.includes("4 1/2") || d.includes("4.5")) return 900;
+    if (d.includes("5 1/2") || d.includes("5.5")) return 1100;
+    if (d.includes("6 1/2") || d.includes("6.5")) return 1300;
+    if (d.includes("7 1/2") || d.includes("7.5")) return 1500;
+    if (d.includes("8 1/2") || d.includes("8.5")) return 1700;
+    if (d.includes("5")) return 1000;
+    if (d.includes("6")) return 1200;
+    if (d.includes("7")) return 1400;
+    if (d.includes("8")) return 1600;
+    if (d.includes("9")) return 1800;
+  }
+
+  // Miles
+  if (d.includes("1M") || d.includes("1 M") || d.includes("MILE")) {
+    if (d.includes("70") || d.includes("70 Y")) return 1670;
+    if (d.includes("1/16") || d.includes("1 1/16")) return 1700;
+    if (d.includes("1/8") || d.includes("1 1/8")) return 1800;
+    if (d.includes("3/16") || d.includes("1 3/16")) return 1900;
+    if (d.includes("1/4") || d.includes("1 1/4")) return 2000;
+    if (d.includes("1/2") || d.includes("1 1/2")) return 2400;
+    return 1600;
+  }
+
+  if (soloNum >= 800 && soloNum <= 3200) {
+    return soloNum;
+  }
+
+  return 1200;
+}
+
+/** Estructura de salida del Parser Determinístico */
+export type CarreraParseadaNativa = {
+  carrera: number;
+  hipodromo: string;
+  fecha: string;
+  hora: string | null;
+  distancia: number;
+  superficie: "Arena" | "Grama";
+  premio?: number;
+  ejemplares: Array<{
+    numero: string;
+    nombre: string;
+    pp?: number | string;
+    jinete?: string;
+    entrenador?: string;
+    peso?: number | string;
+    ml?: string;
+    stud?: string;
+    pedigri?: string;
+    retirado?: boolean;
+    condicionElegibilidad?: "AE" | "MTO" | null;
+  }>;
+};
+
+/**
+ * Parsea una fecha en texto de cabecera como:
+ * - "04Nov26" / "04-Nov-2026" / "NOVEMBER 4, 2026" / "11/04/2026" / "2026-11-04"
+ */
+export function extraerFechaCabecera(texto: string): string | null {
+  if (!texto) return null;
+
+  // Formato ISO directo: 2026-11-04
+  const mIso = texto.match(/\b(20\d{2})[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])\b/);
+  if (mIso) return `${mIso[1]}-${mIso[2]}-${mIso[3]}`;
+
+  // Formato compacto de gacetas USA: 04Nov26 o 04Nov2026
+  const mCompacto = texto.match(/\b(0[1-9]|[12]\d|3[01])([A-Za-z]{3})(20\d{2}|\d{2})\b/);
+  if (mCompacto) {
+    const dia = mCompacto[1];
+    const mesStr = mCompacto[2].toUpperCase();
+    let anio = mCompacto[3];
+    if (anio.length === 2) anio = `20${anio}`;
+    const mesNum = MESES_MAP[mesStr];
+    if (mesNum) return `${anio}-${mesNum}-${dia}`;
+  }
+
+  // Formato tipo "NOVEMBER 4, 2026" o "NOV 4 2026"
+  const mIngles = texto.match(/\b(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER|JAN|FEB|MAR|APR|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[,\s]+(0?[1-9]|[12]\d|3[01])[,\s]+(20\d{2})\b/i);
+  if (mIngles) {
+    const mesNum = MESES_MAP[mIngles[1].toUpperCase()];
+    const dia = mIngles[2].padStart(2, "0");
+    const anio = mIngles[3];
+    if (mesNum) return `${anio}-${mesNum}-${dia}`;
+  }
+
+  // Formato tipo "04/11/2026" o "11/04/2026"
+  const mSlashes = texto.match(/\b(0?[1-9]|1[0-2])\/(0?[1-9]|[12]\d|3[01])\/(20\d{2})\b/);
+  if (mSlashes) {
+    return `${mSlashes[3]}-${mSlashes[1].padStart(2, "0")}-${mSlashes[2].padStart(2, "0")}`;
+  }
+
+  return null;
+}
+
+/**
+ * Resuelve el Hipódromo Oficial canónico buscando en el texto de la página:
+ * 1. Códigos oficiales en la línea maestra (ej. CDX, CTX, DED, EVD, FLX, IND, MNR, MVR, PRX)
+ * 2. Nombres impresos en el encabezado
+ */
+export function resolverHipodromoTexto(texto: string, trackCodeDetectado?: string | null): string {
+  if (trackCodeDetectado) {
+    const cod = trackCodeDetectado.toUpperCase().trim();
+    if (CATALOGO_TRACKS_GACETA[cod]) {
+      return CATALOGO_TRACKS_GACETA[cod];
+    }
+  }
+
+  const upper = texto.toUpperCase();
+  for (const [nombre, canonico] of Object.entries(NOMBRES_HIPODROMOS_GACETA)) {
+    if (upper.includes(nombre)) {
+      return canonico;
+    }
+  }
+
+  // Búsqueda de códigos aislados en líneas de encabezado
+  for (const [cod, canonico] of Object.entries(CATALOGO_TRACKS_GACETA)) {
+    const reCod = new RegExp(`\\b${cod}\\b`, "i");
+    if (reCod.test(upper.slice(0, 800))) {
+      return canonico;
+    }
+  }
+
+  return "USA";
+}
+
+/**
+ * PARSER DETERMINÍSTICO NATIVO:
+ * Extrae carreras de páginas de gacetas (Daily Racing Form / Retrospectos / Equibase).
+ * Funciona de manera no bloqueante, instantánea y sin consumir cuota de IA.
+ */
+export function parsearPaginaRetrospectosNativo(
+  textoPagina: string,
+  opciones?: { fechaOverride?: string; hipodromoOverride?: string }
+): CarreraParseadaNativa | null {
+  if (!textoPagina || textoPagina.trim().length < 50) return null;
+
+  const lineas = textoPagina.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const textoCompleto = lineas.join("\n");
+
+  // 1. Línea maestra de validación:
+  // Purse <MONTO> <CODIGO>ENTRIES <NUM_CARRERA>(ST|ND|RD|TH) <TRACK_CODE> <MES> <DIA> <DISTANCIA>
+  // ej: "Purse $25,000 DRENTRIES 1ST CDX NOVEMBER 4 6F"
+  // ej: "DCENTRIES 2ND CTX"
+  // ej: "DMENTRIES 1ST DED"
+  // ej: "DMENTRIES 1ST EVD"
+  // ej: "DAENTRIES 1ST FLX"
+  // ej: "DCENTRIES 1ST IND"
+  // ej: "TCENTRIES 1ST MNR"
+  // ej: "DCENTRIES 1ST MVR"
+  // ej: "DCENTRIES 1ST PRX"
+  const reLineaMaestra = /(?:PURSE\s*[\$]?\s*([0-9,.]+)\s*)?([A-Z0-9]+ENTRIES|[A-Z]{2,4}\s*ENTRIES)?\s*(\d{1,2})\s*(?:ST|ND|RD|TH)\s+([A-Z]{2,4})\b/i;
+  const matchMaestra = textoCompleto.match(reLineaMaestra);
+
+  // Alternativa de encabezado clásico: "RACE 1", "1ST RACE", "CARRERA 1"
+  let numCarrera: number | null = null;
+  let trackCode: string | null = null;
+  let purseMonto: number | undefined = undefined;
+
+  if (matchMaestra) {
+    if (matchMaestra[1]) {
+      purseMonto = parseFloat(matchMaestra[1].replace(/,/g, ""));
+    }
+    numCarrera = parseInt(matchMaestra[3], 10);
+    trackCode = matchMaestra[4].toUpperCase();
+  } else {
+    // Buscar "RACE <N>" o "<N>ST RACE"
+    const mRace = textoCompleto.match(/\b(?:RACE|CARRERA)\s*#?\s*(\d{1,2})\b/i) ||
+                  textoCompleto.match(/\b(\d{1,2})\s*(?:ST|ND|RD|TH)\s+(?:RACE|CARRERA)\b/i);
+    if (mRace) {
+      numCarrera = parseInt(mRace[1], 10);
+    }
+  }
+
+  if (!numCarrera || isNaN(numCarrera) || numCarrera <= 0) {
+    return null;
+  }
+
+  // 2. Hipódromo
+  const hipodromo = opciones?.hipodromoOverride?.trim() ||
+    resolverHipodromoTexto(textoCompleto, trackCode);
+
+  // 3. Fecha
+  let fecha = opciones?.fechaOverride?.trim() || null;
+  if (!fecha) {
+    fecha = extraerFechaCabecera(textoCompleto);
+  }
+  if (!fecha) {
+    // Si no viene en la cabecera, usar fecha de hoy en formato ISO
+    const hoy = new Date();
+    fecha = hoy.toISOString().split("T")[0];
+  }
+
+  // 4. Distancia
+  let distancia = 1200;
+  const mDist = textoCompleto.match(/\b(\d+(?:\s*(?:1\/2|1\/4|3\/4|1\/16|1\/8|3\/16))?\s*(?:F|FUR|FURLONGS|M|MILE|MILES|YDS|YARDS))\b/i) ||
+                textoCompleto.match(/\b(\d{3,4})\s*(?:METROS|METERS|M)\b/i);
+  if (mDist) {
+    distancia = convertirDistanciaAMetros(mDist[1]);
+  }
+
+  // 5. Superficie
+  let superficie: "Arena" | "Grama" = "Arena";
+  if (/\b(?:TURF|GRAMA|INNER TURF|GRASS)\b/i.test(textoCompleto)) {
+    superficie = "Grama";
+  }
+
+  // 6. Hora de partida
+  let hora: string | null = null;
+  const mHora = textoCompleto.match(/(?:POST\s*TIME|POST|HORA|PARTIDA)[:\s]*(\d{1,2}:\d{2}\s*(?:AM|PM|A\.M\.|P\.M\.)?)/i) ||
+                textoCompleto.match(/\b(\d{1,2}:\d{2}\s*(?:AM|PM|A\.M\.|P\.M\.))\b/i);
+  if (mHora) {
+    hora = mHora[1].trim();
+  }
+
+  // 7. Extracción de Ejemplares (incluyendo AE y MTO)
+  const ejemplares: CarreraParseadaNativa["ejemplares"] = [];
+  const nombresVistos = new Set<string>();
+
+  // Patrón de ejemplar típico de gacetas americanas:
+  // Ej: "1  Flightline (L)  I. Ortiz, Jr.  122  B. Baffert  3-1"
+  // Ej: "1A Also Eligible Horse (L) (AE)  54,4  9-5"
+  // Ej: "2  Horse Name  Jockey Name  54.4  Trainer  5-2"
+  // O líneas con número de gualdrapa al inicio:
+  const reEjemplarLinea = /^(\d{1,2}[A-Za-z]?)\s+([A-Z0-9\s'.\-]{3,35}?)(?:\s*\((?:L|FTG|L1|L[0-9]+)\))?(?:\s*\((AE|MTO)\))?(?:\s+([A-Z][a-zA-Z'.\-]+(?:\s+[A-Z][a-zA-Z'.\-]+){1,3}))?\s+(\d{2,3}(?:[.,]\d)?|\d{2,3})\s+(?:.*?\s+)?(\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}|EVEN|[0-9]+(?:\.[0-9]+)?-?[0-9]*)?$/im;
+
+  for (let i = 0; i < lineas.length; i++) {
+    const l = lineas[i];
+
+    // Ignorar líneas que sean cabeceras o estadísticas
+    if (/^(?:PURSE|RACE|CARRERA|DAILY|EQUICLOUD|COPYRIGHT|PAGE|TABLA|TRACK|POST|WPS|EXACTA|TRIFECTA|SUPERFECTA)/i.test(l)) {
+      continue;
+    }
+
+    const m = l.match(reEjemplarLinea);
+    if (m) {
+      const numProg = m[1].trim();
+      let nombre = m[2].trim().replace(/\s*\((?:L|AE|MTO)\)/gi, "").trim();
+      const condicion = (m[3]?.toUpperCase() as "AE" | "MTO") ||
+                        (l.includes("(AE)") ? "AE" : l.includes("(MTO)") ? "MTO" : null);
+      const jockey = m[4]?.trim();
+      let pesoStr = m[5]?.trim()?.replace(",", ".");
+      let pesoNum: number | string | undefined = pesoStr ? parseFloat(pesoStr) : undefined;
+      if (typeof pesoNum === "number" && isNaN(pesoNum)) pesoNum = undefined;
+
+      const ml = m[6]?.trim();
+
+      const nombreKey = nombre.toUpperCase();
+      if (nombreKey.length >= 2 && !nombresVistos.has(nombreKey) && !/^(?:PURSE|RACE|TRACK|POST)/.test(nombreKey)) {
+        nombresVistos.add(nombreKey);
+        ejemplares.push({
+          numero: numProg,
+          nombre,
+          pp: parseInt(numProg.replace(/[^0-9]/g, ""), 10) || undefined,
+          jinete: jockey,
+          peso: pesoNum,
+          ml: ml || undefined,
+          retirado: false,
+          condicionElegibilidad: condicion,
+        });
+      }
+    }
+  }
+
+  // Si el regex estricto por línea capturó pocos caballos, usamos un analizador de bloques
+  if (ejemplares.length < 2) {
+    // Buscar bloques del estilo:
+    // "1 <NOMBRE>" seguido en la siguiente línea o dentro de 4 líneas de jockey / peso / trainer
+    const reNumCaballo = /^(?:#?\s*)?(\d{1,2}[A-Za-z]?)\s+([A-Z][A-Z0-9\s'.\-]{2,30})/gm;
+    let mBlock: RegExpExecArray | null;
+    while ((mBlock = reNumCaballo.exec(textoCompleto)) !== null) {
+      const numProg = mBlock[1].trim();
+      const nombre = mBlock[2].trim();
+      const nombreKey = nombre.toUpperCase();
+
+      // Descartar falsos positivos comunes
+      if (
+        /^(?:PURSE|RACE|CARRERA|FURLONG|CLAIMING|MAIDEN|ALLOWANCE|STAKES|POST|TRACK|COPYRIGHT|PAGE|DAILY)/i.test(nombreKey) ||
+        nombreKey.length < 2 ||
+        nombresVistos.has(nombreKey)
+      ) {
+        continue;
+      }
+
+      // Buscar ML en las cercanías
+      const contexto = textoCompleto.slice(mBlock.index, mBlock.index + 200);
+      const mML = contexto.match(/\b(\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}|9-5|5-2|3-1|8-1|10-1|12-1|15-1|20-1)\b/);
+      const mPeso = contexto.match(/\b(1[1-2][0-9]|5[0-9][.,][0-9]|5[0-9])\b/);
+      const condicion = contexto.includes("(AE)") ? "AE" : contexto.includes("(MTO)") ? "MTO" : null;
+
+      nombresVistos.add(nombreKey);
+      ejemplares.push({
+        numero: numProg,
+        nombre,
+        pp: parseInt(numProg.replace(/[^0-9]/g, ""), 10) || undefined,
+        peso: mPeso ? parseFloat(mPeso[1].replace(",", ".")) : undefined,
+        ml: mML ? mML[1] : undefined,
+        retirado: false,
+        condicionElegibilidad: condicion,
+      });
+    }
+  }
+
+  if (ejemplares.length === 0) {
+    return null;
+  }
+
+  return {
+    carrera: numCarrera,
+    hipodromo,
+    fecha,
+    hora,
+    distancia,
+    superficie,
+    premio: purseMonto,
+    ejemplares,
+  };
+}
+
+/**
+ * Procesa un lote de texto por páginas de gaceta con el motor determinístico nativo.
+ * Retorna las carreras detectadas y los índices de páginas que necesitan fallback IA.
+ */
+export function parsearGacetaRetrospectosNativo(
+  paginasTexto: string[],
+  opciones?: { fechaOverride?: string; hipodromoOverride?: string }
+): {
+  carreras: CarreraParseadaNativa[];
+  paginasParaFallback: Array<{ indicePagina: number; texto: string }>;
+} {
+  const carreras: CarreraParseadaNativa[] = [];
+  const paginasParaFallback: Array<{ indicePagina: number; texto: string }> = [];
+
+  for (let idx = 0; idx < paginasTexto.length; idx++) {
+    const textoPagina = paginasTexto[idx];
+    const carrera = parsearPaginaRetrospectosNativo(textoPagina, opciones);
+    if (carrera && carrera.ejemplares.length >= 2) {
+      carreras.push(carrera);
+    } else {
+      // Si la página tiene contenido significativo y no se pudo parsear determinísticamente
+      if (textoPagina && textoPagina.trim().length > 150) {
+        paginasParaFallback.push({ indicePagina: idx + 1, texto: textoPagina });
+      }
+    }
+  }
+
+  return { carreras, paginasParaFallback };
+}
+
+
 /** Segmento del documento que corresponde a UNA carrera. */
 export type SegmentoCarrera = {
   /** Número de carrera leído del encabezado (null si el encabezado no se pudo leer). */

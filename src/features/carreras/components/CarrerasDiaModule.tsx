@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { getHorseColor } from "@/shared/lib/horseColors";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -31,6 +31,12 @@ import { agruparPorHipodromo } from "@/features/carreras/lib/agruparHipodromos";
 import { editarCarreraRegistrada } from "@/features/carreras/lib/carreras-dia";
 import { ModalMarcasEditor } from "@/features/marcas/components/ModalMarcasEditor";
 import { ModalSincronizadorUsa } from "@/features/carreras/components/ModalSincronizadorUsa";
+import { ModalImportarGacetaPdf } from "@/features/inteligencia/components/ModalImportarGacetaPdf";
+import {
+  iniciarAutoActualizadorRetirados,
+  detenerAutoActualizadorRetirados,
+  estaAutoActualizadorActivo,
+} from "@/features/carreras/lib/sincronizar-usa-tvg-drf";
 
 const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
 
@@ -108,6 +114,40 @@ export function CarrerasDiaModule() {
   const [editorMarcas, setEditorMarcas] = useState<{ hipodromo: string; carrera: number; fecha: string } | null>(null);
   const [verSinEjemplares, setVerSinEjemplares] = useState(false);
   const [modalSincUsa, setModalSincUsa] = useState(false);
+  const [modalGacetaPdf, setModalGacetaPdf] = useState(false);
+  const [autoSyncActivo, setAutoSyncActivo] = useState(() => estaAutoActualizadorActivo());
+
+  const alternarAutoSync = useCallback(() => {
+    if (autoSyncActivo) {
+      detenerAutoActualizadorRetirados();
+      setAutoSyncActivo(false);
+      window.dispatchEvent(
+        new CustomEvent("toast", {
+          detail: { msg: "⏸️ Auto-Sync 24/7 pausado.", tipo: "info" },
+        })
+      );
+    } else {
+      iniciarAutoActualizadorRetirados(15, (res) => {
+        window.dispatchEvent(
+          new CustomEvent("toast", {
+            detail: {
+              msg: `🔄 Auto-Sync: ${res.totalRetirados} retiros procesados en vivo.`,
+              tipo: "info",
+            },
+          })
+        );
+      });
+      setAutoSyncActivo(true);
+      window.dispatchEvent(
+        new CustomEvent("toast", {
+          detail: {
+            msg: "⚡ Auto-Sync 24/7 activado: carreras y retiros se sincronizan cada 15 min.",
+            tipo: "success",
+          },
+        })
+      );
+    }
+  }, [autoSyncActivo]);
   
   const toast = useCallback((msg: string, tipo: "success" | "warning" | "error" | "info" = "info") => {
     window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -345,25 +385,41 @@ export function CarrerasDiaModule() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent("ejemplares:cambiar-tab", { detail: "gaceta" }));
-            }}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 px-3.5 py-1.5 text-xs font-black uppercase text-white shadow-md transition-all border border-purple-300/40"
-            title="Abrir Descarga de Gaceta IA, Buscar Carreras Faltantes y Enviar Órdenes Particulares al Agente IA"
-          >
-            <span>📰🤖</span>
-            <span>Descarga y Corrección Gaceta IA</span>
-          </button>
+          {/* MODO 1: Sincronizar USA en Vivo (Automático) */}
           <button
             type="button"
             onClick={() => setModalSincUsa(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-95 px-3.5 py-1.5 text-xs font-black uppercase text-slate-950 shadow-md transition-all"
-            title="Sincronizar carreras y ejemplares de hipódromos americanos desde TVG y DRF"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-95 px-3 py-1.5 text-xs font-black uppercase text-slate-950 shadow-md transition-all"
+            title="Descarga directa desde feeds USA (DRF / TVG / TwinSpires) para cualquier fecha sin PDFs"
           >
             <span>🇺🇸</span>
-            <span>Sincronizar USA Hoy (TVG / DRF)</span>
+            <span>Sincronizar USA en Vivo (Automático)</span>
+          </button>
+
+          {/* MODO 2: Importar Gacetas PDF (Multi-Fecha / Lote) */}
+          <button
+            type="button"
+            onClick={() => setModalGacetaPdf(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 px-3 py-1.5 text-xs font-black uppercase text-white shadow-md transition-all border border-purple-300/40"
+            title="Importar uno o múltiples PDFs de retrospectos con vista previa editable antes de guardar"
+          >
+            <span>📄</span>
+            <span>Importar Gacetas PDF (Multi-Fecha / Lote)</span>
+          </button>
+
+          {/* MODO 3: Auto-Sync 24/7 Activo (Toggle / Indicador) */}
+          <button
+            type="button"
+            onClick={alternarAutoSync}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black uppercase shadow-md transition-all border ${
+              autoSyncActivo
+                ? "bg-emerald-600 text-white border-emerald-400/60 hover:bg-emerald-500"
+                : "bg-slate-800/90 text-slate-300 border-slate-700 hover:bg-slate-800"
+            }`}
+            title="Auto-sincronización activa en segundo plano cada 15 minutos para actualizar carreras y retiros"
+          >
+            <span className={`inline-block h-2 w-2 rounded-full ${autoSyncActivo ? "bg-emerald-300 animate-pulse" : "bg-slate-500"}`} />
+            <span>{autoSyncActivo ? "🔄 Auto-Sync 24/7 Activo" : "⏸️ Auto-Sync Inactivo"}</span>
           </button>
         </div>
       </div>
@@ -883,6 +939,14 @@ export function CarrerasDiaModule() {
         onCerrar={() => setModalSincUsa(false)}
         fechaDefecto={fecha}
         onActualizado={() => void refrescar()}
+      />
+
+      <ModalImportarGacetaPdf
+        abierto={modalGacetaPdf}
+        onCerrar={() => setModalGacetaPdf(false)}
+        fechaDefault={fecha}
+        hipodromoDefault={hipodromo}
+        onCarrerasImportadas={() => void refrescar()}
       />
     </div>
   );

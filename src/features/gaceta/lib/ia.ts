@@ -17,7 +17,13 @@ import {
   repararNumerosCarreras,
   type ReporteReparacion,
 } from "@/features/gaceta/lib/numeros";
-import { armarBloques, consolidarPorNumero, segmentarPorCarreras } from "@/features/gaceta/lib/segmentar";
+import {
+  armarBloques,
+  consolidarPorNumero,
+  segmentarPorCarreras,
+  parsearPaginaRetrospectosNativo,
+  parsearGacetaRetrospectosNativo,
+} from "@/features/gaceta/lib/segmentar";
 import type { CarreraRegistro } from "@/features/gaceta/lib/ui";
 
 export type EjemplarExtraido = {
@@ -31,12 +37,18 @@ export type EjemplarExtraido = {
   peso?: number | string;
   medicamento?: string;
   implementos?: string;
+  ml?: string;
+  stud?: string;
+  pedigri?: string;
+  retirado?: boolean;
+  condicionElegibilidad?: "AE" | "MTO" | null;
 };
 
 export type CarreraExtraida = {
   carrera: number | string;
   hipodromo?: string;
   fecha?: string | null;
+  hora?: string | null;
   distancia?: number;
   superficie?: string;
   premio?: number;
@@ -578,7 +590,7 @@ function armarBody(contenido: ContenidoLote, estricto: boolean): Record<string, 
   };
 }
 
-async function postIA(url: string, body: Record<string, unknown>, clave: string, ms = 45000): Promise<Response> {
+async function postIA(url: string, body: Record<string, unknown>, clave: string, ms = 25000): Promise<Response> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
   try {

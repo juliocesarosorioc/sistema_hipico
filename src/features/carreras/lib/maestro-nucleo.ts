@@ -61,6 +61,10 @@ export type EjemplarMatriz = {
   peso?: number | string | null;
   medicamento?: string | null;
   implementos?: string | null;
+  ml?: string | null;
+  stud?: string | null;
+  pedigri?: string | null;
+  condicionElegibilidad?: "AE" | "MTO" | null;
 };
 
 export type EjemplarCarreraCentral = {
@@ -76,6 +80,10 @@ export type EjemplarCarreraCentral = {
   peso?: number | string | null;
   medicamento?: string | null;
   implementos?: string | null;
+  ml?: string | null;
+  stud?: string | null;
+  pedigri?: string | null;
+  condicionElegibilidad?: "AE" | "MTO" | null;
 };
 
 /** Resultado embebido de la fila maestra (0 o 1 mientras la carrera no corrió). */

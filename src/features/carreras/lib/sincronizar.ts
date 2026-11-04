@@ -1,24 +1,5 @@
 /**
  * SINCRONIZACIÓN CON EL REGISTRO CENTRAL DE CARRERAS.
- *
- * La matriz `carreras` (una fila por fecha+hipódromo+carrera) es el ÚNICO lugar
- * del que se listan las carreras que se van a jugar. Pollas, Remates, WPS,
- * Marcas, Dupletas, Tablas Fijas, Gestión de Jugadas y Taquilla leen de ahí a
- * través de `useRegistroCentral`. Por eso TODA alta de carreras —venga del
- * cargador de IA (Gaceta), del Ensamblaje o de la carga manual de programa—
- * tiene que terminar en esta matriz.
- *
- * BUG QUE ESTO CORRIGE: el cargador de IA transcribía las carreras pero solo las
- * guardaba en su propio registro local (`gaceta_registro`), el historial
- * (`gaceta_procesada`) y el padrón (`ejemplares`). Nunca llamaba a la matriz, así
- * que las carreras "extraídas" solo se veían en esa pantalla y no existían para
- * el resto de los módulos.
- *
- * `guardarPrograma` es la vía canónica (documento del día `programa_dia` + alta
- * en la matriz). Como la matriz es la fuente que leen todos los módulos, si el
- * documento del día falla se escribe igual la matriz para no dejar la carrera
- * invisible. Aquí se agrupa por fecha y se FUSIONA con lo que ya haya ese día,
- * para no borrar las carreras de los otros hipódromos.
  */
 import {
   guardarPrograma,
@@ -48,6 +29,9 @@ export type EjemplarEntrante = {
   peso?: string | number;
   medicamento?: string;
   implementos?: string;
+  pp?: number | string | null;
+  ml?: string;
+  retirado?: boolean;
 };
 
 /** Carrera heterogénea a registrar: sirve tanto para `CarreraRegistro` (IA)
@@ -56,6 +40,7 @@ export type CarreraEntrante = {
   hipodromo?: string | null;
   carrera?: number | string | null;
   fecha?: string | null;
+  hora?: string | null;
   distancia?: number | string | null;
   superficie?: string | null;
   premio?: number | string | null;
@@ -127,15 +112,19 @@ export function aCarrerasPrograma(carreras: CarreraEntrante[]): CarreraPrograma[
         ejemplar_id: e.ejemplar_id ?? null,
         jockey: e.jockey,
         entrenador: e.entrenador,
-        peso: e.peso,
+        peso: e.peso !== undefined && e.peso !== null ? String(e.peso).replace(/,/g, ".") : undefined,
         medicamento: e.medicamento,
         implementos: e.implementos,
+        pp: e.pp ?? undefined,
+        ml: e.ml ?? undefined,
+        retirado: Boolean(e.retirado),
       }))
       .filter((e) => e.nombre);
     out.push({
       hipodromo,
       fecha: c.fecha ? String(c.fecha).slice(0, 10) : null,
       carrera: num,
+      hora: c.hora ? String(c.hora).trim() : null,
       distancia: Number(c.distancia) || 0,
       superficie: String(c.superficie || "ARENA").toUpperCase() || "ARENA",
       premio: Number(c.premio) || 0,
@@ -260,6 +249,7 @@ export async function sincronizarCarrerasAlCentral(
           ...nueva,
           fecha: nueva.fecha ?? fecha,
           carrera: Number(nueva.carrera),
+          hora: nueva.hora ?? existente.hora ?? null,
           distancia: nueva.distancia != null ? String(nueva.distancia) : null,
           estado: existente.estado ?? "Programada",
           caballos: nueva.caballos.map((e) => ({ ...e })),
@@ -282,13 +272,7 @@ export async function sincronizarCarrerasAlCentral(
     const actual = await leerProgramaPorFecha(fecha);
     const previas = actual.data?.carreras ?? [];
     const setNuevas = new Set(mergeadas.map(claveCarrera));
-    // Se conservan las carreras del día que NO vienen en esta tanda (otros
-    // hipódromos / otras altas): el registro central es acumulativo.
     const otras = previas.filter((c) => !setNuevas.has(claveCarrera(c)));
-    // Y de las que SÍ vienen, se conservan los EJEMPLARES que el lote no
-    // trajo: un lote parcial (Belmont 1-3, luego Belmont 4-6) tiene que SUMAR
-    // ejemplares, nunca reemplazar la lista. La identidad es el número de
-    // gualdrapa, que es lo que identifica al ejemplar dentro de la carrera.
     const porClavePrevia = new Map(previas.map((c) => [claveCarrera(c), c]));
     const fusionadas: CarreraPrograma[] = mergeadas.map((c) => {
       const previa = porClavePrevia.get(claveCarrera(c));
@@ -306,25 +290,18 @@ export async function sincronizarCarrerasAlCentral(
       ),
     ];
 
-    // 1) Vía canónica: guarda el documento del día (`programa_dia`) Y da de alta
-    //    las carreras en la matriz `carreras`.
     const res = await guardarPrograma(
       { fecha, hipodromos, carreras: [...otras, ...fusionadas] },
       creadoPor,
       { registrarEnMatriz: false }
     );
 
-    // 2) Si el documento del día no se pudo guardar, la MATRIZ —de donde leen
-    //    TODOS los módulos— se escribe igual: sin esto la carrera quedaría
-    //    invisible aunque la extracción haya sido correcta.
-    //
-    // El documento JSON del programa no vuelve a escribir en la matriz las
-    // carreras protegidas; solo se publican las filas validadas.
     const matriz = guardables.length ? await escribirCarrerasMaestro(
       guardables.map((c) => ({
         fecha,
         hipodromo: c.hipodromo,
         carrera: Number(c.carrera),
+        hora: c.hora ?? null,
         estado: c.estado ?? "Programada",
         caballos: (c.caballos ?? []).map((e) => ({
           numero: e.numero,
@@ -336,6 +313,8 @@ export async function sincronizarCarrerasAlCentral(
           peso: e.peso,
           medicamento: e.medicamento,
           implementos: e.implementos,
+          pp: e.pp,
+          retirado: e.retirado,
         })),
         distancia: c.distancia ? String(c.distancia) : null,
         superficie: c.superficie ?? null,
@@ -370,8 +349,6 @@ export async function sincronizarCarrerasAlCentral(
     }
   }
 
-  // Refresca la caché central: Pollas, Remates, WPS, Marcas, Dupletas, Tablas
-  // Fijas, Gestión de Jugadas y Taquilla la ven de inmediato, sin recargar.
   useRegistroCentral.getState().invalidarCarreras();
   return { ok: resultados.every((r) => r.estado !== "ERROR"), fechas, guardadas, resultados };
 }

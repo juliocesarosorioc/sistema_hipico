@@ -1,17 +1,17 @@
-﻿"use client";
-import { DateInput } from "@/shared/components/ui/DateInput";
+"use client";
 
 import { useState, useEffect, useRef } from "react";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import { Button } from "@/shared/components/ui/Button";
 import { CLAVE_GEMINI_KEY } from "@/features/gaceta/lib/ia";
 import {
-  importarYExtraerGacetaPdf,
+  importarLoteGacetasPdf,
   convertirCarrerasExtraidasACatalogo,
   analizarCarrerasGacetaV4,
   type ProgresoExtraccion,
   type ResumenAnalisisGaceta,
 } from "@/features/inteligencia/lib/importador-analizador-gaceta";
-import type { CarreraCatalogo } from "@/features/carreras/lib/maestro-nucleo";
+import type { CarreraCatalogo, EjemplarCarreraCentral } from "@/features/carreras/lib/maestro-nucleo";
 import type { CarreraExtraida } from "@/features/gaceta/lib/ia";
 import { COLORES_GUALDRAPA } from "@/features/inteligencia/lib/analista-venezuela-v4";
 import { sincronizarCarrerasAlCentral } from "@/features/carreras/lib/sincronizar";
@@ -36,14 +36,15 @@ export function ModalImportarGacetaPdf({
 }: Props) {
   // Configuración
   const [fecha, setFecha] = useState(fechaDefault);
-  const [hipodromo, setHipodromo] = useState(hipodromoDefault || "LA RINCONADA");
+  const [usarFechaOverride, setUsarFechaOverride] = useState(false);
+  const [fechaOverride, setFechaOverride] = useState(fechaDefault);
+  const [hipodromo, setHipodromo] = useState(hipodromoDefault || "CHURCHILL DOWNS");
   const [claveGemini, setClaveGemini] = useState("");
   const [mostrarClave, setMostrarClave] = useState(false);
-  const [topePaginas, setTopePaginas] = useState<string>("");
-  const [archivo, setArchivo] = useState<File | null>(null);
+  const [archivos, setArchivos] = useState<File[]>([]);
 
   // Estados de proceso
-  const [fase, setFase] = useState<"config" | "procesando" | "analisis">("config");
+  const [fase, setFase] = useState<"config" | "procesando" | "edicion" | "analisis">("config");
   const [progreso, setProgreso] = useState<ProgresoExtraccion>({
     fase: "leyendo",
     mensaje: "",
@@ -51,12 +52,16 @@ export function ModalImportarGacetaPdf({
   const [error, setError] = useState<string>("");
   const [aviso, setAviso] = useState<string>("");
 
-  // Resultados
+  // Resultados y Edición Previa
   const [carrerasExtraidas, setCarrerasExtraidas] = useState<CarreraExtraida[]>([]);
   const [carrerasCatalogo, setCarrerasCatalogo] = useState<CarreraCatalogo[]>([]);
   const [analisisV4, setAnalisisV4] = useState<ResumenAnalisisGaceta | null>(null);
   const [carreraSeleccionada, setCarreraSeleccionada] = useState<number>(1);
   const [guardandoEnBd, setGuardandoEnBd] = useState(false);
+
+  // Estados de edición puntual de ejemplar/carrera
+  const [nuevoNombreCaballo, setNuevoNombreCaballo] = useState("");
+  const [nuevoNumCaballo, setNuevoNumCaballo] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -70,7 +75,8 @@ export function ModalImportarGacetaPdf({
 
   useEffect(() => {
     setFecha(fechaDefault);
-    setHipodromo(hipodromoDefault || "LA RINCONADA");
+    setFechaOverride(fechaDefault);
+    if (hipodromoDefault) setHipodromo(hipodromoDefault);
   }, [fechaDefault, hipodromoDefault]);
 
   const handleGuardarClave = () => {
@@ -105,51 +111,36 @@ export function ModalImportarGacetaPdf({
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      setArchivo(f);
-      setError("");
-      // [Módulo 2] Detectar fecha e hipódromo del nombre del archivo automáticamente
-      const nombreLower = f.name.toLowerCase();
-      // Patrón ISO: 2026-11-04 o 2026_11_04
-      const matchFechaISO = nombreLower.match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
-      if (matchFechaISO) {
-        const fechaCandidata = `${matchFechaISO[1]}-${matchFechaISO[2]}-${matchFechaISO[3]}`;
-        setFecha(fechaCandidata);
-        emitirToast(`📅 Fecha detectada del archivo: ${fechaCandidata}`, "info");
-      }
-      // Hipódromo desde abreviatura en nombre del archivo
-      const mapaAbrev: Record<string, string> = {
-        "--cd": "CHURCHILL DOWNS", "--ct": "CHARLES TOWN", "--dd": "DELTA DOWNS",
-        "--ed": "EVANGELINE DOWNS", "--fl": "FINGER LAKES", "--hi": "HORSESHOE INDIANAPOLIS",
-        "--mtn": "MOUNTAINEER", "--mv": "MAHONING VALLEY", "--prx": "PARX RACING",
-        "--lr": "LA RINCONADA", "--val": "VALENCIA",
-      };
-      for (const [abrev, nombreHipo] of Object.entries(mapaAbrev)) {
-        if (nombreLower.includes(abrev)) {
-          setHipodromo(nombreHipo);
-          break;
-        }
-      }
+  const agregarArchivos = (nuevos: FileList | File[]) => {
+    const list = Array.from(nuevos).filter(
+      (f) => /\.pdf$/i.test(f.name) || f.type.startsWith("image/")
+    );
+    if (!list.length) {
+      emitirToast("Solo se admiten documentos PDF o imágenes de gaceta.", "warning");
+      return;
     }
+    setArchivos((prev) => {
+      const nombres = new Set(prev.map((a) => a.name));
+      const agregables = list.filter((a) => !nombres.has(a.name));
+      return [...prev, ...agregables];
+    });
+    setError("");
+  };
+
+  const removerArchivo = (idx: number) => {
+    setArchivos((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setArchivo(e.dataTransfer.files[0]);
-      setError("");
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      agregarArchivos(e.dataTransfer.files);
     }
   };
 
-  const handleEjecutarExtraccion = async () => {
-    if (!archivo) {
-      setError("Por favor selecciona un archivo PDF o imagen de la Gaceta.");
-      return;
-    }
-    if (!claveGemini.trim()) {
-      setError("Se requiere la clave API de Gemini para procesar el documento.");
+  const handleEjecutarExtraccionLote = async () => {
+    if (!archivos.length) {
+      setError("Por favor selecciona al menos un archivo PDF o imagen de gaceta.");
       return;
     }
 
@@ -158,62 +149,134 @@ export function ModalImportarGacetaPdf({
     setAviso("");
     setProgreso({
       fase: "leyendo",
-      mensaje: "Iniciando lectura del documento...",
+      mensaje: `Iniciando cola de procesamiento no bloqueante (${archivos.length} archivo(s))...`,
     });
 
     try {
-      const res = await importarYExtraerGacetaPdf({
-        file: archivo,
+      const fechaEfectiva = usarFechaOverride && fechaOverride ? fechaOverride : undefined;
+      const res = await importarLoteGacetasPdf({
+        files: archivos,
         claveGemini: claveGemini.trim(),
-        hipodromoDestino: hipodromo,
-        fechaJornada: fecha,
-        topePaginas: topePaginas ? parseInt(topePaginas, 10) : undefined,
-        onProgreso: (p) => setProgreso(p),
+        fechaOverride: fechaEfectiva,
+        onProgresoLote: (p) => {
+          setProgreso({
+            fase: "extrayendo",
+            mensaje: `[Archivo ${p.archivoActual}/${p.totalArchivos}] ${p.nombreArchivo}: ${p.mensaje}`,
+            paginaActual: p.archivoActual,
+            totalPaginas: p.totalArchivos,
+          });
+        },
       });
 
-      if (!res.ok || !res.carreras.length) {
-        throw new Error(res.error || "No se encontraron carreras legibles en el documento.");
+      if (!res.todasLasCarreras.length) {
+        throw new Error(
+          res.fallidas.map((f) => `${f.nombreArchivo}: ${f.error}`).join(" | ") ||
+            "No se pudieron extraer carreras válidas de los documentos."
+        );
       }
 
-      setCarrerasExtraidas(res.carreras);
-      if (res.aviso) setAviso(res.aviso);
+      setCarrerasExtraidas(res.todasLasCarreras);
+      if (res.fallidas.length > 0) {
+        setAviso(
+          `Se procesaron ${res.exitosas.length} archivo(s) correctamente, pero ${res.fallidas.length} fallaron: ${res.fallidas
+            .map((f) => f.nombreArchivo)
+            .join(", ")}`
+        );
+      }
 
       // Convertir a catálogo
-      const catalogo = convertirCarrerasExtraidasACatalogo(res.carreras, fecha, hipodromo);
+      const fechaBase = fechaEfectiva || fecha;
+      const catalogo = convertirCarrerasExtraidasACatalogo(res.todasLasCarreras, fechaBase, hipodromo);
       setCarrerasCatalogo(catalogo);
 
-      // Ejecutar análisis v4 automático
-      setProgreso({
-        fase: "analizando",
-        mensaje: "Ejecutando Motor Analista Venezuela v4 (MACTOR + SMIC + Actuario)...",
-      });
-
-      const resAnalisis = analizarCarrerasGacetaV4({
-        carreras: catalogo,
-        fecha,
-      });
-
-      setAnalisisV4(resAnalisis);
       if (catalogo.length > 0) {
         setCarreraSeleccionada(Number(catalogo[0].carrera) || 1);
       }
-      setFase("analisis");
-      emitirToast(`Se extrajeron y analizaron ${catalogo.length} carreras exitosamente.`, "success");
+
+      // Ir a la fase de Previsualización y Edición Manual antes de guardar
+      setFase("edicion");
+      emitirToast(
+        `Se extrajeron ${catalogo.length} carrera(s) listas para previsualización y edición manual.`,
+        "success"
+      );
     } catch (err) {
       setFase("config");
       setError(err instanceof Error ? err.message : String(err));
-      emitirToast("Falló la extracción de la Gaceta.", "error");
+      emitirToast("Falló la extracción del lote de gacetas.", "error");
     }
   };
 
-  const handleInyectarALaboratorio = () => {
-    if (!carrerasCatalogo.length) return;
-    onCarrerasImportadas(carrerasCatalogo, fecha, hipodromo);
-    emitirToast("Carreras inyectadas al Laboratorio de Proyecciones.", "success");
-    onCerrar();
+  // Modificación puntual de carrera
+  const modificarCarreraActual = (patch: Partial<CarreraCatalogo>) => {
+    setCarrerasCatalogo((prev) =>
+      prev.map((c) => (Number(c.carrera) === carreraSeleccionada ? { ...c, ...patch } : c))
+    );
   };
 
-  const handleSincronizarConBD = async () => {
+  // Agregar ejemplar a la carrera actual
+  const agregarEjemplarActual = () => {
+    if (!nuevoNombreCaballo.trim()) return;
+    const carr = carrerasCatalogo.find((c) => Number(c.carrera) === carreraSeleccionada);
+    if (!carr) return;
+
+    const numSugerido =
+      nuevoNumCaballo.trim() ||
+      String(
+        (carr.caballos || []).length
+          ? Math.max(...(carr.caballos || []).map((cb) => parseInt(cb.numero, 10) || 0)) + 1
+          : 1
+      );
+
+    const nuevoCab: EjemplarCarreraCentral = {
+      numero: numSugerido,
+      nombre: nuevoNombreCaballo.trim().toUpperCase(),
+      nacionalidad: "USA",
+      pp: parseInt(numSugerido, 10) || null,
+      puestoPista: parseInt(numSugerido, 10) || null,
+      retirado: false,
+    };
+
+    setCarrerasCatalogo((prev) =>
+      prev.map((c) => {
+        if (Number(c.carrera) !== carreraSeleccionada) return c;
+        const ejs = [...(c.caballos || []), nuevoCab];
+        return { ...c, caballos: ejs };
+      })
+    );
+
+    setNuevoNombreCaballo("");
+    setNuevoNumCaballo("");
+    emitirToast(`Ejemplar ${nuevoCab.numero} ${nuevoCab.nombre} agregado a C${carreraSeleccionada}.`, "success");
+  };
+
+  // Alternar retirado de ejemplar
+  const alternarRetiradoEjemplar = (numEjemplar: string) => {
+    setCarrerasCatalogo((prev) =>
+      prev.map((c) => {
+        if (Number(c.carrera) !== carreraSeleccionada) return c;
+        const ejs = (c.caballos || []).map((cb) =>
+          cb.numero === numEjemplar ? { ...cb, retirado: !cb.retirado } : cb
+        );
+        const rets = ejs.filter((cb) => cb.retirado).map((cb) => cb.numero);
+        return { ...c, caballos: ejs, retirados: rets };
+      })
+    );
+  };
+
+  // Eliminar ejemplar de la carrera
+  const eliminarEjemplar = (numEjemplar: string) => {
+    setCarrerasCatalogo((prev) =>
+      prev.map((c) => {
+        if (Number(c.carrera) !== carreraSeleccionada) return c;
+        const ejs = (c.caballos || []).filter((cb) => cb.numero !== numEjemplar);
+        const rets = ejs.filter((cb) => cb.retirado).map((cb) => cb.numero);
+        return { ...c, caballos: ejs, retirados: rets };
+      })
+    );
+  };
+
+  // Guardado Masivo Ultra-Rápido en 1 Sola Transacción RPC
+  const handleGuardarLoteEnBD = async () => {
     if (!carrerasCatalogo.length) return;
     setGuardandoEnBd(true);
     try {
@@ -221,6 +284,7 @@ export function ModalImportarGacetaPdf({
         hipodromo: c.hipodromo,
         carrera: c.carrera,
         fecha: c.fecha,
+        hora: c.hora || null,
         distancia: c.distancia,
         superficie: c.superficie,
         premio: c.premio,
@@ -230,16 +294,27 @@ export function ModalImportarGacetaPdf({
           jockey: cab.jockey || "",
           entrenador: cab.entrenador || "",
           peso: cab.peso || "",
+          pp: cab.pp || null,
+          ml: cab.ml || "",
+          retirado: Boolean(cab.retirado),
           medicamento: cab.medicamento || "",
           implementos: cab.implementos || "",
         })),
       }));
 
-      const res = await sincronizarCarrerasAlCentral(loteParaSinc, "gaceta-ia-pdf");
+      const res = await sincronizarCarrerasAlCentral(loteParaSinc, "gaceta-lote-pdf", {
+        forzarReemplazo: true,
+      });
+
       if (res.ok) {
-        emitirToast("Carreras guardadas en el Registro Central de la plataforma.", "success");
+        emitirToast(
+          `¡Éxito! ${carrerasCatalogo.length} carrera(s) guardadas en BD en 1 sola transacción.`,
+          "success"
+        );
+        onCarrerasImportadas(carrerasCatalogo, fecha, hipodromo);
+        onCerrar();
       } else {
-        emitirToast(res.error || "Advertencia al guardar en la base de datos.", "warning");
+        emitirToast(res.error || "Aviso durante el guardado de carreras en BD.", "warning");
       }
     } catch (e) {
       emitirToast(`Error al persistir en BD: ${e instanceof Error ? e.message : String(e)}`, "error");
@@ -248,26 +323,36 @@ export function ModalImportarGacetaPdf({
     }
   };
 
-  const carreraActivaDetalle = analisisV4?.carrerasAnalizadas.find(
-    (c) => c.carreraNumero === carreraSeleccionada
-  );
+  // Ejecutar análisis actuarial v4 opcional
+  const handleEjecutarAnalisisV4 = () => {
+    if (!carrerasCatalogo.length) return;
+    const resAnalisis = analizarCarrerasGacetaV4({
+      carreras: carrerasCatalogo,
+      fecha,
+    });
+    setAnalisisV4(resAnalisis);
+    setFase("analisis");
+    emitirToast("Análisis prospectivo v4 computado.", "success");
+  };
+
+  const carreraActual = carrerasCatalogo.find((c) => Number(c.carrera) === carreraSeleccionada);
 
   if (!abierto) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto p-6 bg-slate-900 border border-slate-700 text-white rounded-2xl shadow-2xl">
+      <div className="relative w-full max-w-5xl max-h-[94vh] overflow-y-auto p-6 bg-slate-900 border border-slate-700 text-white rounded-2xl shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2.5">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-500 text-slate-950 font-black text-base shadow-sm">
-              📄
+              📑
             </span>
             <div>
               <h2 className="text-base font-black uppercase tracking-wider text-amber-400">
-                Herramienta de Importación, Extracción y Análisis de Gaceta PDF
+                Importador de Gacetas PDF Ultra-Rápido (Multi-Archivo / Lote)
               </h2>
               <p className="text-[11px] text-slate-400 font-medium">
-                Carga el programa oficial, procesa con IA Gemini y proyecta los 22 factores actuariales (La Rinconada / Valencia)
+                Extracción determinística nativa sin bloqueos, soporte multi-hipódromo, previsualización editable y guardado masivo en 1 transacción.
               </p>
             </div>
           </div>
@@ -280,7 +365,7 @@ export function ModalImportarGacetaPdf({
         </div>
 
         {/* ============================================================== */}
-        {/* FASE 1: CONFIGURACIÓN Y SUBIDA DE ARCHIVO                      */}
+        {/* FASE 1: CONFIGURACIÓN Y SUBIDA MULTI-ARCHIVO                   */}
         {/* ============================================================== */}
         {fase === "config" && (
           <div className="space-y-5 pt-3">
@@ -290,7 +375,7 @@ export function ModalImportarGacetaPdf({
               </div>
             )}
 
-            {/* Zona de Drop de archivo */}
+            {/* Zona de Drop Multi-Archivo */}
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleDrop}
@@ -300,8 +385,9 @@ export function ModalImportarGacetaPdf({
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 accept=".pdf,image/*"
-                onChange={handleFileChange}
+                onChange={(e) => e.target.files && agregarArchivos(e.target.files)}
                 className="hidden"
               />
               <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-amber-500/10 text-3xl text-amber-400 border border-amber-500/20">
@@ -309,57 +395,94 @@ export function ModalImportarGacetaPdf({
               </div>
               <div>
                 <p className="text-sm font-black text-amber-300 uppercase tracking-wide">
-                  {archivo ? archivo.name : "Arrastra aquí el PDF o la imagen de la Gaceta Hípica"}
+                  {archivos.length > 0
+                    ? `${archivos.length} archivo(s) PDF seleccionados en lote`
+                    : "Arrastra aquí uno o múltiples PDFs de Gacetas (Multi-Hipódromo)"}
                 </p>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {archivo
-                    ? `Tamaño: ${(archivo.size / (1024 * 1024)).toFixed(2)} MB — Haz clic si deseas cambiarlo`
-                    : "o haz clic para explorar tus archivos (Soporta PDF nativo, escaneado, JPG y PNG)"}
+                  Haz clic para explorar o arrastra múltiples gacetas a la vez (procesamiento con concurrencia controlada sin congelar la pantalla).
                 </p>
               </div>
             </div>
 
-            {/* Formulario de parámetros */}
+            {/* Lista de archivos seleccionados */}
+            {archivos.length > 0 && (
+              <div className="bg-slate-800/40 p-3 rounded-xl border border-slate-700/60 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                  <span>Archivos en Cola ({archivos.length}):</span>
+                  <button
+                    type="button"
+                    onClick={() => setArchivos([])}
+                    className="text-rose-400 hover:underline text-[11px]"
+                  >
+                    Limpiar lista
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-36 overflow-y-auto pr-1">
+                  {archivos.map((a, idx) => (
+                    <div
+                      key={`${a.name}-${idx}`}
+                      className="flex items-center justify-between gap-1.5 bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs"
+                    >
+                      <span className="truncate text-amber-300 font-semibold" title={a.name}>
+                        📄 {a.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removerArchivo(idx);
+                        }}
+                        className="text-slate-500 hover:text-rose-400 font-bold px-1"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Parámetros de Extracción */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-800/40 p-4 rounded-xl border border-slate-700/60">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                  Hipódromo
+                  Hipódromo Sugerido (si no viene en PDF)
                 </label>
                 <select
                   value={hipodromo}
                   onChange={(e) => setHipodromo(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-bold"
                 >
+                  <optgroup label="🇺🇸 Estados Unidos">
+                    <option value="CHURCHILL DOWNS">Churchill Downs (CD)</option>
+                    <option value="CHARLES TOWN">Charles Town (CT)</option>
+                    <option value="DELTA DOWNS">Delta Downs (DED)</option>
+                    <option value="EVANGELINE DOWNS">Evangeline Downs (EVD)</option>
+                    <option value="FINGER LAKES">Finger Lakes (FL)</option>
+                    <option value="HORSESHOE INDIANAPOLIS">Horseshoe Indianapolis (IND)</option>
+                    <option value="MOUNTAINEER">Mountaineer (MNR)</option>
+                    <option value="MAHONING VALLEY">Mahoning Valley (MVR)</option>
+                    <option value="PARX RACING">Parx Racing (PRX)</option>
+                    <option value="GULFSTREAM PARK">Gulfstream Park (GP)</option>
+                    <option value="TAMPA BAY DOWNS">Tampa Bay Downs (TAM)</option>
+                    <option value="AQUEDUCT">Aqueduct (AQU)</option>
+                    <option value="BELMONT PARK">Belmont Park (BEL)</option>
+                    <option value="SARATOGA">Saratoga (SAR)</option>
+                    <option value="KEENELAND">Keeneland (KEE)</option>
+                    <option value="DEL MAR">Del Mar (DMR)</option>
+                    <option value="SANTA ANITA">Santa Anita (SA)</option>
+                  </optgroup>
                   <optgroup label="🇻🇪 Venezuela">
                     <option value="LA RINCONADA">La Rinconada</option>
                     <option value="VALENCIA">Valencia</option>
-                  </optgroup>
-                  <optgroup label="🇺🇸 EE.UU. — Purasangres">
-                    <option value="CHURCHILL DOWNS">Churchill Downs (CD)</option>
-                    <option value="CHARLES TOWN">Charles Town (CT)</option>
-                    <option value="DELTA DOWNS">Delta Downs (DD)</option>
-                    <option value="EVANGELINE DOWNS">Evangeline Downs (ED)</option>
-                    <option value="FINGER LAKES">Finger Lakes (FL)</option>
-                    <option value="HORSESHOE INDIANAPOLIS">Horseshoe Indianapolis (HI)</option>
-                    <option value="MOUNTAINEER">Mountaineer (MTN)</option>
-                    <option value="MAHONING VALLEY">Mahoning Valley (MV)</option>
-                    <option value="PARX RACING">Parx Racing (PRX)</option>
-                    <option value="AQUEDUCT">Aqueduct (AQU)</option>
-                    <option value="BELMONT PARK">Belmont Park (BEL)</option>
-                    <option value="KEENELAND">Keeneland (KEE)</option>
-                    <option value="SARATOGA">Saratoga (SAR)</option>
-                    <option value="GULFSTREAM PARK">Gulfstream Park (GP)</option>
-                  </optgroup>
-                  <optgroup label="🏇 Quarter Horses">
-                    <option value="LOS ALAMITOS">Los Alamitos (LA)</option>
-                    <option value="REMINGTON PARK">Remington Park (RP)</option>
                   </optgroup>
                 </select>
               </div>
 
               <div>
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                  Fecha de la Jornada
+                  Fecha por Defecto
                 </label>
                 <DateInput
                   value={fecha}
@@ -369,25 +492,38 @@ export function ModalImportarGacetaPdf({
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                  Páginas a procesar (Opcional)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-amber-300">
+                    Importar para cualquier fecha
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={usarFechaOverride}
+                    onChange={(e) => setUsarFechaOverride(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-amber-500 rounded cursor-pointer"
+                  />
+                </div>
                 <input
-                  type="number"
-                  placeholder="Todas (vacío)"
-                  value={topePaginas}
-                  onChange={(e) => setTopePaginas(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-bold placeholder:text-slate-600"
+                  type="date"
+                  disabled={!usarFechaOverride}
+                  value={fechaOverride}
+                  onChange={(e) => setFechaOverride(e.target.value)}
+                  className={`w-full bg-slate-900 border rounded-lg px-2.5 py-1.5 text-xs font-bold text-white ${
+                    usarFechaOverride ? "border-amber-500" : "border-slate-700 opacity-50"
+                  }`}
+                  title="Sobrescribir la fecha para todas las carreras del lote"
                 />
               </div>
             </div>
 
-            {/* Configuración de API Key Gemini */}
+            {/* Clave Gemini (Opcional para Fallback IA) */}
             <div className="bg-slate-800/40 p-4 rounded-xl border border-slate-700/60 space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Clave API de Gemini
-                </label>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Clave Gemini (Solo requerida para fallback si el PDF no tiene texto nativo)
+                  </label>
+                </div>
                 <button
                   type="button"
                   onClick={() => setMostrarClave(!mostrarClave)}
@@ -399,7 +535,7 @@ export function ModalImportarGacetaPdf({
               <div className="flex gap-2">
                 <input
                   type={mostrarClave ? "text" : "password"}
-                  placeholder="AIzaSy..."
+                  placeholder="AIzaSy... (Opcional para motor nativo)"
                   value={claveGemini}
                   onChange={(e) => setClaveGemini(e.target.value)}
                   className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono placeholder:text-slate-600"
@@ -420,12 +556,9 @@ export function ModalImportarGacetaPdf({
                   Guardar
                 </Button>
               </div>
-              <p className="text-[10px] text-slate-500">
-                La clave se conserva en este navegador de forma segura para futuras extracciones.
-              </p>
             </div>
 
-            {/* Botón de acción */}
+            {/* Botones de acción */}
             <div className="flex justify-end gap-3 pt-2">
               <Button
                 variant="outline"
@@ -435,18 +568,18 @@ export function ModalImportarGacetaPdf({
                 Cancelar
               </Button>
               <Button
-                onClick={handleEjecutarExtraccion}
-                disabled={!archivo || !claveGemini.trim()}
+                onClick={handleEjecutarExtraccionLote}
+                disabled={!archivos.length}
                 className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs shadow-md px-6 py-2"
               >
-                🚀 Extraer y Analizar Gaceta con IA
+                🚀 Iniciar Extracción Rápida ({archivos.length} PDFs)
               </Button>
             </div>
           </div>
         )}
 
         {/* ============================================================== */}
-        {/* FASE 2: PROCESAMIENTO ACTIVO                                   */}
+        {/* FASE 2: PROCESAMIENTO NO BLOQUEANTE                           */}
         {/* ============================================================== */}
         {fase === "procesando" && (
           <div className="py-14 text-center space-y-6">
@@ -458,12 +591,10 @@ export function ModalImportarGacetaPdf({
 
             <div className="space-y-2">
               <h3 className="text-sm font-black uppercase tracking-wider text-amber-400">
-                {progreso.fase === "leyendo" && "Fase 1: Leyendo y decodificando documento PDF..."}
-                {progreso.fase === "extrayendo" && "Fase 2: Transcribiendo carreras con IA Gemini..."}
-                {progreso.fase === "analizando" && "Fase 3: Computando matrices actuariales v4..."}
+                Extrayendo Gacetas de Forma No Bloqueante
               </h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
-                {progreso.mensaje || "Por favor espera mientras el sistema extrae las carreras."}
+              <p className="text-xs text-slate-400 max-w-lg mx-auto">
+                {progreso.mensaje || "Procesando páginas con el motor determinístico..."}
               </p>
             </div>
 
@@ -480,7 +611,7 @@ export function ModalImportarGacetaPdf({
                   />
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1 font-mono">
-                  Página {progreso.paginaActual || 1} de {progreso.totalPaginas}
+                  Elemento {progreso.paginaActual || 1} de {progreso.totalPaginas}
                 </p>
               </div>
             )}
@@ -488,9 +619,9 @@ export function ModalImportarGacetaPdf({
         )}
 
         {/* ============================================================== */}
-        {/* FASE 3: RESULTADOS Y DASHBOARD ANALÍTICO                      */}
+        {/* FASE 3: PREVISUALIZACIÓN Y EDICIÓN MANUAL DE CARRERAS         */}
         {/* ============================================================== */}
-        {fase === "analisis" && analisisV4 && (
+        {fase === "edicion" && (
           <div className="space-y-4 pt-2">
             {aviso && (
               <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
@@ -498,217 +629,231 @@ export function ModalImportarGacetaPdf({
               </div>
             )}
 
-            {/* Tarjetas de Métricas de la Gaceta */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-              <div className="rounded-xl bg-slate-800/80 border border-slate-700/80 p-3 text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                  Total Carreras
-                </span>
-                <span className="text-xl font-black text-white">{analisisV4.totalCarreras}</span>
-              </div>
-
-              <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 block">
-                  Válidas 5y6
-                </span>
-                <span className="text-xl font-black text-amber-400">
-                  {analisisV4.carrerasValidas5y6.length}
-                </span>
-              </div>
-
-              <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 block">
-                  Líneas Fijas
-                </span>
-                <span className="text-xl font-black text-emerald-400">
-                  {analisisV4.lineasDetectadas.length}
-                </span>
-              </div>
-
-              <div className="rounded-xl bg-blue-500/10 border border-blue-500/30 p-3 text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-300 block">
-                  Morochas Clave
-                </span>
-                <span className="text-xl font-black text-blue-400">
-                  {analisisV4.morochasDetectadas.length}
-                </span>
-              </div>
-
-              <div className="rounded-xl bg-purple-500/10 border border-purple-500/30 p-3 text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300 block">
-                  Sorpresas
-                </span>
-                <span className="text-xl font-black text-purple-400">
-                  {analisisV4.sorpresasDetectadas.length}
-                </span>
-              </div>
-            </div>
-
-            {/* Selector de Carreras Extraídas */}
+            {/* Selector horizontal de carreras extraídas */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-800">
-              {analisisV4.carrerasAnalizadas.map((c) => {
-                const esActiva = c.carreraNumero === carreraSeleccionada;
+              {carrerasCatalogo.map((c) => {
+                const esActiva = Number(c.carrera) === carreraSeleccionada;
+                const totEj = c.caballos?.length ?? 0;
                 return (
                   <button
-                    key={c.carreraNumero}
+                    key={`${c.hipodromo}-${c.carrera}`}
                     type="button"
-                    onClick={() => setCarreraSeleccionada(c.carreraNumero)}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-black uppercase whitespace-nowrap transition-all ${
+                    onClick={() => setCarreraSeleccionada(Number(c.carrera))}
+                    className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
                       esActiva
-                        ? "bg-amber-500 text-slate-950 shadow-sm"
-                        : "bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700"
+                        ? "bg-amber-500 text-slate-950 shadow"
+                        : "bg-slate-800/80 text-slate-300 hover:bg-slate-800 border border-slate-700/60"
                     }`}
                   >
-                    C{c.carreraNumero}
-                    {c.esValida5y6 && (
-                      <span className="ml-1 text-[9px] opacity-80">({c.numeroValida5y6}ªV)</span>
-                    )}
+                    <span>C{c.carrera}</span>
+                    <span className="text-[9px] opacity-75 ml-1">({c.hipodromo.slice(0, 4)})</span>
+                    <span className="text-[9px] opacity-75 ml-1">[{totEj}]</span>
                   </button>
                 );
               })}
             </div>
 
-            {/* Detalle de la Carrera Seleccionada */}
-            {carreraActivaDetalle && (
-              <div className="bg-slate-800/50 rounded-2xl border border-slate-700/60 p-4 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-700/50 pb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black uppercase text-amber-400">
-                      Carrera {carreraActivaDetalle.carreraNumero} — {carreraActivaDetalle.distancia}m
-                    </span>
-                    {carreraActivaDetalle.esValida5y6 && (
-                      <span className="rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 px-2 py-0.5 text-[10px] font-black">
-                        {carreraActivaDetalle.numeroValida5y6}ª VÁLIDA 5Y6
-                      </span>
-                    )}
+            {/* Editor de la Carrera Seleccionada */}
+            {carreraActual && (
+              <div className="space-y-3 bg-slate-800/40 p-4 rounded-xl border border-slate-700/60">
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                  <div>
+                    <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">
+                      Nº Carrera
+                    </label>
+                    <input
+                      type="number"
+                      value={carreraActual.carrera}
+                      onChange={(e) => {
+                        const nuevoNum = parseInt(e.target.value, 10) || 1;
+                        modificarCarreraActual({ carrera: nuevoNum });
+                        setCarreraSeleccionada(nuevoNum);
+                      }}
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-bold"
+                    />
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    Escenario SMIC:{" "}
-                    <span className="font-bold text-white">
-                      {carreraActivaDetalle.escenarioDominanteSMIC.titulo}
-                    </span>
+
+                  <div>
+                    <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">
+                      Hipódromo
+                    </label>
+                    <input
+                      type="text"
+                      value={carreraActual.hipodromo}
+                      onChange={(e) => modificarCarreraActual({ hipodromo: e.target.value.toUpperCase() })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">
+                      Fecha
+                    </label>
+                    <input
+                      type="date"
+                      value={carreraActual.fecha}
+                      onChange={(e) => modificarCarreraActual({ fecha: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">
+                      Hora Partida
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej. 1:00 PM"
+                      value={carreraActual.hora || ""}
+                      onChange={(e) => modificarCarreraActual({ hora: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">
+                      Distancia (m)
+                    </label>
+                    <input
+                      type="number"
+                      value={carreraActual.distancia ?? ""}
+                      onChange={(e) => modificarCarreraActual({ distancia: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">
+                      Superficie
+                    </label>
+                    <select
+                      value={carreraActual.superficie ?? "ARENA"}
+                      onChange={(e) => modificarCarreraActual({ superficie: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-bold"
+                    >
+                      <option value="ARENA">Arena</option>
+                      <option value="GRAMA">Grama</option>
+                      <option value="CESPED">Césped</option>
+                      <option value="TAPETA">Tapeta</option>
+                    </select>
                   </div>
                 </div>
 
-                {/* Tabla de Ranking de Ejemplares */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-700 h-9">
-                        <th className="py-1.5 px-2.5 text-center whitespace-nowrap">Pos Llegada</th>
-                        <th className="py-1.5 px-2.5 text-center whitespace-nowrap"># Carrera</th>
-                        <th className="py-1.5 px-2 text-center text-emerald-400 font-mono font-bold">PP</th>
-                        <th className="py-1.5 px-2.5">Ejemplar</th>
-                        <th className="py-1.5 px-2.5">Jinete / Entrenador</th>
-                        <th className="py-1.5 px-2 text-center">Score Godet</th>
-                        <th className="py-1.5 px-2 text-center">Prob %</th>
-                        <th className="py-1.5 px-2 text-center">Speed Fig</th>
-                        <th className="py-1.5 px-2 text-center">Ventaja</th>
-                        <th className="py-1.5 px-2 text-right">Táctica</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800">
-                      {carreraActivaDetalle.ranking.map((ej) => {
-                        const num = ej.ejemplar.numero;
-                        const gualdrapa = COLORES_GUALDRAPA[num] || {
-                          bg: "#3B82F6",
-                          text: "#FFFFFF",
-                          border: "#1D4ED8",
-                        };
+                {/* Tabla de Ejemplares de la Carrera Actual */}
+                <div className="border border-slate-700/80 rounded-xl overflow-hidden mt-3">
+                  <div className="flex items-center justify-between bg-slate-900/90 px-3 py-2 border-b border-slate-700 text-xs font-bold text-amber-300">
+                    <span>Participantes ({carreraActual.caballos?.length ?? 0}):</span>
+                    <span className="text-[10px] text-slate-400">
+                      Haz clic en ⛔ para retirar / habilitar
+                    </span>
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-950 text-[10px] text-slate-400 uppercase">
+                        <tr>
+                          <th className="py-1.5 px-3">Nº / Gualdrapa</th>
+                          <th className="py-1.5 px-3">Ejemplar</th>
+                          <th className="py-1.5 px-3">Jinete</th>
+                          <th className="py-1.5 px-3">Entrenador</th>
+                          <th className="py-1.5 px-3">Peso</th>
+                          <th className="py-1.5 px-3">M/L</th>
+                          <th className="py-1.5 px-3 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {(carreraActual.caballos || []).map((ej) => {
+                          const num = parseInt(ej.numero, 10);
+                          const gualdrapa = COLORES_GUALDRAPA[num] || {
+                            bg: "#1e293b",
+                            text: "#ffffff",
+                          };
+                          return (
+                            <tr
+                              key={`${ej.numero}-${ej.nombre}`}
+                              className={ej.retirado ? "bg-rose-950/20 opacity-50" : "hover:bg-slate-800/40"}
+                            >
+                              <td className="py-2 px-3 align-middle">
+                                <span
+                                  className="inline-grid h-6 w-6 place-items-center rounded font-black text-[11px]"
+                                  style={{ backgroundColor: gualdrapa.bg, color: gualdrapa.text }}
+                                >
+                                  {ej.numero}
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 align-middle font-bold text-white">
+                                <span className={ej.retirado ? "line-through text-slate-400" : ""}>
+                                  {ej.nombre}
+                                </span>
+                                {ej.condicionElegibilidad && (
+                                  <span className="ml-1 text-[9px] font-black text-amber-400 bg-amber-400/10 px-1 rounded">
+                                    {ej.condicionElegibilidad}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3 align-middle text-slate-300">{ej.jockey || "—"}</td>
+                              <td className="py-2 px-3 align-middle text-slate-400">{ej.entrenador || "—"}</td>
+                              <td className="py-2 px-3 align-middle font-mono text-slate-300">{ej.peso || "—"}</td>
+                              <td className="py-2 px-3 align-middle font-mono text-amber-300">{ej.ml || "—"}</td>
+                              <td className="py-2 px-3 align-middle text-right space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={() => alternarRetiradoEjemplar(ej.numero)}
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                    ej.retirado
+                                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                      : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                                  }`}
+                                  title={ej.retirado ? "Reactivar ejemplar" : "Marcar como retirado"}
+                                >
+                                  {ej.retirado ? "Habilitar" : "⛔ Retirar"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => eliminarEjemplar(ej.numero)}
+                                  className="text-slate-500 hover:text-rose-400 text-xs font-bold"
+                                  title="Eliminar de la carrera"
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
 
-                        return (
-                          <tr key={num} className="hover:bg-slate-700/30 h-14 min-h-[56px] transition-colors">
-                            <td className="py-2.5 px-2.5 font-mono font-bold text-center text-slate-400 align-middle">
-                              #{ej.ordenLlegadaProyectado}
-                            </td>
-                            <td className="py-2.5 px-2.5 text-center align-middle">
-                              <span
-                                style={{
-                                  backgroundColor: gualdrapa.bg,
-                                  color: gualdrapa.text,
-                                  borderColor: gualdrapa.border,
-                                }}
-                                className="inline-grid h-8 w-8 min-w-[32px] place-items-center rounded-lg font-mono font-black text-xs sm:text-sm border shadow-sm"
-                                title={`Número de ejemplar #${num} en esta carrera`}
-                              >
-                                {num}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-2 text-center align-middle">
-                              <span
-                                className="rounded bg-emerald-950 text-emerald-300 border border-emerald-500/50 px-1.5 py-0.5 text-xs font-mono font-bold"
-                                title={`Puesto de Partida Oficial PP #${ej.ejemplar.puestoPista || num}`}
-                              >
-                                🚪 PP {ej.ejemplar.puestoPista || num}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-2.5 align-middle">
-                              <div>
-                                <span className="font-black text-white uppercase block leading-tight">
-                                  {ej.ejemplar.nombre}
-                                </span>
-                                <span className="text-[10px] text-slate-400">
-                                  {ej.ejemplar.estilo} · Kilos: {ej.ejemplar.kilos}kg
-                                </span>
-                              </div>
-                            </td>
-                            <td className="py-2.5 px-2.5 text-slate-300 align-middle">
-                              <span className="block leading-tight font-medium">
-                                {ej.ejemplar.jinete || "—"}
-                              </span>
-                              <span className="text-[10px] text-slate-500">
-                                {ej.ejemplar.entrenador || "—"}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-2 text-center align-middle">
-                              <span
-                                className="rounded bg-emerald-950 text-emerald-300 border border-emerald-500/50 px-1.5 py-0.5 text-xs font-mono font-bold"
-                                title={`Puesto de Partida Oficial PP #${ej.ejemplar.puestoPista || num}`}
-                              >
-                                🚪 PP {ej.ejemplar.puestoPista || num}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-2 text-center font-mono font-bold text-amber-400 align-middle">
-                              {ej.scoreGodetTotal.toFixed(1)}
-                            </td>
-                            <td className="py-2.5 px-2 text-center font-mono font-bold text-white align-middle">
-                              {ej.probabilidadSMIC.toFixed(1)}%
-                            </td>
-                            <td className="py-2.5 px-2 text-center font-mono text-slate-300 align-middle">
-                              {ej.ejemplar.speedRatingTTC}
-                            </td>
-                            <td className="py-2.5 px-2 text-center font-mono text-slate-400 align-middle">
-                              {ej.ordenLlegadaProyectado === 1
-                                ? `+${ej.cuerposVentaja.toFixed(1)} cpos`
-                                : `-${ej.cuerposVentaja.toFixed(1)} cpos`}
-                            </td>
-                            <td className="py-2.5 px-2.5 text-right align-middle">
-                              {ej.esLinea5y6 && (
-                                <span className="rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 px-1.5 py-0.5 text-[9px] font-black uppercase">
-                                  Línea Fija
-                                </span>
-                              )}
-                              {ej.esMorocha5y6 && !ej.esLinea5y6 && (
-                                <span className="rounded-md bg-blue-500/20 text-blue-300 border border-blue-400/40 px-1.5 py-0.5 text-[9px] font-black uppercase">
-                                  Morocha
-                                </span>
-                              )}
-                              {ej.esSorpresaOverlay && (
-                                <span className="rounded-md bg-purple-500/20 text-purple-300 border border-purple-400/40 px-1.5 py-0.5 text-[9px] font-black uppercase ml-1">
-                                  Sorpresa
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  {/* Fila rápida para agregar ejemplar */}
+                  <div className="flex items-center gap-2 p-2 bg-slate-900 border-t border-slate-800">
+                    <input
+                      type="text"
+                      placeholder="Nº"
+                      value={nuevoNumCaballo}
+                      onChange={(e) => setNuevoNumCaballo(e.target.value)}
+                      className="w-14 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white font-bold"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Nombre del Ejemplar..."
+                      value={nuevoNombreCaballo}
+                      onChange={(e) => setNuevoNombreCaballo(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && agregarEjemplarActual()}
+                      className="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white font-bold"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={agregarEjemplarActual}
+                      disabled={!nuevoNombreCaballo.trim()}
+                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black px-3"
+                    >
+                      ➕ Añadir
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Botones de Acción de Integración */}
+            {/* Barra de Guardado Masivo y Acciones */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
               <Button
                 variant="outline"
@@ -716,35 +861,77 @@ export function ModalImportarGacetaPdf({
                 onClick={() => setFase("config")}
                 className="text-xs border-slate-700 text-slate-300 hover:bg-slate-800"
               >
-                ← Cargar Otro Archivo
+                ← Cargar Otro Lote
               </Button>
 
-              <div className="flex flex-wrap items-center gap-2">
-
-                {onAbrirCuadro5y6 && (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      onCarrerasImportadas(carrerasCatalogo, fecha, hipodromo);
-                      onCerrar();
-                      onAbrirCuadro5y6();
-                    }}
-                    className="bg-amber-600 hover:bg-amber-500 text-white font-black text-xs flex items-center gap-1.5"
-                  >
-                    <span>🎟️</span>
-                    <span>Abrir Cuadro Maestro 5y6</span>
-                  </Button>
-                )}
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleEjecutarAnalisisV4}
+                  className="text-xs border-indigo-500/40 text-indigo-300 hover:bg-indigo-950/40"
+                >
+                  ⚡ Proyectar Factores v4
+                </Button>
 
                 <Button
                   size="sm"
-                  onClick={handleInyectarALaboratorio}
-                  className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md flex items-center gap-1.5 px-4"
+                  onClick={handleGuardarLoteEnBD}
+                  disabled={guardandoEnBd || !carrerasCatalogo.length}
+                  className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md px-5"
                 >
-                  <span>📥</span>
-                  <span>Inyectar a Inteligencia Hípica</span>
+                  {guardandoEnBd ? "💾 Guardando..." : `💾 Guardar Lote en BD (${carrerasCatalogo.length} Carreras)`}
                 </Button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* FASE 4: ANÁLISIS PROSPECTIVO V4                                */}
+        {/* ============================================================== */}
+        {fase === "analisis" && analisisV4 && (
+          <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+              <div className="rounded-xl bg-slate-800/80 border border-slate-700/80 p-3 text-center">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Total</span>
+                <span className="text-xl font-black text-white">{analisisV4.totalCarreras}</span>
+              </div>
+              <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-center">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 block">5y6</span>
+                <span className="text-xl font-black text-amber-400">{analisisV4.carrerasValidas5y6.length}</span>
+              </div>
+              <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 text-center">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 block">Líneas</span>
+                <span className="text-xl font-black text-emerald-400">{analisisV4.lineasDetectadas.length}</span>
+              </div>
+              <div className="rounded-xl bg-blue-500/10 border border-blue-500/30 p-3 text-center">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-300 block">Morochas</span>
+                <span className="text-xl font-black text-blue-400">{analisisV4.morochasDetectadas.length}</span>
+              </div>
+              <div className="rounded-xl bg-purple-500/10 border border-purple-500/30 p-3 text-center">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300 block">Sorpresas</span>
+                <span className="text-xl font-black text-purple-400">{analisisV4.sorpresasDetectadas.length}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-3 border-t border-slate-800">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFase("edicion")}
+                className="text-xs border-slate-700 text-slate-300"
+              >
+                ← Volver a Previsualización / Edición
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleGuardarLoteEnBD}
+                disabled={guardandoEnBd}
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-5"
+              >
+                💾 Guardar en Base de Datos
+              </Button>
             </div>
           </div>
         )}
