@@ -112,13 +112,9 @@ export function rangoSemanaDesde(
   grupo: CicloSemanal
 ): { inicio: string; fin: string } {
   const base = inicioIso.slice(0, 10);
-  // Si el inicio fijado no coincide con el día de apertura del ciclo, el rango
-  // se ancla igual: se corrige hacia atrás hasta la apertura anterior. Es lo
-  // que evita que "volvamos" una semana a medio curso por un dedo de más.
-  const retro = (diaFiscalDeIso(base) - grupo.diaInicio + 7) % 7;
-  const inicio = sumarDias(base, -retro);
   const span = grupo.diaFin >= grupo.diaInicio ? grupo.diaFin - grupo.diaInicio : 7 - grupo.diaInicio + grupo.diaFin;
-  return { inicio, fin: sumarDias(inicio, span) };
+  const diasSpan = span > 0 ? span : 6;
+  return { inicio: base, fin: sumarDias(base, diasSpan) };
 }
 
 /** Día fiscal 1..7 (Lunes=1) de una fecha ISO, sin construir un Date con UTC. */

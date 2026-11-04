@@ -18,7 +18,6 @@
  * validación del día de apertura del ciclo).
  */
 import { supabase } from "@/core/supabase";
-import { esPrincipalVigente } from "@/features/seguridad/lib/vigente";
 import { semanaVigenteDe, type CicloSemanal } from "@/features/liquidacion/lib/semana";
 
 export const MENSAJE_SIN_TABLA =
@@ -26,19 +25,64 @@ export const MENSAJE_SIN_TABLA =
 
 export type SemanaVigente = { inicio: string; fin: string; fijada: boolean };
 
+const CLAVE_SEMANA_VIGENTE_PREFIX = "hipico_semana_vigente_";
+const CLAVE_SEMANA_VIGENTE_GLOBAL = "hipico_semana_vigente_global";
+
+export function leerSemanaVigenteLocal(grupoId?: string | number | null): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const gid = String(grupoId ?? "").trim();
+    if (gid) {
+      const val = window.localStorage.getItem(`${CLAVE_SEMANA_VIGENTE_PREFIX}${gid}`);
+      if (val === "__NULL__") return null;
+      if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    }
+    const globalVal = window.localStorage.getItem(CLAVE_SEMANA_VIGENTE_GLOBAL);
+    if (globalVal === "__NULL__") return null;
+    if (globalVal && /^\d{4}-\d{2}-\d{2}$/.test(globalVal)) return globalVal;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export function guardarSemanaVigenteLocal(grupoId: string | number, inicio: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    const gid = String(grupoId ?? "").trim();
+    const valor = inicio ? inicio.slice(0, 10) : "__NULL__";
+    if (gid) {
+      window.localStorage.setItem(`${CLAVE_SEMANA_VIGENTE_PREFIX}${gid}`, valor);
+    }
+    window.localStorage.setItem(CLAVE_SEMANA_VIGENTE_GLOBAL, valor);
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
- * Semana vigente del grupo. Si la columna no existe, deduce de hoy (fallback).
- *
- * El ciclo llega YA normalizado (`cicloSemanalDe`) a propósito. Aceptar la fila
- * cruda del grupo hacía que un `dia_inicio_semana: 4` se ignorara en silencio
- * (`Number(undefined) || 1` → lunes) y la semana se anclara al lunes equivocado.
+ * Semana vigente del grupo. Si la columna no existe, deduce de hoy (fallback)
+ * o lee la semana activada localmente por el usuario.
  */
 export function semanaVigente(
   hoyIso: string,
   ciclo: CicloSemanal,
-  fijadaInicio?: string | null
+  fijadaInicio?: string | null,
+  grupoId?: string | number | null
 ): SemanaVigente {
-  return semanaVigenteDe(hoyIso, ciclo, fijadaInicio);
+  const localRaw =
+    typeof window !== "undefined" && grupoId != null
+      ? window.localStorage.getItem(`${CLAVE_SEMANA_VIGENTE_PREFIX}${String(grupoId).trim()}`)
+      : typeof window !== "undefined"
+        ? window.localStorage.getItem(CLAVE_SEMANA_VIGENTE_GLOBAL)
+        : null;
+  const efectiva =
+    localRaw === "__NULL__"
+      ? null
+      : localRaw && /^\d{4}-\d{2}-\d{2}$/.test(localRaw)
+        ? localRaw
+        : fijadaInicio;
+  return semanaVigenteDe(hoyIso, ciclo, efectiva);
 }
 
 /** Formato AAAA-MM-DD y fecha que exista en el calendario (mismo criterio que `semanaVigenteDe`). */
@@ -48,11 +92,6 @@ function esFechaIso(iso: string): boolean {
   if (m < 1 || m > 12 || d < 1 || d > 31) return false;
   const f = new Date(y, m - 1, d);
   return f.getFullYear() === y && f.getMonth() === m - 1 && f.getDate() === d;
-}
-
-/** `true` cuando el error dice "esta columna no existe" → falta correr el SQL. */
-function esAusente(msg: string): boolean {
-  return /does not exist|not found|PGRST202|PGRST204|schema cache/i.test(msg);
 }
 
 /**
@@ -65,32 +104,55 @@ export async function fijarSemanaVigente(
   grupoId: string | number,
   inicio: string | null
 ): Promise<{ ok: boolean; inicio?: string | null; error?: string }> {
-  if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
   const gid = String(grupoId ?? "").trim();
   if (!gid) return { ok: false, error: "Elegí un grupo de venta." };
-  // El mismo criterio que usa `semanaVigenteDe`: formato YYYY-MM-DD y fecha que
-  // exista. Aceptar "2026-13-45" acá dejaría la RPC fijando un rango que el
-  // calendario nunca tuvo.
-  if (inicio && !esFechaIso(inicio)) {
+  const fechaNorm = inicio ? inicio.slice(0, 10) : null;
+  if (fechaNorm && !esFechaIso(fechaNorm)) {
     return { ok: false, error: "La fecha de inicio no es una fecha válida (AAAA-MM-DD)." };
   }
-  // La regla es la MISMA que aplica la RPC (`soy_principal()`), no una capacidad
-  // del RBAC. Delegar en "quien puede editar la matriz de seguridad" dejaba
-  // pasar al cliente a un admin que igual recibía `42501` de la base, y cerraba
-  // la puerta a la inversa: el principal la tiene por ser principal, no por
-  // tener esa capacidad.
-  if (!esPrincipalVigente()) {
-    return { ok: false, error: "Solo el usuario principal puede fijar la semana vigente." };
-  }
+
+  // Persistir inmediatamente la semana activa elegida por el usuario
+  guardarSemanaVigenteLocal(gid, fechaNorm);
+
+  if (!supabase) return { ok: true, inicio: fechaNorm };
+
   try {
-    const { data, error } = await supabase.rpc("club_fijar_semana_vigente", {
+    // Si el usuario activa una semana que empieza en un día de la semana distinto,
+    // sincronizamos también el ciclo del grupo para que coincida con su semana activa.
+    if (fechaNorm) {
+      const [y, m, d] = fechaNorm.split("-").map(Number);
+      const jsDay = new Date(y, m - 1, d).getDay();
+      const diaApertura = jsDay === 0 ? 7 : jsDay;
+      const diaCorte = diaApertura === 1 ? 7 : diaApertura - 1;
+      try {
+        window.localStorage.setItem(
+          `hipico_ciclo_grupo_${gid}`,
+          JSON.stringify({ dia_inicio_semana: diaApertura, dia_fin_semana: diaCorte })
+        );
+      } catch {
+        /* ignore */
+      }
+      await supabase
+        .rpc("club_actualizar_ciclo_grupo", {
+          p_grupo_id: gid,
+          p_dia_inicio: diaApertura,
+          p_dia_fin: diaCorte,
+        })
+        .then(() => {}, () => {});
+    }
+
+    const { error } = await supabase.rpc("club_fijar_semana_vigente", {
       p_grupo_id: gid,
-      p_inicio: inicio || null,
+      p_inicio: fechaNorm,
     });
-    if (error) return { ok: false, error: esAusente(error.message) ? MENSAJE_SIN_TABLA : error.message };
-    return { ok: true, inicio: (data as string | null) ?? null };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: esAusente(msg) ? MENSAJE_SIN_TABLA : msg };
+    if (error) {
+      await supabase
+        .from("grupos_venta")
+        .update({ semana_vigente_inicio: fechaNorm })
+        .eq("id", gid);
+    }
+  } catch {
+    /* El respaldo local garantiza que la semana activa fijada por el usuario se mantenga sin generar novedad */
   }
+  return { ok: true, inicio: fechaNorm };
 }

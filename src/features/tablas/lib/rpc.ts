@@ -6,6 +6,7 @@ import { alternarRetiroCarrera } from "@/features/carreras/lib/retiros";
 import { sincronizarCentralDesdeTabla } from "@/features/carreras/lib/carreras-dia";
 import { normalizarFilas } from "@/features/tablas/lib/normalizar";
 import { ordenarPorNumero } from "@/features/carreras/lib/maestro-nucleo";
+import { desmarcarCarreraEliminadaLocal, esCarreraEliminadaLocal } from "@/features/carreras/lib/maestro";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
 
@@ -190,7 +191,13 @@ export async function listarTablasPublicadas(): Promise<TablaFijaRow[]> {
     try {
       const { data, error } = await supabase.rpc(nombrarRpc);
       if (error) throw error;
-      if (Array.isArray(data)) return normalizarFilas(data);
+      if (Array.isArray(data)) {
+        const normalizadas = normalizarFilas(data);
+        return normalizadas.filter((t) => {
+          const fecha = String(t.fecha || t.fecha_creacion || "").slice(0, 10);
+          return !esCarreraEliminadaLocal(fecha, t.hipodromo, t.carrera);
+        });
+      }
     } catch (e) {
       console.warn("RPC tablas publicadas no disponible:", e);
     }
@@ -336,6 +343,7 @@ export async function publicarTabla(t: TablaFijaRow): Promise<{ ok: boolean; id?
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
     exigirCapacidad("tablas:fn_publicar");
+    desmarcarCarreraEliminadaLocal(String(t.fecha || t.fecha_creacion || "").slice(0, 10), t.hipodromo, t.carrera);
     const existente = await idExistente(t.hipodromo, t.carrera, t.fecha ?? t.fecha_creacion);
     const r = existente != null
       ? await persistirFila(payloadDeTabla(t), "update", existente)

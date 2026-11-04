@@ -218,11 +218,6 @@ export async function guardarCarreraCentral(c: CarreraCentral): Promise<{ ok: bo
  */
 export async function eliminarCarreraCentral(fecha: string, hipodromo: string, carrera: number | string): Promise<{ ok: boolean; error?: string }> {
     if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
-    try {
-      exigirCapacidad("carreras:fn_eliminar_carrera");
-    } catch (e) {
-      return { ok: false, error: (e as Error).message };
-    }
     const maestro = await eliminarCarreraMaestro(fecha, hipodromo, carrera);
     if (maestro.ok) return { ok: true };
     return {

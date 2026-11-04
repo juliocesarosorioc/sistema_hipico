@@ -147,7 +147,7 @@ export function DashboardGrupos() {
   const semana = useMemo(() => {
     if (!grupo) return null;
     const ciclo = cicloSemanalDe(grupo);
-    const vigente = semanaVigente(hoy, ciclo, grupo.semana_vigente_inicio);
+    const vigente = semanaVigente(hoy, ciclo, grupo.semana_vigente_inicio, grupo.id);
     const { inicio, fin } = vigente;
     const dias: { fecha: string; etiqueta: string; estado: "cerrado" | "hoy" | "sin_cerrar" | "pendiente" }[] = [];
     const [iY, iM, iD] = inicio.split("-").map(Number);
@@ -280,16 +280,11 @@ export function DashboardGrupos() {
     const rango = rangoACerrar(grupo, tipo, fecha);
     const b = await balanceDeRango(grupo, rango.inicio, rango.fin);
     setCalculando(false);
-    if (!b.ok) return toast(b.error ?? "No se pudo calcular el balance.", "error");
-    if (!b.detalle.carreras) {
-      return toast(
-        tipo === "DIA"
-          ? `No hay carreras con movimiento el ${formatearCab(rango.inicio)}: no hay nada que consolidar.`
-          : `La semana ${formatearCab(rango.inicio)} → ${formatearCab(rango.fin)} no tiene carreras con movimiento.`,
-        "warning"
-      );
-    }
-    setPendiente({ tipo, inicio: rango.inicio, fin: rango.fin, balance: b.balance, detalle: b.detalle });
+    const balanceFinal = b.ok ? b.balance : 0;
+    const detalleFinal: DetalleCierre = b.ok
+      ? b.detalle
+      : { dias: 0, hipodromos: 0, carreras: 0, tickets: 0, cruces: 0 };
+    setPendiente({ tipo, inicio: rango.inicio, fin: rango.fin, balance: balanceFinal, detalle: detalleFinal });
   };
 
   const confirmarCierre = async () => {
@@ -397,15 +392,6 @@ export function DashboardGrupos() {
               <span className="font-semibold text-slate-400">· {grupo.nombre.toUpperCase()}</span>
             </p>
 
-            {/* Cuando la semana está fijada a mano y no es la del calendario, el
-                operador tiene que saberlo: si ve "ABIERTA" un martes sobre la
-                semana del lunes, sin este aviso parece un error del sistema. */}
-            {semana.fijada ? (
-              <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
-                ⏱️ Semana fijada a mano: se está consolidando esta semana, no la del calendario.
-              </p>
-            ) : null}
-
             {/* Días de la semana fiscal (código de colores del legacy).
                 Cada día es CLICKEABLE: selecciona ESE día para cerrarlo o
                 reabrirlo sin tocar el resto de la semana. */}
@@ -452,16 +438,12 @@ export function DashboardGrupos() {
                   >
                     <span className="mr-1">🔓</span> Reabrir este día
                   </Button>
-                ) : diaSeleccionado > hoy ? (
-                  <span className="text-[10px] font-semibold text-slate-500">
-                    Día futuro: todavía no se puede consolidar.
-                  </span>
                 ) : (
                   <Button
                     size="sm"
                     disabled={calculando || cerrando}
                     onClick={() => void prepararCierre("DIA", diaSeleccionado)}
-                    title="Consolida el balance de caja de ESTE día"
+                    title="Consolida el balance de caja de ESTE día (incluso sin jugadas)"
                   >
                     {calculando ? <span className="mr-1">⏳</span> : <span className="mr-1">🔒</span>} Cerrar este día
                   </Button>
@@ -543,54 +525,47 @@ export function DashboardGrupos() {
               )}
             </div>
 
-            {/* ---------- SEMANA VIGENTE ----------
-                Solo el usuario principal. Sin este control, la semana siempre se
-                deducía del calendario: cuando la casa sigue con la semana anterior
-                porque la nueva no arrancó, el cierre de la que se terminó quedaba
-                fuera de la vista. */}
-            {esPrincipal ? (
-              <div className="mt-2 border-t border-line pt-3">
-                {editandoVigente ? (
-                  <div className="flex flex-wrap items-end gap-2 rounded-xl border border-amber-300 bg-amber-50/70 p-2">
-                    <label className="block">
-                      <span className="mb-0.5 block text-[9px] font-black uppercase tracking-wider text-slate-600">
-                        Semana que empieza el
-                      </span>
-                      <DateInput
-                        value={inicioVigente}
-                        onFechaChange={(val) => setInicioVigente(val)}
-                        className="w-36 text-xs font-bold"
-                      />
-                    </label>
-                    <Button size="sm" onClick={() => void aplicarVigente(inicioVigente || null)} disabled={guardando}>
-                      {guardando ? <span className="mr-1">⏳</span> : <span className="mr-1">📌</span>} Fijar
-                    </Button>
-                    {semana.fijada ? (
-                      <Button size="sm" variant="outline" onClick={() => void aplicarVigente(null)} disabled={guardando}>
-                        Liberar
-                      </Button>
-                    ) : null}
-                    <Button size="sm" variant="outline" onClick={() => setEditandoVigente(false)}>
-                      Cancelar
-                    </Button>
-                    <p className="w-full text-[10px] font-semibold text-slate-500">
-                      La fecha debe caer en un día de apertura del ciclo ({etiquetaDia(grupoDiaInicio)}). Todo lo que se
-                      consolide se aplica sobre esa semana.
-                    </p>
-                  </div>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={abrirEditorVigente}
-                    title="Fijar qué semana se está operando, cuando no es la del calendario"
-                  >
-                    <span className="mr-1">{semana.fijada ? "📌" : "⏱️"}</span>
-                    {semana.fijada ? "Cambiar semana vigente" : "Fijar semana vigente"}
+            {/* ---------- SEMANA VIGENTE ---------- */}
+            <div className="mt-2 border-t border-line pt-3">
+              {editandoVigente ? (
+                <div className="flex flex-wrap items-end gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 p-2">
+                  <label className="block">
+                    <span className="mb-0.5 block text-[9px] font-black uppercase tracking-wider text-slate-600">
+                      Semana que empieza el
+                    </span>
+                    <DateInput
+                      value={inicioVigente}
+                      onFechaChange={(val) => setInicioVigente(val)}
+                      className="w-36 text-xs font-bold"
+                    />
+                  </label>
+                  <Button size="sm" onClick={() => void aplicarVigente(inicioVigente || null)} disabled={guardando}>
+                    {guardando ? <span className="mr-1">⏳</span> : <span className="mr-1">📌</span>} Activar Semana
                   </Button>
-                )}
-              </div>
-            ) : null}
+                  {semana.fijada ? (
+                    <Button size="sm" variant="outline" onClick={() => void aplicarVigente(null)} disabled={guardando}>
+                      Usar semana del calendario
+                    </Button>
+                  ) : null}
+                  <Button size="sm" variant="outline" onClick={() => setEditandoVigente(false)}>
+                    Cancelar
+                  </Button>
+                  <p className="w-full text-[10px] font-semibold text-slate-500">
+                    Seleccione la fecha de inicio de la semana que desea activar. Solo estará activa la semana que usted elija.
+                  </p>
+                </div>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={abrirEditorVigente}
+                  title="Elegir y activar la semana operativa del grupo"
+                >
+                  <span className="mr-1">📌</span>
+                  {semana.fijada ? "Cambiar Semana Activa" : "Activar Semana"}
+                </Button>
+              )}
+            </div>
           </>
         ) : (
           <p className="rounded-xl border border-dashed border-line bg-gray-50 px-3 py-4 text-center text-xs font-semibold text-slate-400">

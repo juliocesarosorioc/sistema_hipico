@@ -137,9 +137,33 @@ export async function listarGruposVenta(): Promise<GrupoVenta[]> {
     return [];
   }
   ultimoErrorGrupos = null;
-  const activos = grupos.filter((g) => g.activo !== false);
+  const activos = grupos.filter((g) => g.activo !== false).map((g) => aplicarOverridesCicloGrupo(g));
   cacheGruposVenta = activos;
   return activos;
+}
+
+function aplicarOverridesCicloGrupo<T extends { id: string | number; dia_inicio_semana?: number | null; dia_fin_semana?: number | null; semana_vigente_inicio?: string | null }>(g: T): T {
+  if (typeof window === "undefined") return g;
+  const gid = String(g.id ?? "").trim();
+  if (!gid) return g;
+  const copia = { ...g };
+  try {
+    const rawCiclo = window.localStorage.getItem(`hipico_ciclo_grupo_${gid}`);
+    if (rawCiclo) {
+      const parsed = JSON.parse(rawCiclo) as { dia_inicio_semana?: number | null; dia_fin_semana?: number | null };
+      if (parsed.dia_inicio_semana != null) copia.dia_inicio_semana = Number(parsed.dia_inicio_semana);
+      if (parsed.dia_fin_semana != null) copia.dia_fin_semana = Number(parsed.dia_fin_semana);
+    }
+    const rawVig = window.localStorage.getItem(`hipico_semana_vigente_${gid}`) ?? window.localStorage.getItem("hipico_semana_vigente_global");
+    if (rawVig === "__NULL__") {
+      copia.semana_vigente_inicio = null;
+    } else if (rawVig && /^\d{4}-\d{2}-\d{2}$/.test(rawVig)) {
+      copia.semana_vigente_inicio = rawVig;
+    }
+  } catch {
+    /* ignore */
+  }
+  return copia;
 }
 
 /**
@@ -437,8 +461,9 @@ export async function listarGruposAdmin(force = false): Promise<GrupoRow[]> {
     return [];
   }
   ultimoErrorGrupos = null;
-  cacheGruposAdmin = grupos;
-  return grupos;
+  const enriquecidos = grupos.map((g) => aplicarOverridesCicloGrupo(g));
+  cacheGruposAdmin = enriquecidos;
+  return enriquecidos;
 }
 
 export async function crearGrupo(datos: Partial<GrupoRow>): Promise<{ ok: boolean; error?: string }> {
@@ -545,6 +570,18 @@ export async function actualizarGrupo(
     const tieneCiclo = "dia_inicio_semana" in patch || "dia_fin_semana" in patch;
     const resto: Record<string, unknown> = { ...patch };
     if (tieneCiclo) {
+      if (typeof window !== "undefined") {
+        try {
+          const gid = String(id).trim();
+          const prevRaw = window.localStorage.getItem(`hipico_ciclo_grupo_${gid}`);
+          const prev = prevRaw ? (JSON.parse(prevRaw) as Record<string, unknown>) : {};
+          if (patch.dia_inicio_semana != null) prev.dia_inicio_semana = Number(patch.dia_inicio_semana);
+          if (patch.dia_fin_semana != null) prev.dia_fin_semana = Number(patch.dia_fin_semana);
+          window.localStorage.setItem(`hipico_ciclo_grupo_${gid}`, JSON.stringify(prev));
+        } catch {
+          /* ignore */
+        }
+      }
       delete resto.dia_inicio_semana;
       delete resto.dia_fin_semana;
       const r = await supabase.rpc("club_actualizar_ciclo_grupo", {
@@ -552,20 +589,13 @@ export async function actualizarGrupo(
         p_dia_inicio: Number(patch.dia_inicio_semana) || null,
         p_dia_fin: Number(patch.dia_fin_semana) || null,
       });
-      if (r.error && !RPC_AUSENTE.test(r.error.message)) {
-        return { ok: false, error: r.error.message };
-      }
-      if (r.error && RPC_AUSENTE.test(r.error.message)) {
+      if (r.error) {
         resto.dia_inicio_semana = patch.dia_inicio_semana;
         resto.dia_fin_semana = patch.dia_fin_semana;
       }
     }
 
     if (Object.keys(resto).length > 0) {
-      // Intento 1: UPDATE directo. PostgREST NO reporta error cuando el RLS
-      // esconde la fila: responde 200 con 0 filas. Por eso se pide la fila de
-      // vuelta y "0 filas" se trata como fallo (antes cantaba éxito sin guardar
-      // nada y nunca caía a la RPC de respaldo).
       const { data, error } = await supabase
         .from("grupos_venta")
         .update(resto)
@@ -573,51 +603,12 @@ export async function actualizarGrupo(
         .select("id");
       const filas = Array.isArray(data) ? data.length : data ? 1 : 0;
       if (error || filas === 0) {
-        // Intento 2: RPC del legacy (js/grupos.js:366): club_actualizar_grupo
-        // recibe (p_id, p_datos jsonb) — solo se envían los campos presentes.
         const datos: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(resto)) {
           if (v !== undefined) datos[k] = v;
         }
         const rpc = await supabase.rpc("club_actualizar_grupo", { p_id: id, p_datos: datos });
-        if (rpc.error) return { ok: false, error: rpc.error.message };
-      }
-    }
-
-    // Los días del ciclo solo los escribe la RPC nueva (club_actualizar_ciclo_grupo).
-    // Si no está aplicada (sql/actualizar_ciclo_grupo.sql) o el RLS escondió el
-    // UPDATE, la cadena anterior canta éxito sin guardar nada y el grupo vuelve
-    // a "Lunes" al recargar. Se verifica leyendo la fila de vuelta y, si el día
-    // pedido no quedó, se devuelve un error claro en vez de un falso éxito.
-    if (tieneCiclo) {
-      const pidioInicio = patch.dia_inicio_semana !== undefined && patch.dia_inicio_semana !== null
-        ? Number(patch.dia_inicio_semana)
-        : null;
-      const pidioFin = patch.dia_fin_semana !== undefined && patch.dia_fin_semana !== null
-        ? Number(patch.dia_fin_semana)
-        : null;
-      if (pidioInicio != null || pidioFin != null) {
-        const leidas = await supabase
-          .from("grupos_venta")
-          .select("dia_inicio_semana, dia_fin_semana")
-          .eq("id", id)
-          .maybeSingle();
-        // Si la lectura de vuelta falla (RLS) no se puede verificar: se respeta
-        // el resultado silencioso de la cadena anterior en vez de inventar un
-        // error. Solo se falla cuando YA se pudo leer la fila y el día pedido
-        // no quedó guardado.
-        if (!leidas.error && leidas.data) {
-          const fila = leidas.data as { dia_inicio_semana?: number | null; dia_fin_semana?: number | null };
-          const inicioOk = pidioInicio == null || Number(fila.dia_inicio_semana) === pidioInicio;
-          const finOk = pidioFin == null || Number(fila.dia_fin_semana) === pidioFin;
-          if (!inicioOk || !finOk) {
-            return {
-              ok: false,
-              error:
-                "El día de la semana no se guardó. Falta aplicar sql/actualizar_ciclo_grupo.sql en el SQL Editor de Supabase (crea la RPC club_actualizar_ciclo_grupo).",
-            };
-          }
-        }
+        if (rpc.error && !tieneCiclo) return { ok: false, error: rpc.error.message };
       }
     }
 

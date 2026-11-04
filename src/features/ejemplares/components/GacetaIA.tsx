@@ -21,7 +21,7 @@ import {
 } from "@/features/gaceta/lib/validador";
 import { guardarHistorialGaceta, registrarEjemplares, registrarGacetaEHistorial } from "@/features/gaceta/lib/padron";
 import { sincronizarCarrerasAlCentral, type ResultadoCargaCarrera } from "@/features/carreras/lib/sincronizar";
-import { listarCarrerasCentrales } from "@/features/carreras/lib/central";
+import { listarCarrerasCentrales, eliminarCarreraCentral } from "@/features/carreras/lib/central";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
@@ -1097,18 +1097,29 @@ export function GacetaIA() {
     const msj = pendientes > 0 ? `Hay ${pendientes} carrera(s) pendientes de ensamblar. ` : "El registro no tiene carreras pendientes. ";
     void confirmar({
       titulo: "Limpiar registro del día",
-      mensaje: `${msj}Esta acción borra el registro guardado (no afecta las tablas ya publicadas).`,
+      mensaje: `${msj}Esta acción borra el registro guardado y las carreras listadas de la jornada.`,
       tipo: "warning",
       textoConfirmar: "Limpiar",
       destructivo: true,
-    }).then((ok) => {
+    }).then(async (ok) => {
       if (!ok) return;
+      const aBorrar = [...carreras];
       limpiarTodoRegistro();
       setCarreras([]);
       setResumen({ nuevos: 0, vinculados: 0 });
+      for (const c of aBorrar) {
+        const fElim = String(c.fecha || fechaJornadaRef.current || hoyLocal()).slice(0, 10);
+        const hElim = String(c.hipodromo ?? "").trim().toUpperCase();
+        const nElim = Number(c.carrera) || 0;
+        if (hElim && nElim > 0) {
+          useRegistroCentral.getState().eliminarCarrera(fElim, hElim, nElim);
+          useCarrerasDiaStore.getState().eliminarCarrera(hElim, nElim, fElim);
+          await eliminarCarreraCentral(fElim, hElim, nElim).catch(() => {});
+        }
+      }
       refrescarContadores();
       setEstado("Registro limpiado. Cargue un nuevo documento para empezar.");
-      toast("Registro del día limpiado.", "success");
+      toast("Registro del día limpiado permanentemente.", "success");
     });
   }, [carreras, refrescarContadores, toast, confirmar]);
 
@@ -1116,13 +1127,21 @@ export function GacetaIA() {
     (i: number) => {
       const c = carreras[i];
       if (!c) return;
+      const fElim = String(c.fecha || fechaJornadaRef.current || hoyLocal()).slice(0, 10);
+      const hElim = String(c.hipodromo ?? "").trim().toUpperCase();
+      const nElim = Number(c.carrera) || 0;
+      if (hElim && nElim > 0) {
+        void eliminarCarreraCentral(fElim, hElim, nElim);
+        useRegistroCentral.getState().eliminarCarrera(fElim, hElim, nElim);
+        useCarrerasDiaStore.getState().eliminarCarrera(hElim, nElim, fElim);
+      }
       setCarreras((prev) => {
         const rest = prev.filter((_, k) => k !== i);
         persistirRegistro(rest);
         return rest;
       });
       const resto = carreras.length - 1;
-      setEstado(`Carrera C${c.carrera ?? i + 1} del ${c.hipodromo || "programa"} eliminada del registro.`);
+      setEstado(`Carrera C${c.carrera ?? i + 1} del ${c.hipodromo || "programa"} eliminada permanentemente.`);
       toast(resto > 0 ? `Carrera eliminada (quedan ${resto}).` : "Registro vacío tras eliminar la carrera.", "info");
     },
     [carreras, toast]

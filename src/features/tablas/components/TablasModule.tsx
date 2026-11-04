@@ -11,8 +11,10 @@ import { registrarCarreraProgramada, cargarCarrerasDelDia } from "@/features/car
 import {
   numeroCarrera,
   sembrarCarreraCentral,
+  useRegistroCentral,
   useRegistroCentralOpts,
 } from "@/shared/store/useRegistroCentral";
+import { eliminarCarreraCentral } from "@/features/carreras/lib/central";
 import { MonitorHipodromos } from "@/shared/components/ui/MonitorHipodromos";
 import { DateInput } from "@/shared/components/ui/DateInput";
 import { agruparPorHipodromo, diaDeCarrera, type EjeFecha } from "@/features/carreras/lib/agruparHipodromos";
@@ -691,8 +693,17 @@ export function TablasModule(props: Props) {
       toast(`No se pudo eliminar la tabla: ${r.error ?? "Error"}.`, "error");
       return;
     }
+    const fechaElim = String(tabla.fecha || tabla.fecha_creacion || fechaPrograma || hoyLocal()).slice(0, 10);
+    const hipoElim = String(tabla.hipodromo ?? "").trim().toUpperCase();
+    const numElim = Number(tabla.carrera) || 0;
+    if (hipoElim && numElim > 0) {
+      await eliminarCarreraCentral(fechaElim, hipoElim, numElim).catch(() => {});
+      useRegistroCentral.getState().eliminarCarrera(fechaElim, hipoElim, numElim);
+      useCarrerasDiaStore.getState().eliminarCarrera(hipoElim, numElim, fechaElim);
+      eliminarDelRegistroGaceta(hipoElim, numElim);
+    }
     setTablas(tablas.filter((t) => String(t.id) !== String(tabla.id)));
-    toast(`🗑️ Tabla ${nombreHipodromoParaMostrar(tabla.hipodromo)} C${tabla.carrera} eliminada. La carrera y el Padrón se conservan.`, "success");
+    toast(`🗑️ Tabla y carrera ${nombreHipodromoParaMostrar(tabla.hipodromo)} C${tabla.carrera} eliminadas permanentemente.`, "success");
   };
 
   return (
@@ -859,7 +870,17 @@ export function TablasModule(props: Props) {
                   onPublicar={publicarDraft}
                   onQuitar={(uid) => {
                     const quitable = drafts.find((x) => x.uid === uid);
-                    if (quitable) eliminarDelRegistroGaceta(quitable.hipodromo.toUpperCase(), quitable.carrera);
+                    if (quitable) {
+                      const fElim = String(quitable.fecha || fechaPrograma || hoyLocal()).slice(0, 10);
+                      const hElim = quitable.hipodromo.toUpperCase();
+                      const nElim = Number(quitable.carrera) || 0;
+                      eliminarDelRegistroGaceta(hElim, quitable.carrera);
+                      if (hElim && nElim > 0) {
+                        void eliminarCarreraCentral(fElim, hElim, nElim);
+                        useRegistroCentral.getState().eliminarCarrera(fElim, hElim, nElim);
+                        useCarrerasDiaStore.getState().eliminarCarrera(hElim, nElim, fElim);
+                      }
+                    }
                     setDrafts((ds) => ds.filter((x) => x.uid !== uid));
                   }}
                 />

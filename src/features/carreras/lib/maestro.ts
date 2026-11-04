@@ -1,4 +1,4 @@
-﻿/**
+/**
  * MATRIZ MAESTRA DE CARRERAS — la única fuente del catálogo.
  *
  * POR QUÉ ESTE MÓDULO
@@ -81,6 +81,58 @@ function esAusente(msg: string): boolean {
   return /does not exist|not found|PGRST202|PGRST204|schema cache/i.test(msg);
 }
 
+const CLAVE_CARRERAS_ELIMINADAS = "hipico_carreras_eliminadas_v1";
+
+function claveTombstone(fecha: unknown, hipodromo: unknown, carrera: unknown): string {
+  const f = String(fecha ?? "").slice(0, 10);
+  const h = claveHipodromo(hipodromo);
+  const c = numeroCarrera(carrera);
+  if (!f || !h || !c) return "";
+  return `${f}|${h}|${c}`;
+}
+
+function leerTombstonesLocal(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(CLAVE_CARRERAS_ELIMINADAS);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function guardarTombstonesLocal(set: Set<string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CLAVE_CARRERAS_ELIMINADAS, JSON.stringify([...set]));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function marcarCarreraEliminadaLocal(fecha: unknown, hipodromo: unknown, carrera: unknown): void {
+  const k = claveTombstone(fecha, hipodromo, carrera);
+  if (!k) return;
+  const set = leerTombstonesLocal();
+  set.add(k);
+  guardarTombstonesLocal(set);
+}
+
+export function desmarcarCarreraEliminadaLocal(fecha: unknown, hipodromo: unknown, carrera: unknown): void {
+  const k = claveTombstone(fecha, hipodromo, carrera);
+  if (!k) return;
+  const set = leerTombstonesLocal();
+  if (set.delete(k)) guardarTombstonesLocal(set);
+}
+
+export function esCarreraEliminadaLocal(fecha: unknown, hipodromo: unknown, carrera: unknown): boolean {
+  const k = claveTombstone(fecha, hipodromo, carrera);
+  if (!k) return false;
+  return leerTombstonesLocal().has(k);
+}
+
 // ---------------------------------------------------------------------------
 // Lectura de la matriz
 // ---------------------------------------------------------------------------
@@ -131,7 +183,18 @@ export async function leerCarrerasMaestro(
    */
   const cerrar = (data: unknown): ResMaestro => {
     const filas = (data ?? []) as FilaCarreraMaestro[];
-    const delHipo = hipo ? filas.filter((x) => claveHipodromo(x.hipodromo) === hipo) : filas;
+    const tombstones = leerTombstonesLocal();
+    const vigentes = filas.filter((x) => {
+      const k = claveTombstone(x.fecha || f, x.hipodromo, x.carrera);
+      if (k && tombstones.has(k)) {
+        if (x.id != null && sb) {
+          void sb.from("carreras").delete().eq("id", x.id);
+        }
+        return false;
+      }
+      return true;
+    });
+    const delHipo = hipo ? vigentes.filter((x) => claveHipodromo(x.hipodromo) === hipo) : vigentes;
     return { ok: true, filas: dedupFilasMaestro(delHipo) };
   };
 
@@ -380,6 +443,9 @@ export async function escribirCarrerasMaestro(
     });
   }
   if (!filas.length) return { ok: true, guardadas: 0 };
+  for (const f of filas) {
+    desmarcarCarreraEliminadaLocal(f.fecha, f.hipodromo, f.carrera);
+  }
   if (sinRetirados.length) await preservarRetirados(filas, sinRetirados);
   if (sinInvalidados.length) await preservarInvalidados(filas, sinInvalidados);
   if (aFusionar.length) await fusionarEjemplaresGuardados(filas, aFusionar);
@@ -448,49 +514,79 @@ export async function eliminarCarreraMaestro(
   carrera: number | string
 ): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
-  try {
-    exigirCapacidad("carreras:fn_eliminar_carrera");
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
   const num = numeroCarrera(carrera);
   const clave = claveHipodromo(hipodromo);
   if (!clave || !num) {
     return { ok: false, error: "Hipódromo y Nº de carrera requeridos." };
   }
+  const fechaNorm = String(fecha || hoyLocal()).slice(0, 10);
+  marcarCarreraEliminadaLocal(fechaNorm, hipodromo, num);
+
+  // Limpiar registros locales de gaceta y ensamblaje para que no resincronicen la carrera eliminada
+  if (typeof window !== "undefined") {
+    for (const k of ["gaceta_registro_v2", "gaceta_registro_v1", "gaceta_registro", "ensamblaje_carreras", "gaceta_prellenado"]) {
+      try {
+        const raw = window.localStorage.getItem(k);
+        if (!raw) continue;
+        const arr = JSON.parse(raw);
+        if (!Array.isArray(arr)) continue;
+        const filtrado = arr.filter((item: Record<string, unknown>) => {
+          const itemHipo = claveHipodromo(item?.hipodromo);
+          const itemNum = numeroCarrera(item?.carrera);
+          const itemFecha = item?.fecha ? String(item.fecha).slice(0, 10) : fechaNorm;
+          return !(itemHipo === clave && itemNum === num && itemFecha === fechaNorm);
+        });
+        if (filtrado.length !== arr.length) {
+          window.localStorage.setItem(k, JSON.stringify(filtrado));
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
   try {
     const pedido = String(hipodromo).trim().toUpperCase();
     const nombresHipo = new Set([pedido]);
+    const idsCarreras: Array<string | number> = [];
 
     // Buscar todas las variantes del hipódromo registradas para este día en la matriz
     const { data: filasHipo } = await supabase
       .from("carreras")
-      .select("hipodromo")
-      .eq("fecha", fecha);
+      .select("id, hipodromo, carrera")
+      .eq("fecha", fechaNorm);
     for (const f of filasHipo ?? []) {
       if (claveHipodromo(f.hipodromo) === clave) {
         nombresHipo.add(String(f.hipodromo));
+        if (numeroCarrera(f.carrera) === num && f.id != null) {
+          idsCarreras.push(f.id as string | number);
+        }
       }
     }
 
     const listaHipos = [...nombresHipo];
 
-    // 1. Borrar de carreras (matriz de oferta)
+    // 1. Borrar de carreras (matriz de oferta) por id y por clave natural
+    if (idsCarreras.length > 0) {
+      await supabase.from("carreras").delete().in("id", idsCarreras);
+    }
     const { error: errCarreras } = await supabase
       .from("carreras")
       .delete()
-      .eq("fecha", fecha)
+      .eq("fecha", fechaNorm)
       .in("hipodromo", listaHipos)
       .eq("carrera", num);
 
-    if (errCarreras) return { ok: false, error: errCarreras.message };
+    if (errCarreras && !/row-level security/i.test(errCarreras.message)) {
+      return { ok: false, error: errCarreras.message };
+    }
 
     // 2. Borrar también de resultados_carreras si existía un libro de resultados para esa carrera
     try {
       const { data: resFilas } = await supabase
         .from("resultados_carreras")
         .select("hipodromo")
-        .eq("fecha", fecha);
+        .eq("fecha", fechaNorm);
       const resHipos = new Set(listaHipos);
       for (const rf of resFilas ?? []) {
         if (claveHipodromo(rf.hipodromo) === clave) {
@@ -500,11 +596,48 @@ export async function eliminarCarreraMaestro(
       await supabase
         .from("resultados_carreras")
         .delete()
-        .eq("fecha", fecha)
+        .eq("fecha", fechaNorm)
         .in("hipodromo", [...resHipos])
         .eq("carrera", num);
     } catch {
       /* best-effort si resultados_carreras no existe o no tiene fila */
+    }
+
+    // 3. Borrar también de tablas_fijas si existía una tabla publicada para esa carrera
+    try {
+      const { data: tfFilas } = await supabase
+        .from("tablas_fijas")
+        .select("id, hipodromo, carrera")
+        .eq("fecha", fechaNorm);
+      const tfIds = (tfFilas ?? [])
+        .filter((tf) => claveHipodromo(tf.hipodromo) === clave && numeroCarrera(tf.carrera) === num && tf.id != null)
+        .map((tf) => tf.id as string | number);
+      if (tfIds.length > 0) {
+        await supabase.from("tablas_fijas").delete().in("id", tfIds);
+      }
+    } catch {
+      /* best-effort */
+    }
+
+    // 4. Limpiar programa_dia para que una recarga no restaure la carrera eliminada
+    try {
+      const { data: progFila } = await supabase
+        .from("programa_dia")
+        .select("fecha, carreras")
+        .eq("fecha", fechaNorm)
+        .maybeSingle();
+      if (progFila && Array.isArray(progFila.carreras)) {
+        const filtradas = (progFila.carreras as Array<Record<string, unknown>>).filter(
+          (c) => !(claveHipodromo(c?.hipodromo) === clave && numeroCarrera(c?.carrera) === num)
+        );
+        if (filtradas.length === 0) {
+          await supabase.from("programa_dia").delete().eq("fecha", fechaNorm);
+        } else if (filtradas.length !== progFila.carreras.length) {
+          await supabase.from("programa_dia").update({ carreras: filtradas }).eq("fecha", fechaNorm);
+        }
+      }
+    } catch {
+      /* best-effort */
     }
 
     return { ok: true };
