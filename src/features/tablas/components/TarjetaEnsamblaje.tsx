@@ -175,16 +175,25 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
             nac = esAmericano ? "US" : "VE";
           }
           return (
-            <div key={i} className={`grid items-center rounded border border-slate-200 px-1 py-px transition-colors ${i % 2 === 1 ? "bg-slate-100" : "bg-white"} hover:bg-indigo-200`} style={{ gridTemplateColumns: "1.5rem 1fr auto 3.25rem auto" }}>
-              <span
-                className="flex h-6 w-6 shrink-0 flex-none items-center justify-center text-center text-[10px] font-bold leading-none"
+            <div key={i} className={`grid items-center rounded border border-slate-200 px-1 py-px transition-colors ${i % 2 === 1 ? "bg-slate-100" : "bg-white"} hover:bg-indigo-100`} style={{ gridTemplateColumns: "1.75rem 1fr auto 3.25rem auto" }}>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={String(c.numero ?? "")}
+                onChange={(e) => setCaballo(i, { numero: e.target.value })}
+                placeholder="Nº"
+                title="Número del ejemplar (editable)"
+                className="flex h-6 w-6 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold leading-none outline-none focus:ring-1 focus:ring-indigo-500"
                 style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
-              >
-                {c.numero}
-              </span>
-              <span className="min-w-0 truncate px-1 text-[15px] font-bold uppercase leading-none text-slate-800 flex items-center gap-1">
-                {c.nombre}
-              </span>
+              />
+              <input
+                type="text"
+                value={String(c.nombre ?? "")}
+                onChange={(e) => setCaballo(i, { nombre: e.target.value.toUpperCase() })}
+                placeholder="Nombre del ejemplar"
+                title="Nombre del ejemplar (editable)"
+                className="min-w-0 w-full rounded bg-transparent px-1 py-0.5 text-[14px] font-bold uppercase leading-none text-slate-800 outline-none focus:bg-white focus:ring-1 focus:ring-indigo-400"
+              />
               <span className="flex items-center justify-center px-1"><Flag nac={nac} size={10} withName={false} /></span>
               <input
                 type="text"

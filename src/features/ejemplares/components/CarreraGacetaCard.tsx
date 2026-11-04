@@ -14,6 +14,7 @@ import {
 import { nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
 import type { OpcionHipodromo } from "@/features/tablas/lib/rpc";
 import { validarCarrera, generarMensajeParaAgenteIA } from "@/features/gaceta/lib/validador";
+import { compararEjemplares } from "@/features/gaceta/lib/numeros";
 import { emitirToast } from "@/shared/lib/mensajeria";
 
 type Props = {
@@ -21,6 +22,8 @@ type Props = {
   carrera: CarreraRegistro;
   onChange: (c: CarreraRegistro) => void;
   onEnviar: (i: number) => void;
+  onRegistrar?: (i: number) => void;
+  registrandoCarrera?: boolean;
   onEliminar?: () => void;
   onReverificar?: (i: number) => void;
   reverificando?: boolean;
@@ -33,6 +36,8 @@ export function CarreraGacetaCard({
   carrera,
   onChange,
   onEnviar,
+  onRegistrar,
+  registrandoCarrera,
   onEliminar,
   onReverificar,
   reverificando,
@@ -285,20 +290,35 @@ export function CarreraGacetaCard({
         </div>
       )}
 
-      {/* Subetiqueta ejemplares con botón de agregar caballo */}
+      {/* Subetiqueta ejemplares con botón de agregar caballo y ordenar */}
       <div className="flex items-center justify-between px-2 pb-0.5 pt-1 text-[8px] font-black uppercase tracking-wider text-slate-400">
         <span className="flex items-center gap-1">
           <span>🐴 Ejemplares</span>
           <span className="rounded-full bg-slate-100 px-1.5 font-black text-slate-600">{ejemplares.length}</span>
+          {carrera.aplicada && (
+            <span className="rounded bg-emerald-100 px-1 py-px text-[8px] font-black text-emerald-700" title="Carrera guardada y registrada en el sistema">
+              ✓ Registrada
+            </span>
+          )}
         </span>
-        <button
-          type="button"
-          onClick={agregarCaballo}
-          className="rounded bg-indigo-50 px-1.5 py-0.5 text-[8px] font-black normal-case text-indigo-700 hover:bg-indigo-100 hover:text-indigo-900 transition-colors"
-          title="Agregar un caballo faltante a esta carrera"
-        >
-          ➕ Agregar Caballo
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => set({ ejemplares: [...ejemplares].sort(compararEjemplares) })}
+            className="rounded bg-slate-100 px-1.5 py-0.5 text-[8px] font-black normal-case text-slate-700 hover:bg-slate-200 transition-colors"
+            title="Ordenar los ejemplares de menor a mayor por su número (1..N)"
+          >
+            🔢 1..N
+          </button>
+          <button
+            type="button"
+            onClick={agregarCaballo}
+            className="rounded bg-indigo-50 px-1.5 py-0.5 text-[8px] font-black normal-case text-indigo-700 hover:bg-indigo-100 hover:text-indigo-900 transition-colors"
+            title="Agregar un caballo faltante a esta carrera"
+          >
+            ➕ Agregar Caballo
+          </button>
+        </div>
       </div>
 
       {/* Lista de ejemplares con nombres editables y opción para corregir */}
@@ -324,7 +344,7 @@ export function CarreraGacetaCard({
 
           return (
             <div
-              key={`${ej.nombre}-${j}`}
+              key={j}
               className={`flex items-center gap-0.5 rounded border px-1 py-0.5 transition-colors ${
                 faltaNombre ? "border-red-300 bg-red-50/60" : "border-slate-200 bg-slate-50"
               }`}
@@ -337,8 +357,7 @@ export function CarreraGacetaCard({
                 onChange={(e) => setEj(j, { numero: e.target.value })}
                 placeholder="Nº"
                 title="Número de gualdrapa / partidor"
-                tabIndex={-1}
-                className={`w-5 shrink-0 rounded px-0 py-px text-center text-[8px] font-black outline-none focus:ring-1 focus:ring-indigo-400 ${inpEdit}`}
+                className={`w-6 shrink-0 rounded px-0.5 py-0.5 text-center text-[9px] font-black outline-none focus:ring-1 focus:ring-indigo-400 ${inpEdit}`}
                 style={{ backgroundColor: color.bg, color: color.fg, borderColor: color.bg }}
               />
               <input
@@ -347,7 +366,7 @@ export function CarreraGacetaCard({
                 onChange={(e) => setEj(j, { nombre: e.target.value.toUpperCase() })}
                 placeholder="Nombre del ejemplar (editable)"
                 title="Nombre del ejemplar — Puede escribir o corregir directamente"
-                className={`min-w-0 w-full flex-1 rounded border px-1 py-px text-[10px] font-bold uppercase outline-none focus:ring-1 focus:ring-indigo-400 ${
+                className={`min-w-0 w-full flex-1 rounded border px-1.5 py-0.5 text-[11px] font-bold uppercase outline-none focus:ring-2 focus:ring-indigo-400 ${
                   faltaNombre
                     ? "border-red-400 bg-white text-red-900 placeholder:text-red-400"
                     : "border-slate-200 bg-white text-slate-800"
@@ -401,6 +420,17 @@ export function CarreraGacetaCard({
 
       {/* Acciones principales y re-verificación */}
       <div className="flex flex-col gap-1 border-t border-slate-200 bg-white px-2 py-1.5">
+        {onRegistrar && (
+          <button
+            type="button"
+            disabled={registrandoCarrera}
+            onClick={() => onRegistrar(index)}
+            className="w-full rounded-lg bg-emerald-600 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow transition-colors hover:bg-emerald-700 disabled:opacity-50"
+            title="Guarda y registra inmediatamente esta carrera y sus ejemplares editados en Carreras del Día, Tablas Fijas y Padrón"
+          >
+            {registrandoCarrera ? "💾 Guardando y Registrando…" : "💾 Guardar y Registrar Carrera"}
+          </button>
+        )}
         <div className="flex gap-1.5">
           <button
             type="button"

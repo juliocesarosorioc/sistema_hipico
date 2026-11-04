@@ -85,26 +85,38 @@ const HIPODROMOS_USA = [
 const SYS = `Eres el transcriptor oficial de máxima precisión para gacetas hípicas (Venezuela y Estados Unidos).
 Recibes páginas escaneadas, texto o imágenes del programa oficial de carreras.
 
-REGLAS CRÍTICAS DE ORDENAMIENTO Y COMPLETITUD OBLIGATORIA:
+REGLAS CRÍTICAS DE ORDENAMIENTO, VERIFICACIÓN MINUCIOSA DE NÚMEROS/NOMBRES Y COMPLETITUD:
 1. ORDEN SECUENCIAL ESTRICTO DE CARRERAS:
    - Las carreras DEBEN devolverse ordenadas de forma estrictamente secuencial y correlativa: Carrera 1, Carrera 2, Carrera 3, ..., Carrera N.
    - NUNCA devuelvas carreras salteadas, desordenadas ni repetidas.
-2. ORDEN ASCENDENTE ESTRICTO DE EJEMPLARES:
+2. VERIFICACIÓN MINUCIOSA DEL NÚMERO DE EJEMPLAR ("numero"):
+   - "numero" es ÚNICAMENTE el número oficial de dorsal/gualdrapa/programa con el que corre el caballo (1, 1A, 2, 2A, 3, 4, ..., 16).
+   - PROHIBIDO confundir "numero" con:
+     * El peso en kilos o libras (ej. 50, 52, 53, 54, 55, 56, 118, 120, 122, 124). Un dorsal NUNCA es > 24.
+     * La edad del caballo (2a, 3a, 4a, 5a).
+     * Llegadas de carreras anteriores (1º, 2º, 3º) ni dividendos Morning Line (5/2, 3-1).
+     * El Puesto de Partida / Puesto de Pista ("pp") cuando difiere del dorsal (ej. en llaves 1/1A o elegibles AE/MTO).
+   - Verifica la secuencia correlativa 1, 2, 3, ..., N dentro de cada carrera. Si pasas del 3 al 5, busca minuciosamente el ejemplar #4 en el texto/imagen antes de continuar.
+3. VERIFICACIÓN MINUCIOSA DEL NOMBRE DEL EJEMPLAR ("nombre"):
+   - Transcribe letra por letra el nombre oficial exacto del caballo en MAYÚSCULAS (ej: "MAXIMUM SECURITY", "EL GRAN SOL", "MI QUERIDA EMMA").
+   - PROHIBIDO incluir dentro de "nombre":
+     * El número de dorsal o PP al inicio (NO pongas "1 MAXIMUM SECURITY" ni "#3 EL GRAN SOL").
+     * El país entre paréntesis (NO pongas "GRAN SOL (VEN)" ni "STAR (USA)"; pon el país en "nacionalidad").
+     * Medicamentos o implementos como "(L)", "(L1)", "(B)", "BB, V, Gr" (esos van en "medicamento" / "implementos").
+     * El pedigrí (padre, madre, abuelo), sexo/edad ("C.A. 4a"), peso ("53 Kg"), ni el nombre del jinete o entrenador.
+   - NUNCA inventes, abrevies ni sustituyas letras del nombre del caballo.
+4. ORDEN ASCENDENTE ESTRICTO DE EJEMPLARES:
    - Dentro del array "ejemplares" de cada carrera, los caballos DEBEN listarse rigurosamente ordenados por su número oficial de dorsal/gualdrapa de menor a mayor (1, 1A, 2, 2A, 3, 4, ..., 12, 13, 14).
-   - NUNCA pongas ejemplares desordenados, invertidos ni en orden arbitrario.
-3. COMPLETITUD TOTAL (CERO OMISIONES):
+5. COMPLETITUD TOTAL (CERO OMISIONES):
    - Extrae ABSOLUTAMENTE TODOS los ejemplares participantes de cada carrera sin omitir ninguno.
    - Si una carrera tiene 12 inscritos, el array de ejemplares debe contener exactamente los 12 participantes.
-   - Incluye ejemplares elegibles (AE - Also Eligible), sólo pista principal (MTO - Main Track Only) y retirados (SCR) marcando su condición.
-4. DIFERENCIACIÓN OBLIGATORIA ENTRE DORSAL ("numero") Y PUESTO DE PISTA ("pp"):
-   - "numero": Número oficial de dorsal o gualdrapa con el que corre el ejemplar (columna principal, ej: 1, 2, 3, 13, 14).
-   - "pp": Puesto de pista o cajón de partida en el partidor. NUNCA intercambies dorsal con PP.
-5. EXTRACCIÓN Y NORMALIZACIÓN DE DISTANCIAS:
+   - Incluye ejemplares elegibles (AE - Also Eligible), sólo pista principal (MTO - Main Track Only) y retirados (SCR).
+6. EXTRACCIÓN Y NORMALIZACIÓN DE DISTANCIAS:
    - Purasangres (Thoroughbreds): 1000m, 1100m, 1200m, 1300m, 1400m, 1500m, 1600m, 1700m, 1800m, 1900m, 2000m, 2200m, 2400m. Si viene en Furlongs (f): 5f=1000m, 5.5f=1100m, 6f=1200m, 6.5f=1300m, 7f=1400m, 8f/1m=1600m, 8.5f=1700m, 9f=1800m, 10f=2000m, 12f=2400m.
    - Quarter Horses (Cuarto de Milla): 200m (220y), 228m (250y), 272m (300y), 300m (330y), 318m (350y), 364m (400y), 400m (440y), 500m (550y).
-6. EXTRACCIÓN AUTOMÁTICA DE FECHA DEL ENCABEZADO:
+7. EXTRACCIÓN AUTOMÁTICA DE FECHA DEL ENCABEZADO:
    - Extrae la fecha de la reunión del encabezado de la página (ej: "04Nov26", "November 4, 2026", "Miércoles 4 de Noviembre 2026") y devuélvela en formato ISO YYYY-MM-DD.
-7. VENEZUELA (LA RINCONADA / VALENCIA - 5 Y 6):
+8. VENEZUELA (LA RINCONADA / VALENCIA - 5 Y 6):
    - Las carreras válidas del 5 y 6 (tituladas "1ª VÁLIDA", "2ª VÁLIDA", ..., "6ª VÁLIDA") NO reinician la numeración en 1.
    - Mapea siempre al número correlativo general de la reunión (ej: Carrera 5 a 10, o Carrera 7 a 12 según las no válidas previas).
 
@@ -118,7 +130,7 @@ Estructura de salida JSON para cada carrera:
 - ejemplares: lista de objetos con:
   - numero: dorsal del caballo (1, 2, 3, 1A, 13, 14...)
   - pp: puesto de pista (entero o null)
-  - nombre: nombre exacto en MAYÚSCULAS (ej: "MAXIMUM SECURITY")
+  - nombre: nombre exacto en MAYÚSCULAS limpio (ej: "MAXIMUM SECURITY")
   - nacionalidad: USA, VE, etc.
   - valor: 0
   - jockey, entrenador, peso, medicamento, implementos si aparecen legibles (si no, null).
@@ -230,15 +242,214 @@ function parsearJSON(texto: string): CarreraExtraida[] {
   return [];
 }
 
-/** Normaliza una carrera extraída (nacionalidad/nombre/valor + número entero)
- *  antes de fusionarla. */
+const MAPA_PAISES_PARENTESIS: Record<string, string> = {
+  VE: "VE",
+  VEN: "VE",
+  US: "USA",
+  USA: "USA",
+  KY: "USA",
+  FL: "USA",
+  NY: "USA",
+  CA: "USA",
+  PA: "USA",
+  MD: "USA",
+  WV: "USA",
+  LA: "USA",
+  OH: "USA",
+  IN: "USA",
+  OK: "USA",
+  TX: "USA",
+  AR: "AR",
+  ARG: "AR",
+  BR: "BR",
+  BRZ: "BR",
+  CL: "CL",
+  CHI: "CL",
+  PE: "PE",
+  PER: "PE",
+  CO: "CO",
+  COL: "CO",
+  UY: "UY",
+  URU: "UY",
+  PA_NAC: "PA",
+  PAN: "PA",
+  MX: "MX",
+  MEX: "MX",
+  EC: "EC",
+  ECU: "EC",
+};
+
+/**
+ * Limpia y normaliza el número de dorsal/gualdrapa de un ejemplar.
+ * Evita prefijos como "#", "Nº", "PP", ceros a la izquierda ("03" -> 3)
+ * y descarta pesos (50..62 kg o 110..130 lbs) mal asignados como dorsal.
+ */
+function limpiarNumeroEjemplar(rawNum: unknown): string | number {
+  const s = String(rawNum ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/^(?:N[º°.]?|DORSAL|GUALDRAPA|CABALLO|EJEMPLAR|PP|#)\s*/i, "")
+    .replace(/[().]/g, "")
+    .trim();
+  if (!s) return "";
+  const m = s.match(/^0*(\d{1,3})\s*([A-Z]?)$/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    const suf = m[2] || "";
+    if (n > 0 && n <= 24) {
+      return suf ? `${n}${suf}` : n;
+    }
+    // Si n > 24 (ej. peso 53, 54, 120 lbs), no es un dorsal válido
+    return "";
+  }
+  return s;
+}
+
+/**
+ * Limpia minuciosamente el nombre del ejemplar:
+ * - Extrae nacionalidad si viene al final entre paréntesis: "GRAN SOL (VEN)" -> "GRAN SOL", nac="VE"
+ * - Quita etiquetas de medicamento o condición al final: "(L)", "(L1)", "(B)", "(MTO)", "(AE)", "(SCR)"
+ * - Quita número de dorsal o PP pegado al inicio: "1. GRAN SOL", "#3 TORMENTA"
+ * - Quita pesos o edades pegados al final: "53 KG", "120 LBS", "C.A. 4A"
+ */
+function limpiarNombreEjemplar(
+  rawNombre: unknown,
+  ej: EjemplarExtraido
+): string {
+  let s = String(rawNombre ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+  if (!s) return "";
+
+  // 1) Si el nombre empieza con un número de dorsal (ej. "1. GRAN SOL", "#2 RELAMPAGO", "3 - RAYO")
+  // y el nombre restante tiene al menos 3 letras:
+  const mInicioNum = s.match(/^(?:#|N[º°.]?\s*)?0*(\d{1,2}[A-Z]?)(?:\s*[-.):]\s*|\s+)([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9' .\-]{2,})$/);
+  if (mInicioNum) {
+    const posibleNum = mInicioNum[1];
+    const restoNombre = mInicioNum[2].trim();
+    // Evitar cortar nombres reales de caballos que empiezan por número si ya tiene el mismo número o no tiene número
+    if (!ej.numero || String(ej.numero).trim() === "" || String(ej.numero).trim() === posibleNum) {
+      if (!ej.numero || String(ej.numero).trim() === "") {
+        ej.numero = limpiarNumeroEjemplar(posibleNum);
+      }
+      s = restoNombre;
+    }
+  }
+
+  // 2) Extraer códigos entre paréntesis al final: (VEN), (USA), (L), (MTO), (AE), (SCR), (RET)
+  let seguirParentesis = true;
+  while (seguirParentesis) {
+    seguirParentesis = false;
+    const mPar = s.match(/\s*\(([^()]{1,12})\)\s*$/);
+    if (mPar) {
+      const token = mPar[1].trim().toUpperCase();
+      if (MAPA_PAISES_PARENTESIS[token]) {
+        if (!ej.nacionalidad || !NACIONALIDADES.includes(String(ej.nacionalidad).toUpperCase())) {
+          ej.nacionalidad = MAPA_PAISES_PARENTESIS[token];
+        }
+        s = s.slice(0, mPar.index).trim();
+        seguirParentesis = true;
+      } else if (/^(?:L|L1|L2|B|BL|MTO|AE|SCR|RET|PP\s*\d+|BB|V|GR|LA|OT|CC|BZ|M)$/i.test(token)) {
+        if (/^L\d?$/i.test(token) && !ej.medicamento) ej.medicamento = token;
+        s = s.slice(0, mPar.index).trim();
+        seguirParentesis = true;
+      }
+    }
+  }
+
+  // 3) Quitar pesos pegados al final (ej. " - 53 KG", " 54KG", " 120 LBS")
+  s = s.replace(/(?:\s*[-/|]\s*|\s+)\d{2,3}(?:[.,]\d)?\s*(?:KG|KGS|KILOS|LBS|LB)\.?\s*$/i, "").trim();
+
+  // 4) Quitar medicación suelta con guion al final (ej. " - L", " / L1")
+  s = s.replace(/\s*[-/|]\s*(?:L|L1|B|MTO|AE|SCR)\s*$/i, "").trim();
+
+  // 5) Limpiar signos sobrantes en bordes
+  s = s.replace(/^[-•*.,:;/_#]+|[-•*,:;/_#]+$/g, "").replace(/\s+/g, " ").trim();
+
+  return s;
+}
+
+/** Normaliza y verifica minuciosamente una carrera extraída (números 1..N, nombres limpios,
+ *  nacionalidad y deduplicación) antes de fusionarla. */
 function normalizarExtraida(c: CarreraExtraida): void {
-  c.ejemplares = Array.isArray(c.ejemplares) ? c.ejemplares : [];
-  c.ejemplares.forEach((ej) => {
+  const crudos = Array.isArray(c.ejemplares) ? c.ejemplares : [];
+  const procesados: EjemplarExtraido[] = [];
+
+  for (const ej of crudos) {
+    if (!ej || typeof ej !== "object") continue;
+    ej.numero = limpiarNumeroEjemplar(ej.numero);
+    ej.nombre = limpiarNombreEjemplar(ej.nombre, ej);
     ej.nacionalidad = nacEjemplar(ej, c.hipodromo);
-    ej.nombre = String(ej.nombre || "").trim().toUpperCase();
     ej.valor = 0;
-  });
+
+    // Si el número quedó vacío pero `pp` es un entero válido <= 24, usar `pp` como respaldo inicial
+    if ((ej.numero === "" || ej.numero == null) && ej.pp != null) {
+      const ppLimpio = limpiarNumeroEjemplar(ej.pp);
+      if (ppLimpio !== "") ej.numero = ppLimpio;
+    }
+
+    // Descartar filas completamente vacías (sin nombre y sin número)
+    if (!ej.nombre && (ej.numero === "" || ej.numero == null)) continue;
+    procesados.push(ej);
+  }
+
+  // Verificar y reparar numeración correlativa cuando algún ejemplar perdió su dorsal
+  // o tenía un peso (>24) en el campo `numero` pero viene en su posición correlativa 1..N:
+  const total = procesados.length;
+  if (total >= 2 && total <= 24) {
+    const usados = new Set<number>();
+    for (const ej of procesados) {
+      const n = parseInt(String(ej.numero ?? "").replace(/\D/g, ""), 10);
+      if (!Number.isNaN(n) && n >= 1 && n <= 24) usados.add(n);
+    }
+    for (let idx = 0; idx < total; idx++) {
+      const ej = procesados[idx];
+      const n = parseInt(String(ej.numero ?? "").replace(/\D/g, ""), 10);
+      if (Number.isNaN(n) || n < 1 || n > 24) {
+        const esperado = idx + 1;
+        if (!usados.has(esperado)) {
+          ej.numero = esperado;
+          usados.add(esperado);
+        }
+      }
+    }
+
+    // Si hay dos caballos con el MISMO número pero distinto nombre, y uno tiene `pp` igual
+    // a un hueco libre de 1..total, reparar con ese hueco:
+    const conteoPorNum = new Map<string, EjemplarExtraido[]>();
+    for (const ej of procesados) {
+      const k = String(ej.numero ?? "").trim();
+      if (!k) continue;
+      const arr = conteoPorNum.get(k) || [];
+      arr.push(ej);
+      conteoPorNum.set(k, arr);
+    }
+    for (const [, grupo] of conteoPorNum) {
+      if (grupo.length > 1) {
+        for (let g = 1; g < grupo.length; g++) {
+          const dup = grupo[g];
+          const ppInt = parseInt(String(dup.pp ?? "").replace(/\D/g, ""), 10);
+          if (!Number.isNaN(ppInt) && ppInt >= 1 && ppInt <= 24 && !usados.has(ppInt)) {
+            dup.numero = ppInt;
+            usados.add(ppInt);
+          }
+        }
+      }
+    }
+  }
+
+  // Deduplicar filas que tengan exactamente el mismo número y el mismo nombre
+  const unicos: EjemplarExtraido[] = [];
+  const vistos = new Set<string>();
+  for (const ej of procesados) {
+    const clave = `${String(ej.numero ?? "").trim()}|${String(ej.nombre ?? "").trim()}`;
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    unicos.push(ej);
+  }
+
+  c.ejemplares = unicos;
   const n = numeroDeCarrera(c.carrera);
   if (n != null) c.carrera = n;
 }
@@ -588,6 +799,54 @@ async function extraerParte(
 // ---------- Punto de entrada ----------
 
 /**
+ * Detecta si una carrera extraída presenta huecos en la numeración 1..N de sus ejemplares,
+ * números duplicados o caballos sin nombre, para activar una re-verificación focalizada automática.
+ */
+function detectarIncidenciasNumeracionYNombres(c: CarreraExtraida): string[] {
+  const ejs = Array.isArray(c.ejemplares) ? c.ejemplares : [];
+  if (ejs.length === 0) return ["No se detectaron ejemplares en la carrera."];
+  const incidencias: string[] = [];
+  const numeros = new Set<number>();
+  const duplicados = new Set<number>();
+  const sinNombre: Array<string | number> = [];
+
+  ejs.forEach((ej, idx) => {
+    const n = parseInt(String(ej.numero ?? "").replace(/\D/g, ""), 10);
+    if (!Number.isNaN(n) && n >= 1 && n <= 24) {
+      if (numeros.has(n)) duplicados.add(n);
+      numeros.add(n);
+    } else {
+      incidencias.push(`Ejemplar en posición ${idx + 1} (${ej.nombre || "sin nombre"}) no tiene número de dorsal válido.`);
+    }
+    const nom = String(ej.nombre || "").trim();
+    if (!nom || /^(?:SIN NOMBRE|EJEMPLAR|CABALLO|\?|-)$/i.test(nom)) {
+      sinNombre.push(ej.numero || idx + 1);
+    }
+  });
+
+  if (duplicados.size > 0) {
+    incidencias.push(`Números de dorsal duplicados: #${[...duplicados].join(", #")}.`);
+  }
+  if (sinNombre.length > 0) {
+    incidencias.push(`Ejemplares sin nombre válido: #${sinNombre.join(", #")}.`);
+  }
+  if (numeros.size >= 2) {
+    const ordenados = [...numeros].sort((a, b) => a - b);
+    const max = ordenados[ordenados.length - 1];
+    if (ordenados[0] <= 2 && max <= 24) {
+      const faltantes: number[] = [];
+      for (let k = 1; k <= max; k++) {
+        if (!numeros.has(k)) faltantes.push(k);
+      }
+      if (faltantes.length > 0) {
+        incidencias.push(`Faltan en la secuencia 1..${max} los ejemplares con dorsal: #${faltantes.join(", #")}.`);
+      }
+    }
+  }
+  return incidencias;
+}
+
+/**
  * Transcribe una gaceta EN TEXTO partiéndola en bloques de 2-3 carreras.
  *
  * Es la vía que resuelve la carga incompleta: el documento entero no cabe en
@@ -744,6 +1003,36 @@ export async function transformarGacetaTexto(
       }
     }
 
+    // Verificación automática de segunda pasada para carreras con huecos de numeración o nombres faltantes
+    if (!cuotaTotal) {
+      let autoVerificadas = 0;
+      for (let idxC = 0; idxC < carreras.length && autoVerificadas < 3; idxC++) {
+        const c = carreras[idxC];
+        const inc = detectarIncidenciasNumeracionYNombres(c);
+        if (inc.length > 0) {
+          const numC = numeroDeCarrera(c.carrera);
+          const segCarrera = numC != null ? segmentos.find((s) => s.numero === numC)?.texto : undefined;
+          const textoFuenteCarrera = segCarrera || texto;
+          autoVerificadas++;
+          onEstado?.(`🔍 Verificando minuciosamente números y nombres de Carrera ${c.carrera}…`);
+          try {
+            const rev = await reverificarCarreraConIA(clave, c, textoFuenteCarrera, inc, [], onEstado);
+            if (rev.ok && rev.carrera && Array.isArray(rev.carrera.ejemplares) && rev.carrera.ejemplares.length >= (c.ejemplares?.length ?? 0)) {
+              carreras[idxC] = {
+                ...c,
+                ...rev.carrera,
+                carrera: c.carrera,
+                hipodromo: rev.carrera.hipodromo || c.hipodromo,
+                archivoOrigen: c.archivoOrigen || rev.carrera.archivoOrigen,
+              };
+            }
+          } catch {
+            /* conservar extracción inicial si falla la segunda pasada */
+          }
+        }
+      }
+    }
+
     // Ordenamiento determinista de carreras y ejemplares
     ordenarCarrerasYEjemplares(carreras);
 
@@ -886,6 +1175,31 @@ export async function transformarGaceta(
     }
 
     if (carreras.length > 0) {
+      if (!cuotaTotal) {
+        let autoVerificadas = 0;
+        for (let idxC = 0; idxC < carreras.length && autoVerificadas < 2; idxC++) {
+          const c = carreras[idxC];
+          const inc = detectarIncidenciasNumeracionYNombres(c);
+          if (inc.length > 0) {
+            autoVerificadas++;
+            onEstado?.(`🔍 Verificando minuciosamente números y nombres de Carrera ${c.carrera}…`);
+            try {
+              const rev = await reverificarCarreraConIA(clave, c, "", inc, imagenes.slice(0, 4), onEstado);
+              if (rev.ok && rev.carrera && Array.isArray(rev.carrera.ejemplares) && rev.carrera.ejemplares.length >= (c.ejemplares?.length ?? 0)) {
+                carreras[idxC] = {
+                  ...c,
+                  ...rev.carrera,
+                  carrera: c.carrera,
+                  hipodromo: rev.carrera.hipodromo || c.hipodromo,
+                  archivoOrigen: c.archivoOrigen || rev.carrera.archivoOrigen,
+                };
+              }
+            } catch {
+              /* conservar extracción inicial */
+            }
+          }
+        }
+      }
       // Ordenamiento determinista de carreras y ejemplares
       ordenarCarrerasYEjemplares(carreras);
       return {

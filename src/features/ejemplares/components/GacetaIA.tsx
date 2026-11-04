@@ -89,7 +89,7 @@ type PdfDoc = {
   numPages: number;
   getPage: (n: number) => Promise<{
     getViewport: (o: { scale: number }) => { width: number; height: number };
-    getTextContent: () => Promise<{ items: Array<{ str?: string; hasEOL?: boolean }> }>;
+    getTextContent: () => Promise<{ items: Array<{ str?: string; hasEOL?: boolean; transform?: number[] }> }>;
     render: (p: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<void> };
     cleanup: () => void;
   }>;
@@ -187,10 +187,39 @@ async function extraerPdfComoTexto(file: File, tope?: number): Promise<string> {
       const page = await doc.getPage(i);
       try {
         const contenido = await page.getTextContent();
-        const lineas = (contenido?.items ?? [])
-          .map((it) => `${it.str ?? ""}${it.hasEOL ? "\n" : " "}`)
-          .join("");
-        if (lineas.trim()) paginas.push(lineas);
+        const items = contenido?.items ?? [];
+        // Reconstruir líneas respetando coordenadas Y/X cuando están disponibles,
+        // evitando que el número de gualdrapa y el nombre del ejemplar se separen en líneas distintas.
+        const conCoords = items.filter(
+          (it) => Array.isArray(it.transform) && it.transform.length >= 6 && (it.str ?? "").trim().length > 0
+        );
+        let lineas = "";
+        if (conCoords.length > items.length * 0.5) {
+          const filas: Array<{ y: number; partes: Array<{ x: number; str: string }> }> = [];
+          const TOLERANCIA_Y = 3.5;
+          for (const it of items) {
+            const txt = String(it.str ?? "");
+            if (!txt.trim()) continue;
+            const x = Array.isArray(it.transform) ? Number(it.transform[4]) || 0 : 0;
+            const y = Array.isArray(it.transform) ? Number(it.transform[5]) || 0 : 0;
+            let fila = filas.find((f) => Math.abs(f.y - y) <= TOLERANCIA_Y);
+            if (!fila) {
+              fila = { y, partes: [] };
+              filas.push(fila);
+            }
+            fila.partes.push({ x, str: txt });
+          }
+          filas.sort((a, b) => b.y - a.y);
+          lineas = filas
+            .map((f) => {
+              f.partes.sort((a, b) => a.x - b.x);
+              return f.partes.map((p) => p.str.trim()).join("   ");
+            })
+            .join("\n");
+        } else {
+          lineas = items.map((it) => `${it.str ?? ""}${it.hasEOL ? "\n" : " "}`).join("");
+        }
+        if (lineas.trim()) paginas.push(`--- PÁGINA ${i} ---\n${lineas}`);
       } catch {
         /* página sin capa de texto: se omite */
       }
@@ -337,6 +366,7 @@ export function GacetaIA() {
   const [informeResultado, setInformeResultado] = useState<ResultadoInformeCarga | null>(null);
   const [archivosSubidos, setArchivosSubidos] = useState<string[]>([]);
   const [carreraReverificandoIndex, setCarreraReverificandoIndex] = useState<number | null>(null);
+  const [carreraRegistrandoIndex, setCarreraRegistrandoIndex] = useState<number | null>(null);
   const [modalMensajeriaAbierto, setModalMensajeriaAbierto] = useState(false);
   const [alertaGacetaPrevia, setAlertaGacetaPrevia] = useState<{
     existe: boolean;
@@ -385,7 +415,8 @@ export function GacetaIA() {
     async (
       loteCarreras: CarreraRegistro[],
       fechaDestino?: string,
-      registroAutomatico = false
+      registroAutomatico = false,
+      forzarReemplazo = false
     ): Promise<boolean> => {
       if (!loteCarreras.length) return false;
       const fecha = fechaDestino || normalizarFechaIso(fechaJornadaRef.current);
@@ -397,7 +428,7 @@ export function GacetaIA() {
       const lote = loteCarreras.map((c) => ({ ...c, fecha }));
       setSincronizando(true);
       setFaseRegistro("registrando");
-      setEstado("💾 Registrando automáticamente en Carreras del Día...");
+      setEstado("💾 Registrando y guardando carreras en Carreras del Día...");
       setReporteCarga([]);
       try {
         try {
@@ -415,7 +446,7 @@ export function GacetaIA() {
             "warning"
           );
         }
-        const sincronizacion = await sincronizarCarrerasAlCentral(lote, "gaceta-ia");
+        const sincronizacion = await sincronizarCarrerasAlCentral(lote, "gaceta-ia", { forzarReemplazo });
         setReporteCarga(sincronizacion.resultados);
         if (!sincronizacion.ok || sincronizacion.resultados.some((r) => r.estado === "ERROR")) {
           throw new Error(sincronizacion.error || "No se pudieron guardar las carreras en la matriz central.");
@@ -424,12 +455,12 @@ export function GacetaIA() {
         useCarrerasDiaStore.getState().setFecha(fecha);
         const actualizables = new Set(
           sincronizacion.resultados
-            .filter((r) => r.estado === "CREADA" || r.estado === "ACTUALIZADA_COMPLETADA")
+            .filter((r) => forzarReemplazo || r.estado === "CREADA" || r.estado === "ACTUALIZADA_COMPLETADA")
             .map((r) => `${claveHipodromo(r.hipodromo)}|${Number(r.carrera)}`)
         );
-        const loteActualizable = lote.filter((c) =>
-          actualizables.has(`${claveHipodromo(c.hipodromo)}|${Number(c.carrera)}`)
-        );
+        const loteActualizable = forzarReemplazo
+          ? lote
+          : lote.filter((c) => actualizables.has(`${claveHipodromo(c.hipodromo)}|${Number(c.carrera)}`));
         useCarrerasDiaStore.getState().fusionarLote(
           loteActualizable.map((c) => ({
             fecha,
@@ -475,27 +506,30 @@ export function GacetaIA() {
           console.warn("Aviso en publicación automática de tablas:", errTablas);
         }
 
-        // Marcar en almacenamiento local como enviadas y aplicadas
-        const carrerasActualizadas = lote.map((c) => ({
-          ...c,
-          enviada: true,
-          aplicada: true,
-        }));
-        persistirRegistro(carrerasActualizadas);
-        refrescarContadores();
-
-        setCarreras((prev) =>
-          prev.map((c) => {
+        // Actualizar estado local y persistir todas las carreras sin perder las demás cuando se guarda una sola tarjeta
+        setCarreras((prev) => {
+          const base = prev.length > 0 ? prev : lote;
+          const next = base.map((c) => {
             const actualizada = lote.find(
               (n) =>
                 claveHipodromo(n.hipodromo) === claveHipodromo(c.hipodromo) &&
                 Number(n.carrera) === Number(c.carrera)
             );
-            return actualizada ? { ...actualizada, enviada: true, aplicada: true, ejemplares: (actualizada.ejemplares ?? []).map((e) => ({ ...e })) } : c;
-          })
-        );
+            return actualizada
+              ? {
+                  ...actualizada,
+                  enviada: true,
+                  aplicada: true,
+                  ejemplares: (actualizada.ejemplares ?? []).map((e) => ({ ...e })),
+                }
+              : c;
+          });
+          persistirRegistro(next);
+          return next;
+        });
+        refrescarContadores();
         setFaseRegistro("listo");
-        setEstado(`✅ Carreras y jugadas registradas y publicadas en la plataforma · ${fecha}`);
+        setEstado(`✅ Carreras y jugadas guardadas, registradas y publicadas en la plataforma · ${fecha}`);
         const conteo = (estado: ResultadoCargaCarrera["estado"]) =>
           sincronizacion.resultados.filter((r) => r.estado === estado).length;
 
@@ -524,7 +558,7 @@ export function GacetaIA() {
         toast(
           registroAutomatico
             ? `✅ IA registró ${conteo("CREADA")} nuevas, completó ${conteo("ACTUALIZADA_COMPLETADA")} carreras y publicó ${tablasPublicadas || lote.length} tablas de jugadas (Fecha: ${fecha})`
-            : `✅ Sincronización y publicación: ${conteo("CREADA")} nuevas, ${tablasPublicadas || lote.length} tablas fijas activas (Fecha: ${fecha}).`,
+            : `✅ Cambios guardados y registrados (${lote.length} carrera${lote.length === 1 ? "" : "s"}, ${tablasPublicadas || lote.length} tabla${(tablasPublicadas || lote.length) === 1 ? "" : "s"} activa${(tablasPublicadas || lote.length) === 1 ? "" : "s"} · Fecha: ${fecha}).`,
           "success"
         );
         return true;
@@ -532,13 +566,13 @@ export function GacetaIA() {
         const mensaje = e instanceof Error ? e.message : String(e);
         setFaseRegistro("error");
         setEstado(`No se pudieron registrar las carreras en el catálogo central: ${mensaje}`);
-        toast(`❌ No se completó el registro automático: ${mensaje}`, "error");
+        toast(`❌ No se completó el registro: ${mensaje}`, "error");
         return false;
       } finally {
         setSincronizando(false);
       }
     },
-    [toast]
+    [toast, refrescarContadores, resumen.nuevos, resumen.vinculados]
   );
 
   useEffect(() => {
@@ -1250,12 +1284,13 @@ export function GacetaIA() {
             persistirRegistro(nextList);
             return nextList;
           });
+          await registrarCarrerasEnElDia([actualizada], undefined, false, true);
 
           toast(
-            `✅ Carrera ${c.carrera ?? index + 1} re-verificada con éxito (${actualizada.ejemplares?.length ?? 0} ejemplares).`,
+            `✅ Carrera ${c.carrera ?? index + 1} re-verificada y registrada con éxito (${actualizada.ejemplares?.length ?? 0} ejemplares).`,
             "success"
           );
-          setEstado(`Carrera ${c.carrera ?? index + 1} actualizada con IA.`);
+          setEstado(`Carrera ${c.carrera ?? index + 1} actualizada y registrada con IA.`);
         } else {
           toast(`⚠️ No se pudo re-verificar la carrera: ${res.error || "Sin respuesta"}`, "warning");
           setEstado(`Aviso: ${res.error || "No se pudo re-verificar"}`);
@@ -1267,8 +1302,66 @@ export function GacetaIA() {
         setCarreraReverificandoIndex(null);
       }
     },
-    [carreras, clave, textosDocumentos, textoDocumento, paginas, toast]
+    [carreras, clave, textosDocumentos, textoDocumento, paginas, toast, registrarCarrerasEnElDia]
   );
+
+  // Guardar y registrar una carrera individual tras editarla en su tarjeta
+  const handleRegistrarCarreraIndividual = useCallback(
+    async (index: number) => {
+      const c = carreras[index];
+      if (!c) return;
+      const carreraOrdenada = ordenarCarrerasYEjemplares([c])[0] ?? c;
+      setCarreras((prev) => {
+        const nextList = prev.map((item, k) => (k === index ? carreraOrdenada : item));
+        persistirRegistro(nextList);
+        return nextList;
+      });
+      setCarreraRegistrandoIndex(index);
+      try {
+        await registrarCarrerasEnElDia([carreraOrdenada], undefined, false, true);
+      } finally {
+        setCarreraRegistrandoIndex(null);
+      }
+    },
+    [carreras, registrarCarrerasEnElDia]
+  );
+
+  // Agregar manualmente una nueva carrera editable
+  const agregarCarreraManual = useCallback(() => {
+    const fechaDestino = normalizarFechaIso(fechaJornadaRef.current) || hoyLocal();
+    const hipoBase =
+      carreras[0]?.hipodromo ||
+      hipodromos[0]?.value ||
+      "LA RINCONADA";
+    const maxNum = carreras.reduce((max, c) => {
+      const n = Number(c.carrera) || 0;
+      return n > max ? n : max;
+    }, 0);
+    const nuevaCarrera: CarreraRegistro = {
+      carrera: maxNum + 1,
+      hipodromo: hipoBase,
+      fecha: fechaDestino,
+      distancia: 1200,
+      superficie: "ARENA",
+      premio: 100,
+      ejemplares: Array.from({ length: 6 }, (_, idx) => ({
+        numero: idx + 1,
+        nombre: "",
+        nacionalidad: "VE",
+        valor: 0,
+        pts: 0,
+      })),
+      seleccionada: true,
+      enviada: false,
+      aplicada: false,
+    };
+    setCarreras((prev) => {
+      const next = [...prev, nuevaCarrera];
+      persistirRegistro(next);
+      return next;
+    });
+    toast(`➕ Carrera #${maxNum + 1} agregada para edición manual. Complete los ejemplares y presione "💾 Guardar y Registrar Carrera".`, "info");
+  }, [carreras, hipodromos, toast]);
 
   // Buscar una carrera faltante con la IA
   const handleBuscarCarreraFaltante = useCallback(
@@ -1338,10 +1431,11 @@ export function GacetaIA() {
             persistirRegistro(ordenadas);
             return ordenadas;
           });
+          await registrarCarrerasEnElDia([carreraReg], undefined, false, true);
 
           setCarreraFaltanteInput("");
-          toast(`✅ ¡Carrera ${num} encontrada y agregada con éxito! (${carreraReg.ejemplares?.length ?? 0} ejemplares)`, "success");
-          setEstado(`Carrera ${num} agregada y ordenada.`);
+          toast(`✅ ¡Carrera ${num} encontrada, agregada y registrada con éxito! (${carreraReg.ejemplares?.length ?? 0} ejemplares)`, "success");
+          setEstado(`Carrera ${num} agregada, ordenada y registrada.`);
         } else {
           toast(`⚠️ ${res.error || "No se encontró la carrera en el documento."}`, "warning");
           setEstado(res.error || "Carrera no encontrada.");
@@ -1353,7 +1447,7 @@ export function GacetaIA() {
         setBuscandoFaltante(false);
       }
     },
-    [carreraFaltanteInput, clave, carreras, textoDocumento, textosDocumentos, paginas, toast]
+    [carreraFaltanteInput, clave, carreras, textoDocumento, textosDocumentos, paginas, toast, registrarCarrerasEnElDia]
   );
 
   // Ejecutar orden particular interactiva con IA
@@ -1416,8 +1510,9 @@ export function GacetaIA() {
         const ordenadas = ordenarCarrerasYEjemplares(carrerasActualizadas);
         setCarreras(ordenadas);
         persistirRegistro(ordenadas);
-        toast(`✅ ${res.mensaje || "Corrección aplicada con éxito por el Agente IA."}`, "success");
-        setEstado("Orden ejecutada y carreras ordenadas.");
+        await registrarCarrerasEnElDia(ordenadas, undefined, false, true);
+        toast(`✅ ${res.mensaje || "Corrección aplicada y registrada con éxito por el Agente IA."}`, "success");
+        setEstado("Orden ejecutada, carreras ordenadas y registradas.");
         setOrdenParticular("");
       } else {
         toast(`⚠️ ${res.error || "No se pudo completar la orden."}`, "warning");
@@ -1429,7 +1524,7 @@ export function GacetaIA() {
     } finally {
       setEjecutandoOrden(false);
     }
-  }, [ordenParticular, clave, carreras, carreraOrdenIndex, textoDocumento, textosDocumentos, paginas, toast]);
+  }, [ordenParticular, clave, carreras, carreraOrdenIndex, textoDocumento, textosDocumentos, paginas, toast, registrarCarrerasEnElDia]);
 
   // Navegación de teclado tipo planilla sobre los VALORES (Tab/Enter/↑↓),
   // igual que el legacy js/gaceta.js.
@@ -2099,61 +2194,89 @@ export function GacetaIA() {
           </div>
         </section>
 
-      {carreras.length > 0 && (
-        <div className="rounded-2xl border border-line bg-surface p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-black uppercase tracking-wider text-slate-700">
-              📋 Carreras Extraídas{" "}
-              <span className="text-xs font-bold normal-case text-slate-500">
-                ({carreras.length} carreras · {resumen.nuevos} nuevos / {resumen.vinculados} vinculados al padrón)
-              </span>
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="default" size="sm" disabled={registrando || historial || enviando} onClick={() => void registrarEnPadron()}>
-                {registrando ? "Vinculando…" : "✔ Registrar en el padrón"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={sincronizando || enviando}
-                onClick={() => void registrarCarrerasEnElDia(carreras)}
-                title="Guarda otra vez los cambios manuales de ejemplares y datos de carrera en la matriz central."
-              >
-                {sincronizando ? "Sincronizando…" : "🔄 Actualizar / Re-sincronizar en Base de Datos"}
-              </Button>
-              <Button variant="outline" size="sm" disabled={historial || registrando || enviando} onClick={() => void guardarHist()}>
-                {historial ? "Guardando…" : "🗂️ Guardar historial"}
-              </Button>
-              <Button variant="default" size="sm" disabled={enviando || carreras.length === 0} onClick={enviarSeleccionadas}>
-                {enviando ? "Enviando…" : `📤 ${labelEnvio}`}
-              </Button>
-              <Button variant="danger" size="sm" disabled={enviando} onClick={limpiar}>
-                🧹 Limpiar registro
-              </Button>
-            </div>
+      <div className="rounded-2xl border border-line bg-surface p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-black uppercase tracking-wider text-slate-700">
+            📋 Carreras en Edición / Extraídas{" "}
+            <span className="text-xs font-bold normal-case text-slate-500">
+              ({carreras.length} carreras · {resumen.nuevos} nuevos / {resumen.vinculados} vinculados al padrón)
+            </span>
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={sincronizando || enviando}
+              onClick={agregarCarreraManual}
+              className="border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 font-black"
+              title="Agrega una tarjeta de carrera en blanco para cargarla o editarla manualmente y registrarla."
+            >
+              ➕ Nueva Carrera Manual
+            </Button>
+            {carreras.length > 0 && (
+              <>
+                <Button variant="default" size="sm" disabled={registrando || historial || enviando} onClick={() => void registrarEnPadron()}>
+                  {registrando ? "Vinculando…" : "✔ Registrar en el padrón"}
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={sincronizando || enviando}
+                  onClick={() => void registrarCarrerasEnElDia(carreras, undefined, false, true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-black shadow-xs"
+                  title="Guarda y registra todos los cambios manuales de ejemplares y datos de carrera en Carreras del Día y Tablas Fijas."
+                >
+                  {sincronizando ? "Guardando y registrando…" : "💾 Guardar y Registrar Carreras Editadas"}
+                </Button>
+                <Button variant="outline" size="sm" disabled={historial || registrando || enviando} onClick={() => void guardarHist()}>
+                  {historial ? "Guardando…" : "🗂️ Guardar historial"}
+                </Button>
+                <Button variant="default" size="sm" disabled={enviando || carreras.length === 0} onClick={enviarSeleccionadas}>
+                  {enviando ? "Enviando…" : `📤 ${labelEnvio}`}
+                </Button>
+                <Button variant="danger" size="sm" disabled={enviando} onClick={limpiar}>
+                  🧹 Limpiar registro
+                </Button>
+              </>
+            )}
           </div>
-          <div ref={gridRef} onKeyDown={onGridKeyDown} className="grid grid-cols-1 gap-2 p-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4">
-            {carreras.map((c, i) => (
-              <CarreraGacetaCard
-                key={`${String(c.hipodromo || "")}-${String(c.carrera ?? "")}-${i}`}
-                index={i}
-                carrera={c}
-                hipodromos={hipodromos}
-                onChange={(nc) => setCarreras((prev) => prev.map((x, k) => (k === i ? nc : x)))}
-                onEnviar={(id) => void enviar([carreras[id]])}
-                onEliminar={() => eliminarCarrera(i)}
-                onReverificar={handleReverificarCarrera}
-                reverificando={carreraReverificandoIndex === i}
-              />
-            ))}
-          </div>
-          <p className="mt-3 text-[11px] italic leading-relaxed text-slate-500">
-            💡 Al terminar la extracción, las carreras se registran en el catálogo central y quedan disponibles en los módulos
-            de la jornada. Revise los datos; use <b>Actualizar / Re-sincronizar</b> si edita una tarjeta. El envío al Ensamblaje
-            sigue siendo una acción aparte.
-          </p>
         </div>
-      )}
+        {carreras.length > 0 ? (
+          <>
+            <div ref={gridRef} onKeyDown={onGridKeyDown} className="grid grid-cols-1 gap-2 p-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4">
+              {carreras.map((c, i) => (
+                <CarreraGacetaCard
+                  key={i}
+                  index={i}
+                  carrera={c}
+                  hipodromos={hipodromos}
+                  onChange={(nc) =>
+                    setCarreras((prev) => {
+                      const next = prev.map((x, k) => (k === i ? { ...nc, enviada: false } : x));
+                      persistirRegistro(next);
+                      return next;
+                    })
+                  }
+                  onRegistrar={handleRegistrarCarreraIndividual}
+                  registrandoCarrera={carreraRegistrandoIndex === i}
+                  onEnviar={(id) => void enviar([carreras[id]])}
+                  onEliminar={() => eliminarCarrera(i)}
+                  onReverificar={handleReverificarCarrera}
+                  reverificando={carreraReverificandoIndex === i}
+                />
+              ))}
+            </div>
+            <p className="mt-3 text-[11px] italic leading-relaxed text-slate-500">
+              💡 Puedes escribir o borrar nombres y números de ejemplares libremente sin perder el foco. Al terminar de editar una carrera, presiona{" "}
+              <b>💾 Guardar y Registrar Carrera</b> en la tarjeta (o <b>💾 Guardar y Registrar Carreras Editadas</b> arriba) para actualizarla de inmediato en Carreras del Día y en las Tablas de Jugadas.
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-slate-500">
+            No hay carreras en edición para esta fecha. Sube una gaceta arriba o presiona <b>➕ Nueva Carrera Manual</b> para crear y registrar una carrera directamente.
+          </p>
+        )}
+      </div>
 
       {/* Vista previa de una página de la gaceta en grande */}
       {vistaIndice >= 0 && paginas[vistaIndice] && (

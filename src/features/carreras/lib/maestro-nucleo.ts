@@ -103,13 +103,13 @@ export type FilaCarreraMaestro = {
   superficie?: string | null;
   premio?: number | null;
   hora?: string | null;
-origen?: string | null;
-registrado_por?: string | null;
-actualizado_por?: string | null;
-verificado?: boolean | null;
-verificado_por?: string | null;
-verificado_at?: string | null;
-invalidado_remate?: string | null;
+  origen?: string | null;
+  registrado_por?: string | null;
+  actualizado_por?: string | null;
+  verificado?: boolean | null;
+  verificado_por?: string | null;
+  verificado_at?: string | null;
+  invalidado_remate?: string | null;
   /** Ejemplares invalidados SOLO para Pollas (columna `invalidado_polla`). */
   invalidado_polla?: string | null;
   updated_at?: string | null;
@@ -119,14 +119,14 @@ invalidado_remate?: string | null;
 /** Fila que se escribe en la matriz. Obligatorios: hipódromo y Nº de carrera. */
 export type EntradaCarrera = {
   fecha?: string;
-hipodromo: string;
-carrera: number | string;
-estado?: string;
-caballos?: EjemplarMatriz[] | null;
-retirados?: string | null;
+  hipodromo: string;
+  carrera: number | string;
+  estado?: string;
+  caballos?: EjemplarMatriz[] | null;
+  retirados?: string | null;
   invalidado_remate?: string | null;
   invalidado_polla?: string | null;
-distancia?: string | null;
+  distancia?: string | null;
   superficie?: string | null;
   premio?: number | null;
   hora?: string | null;
@@ -161,19 +161,58 @@ const tieneDato = (valor: unknown): boolean =>
 const nombreGenerico = (valor: unknown): boolean =>
   !tieneDato(valor) || /^(?:EJEMPLAR|CABALLO)\s*\d*$/i.test(String(valor).trim());
 
-/** Enriquece una fila cargada sin reemplazar datos operativos ya existentes. */
+/** Enriquece o actualiza una fila cargada sin reemplazar datos operativos de liquidación ya existentes. */
 export function fusionarCargaGaceta(
   existente: FilaCarreraMaestro,
-  nueva: EntradaCarrera
+  nueva: EntradaCarrera,
+  forzarReemplazo = false
 ): ResultadoMergeCarrera {
   const camposCompletados: string[] = [];
   const completarCampo = <T>(campo: string, anterior: T | null | undefined, propuesto: T | null | undefined): T | null | undefined => {
-    if (!tieneDato(anterior) && tieneDato(propuesto)) {
+    if (tieneDato(propuesto) && (!tieneDato(anterior) || (forzarReemplazo && String(anterior).trim() !== String(propuesto).trim()))) {
       camposCompletados.push(campo);
       return propuesto;
     }
     return anterior;
   };
+
+  if (forzarReemplazo && Array.isArray(nueva.caballos) && nueva.caballos.length > 0) {
+    const caballoLista = ordenarPorNumero(
+      nueva.caballos
+        .filter((raw) => raw && typeof raw === "object" && String(raw.numero ?? "").trim() && String(raw.nombre ?? "").trim())
+        .map((raw) => ({
+          ...raw,
+          numero: String(raw.numero ?? "").trim(),
+          nombre: String(raw.nombre ?? "").trim().toUpperCase(),
+        }))
+    );
+    const distancia = completarCampo("distancia", existente.distancia, nueva.distancia);
+    const hora = completarCampo("hora", existente.hora, nueva.hora);
+    const superficie = completarCampo("superficie", existente.superficie, nueva.superficie);
+    const premio = completarCampo("premio", existente.premio, nueva.premio);
+    return {
+      carrera: {
+        ...nueva,
+        fecha: existente.fecha,
+        hipodromo: existente.hipodromo,
+        carrera: existente.carrera,
+        estado: existente.estado ?? nueva.estado,
+        caballos: caballoLista,
+        distancia: distancia ?? null,
+        hora: hora ?? null,
+        superficie: superficie ?? null,
+        premio: premio ?? null,
+        retirados: existente.retirados,
+        invalidado_remate: existente.invalidado_remate,
+        invalidado_polla: existente.invalidado_polla,
+        origen: existente.origen ?? nueva.origen,
+        fusionar_ejemplares: false,
+      },
+      cambio: true,
+      ejemplaresCompletados: caballoLista.length,
+      camposCompletados: camposCompletados.length ? camposCompletados : ["ejemplares actualizados"],
+    };
+  }
 
   const existentesPorNumero = new Map<string, EjemplarMatriz>();
   for (const raw of Array.isArray(existente.caballos) ? existente.caballos : []) {
@@ -196,9 +235,9 @@ export function fusionarCargaGaceta(
     }
     const caballo: EjemplarMatriz = { ...previo, numero };
     let cambio = false;
-    const completar = <T>(campo: keyof EjemplarMatriz, valor: T | null | undefined, reemplazarGenerico = false) => {
+    const completar = <T>(campo: keyof EjemplarMatriz, valor: T | null | undefined, reemplazarSiDifiere = false) => {
       const anterior = caballo[campo];
-      const falta = !tieneDato(anterior) || (reemplazarGenerico && nombreGenerico(anterior));
+      const falta = !tieneDato(anterior) || (reemplazarSiDifiere && nombreGenerico(anterior));
       if (falta && tieneDato(valor)) {
         (caballo as Record<string, unknown>)[campo] = valor;
         cambio = true;
@@ -262,14 +301,14 @@ export type CarreraCatalogo = {
   superficie?: string | null;
   premio?: number | null;
   hora?: string | null;
-estado?: string;
-origen?: string | null;
-registrado_por?: string | null;
-actualizado_por?: string | null;
-verificado?: boolean;
-verificado_por?: string | null;
-verificado_at?: string | null;
-/** Ejemplares invalidados SOLO para Remates. No es lo mismo que retirados. */
+  estado?: string;
+  origen?: string | null;
+  registrado_por?: string | null;
+  actualizado_por?: string | null;
+  verificado?: boolean;
+  verificado_por?: string | null;
+  verificado_at?: string | null;
+  /** Ejemplares invalidados SOLO para Remates. No es lo mismo que retirados. */
   invalidados?: string[];
   /**
    * Ejemplares invalidados SOLO para Pollas.
@@ -569,38 +608,9 @@ function fusionarMaestro(a: FilaCarreraMaestro, b: FilaCarreraMaestro): FilaCarr
 }
 
 /**
- * Colapsa a UNA fila por clave canónica `hipodromo|carrera` (la de
- * `claves.ts`, la misma que usan Marcas, Tablas, Dupletas y Remates).
- *
- * POR QUÉ EXISTE: la matriz es UNIQUE (fecha, hipodromo, carrera), pero si ese
- * índice no está aplicado en la base —o si una fila entró por un camino que no
- * lo respeta— la API devuelve la carrera repetida. Entonces los módulos que
- * arman la lista CHIP POR FILA la pintan dos veces ("C1 aparece 2 veces", el
- * contador dice 18 carreras para 13 reales) y una de las copias suele venir sin
- * ejemplares, así que la carrera salta a "Sin ejemplares registrados"
- * ("5 carrera(s) del filtro sin ejemplares") mientras Carreras del Día, que
- * lee la copia buena, sí muestra el padrón completo.
- *
- * Fusiona en vez de descartar: gana la fila más rica (resultado primero) y las
- * listas se unen (ejemplares por número, retiros e invalidados), de modo que
- * ninguna copia pierde información. Las filas sin hipódromo o sin número de
- * carrera válido se descartan: no son identificables y solo contaminan.
- */
-/**
  * Resuelve el TEXTO de hipódromo que se debe ESCRIBIR en cada fila para que el
  * `onConflict (fecha,hipodromo,carrera)` de la matriz ACTUALICE la fila que ya
  * existe en lugar de insertar una segunda.
- *
- * El problema: la clave única de la matriz compara el TEXTO tal cual quedó
- * guardado ("LA RINCONADA" y "La Rinconada" son dos filas distintas), mientras
- * la app cruza los hipódromos por su clave canónica (mayúsculas sin espacios).
- * Un upsert ciego con "LA RINCONADA" sobre una BD que guarda "La Rinconada"
- * crea un DUPLICADO que solo `dedupFilasMaestro` vuelve a fusionar al LEER —
- * la UI se ve bien, pero la fila gemela queda huérfana en la base.
- *
- * Devuelve un Map clave → texto a usar: el TEXTO GUARDADO si existe una fila
- * con la misma clave canónica (fecha + hipódromo + número), o la forma canónica
- * en mayúsculas para las que son nuevas.
  */
 export function hipodromosAEscribir(
   entradas: { fecha?: string | null; hipodromo: unknown; carrera: unknown }[],
@@ -627,26 +637,6 @@ export function hipodromosAEscribir(
 
 /**
  * RESCATE del resultado cuando el EMBED no lo trajo.
- *
- * POR QUÉ EXISTE
- * --------------
- * `leerCarrerasMaestro` pide el resultado embebido (`resultados_carreras(*)`), que
- * PostgREST resuelve por la FK `resultados_carreras.carrera_id -> carreras.id`.
- * Esa columna puede quedar NULL: la migración la backfillea con una igualdad
- * EXACTA de hipódromo (`c.hipodromo = upper(trim(r.hipodromo))`), así que una
- * fila guardada como "La Rinconada" cuando la matriz dice "LA RINCONADA" nunca
- * se enlaza (el diagnóstico tiene una pasada que repara "resultados sueltos").
- * Cuando `carrera_id` es NULL el embed no devuelve NADA y no hay error: el
- * catálogo queda con `ganadores: []` y cualquier contador que salga de ahí
- * —el progreso de la jornada— se queda en cero para siempre.
- *
- * La cura NO es una segunda verdad: se lee la MISMA tabla `resultados_carreras`
- * por su clave natural (fecha + hipódromo + carrera, la de `claveCarrera`) y se
- * completa SOLO lo que el embed no trajo. Es un respaldo idempotente: si el
- * embed ya trajo el resultado, la fila se deja intacta.
- *
- * `resultados` son las filas crudas de `resultados_carreras` del día (se leen
- * todas en UNA consulta, como `cargarCarrerasDelDia`).
  */
 export function completarResultadosPorClave(
   catalogo: CarreraCatalogo[],
@@ -676,9 +666,6 @@ export function dedupFilasMaestro(filas: FilaCarreraMaestro[]): FilaCarreraMaest
     const hipo = claveHipodromo(f.hipodromo);
     const num = numeroCarrera(f.carrera);
     if (!hipo || !num) continue;
-    // La fecha entra en la clave aunque la consulta ya venga filtrada por ella:
-    // si alguien pasa filas de dos jornadas, la C1 de una no se fusiona con la
-    // C1 de la otra (son carreras distintas aunque compartan número).
     const dia = String(f.fecha ?? "").trim().slice(0, 10);
     const k = `${dia}|${hipo}|${num}`;
     const actual = porClave.get(k);

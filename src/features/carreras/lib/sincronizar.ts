@@ -155,8 +155,10 @@ const claveCarrera = (c: CarreraPrograma): string =>
  */
 export async function sincronizarCarrerasAlCentral(
   carreras: CarreraEntrante[],
-  creadoPor?: string
+  creadoPor?: string,
+  opciones?: { forzarReemplazo?: boolean }
 ): Promise<ResSincronizar> {
+  const forzarReemplazo = Boolean(opciones?.forzarReemplazo);
   const validas = aCarrerasPrograma(carreras);
   const resultados: ResultadoCargaCarrera[] = carreras
     .filter((c) => !aCarrerasPrograma([c]).length)
@@ -252,14 +254,18 @@ export async function sincronizarCarrerasAlCentral(
         });
         continue;
       }
-      const fusion = fusionarCargaGaceta(existente, {
-        ...nueva,
-        fecha: nueva.fecha ?? fecha,
-        carrera: Number(nueva.carrera),
-        distancia: nueva.distancia != null ? String(nueva.distancia) : null,
-        estado: existente.estado ?? "Programada",
-        caballos: nueva.caballos.map((e) => ({ ...e })),
-      });
+      const fusion = fusionarCargaGaceta(
+        existente,
+        {
+          ...nueva,
+          fecha: nueva.fecha ?? fecha,
+          carrera: Number(nueva.carrera),
+          distancia: nueva.distancia != null ? String(nueva.distancia) : null,
+          estado: existente.estado ?? "Programada",
+          caballos: nueva.caballos.map((e) => ({ ...e })),
+        },
+        forzarReemplazo
+      );
       const carreraMergeada = fusion.carrera as CarreraPrograma;
       mergeadas.push(carreraMergeada);
       if (fusion.cambio) guardables.push(carreraMergeada);
@@ -335,7 +341,7 @@ export async function sincronizarCarrerasAlCentral(
         superficie: c.superficie ?? null,
         premio: c.premio ?? null,
         origen: "ia",
-        fusionar_ejemplares: true,
+        fusionar_ejemplares: !forzarReemplazo,
       }))
     ) : { ok: true, guardadas: 0 };
     if (!matriz.ok) {
