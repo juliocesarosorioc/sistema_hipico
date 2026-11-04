@@ -174,6 +174,10 @@ export function limpiarAlmacenamientoSesionLocal(): void {
 /**
  * Verifica las credenciales contra Supabase. No guarda nada del lado del
  * navegador: la sesión la persiste el propio cliente de Supabase.
+ *
+ * [Módulo 1] Integrado con control de sesión única e IP única.
+ * El caller (useAuthStore) es responsable de registrar el intento
+ * fallido y verificar el bloqueo ANTES de llamar a esta función.
  */
 export async function iniciarSesion(identificador: string, clave: string): Promise<ResultadoLogin> {
   if (!supabase) {

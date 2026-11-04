@@ -5,11 +5,6 @@
  * es decir, bajo un SUBPATH. Este script es igual a `build:export` pero además
  * informa `NEXT_PUBLIC_BASE_PATH=/sistema_hipico`, que `next.config.mjs` usa
  * como `basePath`+`assetPrefix` para que los enlaces y los assets apunten bien.
- *
- * Además post-procesa `out/`:
- *   1. Crea `.nojekyll` para que GitHub Pages no ignore `_next/`.
- *   2. Genera copias `<ruta>.html` (ej. `login.html`) para evitar 404 en accesos sin trailing slash.
- *   3. Inyecta fallback SPA en `404.html`.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -18,6 +13,32 @@ import { fileURLToPath } from "node:url";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outDir = path.join(root, "out");
+const apiDir = path.join(root, "src", "app", "api");
+const apiBackupDir = path.join(root, "src", "app", "_api_server_only");
+
+// En modo export estático, ocultar temporalmente rutas API dinámicas de servidor
+let apiMovida = false;
+if (fs.existsSync(apiDir)) {
+  fs.renameSync(apiDir, apiBackupDir);
+  apiMovida = true;
+}
+
+function restaurarApi() {
+  if (apiMovida && fs.existsSync(apiBackupDir)) {
+    try {
+      fs.renameSync(apiBackupDir, apiDir);
+      apiMovida = false;
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+process.on("exit", restaurarApi);
+process.on("SIGINT", () => {
+  restaurarApi();
+  process.exit(1);
+});
 
 const esWindows = process.platform === "win32";
 const npx = esWindows ? "npx.cmd" : "npx";
@@ -33,11 +54,13 @@ const hijo = spawn(npx, ["next", "build"], {
 });
 
 hijo.on("error", (err) => {
+  restaurarApi();
   console.error("No se pudo lanzar el build para GitHub Pages:", err);
   process.exit(1);
 });
 
 hijo.on("exit", (code) => {
+  restaurarApi();
   if (code === 0) {
     postProcesarExportGithubPages();
   }
@@ -78,7 +101,7 @@ function postProcesarExportGithubPages() {
         }
       })();
     </script>`;
-    if (!contenido404.includes("window.location.replace(p + \"/\"")) {
+    if (!contenido404.includes('window.location.replace(p + "/"')) {
       contenido404 = contenido404.replace("<head>", `<head>${scriptRedireccion}`);
       fs.writeFileSync(path404, contenido404, "utf8");
       console.log("  ✓ Redirección inteligente SPA agregada a out/404.html");

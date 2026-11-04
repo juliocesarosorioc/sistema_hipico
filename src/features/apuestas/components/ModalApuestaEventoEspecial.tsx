@@ -17,6 +17,8 @@ interface ClienteSimple {
   id?: string | number;
   nombre?: string | null;
   seudonimo?: string | null;
+  saldo_actual?: number | null;
+  aval?: number | null;
 }
 
 interface ModalApuestaEventoEspecialProps {
@@ -119,6 +121,20 @@ export function ModalApuestaEventoEspecial({
       return;
     }
 
+    if (clienteId) {
+      const cli = clientes.find((item) => String(item.id) === clienteId);
+      if (cli) {
+        const disp = (cli.saldo_actual ?? 0) + (cli.aval ?? 0);
+        if (mNum > disp) {
+          emitirToast(
+            `Saldo insuficiente para ${cli.seudonimo || cli.nombre}. Disponible: ${disp.toFixed(2)} (Saldo: ${(cli.saldo_actual ?? 0).toFixed(2)}, Aval: ${(cli.aval ?? 0).toFixed(2)}).`,
+            "warning"
+          );
+          return;
+        }
+      }
+    }
+
     setGuardando(true);
     try {
       const res = await registrarApuestaEventoEspecial({
@@ -163,9 +179,11 @@ export function ModalApuestaEventoEspecial({
     const res = await actualizarEstadoEventoEspecial(id, nuevoEstado);
     if (res.ok) {
       if (nuevoEstado === "GANADOR") {
-        emitirToast("🏆 ¡Ganador seleccionado con éxito!", "success");
+        emitirToast("🏆 ¡Ganador seleccionado! Saldo acreditado y asiento contable NIIF generado.", "success");
       } else if (nuevoEstado === "PERDEDOR") {
-        emitirToast("❌ Marcada como no ganadora.", "info");
+        emitirToast("❌ Marcada como no ganadora. Saldo y contabilidad NIIF actualizados.", "info");
+      } else if (nuevoEstado === "ANULADA") {
+        emitirToast("🚫 Apuesta anulada y saldos/asientos revertidos de forma atómica.", "info");
       } else {
         emitirToast("🔄 Estado restablecido.", "info");
       }
@@ -568,6 +586,16 @@ export function ModalApuestaEventoEspecial({
                             className="rounded-xl border border-rose-500/40 bg-rose-950/40 px-2 py-1 text-xs font-bold text-rose-300 hover:bg-rose-900/60 transition-all"
                           >
                             ❌
+                          </button>
+                        )}
+                        {ap.estado !== "ANULADA" && (
+                          <button
+                            type="button"
+                            onClick={() => void handleCambiarEstado(ap.id, "ANULADA")}
+                            title="Anular apuesta y revertir saldos de forma atómica"
+                            className="rounded-xl border border-rose-600/50 bg-rose-950/60 px-2 py-1 text-xs font-bold text-rose-300 hover:bg-rose-900 transition-all"
+                          >
+                            🚫 Anular
                           </button>
                         )}
                         {ap.estado !== "PENDIENTE" && (

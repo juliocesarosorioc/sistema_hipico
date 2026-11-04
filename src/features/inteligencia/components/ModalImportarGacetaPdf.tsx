@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { DateInput } from "@/shared/components/ui/DateInput";
 
 import { useState, useEffect, useRef } from "react";
@@ -110,6 +110,28 @@ export function ModalImportarGacetaPdf({
     if (f) {
       setArchivo(f);
       setError("");
+      // [Módulo 2] Detectar fecha e hipódromo del nombre del archivo automáticamente
+      const nombreLower = f.name.toLowerCase();
+      // Patrón ISO: 2026-11-04 o 2026_11_04
+      const matchFechaISO = nombreLower.match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+      if (matchFechaISO) {
+        const fechaCandidata = `${matchFechaISO[1]}-${matchFechaISO[2]}-${matchFechaISO[3]}`;
+        setFecha(fechaCandidata);
+        emitirToast(`📅 Fecha detectada del archivo: ${fechaCandidata}`, "info");
+      }
+      // Hipódromo desde abreviatura en nombre del archivo
+      const mapaAbrev: Record<string, string> = {
+        "--cd": "CHURCHILL DOWNS", "--ct": "CHARLES TOWN", "--dd": "DELTA DOWNS",
+        "--ed": "EVANGELINE DOWNS", "--fl": "FINGER LAKES", "--hi": "HORSESHOE INDIANAPOLIS",
+        "--mtn": "MOUNTAINEER", "--mv": "MAHONING VALLEY", "--prx": "PARX RACING",
+        "--lr": "LA RINCONADA", "--val": "VALENCIA",
+      };
+      for (const [abrev, nombreHipo] of Object.entries(mapaAbrev)) {
+        if (nombreLower.includes(abrev)) {
+          setHipodromo(nombreHipo);
+          break;
+        }
+      }
     }
   };
 
@@ -308,8 +330,30 @@ export function ModalImportarGacetaPdf({
                   onChange={(e) => setHipodromo(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-bold"
                 >
-                  <option value="LA RINCONADA">🇻🇪 La Rinconada</option>
-                  <option value="VALENCIA">🇻🇪 Valencia</option>
+                  <optgroup label="🇻🇪 Venezuela">
+                    <option value="LA RINCONADA">La Rinconada</option>
+                    <option value="VALENCIA">Valencia</option>
+                  </optgroup>
+                  <optgroup label="🇺🇸 EE.UU. — Purasangres">
+                    <option value="CHURCHILL DOWNS">Churchill Downs (CD)</option>
+                    <option value="CHARLES TOWN">Charles Town (CT)</option>
+                    <option value="DELTA DOWNS">Delta Downs (DD)</option>
+                    <option value="EVANGELINE DOWNS">Evangeline Downs (ED)</option>
+                    <option value="FINGER LAKES">Finger Lakes (FL)</option>
+                    <option value="HORSESHOE INDIANAPOLIS">Horseshoe Indianapolis (HI)</option>
+                    <option value="MOUNTAINEER">Mountaineer (MTN)</option>
+                    <option value="MAHONING VALLEY">Mahoning Valley (MV)</option>
+                    <option value="PARX RACING">Parx Racing (PRX)</option>
+                    <option value="AQUEDUCT">Aqueduct (AQU)</option>
+                    <option value="BELMONT PARK">Belmont Park (BEL)</option>
+                    <option value="KEENELAND">Keeneland (KEE)</option>
+                    <option value="SARATOGA">Saratoga (SAR)</option>
+                    <option value="GULFSTREAM PARK">Gulfstream Park (GP)</option>
+                  </optgroup>
+                  <optgroup label="🏇 Quarter Horses">
+                    <option value="LOS ALAMITOS">Los Alamitos (LA)</option>
+                    <option value="REMINGTON PARK">Remington Park (RP)</option>
+                  </optgroup>
                 </select>
               </div>
 

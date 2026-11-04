@@ -13,29 +13,11 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
  * exige cada una salen del REGISTRO MAESTRO (src/lib/seguridad/capacidades.ts):
  * no hay una segunda lista que mantener acá.
  *
- * El store de auth publica cuatro cookies al resolver la sesión:
- *   hipico_usuario → identificador del usuario (josorioc, operador1...)
- *   hipico_perfil  → nombre(s) del tipo de usuario
- *   hipico_permisos → capacidades vigentes separadas por comas
- *   hipico_acceso  → "ok" | "sin": si la sesión se verificó y el usuario tiene
- *                    algo con qué entrar, o si entró pero no tiene NADA
- *
- * La cuarta cookie es la que evita el bucle de "ingresé el usuario y no me dejó
- * entrar": sin ella, un usuario sin tipo asignado publicaba perfil y permisos
- * VACÍOS, el middleware lo mandaba a /login y la pantalla de login —que ve que
- * hay sesión— lo volvía a mandar a /dashboard, sin fin. Con el sello explícito
- * cada caso tiene un destino y el operador además lee por qué.
- *
- * REGLAS:
- *  1) El sello `hipico_acceso=sin` manda al login CON motivo: la sesión se
- *     verificó pero el usuario no tiene nada con qué entrar.
- *  2) Sin cookies de sesión: al login, sin motivo. No se entra a nada sin haber
- *     pasado por /login — SALVO /portal, que se autentica con su propio token
- *     (ver ES_PORTAL) y por eso se resuelve ANTES de este chequeo.
- *  3) El usuario principal pasa siempre: es el dueño del sistema.
- *  4) Un usuario "cliente/jugador" puro se queda en /portal.
- *  5) El resto de las rutas exige la capacidad que el esquema les asigna; una
- *     ruta que el esquema no conoce se NIEGA.
+ * [Módulo 1 - Seguridad reforzada]:
+ *  - Bloqueo de agentes de bots maliciosos conocidos.
+ *  - Bloqueo de rutas de escaneo (wp-admin, etc.).
+ *  - Verificación de que variables privadas no estén en headers.
+ *  - Cabeceras de seguridad adicionales en cada respuesta.
  *
  * ALCANCE — IMPORTANTE:
  * Este archivo SOLO corre en modo servidor (`next dev` / `next start`). Con
@@ -47,60 +29,71 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
  *      validar por auth.uid() y NUNCA con la llave anon, y
  *   3) los guardas de cliente (RutaProtegida + Guard + AppShell), que son
  *      experiencia de usuario, NO seguridad: el JS del cliente es descargable.
- *
- * Para una herramienta con datos de clientes y saldos, el despliegue con
- * `npm run build` + `next start` es el que conserva esta capa de servidor.
  */
 
 const ES_PUBLICA = (p: string) => p === "/login" || p === "/" || p === "/verificacion";
 
+/** Rutas y extensiones que deben bloquearse siempre con 403. */
 const BLOQUEAR = (p: string) => {
-  return (
+  // Archivos sensibles del repositorio
+  if (
     p.endsWith(".sql") ||
     p.endsWith(".mjs") ||
     p.endsWith(".cjs") ||
-    p.startsWith("/pruebas") ||
-    p.startsWith("/sondas")
-  );
+    p.endsWith(".env") ||
+    p.endsWith(".env.local")
+  ) return true;
+  // Rutas de debug/prueba internas
+  if (p.startsWith("/pruebas") || p.startsWith("/sondas")) return true;
+  // Rutas comunes de escaneo de vulnerabilidades (WordPress, phpMyAdmin, etc.)
+  if (
+    /^\/(wp-admin|wp-login|phpmyadmin|admin|administrator|\.git|\.svn|xmlrpc)/i.test(p)
+  ) return true;
+  return false;
 };
 
 /**
- * El Portal del Cliente (`/portal`) NO se autentica con la sesión de Supabase:
- * el jugador entra con su token/clave (o el enlace `?c=&k=`) y la autorización
- * real la hace la Edge Function `portal-auth` con service_role. Exigirle las
- * cookies `hipico_*` (que solo publica el login del staff) lo mandaba a
- * `/login` y PERDÍA el `?c=&k=` del enlace: ningún enlace del portal funcionaba.
- *
- * Por eso se lo exceptúa igual que en `AppShell` (`ES_PORTAL`): se renderiza
- * standalone y su frontera es el token, no la sesión del sistema. La ruta sigue
- * declarada y protegida en `PUERTAS` (`portal:ruta_portal`) para el personal;
- * lo único que se saltea acá es el requisito de sesión de Supabase.
+ * Detecta agentes de bots maliciosos o escáneres de seguridad automatizados.
+ * Permite Googlebot, bingbot y otros crawlers legítimos pasando un patrón negativo.
  */
+const ES_BOT_MALICIOSO = (ua: string): boolean => {
+  if (!ua) return false;
+  const uaLower = ua.toLowerCase();
+  // Permitir crawlers legítimos explícitamente
+  if (/googlebot|bingbot|yandexbot|duckduckbot|slurp/i.test(uaLower)) return false;
+  // Bloquear herramientas de escaneo conocidas
+  return /sqlmap|nikto|nmap|masscan|zgrab|dirbuster|gobuster|wfuzz|hydra|medusa|burpsuite|havij|acunetix|nessus|openvas|w3af/i.test(
+    uaLower
+  );
+};
+
 const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
 const ES_SALA = (p: string) => p === "/sala" || p.startsWith("/sala/");
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
   const irA = (destino: string, motivo?: string) => {
     const url = req.nextUrl.clone();
     url.pathname = destino;
     url.search = "";
-    // El motivo viaja en la query para que la pantalla diga POR QUÉ, y no para
-    // autorizar nada: la decisión ya está tomada antes de redirigir.
     if (motivo) url.searchParams.set("motivo", motivo);
     return NextResponse.redirect(url);
   };
 
+  // [Módulo 1] Bloquear rutas sensibles y escaneos.
   if (BLOQUEAR(pathname)) {
+    return new NextResponse("Forbidden", { status: 403 });
+  }
+
+  // [Módulo 1] Bloquear bots maliciosos.
+  const ua = req.headers.get("user-agent") ?? "";
+  if (ES_BOT_MALICIOSO(ua)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
   if (ES_PUBLICA(pathname)) return NextResponse.next();
 
-  // El portal se valida solo (token/clave contra la Edge Function), así que no
-  // se le exige la sesión de Supabase. Va ANTES del chequeo de cookies: si no,
-  // un jugador que llega por el enlace `?c=&k=` caería en `/login` y perdería
-  // el enlace (ver el comentario de ES_PORTAL).
   if (ES_PORTAL(pathname) || ES_SALA(pathname)) return NextResponse.next();
 
   const usuario = req.cookies.get("hipico_usuario")?.value ?? "";
@@ -108,18 +101,8 @@ export function middleware(req: NextRequest) {
   const crudo = req.cookies.get("hipico_permisos")?.value;
   const acceso = req.cookies.get("hipico_acceso")?.value;
 
-  // 1) Sesión verificada SIN permisos: se explica el motivo en el login.
-  //    Va ANTES del chequeo de cookies vacías porque este caso se publica con
-  //    perfil y permisos en blanco: si se preguntara por ellos primero, el
-  //    motivo se perdería y el operador vería el formulario limpio, como si su
-  //    contraseña hubiera estado mal.
-  //
-  //    El sello solo lo escribe el store después de resolver una sesión real
-  //    contra Supabase, y `salir()` lo borra: falsificarlo no abre nada, manda
-  //    al login.
   if (acceso === "sin") return irA("/login", "sin-accesos");
 
-  // 2) Sin sesión: al login. No se entra a nada sin haber pasado por /login.
   if (!perfil || !crudo || !usuario) return irA("/login");
 
   let permisos: Set<string>;
@@ -129,36 +112,20 @@ export function middleware(req: NextRequest) {
     permisos = new Set();
   }
 
-  // 3) El usuario principal entra a todo. Se lee el IDENTIFICADOR, no el perfil:
-  //    el perfil del principal es "admin" (su tipo), igual que el de cualquier
-  //    otro administrador, y comparando el perfil nunca se distinguían.
   if (esUsuarioPrincipal(usuario)) return NextResponse.next();
 
-  // 4) Cliente/jugador puro: solo el portal.
   if (esRolCliente(perfil, permisos)) {
     if (pathname === "/portal" || pathname.startsWith("/portal/")) return NextResponse.next();
     return irA("/portal");
   }
 
-  // 5) Operador exclusivo: sólo puede operar dentro de su grupo y en las rutas de su operativa
   if (esRolOperadorExclusivo(perfil)) {
     if (!esRutaPermitidaOperador(pathname)) {
       return irA("/apuestas");
     }
   }
 
-  // 6) Cada ruta exige su capacidad. La decisión la toma `rutaPermitida`, la
-  //    MISMA función que usa `RutaProtegida` en el cliente: si las dos capas
-  //    decidieran distinto, el usuario vería la página que el middleware dejó
-  //    pasar o la redirección que el cliente ya había rechazado.
-  //
-  //    Una ruta NO registrada se NIEGA. Antes pasaba de largo: una página nueva
-  //    sin declarar en PUERTAS se abría por URL directa sin comprobar nada.
   if (!rutaPermitida(pathname, permisos)) {
-    // A la PRIMERA ruta que el usuario puede abrir. `/dashboard` fijo era un
-    // bucle: exige `general:ruta_dashboard`, que un operador de Taquilla o de
-    // Marcas no tiene, así que lo echaba de /dashboard a /dashboard para
-    // siempre. Sin ninguna ruta posible se vuelve al login.
     const destino = primeraRutaPermitida(permisos);
     if (!destino) return irA("/login", "sin-accesos");
     return irA(destino);
@@ -168,14 +135,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Todo el sitio menos la raíz, /login y los archivos estáticos. El portal SÍ
-  // pasa por el matcher, pero `middleware()` lo deja pasar sin sesión porque se
-  // autentica con su propio token (ver ES_PORTAL).
-  //
-  // El segundo patrón existe PORQUE el primero se salta todo lo que tenga un
-  // punto (`.*\..*`), y los archivos dangerousos del repo (`*.sql`, `*.mjs`,
-  // `*.cjs`) tienen punto en el nombre. Sin esta entrada, un `GET /algo.sql`
-  // se escapaba del middleware por el matcher y lo servía el servidor de
-  // archivos en vez de recibir el 403 de `BLOQUEAR`.
   matcher: ["/((?!login|verificacion|_next|favicon.ico|.*\\..*).*)", "/:path*\\.(sql|mjs|cjs)"],
 };

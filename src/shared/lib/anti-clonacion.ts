@@ -1,11 +1,17 @@
 /**
- * Módulo de Seguridad Anti-Clonación y Anti-Hackeo
- * ------------------------------------------------
+ * Módulo de Seguridad Anti-Clonación, Anti-Hackeo y Sesión Única en Cliente
+ * -------------------------------------------------------------------------
  * Proporciona defensas activas en el navegador contra clonación de interfaz,
- * clickjacking en iframes externos y ataques de suplantación.
+ * clickjacking en iframes externos, ataques de suplantación y concurrencia.
  */
 
-export function activarProteccionAntiClonacion(): void {
+let canalSesionUnica: BroadcastChannel | null = null;
+
+export function activarProteccionAntiClonacion(opts?: {
+  usuarioId?: string;
+  sesionId?: string;
+  onSesionDuplicada?: () => void;
+}): void {
   if (typeof window === "undefined") return;
 
   // 1. Anti-Clickjacking / Anti-Iframe:
@@ -13,19 +19,15 @@ export function activarProteccionAntiClonacion(): void {
   // rompemos el iframe para forzar la navegación directa en la ventana principal.
   try {
     if (window.top && window.top !== window.self) {
-      // Intentamos comprobar el origen del padre
       const esMismoOrigen = window.top.location.origin === window.self.location.origin;
       if (!esMismoOrigen) {
         window.top.location.href = window.self.location.href;
       }
     }
   } catch {
-    // Si saltó error por política de mismo origen (Cross-Origin Frame),
-    // significa que el padre es definitivamente un dominio externo malicioso.
     try {
       window.top!.location.href = window.self.location.href;
     } catch {
-      // Bloquear el cuerpo de la página para que no pueda ser usada
       document.body.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0f172a;color:#f8fafc;font-family:sans-serif;text-align:center;padding:20px;">
           <div>
@@ -35,5 +37,54 @@ export function activarProteccionAntiClonacion(): void {
         </div>
       `;
     }
+  }
+
+  // 2. Coordinación de Sesión Única y Anti-Concurrencia (BroadcastChannel entre pestañas/ventanas)
+  if (typeof BroadcastChannel !== "undefined" && opts?.usuarioId && opts?.sesionId) {
+    if (canalSesionUnica) {
+      try { canalSesionUnica.close(); } catch { /* ignore */ }
+    }
+
+    try {
+      canalSesionUnica = new BroadcastChannel(`sesion_unica_${opts.usuarioId}`);
+      canalSesionUnica.onmessage = (event) => {
+        const data = event.data;
+        if (data && data.tipo === "NUEVA_SESION_INICIADA" && data.sesionId !== opts.sesionId) {
+          // Otra pestaña o ventana del mismo navegador inició sesión con este usuario
+          if (opts.onSesionDuplicada) {
+            opts.onSesionDuplicada();
+          }
+        }
+      };
+
+      // Anunciar nuestra sesión activa
+      canalSesionUnica.postMessage({
+        tipo: "NUEVA_SESION_INICIADA",
+        sesionId: opts.sesionId,
+        timestamp: Date.now(),
+      });
+    } catch {
+      /* BroadcastChannel no disponible o restringido */
+    }
+  }
+}
+
+/**
+ * Notifica a otras pestañas que una nueva sesión fue autenticada.
+ */
+export function notificarInicioSesionUnica(usuarioId: string, sesionId: string): void {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return;
+  try {
+    const canal = new BroadcastChannel(`sesion_unica_${usuarioId}`);
+    canal.postMessage({
+      tipo: "NUEVA_SESION_INICIADA",
+      sesionId,
+      timestamp: Date.now(),
+    });
+    setTimeout(() => {
+      try { canal.close(); } catch { /* ignore */ }
+    }, 1000);
+  } catch {
+    /* ignore */
   }
 }

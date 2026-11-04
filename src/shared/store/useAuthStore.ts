@@ -23,6 +23,15 @@ import { leerMiGrupo } from "@/features/seguridad/lib/grupo-usuario";
 import { CAPACIDADES, CAPACIDADES_POR_CLAVE, esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
 import { limpiarAccesosVigentes, setAccesosVigentes, setGrupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import type { ExcepcionUsuario, TipoUsuario } from "@/features/seguridad/lib/tipos";
+import { obtenerIpCliente } from "@/shared/lib/ip-detector";
+import {
+  generarSesionIdSeguro,
+  invalidarSesionesPrevias,
+  iniciarHeartbeatSesion,
+  detenerHeartbeatSesion,
+  registrarCambioIpSesion,
+} from "@/features/seguridad/lib/seguimiento-usuarios";
+import { activarProteccionAntiClonacion, notificarInicioSesionUnica } from "@/shared/lib/anti-clonacion";
 
 const CLAVE_PERFIL = "hipico_perfil";
 const CLAVE_PERMISOS = "hipico_permisos";
@@ -119,6 +128,53 @@ const MS_CARGA_INICIAL = TIMEOUT_SESION_MS;
 
 /** Un arranque a la vez: las llamadas superpuestas se pegan al que ya corre. */
 let carreraCarga: Promise<void> | null = null;
+
+/**
+ * [Módulo 1] Activa la protección de sesión única, vinculación por IP
+ * y el latido continuo contra la tabla de presencia y eventos de auditoría.
+ */
+async function postLoginSesionUnica(id: string, nombre?: string, rol?: string, grupoId?: string) {
+  try {
+    const ip = await obtenerIpCliente();
+    const sesionId = generarSesionIdSeguro();
+    await invalidarSesionesPrevias(id);
+    notificarInicioSesionUnica(id, sesionId);
+
+    activarProteccionAntiClonacion({
+      usuarioId: id,
+      sesionId,
+      onSesionDuplicada: () => {
+        void useAuthStore.getState().salir(false);
+        useAuthStore.setState({
+          errorLogin: "⚠️ Sesión cerrada: Se ha iniciado sesión con esta cuenta en otro navegador o dispositivo.",
+        });
+      },
+    });
+
+    iniciarHeartbeatSesion({
+      sesionId,
+      usuarioId: id,
+      nombre,
+      rol,
+      grupoId,
+      ipInicial: ip,
+      onCambioIp: () => {
+        void registrarCambioIpSesion({
+          sesionId,
+          usuarioId: id,
+          ipOriginal: ip,
+          ipNueva: "IP_ALTERADA",
+        });
+        void useAuthStore.getState().salir(true);
+        useAuthStore.setState({
+          errorLogin: "⚠️ Sesión terminada por seguridad: Se detectó un cambio en tu dirección IP de conexión.",
+        });
+      },
+    });
+  } catch {
+    /* fallback seguro */
+  }
+}
 
 /**
  * Deja los permisos en cookies para que src/middleware.ts pueda bloquear rutas.
@@ -649,6 +705,7 @@ export const useAuthStore = create<EstadoAuth>()(
           grupoNombre: "Mi Grupo",
           grupoActivo,
         });
+        void postLoginSesionUnica("operador", "Operador", "OPERADOR", grupoActivo ?? "");
       },
 
       entrarComoOperadorGrupo: (op) => {
@@ -706,6 +763,7 @@ export const useAuthStore = create<EstadoAuth>()(
           grupoNombre: op.grupoNombre || "",
           grupoActivo: grupoEfectivo,
         });
+        void postLoginSesionUnica(op.id, op.nombre, "OPERADOR", grupoEfectivo || "");
       },
 
       iniciarSesion: async (identificador, clave) => {
@@ -756,6 +814,7 @@ export const useAuthStore = create<EstadoAuth>()(
               grupoNombre: "Todos los grupos",
               grupoActivo: null,
             });
+            void postLoginSesionUnica(uidPrincipal, "Julio Osorio", "admin", "");
             return true;
           }
         }
@@ -1001,6 +1060,7 @@ export const useAuthStore = create<EstadoAuth>()(
             veTodosLosGrupos: a.veTodosLosGrupos,
             grupoActivo: a.grupoActivo,
           });
+          void postLoginSesionUnica(id, a.tipoUsuario?.nombre || id, a.tipoUsuario?.nombre || "Usuario", a.grupoId);
           return true;
         } catch (e) {
           limpiarAccesosVigentes();
@@ -1061,6 +1121,7 @@ export const useAuthStore = create<EstadoAuth>()(
       },
 
       salir: async (cerrarSesionRemota = true) => {
+        detenerHeartbeatSesion();
         borrarCookiesDeAcceso();
         limpiarAccesosVigentes();
         guardarGrupoActivo(null);

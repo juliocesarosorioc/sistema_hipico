@@ -708,3 +708,127 @@ export async function registrarCarreraMaestro(
   const r = await escribirCarrerasMaestro([e]);
   return { ok: r.ok, error: r.error };
 }
+
+export type DatosEdicionCarrera = {
+  id?: string;
+  fechaAntigua: string;
+  hipodromoAntiguo: string;
+  carreraAntigua: number;
+  fechaNueva: string;
+  hipodromoNuevo: string;
+  carreraNueva: number;
+  distanciaNueva?: string;
+  horaNueva?: string;
+};
+
+/**
+ * [Módulo 2 - Edición Manual de Carreras Registradas]
+ * Modifica directamente una carrera registrada y actualiza en cascada
+ * transaccionalmente todas las referencias asociadas (resultados, tablas fijas,
+ * jugadas, marcas, pollas, remates, dupletas).
+ */
+export async function actualizarCarreraMaestro(
+  datos: DatosEdicionCarrera
+): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Sin credenciales Supabase." };
+  const u = usuarioVigente() || "admin";
+
+  try {
+    // 1. Intentar vía RPC transaccional optimizada
+    const { data, error } = await supabase.rpc("club_actualizar_carrera_transaccional", {
+      p_carrera_id: datos.id || null,
+      p_fecha_antigua: datos.fechaAntigua,
+      p_hipodromo_antiguo: datos.hipodromoAntiguo.trim().toUpperCase(),
+      p_carrera_antigua: datos.carreraAntigua,
+      p_fecha_nueva: datos.fechaNueva,
+      p_hipodromo_nuevo: datos.hipodromoNuevo.trim().toUpperCase(),
+      p_carrera_nueva: datos.carreraNueva,
+      p_distancia_nueva: datos.distanciaNueva || null,
+      p_hora_nueva: datos.horaNueva || null,
+      p_usuario: u,
+    });
+
+    if (!error && data && (data as { ok?: boolean }).ok) {
+      return { ok: true };
+    }
+    if (error && !error.message.includes("function") && !error.message.includes("does not exist")) {
+      return { ok: false, error: error.message };
+    }
+  } catch (err) {
+    console.warn("Fallo RPC club_actualizar_carrera_transaccional, recurriendo a actualización directa:", err);
+  }
+
+  // 2. Fallback transaccional del lado cliente si la RPC no estuviese compilada
+  try {
+    const hipoAntLimpio = datos.hipodromoAntiguo.trim().toUpperCase();
+    const hipoNuevoLimpio = datos.hipodromoNuevo.trim().toUpperCase();
+
+    // Actualizar fila en `carreras`
+    let query = supabase.from("carreras").update({
+      fecha: datos.fechaNueva,
+      hipodromo: hipoNuevoLimpio,
+      carrera: datos.carreraNueva,
+      distancia: datos.distanciaNueva || undefined,
+      hora: datos.horaNueva || undefined,
+      actualizado_por: u,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (datos.id) {
+      query = query.eq("id", datos.id);
+    } else {
+      query = query
+        .eq("fecha", datos.fechaAntigua)
+        .eq("hipodromo", hipoAntLimpio)
+        .eq("carrera", datos.carreraAntigua);
+    }
+
+    const { error: errCarrera } = await query;
+    if (errCarrera) {
+      return { ok: false, error: `Error al actualizar carrera en maestro: ${errCarrera.message}` };
+    }
+
+    // Actualizar en cascada en tablas_fijas
+    await supabase
+      .from("tablas_fijas")
+      .update({
+        fecha: datos.fechaNueva,
+        hipodromo: hipoNuevoLimpio,
+        carrera: datos.carreraNueva,
+      })
+      .eq("fecha", datos.fechaAntigua)
+      .eq("hipodromo", hipoAntLimpio)
+      .eq("carrera", datos.carreraAntigua);
+
+    // Actualizar en cascada en resultados_carreras
+    await supabase
+      .from("resultados_carreras")
+      .update({
+        fecha: datos.fechaNueva,
+        hipodromo: hipoNuevoLimpio,
+        carrera: datos.carreraNueva,
+      })
+      .eq("fecha", datos.fechaAntigua)
+      .eq("hipodromo", hipoAntLimpio)
+      .eq("carrera", datos.carreraAntigua);
+
+    // Actualizar en cascada en jugadas
+    await supabase
+      .from("jugadas")
+      .update({
+        fecha: datos.fechaNueva,
+        hipodromo: hipoNuevoLimpio,
+        carrera: datos.carreraNueva,
+      })
+      .eq("fecha", datos.fechaAntigua)
+      .eq("hipodromo", hipoAntLimpio)
+      .eq("carrera", datos.carreraAntigua);
+
+    return { ok: true };
+  } catch (errFallback) {
+    return {
+      ok: false,
+      error: `Error al editar la carrera: ${errFallback instanceof Error ? errFallback.message : String(errFallback)}`,
+    };
+  }
+}

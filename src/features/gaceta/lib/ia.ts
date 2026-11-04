@@ -74,10 +74,12 @@ const NACIONALIDADES = ["VE", "USA", "BR", "AR", "CL", "MX", "PA", "PE", "CO", "
 // sus ejemplares quedan con nacionalidad USA por defecto; los de Venezuela (o
 // no reconocidos, el programa es venezolano) quedan VE. Igual que el legacy.
 const HIPODROMOS_USA = [
-  "AQUEDUCT", "BELMONT PARK", "CHARLES TOWN", "CHURCHILL DOWNS", "DEL MAR",
-  "FAIR GROUNDS", "FINGER LAKES", "GOLDEN GATE FIELDS", "GULFSTREAM PARK",
-  "KEENELAND", "LAUREL PARK", "LOS ALAMITOS", "MONMOUTH PARK", "OAKLAWN PARK",
-  "PIMLICO", "SANTA ANITA", "SARATOGA", "TAMPA BAY DOWNS",
+  "AQUEDUCT", "BELMONT PARK", "CHARLES TOWN", "CHURCHILL DOWNS", "DELTA DOWNS",
+  "EVANGELINE DOWNS", "FAIR GROUNDS", "FINGER LAKES", "GOLDEN GATE FIELDS", "GULFSTREAM PARK",
+  "HAWTHORNE", "HORSESHOE INDIANAPOLIS", "KEENELAND", "LAUREL PARK", "LOS ALAMITOS",
+  "MAHONING VALLEY", "MONMOUTH PARK", "MOUNTAINEER", "OAKLAWN PARK", "PARX RACING",
+  "PENN NATIONAL", "PIMLICO", "REMINGTON PARK", "SANTA ANITA", "SARATOGA",
+  "SUNLAND PARK", "TAMPA BAY DOWNS", "TURF PARADISE", "WOODBINE", "DEL MAR",
 ];
 
 const SYS = `Eres el transcriptor oficial de máxima precisión para gacetas hípicas (Venezuela y Estados Unidos).
@@ -93,26 +95,31 @@ REGLAS CRÍTICAS DE ORDENAMIENTO Y COMPLETITUD OBLIGATORIA:
 3. COMPLETITUD TOTAL (CERO OMISIONES):
    - Extrae ABSOLUTAMENTE TODOS los ejemplares participantes de cada carrera sin omitir ninguno.
    - Si una carrera tiene 12 inscritos, el array de ejemplares debe contener exactamente los 12 participantes.
-   - Si el programa trae 10 carreras, el array "carreras" debe contener las 10 carreras.
+   - Incluye ejemplares elegibles (AE - Also Eligible), sólo pista principal (MTO - Main Track Only) y retirados (SCR) marcando su condición.
 4. DIFERENCIACIÓN OBLIGATORIA ENTRE DORSAL ("numero") Y PUESTO DE PISTA ("pp"):
-   - "numero": Número oficial de dorsal o gualdrapa con el que corre el ejemplar (columna principal, ej: 1, 2, 3...).
-   - "pp": Puesto de pista o cajón de partida en el partidor. En Venezuela o distancias de 1200m-1500m un ejemplar con dorsal 1 puede salir por el puesto de pista 6. NUNCA intercambies dorsal con PP.
-5. VENEZUELA (LA RINCONADA / VALENCIA - 5 Y 6):
+   - "numero": Número oficial de dorsal o gualdrapa con el que corre el ejemplar (columna principal, ej: 1, 2, 3, 13, 14).
+   - "pp": Puesto de pista o cajón de partida en el partidor. NUNCA intercambies dorsal con PP.
+5. EXTRACCIÓN Y NORMALIZACIÓN DE DISTANCIAS:
+   - Purasangres (Thoroughbreds): 1000m, 1100m, 1200m, 1300m, 1400m, 1500m, 1600m, 1700m, 1800m, 1900m, 2000m, 2200m, 2400m. Si viene en Furlongs (f): 5f=1000m, 5.5f=1100m, 6f=1200m, 6.5f=1300m, 7f=1400m, 8f/1m=1600m, 8.5f=1700m, 9f=1800m, 10f=2000m, 12f=2400m.
+   - Quarter Horses (Cuarto de Milla): 200m (220y), 228m (250y), 272m (300y), 300m (330y), 318m (350y), 364m (400y), 400m (440y), 500m (550y).
+6. EXTRACCIÓN AUTOMÁTICA DE FECHA DEL ENCABEZADO:
+   - Extrae la fecha de la reunión del encabezado de la página (ej: "04Nov26", "November 4, 2026", "Miércoles 4 de Noviembre 2026") y devuélvela en formato ISO YYYY-MM-DD.
+7. VENEZUELA (LA RINCONADA / VALENCIA - 5 Y 6):
    - Las carreras válidas del 5 y 6 (tituladas "1ª VÁLIDA", "2ª VÁLIDA", ..., "6ª VÁLIDA") NO reinician la numeración en 1.
-   - Mapea siempre al número correlativo general de la reunión (ej: Carrera 5 a 10, o Carrera 7 a 12 según las no válidas previas). La 1ª Válida nunca es Carrera 1 si hubo carreras ordinarias previas.
+   - Mapea siempre al número correlativo general de la reunión (ej: Carrera 5 a 10, o Carrera 7 a 12 según las no válidas previas).
 
 Estructura de salida JSON para cada carrera:
 - carrera: número entero de la carrera (1, 2, 3...)
-- hipodromo: nombre oficial en MAYÚSCULAS (ej: "LA RINCONADA", "GULFSTREAM PARK", "VALENCIA")
-- fecha: YYYY-MM-DD si es legible, si no null
-- distancia: distancia en metros (entero, ej: 1200, 1400, 1600)
+- hipodromo: nombre oficial en MAYÚSCULAS (ej: "CHURCHILL DOWNS", "CHARLES TOWN", "DELTA DOWNS", "LA RINCONADA", "VALENCIA")
+- fecha: YYYY-MM-DD si es legible en el encabezado, si no null
+- distancia: distancia en metros (entero, ej: 1200, 1400, 1600, 300, 364)
 - superficie: ARENA, CESPED, FANGO o TAPETA
 - premio: número si aparece, si no 0
 - ejemplares: lista de objetos con:
-  - numero: dorsal del caballo (1, 2, 3, 1A...)
+  - numero: dorsal del caballo (1, 2, 3, 1A, 13, 14...)
   - pp: puesto de pista (entero o null)
-  - nombre: nombre exacto en MAYÚSCULAS
-  - nacionalidad: VE, USA, etc.
+  - nombre: nombre exacto en MAYÚSCULAS (ej: "MAXIMUM SECURITY")
+  - nacionalidad: USA, VE, etc.
   - valor: 0
   - jockey, entrenador, peso, medicamento, implementos si aparecen legibles (si no, null).
 

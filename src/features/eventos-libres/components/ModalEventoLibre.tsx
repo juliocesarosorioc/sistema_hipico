@@ -5,6 +5,7 @@ import {
   cargarEventosLibres,
   crearEventoLibre,
   liquidarEventoLibre,
+  reversarOAnularEventoLibre,
   leerEventosLibresMemoria,
   type CategoriaDeporte,
   type EventoLibreRow,
@@ -156,6 +157,28 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
       setMontoGanancia("");
     } else {
       setMensaje(r.error || "Error al liquidar.");
+    }
+  };
+
+  const handleReversar = async (ev: EventoLibreRow) => {
+    const esLiquidado = ev.estado === "GANO_JUGADOR_1" || ev.estado === "GANO_JUGADOR_2";
+    const accion = esLiquidado ? "reversar la liquidación y restaurar los saldos y asientos contables" : "anular este evento";
+    if (!confirm(`¿Está seguro de que desea ${accion} del evento "${ev.concepto}"?`)) {
+      return;
+    }
+    setGuardando(true);
+    const r = await reversarOAnularEventoLibre({
+      eventoId: ev.id,
+      motivo: "Anulación / Reversión manual desde taquilla",
+    });
+    setGuardando(false);
+
+    if (r.ok) {
+      setEventos(leerEventosLibresMemoria());
+      setMensaje(`✅ Evento "${ev.concepto}" anulado/reversado con éxito.`);
+      setEventoEnLiquidacion("");
+    } else {
+      setMensaje(r.error || "Error al anular/reversar el evento.");
     }
   };
 
@@ -432,6 +455,14 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
                             >
                               🤝 Empate / Nulo
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleReversar(ev)}
+                              disabled={guardando}
+                              className="rounded-lg bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                            >
+                              ❌ Anular Evento
+                            </button>
                           </div>
                           {eventoEnLiquidacion === ev.id && (
                             <div className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
@@ -490,8 +521,20 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
                           )}
                         </div>
                       ) : (
-                        <div className="text-[10px] text-slate-500 font-mono">
-                          Ganancia bruta: ${ev.montoLiquidadoGanador?.toFixed(2)} · Comisión Casa: ${ev.comisionCobrada?.toFixed(2)} · Incentivo: ${ev.incentivoAcreditado?.toFixed(2)} · Socio: ${ev.comisionSocioAcreditada?.toFixed(2)}
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 w-full">
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            Ganancia bruta: ${ev.montoLiquidadoGanador?.toFixed(2)} · Comisión Casa: ${ev.comisionCobrada?.toFixed(2)} · Incentivo: ${ev.incentivoAcreditado?.toFixed(2)} · Socio: ${ev.comisionSocioAcreditada?.toFixed(2)}
+                          </div>
+                          {ev.estado !== "ANULADA" && (
+                            <button
+                              type="button"
+                              onClick={() => void handleReversar(ev)}
+                              disabled={guardando}
+                              className="rounded-lg bg-rose-600 px-2.5 py-1 text-[10px] font-black uppercase text-white shadow hover:bg-rose-700 disabled:opacity-50"
+                            >
+                              🔄 Reversar / Anular
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

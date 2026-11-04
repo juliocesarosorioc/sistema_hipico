@@ -548,3 +548,117 @@ export async function liquidarEventoLibre(params: {
 
   return { ok: true, resultado: resUnificado };
 }
+
+
+/**
+ * [Módulo 3 - Reversión / Anulación Atómica de Eventos Libres]
+ * Restaura los saldos de los clientes, revierte asientos contables NIIF y marca el evento como ANULADA.
+ */
+export async function reversarOAnularEventoLibre(params: {
+  eventoId: string;
+  motivo?: string;
+  usuario?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const lista = leerEventosLibresMemoria();
+  const ev = lista.find((e) => e.id === params.eventoId);
+  if (!ev) {
+    return { ok: false, error: "Evento libre no encontrado." };
+  }
+
+  const estadoPrevio = ev.estado;
+  const montoGanancia = ev.montoLiquidadoGanador ?? 0;
+  const ganoJ1 = estadoPrevio === "GANO_JUGADOR_1";
+  const ganoJ2 = estadoPrevio === "GANO_JUGADOR_2";
+  const estabaLiquidado = ganoJ1 || ganoJ2;
+
+  // 1. Restaurar saldos de clientes si estaba liquidado
+  if (supabase && estabaLiquidado && montoGanancia > 0) {
+    try {
+      const ganadorId = ganoJ1 ? ev.jugador1Id : ev.jugador2Id;
+      const perdedorId = ganoJ1 ? ev.jugador2Id : ev.jugador1Id;
+      const gananciaNeta = ev.gananciaNetaGanador ?? montoGanancia;
+
+      // Restar ganancia neta al ganador
+      const { data: cGan } = await supabase.from("clientes").select("saldo_actual").eq("id", ganadorId as never).maybeSingle();
+      if (cGan) {
+        const actGan = Number(cGan.saldo_actual || 0);
+        await supabase.from("clientes").update({ saldo_actual: restarDinero(actGan, gananciaNeta) }).eq("id", ganadorId as never);
+      }
+
+      // Devolver pérdida al perdedor
+      const { data: cPer } = await supabase.from("clientes").select("saldo_actual").eq("id", perdedorId as never).maybeSingle();
+      if (cPer) {
+        const actPer = Number(cPer.saldo_actual || 0);
+        await supabase.from("clientes").update({ saldo_actual: sumarDinero(actPer, montoGanancia) }).eq("id", perdedorId as never);
+      }
+
+      // Revertir asiento contable NIIF si se había registrado
+      await generarAsientoPartidaDoble({
+        fecha_contable: ev.fecha,
+        tipo_evento: "REVERSION_EVENTO_LIBRE",
+        referencia_id: `REV:${ev.id}`,
+        clave_idempotencia: `EVLIBRE:REV:${ev.id}`,
+        descripcion: `Reversión / Anulación Evento Libre: ${ev.concepto} (${params.motivo || "Anulación manual"})`,
+        lineas: [
+          {
+            cuenta_codigo: "2.1.01.001",
+            cliente_id: String(ganadorId),
+            debe: gananciaNeta,
+            haber: 0,
+            concepto: `Reversión premio ganado - ${ganoJ1 ? ev.jugador1Nombre : ev.jugador2Nombre}`,
+          },
+          {
+            cuenta_codigo: "2.1.01.001",
+            cliente_id: String(perdedorId),
+            debe: 0,
+            haber: montoGanancia,
+            concepto: `Restauración saldo por anulación - ${ganoJ1 ? ev.jugador2Nombre : ev.jugador1Nombre}`,
+          },
+          {
+            cuenta_codigo: "4.1.01.001",
+            debe: ev.comisionCobrada ?? 0,
+            haber: 0,
+            concepto: `Reversión comisión casa Evento Libre - ${ev.concepto}`,
+          },
+        ],
+      });
+    } catch (e) {
+      console.warn("Fallo en reversión contable/saldos de Evento Libre:", e);
+    }
+  }
+
+  // 2. Actualizar estado a ANULADA
+  ev.estado = "ANULADA";
+  ev.ganadorSeleccionado = null;
+  ev.actualizadoEn = new Date().toISOString();
+  guardarEventosLibresMemoria(lista);
+
+  if (supabase) {
+    try {
+      await supabase
+        .from("apuestas_eventos_especiales")
+        .update({
+          estado: "ANULADA",
+          ganador_seleccionado: false,
+          fecha_liquidacion: null,
+          nota: `EVENTO_LIBRE_P2P:${JSON.stringify(ev)}`,
+        })
+        .eq("id", ev.id);
+
+      await supabase
+        .from("tickets_apuestas")
+        .update({
+          estado: "Anulada",
+          anulada: true,
+          monto_decidido: 0,
+          premio_pagar: 0,
+          comision_pagada: 0,
+        })
+        .ilike("nota_auditoria", `%"id":"${ev.id}"%`);
+    } catch (eDb) {
+      console.warn("Fallo actualizando BD para reversión:", eDb);
+    }
+  }
+
+  return { ok: true };
+}

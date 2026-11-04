@@ -3,18 +3,18 @@
 // ============================================================================
 
 const MESES: Record<string, number> = {
-  enero: 1, ene: 1,
-  febrero: 2, feb: 2,
-  marzo: 3, mar: 3,
-  abril: 4, abr: 4,
+  enero: 1, ene: 1, jan: 1, january: 1,
+  febrero: 2, feb: 2, february: 2,
+  marzo: 3, mar: 3, march: 3,
+  abril: 4, abr: 4, apr: 4, april: 4,
   mayo: 5, may: 5,
-  junio: 6, jun: 6,
-  julio: 7, jul: 7,
-  agosto: 8, ago: 8,
-  septiembre: 9, setiembre: 9, sep: 9, sept: 9,
-  octubre: 10, oct: 10,
-  noviembre: 11, nov: 11,
-  diciembre: 12, dic: 12,
+  junio: 6, jun: 6, june: 6,
+  julio: 7, jul: 7, july: 7,
+  agosto: 8, ago: 8, aug: 8, august: 8,
+  septiembre: 9, setiembre: 9, sep: 9, sept: 9, september: 9,
+  octubre: 10, oct: 10, october: 10,
+  noviembre: 11, nov: 11, november: 11,
+  diciembre: 12, dic: 12, dec: 12, december: 12,
 };
 
 export type LecturaFecha = {
@@ -58,6 +58,32 @@ export function interpretarFecha(v: unknown): LecturaFecha {
 
   const iso = desdeIsoConHora(s);
   if (iso) return { iso, ambigua: false, alternativas: [iso], motivo: null };
+
+  // Retrospectos USA formato compacto: 04Nov26 o 4Nov2026 o 04-Nov-26
+  const compactoUsa = /^(\d{1,2})[-_]?([a-zA-Z]{3,9})[-_]?(\d{2,4})$/.exec(s);
+  if (compactoUsa) {
+    const d = Number(compactoUsa[1]);
+    const m = MESES[compactoUsa[2].toLowerCase()];
+    let y = Number(compactoUsa[3]);
+    if (y < 100) y += 2000;
+    if (m) {
+      const r = isoDe(y, m, d);
+      if (r) return { iso: r, ambigua: false, alternativas: [r], motivo: null };
+    }
+  }
+
+  // Retrospectos USA formato con coma: Nov 04, 2026 o Nov 4 2026
+  const mesDiaUsa = /^([a-zA-Z]{3,9})\s+(\d{1,2}),?\s*(\d{2,4})$/.exec(s);
+  if (mesDiaUsa) {
+    const m = MESES[mesDiaUsa[1].toLowerCase()];
+    const d = Number(mesDiaUsa[2]);
+    let y = Number(mesDiaUsa[3]);
+    if (y < 100) y += 2000;
+    if (m) {
+      const r = isoDe(y, m, d);
+      if (r) return { iso: r, ambigua: false, alternativas: [r], motivo: null };
+    }
+  }
 
   const conMes = /^[\p{L}\s,]*?(\d{1,2})\s*(?:de\s+|del\s+)?([\p{L}]+)\.?\s*(?:de\s+|del\s+)?(\d{4})\s*$/u.exec(s);
   if (conMes) {

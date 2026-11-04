@@ -85,43 +85,67 @@ const enGitHubActions = process.env.GITHUB_ACTIONS === "true";
  * desarrollo los evalúa; en producción `'unsafe-eval'` no es necesario y
  * queda anotado para retirarlo cuando se pueda medir.
  */
+/**
+ * [Módulo 1] Cabeceras de seguridad reforzadas.
+ *
+ * Cambios respecto a la versión anterior:
+ *  - X-Frame-Options: cambiado de SAMEORIGIN a DENY (Anti-Clickjacking total).
+ *  - Permissions-Policy: eliminado `unload=*` que no es una directiva estándar.
+ *  - CSP: script-src y script-src-elem ya no permiten `https:` abierto; solo
+ *    dominios explícitamente declarados (Supabase, Gemini, Cloudflare Turnstile,
+ *    jsDelivr para el worker de pdfjs-dist que se carga en el cliente).
+ */
 const cabecerasSeguridad = [
   {
     source: "/:path*",
     headers: [
       {
         key: "Strict-Transport-Security",
-        value: "max-age=31536000; includeSubDomains; preload",
+        value: "max-age=63072000; includeSubDomains; preload",
       },
-      { key: "X-Frame-Options", value: "SAMEORIGIN" },
+      // Anti-Clickjacking total: ningún frame externo ni propio puede embeber la app.
+      { key: "X-Frame-Options", value: "DENY" },
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       {
         key: "Permissions-Policy",
-        value: "camera=(), microphone=(), geolocation=(), unload=*",
+        value: "camera=(), microphone=(), geolocation=()",
       },
       {
         key: "Content-Security-Policy",
         value: [
           "default-src 'self'",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
-          "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https:",
-          "style-src 'self' 'unsafe-inline' https: data:",
-          "style-src-elem 'self' 'unsafe-inline' https: data:",
+          // unsafe-inline es necesario para Next.js (estilos en línea e hidratación).
+          // unsafe-eval solo en desarrollo; en producción se puede restringir más.
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://challenges.cloudflare.com https://www.google.com https://www.gstatic.com",
+          "script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://challenges.cloudflare.com https://www.google.com https://www.gstatic.com",
+          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+          "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
           "img-src 'self' data: blob: https:",
-          "font-src 'self' data: https:",
-          "connect-src 'self' https: wss: https://*.supabase.co wss://*.supabase.co https://generativelanguage.googleapis.com",
-          "frame-ancestors 'self'",
+          "font-src 'self' data: https://fonts.gstatic.com",
+          // connect-src restringido a dominios reales que usa la app:
+          "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://generativelanguage.googleapis.com https://api64.ipify.org https://api.ipify.org https://challenges.cloudflare.com",
+          // frame-ancestors DENY: ningún sitio puede embeber esta app en un iframe.
+          "frame-ancestors 'none'",
+          "frame-src https://challenges.cloudflare.com https://www.google.com",
           "base-uri 'self'",
           "form-action 'self'",
+          "object-src 'none'",
+          "worker-src 'self' blob: https://cdn.jsdelivr.net",
         ].join("; "),
       },
+      // Ocultar tecnología de servidor completamente.
+      { key: "X-Powered-By", value: "" },
     ],
   },
 ];
 
 const nextConfig = {
   reactStrictMode: true,
+  // [Módulo 1] Deshabilitar Source Maps en producción para proteger el código fuente.
+  // Los source maps revelan el TypeScript original en las DevTools del navegador.
+  productionBrowserSourceMaps: false,
+  // [Módulo 1] Ocultar cabecera X-Powered-By (ya oculta con poweredByHeader: false).
   poweredByHeader: false,
   ...(esExportEstatico
     ? { output: "export", trailingSlash }

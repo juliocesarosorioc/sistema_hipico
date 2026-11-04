@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Centralización de resultados de carreras del día.
  * La tabla public.resultados_carreras (paquete SQL, RLS off) es la fuente de
  * verdad compartida entre módulos: los resultados + pizarra se persistén aquí
@@ -10,7 +10,7 @@ import { exigirCapacidad, tieneCapacidad } from "@/features/seguridad/lib/vigent
 import { puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
 import { useCarrerasDiaStore, type CarreraDelDia } from "@/shared/store/useCarrerasDiaStore";
 import { claveCarrera } from "@/features/carreras/lib/claves";
-import { registrarCarreraMaestro, ordenarPorNumero } from "@/features/carreras/lib/maestro";
+import { registrarCarreraMaestro, ordenarPorNumero, actualizarCarreraMaestro, type DatosEdicionCarrera } from "@/features/carreras/lib/maestro";
 import { hoyLocal, type CaballoPrograma } from "@/features/gaceta/lib/programa";
 
 export type ResultadoCentralInput = {
@@ -654,4 +654,44 @@ export async function revertirResultadoCentral(input: {
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
+}
+
+
+/**
+ * [Módulo 2] Edita manualmente una carrera en la base de datos y sincroniza el store local.
+ */
+export async function editarCarreraRegistrada(
+  datos: DatosEdicionCarrera
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await actualizarCarreraMaestro(datos);
+  if (!res.ok) return res;
+
+  // Actualizar store reactivo en el cliente
+  try {
+    const store = useCarrerasDiaStore.getState();
+    const carreras = [...store.carreras];
+    const hipAnt = datos.hipodromoAntiguo.trim().toUpperCase();
+    const hipNuevo = datos.hipodromoNuevo.trim().toUpperCase();
+
+    const idx = carreras.findIndex(
+      (c) =>
+        c.fecha === datos.fechaAntigua &&
+        c.hipodromo.trim().toUpperCase() === hipAnt &&
+        Number(c.carrera) === Number(datos.carreraAntigua)
+    );
+
+    if (idx >= 0) {
+      carreras[idx] = {
+        ...carreras[idx],
+        fecha: datos.fechaNueva,
+        hipodromo: hipNuevo,
+        carrera: Number(datos.carreraNueva),
+      };
+      useCarrerasDiaStore.setState({ carreras });
+    }
+  } catch {
+    /* ignore store update */
+  }
+
+  return { ok: true };
 }

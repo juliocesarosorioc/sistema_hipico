@@ -1,5 +1,6 @@
 /**
  * Utilidades de seguridad cliente/servidor compartidas (OWASP ASVS aligned)
+ * [Módulo 1 - Blindaje de Seguridad y Anti-Hackeo]
  */
 
 export type FortalezaClave = {
@@ -9,13 +10,32 @@ export type FortalezaClave = {
   suggestions: string[];
 };
 
+/**
+ * Sanitiza texto general contra XSS e inyecciones de código.
+ */
 export function sanitizarTexto(input: unknown, max = 200): string {
   if (typeof input !== "string") return "";
   return input
     .replace(/[\u0000-\u001F\u007F-\u009F]/g, "")
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
     .replace(/javascript:/gi, "")
+    .replace(/vbscript:/gi, "")
+    .replace(/data:text\/html/gi, "")
     .replace(/on\w+\s*=/gi, "")
+    .trim()
+    .slice(0, max);
+}
+
+/**
+ * Sanitiza inputs contra inyección SQL básica cuando se construyen filtros.
+ */
+export function sanitizarSqlParam(input: unknown, max = 100): string {
+  if (typeof input !== "string") return "";
+  return input
+    .replace(/[\u0000\n\r\t]/g, " ")
+    .replace(/['";\\]/g, "")
+    .replace(/--|\/\*|\*\//g, "")
+    .replace(/\b(union\s+select|insert\s+into|drop\s+table|delete\s+from|update\s+set|exec\s*\(|xp_)\b/gi, "")
     .trim()
     .slice(0, max);
 }
@@ -91,9 +111,9 @@ export class RateLimiterCliente {
   private bloqueadoHasta: number = 0;
 
   constructor(
-    private maxIntentos = 5,
+    private maxIntentos = 3,
     private ventanaMs = 5 * 60 * 1000,
-    private bloqueoMs = 15 * 60 * 1000
+    private bloqueoMs = 30 * 60 * 1000
   ) {}
 
   puedeIntentar(): { ok: boolean; segundosRestantes?: number } {
@@ -126,4 +146,34 @@ export function generarTokenCsrf(): string {
     return crypto.randomUUID();
   }
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
+}
+
+/**
+ * [Módulo 1 - Auditoría de Secretos]:
+ * Verifica que ninguna clave privada de infraestructura esté expuesta en variables
+ * cliente con prefijo NEXT_PUBLIC_.
+ */
+export function verificarSeguridadEntorno(): { segura: boolean; violaciones: string[] } {
+  const violaciones: string[] = [];
+
+  if (typeof process !== "undefined" && process.env) {
+    for (const [key] of Object.entries(process.env)) {
+      if (key.startsWith("NEXT_PUBLIC_")) {
+        const lower = key.toLowerCase();
+        if (
+          lower.includes("service_role") ||
+          lower.includes("secret") ||
+          lower.includes("private_key") ||
+          lower.includes("db_pass")
+        ) {
+          violaciones.push(key);
+        }
+      }
+    }
+  }
+
+  return {
+    segura: violaciones.length === 0,
+    violaciones,
+  };
 }

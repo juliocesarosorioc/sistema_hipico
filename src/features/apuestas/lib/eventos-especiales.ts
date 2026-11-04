@@ -9,6 +9,8 @@
 
 import { supabase } from "@/core/supabase";
 import { hoyLocal } from "@/core/utils/fechas";
+import { generarAsientoPartidaDoble } from "@/features/contabilidad/lib/plan-cuentas";
+import { sumarDinero, restarDinero } from "@/shared/lib/dinero";
 
 export type EstadoApuestaEspecial = "PENDIENTE" | "GANADOR" | "PERDEDOR" | "ANULADA";
 
@@ -189,6 +191,28 @@ export async function registrarApuestaEventoEspecial(datos: {
     return { ok: false, error: "El monto de la apuesta debe ser mayor a 0." };
   }
 
+  // Validación de saldo disponible y aval en tiempo real
+  if (datos.cliente_id && supabase) {
+    try {
+      const { data: cli } = await supabase
+        .from("clientes")
+        .select("id, nombre, saldo_actual, aval")
+        .eq("id", datos.cliente_id as never)
+        .maybeSingle();
+      if (cli) {
+        const disponible = (Number(cli.saldo_actual) || 0) + (Number(cli.aval) || 0);
+        if (datos.monto > disponible) {
+          return {
+            ok: false,
+            error: `Saldo insuficiente para ${cli.nombre}. Disponible: $${disponible.toFixed(2)} (Saldo: $${Number(cli.saldo_actual).toFixed(2)}, Aval: $${Number(cli.aval).toFixed(2)}).`,
+          };
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   const fechaEfectiva = datos.fecha || hoyLocal();
   const pagoEstimado =
     datos.pago_potencial !== undefined && datos.pago_potencial > 0
@@ -246,10 +270,12 @@ export async function registrarApuestaEventoEspecial(datos: {
 
 /**
  * Selecciona o actualiza el estado de una apuesta (Ganador / Perdedor / Pendiente / Anulada)
+ * Ejecuta liquidación exacta o reversión atómica de saldos y asientos contables NIIF de partida doble.
  */
 export async function actualizarEstadoEventoEspecial(
   id: string,
-  nuevoEstado: EstadoApuestaEspecial
+  nuevoEstado: EstadoApuestaEspecial,
+  motivo?: string
 ): Promise<{ ok: boolean; error?: string }> {
   const actuales = leerLocal();
   const idx = actuales.findIndex((a) => a.id === id);
@@ -257,7 +283,10 @@ export async function actualizarEstadoEventoEspecial(
     return { ok: false, error: "Apuesta no encontrada." };
   }
 
+  const apuesta = actuales[idx];
+  const estadoAnterior = apuesta.estado;
   const ahora = new Date().toISOString();
+
   actuales[idx].estado = nuevoEstado;
   actuales[idx].ganador_seleccionado = nuevoEstado === "GANADOR";
   actuales[idx].fecha_liquidacion = nuevoEstado !== "PENDIENTE" ? ahora : null;
@@ -274,10 +303,124 @@ export async function actualizarEstadoEventoEspecial(
           ganador_seleccionado: nuevoEstado === "GANADOR",
           fecha_liquidacion: nuevoEstado !== "PENDIENTE" ? ahora : null,
           actualizado_en: ahora,
+          nota: motivo ? `${apuesta.nota ? apuesta.nota + " | " : ""}${motivo}` : apuesta.nota,
         })
         .eq("id", id);
-    } catch {
-      /* ignore */
+
+      // Impacto en saldo del cliente y registro contable NIIF de partida doble
+      if (apuesta.cliente_id) {
+        const cId = apuesta.cliente_id;
+        const { data: cli } = await supabase
+          .from("clientes")
+          .select("saldo_actual, nombre")
+          .eq("id", cId as never)
+          .maybeSingle();
+
+        if (cli) {
+          const saldoPrevio = Number(cli.saldo_actual || 0);
+
+          if (nuevoEstado === "GANADOR" && estadoAnterior !== "GANADOR") {
+            const gananciaNeta = Math.max(0, apuesta.pago_potencial - apuesta.monto);
+            await supabase
+              .from("clientes")
+              .update({ saldo_actual: sumarDinero(saldoPrevio, gananciaNeta) })
+              .eq("id", cId as never);
+
+            await generarAsientoPartidaDoble({
+              fecha_contable: apuesta.fecha,
+              tipo_evento: "PREMIO_EVENTO_ESPECIAL",
+              referencia_id: `ESP:${apuesta.id}`,
+              clave_idempotencia: `ESP:GAN:${apuesta.id}`,
+              descripcion: `Premio Evento Especial: ${apuesta.evento} (${apuesta.cliente_nombre})`,
+              lineas: [
+                {
+                  cuenta_codigo: "5.1.01.001",
+                  debe: gananciaNeta,
+                  haber: 0,
+                  concepto: `Gasto Premio Ganador Evento Especial - ${apuesta.evento}`,
+                },
+                {
+                  cuenta_codigo: "2.1.01.001",
+                  cliente_id: apuesta.cliente_id,
+                  cliente_nombre: apuesta.cliente_nombre,
+                  debe: 0,
+                  haber: gananciaNeta,
+                  concepto: `Premio acreditado - ${apuesta.cliente_nombre}`,
+                },
+              ],
+            });
+          } else if (nuevoEstado === "PERDEDOR" && estadoAnterior !== "PERDEDOR") {
+            await supabase
+              .from("clientes")
+              .update({ saldo_actual: restarDinero(saldoPrevio, apuesta.monto) })
+              .eq("id", cId as never);
+
+            await generarAsientoPartidaDoble({
+              fecha_contable: apuesta.fecha,
+              tipo_evento: "PERDIDA_EVENTO_ESPECIAL",
+              referencia_id: `ESP:${apuesta.id}`,
+              clave_idempotencia: `ESP:PERD:${apuesta.id}`,
+              descripcion: `Cobro apuesta perdida Evento Especial: ${apuesta.evento} (${apuesta.cliente_nombre})`,
+              lineas: [
+                {
+                  cuenta_codigo: "1.2.02.001",
+                  cliente_id: apuesta.cliente_id,
+                  cliente_nombre: apuesta.cliente_nombre,
+                  debe: apuesta.monto,
+                  haber: 0,
+                  concepto: `Cobro apuesta perdida Evento Especial - ${apuesta.cliente_nombre}`,
+                },
+                {
+                  cuenta_codigo: "4.1.01.001",
+                  debe: 0,
+                  haber: apuesta.monto,
+                  concepto: `Ingreso apuestas deportivas/especiales - ${apuesta.evento}`,
+                },
+              ],
+            });
+          } else if (nuevoEstado === "ANULADA" || nuevoEstado === "PENDIENTE") {
+            // Reversar estado anterior si estaba liquidado
+            if (estadoAnterior === "GANADOR") {
+              const gananciaNeta = Math.max(0, apuesta.pago_potencial - apuesta.monto);
+              await supabase
+                .from("clientes")
+                .update({ saldo_actual: restarDinero(saldoPrevio, gananciaNeta) })
+                .eq("id", cId as never);
+            } else if (estadoAnterior === "PERDEDOR") {
+              await supabase
+                .from("clientes")
+                .update({ saldo_actual: sumarDinero(saldoPrevio, apuesta.monto) })
+                .eq("id", cId as never);
+            }
+
+            await generarAsientoPartidaDoble({
+              fecha_contable: apuesta.fecha,
+              tipo_evento: "REVERSION_EVENTO_ESPECIAL",
+              referencia_id: `REV:ESP:${apuesta.id}`,
+              clave_idempotencia: `ESP:REV:${apuesta.id}`,
+              descripcion: `Reversión / Anulación Evento Especial: ${apuesta.evento} (${apuesta.cliente_nombre})`,
+              lineas: [
+                {
+                  cuenta_codigo: "2.1.01.001",
+                  cliente_id: apuesta.cliente_id,
+                  cliente_nombre: apuesta.cliente_nombre,
+                  debe: apuesta.monto,
+                  haber: 0,
+                  concepto: `Reversión contable saldo cliente - ${apuesta.cliente_nombre}`,
+                },
+                {
+                  cuenta_codigo: "4.1.01.001",
+                  debe: 0,
+                  haber: apuesta.monto,
+                  concepto: `Reversión contable ingreso casa - ${apuesta.evento}`,
+                },
+              ],
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Fallo sincronizando estado/contabilidad de evento especial:", err);
     }
   }
 

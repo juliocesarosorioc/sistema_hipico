@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { getHorseColor } from "@/shared/lib/horseColors";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -28,6 +28,7 @@ import { claveCarrera, claveHipodromo } from "@/features/carreras/lib/claves";
 import { marcarCarreraVerificada, guardarInvalidadosRemate } from "@/features/carreras/lib/maestro";
 import { MonitorHipodromos } from "@/shared/components/ui/MonitorHipodromos";
 import { agruparPorHipodromo } from "@/features/carreras/lib/agruparHipodromos";
+import { editarCarreraRegistrada } from "@/features/carreras/lib/carreras-dia";
 import { ModalMarcasEditor } from "@/features/marcas/components/ModalMarcasEditor";
 import { ModalSincronizadorUsa } from "@/features/carreras/components/ModalSincronizadorUsa";
 
@@ -43,6 +44,8 @@ type ModalForm = {
   premio: string;
   hora: string;
   retirados: string;
+  fecha?: string;
+  hipodromo?: string;
 };
 
 const vacioModal = (): ModalForm => ({
@@ -55,6 +58,8 @@ const vacioModal = (): ModalForm => ({
   premio: "",
   hora: "",
   retirados: "",
+  fecha: "",
+  hipodromo: "",
 });
 
 /** Parsea un textarea o línea de ejemplares: cada línea o coma "numero nombre" (o solo numero). */
@@ -188,13 +193,17 @@ export function CarrerasDiaModule() {
       premio: c.premio != null ? String(c.premio) : "",
       hora: c.hora ?? "",
       retirados: (c.retirados ?? []).join(","),
+      fecha: c.fecha || fecha,
+      hipodromo: c.hipodromo || hipodromo,
     });
   };
 
   const guardar = async () => {
     const num = Number(modal.carrera) || 0;
-    if (!fecha) return toast("Seleccione primero una fecha en el buscador.", "warning");
-    if (!hipodromo) return toast("Elija un hipódromo para registrar la carrera (arriba, en el filtro).", "warning");
+    const fechaObj = modal.fecha || fecha;
+    const hipoObj = (modal.hipodromo || hipodromo).trim().toUpperCase();
+    if (!fechaObj) return toast("Seleccione primero una fecha en el buscador.", "warning");
+    if (!hipoObj) return toast("Elija un hipódromo para registrar la carrera (arriba, en el filtro).", "warning");
     if (!num) return toast("Nº de carrera requerido.", "warning");
 
     const textoEj = modal.ejemplares.trim();
@@ -212,9 +221,34 @@ export function CarrerasDiaModule() {
             : [];
 
     setGuardando(true);
+
+    if (modal.editar) {
+      const fechaAnt = modal.editar.fecha || fecha;
+      const hipoAnt = (modal.editar.hipodromo || hipodromo).trim().toUpperCase();
+      const numAnt = Number(modal.editar.carrera);
+
+      if (fechaObj !== fechaAnt || hipoObj !== hipoAnt || num !== numAnt) {
+        const rEd = await editarCarreraRegistrada({
+          id: modal.editar.id ? String(modal.editar.id) : undefined,
+          fechaAntigua: fechaAnt,
+          hipodromoAntiguo: hipoAnt,
+          carreraAntigua: numAnt,
+          fechaNueva: fechaObj,
+          hipodromoNuevo: hipoObj,
+          carreraNueva: num,
+          distanciaNueva: modal.distancia.trim() || undefined,
+          horaNueva: modal.hora.trim() || undefined,
+        });
+        if (!rEd.ok) {
+          setGuardando(false);
+          return toast("Error al editar carrera: " + (rEd.error ?? "desconocido"), "error");
+        }
+      }
+    }
+
     const r = await guardarCarreraCentral({
-      fecha,
-      hipodromo,
+      fecha: fechaObj,
+      hipodromo: hipoObj,
       carrera: num,
       caballos,
       distancia: modal.distancia.trim() || null,
@@ -707,6 +741,35 @@ export function CarrerasDiaModule() {
               </button>
             </div>
             <div className="space-y-3 p-4">
+              <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <label className="block">
+                  <span className={inputLbl}>Nº Carrera</span>
+                  <input
+                    type="number"
+                    value={modal.carrera}
+                    onChange={(e) => setModal((m) => ({ ...m, carrera: e.target.value }))}
+                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm font-black text-indigo-700"
+                  />
+                </label>
+                <label className="block">
+                  <span className={inputLbl}>Hipódromo</span>
+                  <input
+                    value={modal.hipodromo || hipodromo}
+                    onChange={(e) => setModal((m) => ({ ...m, hipodromo: e.target.value }))}
+                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm font-black text-slate-900 uppercase"
+                  />
+                </label>
+                <label className="block">
+                  <span className={inputLbl}>Fecha Jornada</span>
+                  <input
+                    type="date"
+                    value={modal.fecha || fecha}
+                    onChange={(e) => setModal((m) => ({ ...m, fecha: e.target.value }))}
+                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm font-bold text-slate-900"
+                  />
+                </label>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
                   <span className={inputLbl}>Distancia (m)</span>

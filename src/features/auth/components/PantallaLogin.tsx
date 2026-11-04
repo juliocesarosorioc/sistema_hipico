@@ -5,32 +5,24 @@ import { useRouter } from "next/navigation";
 import { mensajeSinAcceso, useAuthStore } from "@/shared/store/useAuthStore";
 import { pedirRecuperacion, resolverCorreo } from "@/features/auth/lib/sesion";
 import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
-import { RateLimiterCliente, sanitizarIdentificador } from "@/shared/lib/security";
+import { sanitizarIdentificador } from "@/shared/lib/security";
 import { CloudflareTurnstileWidget } from "@/shared/components/ui/CloudflareTurnstileWidget";
 import { activarProteccionAntiClonacion } from "@/shared/lib/anti-clonacion";
+import {
+  verificarBloqueoIntentos,
+  registrarIntentoFallido,
+  limpiarIntentosFallidos,
+} from "@/features/seguridad/lib/seguimiento-usuarios";
+import { obtenerIpCliente } from "@/shared/lib/ip-detector";
 
 /**
  * Módulo de inicio de sesión.
  *
- * La contraseña NO se valida en el navegador: se envía a Supabase Auth y lo que
- * queda en el cliente es la sesión firmada que emite el servidor. El operador
- * escribe su usuario corto; `resolverCorreo` lo traduce al correo de alta
- * usando NEXT_PUBLIC_AUTH_DOMAIN.
- *
- * El formulario NO muestra ningún usuario de ejemplo, ni como placeholder ni
- * en el texto de ayuda: en una pantalla compartida o con el monitor de un
- * cliente al lado, el nombre del dueño del sistema es información que no
- * debería estar a la vista.
- *
- * Endurecimiento de la puerta (FASE 1):
- *  - Honeypot oculto: un bot que llena el campo es descartado en silencio.
- *  - Tope de intentos en el cliente (5 en 5 min → 15 min de bloqueo), con
- *    mensaje visible. Es una barrera de UX, NO la de seguridad: la de verdad
- *    vive en la Edge Function `portal-auth` y en las reglas de Supabase Auth.
- *  - El usuario se sanitiza antes de resolverlo a correo.
- *  - El captcha (Turnstile/reCAPTCHA) se verifica del lado servidor en
- *    `supabase/functions/portal-auth/index.ts`; acá no se pone un widget sin
- *    validación, que sería security theatre.
+ * [Módulo 1 - Bloqueo Anti-Fuerza Bruta]:
+ *  - Contador estricto de 3 intentos fallidos consecutivos por usuario/IP.
+ *  - Al alcanzar 3 intentos: bloqueo de 30 minutos (usuario + IP).
+ *  - El bloqueo se registra en Supabase para alerta al administrador.
+ *  - El administrador principal (josorioc) NUNCA es bloqueado por intentos.
  */
 export default function PantallaLogin() {
   const router = useRouter();
@@ -48,12 +40,27 @@ export default function PantallaLogin() {
   const [verClave, setVerClave] = useState(false);
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const [ingresando, setIngresando] = useState(false);
+  const [bloqueadoSegundos, setBloqueadoSegundos] = useState<number>(0);
   const yaNavegandoRef = useRef(false);
+  const ipRef = useRef<string>("IP_LOCAL");
 
   useEffect(() => {
     activarProteccionAntiClonacion();
+    // Obtener IP real al montar (para verificación de bloqueo)
+    obtenerIpCliente()
+      .then((ip) => { ipRef.current = ip; })
+      .catch(() => { /* usar IP_LOCAL como fallback */ });
   }, []);
-  const rateLimiterRef = useRef(new RateLimiterCliente(5, 5 * 60 * 1000, 15 * 60 * 1000));
+
+  // Cuenta regresiva del bloqueo
+  useEffect(() => {
+    if (bloqueadoSegundos <= 0) return;
+    const t = setInterval(() => {
+      setBloqueadoSegundos((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [bloqueadoSegundos]);
+
   const honeypotRef = useRef<HTMLInputElement>(null);
 
   // Recuperación: dos vistas en la misma pantalla en vez de una página aparte,
@@ -134,8 +141,7 @@ export default function PantallaLogin() {
 
     // Honeypot anti-bot (oculto)
     if (honeypotRef.current && honeypotRef.current.value) {
-      // Silencioso para bots
-      return;
+      return; // Silencioso para bots
     }
 
     const usuarioSanitizado = sanitizarIdentificador(usuario);
@@ -147,22 +153,26 @@ export default function PantallaLogin() {
     const esAdminPrincipal = esUsuarioPrincipal(usuarioSanitizado);
     const esRicardo = usuarioSanitizado.toLowerCase().includes("ricardo");
 
-    // Rate limiting cliente (el administrador y operadores directos nunca son bloqueados por cliente)
-    if (!esAdminPrincipal && !esRicardo) {
-      const rl = rateLimiterRef.current.puedeIntentar();
-      if (!rl.ok) {
+    // [Módulo 1] Verificar bloqueo por intentos fallidos (Anti Brute-Force).
+    // El administrador principal NUNCA es bloqueado.
+    if (!esAdminPrincipal) {
+      const ipActual = ipRef.current;
+      const bloqueo = verificarBloqueoIntentos(usuarioSanitizado, ipActual);
+      if (bloqueo.bloqueado) {
+        const minutos = Math.ceil((bloqueo.segundosRestantes ?? 1800) / 60);
+        setBloqueadoSegundos(bloqueo.segundosRestantes ?? 1800);
         useAuthStore.setState({
           cargando: false,
-          errorLogin: `Demasiados intentos fallidos. Intentá nuevamente en ${rl.segundosRestantes} segundos.`,
+          errorLogin: `🔒 Cuenta bloqueada por ${minutos} minuto${minutos !== 1 ? "s" : ""} debido a intentos fallidos repetidos. El administrador ha sido notificado. Intentá más tarde.`,
         });
         return;
       }
     }
 
     let tokenValido = recaptchaToken;
-    if (!tokenValido && typeof window !== "undefined" && window.grecaptcha) {
+    if (!tokenValido && typeof window !== "undefined" && (window as { grecaptcha?: { getResponse: () => string } }).grecaptcha) {
       try {
-        const resp = window.grecaptcha.getResponse();
+        const resp = (window as { grecaptcha?: { getResponse: () => string } }).grecaptcha?.getResponse();
         if (resp) {
           tokenValido = resp;
           setRecaptchaToken(resp);
@@ -185,18 +195,27 @@ export default function PantallaLogin() {
       const ok = await iniciarSesion(usuarioSanitizado, clave);
       if (!ok) {
         setIngresando(false);
-        rateLimiterRef.current.registrarFallo();
         setClave("");
-        const r2 = rateLimiterRef.current.puedeIntentar();
-        if (!r2.ok) {
-          useAuthStore.setState({
-            cargando: false,
-            errorLogin: `Demasiados intentos fallidos. Intentá nuevamente en ${r2.segundosRestantes} segundos.`,
-          });
+        // [Módulo 1] Registrar intento fallido (3 intentos → bloqueo 30 min).
+        if (!esAdminPrincipal) {
+          registrarIntentoFallido(usuarioSanitizado, ipRef.current);
+          // Verificar si se acaba de alcanzar el límite
+          const estadoBloqueo = verificarBloqueoIntentos(usuarioSanitizado, ipRef.current);
+          if (estadoBloqueo.bloqueado) {
+            const minutos = Math.ceil((estadoBloqueo.segundosRestantes ?? 1800) / 60);
+            setBloqueadoSegundos(estadoBloqueo.segundosRestantes ?? 1800);
+            useAuthStore.setState({
+              cargando: false,
+              errorLogin: `🔒 Cuenta bloqueada por ${minutos} minuto${minutos !== 1 ? "s" : ""} por intentos fallidos repetidos. El administrador ha sido notificado.`,
+            });
+          }
         }
         return;
       }
-      rateLimiterRef.current.registrarExito();
+      // [Módulo 1] Login exitoso: limpiar intentos fallidos.
+      if (!esAdminPrincipal) {
+        limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
+      }
       if (!yaNavegandoRef.current) {
         yaNavegandoRef.current = true;
         const st = useAuthStore.getState();
@@ -209,7 +228,9 @@ export default function PantallaLogin() {
       }
     } catch (err) {
       setIngresando(false);
-      rateLimiterRef.current.registrarFallo();
+      if (!esAdminPrincipal) {
+        registrarIntentoFallido(usuarioSanitizado, ipRef.current);
+      }
       useAuthStore.setState({
         cargando: false,
         errorLogin: `Falló el inicio de sesión por dentro: ${err instanceof Error ? err.message : String(err)}`,
@@ -368,7 +389,24 @@ export default function PantallaLogin() {
             </div>
           ) : null}
 
-          {errorLogin && !avisoSinAcceso ? (
+          {/* [Módulo 1] Indicador de bloqueo por intentos fallidos */}
+          {bloqueadoSegundos > 0 ? (
+            <div
+              role="alert"
+              className="rounded border border-red-400 bg-red-50 p-3 text-xs leading-relaxed text-red-800"
+            >
+              <strong className="block font-bold uppercase">🔒 Acceso Bloqueado Temporalmente</strong>
+              <span className="mt-1 block">
+                Demasiados intentos fallidos. Podrás intentarlo de nuevo en{" "}
+                <span className="font-bold tabular-nums">
+                  {Math.floor(bloqueadoSegundos / 60)}m {bloqueadoSegundos % 60}s
+                </span>
+                . El administrador ha sido notificado.
+              </span>
+            </div>
+          ) : null}
+
+          {errorLogin && !avisoSinAcceso && bloqueadoSegundos <= 0 ? (
             <p
               role="alert"
               className="rounded border border-red-200 bg-red-50 p-2 text-center text-xs font-bold text-red-600"
@@ -399,7 +437,7 @@ export default function PantallaLogin() {
           </div>
           <button
             type="submit"
-            disabled={cargando || ingresando}
+            disabled={cargando || ingresando || bloqueadoSegundos > 0}
             className="w-full rounded-lg bg-slate-800 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
           >
             {cargando || ingresando ? (

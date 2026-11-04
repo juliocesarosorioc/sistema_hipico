@@ -206,7 +206,12 @@ export type TipoEventoContable =
   | "HONORARIOS_EQUIPO"
   | "COBRO_CLIENTE_AVALADO"
   | "PAGO_GANADOR_AVALADO"
-  | "DEPOSITO_BANCO";
+  | "DEPOSITO_BANCO"
+  | "LIQUIDACION_EVENTO_LIBRE"
+  | "REVERSION_EVENTO_LIBRE"
+  | "PREMIO_EVENTO_ESPECIAL"
+  | "PERDIDA_EVENTO_ESPECIAL"
+  | "REVERSION_EVENTO_ESPECIAL";
 
 export interface LineaAsientoContable {
   cuenta_codigo: string;

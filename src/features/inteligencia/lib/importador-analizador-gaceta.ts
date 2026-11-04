@@ -343,6 +343,8 @@ export function convertirCarrerasExtraidasACatalogo(
   return carrerasExtraidas.map((ce) => {
     const hip = String(ce.hipodromo || hipodromoDefault).trim().toUpperCase() || hipodromoDefault;
     const numCarrera = Number(ce.carrera) || 1;
+    // Si la carrera extrajo su fecha del encabezado, usarla; si no, la fecha objetivo
+    const fechaCarrera = (ce.fecha && ce.fecha.length >= 8) ? ce.fecha : fecha;
     const caballos: EjemplarCarreraCentral[] = (ce.ejemplares || []).map((ej, idx) => ({
       numero: String(ej.numero ?? idx + 1),
       nombre: String(ej.nombre || "").trim().toUpperCase(),
@@ -358,7 +360,7 @@ export function convertirCarrerasExtraidasACatalogo(
     }));
 
     return {
-      fecha,
+      fecha: fechaCarrera,
       hipodromo: hip,
       carrera: numCarrera,
       distancia: ce.distancia ? String(ce.distancia) : "1200",

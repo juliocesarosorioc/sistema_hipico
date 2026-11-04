@@ -3,10 +3,6 @@
  * sin depender de `cross-env` ni de que la shell del sistema sepa asignar
  * variables. Se usa para el despliegue junto al sistema legacy.
  *
- * Recordatorio de seguridad: el build estático NO incluye `src/middleware.ts`
- * (Next lo elimina y avisa con "Middleware cannot be used with output: export").
- * La frontera real en ese modo es Supabase Auth + RLS.
- *
  * Para el despliegue CON capa de servidor usar `npm run build` + `npm start`.
  */
 import { spawn } from "node:child_process";
@@ -16,6 +12,31 @@ import { fileURLToPath } from "node:url";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outDir = path.join(root, "out");
+const apiDir = path.join(root, "src", "app", "api");
+const apiBackupDir = path.join(root, "src", "app", "_api_server_only");
+
+let apiMovida = false;
+if (fs.existsSync(apiDir)) {
+  fs.renameSync(apiDir, apiBackupDir);
+  apiMovida = true;
+}
+
+function restaurarApi() {
+  if (apiMovida && fs.existsSync(apiBackupDir)) {
+    try {
+      fs.renameSync(apiBackupDir, apiDir);
+      apiMovida = false;
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+process.on("exit", restaurarApi);
+process.on("SIGINT", () => {
+  restaurarApi();
+  process.exit(1);
+});
 
 const esWindows = process.platform === "win32";
 const npx = esWindows ? "npx.cmd" : "npx";
@@ -27,11 +48,13 @@ const hijo = spawn(npx, ["next", "build"], {
 });
 
 hijo.on("error", (err) => {
+  restaurarApi();
   console.error("No se pudo lanzar el build estático:", err);
   process.exit(1);
 });
 
 hijo.on("exit", (code) => {
+  restaurarApi();
   if (code === 0 && fs.existsSync(outDir)) {
     // 1. .nojekyll
     fs.writeFileSync(path.join(outDir, ".nojekyll"), "", "utf8");

@@ -29,9 +29,11 @@ create index if not exists usuario_sistema_telefono_idx
   on public.usuario_sistema (telefono);
 
 -- 2. Función RPC para validar credenciales de operador y retornar su grupo exclusivo
+-- [Módulo 1: Control Anti-Brute Force con 3 intentos y bloqueo de 30 minutos]
 create or replace function public.club_login_operador(
   p_identificador text,
-  p_clave text
+  p_clave text,
+  p_ip text default '127.0.0.1'
 )
 returns jsonb
 language plpgsql
@@ -43,17 +45,36 @@ declare
   v_id_limpio text;
   v_tel_limpio text;
   v_tel_sin_cero text;
+  v_bloqueo record;
+  v_ip_limpia text;
 begin
   if p_identificador is null or trim(p_identificador) = '' or p_clave is null or trim(p_clave) = '' then
     return jsonb_build_object('ok', false, 'error', 'Identificador y clave son requeridos.');
   end if;
 
   v_id_limpio := lower(trim(p_identificador));
-  -- Quitar posibles dominios de correo
   v_id_limpio := split_part(v_id_limpio, '@', 1);
+  v_ip_limpia := coalesce(nullif(trim(p_ip), ''), '127.0.0.1');
+
+  -- 1. Verificar si está bloqueado por intentos fallidos
+  select * into v_bloqueo
+  from public.usuario_intentos_login
+  where (identificador = v_id_limpio or ip = v_ip_limpia)
+    and bloqueado_hasta is not null
+    and bloqueado_hasta > now()
+  order by bloqueado_hasta desc
+  limit 1;
+
+  if v_bloqueo is not null then
+    return jsonb_build_object(
+      'ok', false,
+      'bloqueado', true,
+      'error', format('Acceso bloqueado por 30 minutos debido a 3 intentos fallidos consecutivos. Vuelve a intentarlo a las %s.', to_char(v_bloqueo.bloqueado_hasta, 'HH24:MI:SS'))
+    );
+  end if;
+
   -- Versión solo dígitos para teléfonos
   v_tel_limpio := regexp_replace(p_identificador, '\D', '', 'g');
-  -- Quitar cero nacional inicial si viene por ej 0414... -> 414...
   if length(v_tel_limpio) = 11 and left(v_tel_limpio, 1) = '0' then
     v_tel_sin_cero := substring(v_tel_limpio from 2);
   else
@@ -76,13 +97,18 @@ begin
   limit 1;
 
   if v_usuario is null then
+    perform public.club_registrar_intento_fallido(v_id_limpio, v_ip_limpia);
     return jsonb_build_object('ok', false, 'error', 'Usuario o número de teléfono no encontrado.');
   end if;
 
   -- Validar clave de acceso asignada
   if v_usuario.clave_acceso is null or trim(v_usuario.clave_acceso) <> trim(p_clave) then
+    perform public.club_registrar_intento_fallido(v_id_limpio, v_ip_limpia);
     return jsonb_build_object('ok', false, 'error', 'Contraseña incorrecta.');
   end if;
+
+  -- Login exitoso: limpiar intentos fallidos
+  perform public.club_limpiar_intentos_login(v_id_limpio, v_ip_limpia);
 
   return jsonb_build_object(
     'ok', true,
@@ -97,7 +123,7 @@ end;
 $$;
 
 -- Permitir ejecución anónima y autenticada
-grant execute on function public.club_login_operador(text, text) to anon, authenticated;
+grant execute on function public.club_login_operador(text, text, text) to anon, authenticated;
 
 -- 2B. Función RPC para guardar o reasignar operador de grupo con bypass total de RLS
 create or replace function public.club_guardar_operador(
