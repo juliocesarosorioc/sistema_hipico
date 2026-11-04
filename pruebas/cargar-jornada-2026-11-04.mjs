@@ -1,6 +1,6 @@
 // ============================================================================
 // CARGADOR EJECUTABLE DE LA JORNADA 2026-11-04 (SUPABASE)
-// Inserta masivamente las 78 carreras y 681 ejemplares de los 8 hipódromos
+// Inserta masivamente las 78 carreras y 681 ejemplares de los 9 hipódromos
 // oficiales en 'hipodromos', 'carreras', 'programa_dia', 'ejemplares' y tablas IH.
 // ============================================================================
 
@@ -22,7 +22,9 @@ if (fs.existsSync(envPath)) {
 }
 
 const urlMatch = envContent.match(/NEXT_PUBLIC_SUPABASE_URL=([^\r\n]+)/);
-const keyMatch = envContent.match(/SUPABASE_SERVICE_ROLE_KEY=([^\r\n]+)/) || envContent.match(/NEXT_PUBLIC_SUPABASE_ANON_KEY=([^\r\n]+)/);
+const keyMatch =
+  envContent.match(/SUPABASE_SERVICE_ROLE_KEY=([^\r\n]+)/) ||
+  envContent.match(/NEXT_PUBLIC_SUPABASE_ANON_KEY=([^\r\n]+)/);
 
 if (!urlMatch || !keyMatch) {
   console.error("❌ Error: No se encontraron credenciales de Supabase en .env o .env.local");
@@ -46,29 +48,73 @@ async function ejecutarIngesta() {
   console.log(`📊 Datos preparados: ${tracks.length} Hipódromos, ${carreras.length} Carreras, ${ejemplares.length} Ejemplares.\n`);
 
   // 1. HIPÓDROMOS
-  console.log("[1/6] Insertando hipódromos...");
-  const hipoRows = tracks.map((t) => ({ nombre: t.nombre, pais: t.pais }));
-  const { error: errHipo } = await supabase.from("hipodromos").upsert(hipoRows, { onConflict: "nombre" });
-  if (errHipo) console.warn("  ⚠️ Advertencia en hipodromos:", errHipo.message);
-  else console.log(`  ✅ ${hipoRows.length} hipódromos asegurados en 'hipodromos'.`);
+  console.log("[1/5] Sincronizando hipódromos...");
+  const { data: existHipo } = await supabase.from("hipodromos").select("id, nombre");
+  const norm = (s) => (s || "").trim().toUpperCase();
+  const existingHipoSet = new Set((existHipo || []).map((h) => norm(h.nombre)));
+  const nuevosHipos = tracks
+    .filter((t) => !existingHipoSet.has(norm(t.nombre)))
+    .map((t) => ({ nombre: t.nombre, pais: t.pais }));
 
-  // 2. EJEMPLARES (Padrón Central)
-  console.log("[2/6] Insertando padrón de ejemplares...");
-  const nombresUnicos = [...new Set(ejemplares.map((e) => e.nombre))];
-  let insEj = 0;
-  for (let i = 0; i < nombresUnicos.length; i += 100) {
-    const batch = nombresUnicos.slice(i, i + 100).map((nom) => ({
-      nombre: nom,
-      nacionalidad: "USA",
-      total_carreras: 0
-    }));
-    const { error: errEj } = await supabase.from("ejemplares").upsert(batch, { onConflict: "nombre" });
-    if (!errEj) insEj += batch.length;
+  if (nuevosHipos.length > 0) {
+    const { error: errHipo } = await supabase.from("hipodromos").insert(nuevosHipos);
+    if (errHipo) console.warn("  ⚠️ Advertencia en hipodromos:", errHipo.message);
+    else console.log(`  ✅ ${nuevosHipos.length} nuevos hipódromos insertados.`);
+  } else {
+    console.log(`  ✅ Todos los hipódromos (${tracks.length}) ya existen en 'hipodromos'.`);
   }
-  console.log(`  ✅ ${insEj} ejemplares registrados en 'ejemplares'.`);
 
-  // 3. CARRERAS (Matriz Central)
-  console.log("[3/6] Insertando 78 carreras en 'carreras'...");
+  // 2. EJEMPLARES (Padrón Central 'ejemplares' + Padrón 'ih_ejemplares')
+  console.log("[2/5] Insertando padrón de ejemplares...");
+  const nombresUnicos = [...new Set(ejemplares.map((e) => e.nombre.trim().toUpperCase()))];
+  const { data: existEj } = await supabase.from("ejemplares").select("id, nombre");
+  const existingEjMap = new Map((existEj || []).map((e) => [e.nombre.trim().toUpperCase(), e.id]));
+
+  const aInsertarEj = nombresUnicos
+    .filter((n) => !existingEjMap.has(n))
+    .map((nom) => ({
+      nombre: nom,
+      nacionalidad: "USA"
+    }));
+
+  let insEj = 0;
+  for (let i = 0; i < aInsertarEj.length; i += 100) {
+    const batch = aInsertarEj.slice(i, i + 100);
+    const { data: insData, error: errEj } = await supabase.from("ejemplares").insert(batch).select("id, nombre");
+    if (insData) {
+      for (const row of insData) existingEjMap.set(row.nombre.trim().toUpperCase(), row.id);
+      insEj += insData.length;
+    } else if (errEj) {
+      console.warn("  ⚠️ Error en lote ejemplares:", errEj.message);
+    }
+  }
+  console.log(`  ✅ ${insEj} nuevos ejemplares registrados en 'ejemplares' (Total: ${existingEjMap.size}).`);
+
+  // Sincronizar catálogo IH ('ih_ejemplares')
+  console.log("      Sincronizando catálogo en 'ih_ejemplares'...");
+  const ihEjemplaresMap = new Map();
+  const ihBatch = nombresUnicos.map((nom) => ({
+    nombre_normalizado: nom,
+    nombre_display: nom,
+    pais_origen: "USA"
+  }));
+
+  for (let i = 0; i < ihBatch.length; i += 100) {
+    const sub = ihBatch.slice(i, i + 100);
+    const { data: dIh, error: errIhEj } = await supabase
+      .from("ih_ejemplares")
+      .upsert(sub, { onConflict: "nombre_normalizado" })
+      .select("id, nombre_normalizado");
+    if (dIh) {
+      for (const r of dIh) ihEjemplaresMap.set(r.nombre_normalizado, r.id);
+    } else if (errIhEj) {
+      console.warn("  ⚠️ Error en ih_ejemplares batch:", errIhEj.message);
+    }
+  }
+  console.log(`  ✅ ${ihEjemplaresMap.size} ejemplares asegurados en 'ih_ejemplares'.`);
+
+  // 3. CARRERAS (Matriz Central 'carreras')
+  console.log("[3/5] Insertando 78 carreras en 'carreras'...");
   let insCarr = 0;
   for (let i = 0; i < carreras.length; i += 20) {
     const batch = carreras.slice(i, i + 20).map((c) => ({
@@ -88,10 +134,10 @@ async function ejecutarIngesta() {
     if (errC) console.warn("  ⚠️ Error en lote carreras:", errC.message);
     else insCarr += batch.length;
   }
-  console.log(`  ✅ ${insCarr} carreras registradas en 'carreras'.`);
+  console.log(`  ✅ ${insCarr} carreras registradas/actualizadas en 'carreras'.`);
 
-  // 4. PROGRAMA DEL DÍA
-  console.log("[4/6] Actualizando 'programa_dia' para 2026-11-04...");
+  // 4. PROGRAMA DEL DÍA ('programa_dia')
+  console.log("[4/5] Actualizando 'programa_dia' para 2026-11-04...");
   const programaCarreras = carreras.map((c) => ({
     hipodromo: c.hipodromo,
     fecha: c.fecha,
@@ -125,41 +171,50 @@ async function ejecutarIngesta() {
   if (errProg) console.warn("  ⚠️ Error en programa_dia:", errProg.message);
   else console.log("  ✅ 'programa_dia' actualizado con las 78 carreras y 681 ejemplares.");
 
-  // 5. INTELIGENCIA HÍPICA (ih_carreras_programa e ih_inscripciones_carrera)
-  console.log("[5/6] Inyectando datos en Inteligencia Hípica ('ih_carreras_programa')...");
-  const progRows = carreras.map((c) => ({
-    fecha: c.fecha,
-    hipodromo: c.hipodromo.toUpperCase(),
-    carrera_numero: c.carrera,
-    distancia_metros: c.distancia,
-    superficie: c.superficie,
-    hora_programada: `${c.hora}:00`,
-    estado_carrera: "PROGRAMADA"
-  }));
+  // 5. INTELIGENCIA HÍPICA ('ih_carreras_programa' e 'ih_inscripciones_carrera')
+  console.log("[5/5] Inyectando datos en Inteligencia Hípica ('ih_carreras_programa' e 'ih_inscripciones_carrera')...");
+  await supabase.from("ih_carreras_programa").delete().eq("fecha", "2026-11-04");
+
+  const progRows = carreras.map((c) => {
+    const trackCode = c.hipodromo.replace(/[^A-Z0-9]/gi, "").substring(0, 4).toUpperCase();
+    return {
+      jurisdiccion: "USA",
+      hipodromo: c.hipodromo.toUpperCase(),
+      fecha: c.fecha,
+      numero_carrera: c.carrera,
+      codigo_carrera: `${trackCode}-20261104-${String(c.carrera).padStart(2, "0")}`,
+      distancia_metros: c.distancia,
+      hora_carrera: c.hora
+    };
+  });
 
   const { data: insertedIh, error: errIh } = await supabase
     .from("ih_carreras_programa")
-    .upsert(progRows, { onConflict: "fecha,hipodromo,carrera_numero" })
-    .select("id, fecha, hipodromo, carrera_numero");
+    .insert(progRows)
+    .select("id, hipodromo, numero_carrera");
 
   if (!errIh && insertedIh && insertedIh.length > 0) {
     const idMap = new Map();
     for (const row of insertedIh) {
-      idMap.set(`${row.fecha}|${row.hipodromo}|${row.carrera_numero}`, row.id);
+      idMap.set(`${row.hipodromo}|${row.numero_carrera}`, row.id);
     }
     const inscripciones = [];
     for (const c of carreras) {
-      const cid = idMap.get(`${c.fecha}|${c.hipodromo.toUpperCase()}|${c.carrera}`);
+      const cid = idMap.get(`${c.hipodromo.toUpperCase()}|${c.carrera}`);
       if (cid) {
         for (const cb of c.caballos) {
+          const ejId = ihEjemplaresMap.get(cb.nombre.trim().toUpperCase()) || null;
           inscripciones.push({
             carrera_id: cid,
-            numero_gualdrapa: cb.numero,
+            ejemplar_id: ejId,
+            numero_programa: Number(cb.numero) || 1,
+            puesto_pista_actual: cb.pp || Number(cb.numero) || 1,
             nombre_ejemplar: cb.nombre,
-            puesto_pista: cb.pp || Number(cb.numero) || 1,
-            jinete_nombre: cb.jockey || null,
-            entrenador_nombre: cb.entrenador || null,
-            retirado: Boolean(cb.retirado)
+            nombre_normalizado: cb.nombre.toUpperCase().trim(),
+            morning_line: cb.ml || "5/1",
+            jinete_actual: cb.jockey || null,
+            entrenador_actual: cb.entrenador || null,
+            retirado_en_vivo: Boolean(cb.retirado)
           });
         }
       }
@@ -167,48 +222,13 @@ async function ejecutarIngesta() {
     let insInsc = 0;
     for (let i = 0; i < inscripciones.length; i += 100) {
       const bInsc = inscripciones.slice(i, i + 100);
-      const { error: errInsc } = await supabase
-        .from("ih_inscripciones_carrera")
-        .upsert(bInsc, { onConflict: "carrera_id,numero_gualdrapa" });
+      const { error: errInsc } = await supabase.from("ih_inscripciones_carrera").insert(bInsc);
       if (!errInsc) insInsc += bInsc.length;
+      else console.warn("  ⚠️ Error en inscripciones batch:", errInsc.message);
     }
-    console.log(`  ✅ ${insertedIh.length} carreras y ${insInsc} inscripciones en tablas IH.`);
-  } else {
-    console.log("  ℹ️ ih_carreras_programa actualizado o no disponible.");
-  }
-
-  // 6. HISTORIAL DE INTELIGENCIA DE EJEMPLARES
-  console.log("[6/6] Poblando 'historial_inteligencia_ejemplares'...");
-  let insHie = 0;
-  for (let i = 0; i < ejemplares.length; i += 50) {
-    const b = ejemplares.slice(i, i + 50).map((e) => {
-      const cMeta = carreras.find((c) => c.hipodromo === e.hipodromo && c.carrera === e.carrera);
-      return {
-        fecha: "2026-11-04",
-        hipodromo: e.hipodromo,
-        carrera: e.carrera,
-        numero: e.numero,
-        nombre_ejemplar: e.nombre,
-        jockey: e.jockey,
-        entrenador: e.entrenador,
-        stud: e.stud,
-        peso: e.peso,
-        ml: e.ml,
-        distancia_metros: cMeta?.distancia || 1200,
-        superficie: cMeta?.superficie || "ARENA",
-        retirado: Boolean(e.retirado)
-      };
-    });
-    const { error: errHie } = await supabase.from("historial_inteligencia_ejemplares").insert(b);
-    if (!errHie) insHie += b.length;
-    else {
-      // Si la tabla no existe en el schema cache de Supabase REST
-      if (i === 0) console.log("  ℹ️ Tabla 'historial_inteligencia_ejemplares' no presente en schema cache REST (definida en SQL).");
-      break;
-    }
-  }
-  if (insHie > 0) {
-    console.log(`  ✅ ${insHie} registros en 'historial_inteligencia_ejemplares'.`);
+    console.log(`  ✅ ${insertedIh.length} carreras y ${insInsc} inscripciones registradas en tablas IH.`);
+  } else if (errIh) {
+    console.warn("  ⚠️ Error en ih_carreras_programa:", errIh.message);
   }
 
   // --------------------------------------------------------------------------
@@ -236,11 +256,26 @@ async function ejecutarIngesta() {
     .select("*", { count: "exact", head: true })
     .eq("fecha", "2026-11-04");
 
-  console.log(`• Carreras en matriz 'carreras': ${cCarreras} de 78`);
+  const { count: cIhInsc } = await supabase
+    .from("ih_inscripciones_carrera")
+    .select("*", { count: "exact", head: true });
+
+  const { count: cTotalEjemplares } = await supabase
+    .from("ejemplares")
+    .select("*", { count: "exact", head: true });
+
+  const { count: cTotalIhEjemplares } = await supabase
+    .from("ih_ejemplares")
+    .select("*", { count: "exact", head: true });
+
+  console.log(`• Carreras en matriz 'carreras': ${cCarreras} carreras`);
   console.log(`• Hipódromos en 'programa_dia': ${(progVerif?.hipodromos || []).length} pistas (${(progVerif?.hipodromos || []).join(", ")})`);
   console.log(`• Carreras en 'programa_dia': ${(progVerif?.carreras || []).length} carreras`);
   console.log(`• Ejemplares en 'programa_dia': ${totalEjEnProg} ejemplares`);
-  console.log(`• Carreras en 'ih_carreras_programa': ${cIhCarr} carreras`);
+  console.log(`• Carreras en Inteligencia Hípica ('ih_carreras_programa'): ${cIhCarr} carreras`);
+  console.log(`• Inscripciones en Inteligencia Hípica ('ih_inscripciones_carrera'): ${cIhInsc} inscripciones`);
+  console.log(`• Padrón en 'ejemplares': ${cTotalEjemplares} ejemplares`);
+  console.log(`• Padrón en 'ih_ejemplares': ${cTotalIhEjemplares} ejemplares`);
 
   console.log("\n🎉 INGESTA DE LA JORNADA 2026-11-04 COMPLETADA CON ÉXITO.");
 }
