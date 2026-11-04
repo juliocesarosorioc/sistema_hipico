@@ -91,11 +91,16 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
     const enlaceFinal = linkCorto && linkCorto.startsWith("http") ? linkCorto : linkLargo;
     const usuarioTxt = cliente.seudonimo || cliente.nombre || "";
     const mensaje = [
-      `🏇 *Acceso a tu Portal de Cliente*`,
-      `👤 *Usuario:* ${usuarioTxt}`,
-      `🔑 *Código:* ${token}`,
-      `🔒 *Contraseña:* ${clavePortal}`,
-      `🔗 *Enlace directo:* ${enlaceFinal}`,
+      `🏇📱 *PORTAL DE CLIENTES — ACCESO OFICIAL*`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `👋 *¡Hola, ${usuarioTxt}!* Ya puedes ingresar a tu portal personal para consultar saldo, jugadas en vivo y resultados.`,
+      ``,
+      `👤 *Usuario:* *${usuarioTxt}*`,
+      `🔑 *Código:* \`${token}\``,
+      `🔒 *Contraseña:* \`${clavePortal}\``,
+      `🌐 *Enlace directo:* ${enlaceFinal}`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `🛡️ _Guarda este mensaje para ingresar siempre a tu cuenta._ ✨`,
     ].join("\n");
     const telLimpio = String(cliente.telefono ?? "").replace(/\D+/g, "");
     const codPais = String(cliente.codigo_pais ?? "").replace(/\D+/g, "");

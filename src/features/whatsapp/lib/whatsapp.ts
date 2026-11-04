@@ -44,7 +44,8 @@ export type RegistroWsp = {
   estado?: string | null;
 };
 
-const CLAVE_PLANTILLAS = "sistema-hipico:whatsapp-plantillas";
+const CLAVE_PLANTILLAS = "sistema-hipico:whatsapp-plantillas-v2";
+const CLAVE_PLANTILLAS_V1 = "sistema-hipico:whatsapp-plantillas";
 /** Compat: el legacy guardaba en esta clave (grupo "Plantillas del Centro WhatsApp"). */
 const CLAVE_MSJ_LEGACY = "club_mensajes_whatsapp";
 
@@ -70,95 +71,91 @@ export const PLANTILLAS_DEFAULT: PlantillaWsp[] = [
     label: "Saldo actual",
     grupo: "envio",
     variables: "{nombre} {saldo} {aval} {disponible} {club}",
-    txt: "Hola {nombre} 👋\n\n*{club}*\n\nTu saldo actual es:\n💰 *$ {saldo} USD*\n\nAval vigente: $ {aval}\n\nPuedes jugar hasta: *$ {disponible} USD*\n\n¡Gracias por tu confianza!",
+    txt: "👋 *¡Hola, {nombre}!* 🏇\n\n🏆 *{club}*\n━━━━━━━━━━━━━━━━━━━━\n📊 *ESTADO DE CUENTA:*\n\n💰 *Saldo Actual:* $ {saldo} USD\n🛡️ *Aval Vigente:* $ {aval} USD\n⚡ *Disponible para Jugar:* *$ {disponible} USD*\n━━━━━━━━━━━━━━━━━━━━\n✨ _¡Gracias por tu confianza y mucha suerte en tus jugadas!_ 🍀🏇",
   },
   {
     id: "aval",
     label: "Recordatorio de aval",
     grupo: "envio",
     variables: "{nombre} {aval} {club}",
-    txt: "Hola {nombre} ⚠️\n\n*{club}*\n\nTe recordamos que tienes un aval pendiente de *$ {aval} USD*.\n\nPara mantener tu cuenta al día, pasa por taquilla o coordina tu abono. ¡Gracias!",
+    txt: "⚠️ *RECORDATORIO DE AVAL* ⚠️\n\n👤 *Estimado(a) {nombre}:*\n🏇 *{club}*\n━━━━━━━━━━━━━━━━━━━━\n\n📌 Te recordamos que mantienes un aval pendiente por:\n🛡️ *Monto Aval:* *$ {aval} USD*\n\n💳 Para mantener tu cuenta activa y al día, por favor coordina tu abono o acércate a taquilla.\n━━━━━━━━━━━━━━━━━━━━\n🤝 _¡Agradecemos tu puntualidad y preferencia!_",
   },
   {
     id: "bienvenida",
     label: "Bienvenida",
     grupo: "envio",
     variables: "{nombre} {saldo}",
-    txt: "¡Hola {nombre}! 🎉\n\nBienvenido(a) al *Club del Dinero*.\nTu cuenta queda activa con un saldo de *$ {saldo} USD*.\n\n¡Éxitos y buenas jugadas! 🏇",
+    txt: "🎉 *¡BIENVENIDO(A) A {club}!* 🏇\n\n👋 *Hola, {nombre}:*\nTu cuenta ha sido activada con éxito en nuestro sistema.\n\n💳 *Saldo Inicial:* 💰 *$ {saldo} USD*\n⚡ *Estado:* 🟢 Cuenta 100% Operativa\n\n━━━━━━━━━━━━━━━━━━━━\n🏇 _¡Te deseamos el mayor de los éxitos en cada carrera y excelentes jugadas!_ 🍀🔥",
   },
   {
     id: "negativo",
     label: "Saldo pendiente por abonar",
     grupo: "envio",
     variables: "{nombre} {saldo} {club}",
-    txt: "Hola {nombre} 🙏\n\n*{club}*\n\nTu cuenta presenta un saldo pendiente de *$ {saldo} USD*.\nTe pedimos abonar para continuar disfrutando del servicio.\n\n¡Gracias!",
+    txt: "🔔 *AVISO DE SALDO PENDIENTE* 🔔\n\n👤 *Hola, {nombre}:*\n🏇 *{club}*\n━━━━━━━━━━━━━━━━━━━━\n\n📉 Tu cuenta presenta un saldo pendiente por liquidar:\n🔴 *Saldo por Abonar:* *$ {saldo} USD*\n\n💳 Te solicitamos gestionar tu abono para reactivar tu cupo y seguir disfrutando del juego sin interrupciones.\n━━━━━━━━━━━━━━━━━━━━\n🙏 _¡Muchas gracias por tu atención y pronta gestión!_",
   },
   {
     id: "personalizada",
     label: "Mensaje personalizado",
     grupo: "envio",
     variables: "{nombre}",
-    txt: "Hola {nombre} 👋\n\n",
+    txt: "👋 *Hola, {nombre}:*\n🏇 *{club}*\n━━━━━━━━━━━━━━━━━━━━\n\n",
   },
   {
     id: "reporte_general",
     label: "Reporte de saldos",
     grupo: "reporte",
     variables: "{fecha} {club} {lineas} {balance}",
-    txt: "📊 *REPORTE DE SALDOS - {club}*\n📅 Fecha: {fecha}\n\n{lineas}💰 *BALANCE GLOBAL (A favor de los clientes):* $ {balance}",
+    txt: "📊 *REPORTE CONSOLIDADO DE SALDOS* 📊\n🏇 *{club}*\n📅 *Fecha:* {fecha}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n━━━━━━━━━━━━━━━━━━━━\n💰 *BALANCE GLOBAL (A favor de los clientes):* *$ {balance} USD*\n📌 _Reporte oficial generado por sistema._",
   },
   {
     id: "tablas_matriz",
     label: "Tablas Fijas (matriz)",
     grupo: "tablas",
     variables: "{fecha} {lineas} {totales}",
-    txt: "🏇 *TABLAS FIJAS PUBLICADAS* 📅 {fecha}\n\n{lineas}\n🧮 *TOTAL EJEMPLARES:* {totales}\n\n📌 NORMAS: válida solo para la carrera y el ejemplar indicados. Presente en caja.",
+    txt: "🏇🏆 *TABLAS FIJAS PUBLICADAS* 🏆🏇\n📅 *Jornada:* {fecha}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n🧮 *Total Ejemplares:* *{totales}*\n📌 *Normas:* Válida exclusivamente para la carrera y el ejemplar indicados. Presentar ticket en taquilla.",
   },
   {
     id: "tablas_reporte",
     label: "Reporte de Tablas",
     grupo: "tablas",
     variables: "{fecha} {lineas}",
-    txt: "📊 *REPORTE DE TABLAS* 📅 {fecha}\n\n{lineas}\n📌 NORMAS: reporte de control interno de tablas fijas.",
+    txt: "📊📋 *REPORTE DE CONTROL — TABLAS FIJAS* 📋📊\n📅 *Fecha:* {fecha}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n🔒 *Control Interno:* Reporte de auditoría y conciliación de tablas fijas.",
   },
   {
     id: "remates_pizarra",
     label: "Pizarra de Remates",
     grupo: "tablas",
     variables: "{remate} {hipodromo} {carrera} {fecha} {lineas} {incentivo} {total}",
-    // El cierre va con el formato EXACTO que pide el grupo: dos espacios antes
-    // del monto de incentivo, línea en blanco y el total en negrita. Está en la
-    // plantilla y no solo en el código para que, si el operador edita la
-    // plantilla desde el Centro de WhatsApp, vea el cierre como se está usando.
-    txt: "*{remate}*\n🏇 {hipodromo} · C{carrera} · {fecha}\n\n{lineas}\n\nIncentivo de la casa  {incentivo}\n\n*Total a pagar {total}*",
+    txt: "🔨🏇 *PIZARRA OFICIAL DE REMATES* 🏇🔨\n🏛️ *{hipodromo}* · Carrera {carrera}\n📅 *Fecha:* {fecha}\n🏷️ *{remate}*\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n🎁 *Incentivo de la casa:*  {incentivo}\n\n━━━━━━━━━━━━━━━━━━━━\n💰 *TOTAL A PAGAR:* *{total}*\n🏁 _Pizarra oficial certificada para pago en taquilla._",
   },
   {
     id: "marcas_resultados",
     label: "Marcas de la|Programa",
     grupo: "marcas",
     variables: "{nombre} {club} {fecha} {hipodromo} {carrera} {lineas} {premio}",
-    txt: "Hola {nombre} 👋\n\n🎯 *{club}*\n📅 {fecha} / {hipodromo} / C{carrera}\n\n{lineas}\n\n💰 *Premio de la carrera:* $ {premio}\n\n📌 La jugada es Junction: se cobra como la Carrera con premio y se paga si la pista da 3 o más aciertos. Juega con criterio.",
+    txt: "🎯🏇 *MARCAS OFICIALES — RESULTADOS* 🏇🎯\n👋 *Hola, {nombre}:*\n🏛️ *{club}*\n📅 *Fecha:* {fecha} · 📍 *Hipódromo:* {hipodromo} · 🏁 *Carrera:* C{carrera}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n💰 *Premio de la carrera:* *$ {premio} USD*\n📌 _Válido bajo las reglas oficiales de marcas del club. Juega con criterio._",
   },
   {
     id: "marcas_duplicados",
     label: "Marcas repetidas",
     grupo: "marcas",
     variables: "{nombre} {club} {fecha} {lineas}",
-    txt: "Hola {nombre} ⚠️\n\n*{club} — REPETIDAS*\n📅 {fecha}\n\n{lineas}\n\nRevisá tu Ticket antes de cobrar.",
+    txt: "⚠️📋 *ALERTA DE MARCAS REPETIDAS* 📋⚠️\n👤 *Estimado(a) {nombre}:*\n🏇 *{club}* · 📅 {fecha}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n🔍 *Atención:* Por favor revisa y valida tu ticket antes de solicitar cobro en taquilla.",
   },
   {
     id: "marcas_hoja",
     label: "Hoja de Marcas del día",
     grupo: "marcas",
     variables: "{fecha} {hipodromo} {lineas} {totales} {marcas}",
-    txt: "🏇 *PROGRAMA DEL DÍA* 📅 {fecha}\n\n{lineas}\n\n🧮 *CARRERAS:* {totales} / CON JUGADAS: {marcas}\n\n📌 Válidas solo para el día indicado. Presente en caja.",
+    txt: "🏇📋 *PROGRAMA Y HOJA DE MARCAS DEL DÍA* 📋🏇\n📅 *Fecha Oficial:* {fecha}\n🏛️ *Hipódromo:* {hipodromo}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n🧮 *Total Carreras:* *{totales}* · 🎯 *Con Jugadas:* *{marcas}*\n📌 _Válidas únicamente para el día indicado. Presentar en taquilla._",
   },
   {
     id: "dupleta_pizarra",
     label: "Pizarra de Dupleta",
     grupo: "dupleta",
     variables: "{club} {fecha} {hipodromo} {lineas} {premio}",
-    txt: "🎰 *DUPLETA — {club}*\n📅 {fecha} · {hipodromo}\n\n{lineas}\n\n💰 *Premio:* $ {premio}\n\n📌 Válida sólo el día indicado. Presente en caja.",
+    txt: "🎰🏇 *PIZARRA OFICIAL DE DUPLETA* 🏇🎰\n🏆 *{club}*\n📅 *Fecha:* {fecha} · 🏛️ *Hipódromo:* {hipodromo}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n💰 *PREMIO ACUMULADO:* *$ {premio} USD*\n📌 _Válida exclusivamente para la jornada indicada. Presentar en taquilla._",
   },
 ];
 
@@ -214,13 +211,27 @@ export const CODIGOS_PAIS: string[] = ["+54", "+56", "+57", "+58", "+591", "+594
 // ============================================================
 let cachePlantillas: PlantillaWsp[] | null = null;
 
-/** Carga plantillas: primero la clave propia, luego el heredado del legacy. */
+/** Carga plantillas: primero la clave propia v2, luego migración de v1 y compat legacy. */
 export function cargarPlantillas(): PlantillaWsp[] {
   if (cachePlantillas) return cachePlantillas;
   let propias: Record<string, string> = {};
   let legacyMsj: Record<string, { txt?: string }> = {};
   try {
-    propias = JSON.parse(localStorage.getItem(CLAVE_PLANTILLAS) || "{}");
+    const rawV2 = localStorage.getItem(CLAVE_PLANTILLAS);
+    if (rawV2) {
+      propias = JSON.parse(rawV2);
+    } else {
+      // Migración selectiva: solo conservar plantillas personalizadas de v1
+      const rawV1 = localStorage.getItem(CLAVE_PLANTILLAS_V1);
+      if (rawV1) {
+        const v1 = JSON.parse(rawV1);
+        for (const k of Object.keys(v1)) {
+          if (!PLANTILLAS_DEFAULT.some((d) => d.id === k)) {
+            propias[k] = v1[k];
+          }
+        }
+      }
+    }
   } catch {
     propias = {};
   }

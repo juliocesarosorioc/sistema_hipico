@@ -197,7 +197,18 @@ export async function enlaceWhatsAppTicket(t: TicketDisputa): Promise<string | n
   if (!tel?.telefono) return null;
   const codigo = tel.codigo_pais || "+58";
   const numeroInt = String(codigo).replace(/\D/g, "") + String(tel.telefono).replace(/\D/g, "");
-  const mensaje = `Hola ${t.cliente_nombre ?? "cliente"} 👋\n\n*Club del Dinero*\n\nTu ticket T-${t.numero_ticket ?? String(t.id).slice(0, 6)} fue resuelto:\n• Acción: ${t.accion_aplicada ?? "Atendido"}${t.monto_resuelto != null && Number(t.monto_resuelto) > 0 ? ` ($${Number(t.monto_resuelto).toFixed(2)})` : ""}\n• Respuesta: ${t.respuesta_casa ?? ""}\n\n¡Gracias por tu confianza!`;
+  const montoStr = t.monto_resuelto != null && Number(t.monto_resuelto) > 0 ? ` ($ ${Number(t.monto_resuelto).toFixed(2)} USD)` : "";
+  const mensaje = [
+    `👋 *¡Hola, ${t.cliente_nombre ?? "cliente"}!* 🏇`,
+    ``,
+    `🏆 *Club del Dinero* ━━━━━━━━━━━━`,
+    `🎟️ *NOTIFICACIÓN DE TICKET RESUELTO:* *#T-${t.numero_ticket ?? String(t.id).slice(0, 6)}*`,
+    ``,
+    `✅ *Acción:* ${t.accion_aplicada ?? "Atendido"}${montoStr}`,
+    `💬 *Respuesta de Taquilla:* ${t.respuesta_casa ?? "Tu requerimiento ha sido verificado con éxito."}`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `🤝 _¡Gracias por tu confianza y preferencia!_ ✨`,
+  ].join("\n");
   return `https://wa.me/${numeroInt}?text=${encodeURIComponent(mensaje)}`;
 }
 /**

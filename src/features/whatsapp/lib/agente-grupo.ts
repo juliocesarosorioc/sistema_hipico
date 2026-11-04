@@ -44,13 +44,13 @@ export function parsearPizarra(texto: string): number[] | null {
 }
 
 export function respuestaApertura(cmd: ComandoApertura): string {
-  return `🟢 ABIERTA ${cmd.hipodromo} - CARRERA ${cmd.carrera}. Hagan sus jugadas.`;
+  return `🟢 ABIERTA ${cmd.hipodromo} - CARRERA ${cmd.carrera} 🏇\n⚡ ¡Hagan sus jugadas! Mucha suerte a todos. 🍀💰`;
 }
 
 export function respuestaCarreraCerrada(): string {
-  return "⛔ Carrera cerrada, no se registran más jugadas.";
+  return "⛔ Carrera cerrada, no se registran más jugadas. ¡En partida! 🏇💨";
 }
 
 export function respuestaPizarra(pizarra: number[]): string {
-  return `🏁 Pizarra oficial: ${pizarra.join("-")}. Procesando liquidación...`;
+  return `🏁🏆 *Pizarra oficial: ${pizarra.join("-")}* 🏆🏁\n🔢 Orden: ${pizarra.join(" - ")}\n⚙️ Procesando liquidación... ⏳`;
 }

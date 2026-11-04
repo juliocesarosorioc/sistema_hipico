@@ -165,16 +165,16 @@ function tasaDeJugada(comisionPct: number | null | undefined): number {
 export function pieEstricto(totalJugadas: number): string {
   return [
     `------------------------------`,
-    `Total jugadas: ${totalJugadas}`,
+    `📊 Total jugadas: ${totalJugadas}`,
     `------------------------------`,
-    `PLANO REFERENCIAL`,
-    `La guía es el chat`,
+    `📋 PLANO REFERENCIAL`,
+    `💬 La guía es el chat`,
     `(se gana y se cobra con el chat)`,
-    `USTED ES SU PROPIO CORREDOR`,
-    `RECLAMOS AL PRIVADO`,
-    `VERIFICAR SUS JUGADAS POR FAVOR`,
-    `NO DIGA: ❌MALO❌; CASA FALTA...`,
-    `TILDE SU JUGADA Y SE REVISARÁ`,
+    `🎯 USTED ES SU PROPIO CORREDOR`,
+    `📩 RECLAMOS AL PRIVADO`,
+    `🔍 VERIFICAR SUS JUGADAS POR FAVOR`,
+    `⚠️ NO DIGA: ❌MALO❌; CASA FALTA...`,
+    `✅ TILDE SU JUGADA Y SE REVISARÁ`,
   ].join("\n");
 }
 
@@ -186,14 +186,14 @@ export function cabeceraCarrera(meta: MetaCarrera): string {
   const anio = fecha.toLocaleDateString("es-VE", { year: "numeric" });
   const retirados = meta.retirados?.trim()
     ? meta.retirados.trim()
-    : "NO HUBO RETIROS";
+    : "NINGUNO";
   const pizarra = meta.pizarra?.trim() ? meta.pizarra.trim() : ".....";
   return [
-    `🏇🏆${meta.grupo ?? meta.hipodromo}🏆🏇`,
-    `${weekday}, ${dia} de ${mes} de ${anio}`,
-    `${meta.hipodromo}, ${meta.carrera} Carrera`,
-    `Ret: ${retirados}`,
-    `Pizarra: ${pizarra}`,
+    `🏇🏆 *${meta.grupo ?? meta.hipodromo}* 🏆🏇`,
+    `📅 ${weekday}, ${dia} de ${mes} de ${anio}`,
+    `🏛️ *${meta.hipodromo}* · 🏁 *Carrera ${meta.carrera}*`,
+    `🚫 Ret: ${retirados}`,
+    `🏁 Pizarra: ${pizarra}`,
   ].join("\n");
 }
 
@@ -224,14 +224,14 @@ export function cabeceraPlanoJugadas(meta: MetaCarrera): string {
   const dia = fecha.toLocaleDateString("es-VE", { day: "numeric" });
   const mes = cap(fecha.toLocaleDateString("es-VE", { month: "long" }));
   const anio = fecha.toLocaleDateString("es-VE", { year: "numeric" });
-  const retirados = String(meta.retirados ?? "").trim();
+  const retirados = String(meta.retirados ?? "").trim() || "NINGUNO";
   const pizarra = String(meta.pizarra ?? "").trim() || ".....";
   return [
-    `🐎 ${String(meta.grupo ?? meta.hipodromo).trim()} 🐎`,
-    `FECHA: ${weekday}, ${dia} de ${mes} de ${anio}`,
-    `HIPÓDROMO Y CARRERA: ${meta.hipodromo}, ${meta.carrera} Carrera`,
-    `Ret: ${retirados}`,
-    `Pizarra: ${pizarra}`,
+    `🐎🏆 *${String(meta.grupo ?? meta.hipodromo).trim()}* 🏆🐎`,
+    `📅 FECHA: ${weekday}, ${dia} de ${mes} de ${anio}`,
+    `🏛️ HIPÓDROMO Y CARRERA: ${meta.hipodromo}, ${meta.carrera} Carrera`,
+    `🚫 Ret: ${retirados}`,
+    `🏁 Pizarra: ${pizarra}`,
   ].join("\n");
 }
 
@@ -239,11 +239,11 @@ export function cabeceraPlanoJugadas(meta: MetaCarrera): string {
 export function piePlanoJugadas(): string {
   return [
     LINEA_SEPARADOR,
-    "PLANO REFERENCIAL",
-    "La guía es el chat",
+    "📋 PLANO REFERENCIAL",
+    "💬 La guía es el chat",
     "(se gana y se cobra con el chat)",
-    "SEÑORES REVISAR SU POZO Y JUEGUEN SU DISPONIBLE ✅🚨",
-    "Se pasan planos de jugadas y de pozo antes y después de la carrera POR FAVOR REVISAR Y VERIFICAR si nota algún error avisar de una vez para poder corregir al instante 🔴⚠️",
+    "🚨 SEÑORES REVISAR SU POZO Y JUEGUEN SU DISPONIBLE ✅🚨",
+    "📢 Se pasan planos de jugadas y de pozo antes y después de la carrera POR FAVOR REVISAR Y VERIFICAR si nota algún error avisar de una vez para poder corregir al instante 🔴⚠️",
   ].join("\n");
 }
 
