@@ -584,15 +584,6 @@ export async function actualizarGrupo(
       }
       delete resto.dia_inicio_semana;
       delete resto.dia_fin_semana;
-      const r = await supabase.rpc("club_actualizar_ciclo_grupo", {
-        p_grupo_id: String(id),
-        p_dia_inicio: Number(patch.dia_inicio_semana) || null,
-        p_dia_fin: Number(patch.dia_fin_semana) || null,
-      });
-      if (r.error) {
-        resto.dia_inicio_semana = patch.dia_inicio_semana;
-        resto.dia_fin_semana = patch.dia_fin_semana;
-      }
     }
 
     if (Object.keys(resto).length > 0) {

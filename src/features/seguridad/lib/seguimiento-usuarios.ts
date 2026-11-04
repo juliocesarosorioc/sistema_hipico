@@ -533,40 +533,26 @@ export async function registrarLatidoPresencia(params: {
 
   if (supabase) {
     try {
-      await supabase.rpc("club_registrar_latido_sesion", {
-        p_sesion_id: sesionId,
-        p_usuario_id: params.usuarioId,
-        p_nombre: params.nombre || params.usuarioId,
-        p_rol: params.rol || "Operador",
-        p_grupo_id: params.grupoId ? String(params.grupoId) : null,
-        p_pagina: params.paginaActual || window.location.pathname,
-        p_ip: params.ip || null,
-        p_navegador: navegador,
-        p_dispositivo: dispositivo,
-      });
+      await supabase.from("usuario_sesion").upsert(
+        [
+          {
+            id: sesionId,
+            usuario_id: params.usuarioId,
+            nombre: params.nombre || params.usuarioId,
+            rol: params.rol || "Operador",
+            grupo_id: params.grupoId ? String(params.grupoId) : null,
+            ultimo_latido: ahoraIso,
+            activo: true,
+            dispositivo,
+            navegador,
+            pagina_actual: params.paginaActual || window.location.pathname,
+            ip: params.ip || null,
+          },
+        ],
+        { onConflict: "id" }
+      );
     } catch {
-      try {
-        await supabase.from("usuario_sesion").upsert(
-          [
-            {
-              id: sesionId,
-              usuario_id: params.usuarioId,
-              nombre: params.nombre || params.usuarioId,
-              rol: params.rol || "Operador",
-              grupo_id: params.grupoId ? String(params.grupoId) : null,
-              ultimo_latido: ahoraIso,
-              activo: true,
-              dispositivo,
-              navegador,
-              pagina_actual: params.paginaActual || window.location.pathname,
-              ip: params.ip || null,
-            },
-          ],
-          { onConflict: "id" }
-        );
-      } catch {
-        /* best-effort */
-      }
+      /* best-effort */
     }
   }
 }

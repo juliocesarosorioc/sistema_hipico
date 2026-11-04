@@ -63,6 +63,7 @@ const CAPACIDAD_CERRAR = "contabilidad:fn_registrar_movimiento";
 
 const TABLA = "cierres_jornada";
 const CLAVE_CIERRES_LOCAL_PREFIX = "hipico_cierres_jornada_";
+let tablaCierresAusente = false;
 
 function leerCierresLocal(grupoId: string): CierreJornada[] {
   if (typeof window === "undefined" || !grupoId) return [];
@@ -133,7 +134,7 @@ export async function listarCierres(
   const gid = String(grupoId ?? "").trim();
   if (!gid) return { ok: true, cierres: [] };
   const locales = leerCierresLocal(gid);
-  if (!supabase) return { ok: true, cierres: locales };
+  if (!supabase || tablaCierresAusente) return { ok: true, cierres: locales };
   try {
     const { data, error } = await supabase
       .from(TABLA)
@@ -142,6 +143,7 @@ export async function listarCierres(
       .order("fecha_fin", { ascending: false })
       .order("id", { ascending: false });
     if (error) {
+      if (esAusente(error.message)) tablaCierresAusente = true;
       return { ok: true, cierres: locales };
     }
     const remotos = (data ?? []) as unknown as CierreJornada[];
@@ -238,7 +240,7 @@ export async function cerrarRango(opts: {
   const actualizados = fusionarCierres([cierreLocal], previos);
   guardarCierresLocal(gid, actualizados);
 
-  if (!supabase) return { ok: true, rango, cierre: cierreLocal };
+  if (!supabase || tablaCierresAusente) return { ok: true, rango, cierre: cierreLocal };
 
   try {
     const { data, error } = await supabase
@@ -246,6 +248,9 @@ export async function cerrarRango(opts: {
       .upsert(fila, { onConflict: "grupo_id,tipo,fecha_inicio,fecha_fin" })
       .select(COLS)
       .maybeSingle();
+    if (error && esAusente(error.message)) {
+      tablaCierresAusente = true;
+    }
     if (!error && data) {
       const remoto = data as unknown as CierreJornada;
       guardarCierresLocal(gid, fusionarCierres([remoto], actualizados));

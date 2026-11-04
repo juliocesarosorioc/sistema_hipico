@@ -114,45 +114,20 @@ export async function fijarSemanaVigente(
   // Persistir inmediatamente la semana activa elegida por el usuario
   guardarSemanaVigenteLocal(gid, fechaNorm);
 
-  if (!supabase) return { ok: true, inicio: fechaNorm };
-
-  try {
-    // Si el usuario activa una semana que empieza en un día de la semana distinto,
-    // sincronizamos también el ciclo del grupo para que coincida con su semana activa.
-    if (fechaNorm) {
-      const [y, m, d] = fechaNorm.split("-").map(Number);
-      const jsDay = new Date(y, m - 1, d).getDay();
-      const diaApertura = jsDay === 0 ? 7 : jsDay;
-      const diaCorte = diaApertura === 1 ? 7 : diaApertura - 1;
-      try {
-        window.localStorage.setItem(
-          `hipico_ciclo_grupo_${gid}`,
-          JSON.stringify({ dia_inicio_semana: diaApertura, dia_fin_semana: diaCorte })
-        );
-      } catch {
-        /* ignore */
-      }
-      await supabase
-        .rpc("club_actualizar_ciclo_grupo", {
-          p_grupo_id: gid,
-          p_dia_inicio: diaApertura,
-          p_dia_fin: diaCorte,
-        })
-        .then(() => {}, () => {});
+  if (fechaNorm && typeof window !== "undefined") {
+    const [y, m, d] = fechaNorm.split("-").map(Number);
+    const jsDay = new Date(y, m - 1, d).getDay();
+    const diaApertura = jsDay === 0 ? 7 : jsDay;
+    const diaCorte = diaApertura === 1 ? 7 : diaApertura - 1;
+    try {
+      window.localStorage.setItem(
+        `hipico_ciclo_grupo_${gid}`,
+        JSON.stringify({ dia_inicio_semana: diaApertura, dia_fin_semana: diaCorte })
+      );
+    } catch {
+      /* ignore */
     }
-
-    const { error } = await supabase.rpc("club_fijar_semana_vigente", {
-      p_grupo_id: gid,
-      p_inicio: fechaNorm,
-    });
-    if (error) {
-      await supabase
-        .from("grupos_venta")
-        .update({ semana_vigente_inicio: fechaNorm })
-        .eq("id", gid);
-    }
-  } catch {
-    /* El respaldo local garantiza que la semana activa fijada por el usuario se mantenga sin generar novedad */
   }
+
   return { ok: true, inicio: fechaNorm };
 }
