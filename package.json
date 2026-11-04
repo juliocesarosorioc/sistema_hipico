@@ -10,7 +10,8 @@
     "build:gh-pages": "node scripts/build-gh-pages.mjs",
     "start": "next start",
     "test": "node pruebas/correr.cjs",
-    "validar:sql": "node pruebas/validar-sql.mjs"
+    "validar:sql": "node pruebas/validar-sql.mjs",
+    "deploy:web": "git push origin main"
   },
   "repository": {
     "type": "git",
