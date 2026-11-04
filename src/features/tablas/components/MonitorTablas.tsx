@@ -299,6 +299,27 @@ export function MonitorTablas({
   const [carreraFiltro, setCarreraFiltro] = useState<string>("");
   const [exportandoExcel, setExportandoExcel] = useState(false);
 
+  /** Densidad visual de las tarjetas: cómoda (default, espaciosa) vs compacta (alta densidad). */
+  const [densidadVista, setDensidadVista] = useState<"comoda" | "compacta">(() => {
+    if (typeof window !== "undefined") {
+      const salvada = localStorage.getItem("hipico_tablas_densidad");
+      if (salvada === "compacta" || salvada === "comoda") return salvada;
+    }
+    return "comoda";
+  });
+
+  const alternarDensidad = (d: "comoda" | "compacta") => {
+    setDensidadVista(d);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("hipico_tablas_densidad", d);
+    }
+  };
+
+  /** Filtro de estado: abiertas para venta o todas (incluye cerradas y liquidadas). */
+  const [filtroEstado, setFiltroEstado] = useState<"abiertas" | "todas">("abiertas");
+  /** Buscador rápido en tiempo real por caballo, número o carrera. */
+  const [busquedaTexto, setBusquedaTexto] = useState("");
+
   /** Hipódromo filtrado: si el padre controla el filtro (Hipódromos del Día),
    *  lo gobierna desde arriba; si no, opera interno. */
   const hipodromoControlado = onHipodromoFiltro !== undefined;
@@ -324,9 +345,24 @@ export function MonitorTablas({
    *  alimentan los filtros en el eje de CARRERA. */
   const centralEnFiltro = ejeFecha === "carrera";
 
-  // `useMemo`: sin esto se recalculaba en cada render (incluidas las veces que
-  // solo cambia un input del filtro) y, como alimenta varios `useMemo` de
-  // filtros en cascada, invalidaba toda la cascada en cada pulsación.
+  // Data base según filtro de estado: abiertas para venta o todas
+  const baseTablas = useMemo(() => {
+    return filtroEstado === "abiertas" ? tablas.filter((t) => !t.cerrada) : tablas;
+  }, [tablas, filtroEstado]);
+
+  // Conteo de tablas por hipódromo para las píldoras de navegación rápida
+  const conteoPorHipodromo = useMemo(() => {
+    const counts: Record<string, number> = {};
+    baseTablas.forEach((t) => {
+      if (fechaFiltro && diaDeLaTabla(t, ejeFecha) !== fechaFiltro) return;
+      const hipo = t.hipodromo ?? "";
+      if (hipo) {
+        counts[hipo] = (counts[hipo] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [baseTablas, fechaFiltro, ejeFecha]);
+
   const abiertas = useMemo(() => tablas.filter((t) => !t.cerrada), [tablas]);
 
   // DATA CENTRAL: días e hipódromos con carreras registradas en Carreras del
@@ -337,14 +373,14 @@ export function MonitorTablas({
   // FILTROS EN CASCADA BIDIRECCIONALES
   const fechasDisponibles = useMemo(() => {
     const setFechas = new Set<string>();
-    abiertas.forEach(t => {
+    baseTablas.forEach((t) => {
       if (!hipodromoFiltro || t.hipodromo === hipodromoFiltro) {
         const d = diaDeLaTabla(t, ejeFecha);
         if (d) setFechas.add(d);
       }
     });
     if (centralEnFiltro) {
-      centralCarreras.forEach(c => {
+      centralCarreras.forEach((c) => {
         if (!hipodromoFiltro || c.hipodromo === hipodromoFiltro) setFechas.add(c.fecha);
       });
     }
@@ -352,34 +388,34 @@ export function MonitorTablas({
     // carreras: el filtro nunca se resetea a "todas las fechas".
     if (fechaFiltro) setFechas.add(fechaFiltro);
     return Array.from(setFechas).sort().reverse();
-  }, [abiertas, hipodromoFiltro, centralCarreras, fechaFiltro, ejeFecha, centralEnFiltro]);
+  }, [baseTablas, hipodromoFiltro, centralCarreras, fechaFiltro, ejeFecha, centralEnFiltro]);
 
   const hipodromosDisponibles = useMemo(() => {
     const setHips = new Set<string>();
-    abiertas.forEach(t => {
+    baseTablas.forEach((t) => {
       if (!fechaFiltro || diaDeLaTabla(t, ejeFecha) === fechaFiltro) {
         if (t.hipodromo) setHips.add(t.hipodromo);
       }
     });
     if (centralEnFiltro) {
-      centralCarreras.forEach(c => {
+      centralCarreras.forEach((c) => {
         if (!fechaFiltro || c.fecha === fechaFiltro) setHips.add(c.hipodromo);
       });
     }
     return Array.from(setHips).sort();
-  }, [abiertas, fechaFiltro, centralCarreras, ejeFecha, centralEnFiltro]);
+  }, [baseTablas, fechaFiltro, centralCarreras, ejeFecha, centralEnFiltro]);
 
   /** Números de carrera disponibles dentro del día + hipódromo filtrados. */
   const carrerasDisponibles = useMemo(() => {
     const nums = new Set<string>();
-    abiertas.forEach(t => {
+    baseTablas.forEach((t) => {
       if (fechaFiltro && diaDeLaTabla(t, ejeFecha) !== fechaFiltro) return;
       if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return;
       const c = String(t.carrera ?? "").trim();
       if (c) nums.add(c);
     });
     if (centralEnFiltro) {
-      centralCarreras.forEach(c => {
+      centralCarreras.forEach((c) => {
         if (fechaFiltro && c.fecha !== fechaFiltro) return;
         if (hipodromoFiltro && c.hipodromo !== hipodromoFiltro) return;
         const n = String(c.carrera ?? "").trim();
@@ -387,7 +423,7 @@ export function MonitorTablas({
       });
     }
     return Array.from(nums).sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
-  }, [abiertas, centralCarreras, fechaFiltro, hipodromoFiltro, ejeFecha, centralEnFiltro]);
+  }, [baseTablas, centralCarreras, fechaFiltro, hipodromoFiltro, ejeFecha, centralEnFiltro]);
 
   // La carrera elegida se descarta sola si cambia el día o el hipódromo, para
   // que el filtro nunca quede huérfano (mostrando "0 tablas" sin motivo).
@@ -403,27 +439,43 @@ export function MonitorTablas({
     if (hipodromoFiltro && !hipodromosDisponibles.includes(hipodromoFiltro)) setHipodromoLocal("");
   }, [hipodromosDisponibles, hipodromoFiltro, hipodromoControlado]);
 
-  // Aplicación del filtro final. Se ordena por hipódromo y luego por número de
-  // carrera ASCENDENTE (comparación numérica: C2 va antes que C10). El store
-  // también se muta en local (publicar/cerrar), así que el orden se reaplica
-  // aquí y no se confía solo en el de la carga inicial.
-  const filtradas = useMemo(() => abiertas
-    .filter(t => {
-      if (fechaFiltro && diaDeLaTabla(t, ejeFecha) !== fechaFiltro) return false;
-      if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return false;
-      if (carreraFiltro && String(t.carrera ?? "").trim() !== carreraFiltro) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      const hipo = (a.hipodromo ?? "").localeCompare(b.hipodromo ?? "", "es");
-      if (hipo !== 0) return hipo;
-      const ca = Number(a.carrera);
-      const cb = Number(b.carrera);
-      const va = Number.isFinite(ca) && ca > 0 ? ca : Number.POSITIVE_INFINITY;
-      const vb = Number.isFinite(cb) && cb > 0 ? cb : Number.POSITIVE_INFINITY;
-      if (va !== vb) return va - vb;
-      return diaDeLaTabla(a, ejeFecha).localeCompare(diaDeLaTabla(b, ejeFecha));
-    }), [abiertas, fechaFiltro, hipodromoFiltro, carreraFiltro, ejeFecha]);
+  // Aplicación del filtro final con orden numérico y búsqueda instantánea
+  const filtradas = useMemo(() => {
+    const q = busquedaTexto.trim().toLowerCase();
+    return baseTablas
+      .filter((t) => {
+        if (fechaFiltro && diaDeLaTabla(t, ejeFecha) !== fechaFiltro) return false;
+        if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return false;
+        if (carreraFiltro && String(t.carrera ?? "").trim() !== carreraFiltro) return false;
+        if (q) {
+          const hipoNombre = (t.hipodromo ?? "").toLowerCase();
+          const hipoMostrar = nombreHipodromoParaMostrar(t.hipodromo).toLowerCase();
+          const carreraStr = String(t.carrera ?? "").toLowerCase();
+          const matchHipo = hipoNombre.includes(q) || hipoMostrar.includes(q);
+          const matchCarrera =
+            carreraStr === q ||
+            `c${carreraStr}` === q ||
+            `carrera ${carreraStr}`.includes(q);
+          const matchCaballos = (t.caballos ?? []).some((c) => {
+            const num = String(c.numero ?? "").toLowerCase();
+            const nom = (c.nombre ?? "").toLowerCase();
+            return num === q || `n${num}` === q || `#${num}` === q || nom.includes(q);
+          });
+          if (!matchHipo && !matchCarrera && !matchCaballos) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const hipo = (a.hipodromo ?? "").localeCompare(b.hipodromo ?? "", "es");
+        if (hipo !== 0) return hipo;
+        const ca = Number(a.carrera);
+        const cb = Number(b.carrera);
+        const va = Number.isFinite(ca) && ca > 0 ? ca : Number.POSITIVE_INFINITY;
+        const vb = Number.isFinite(cb) && cb > 0 ? cb : Number.POSITIVE_INFINITY;
+        if (va !== vb) return va - vb;
+        return diaDeLaTabla(a, ejeFecha).localeCompare(diaDeLaTabla(b, ejeFecha));
+      });
+  }, [baseTablas, fechaFiltro, hipodromoFiltro, carreraFiltro, ejeFecha, busquedaTexto]);
 
   /**
    * Excel de lo que se está mirando: se arma la matriz con las MISMAS filas
@@ -795,457 +847,634 @@ export function MonitorTablas({
     <div className="space-y-4">
       {aviso && <p className="rounded-lg bg-success-500/10 px-3 py-2 text-xs font-semibold text-success-700 no-print">{aviso}</p>}
 
-      {/* FILTROS EN CASCADA Y VISTA IMPRESIÓN */}
-      <div className="no-print flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
-        <p className="text-xs font-bold text-slate-600">
-          {filtradas.length} tabla(s) filtrada(s)
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-
-          {/* Eje del día: la tabla tiene DOS fechas y no siempre coinciden.
-              "Carrera" agrupa/filtra por cuándo CORRE; "Venta" por cuándo se
-              VENDIÓ/publicó. Cambia el selector de Fecha y el panel de arriba. */}
-          <div className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-1.5 py-1 shadow-sm">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🧭 Eje</span>
-            <button
-              type="button"
-              onClick={() => setEjeFecha("carrera")}
-              title="Agrupar y filtrar por la fecha en que CORRE la carrera"
-              className={`cursor-pointer rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide transition ${
-                ejeFecha === "carrera" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              🏇 Carrera
-            </button>
-            <button
-              type="button"
-              onClick={() => setEjeFecha("venta")}
-              title="Agrupar y filtrar por la fecha en que se VENDIÓ/publicó la tabla"
-              className={`cursor-pointer rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide transition ${
-                ejeFecha === "venta" ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              🧾 Venta
-            </button>
-          </div>
-
-          {/* Filtro Hipódromo */}
-          <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🏛️ Hipódromo</span>
-            <select
-              value={hipodromoFiltro}
-              onChange={(e) => setHipodromoFiltro(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none normal-case"
-            >
-              <option value="">TODOS</option>
-              {hipodromosDisponibles.map(h => <option key={h} value={h}>{nombreHipodromoParaMostrar(h)}</option>)}
-            </select>
-          </label>
-
-                    {/* Filtro Fecha (según el eje elegido arriba) */}
-          <div className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-              {ejeFecha === "venta" ? "🧾 Venta" : "📅 Carrera"}
+      {/* BARRA DE FILTROS, BUSCADOR Y HERRAMIENTAS */}
+      <div className="no-print space-y-2.5 rounded-xl border border-slate-200 bg-slate-50/90 p-3 shadow-xs">
+        {/* FILA SUPERIOR: CONTEO, ESTADO, DENSIDAD Y BUSCADOR */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-100/80 px-2.5 py-1 text-xs font-black text-indigo-900 border border-indigo-200/60 shadow-xs">
+              📊 {filtradas.length} {filtradas.length === 1 ? "tabla" : "tablas"}
             </span>
-            <DateInput
-              value={fechaFiltro}
-              onFechaChange={(val) => setFechaFiltro(val)}
-              placeholder="TODAS"
-              className="border-0 bg-transparent py-0 px-1 text-xs font-bold text-slate-900 shadow-none focus:ring-0 w-28"
-            />
-            {fechaFiltro ? (
+
+            {/* Selector de Estado: Abiertas vs Todas */}
+            <div className="inline-flex items-center rounded-lg border border-slate-300 bg-white p-0.5 shadow-xs">
               <button
                 type="button"
-                onClick={() => setFechaFiltro("")}
-                title="Ver todas las fechas"
-                className="text-[10px] font-bold text-slate-400 hover:text-slate-700 px-1"
+                onClick={() => setFiltroEstado("abiertas")}
+                className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-black uppercase tracking-wide transition ${
+                  filtroEstado === "abiertas"
+                    ? "bg-emerald-600 text-white shadow-xs"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+                title="Mostrar únicamente tablas abiertas para venta"
+              >
+                🟢 Abiertas
+              </button>
+              <button
+                type="button"
+                onClick={() => setFiltroEstado("todas")}
+                className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-black uppercase tracking-wide transition ${
+                  filtroEstado === "todas"
+                    ? "bg-slate-800 text-white shadow-xs"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+                title="Mostrar todas las tablas, incluidas cerradas y liquidadas"
+              >
+                🏁 Todas
+              </button>
+            </div>
+
+            {/* Selector de Densidad: Cómoda vs Compacta */}
+            <div className="inline-flex items-center rounded-lg border border-slate-300 bg-white p-0.5 shadow-xs">
+              <button
+                type="button"
+                onClick={() => alternarDensidad("comoda")}
+                className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-black uppercase tracking-wide transition ${
+                  densidadVista === "comoda"
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+                title="Modo Cómodo: tarjetas amplias, texto legible para pantallas móviles y táctiles"
+              >
+                📱 Cómoda
+              </button>
+              <button
+                type="button"
+                onClick={() => alternarDensidad("compacta")}
+                className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-black uppercase tracking-wide transition ${
+                  densidadVista === "compacta"
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+                title="Modo Compacto: cuadrícula densa para ver muchas tablas a la vez en taquillas y pantallas grandes"
+              >
+                🖥️ Compacta
+              </button>
+            </div>
+          </div>
+
+          {/* BUSCADOR RÁPIDO */}
+          <div className="relative flex-1 min-w-[220px] max-w-sm">
+            <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 text-xs">
+              🔍
+            </span>
+            <input
+              type="text"
+              value={busquedaTexto}
+              onChange={(e) => setBusquedaTexto(e.target.value)}
+              placeholder="Buscar caballo, Nº o carrera..."
+              className="w-full rounded-lg border border-slate-300 bg-white py-1 pl-8 pr-7 text-xs font-bold text-slate-800 placeholder-slate-400 shadow-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            {busquedaTexto ? (
+              <button
+                type="button"
+                onClick={() => setBusquedaTexto("")}
+                className="absolute inset-y-0 right-0 flex items-center pr-2 text-xs font-bold text-slate-400 hover:text-slate-700"
+                title="Limpiar búsqueda"
               >
                 ✕
               </button>
             ) : null}
           </div>
+        </div>
 
-          {/* Filtro Carrera */}
-          <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🏇 Carrera</span>
-            <select
-              value={carreraFiltro}
-              onChange={(e) => setCarreraFiltro(e.target.value)}
-              disabled={carrerasDisponibles.length === 0}
-              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none"
-            >
-              <option value="">TODAS</option>
-              {carrerasDisponibles.map(c => <option key={c} value={c}>C{c}</option>)}
-            </select>
-          </label>
+        {/* FILA INTERMEDIA: FILTROS CLÁSICOS Y BOTONES DE ACCIÓN */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-slate-200/80 pt-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Eje del día */}
+            <div className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-1.5 py-1 shadow-xs">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🧭 Eje</span>
+              <button
+                type="button"
+                onClick={() => setEjeFecha("carrera")}
+                title="Agrupar y filtrar por la fecha en que CORRE la carrera"
+                className={`cursor-pointer rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide transition ${
+                  ejeFecha === "carrera" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                🏇 Carrera
+              </button>
+              <button
+                type="button"
+                onClick={() => setEjeFecha("venta")}
+                title="Agrupar y filtrar por la fecha en que se VENDIÓ/publicó la tabla"
+                className={`cursor-pointer rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide transition ${
+                  ejeFecha === "venta" ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                🧾 Venta
+              </button>
+            </div>
 
-          {(fechaFiltro !== "" || hipodromoFiltro || carreraFiltro) && (
+            {/* Filtro Fecha */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-xs">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                {ejeFecha === "venta" ? "🧾 Venta" : "📅 Carrera"}
+              </span>
+              <DateInput
+                value={fechaFiltro}
+                onFechaChange={(val) => setFechaFiltro(val)}
+                placeholder="TODAS"
+                className="border-0 bg-transparent py-0 px-1 text-xs font-bold text-slate-900 shadow-none focus:ring-0 w-28"
+              />
+              {fechaFiltro ? (
+                <button
+                  type="button"
+                  onClick={() => setFechaFiltro("")}
+                  title="Ver todas las fechas"
+                  className="text-[10px] font-bold text-slate-400 hover:text-slate-700 px-1"
+                >
+                  ✕
+                </button>
+              ) : null}
+            </div>
+
+            {/* Filtro Carrera */}
+            <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-xs">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🏇 Carrera</span>
+              <select
+                value={carreraFiltro}
+                onChange={(e) => setCarreraFiltro(e.target.value)}
+                disabled={carrerasDisponibles.length === 0}
+                className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none"
+              >
+                <option value="">TODAS</option>
+                {carrerasDisponibles.map(c => <option key={c} value={c}>C{c}</option>)}
+              </select>
+            </label>
+
+            {(fechaFiltro !== "" || hipodromoFiltro !== "" || carreraFiltro !== "" || busquedaTexto !== "") && (
+              <button
+                type="button"
+                onClick={() => { setFechaFiltro(""); setHipodromoFiltro(""); setCarreraFiltro(""); setBusquedaTexto(""); }}
+                className="cursor-pointer text-[10px] font-black uppercase text-red-600 hover:text-red-700 border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-lg transition"
+              >
+                ✕ Limpiar filtros
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => { setFechaFiltro(""); setHipodromoFiltro(""); setCarreraFiltro(""); }}
-              className="text-[10px] font-black uppercase text-red-500 hover:text-red-600 border border-red-200 bg-red-50 px-2 py-1 rounded"
+              onClick={() => setVistaImpresion((v) => !v)}
+              className="cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-indigo-700 shadow-xs transition-colors hover:bg-indigo-50"
             >
-              ✕ Limpiar
+              🖨️ {vistaImpresion ? "Volver a Edición" : "Vista de impresión"}
             </button>
-          )}
 
-          <button
-            type="button"
-            onClick={() => setVistaImpresion((v) => !v)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-indigo-700 shadow-sm transition-colors hover:bg-indigo-50 ml-2"
-          >
-            🖨️ {vistaImpresion ? "Volver a Edición" : "Vista de impresión"}
-          </button>
+            <button
+              type="button"
+              onClick={() => void exportarExcel()}
+              disabled={exportandoExcel || filtradas.length === 0}
+              title="Descargar como Excel (.xls) lo que muestran los filtros actuales"
+              className="cursor-pointer rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-emerald-700 shadow-xs transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {exportandoExcel ? "⏳ Generando…" : "📊 Excel"}
+            </button>
 
-          {/* Excel de lo filtrado: mismos filtros que la pantalla. */}
-          <button
-            type="button"
-            onClick={() => void exportarExcel()}
-            disabled={exportandoExcel || filtradas.length === 0}
-            title="Descargar como Excel (.xls) lo que muestran los filtros actuales"
-            className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {exportandoExcel ? "⏳ Generando…" : "📊 Excel"}
-          </button>
+            <button
+              type="button"
+              onClick={() => setReporteAbierto(true)}
+              title="Reporte de tablas fijas vendidas (riesgo, ganadores, comisiones, pagos y retiros)"
+              aria-label="Reporte de tablas fijas vendidas"
+              className="cursor-pointer inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-xs transition hover:brightness-110"
+            >
+              📈 Reporte
+            </button>
 
-          {/* REPORTE de lo VENDIDO: tablas dinámicas por grupo/hipódromo/carrera/
-              jugador, monto en riesgo, ganadores/perdedores, comisión por grupo,
-              pagos y retiros. Abre a pantalla completa. */}
-          <button
-            type="button"
-            onClick={() => setReporteAbierto(true)}
-            title="Reporte de tablas fijas vendidas (riesgo, ganadores, comisiones, pagos y retiros)"
-            aria-label="Reporte de tablas fijas vendidas"
-            className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-sm transition-colors hover:from-indigo-500 hover:to-violet-500"
-          >
-            📈 Reporte
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              const primera = filtradas[0] ?? tablas[0] ?? null;
-              if (primera) setTablaControlRiesgo(primera);
-            }}
-            disabled={filtradas.length === 0 && tablas.length === 0}
-            title="Herramienta de Control de Riesgo, Cupos y Pérdida Máxima por Carrera y Ejemplar"
-            aria-label="Control de Riesgo y Cupos"
-            className="inline-flex items-center gap-1 rounded-lg border border-purple-300 bg-gradient-to-r from-purple-700 to-indigo-700 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-sm transition-colors hover:from-purple-600 hover:to-indigo-600 disabled:opacity-50"
-          >
-            🛡️ Control de Riesgo y Cupos
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                const primera = filtradas[0] ?? tablas[0] ?? null;
+                if (primera) setTablaControlRiesgo(primera);
+              }}
+              disabled={filtradas.length === 0 && tablas.length === 0}
+              title="Herramienta de Control de Riesgo, Cupos y Pérdida Máxima por Carrera y Ejemplar"
+              aria-label="Control de Riesgo y Cupos"
+              className="cursor-pointer inline-flex items-center gap-1 rounded-lg border border-purple-300 bg-gradient-to-r from-purple-700 to-indigo-700 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-xs transition hover:brightness-110 disabled:opacity-50"
+            >
+              🛡️ Control de Riesgo y Cupos
+            </button>
+          </div>
         </div>
+
+        {/* PÍLDORAS INTERACTIVAS DE HIPÓDROMOS */}
+        {hipodromosDisponibles.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
+            <span className="shrink-0 text-[10px] font-black uppercase tracking-wider text-slate-400 pr-1">
+              🏛️ Hipódromos:
+            </span>
+            <button
+              type="button"
+              onClick={() => setHipodromoFiltro("")}
+              className={`shrink-0 cursor-pointer rounded-lg px-2.5 py-1 text-xs font-black transition-all ${
+                !hipodromoFiltro
+                  ? "bg-slate-900 text-white shadow-sm ring-1 ring-slate-950"
+                  : "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-100"
+              }`}
+            >
+              TODOS ({baseTablas.length})
+            </button>
+            {hipodromosDisponibles.map((h) => {
+              const activo = hipodromoFiltro === h;
+              const count = conteoPorHipodromo[h] || 0;
+              const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN|CHARLES|DELTA|REMINGTON|MOUNTAINEER|FINGER|MAHONING|PENN|HORSESHOE|KEENELAND|CHURCHILL/i.test(h);
+              const bandera = esAmericano ? "US" : "VE";
+              return (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => setHipodromoFiltro(activo ? "" : h)}
+                  className={`shrink-0 inline-flex items-center gap-1.5 cursor-pointer rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                    activo
+                      ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black shadow-md ring-2 ring-indigo-400/50"
+                      : "border border-slate-200 bg-white text-slate-800 hover:border-indigo-300 hover:bg-indigo-50/50"
+                  }`}
+                >
+                  <Flag nac={bandera} size={12} withName={false} />
+                  <span>{nombreHipodromoParaMostrar(h)}</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.2 text-[10px] font-black leading-none ${
+                      activo ? "bg-white/25 text-white" : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* VISTA PANTALLA O IMPRESIÓN */}
       {vistaImpresion ? (
         <MatrizImpresion tablas={filtradas} />
       ) : (
-        <div className="grid gap-4 print:hidden sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <div
+          className={
+            densidadVista === "compacta"
+              ? "grid gap-2.5 print:hidden sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+              : "grid gap-4 print:hidden sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+          }
+        >
           {filtradas.length === 0 && (
-            <div className="col-span-full rounded-2xl border border-dashed border-line bg-surface p-10 text-center">
-              <p className="text-sm font-semibold text-slate-500">No hay tablas que coincidan con los filtros.</p>
+            <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center shadow-xs">
+              <span className="text-3xl">🏇</span>
+              <p className="mt-2 text-sm font-bold text-slate-700">No hay tablas que coincidan con los filtros seleccionados.</p>
+              <p className="text-xs text-slate-500 mt-1">Prueba cambiando el día, hipódromo o limpiando la búsqueda.</p>
+              {(fechaFiltro || hipodromoFiltro || carreraFiltro || busquedaTexto) && (
+                <button
+                  type="button"
+                  onClick={() => { setFechaFiltro(""); setHipodromoFiltro(""); setCarreraFiltro(""); setBusquedaTexto(""); }}
+                  className="mt-3 inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-black text-white shadow-sm hover:bg-indigo-500 transition"
+                >
+                  ✕ Restablecer todos los filtros
+                </button>
+              )}
             </div>
           )}
-          {filtradas.map((t) => (
-            <div key={String(t.id)} className="flex flex-col overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-sm">
-              <div className="px-1.5 py-px text-white" style={{ background: "linear-gradient(135deg,#4f46e5 0%,#7c3aed 60%,#9333ea 100%)" }}>
-                <div className="flex items-center justify-between gap-1 leading-none">
-                  <span className="min-w-0 truncate rounded bg-white/20 px-1.5 py-px text-[16px] font-bold normal-case tracking-wider">
-                    🏛️ {nombreHipodromoParaMostrar(t.hipodromo)}
-                  </span>
-                  <span className="flex items-center gap-1 whitespace-nowrap">
-                    <span className="inline-flex items-center rounded-md border-4 border-white bg-indigo-900 px-4 py-1 text-[15px] font-black uppercase leading-none tracking-widest text-white shadow-lg md:text-[19px]">
-                      C{t.carrera ?? ""}
-                    </span>
-                    {/*
-                      Acciones CRUD de la tabla, en la cabecera y al lado de la
-                      carrera. Antes vivían en una fila al pie de la tarjeta, con
-                      cuatro botones de texto de ancho elástico: ocupaban una
-                      banda entera, se veían distintos entre sí (el de eliminar
-                      era más chico que los otros) y competían con la información
-                      del cuadro. Arriba, cuadrados y del mismo tamaño, la
-                      lectura es "esta tabla, estas acciones" de un vistazo y la
-                      tarjeta recupera el pie para la Suma.
-
-                      El color sí codifica la acción (editar=ámbar, vender=índigo,
-                      liquidar=esmeralda, eliminar=rojo), pero la FORMA es idéntica
-                      en las cuatro: sin texto, con `title` para el emergente.
-                    */}
-                    <span className="no-print ml-1 flex items-center gap-1">
-                      <Guard permiso="tablas:btn_editar">
-                        <button
-                          type="button"
-                          onClick={() => { setEditando(t); setPatchEdicion({}); setPatchCaballos((t.caballos ?? []).map((c) => ({ ...c }))); void cargarCupos(t); }}
-                          title="Editar la tabla y la carrera"
-                          aria-label="Editar la tabla y la carrera"
-                          className={BTN_CRUDA + " bg-amber-500 hover:bg-amber-400"}
-                        >
-                          ✏️
-                        </button>
-                      </Guard>
-                      <Guard permiso="tablas:btn_vender">
-                        <button
-                          type="button"
-                          onClick={() => void abrirVenta(t)}
-                          title="Vender esta tabla"
-                          aria-label="Vender esta tabla"
-                          className={BTN_CRUDA + " bg-indigo-500 hover:bg-indigo-400"}
-                        >
-                          🎟️
-                        </button>
-                      </Guard>
-                      <Guard permiso="tablas:btn_liquidar">
-                        <button
-                          type="button"
-                          onClick={() => setLiquidando(t)}
-                          title="Liquidar: cobrar los premios de la carrera"
-                          aria-label="Liquidar la tabla"
-                          className={BTN_CRUDA + " bg-emerald-600 hover:bg-emerald-500"}
-                        >
-                          🏁
-                        </button>
-                      </Guard>
-                      <Guard algunaDe={["tablas:btn_control_riesgo", "tablas:btn_editar"]}>
-                        <button
-                          type="button"
-                          onClick={() => setTablaControlRiesgo(t)}
-                          title="Control de riesgo, máximos por ejemplar y gestión de cupos por grupo"
-                          aria-label="Control de riesgo y cupos"
-                          className={BTN_CRUDA + " bg-purple-600 hover:bg-purple-500"}
-                        >
-                          🛡️
-                        </button>
-                      </Guard>
-                      <button
-                        type="button"
-                        onClick={() => void toggleActivaPortal(t.id)}
-                        title={
-                          esTablaActivaEnPortal(t.id)
-                            ? "Activa para venta en Portal (clic para ocultar a los jugadores)"
-                            : "Oculta en Portal (clic para activar y mostrar a los jugadores)"
-                        }
-                        aria-label="Activar o desactivar en portal"
-                        className={
-                          BTN_CRUDA +
-                          (esTablaActivaEnPortal(t.id)
-                            ? " bg-teal-600 hover:bg-teal-500 text-white"
-                            : " bg-slate-400 hover:bg-slate-300 text-slate-800 opacity-60")
-                        }
-                      >
-                        {esTablaActivaEnPortal(t.id) ? "👁️" : "🙈"}
-                      </button>
-                      {onEliminar && (
-                        <Guard permiso="tablas:btn_eliminar">
-                          <button
-                            type="button"
-                            onClick={() => setConfirmarEliminar(t)}
-                            title="Eliminar la tabla"
-                            aria-label="Eliminar la tabla"
-                            className={BTN_CRUDA + " bg-rose-600 hover:bg-rose-500"}
-                          >
-                            🗑️
-                          </button>
-                        </Guard>
-                      )}
-                    </span>
-                  </span>
-                </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] font-bold leading-none">
-                  <span className="rounded bg-white/20 px-1 py-px">📏 {t.distancia_carrera ?? ""} m</span>
-                  <span className="rounded bg-white/20 px-1 py-px uppercase">{t.superficie || "ARENA"}</span>
-                  {/* Las DOS fechas de la tabla: cuándo corre y cuándo se
-                      vendió. Se resalta la del eje activo para que el ojo
-                      sepa contra cuál se está agrupando. */}
-                  <span
-                    className={`rounded px-1 py-px ${ejeFecha === "carrera" ? "bg-white/40 ring-1 ring-white/60" : "bg-white/20"}`}
-                    title="Fecha de carrera (cuándo corre)"
-                  >
-                    🏇 {diaDeLaTabla(t, "carrera") || "—"}
-                  </span>
-                  <span
-                    className={`rounded px-1 py-px ${ejeFecha === "venta" ? "bg-white/40 ring-1 ring-white/60" : "bg-white/20"}`}
-                    title="Fecha de venta (cuándo se publicó)"
-                  >
-                    🧾 {diaDeLaTabla(t, "venta") || "—"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void toggleActivaPortal(t.id)}
-                    className={`rounded px-1.5 py-px text-[9px] font-black uppercase tracking-wider transition-colors cursor-pointer ${
-                      esTablaActivaEnPortal(t.id)
-                        ? "bg-teal-500/40 text-teal-100 ring-1 ring-teal-300/50"
-                        : "bg-black/30 text-slate-300 ring-1 ring-slate-400/30 opacity-70"
-                    }`}
-                    title="Clic para activar/desactivar visibilidad y venta en el Portal de Usuarios"
-                  >
-                    {esTablaActivaEnPortal(t.id) ? "🟢 Portal: Activa" : "⚪ Portal: Oculta"}
-                  </button>
-                </div>
-                <div className="mt-0.5 flex items-center justify-between rounded bg-white/20 px-1.5 py-px leading-none">
-                  <span className="text-[11px] font-black uppercase tracking-wider opacity-90">💰 MONTO A PAGAR TABLA</span>
-                  <span className="whitespace-nowrap text-sm font-black">{fmtValor(t.premio_recalculado ?? null)}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between px-1.5 pb-0.5 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">
-                <span>🐴 Ejemplares</span>
-                <span className="rounded-full bg-slate-100 px-1.5 text-[9px] font-black text-slate-600">{(t.caballos ?? []).length}</span>
-              </div>
-
-              {Array.isArray(t.caballos) && t.caballos.some((c) => (c.max_tablas ?? 0) > 0) && (
-                <div className="mx-1 mb-1 flex items-center justify-between rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-bold text-purple-700 border border-purple-200">
-                  <span className="flex items-center gap-1">🛡️ Riesgo & Cupos activos</span>
-                  <button
-                    type="button"
-                    onClick={() => setTablaControlRiesgo(t)}
-                    className="font-black text-purple-900 underline hover:text-purple-600"
-                  >
-                    Gestionar
-                  </button>
-                </div>
-              )}
-
-              <div className="flex-1 px-1 py-0">
-                {(t.caballos ?? []).map((c, i) => {
-                  let nac = c.nacionalidad ? String(c.nacionalidad).toUpperCase() : "";
-                  if (!nac) {
-                    const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(t.hipodromo || "");
-                    nac = esAmericano ? "US" : "VE";
-                  }
-                  const valor = parseNum(c.valor_ejemplar);
-                  return (
-                    <div
-                      key={i}
-                      className={`group grid w-full items-center rounded px-1 py-0 text-left transition-colors ${c.invalidado ? "bg-purple-50" : i % 2 === 1 ? "bg-slate-100" : "bg-white"} hover:bg-indigo-200 ${c.retirado ? "opacity-50" : ""}`}
-                      style={{ gridTemplateColumns: "1.75rem 1fr 1.25rem 4rem 3.25rem" }}
+          {filtradas.map((t) => {
+            const esCompacta = densidadVista === "compacta";
+            const estaCerrada = Boolean(t.cerrada);
+            return (
+              <div
+                key={String(t.id)}
+                className={`relative flex flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition-all duration-150 hover:shadow-md ${
+                  estaCerrada
+                    ? "border-slate-300 opacity-80"
+                    : "border-indigo-200/90 hover:border-indigo-400"
+                }`}
+              >
+                {estaCerrada && (
+                  <div className="bg-slate-900 py-0.5 text-center text-[10px] font-black uppercase tracking-wider text-amber-300">
+                    🔒 CARRERA CERRADA / LIQUIDADA
+                  </div>
+                )}
+                {/* CABECERA DE LA TABLA */}
+                <div
+                  className={esCompacta ? "px-2 py-1 text-white" : "px-2.5 py-1.5 text-white"}
+                  style={{
+                    background: estaCerrada
+                      ? "linear-gradient(135deg,#475569 0%,#334155 100%)"
+                      : "linear-gradient(135deg,#4338ca 0%,#6366f1 50%,#7e22ce 100%)",
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-1 leading-none">
+                    <span
+                      className={`min-w-0 truncate rounded bg-white/20 font-black tracking-wide ${
+                        esCompacta ? "px-1.5 py-0.5 text-xs" : "px-2 py-0.5 text-sm"
+                      }`}
+                      title={nombreHipodromoParaMostrar(t.hipodromo)}
                     >
-                      <button
-                        type="button"
-                        onClick={() => setEjemplarModal({ tabla: t, indice: i })}
-                        title="Retirar, rehabilitar o vender este ejemplar"
-                        className={`col-span-4 grid w-full items-center text-left ${c.retirado ? "cursor-pointer" : "cursor-pointer"}`}
-                        style={{ gridTemplateColumns: "1.75rem 1fr 1.25rem 4rem" }}
+                      🏛️ {nombreHipodromoParaMostrar(t.hipodromo)}
+                    </span>
+                    <span className="flex items-center gap-1 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center rounded-md border-2 border-white bg-indigo-950 font-black uppercase leading-none tracking-widest text-white shadow-md ${
+                          esCompacta ? "px-2 py-0.5 text-xs" : "px-3 py-1 text-sm md:text-base"
+                        }`}
                       >
-                        <span
-                          className="flex h-6 w-6 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold leading-none"
-                          style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
-                        >
-                          {c.numero}
-                        </span>
-                        {/*
-                          Nombre del ejemplar + INSIGNIA de INVALIDADO.
-                          La insignia va FUERA del texto que se trunca: si
-                          quedara dentro, un nombre largo la cortaria y el
-                          operador no veria que el ejemplar esta descalificado.
-                        */}
-                        <span className="flex min-w-0 items-center gap-1 px-1 text-[14px] font-bold uppercase leading-none text-slate-800">
-                          <span className="min-w-0 truncate">{c.nombre || "Sin nombre"}</span>
-                          {c.invalidado ? (
-                            <span
-                              className="shrink-0 rounded bg-purple-600 px-1 py-px text-[8px] font-black uppercase tracking-wide text-white"
-                              title={`INVALIDADO${c.motivo_invalidacion ? `: ${c.motivo_invalidacion}` : ""}. No puede ganar ni ser pagado como ganador.`}
-                            >
-                              INVALIDADO
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="flex justify-center text-center leading-none">
-                          {nac !== "VE" && <Flag nac={nac} size={12} withName={false} />}
-                        </span>
-                        <span className={`whitespace-nowrap text-right text-[17px] font-black leading-none ${c.retirado ? "text-red-500 line-through" : "text-blue-700"}`}>
-                            {c.retirado ? "RET." : c.invalidado ? "INV." : `${fmtPts(valor)}`}
-                        </span>
-                      </button>
-                      {/*
-                        Columna de acciones del cuadro. Solo aparece al pasar el
-                        mouse y va en `no-print`: en la hoja impresa no puede
-                        quedar un boton. El click sigue corriendo por el boton
-                        de la izquierda, que cubre las 4 columnas del dato.
-                      */}
-                      <span className="no-print col-start-5 flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                        <Guard permiso="tablas:btn_editar_cuadro">
+                        C{t.carrera ?? ""}
+                      </span>
+
+                      {/* Botones de acción */}
+                      <span className="no-print ml-1 flex items-center gap-1">
+                        <Guard permiso="tablas:btn_editar">
                           <button
                             type="button"
-                            onClick={() => setCuadroEnEdicion({ tabla: t, indice: i })}
-                            title={`Editar ${c.nombre || `cuadro ${i + 1}`}`}
-                            className="rounded px-1 text-[11px] text-indigo-500 transition-colors hover:bg-indigo-100 hover:text-indigo-700"
+                            onClick={() => { setEditando(t); setPatchEdicion({}); setPatchCaballos((t.caballos ?? []).map((c) => ({ ...c }))); void cargarCupos(t); }}
+                            title="Editar la tabla y la carrera"
+                            aria-label="Editar la tabla y la carrera"
+                            className={BTN_CRUDA + " bg-amber-500 hover:bg-amber-400"}
                           >
                             ✏️
                           </button>
                         </Guard>
-                        <Guard permiso="tablas:btn_quitar_cuadro">
+                        <Guard permiso="tablas:btn_vender">
                           <button
                             type="button"
-                            onClick={() => setCuadroBorrando({ tabla: t, indice: i })}
-                            title={`Quitar ${c.nombre || `cuadro ${i + 1}`}`}
-                            className="rounded px-1 text-[11px] text-red-400 transition-colors hover:bg-red-100 hover:text-red-600"
+                            onClick={() => void abrirVenta(t)}
+                            title="Vender esta tabla"
+                            aria-label="Vender esta tabla"
+                            className={BTN_CRUDA + " bg-indigo-500 hover:bg-indigo-400"}
                           >
-                            🗑️
+                            🎟️
                           </button>
                         </Guard>
+                        <Guard permiso="tablas:btn_liquidar">
+                          <button
+                            type="button"
+                            onClick={() => setLiquidando(t)}
+                            title="Liquidar: cobrar los premios de la carrera"
+                            aria-label="Liquidar la tabla"
+                            className={BTN_CRUDA + " bg-emerald-600 hover:bg-emerald-500"}
+                          >
+                            🏁
+                          </button>
+                        </Guard>
+                        <Guard algunaDe={["tablas:btn_control_riesgo", "tablas:btn_editar"]}>
+                          <button
+                            type="button"
+                            onClick={() => setTablaControlRiesgo(t)}
+                            title="Control de riesgo, máximos por ejemplar y gestión de cupos por grupo"
+                            aria-label="Control de riesgo y cupos"
+                            className={BTN_CRUDA + " bg-purple-600 hover:bg-purple-500"}
+                          >
+                            🛡️
+                          </button>
+                        </Guard>
+                        <button
+                          type="button"
+                          onClick={() => void toggleActivaPortal(t.id)}
+                          title={
+                            esTablaActivaEnPortal(t.id)
+                              ? "Activa para venta en Portal (clic para ocultar a los jugadores)"
+                              : "Oculta en Portal (clic para activar y mostrar a los jugadores)"
+                          }
+                          aria-label="Activar o desactivar en portal"
+                          className={
+                            BTN_CRUDA +
+                            (esTablaActivaEnPortal(t.id)
+                              ? " bg-teal-600 hover:bg-teal-500 text-white"
+                              : " bg-slate-400 hover:bg-slate-300 text-slate-800 opacity-60")
+                          }
+                        >
+                          {esTablaActivaEnPortal(t.id) ? "👁️" : "🙈"}
+                        </button>
+                        {onEliminar && (
+                          <Guard permiso="tablas:btn_eliminar">
+                            <button
+                              type="button"
+                              onClick={() => setConfirmarEliminar(t)}
+                              title="Eliminar la tabla"
+                              aria-label="Eliminar la tabla"
+                              className={BTN_CRUDA + " bg-rose-600 hover:bg-rose-500"}
+                            >
+                              🗑️
+                            </button>
+                          </Guard>
+                        )}
                       </span>
-                    </div>
-                  );
-                })}
-                <Guard permiso="tablas:btn_agregar_cuadro">
-                  <button
-                    type="button"
-                    onClick={() => setCuadroEnEdicion({ tabla: t, indice: null })}
-                    className="no-print mt-0.5 flex w-full items-center justify-center gap-1 rounded border border-dashed border-indigo-300 py-0.5 text-[10px] font-black uppercase tracking-wider text-indigo-500 transition-colors hover:border-indigo-500 hover:bg-indigo-50"
-                  >
-                    ＋ Añadir cuadro
-                  </button>
-                </Guard>
-              </div>
-
-              {/*
-                Pie de la tarjeta. Usa el mismo `gridTemplateColumns` que cada
-                cuadro para que el total caiga exactamente bajo la columna del
-                valor y no flotando a la derecha. Antes era un
-                `flex justify-between`, que dejaba el numero desalineado
-                respecto de la columna de 4rem.
-                `flex-1` en el bloque de cuadros (arriba) es lo que empuja este
-                pie hacia abajo cuando la tabla tiene pocos ejemplares: sin
-                eso el pie queda pegado a los cuadros y no al fondo de la caja.
-                Se mantiene `py-0.5` para no alargar la tarjeta: aquí ya no queda
-                la fila de acciones, que viven en la cabecera.
-              */}
-              <div
-                className="grid items-center border-t border-slate-100 bg-white px-1 py-0.5"
-                style={{ gridTemplateColumns: "1.75rem 1fr 1.25rem 4rem" }}
-              >
-                <span />
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 leading-none">
-                  🧮 Suma
-                  <span className="font-semibold normal-case tracking-normal text-slate-400">
-                    {/*
-                      "ACTIVOS" = los ejemplares que de verdad reparten: ni
-                      retirados ni INVALIDADOS (un descalificado no puede
-                      ganar y su valor no esta en la base). Por eso el conteo
-                      tiene que usar la MISMA regla que `sumaBase`.
-                    */}
-                    ({(t.caballos ?? []).filter((c) => !c.retirado && !c.invalidado).length} activos)
-                  </span>
-                  {(t.caballos ?? []).some((c) => c.invalidado) ? (
-                    <span
-                      className="font-semibold normal-case tracking-normal text-purple-700"
-                      title="Ejemplares descalificados: no pueden ganar ni ser pagados como ganadores"
-                    >
-                      · {(t.caballos ?? []).filter((c) => c.invalidado).length} invalidado(s)
                     </span>
-                  ) : null}
-                </span>
-                <span />
-                <span
-                  className="whitespace-nowrap text-right text-[17px] font-black leading-none"
-                  style={{ color: "#74ACDF" }}
+                  </div>
+
+                  {/* Subtítulo con metadata */}
+                  <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-bold leading-none">
+                    <span className="rounded bg-white/20 px-1 py-0.5">📏 {t.distancia_carrera ?? ""} m</span>
+                    <span className="rounded bg-white/20 px-1 py-0.5 uppercase">{t.superficie || "ARENA"}</span>
+                    <span
+                      className={`rounded px-1 py-0.5 ${ejeFecha === "carrera" ? "bg-white/40 ring-1 ring-white/60 font-black" : "bg-white/20"}`}
+                      title="Fecha de carrera (cuándo corre)"
+                    >
+                      🏇 {diaDeLaTabla(t, "carrera") || "—"}
+                    </span>
+                    <span
+                      className={`rounded px-1 py-0.5 ${ejeFecha === "venta" ? "bg-white/40 ring-1 ring-white/60 font-black" : "bg-white/20"}`}
+                      title="Fecha de venta (cuándo se publicó)"
+                    >
+                      🧾 {diaDeLaTabla(t, "venta") || "—"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void toggleActivaPortal(t.id)}
+                      className={`rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider transition-colors cursor-pointer ${
+                        esTablaActivaEnPortal(t.id)
+                          ? "bg-teal-500/40 text-teal-100 ring-1 ring-teal-300/50"
+                          : "bg-black/30 text-slate-300 ring-1 ring-slate-400/30 opacity-70"
+                      }`}
+                      title="Clic para activar/desactivar visibilidad y venta en el Portal de Usuarios"
+                    >
+                      {esTablaActivaEnPortal(t.id) ? "🟢 Portal" : "⚪ Oculta"}
+                    </button>
+                  </div>
+
+                  {/* BANNER MONTO A PAGAR */}
+                  <div className={`mt-1 flex items-center justify-between rounded bg-black/25 backdrop-blur-xs px-2 py-0.5 border border-white/10 ${esCompacta ? "text-xs" : "text-sm"}`}>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-200">
+                      💰 MONTO A PAGAR
+                    </span>
+                    <span className="whitespace-nowrap font-black font-mono text-amber-300 text-sm md:text-base drop-shadow-xs">
+                      {fmtValor(t.premio_recalculado ?? null)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* HEADER EJEMPLARES */}
+                <div className="flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-50/70 border-b border-slate-100">
+                  <span className="flex items-center gap-1">🐴 Ejemplares</span>
+                  <span className="rounded-full bg-slate-200/80 px-1.5 py-0.2 text-[9px] font-black text-slate-700">
+                    {(t.caballos ?? []).length}
+                  </span>
+                </div>
+
+                {Array.isArray(t.caballos) && t.caballos.some((c) => (c.max_tablas ?? 0) > 0) && (
+                  <div className="mx-1 my-0.5 flex items-center justify-between rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-bold text-purple-700 border border-purple-200">
+                    <span className="flex items-center gap-1">🛡️ Riesgo & Cupos activos</span>
+                    <button
+                      type="button"
+                      onClick={() => setTablaControlRiesgo(t)}
+                      className="font-black text-purple-900 underline hover:text-purple-600"
+                    >
+                      Gestionar
+                    </button>
+                  </div>
+                )}
+
+                {/* FILAS DE EJEMPLARES */}
+                <div className="flex-1 px-1 py-0.5 divide-y divide-slate-100/60">
+                  {(t.caballos ?? []).map((c, i) => {
+                    let nac = c.nacionalidad ? String(c.nacionalidad).toUpperCase() : "";
+                    if (!nac) {
+                      const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN|CHARLES|DELTA|REMINGTON|MOUNTAINEER|FINGER|MAHONING|PENN|HORSESHOE|KEENELAND|CHURCHILL/i.test(t.hipodromo || "");
+                      nac = esAmericano ? "US" : "VE";
+                    }
+                    const valor = parseNum(c.valor_ejemplar);
+                    const gridCols = esCompacta
+                      ? "1.5rem 1fr 1rem 3.5rem 2.25rem"
+                      : "1.75rem 1fr 1.25rem 4rem 3rem";
+                    const btnGridCols = esCompacta
+                      ? "1.5rem 1fr 1rem 3.5rem"
+                      : "1.75rem 1fr 1.25rem 4rem";
+
+                    return (
+                      <div
+                        key={i}
+                        className={`group grid w-full items-center rounded px-1 py-0.5 text-left transition-colors ${
+                          c.invalidado
+                            ? "bg-purple-50/90"
+                            : i % 2 === 1
+                              ? "bg-slate-50/70"
+                              : "bg-white"
+                        } hover:bg-indigo-50/80 ${c.retirado ? "opacity-50" : ""}`}
+                        style={{ gridTemplateColumns: gridCols }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setEjemplarModal({ tabla: t, indice: i })}
+                          title="Retirar, rehabilitar o vender este ejemplar"
+                          className="col-span-4 grid w-full items-center text-left cursor-pointer"
+                          style={{ gridTemplateColumns: btnGridCols }}
+                        >
+                          <span
+                            className={`flex shrink-0 flex-none items-center justify-center rounded font-black leading-none shadow-2xs ${
+                              esCompacta ? "h-5 w-5 text-[9px]" : "h-6 w-6 text-[10px]"
+                            }`}
+                            style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
+                          >
+                            {c.numero}
+                          </span>
+
+                          <span
+                            className={`flex min-w-0 items-center gap-1 px-1 font-bold uppercase leading-none text-slate-800 ${
+                              esCompacta ? "text-[12px]" : "text-[13.5px]"
+                            }`}
+                          >
+                            <span className="min-w-0 truncate">{c.nombre || "Sin nombre"}</span>
+                            {c.invalidado ? (
+                              <span
+                                className="shrink-0 rounded bg-purple-600 px-1 py-px text-[8px] font-black uppercase tracking-wide text-white"
+                                title={`INVALIDADO${c.motivo_invalidacion ? `: ${c.motivo_invalidacion}` : ""}. No puede ganar ni ser pagado como ganador.`}
+                              >
+                                INV.
+                              </span>
+                            ) : null}
+                          </span>
+
+                          <span className="flex justify-center text-center leading-none">
+                            {nac !== "VE" && <Flag nac={nac} size={esCompacta ? 10 : 12} withName={false} />}
+                          </span>
+
+                          <span
+                            className={`whitespace-nowrap text-right font-black font-mono leading-none ${
+                              esCompacta ? "text-[14px]" : "text-[16px]"
+                            } ${
+                              c.retirado
+                                ? "text-red-500 line-through"
+                                : c.invalidado
+                                  ? "text-purple-600"
+                                  : "text-indigo-700"
+                            }`}
+                          >
+                            {c.retirado ? "RET." : c.invalidado ? "INV." : fmtPts(valor)}
+                          </span>
+                        </button>
+
+                        {/* Botones de acción del cuadro en hover */}
+                        <span className="no-print col-start-5 flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                          <Guard permiso="tablas:btn_editar_cuadro">
+                            <button
+                              type="button"
+                              onClick={() => setCuadroEnEdicion({ tabla: t, indice: i })}
+                              title={`Editar ${c.nombre || `cuadro ${i + 1}`}`}
+                              className="rounded px-1 text-[11px] text-indigo-500 transition-colors hover:bg-indigo-100 hover:text-indigo-700"
+                            >
+                              ✏️
+                            </button>
+                          </Guard>
+                          <Guard permiso="tablas:btn_quitar_cuadro">
+                            <button
+                              type="button"
+                              onClick={() => setCuadroBorrando({ tabla: t, indice: i })}
+                              title={`Quitar ${c.nombre || `cuadro ${i + 1}`}`}
+                              className="rounded px-1 text-[11px] text-red-400 transition-colors hover:bg-red-100 hover:text-red-600"
+                            >
+                              🗑️
+                            </button>
+                          </Guard>
+                        </span>
+                      </div>
+                    );
+                  })}
+                  <Guard permiso="tablas:btn_agregar_cuadro">
+                    <button
+                      type="button"
+                      onClick={() => setCuadroEnEdicion({ tabla: t, indice: null })}
+                      className="no-print mt-1 flex w-full items-center justify-center gap-1 rounded border border-dashed border-indigo-300 py-1 text-[10px] font-black uppercase tracking-wider text-indigo-600 transition-colors hover:border-indigo-500 hover:bg-indigo-50"
+                    >
+                      ＋ Añadir cuadro
+                    </button>
+                  </Guard>
+                </div>
+
+                {/* PIE DE LA TARJETA: SUMA BASE */}
+                <div
+                  className="grid items-center border-t border-slate-200/80 bg-slate-50/80 px-2 py-1"
+                  style={{
+                    gridTemplateColumns: esCompacta
+                      ? "1.5rem 1fr 1rem 3.5rem"
+                      : "1.75rem 1fr 1.25rem 4rem",
+                  }}
                 >
-                  {fmtPts(t.suma_base_tabla ?? sumaBase(t.caballos))}
-                </span>
+                  <span />
+                  <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-500 leading-none">
+                    🧮 Suma
+                    <span className="font-semibold normal-case tracking-normal text-slate-400">
+                      ({(t.caballos ?? []).filter((c) => !c.retirado && !c.invalidado).length} activos)
+                    </span>
+                    {(t.caballos ?? []).some((c) => c.invalidado) ? (
+                      <span
+                        className="font-semibold normal-case tracking-normal text-purple-700"
+                        title="Ejemplares descalificados"
+                      >
+                        · {(t.caballos ?? []).filter((c) => c.invalidado).length} inv.
+                      </span>
+                    ) : null}
+                  </span>
+                  <span />
+                  <span
+                    className={`whitespace-nowrap text-right font-black font-mono leading-none ${
+                      esCompacta ? "text-[15px]" : "text-[17px]"
+                    }`}
+                    style={{ color: "#0284c7" }}
+                  >
+                    {fmtPts(t.suma_base_tabla ?? sumaBase(t.caballos))}
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
