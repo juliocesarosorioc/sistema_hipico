@@ -111,6 +111,9 @@ export function CarrerasDiaModule() {
   const [guardando, setGuardando] = useState(false);
   const [modal, setModal] = useState<ModalForm>(() => vacioModal());
   const [confirmarEliminar, setConfirmarEliminar] = useState<CarreraCentral | null>(null);
+  const [seleccionadasParaEliminar, setSeleccionadasParaEliminar] = useState<Set<string>>(new Set());
+  const [confirmarEliminarLote, setConfirmarEliminarLote] = useState(false);
+  const [eliminandoLote, setEliminandoLote] = useState(false);
   const [editorMarcas, setEditorMarcas] = useState<{ hipodromo: string; carrera: number; fecha: string } | null>(null);
   const [verSinEjemplares, setVerSinEjemplares] = useState(false);
   const [modalSincUsa, setModalSincUsa] = useState(false);
@@ -377,6 +380,77 @@ export function CarrerasDiaModule() {
     void refrescar();
   };
 
+  const toggleSeleccionCarrera = (idClave: string) => {
+    setSeleccionadasParaEliminar((prev) => {
+      const next = new Set(prev);
+      if (next.has(idClave)) next.delete(idClave);
+      else next.add(idClave);
+      return next;
+    });
+  };
+
+  const todasVisiblesSeleccionadas =
+    carrerasVisibles.length > 0 &&
+    carrerasVisibles.every((c) =>
+      seleccionadasParaEliminar.has(claveCarrera(c.hipodromo, c.carrera, fecha))
+    );
+
+  const alternarSeleccionarTodas = () => {
+    if (todasVisiblesSeleccionadas) {
+      setSeleccionadasParaEliminar(new Set());
+    } else {
+      const claves = carrerasVisibles.map((c) =>
+        claveCarrera(c.hipodromo, c.carrera, fecha)
+      );
+      setSeleccionadasParaEliminar(new Set(claves));
+    }
+  };
+
+  const deseleccionarTodas = () => {
+    setSeleccionadasParaEliminar(new Set());
+  };
+
+  const eliminarLoteSeleccionadas = async () => {
+    if (seleccionadasParaEliminar.size === 0) return;
+    setEliminandoLote(true);
+    try {
+      const aEliminar = carrerasVisibles.filter((c) =>
+        seleccionadasParaEliminar.has(claveCarrera(c.hipodromo, c.carrera, fecha))
+      );
+
+      let exito = 0;
+      for (const c of aEliminar) {
+        const hipoTarget = hipodromo || c.hipodromo;
+        const r = await eliminarCarreraCentral(fecha, hipoTarget, c.carrera);
+        if (r.ok) {
+          useRegistroCentral.getState().eliminarCarrera(fecha, hipoTarget, c.carrera);
+          useCarrerasDiaStore.getState().eliminarCarrera(hipoTarget, c.carrera, fecha);
+          exito++;
+        }
+      }
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent("hipico:carreras-actualizadas", {
+            detail: { fecha, accion: "eliminadas_lote", total: exito },
+          })
+        );
+      } catch {
+        /* ignore */
+      }
+
+      toast(`🗑️ Se eliminaron ${exito} carrera(s) seleccionadas del día exitosamente.`, "success");
+      setSeleccionadasParaEliminar(new Set());
+      setConfirmarEliminarLote(false);
+      void refrescar();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast(`Error al eliminar en lote: ${msg}`, "error");
+    } finally {
+      setEliminandoLote(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <ToastHost />
@@ -459,6 +533,47 @@ export function CarrerasDiaModule() {
         />
       </div>
 
+      {/* Barra de Selección y Eliminación Masiva de Carreras */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 select-none">
+            <input
+              type="checkbox"
+              checked={todasVisiblesSeleccionadas}
+              onChange={alternarSeleccionarTodas}
+              className="h-4 w-4 rounded border-slate-300 text-cyan-700 focus:ring-cyan-500 cursor-pointer"
+            />
+            <span>Seleccionar todas ({carrerasVisibles.length})</span>
+          </label>
+          {seleccionadasParaEliminar.size > 0 && (
+            <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-black text-red-700 border border-red-200">
+              {seleccionadasParaEliminar.size} seleccionada(s)
+            </span>
+          )}
+        </div>
+
+        {seleccionadasParaEliminar.size > 0 && (
+          <div className="flex items-center gap-2 animate-in fade-in duration-150">
+            <button
+              type="button"
+              onClick={deseleccionarTodas}
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={eliminandoLote}
+              onClick={() => setConfirmarEliminarLote(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 hover:bg-red-700 active:scale-95 px-3.5 py-1 text-xs font-black text-white shadow-sm transition-all disabled:opacity-50"
+            >
+              <span>🗑️</span>
+              <span>Eliminar {seleccionadasParaEliminar.size} carrera(s)</span>
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Listado del día (Tarjetas táctiles en Celular + Tabla en Escritorio) */}
       <div className="overflow-hidden rounded-lg border border-cyan-200 bg-white shadow-sm">
         {sinEjemplares.length > 0 && (
@@ -497,10 +612,22 @@ export function CarrerasDiaModule() {
           )}
           {carrerasVisibles.map((c) => {
             const n = c.caballos?.length ?? 0;
+            const claveEstaCarrera = claveCarrera(c.hipodromo, c.carrera, fecha);
+            const estaSeleccionada = seleccionadasParaEliminar.has(claveEstaCarrera);
             return (
-              <div key={claveCarrera(c.hipodromo, c.carrera, fecha)} className="p-3 space-y-2">
+              <div
+                key={claveEstaCarrera}
+                className={`p-3 space-y-2 transition-colors ${estaSeleccionada ? "bg-red-50/70 border-l-4 border-red-500" : ""}`}
+              >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      aria-label={`Seleccionar carrera C${c.carrera}`}
+                      checked={estaSeleccionada}
+                      onChange={() => toggleSeleccionCarrera(claveEstaCarrera)}
+                      className="h-4 w-4 rounded border-slate-300 text-cyan-700 focus:ring-cyan-500 cursor-pointer"
+                    />
                     <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-700 text-xs font-black text-white">
                       C{c.carrera}
                     </span>
@@ -588,6 +715,15 @@ export function CarrerasDiaModule() {
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="bg-cyan-700 text-cyan-50">
+                <th className="w-10 border border-cyan-800 px-1 py-1 text-center">
+                  <input
+                    type="checkbox"
+                    title="Seleccionar todas las carreras visibles"
+                    checked={todasVisiblesSeleccionadas}
+                    onChange={alternarSeleccionarTodas}
+                    className="h-4 w-4 rounded border-slate-300 text-cyan-700 focus:ring-cyan-500 cursor-pointer"
+                  />
+                </th>
                 <th className="w-14 border border-cyan-800 px-1 py-1 text-center text-[10px] font-bold uppercase">Nº</th>
                 <th className="border border-cyan-800 px-1 py-1 text-left text-[10px] font-bold uppercase">Ejemplares</th>
                 <th className="border border-cyan-800 px-1 py-1 text-center text-[10px] font-bold uppercase">Dist.</th>
@@ -600,14 +736,14 @@ export function CarrerasDiaModule() {
             <tbody>
               {cargando && (
                 <tr>
-                  <td colSpan={7} className="px-2 py-3 text-center text-xs font-semibold text-slate-500">
+                  <td colSpan={8} className="px-2 py-3 text-center text-xs font-semibold text-slate-500">
                     Cargando carreras del día…
                   </td>
                 </tr>
               )}
               {!cargando && carrerasVisibles.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-2 py-4 text-center text-xs font-semibold text-amber-600">
+                  <td colSpan={8} className="px-2 py-4 text-center text-xs font-semibold text-amber-600">
                     {sinEjemplares.length > 0 && !verSinEjemplares ? (
                       <>⚠️ Las {carreras.length} carreras del filtro no tienen ejemplares: mostralas para cargárselos.</>
                     ) : !fecha ? (
@@ -620,11 +756,21 @@ export function CarrerasDiaModule() {
               )}
               {carrerasVisibles.map((c, i) => {
                 const n = c.caballos?.length ?? 0;
+                const claveEstaCarrera = claveCarrera(c.hipodromo, c.carrera, fecha);
+                const estaSeleccionada = seleccionadasParaEliminar.has(claveEstaCarrera);
                 return (
                   <tr
-                    key={claveCarrera(c.hipodromo, c.carrera, fecha)}
-                    className={i % 2 ? "bg-cyan-50/50" : "bg-white"}
+                    key={claveEstaCarrera}
+                    className={`transition-colors ${estaSeleccionada ? "bg-red-50/80 font-semibold" : i % 2 ? "bg-cyan-50/50" : "bg-white"}`}
                   >
+                    <td className="w-10 border border-cyan-100 px-1 py-1 text-center">
+                      <input
+                        type="checkbox"
+                        checked={estaSeleccionada}
+                        onChange={() => toggleSeleccionCarrera(claveEstaCarrera)}
+                        className="h-4 w-4 rounded border-slate-300 text-cyan-700 focus:ring-cyan-500 cursor-pointer"
+                      />
+                    </td>
                     <td className="border border-cyan-100 px-1 py-1 text-center text-sm font-extrabold text-cyan-700">
                       C{c.carrera}
                     </td>
@@ -926,6 +1072,80 @@ export function CarrerasDiaModule() {
             <div className="flex justify-end gap-2 border-t border-red-100 bg-gray-50 px-4 py-3">
               <Button variant="ghost" size="sm" onClick={() => setConfirmarEliminar(null)}>Cancelar</Button>
               <Button variant="danger" size="sm" onClick={() => void eliminar(confirmarEliminar)}>🗑️ Quitar</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmación de baja en lote (Múltiples carreras a la vez) */}
+      {confirmarEliminarLote && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+          onClick={() => !eliminandoLote && setConfirmarEliminarLote(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border-2 border-red-300 bg-white shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between rounded-t-2xl border-b border-red-200 bg-red-50 px-5 py-3.5">
+              <div className="flex items-center gap-2 text-red-700">
+                <span className="text-xl">🗑️</span>
+                <h3 className="text-sm font-black uppercase tracking-wide">
+                  Quitar {seleccionadasParaEliminar.size} carreras a la vez
+                </h3>
+              </div>
+              <button
+                type="button"
+                disabled={eliminandoLote}
+                onClick={() => setConfirmarEliminarLote(false)}
+                className="text-red-400 hover:text-red-600 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-3 p-5">
+              <p className="text-sm font-bold text-slate-800">
+                ¿Estás seguro de quitar las {seleccionadasParaEliminar.size} carreras seleccionadas de la fecha {fecha}?
+              </p>
+              <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-mono">
+                {carrerasVisibles
+                  .filter((c) =>
+                    seleccionadasParaEliminar.has(claveCarrera(c.hipodromo, c.carrera, fecha))
+                  )
+                  .map((c) => (
+                    <div key={claveCarrera(c.hipodromo, c.carrera, fecha)} className="py-0.5 text-slate-700">
+                      • {nombreHipodromoParaMostrar(c.hipodromo)} - Carrera C{c.carrera} ({c.caballos?.length ?? 0} ejemplares)
+                    </div>
+                  ))}
+              </div>
+              <p className="text-[11px] font-semibold text-slate-500">
+                Esta acción quita estas carreras de la lista central del día. No afecta las tablas fijas ni apuestas ya generadas.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-red-100 bg-gray-50 px-5 py-3 rounded-b-2xl">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={eliminandoLote}
+                onClick={() => setConfirmarEliminarLote(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={eliminandoLote}
+                onClick={() => void eliminarLoteSeleccionadas()}
+              >
+                {eliminandoLote ? (
+                  <>
+                    <span className="animate-spin inline-block mr-1">🔄</span>
+                    <span>Quitando {seleccionadasParaEliminar.size}...</span>
+                  </>
+                ) : (
+                  `🗑️ Confirmar Quitar (${seleccionadasParaEliminar.size})`
+                )}
+              </Button>
             </div>
           </div>
         </div>

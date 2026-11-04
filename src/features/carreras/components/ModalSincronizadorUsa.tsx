@@ -270,6 +270,24 @@ export function ModalSincronizadorUsa({
     }
   };
 
+  const cambiarTabPegar = async () => {
+    setTab("pegar");
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
+        const texto = await navigator.clipboard.readText();
+        if (texto && texto.trim()) {
+          setTextoPegado(texto);
+          handleCambioTextoPegado(texto);
+          emitirToast("📋 Texto detectado en el portapapeles y cargado en el área de trabajo.", "success");
+          return;
+        }
+      }
+    } catch {
+      // Ignorar si el navegador restringe la lectura
+    }
+    emitirToast("📋 Modo Pegar Rápido activado. Pega tu cartelera con el botón o con Ctrl+V.", "info");
+  };
+
   const handleCambioTextoPegado = (valor: string) => {
     setTextoPegado(valor);
     const f = extraerFechaDeTexto(valor);
@@ -341,7 +359,7 @@ export function ModalSincronizadorUsa({
           </button>
           <button
             type="button"
-            onClick={() => setTab("pegar")}
+            onClick={() => void cambiarTabPegar()}
             className={`border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition-all ${
               tab === "pegar"
                 ? "border-amber-400 text-amber-300 bg-amber-500/10"
@@ -657,6 +675,66 @@ export function ModalSincronizadorUsa({
           ) : (
             /* Tab Pegar Rápido */
             <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-2xl">📋</span>
+                  <div>
+                    <div className="text-xs font-black text-amber-300 uppercase tracking-wide">
+                      Área de Pegado Rápido Inteligente
+                    </div>
+                    <div className="text-[10px] text-slate-300">
+                      Pega la cartelera copiada de DRF, TVG, Equibase o una URL directa.
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
+                          const t = await navigator.clipboard.readText();
+                          if (t && t.trim()) {
+                            handleCambioTextoPegado(t);
+                            emitirToast("📋 Texto pegado desde el portapapeles exitosamente.", "success");
+                          } else {
+                            emitirToast("El portapapeles está vacío o no contiene texto.", "warning");
+                          }
+                        } else {
+                          emitirToast("Usa Ctrl+V para pegar directamente en la caja de texto.", "info");
+                        }
+                      } catch {
+                        emitirToast("Permiso de portapapeles restringido. Usa Ctrl+V para pegar.", "warning");
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 px-3 py-1.5 text-xs font-black shadow transition-all active:scale-95"
+                  >
+                    <span>📋</span>
+                    <span>Pegar desde Portapapeles</span>
+                  </button>
+                  {textoPegado && (
+                    <button
+                      type="button"
+                      onClick={() => setTextoPegado("")}
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs font-bold text-slate-400 hover:text-white"
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {textoPegado.trim() && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-900 px-3 py-2 text-[11px] font-bold border border-slate-700">
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <span>⚡</span> Carreras detectadas: {parsearTextoPegadoUsa(textoPegado, hipodromoPegado, fecha).length} carrera(s)
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    Hipódromo objetivo: <span className="text-white font-black">{hipodromoPegado}</span> · Fecha: <span className="text-white font-black">{fecha}</span>
+                  </span>
+                </div>
+              )}
+
               <div>
                 <label htmlFor="hipodromo-pegado-select" className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                   Hipódromo Destino
@@ -680,13 +758,6 @@ export function ModalSincronizadorUsa({
                   <label htmlFor="texto-pegado-textarea" className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                     Contenido Copiado de TVG o DRF (Entries / Scratches)
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setTextoPegado("")}
-                    className="text-[10px] text-slate-500 hover:text-white"
-                  >
-                    Limpiar
-                  </button>
                 </div>
                 <textarea
                   id="texto-pegado-textarea"
