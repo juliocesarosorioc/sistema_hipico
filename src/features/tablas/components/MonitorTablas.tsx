@@ -305,7 +305,7 @@ export function MonitorTablas({
       const salvada = localStorage.getItem("hipico_tablas_densidad");
       if (salvada === "compacta" || salvada === "comoda") return salvada;
     }
-    return "comoda";
+    return "compacta";
   });
 
   const alternarDensidad = (d: "comoda" | "compacta") => {
@@ -1108,19 +1108,25 @@ export function MonitorTablas({
         )}
       </div>
 
-      {/* VISTA PANTALLA O IMPRESIÓN */}
+      {/* VISTA PANTALLA (ESTILO MATRIZ DE IMPRESIÓN CON MENÚS Y OPERACIONES) */}
       {vistaImpresion ? (
-        <MatrizImpresion tablas={filtradas} />
+        <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+          <div className="mb-2 flex items-center justify-between border-b border-slate-200 pb-2 px-2">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-700">🖨️ Vista de Impresión Pura (Solo Lectura)</span>
+            <button
+              type="button"
+              onClick={() => setVistaImpresion(false)}
+              className="rounded bg-indigo-600 px-2.5 py-1 text-[11px] font-black uppercase text-white hover:bg-indigo-700 shadow-xs transition"
+            >
+              ← Volver a Vista de Tablas con Menús
+            </button>
+          </div>
+          <MatrizImpresion tablas={filtradas} />
+        </div>
       ) : (
-        <div
-          className={
-            densidadVista === "compacta"
-              ? "grid gap-2.5 print:hidden sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
-              : "grid gap-4 print:hidden sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-          }
-        >
-          {filtradas.length === 0 && (
-            <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center shadow-xs">
+        <div className="legacy-impresion-container rounded-2xl bg-[#eef2f7] p-2.5 sm:p-3 border border-slate-300/80 shadow-xs">
+          {filtradas.length === 0 ? (
+            <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center shadow-xs">
               <span className="text-3xl">🏇</span>
               <p className="mt-2 text-sm font-bold text-slate-700">No hay tablas que coincidan con los filtros seleccionados.</p>
               <p className="text-xs text-slate-500 mt-1">Prueba cambiando el día, hipódromo o limpiando la búsqueda.</p>
@@ -1134,347 +1140,312 @@ export function MonitorTablas({
                 </button>
               )}
             </div>
-          )}
-          {filtradas.map((t) => {
-            const esCompacta = densidadVista === "compacta";
-            const estaCerrada = Boolean(t.cerrada);
-            return (
-              <div
-                key={String(t.id)}
-                className={`relative flex flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition-all duration-150 hover:shadow-md ${
-                  estaCerrada
-                    ? "border-slate-300 opacity-80"
-                    : "border-indigo-200/90 hover:border-indigo-400"
-                }`}
-              >
-                {estaCerrada && (
-                  <div className="bg-slate-900 py-0.5 text-center text-[10px] font-black uppercase tracking-wider text-amber-300">
-                    🔒 CARRERA CERRADA / LIQUIDADA
-                  </div>
-                )}
-                {/* CABECERA DE LA TABLA */}
-                <div
-                  className={esCompacta ? "px-2 py-1 text-white" : "px-2.5 py-1.5 text-white"}
-                  style={{
-                    background: estaCerrada
-                      ? "linear-gradient(135deg,#475569 0%,#334155 100%)"
-                      : "linear-gradient(135deg,#4338ca 0%,#6366f1 50%,#7e22ce 100%)",
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-1 leading-none">
-                    <span
-                      className={`min-w-0 truncate rounded bg-white/20 font-black tracking-wide ${
-                        esCompacta ? "px-1.5 py-0.5 text-xs" : "px-2 py-0.5 text-sm"
-                      }`}
-                      title={nombreHipodromoParaMostrar(t.hipodromo)}
-                    >
-                      🏛️ {nombreHipodromoParaMostrar(t.hipodromo)}
-                    </span>
-                    <span className="flex items-center gap-1 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center rounded-md border-2 border-white bg-indigo-950 font-black uppercase leading-none tracking-widest text-white shadow-md ${
-                          esCompacta ? "px-2 py-0.5 text-xs" : "px-3 py-1 text-sm md:text-base"
-                        }`}
-                      >
-                        C{t.carrera ?? ""}
-                      </span>
+          ) : (
+            <div
+              className={
+                densidadVista === "compacta"
+                  ? "grid gap-2.5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-5"
+                  : "grid gap-3.5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4"
+              }
+            >
+              {filtradas.map((t) => {
+                const ejemplares = t.caballos ?? [];
+                const estaCerrada = Boolean(t.cerrada);
+                const sumaPts = t.suma_base_tabla ?? sumaBase(t.caballos);
+                const premioMonto = t.premio_recalculado ?? t.premio_original ?? t.monto_tabla ?? 100;
+                const tieneRiesgo = Array.isArray(t.caballos) && t.caballos.some((c) => (c.max_tablas ?? 0) > 0);
 
-                      {/* Botones de acción */}
-                      <span className="no-print ml-1 flex items-center gap-1">
-                        <Guard permiso="tablas:btn_editar">
-                          <button
-                            type="button"
-                            onClick={() => { setEditando(t); setPatchEdicion({}); setPatchCaballos((t.caballos ?? []).map((c) => ({ ...c }))); void cargarCupos(t); }}
-                            title="Editar la tabla y la carrera"
-                            aria-label="Editar la tabla y la carrera"
-                            className={BTN_CRUDA + " bg-amber-500 hover:bg-amber-400"}
+                return (
+                  <div
+                    key={String(t.id)}
+                    className={`tarjeta-legacy group/card relative flex flex-col overflow-hidden rounded-lg border bg-white shadow-xs transition-all duration-150 hover:shadow-md ${
+                      estaCerrada
+                        ? "border-slate-300 opacity-85"
+                        : "border-slate-300 hover:border-indigo-400"
+                    }`}
+                  >
+                    {/* CABECERA ESTILO IMPRESIÓN (DARK #0f172a) CON MENÚS */}
+                    <div className="enc-legacy bg-[#0f172a] text-white px-2 py-1.5 select-none">
+                      {/* LÍNEA 1: HIPÓDROMO, CARRERA Y MENÚS */}
+                      <div className="l1-legacy flex items-center justify-between gap-1 leading-none">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span
+                            className="hip-legacy text-[11px] font-black tracking-wide uppercase text-white truncate"
+                            title={nombreHipodromoParaMostrar(t.hipodromo)}
                           >
-                            ✏️
-                          </button>
-                        </Guard>
-                        <Guard permiso="tablas:btn_vender">
-                          <button
-                            type="button"
-                            onClick={() => void abrirVenta(t)}
-                            title="Vender esta tabla"
-                            aria-label="Vender esta tabla"
-                            className={BTN_CRUDA + " bg-indigo-500 hover:bg-indigo-400"}
-                          >
-                            🎟️
-                          </button>
-                        </Guard>
-                        <Guard permiso="tablas:btn_liquidar">
-                          <button
-                            type="button"
-                            onClick={() => setLiquidando(t)}
-                            title="Liquidar: cobrar los premios de la carrera"
-                            aria-label="Liquidar la tabla"
-                            className={BTN_CRUDA + " bg-emerald-600 hover:bg-emerald-500"}
-                          >
-                            🏁
-                          </button>
-                        </Guard>
-                        <Guard algunaDe={["tablas:btn_control_riesgo", "tablas:btn_editar"]}>
-                          <button
-                            type="button"
-                            onClick={() => setTablaControlRiesgo(t)}
-                            title="Control de riesgo, máximos por ejemplar y gestión de cupos por grupo"
-                            aria-label="Control de riesgo y cupos"
-                            className={BTN_CRUDA + " bg-purple-600 hover:bg-purple-500"}
-                          >
-                            🛡️
-                          </button>
-                        </Guard>
-                        <button
-                          type="button"
-                          onClick={() => void toggleActivaPortal(t.id)}
-                          title={
-                            esTablaActivaEnPortal(t.id)
-                              ? "Activa para venta en Portal (clic para ocultar a los jugadores)"
-                              : "Oculta en Portal (clic para activar y mostrar a los jugadores)"
-                          }
-                          aria-label="Activar o desactivar en portal"
-                          className={
-                            BTN_CRUDA +
-                            (esTablaActivaEnPortal(t.id)
-                              ? " bg-teal-600 hover:bg-teal-500 text-white"
-                              : " bg-slate-400 hover:bg-slate-300 text-slate-800 opacity-60")
-                          }
-                        >
-                          {esTablaActivaEnPortal(t.id) ? "👁️" : "🙈"}
-                        </button>
-                        {onEliminar && (
-                          <Guard permiso="tablas:btn_eliminar">
+                            {nombreHipodromoParaMostrar(t.hipodromo)}
+                          </span>
+                          <span className="cc-legacy shrink-0 bg-white/20 text-white rounded px-1.5 py-0.5 text-[11px] font-black leading-none">
+                            C{t.carrera ?? ""}
+                          </span>
+                        </div>
+
+                        {/* MENÚS DE ACCIONES (Compactos, elegantes, alto contraste) */}
+                        <div className="no-print flex items-center gap-0.5 shrink-0">
+                          <Guard permiso="tablas:btn_editar">
                             <button
                               type="button"
-                              onClick={() => setConfirmarEliminar(t)}
-                              title="Eliminar la tabla"
-                              aria-label="Eliminar la tabla"
-                              className={BTN_CRUDA + " bg-rose-600 hover:bg-rose-500"}
-                            >
-                              🗑️
-                            </button>
-                          </Guard>
-                        )}
-                      </span>
-                    </span>
-                  </div>
-
-                  {/* Subtítulo con metadata */}
-                  <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-bold leading-none">
-                    <span className="rounded bg-white/20 px-1 py-0.5">📏 {t.distancia_carrera ?? ""} m</span>
-                    <span className="rounded bg-white/20 px-1 py-0.5 uppercase">{t.superficie || "ARENA"}</span>
-                    <span
-                      className={`rounded px-1 py-0.5 ${ejeFecha === "carrera" ? "bg-white/40 ring-1 ring-white/60 font-black" : "bg-white/20"}`}
-                      title="Fecha de carrera (cuándo corre)"
-                    >
-                      🏇 {diaDeLaTabla(t, "carrera") || "—"}
-                    </span>
-                    <span
-                      className={`rounded px-1 py-0.5 ${ejeFecha === "venta" ? "bg-white/40 ring-1 ring-white/60 font-black" : "bg-white/20"}`}
-                      title="Fecha de venta (cuándo se publicó)"
-                    >
-                      🧾 {diaDeLaTabla(t, "venta") || "—"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void toggleActivaPortal(t.id)}
-                      className={`rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider transition-colors cursor-pointer ${
-                        esTablaActivaEnPortal(t.id)
-                          ? "bg-teal-500/40 text-teal-100 ring-1 ring-teal-300/50"
-                          : "bg-black/30 text-slate-300 ring-1 ring-slate-400/30 opacity-70"
-                      }`}
-                      title="Clic para activar/desactivar visibilidad y venta en el Portal de Usuarios"
-                    >
-                      {esTablaActivaEnPortal(t.id) ? "🟢 Portal" : "⚪ Oculta"}
-                    </button>
-                  </div>
-
-                  {/* BANNER MONTO A PAGAR */}
-                  <div className={`mt-1 flex items-center justify-between rounded bg-black/25 backdrop-blur-xs px-2 py-0.5 border border-white/10 ${esCompacta ? "text-xs" : "text-sm"}`}>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-200">
-                      💰 MONTO A PAGAR
-                    </span>
-                    <span className="whitespace-nowrap font-black font-mono text-amber-300 text-sm md:text-base drop-shadow-xs">
-                      {fmtValor(t.premio_recalculado ?? null)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* HEADER EJEMPLARES */}
-                <div className="flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-50/70 border-b border-slate-100">
-                  <span className="flex items-center gap-1">🐴 Ejemplares</span>
-                  <span className="rounded-full bg-slate-200/80 px-1.5 py-0.2 text-[9px] font-black text-slate-700">
-                    {(t.caballos ?? []).length}
-                  </span>
-                </div>
-
-                {Array.isArray(t.caballos) && t.caballos.some((c) => (c.max_tablas ?? 0) > 0) && (
-                  <div className="mx-1 my-0.5 flex items-center justify-between rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-bold text-purple-700 border border-purple-200">
-                    <span className="flex items-center gap-1">🛡️ Riesgo & Cupos activos</span>
-                    <button
-                      type="button"
-                      onClick={() => setTablaControlRiesgo(t)}
-                      className="font-black text-purple-900 underline hover:text-purple-600"
-                    >
-                      Gestionar
-                    </button>
-                  </div>
-                )}
-
-                {/* FILAS DE EJEMPLARES */}
-                <div className="flex-1 px-1 py-0.5 divide-y divide-slate-100/60">
-                  {(t.caballos ?? []).map((c, i) => {
-                    let nac = c.nacionalidad ? String(c.nacionalidad).toUpperCase() : "";
-                    if (!nac) {
-                      const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN|CHARLES|DELTA|REMINGTON|MOUNTAINEER|FINGER|MAHONING|PENN|HORSESHOE|KEENELAND|CHURCHILL/i.test(t.hipodromo || "");
-                      nac = esAmericano ? "US" : "VE";
-                    }
-                    const valor = parseNum(c.valor_ejemplar);
-                    const gridCols = esCompacta
-                      ? "1.5rem 1fr 1rem 3.5rem 2.25rem"
-                      : "1.75rem 1fr 1.25rem 4rem 3rem";
-                    const btnGridCols = esCompacta
-                      ? "1.5rem 1fr 1rem 3.5rem"
-                      : "1.75rem 1fr 1.25rem 4rem";
-
-                    return (
-                      <div
-                        key={i}
-                        className={`group grid w-full items-center rounded px-1 py-0.5 text-left transition-colors ${
-                          c.invalidado
-                            ? "bg-purple-50/90"
-                            : i % 2 === 1
-                              ? "bg-slate-50/70"
-                              : "bg-white"
-                        } hover:bg-indigo-50/80 ${c.retirado ? "opacity-50" : ""}`}
-                        style={{ gridTemplateColumns: gridCols }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setEjemplarModal({ tabla: t, indice: i })}
-                          title="Retirar, rehabilitar o vender este ejemplar"
-                          className="col-span-4 grid w-full items-center text-left cursor-pointer"
-                          style={{ gridTemplateColumns: btnGridCols }}
-                        >
-                          <span
-                            className={`flex shrink-0 flex-none items-center justify-center rounded font-black leading-none shadow-2xs ${
-                              esCompacta ? "h-5 w-5 text-[9px]" : "h-6 w-6 text-[10px]"
-                            }`}
-                            style={{ backgroundColor: colorDeNumero(c.numero), color: textoDeNumero(c.numero) }}
-                          >
-                            {c.numero}
-                          </span>
-
-                          <span
-                            className={`flex min-w-0 items-center gap-1 px-1 font-bold uppercase leading-none text-slate-800 ${
-                              esCompacta ? "text-[12px]" : "text-[13.5px]"
-                            }`}
-                          >
-                            <span className="min-w-0 truncate">{c.nombre || "Sin nombre"}</span>
-                            {c.invalidado ? (
-                              <span
-                                className="shrink-0 rounded bg-purple-600 px-1 py-px text-[8px] font-black uppercase tracking-wide text-white"
-                                title={`INVALIDADO${c.motivo_invalidacion ? `: ${c.motivo_invalidacion}` : ""}. No puede ganar ni ser pagado como ganador.`}
-                              >
-                                INV.
-                              </span>
-                            ) : null}
-                          </span>
-
-                          <span className="flex justify-center text-center leading-none">
-                            {nac !== "VE" && <Flag nac={nac} size={esCompacta ? 10 : 12} withName={false} />}
-                          </span>
-
-                          <span
-                            className={`whitespace-nowrap text-right font-black font-mono leading-none ${
-                              esCompacta ? "text-[14px]" : "text-[16px]"
-                            } ${
-                              c.retirado
-                                ? "text-red-500 line-through"
-                                : c.invalidado
-                                  ? "text-purple-600"
-                                  : "text-indigo-700"
-                            }`}
-                          >
-                            {c.retirado ? "RET." : c.invalidado ? "INV." : fmtPts(valor)}
-                          </span>
-                        </button>
-
-                        {/* Botones de acción del cuadro en hover */}
-                        <span className="no-print col-start-5 flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                          <Guard permiso="tablas:btn_editar_cuadro">
-                            <button
-                              type="button"
-                              onClick={() => setCuadroEnEdicion({ tabla: t, indice: i })}
-                              title={`Editar ${c.nombre || `cuadro ${i + 1}`}`}
-                              className="rounded px-1 text-[11px] text-indigo-500 transition-colors hover:bg-indigo-100 hover:text-indigo-700"
+                              onClick={() => {
+                                setEditando(t);
+                                setPatchEdicion({});
+                                setPatchCaballos((t.caballos ?? []).map((c) => ({ ...c })));
+                                void cargarCupos(t);
+                              }}
+                              title="Editar tabla y carrera"
+                              className="inline-flex h-5 w-5 items-center justify-center rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-bold shadow-2xs transition hover:scale-105 active:scale-95"
                             >
                               ✏️
                             </button>
                           </Guard>
-                          <Guard permiso="tablas:btn_quitar_cuadro">
+                          <Guard permiso="tablas:btn_vender">
                             <button
                               type="button"
-                              onClick={() => setCuadroBorrando({ tabla: t, indice: i })}
-                              title={`Quitar ${c.nombre || `cuadro ${i + 1}`}`}
-                              className="rounded px-1 text-[11px] text-red-400 transition-colors hover:bg-red-100 hover:text-red-600"
+                              onClick={() => void abrirVenta(t)}
+                              title="Vender esta tabla"
+                              className="inline-flex h-5 w-5 items-center justify-center rounded bg-indigo-500 hover:bg-indigo-400 text-white text-[10px] font-bold shadow-2xs transition hover:scale-105 active:scale-95"
                             >
-                              🗑️
+                              🎟️
                             </button>
                           </Guard>
+                          <Guard permiso="tablas:btn_liquidar">
+                            <button
+                              type="button"
+                              onClick={() => setLiquidando(t)}
+                              title="Liquidar la carrera"
+                              className="inline-flex h-5 w-5 items-center justify-center rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold shadow-2xs transition hover:scale-105 active:scale-95"
+                            >
+                              🏁
+                            </button>
+                          </Guard>
+                          <Guard algunaDe={["tablas:btn_control_riesgo", "tablas:btn_editar"]}>
+                            <button
+                              type="button"
+                              onClick={() => setTablaControlRiesgo(t)}
+                              title="Control de riesgo y cupos por grupo"
+                              className="inline-flex h-5 w-5 items-center justify-center rounded bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold shadow-2xs transition hover:scale-105 active:scale-95"
+                            >
+                              🛡️
+                            </button>
+                          </Guard>
+                          <button
+                            type="button"
+                            onClick={() => void toggleActivaPortal(t.id)}
+                            title={
+                              esTablaActivaEnPortal(t.id)
+                                ? "Visible en Portal de Clientes (clic para ocultar)"
+                                : "Oculta en Portal de Clientes (clic para activar)"
+                            }
+                            className={`inline-flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold shadow-2xs transition hover:scale-105 active:scale-95 ${
+                              esTablaActivaEnPortal(t.id)
+                                ? "bg-teal-600 hover:bg-teal-500 text-white"
+                                : "bg-slate-700 hover:bg-slate-600 text-slate-300 opacity-70"
+                            }`}
+                          >
+                            {esTablaActivaEnPortal(t.id) ? "👁️" : "🙈"}
+                          </button>
+                          {onEliminar && (
+                            <Guard permiso="tablas:btn_eliminar">
+                              <button
+                                type="button"
+                                onClick={() => setConfirmarEliminar(t)}
+                                title="Eliminar tabla"
+                                className="inline-flex h-5 w-5 items-center justify-center rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold shadow-2xs transition hover:scale-105 active:scale-95"
+                              >
+                                🗑️
+                              </button>
+                            </Guard>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* LÍNEA 2: DISTANCIA, SUPERFICIE, FECHA Y ESTADO */}
+                      <div className="l2-legacy flex items-center justify-between gap-1 text-[8.5px] font-bold text-slate-300 mt-1 leading-none">
+                        <span className="meta-legacy truncate">
+                          <b>DIST {t.distancia_carrera ?? ""} m</b> · {t.superficie || "ARENA"}
+                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                          {estaCerrada ? (
+                            <span className="rounded bg-rose-600/90 text-white px-1 py-0.2 text-[8px] font-black uppercase tracking-wider">
+                              🔒 CERRADA
+                            </span>
+                          ) : null}
+                          {tieneRiesgo ? (
+                            <span
+                              onClick={() => setTablaControlRiesgo(t)}
+                              className="rounded bg-purple-500/80 hover:bg-purple-500 text-white px-1 py-0.2 text-[8px] font-black uppercase tracking-wider cursor-pointer"
+                              title="Límites de riesgo y cupos activos"
+                            >
+                              🛡️ Cupos
+                            </span>
+                          ) : null}
+                          <span
+                            className="fecha-legacy font-black text-sky-300"
+                            title={`Fecha de carrera: ${diaDeLaTabla(t, "carrera") || t.fecha?.slice(0, 10) || "—"}`}
+                          >
+                            {diaDeLaTabla(t, "carrera") || t.fecha?.slice(0, 10) || ""}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* FILAS DE EJEMPLARES (ZEBRA STRIPING, NÚMEROS A COLOR, PUNTOS ALINEADOS) */}
+                    <div className="filas-legacy flex-1 flex flex-col gap-0.5 p-1 bg-white">
+                      {ejemplares.length === 0 ? (
+                        <div className="text-center text-rose-600 font-bold py-3 text-xs">
+                          ⚠️ SIN EJEMPLARES
+                        </div>
+                      ) : null}
+                      {ejemplares.map((c, i) => {
+                        const hipoAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN/i.test(
+                          t.hipodromo || ""
+                        );
+                        const casa = hipoAmericano ? "USA" : "VE";
+                        const nacRaw = c.nacionalidad ? String(c.nacionalidad) : "";
+                        const nac = nacRaw.trim() ? normalizarNacionalidad(nacRaw) : casa;
+                        const valor = parseNum(c.valor_ejemplar);
+
+                        return (
+                          <div
+                            key={i}
+                            className={`fila-legacy group/row relative flex items-center justify-between gap-1.5 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-indigo-50/90 ${
+                              c.invalidado
+                                ? "bg-purple-50/90"
+                                : i % 2 === 1
+                                  ? "bg-[#eef2f7]"
+                                  : "bg-white"
+                            } ${c.retirado ? "opacity-60" : ""}`}
+                          >
+                            {/* Botón principal de fila: retira/rehab o vende directo */}
+                            <button
+                              type="button"
+                              onClick={() => setEjemplarModal({ tabla: t, indice: i })}
+                              title="Clic para retirar, rehabilitar o vender este ejemplar"
+                              className="flex items-center gap-1.5 min-w-0 flex-1 text-left cursor-pointer"
+                            >
+                              {/* Número con color oficial de gualdrapa */}
+                              <span
+                                className="num-legacy flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded font-black text-[9.5px] leading-none shadow-2xs"
+                                style={{
+                                  backgroundColor: colorDeNumero(c.numero),
+                                  color: textoDeNumero(c.numero),
+                                }}
+                              >
+                                {c.numero}
+                              </span>
+
+                              {/* Nombre del caballo */}
+                              <span
+                                className={`cab-legacy truncate font-bold text-slate-800 text-[11px] leading-tight ${
+                                  c.retirado ? "line-through text-rose-600" : ""
+                                }`}
+                              >
+                                {c.nombre || "Sin nombre"}
+                              </span>
+
+                              {/* Bandera si es foráneo */}
+                              {nac !== casa && (
+                                <span className="band-legacy shrink-0">
+                                  <Flag nac={nac} size={10} withName={false} />
+                                </span>
+                              )}
+
+                              {/* Badge invalidado */}
+                              {c.invalidado ? (
+                                <span className="shrink-0 rounded bg-purple-600 px-1 py-px text-[7.5px] font-black uppercase text-white">
+                                  INV.
+                                </span>
+                              ) : null}
+                            </button>
+
+                            {/* Puntos / Valor del ejemplar */}
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span
+                                onClick={() => setEjemplarModal({ tabla: t, indice: i })}
+                                title="Valor en puntos"
+                                className={`mon-legacy font-mono font-black text-[11.5px] whitespace-nowrap cursor-pointer select-none ${
+                                  c.retirado
+                                    ? "text-rose-600 line-through"
+                                    : valor === 0
+                                      ? "text-slate-400 font-normal"
+                                      : "text-slate-700"
+                                }`}
+                              >
+                                {c.retirado ? "RET." : valor === 0 ? "–" : fmtPts(valor)}
+                              </span>
+
+                              {/* Menú hover en fila de caballo: editar o borrar cuadro */}
+                              <span className="no-print hidden group-hover/row:flex items-center gap-0.5 ml-0.5">
+                                <Guard permiso="tablas:btn_editar_cuadro">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCuadroEnEdicion({ tabla: t, indice: i });
+                                    }}
+                                    title={`Editar ${c.nombre || `cuadro ${i + 1}`}`}
+                                    className="rounded p-0.5 text-[10px] text-indigo-600 hover:bg-indigo-100 transition"
+                                  >
+                                    ✏️
+                                  </button>
+                                </Guard>
+                                <Guard permiso="tablas:btn_quitar_cuadro">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCuadroBorrando({ tabla: t, indice: i });
+                                    }}
+                                    title={`Quitar ${c.nombre || `cuadro ${i + 1}`}`}
+                                    className="rounded p-0.5 text-[10px] text-rose-600 hover:bg-rose-100 transition"
+                                  >
+                                    🗑️
+                                  </button>
+                                </Guard>
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Botón rápido Añadir Cuadro */}
+                      <Guard permiso="tablas:btn_agregar_cuadro">
+                        <button
+                          type="button"
+                          onClick={() => setCuadroEnEdicion({ tabla: t, indice: null })}
+                          className="no-print mt-0.5 flex w-full items-center justify-center gap-1 rounded border border-dashed border-slate-300 py-0.5 text-[9.5px] font-bold text-slate-500 hover:text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50/50 transition cursor-pointer"
+                        >
+                          ＋ Añadir cuadro
+                        </button>
+                      </Guard>
+                    </div>
+
+                    {/* PIE ESTILO IMPRESIÓN CON PREMIO Y BOTÓN DE VENTA */}
+                    <div className="pie-legacy flex items-center justify-between px-2 py-1 bg-[#f1f5f9] border-t border-slate-300 text-[10px] select-none">
+                      <div className="flex items-center gap-1 text-slate-600 font-bold uppercase text-[8.5px] tracking-wider">
+                        <span>PREMIO/TABLA</span>
+                        <span className="text-slate-400 font-normal">
+                          (Suma: {fmtPts(sumaPts)})
                         </span>
                       </div>
-                    );
-                  })}
-                  <Guard permiso="tablas:btn_agregar_cuadro">
-                    <button
-                      type="button"
-                      onClick={() => setCuadroEnEdicion({ tabla: t, indice: null })}
-                      className="no-print mt-1 flex w-full items-center justify-center gap-1 rounded border border-dashed border-indigo-300 py-1 text-[10px] font-black uppercase tracking-wider text-indigo-600 transition-colors hover:border-indigo-500 hover:bg-indigo-50"
-                    >
-                      ＋ Añadir cuadro
-                    </button>
-                  </Guard>
-                </div>
-
-                {/* PIE DE LA TARJETA: SUMA BASE */}
-                <div
-                  className="grid items-center border-t border-slate-200/80 bg-slate-50/80 px-2 py-1"
-                  style={{
-                    gridTemplateColumns: esCompacta
-                      ? "1.5rem 1fr 1rem 3.5rem"
-                      : "1.75rem 1fr 1.25rem 4rem",
-                  }}
-                >
-                  <span />
-                  <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-500 leading-none">
-                    🧮 Suma
-                    <span className="font-semibold normal-case tracking-normal text-slate-400">
-                      ({(t.caballos ?? []).filter((c) => !c.retirado && !c.invalidado).length} activos)
-                    </span>
-                    {(t.caballos ?? []).some((c) => c.invalidado) ? (
-                      <span
-                        className="font-semibold normal-case tracking-normal text-purple-700"
-                        title="Ejemplares descalificados"
-                      >
-                        · {(t.caballos ?? []).filter((c) => c.invalidado).length} inv.
-                      </span>
-                    ) : null}
-                  </span>
-                  <span />
-                  <span
-                    className={`whitespace-nowrap text-right font-black font-mono leading-none ${
-                      esCompacta ? "text-[15px]" : "text-[17px]"
-                    }`}
-                    style={{ color: "#0284c7" }}
-                  >
-                    {fmtPts(t.suma_base_tabla ?? sumaBase(t.caballos))}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+                      <div className="flex items-center gap-1.5">
+                        <b className="font-mono text-emerald-700 text-[12px] font-black">
+                          {fmtValor(premioMonto)}
+                        </b>
+                        <button
+                          type="button"
+                          onClick={() => void abrirVenta(t)}
+                          title="Vender jugadas en esta tabla"
+                          className="no-print inline-flex items-center rounded bg-indigo-600 px-1.5 py-0.5 text-[9px] font-black uppercase text-white hover:bg-indigo-500 transition shadow-2xs hover:scale-105 active:scale-95"
+                        >
+                          🎟️ Vender
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
