@@ -249,9 +249,6 @@ function TablaJugadas({
           return (
             <tr key={i} className="border-b border-slate-100 bg-white">
               <td className="py-[3px] pr-1 font-bold text-slate-800 whitespace-normal break-words [overflow-wrap:anywhere] align-middle">
-                <span className="inline-block rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[8px] font-black text-blue-700 mr-1">
-                  Juega
-                </span>
                 <span>{j.juega}</span>
               </td>
               <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap align-middle">{j.aposto}</td>
@@ -305,12 +302,7 @@ function TablaJugadas({
               </td>
               <td className="py-[3px] pl-2 text-slate-600 whitespace-normal break-words [overflow-wrap:anywhere] align-middle">
                 {j.da ? (
-                  <>
-                    <span className="inline-block rounded bg-amber-50 border border-amber-200 px-1 py-0.5 text-[8px] font-black text-amber-700 mr-1">
-                      Da
-                    </span>
-                    <span>{j.da}</span>
-                  </>
+                  <span>{j.da}</span>
                 ) : (
                   '—'
                 )}
