@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { emitirToast } from "@/shared/lib/mensajeria";
+import { RecaptchaWidget } from "@/shared/components/ui/RecaptchaWidget";
 import {
   ETIQUETAS_ROL,
   generarMensajeWhatsAppAprobacion,
@@ -27,6 +28,7 @@ export function ModalRegistroUsuario({ abierto, onCerrar, adminTelefono = "", on
   const [nombreGrupoNuevo, setNombreGrupoNuevo] = useState("");
   const [clave, setClave] = useState("");
   const [claveConfirm, setClaveConfirm] = useState("");
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [solicitudEnviada, setSolicitudEnviada] = useState(false);
@@ -80,6 +82,11 @@ export function ModalRegistroUsuario({ abierto, onCerrar, adminTelefono = "", on
     }
     if (clave && clave !== claveConfirm) {
       emitirToast("Las contraseñas no coinciden.", "warning");
+      return;
+    }
+
+    if (!recaptchaToken) {
+      emitirToast("⚠️ Por favor completa la verificación reCAPTCHA con imágenes antes de enviar la solicitud.", "warning");
       return;
     }
 
@@ -426,6 +433,14 @@ export function ModalRegistroUsuario({ abierto, onCerrar, adminTelefono = "", on
                   onChange={(e) => setMensaje(e.target.value)}
                   placeholder="Ej: Deseo abrir cupo para jugar tablas y marcas..."
                   className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-medium text-white outline-none focus:border-amber-400 resize-none"
+                />
+              </div>
+
+              {/* Verificación reCAPTCHA con imágenes */}
+              <div className="flex flex-col items-center justify-center pt-2">
+                <RecaptchaWidget
+                  onVerificado={(t) => setRecaptchaToken(t)}
+                  onExpirado={() => setRecaptchaToken(null)}
                 />
               </div>
 

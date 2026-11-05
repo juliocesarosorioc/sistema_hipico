@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { CloudflareTurnstileWidget } from "@/shared/components/ui/CloudflareTurnstileWidget";
+import { RecaptchaWidget } from "@/shared/components/ui/RecaptchaWidget";
 
 interface Props {
   onExito?: () => void;
@@ -114,11 +114,10 @@ export function VerificacionCloudflare({
           </p>
         </div>
 
-        {/* Widget Turnstile */}
+        {/* Widget reCAPTCHA Oficial con Desafío de Imágenes */}
         <div className="pt-2 pb-1 flex flex-col items-center justify-center">
-          <CloudflareTurnstileWidget
+          <RecaptchaWidget
             onVerificado={handleVerificado}
-            autoVerificar={autoVerificar}
             className="w-full"
           />
 

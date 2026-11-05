@@ -6,6 +6,9 @@ import {
   CATALOGO_DRF_OFICIAL,
   parsearTextoPegadoUsa,
   sincronizarCarrerasAmericanasDia,
+  importarYDobleVerificarUsa,
+  type ProgresoSincronizacionSecuencial,
+  type ResumenDobleVerificado,
   iniciarAutoActualizadorRetirados,
   detenerAutoActualizadorRetirados,
   extraerFechaDeTexto,
@@ -79,8 +82,9 @@ export function ModalSincronizadorUsa({
 
   // Estado de ejecución
   const [cargando, setCargando] = useState(false);
+  const [progreso, setProgreso] = useState<ProgresoSincronizacionSecuencial | null>(null);
   const [, startTransition] = useTransition();
-  const [resumen, setResumen] = useState<ResumenSincronizacionUsa | null>(null);
+  const [resumen, setResumen] = useState<ResumenDobleVerificado | ResumenSincronizacionUsa | null>(null);
 
   if (!abierto) return null;
 
@@ -194,13 +198,21 @@ export function ModalSincronizadorUsa({
   const ejecutarSincronizacionAuto = async () => {
     setCargando(true);
     setResumen(null);
+    setProgreso(null);
 
-    const tracksFiltro = seleccionTodos ? undefined : seleccionados;
+    const tracksFiltro = seleccionTodos
+      ? HIPODROMOS_USA_DISPONIBLES.map((t) => t.nombre)
+      : (seleccionados.length > 0 ? seleccionados : ["Gulfstream Park", "Santa Anita", "Tampa Bay Downs", "Aqueduct"]);
+
     try {
-      const res = await sincronizarCarrerasAmericanasDia({
+      const res = await importarYDobleVerificarUsa({
         fechaISO: fecha,
-        tracksFiltro,
+        tracks: tracksFiltro,
         fuentePreferida: fuente,
+        urlDirectaDrf: metaDrf?.urlPublica,
+        onProgreso: (p) => {
+          setProgreso(p);
+        },
       });
 
       setResumen(res);
@@ -208,7 +220,11 @@ export function ModalSincronizadorUsa({
         setMostrarInformeModal(true);
         useCarrerasDiaStore.getState().setFecha(res.fecha || fecha);
         emitirToast(
-          `✅ Sincronizados ${res.tracksProcesados.length} hipódromos (${res.totalCarreras} carreras, ${res.totalEjemplares} ejemplares) para ${res.fecha || fecha}.`,
+          `✅ Sincronizados y Doblemente Verificados: ${res.tracksProcesados.length} hipódromos (${res.totalCarreras} carreras, ${res.totalEjemplares} ejemplares). ${
+            res.omisionesCorregidas > 0
+              ? `🛡️ Se subsanaron ${res.omisionesCorregidas} omisiones iniciales.`
+              : "0 omisiones detectadas."
+          }`,
           "success"
         );
         startTransition(() => {
@@ -843,6 +859,73 @@ Race 1 - 12:35 PM
           )}
         </div>
 
+        {/* Panel de Progreso: Carga Uno por Uno y Doble Verificación */}
+        {cargando && progreso && (
+          <div className="mx-5 mb-3 rounded-2xl border border-amber-500/40 bg-slate-900/90 p-4 shadow-xl animate-in fade-in duration-200">
+            <div className="flex items-center justify-between text-xs font-bold text-amber-300 mb-2">
+              <span className="flex items-center gap-1.5">
+                <span className="animate-spin">🔄</span>
+                <span>Procesamiento Secuencial & Doble Verificación</span>
+              </span>
+              <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] text-amber-200 border border-amber-500/30">
+                {progreso.fase === "CARGA_INICIAL" ? "Pase 1/3: Carga Uno por Uno" : progreso.fase === "VERIFICACION_1" ? "Pase 2/3: Verificación 1/2" : "Pase 3/3: Verificación 2/2"}
+              </span>
+            </div>
+
+            {/* Stepper Visual */}
+            <div className="grid grid-cols-3 gap-2 text-[10px] font-black uppercase text-center mb-3">
+              <div className={`p-2 rounded-xl border transition-all ${
+                progreso.fase === "CARGA_INICIAL"
+                  ? "bg-amber-500/20 border-amber-400 text-amber-300 ring-1 ring-amber-400"
+                  : "bg-slate-800/80 border-slate-700 text-slate-400"
+              }`}>
+                <span>1. Uno por Uno</span>
+              </div>
+              <div className={`p-2 rounded-xl border transition-all ${
+                progreso.fase === "VERIFICACION_1"
+                  ? "bg-amber-500/20 border-amber-400 text-amber-300 ring-1 ring-amber-400"
+                  : "bg-slate-800/80 border-slate-700 text-slate-400"
+              }`}>
+                <span>2. Verificación 1/2</span>
+              </div>
+              <div className={`p-2 rounded-xl border transition-all ${
+                progreso.fase === "VERIFICACION_2"
+                  ? "bg-emerald-500/20 border-emerald-400 text-emerald-300 ring-1 ring-emerald-400"
+                  : "bg-slate-800/80 border-slate-700 text-slate-400"
+              }`}>
+                <span>3. Verificación 2/2</span>
+              </div>
+            </div>
+
+            <p className="text-xs font-bold text-white mb-2">
+              {progreso.mensaje}
+            </p>
+
+            {/* Barra de progreso */}
+            <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-300"
+                style={{
+                  width: `${
+                    progreso.fase === "CARGA_INICIAL"
+                      ? Math.round((progreso.indiceTrack / (progreso.totalTracks || 1)) * 33)
+                      : progreso.fase === "VERIFICACION_1"
+                      ? 33 + Math.round((progreso.indiceTrack / (progreso.totalTracks || 1)) * 33)
+                      : 66 + Math.round((progreso.indiceTrack / (progreso.totalTracks || 1)) * 34)
+                  }%`
+                }}
+              />
+            </div>
+
+            {progreso.omisionesCorregidas > 0 && (
+              <div className="mt-2 text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
+                <span>🛡️</span>
+                <span>{progreso.omisionesCorregidas} omisión(es) detectada(s) y subsanada(s) exitosamente.</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Pie de Acciones */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 bg-slate-950 px-5 py-3.5">
           <button
@@ -893,6 +976,7 @@ Race 1 - 12:35 PM
             </button>
           )}
         </div>
+
         {/* Modal de Informe de Resultado */}
         {mostrarInformeModal && resumen && (
           <ModalInformeResultadoSincronizacion
@@ -984,6 +1068,21 @@ function ModalInformeResultadoSincronizacion({
               </span>
             </div>
           </div>
+
+          {/* Badge de Doble Verificación */}
+          {"dobleVerificado" in resumen && Boolean((resumen as ResumenDobleVerificado).dobleVerificado) && (
+            <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/40 p-2.5 flex items-center justify-between text-xs">
+              <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+                <span>🛡️</span>
+                <span>Procesado 1 por 1 y Verificado 2 veces (Doble pasada de integridad)</span>
+              </span>
+              <span className="font-black text-emerald-400">
+                {(resumen as ResumenDobleVerificado).omisionesCorregidas > 0
+                  ? `${(resumen as ResumenDobleVerificado).omisionesCorregidas} omisiones corregidas`
+                  : "0 omisiones"}
+              </span>
+            </div>
+          )}
 
           {/* Desglose por Hipódromo */}
           <div className="space-y-2">

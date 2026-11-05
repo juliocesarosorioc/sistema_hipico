@@ -219,10 +219,10 @@ export function PortalInicioBetplay() {
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5 leading-none">
                   <span className="font-black text-base tracking-wider uppercase">
-                    BETPLAY
+                    SISTEMA HÍPICO
                   </span>
                   <span className="rounded bg-amber-500/20 px-1 py-0.2 text-[9px] font-black tracking-widest text-amber-400 border border-amber-500/30">
-                    RACING
+                    OFICIAL
                   </span>
                 </div>
                 <span className="text-[10px] text-slate-400 font-medium tracking-tight">
@@ -954,7 +954,7 @@ export function PortalInicioBetplay() {
               <div className="flex items-center gap-2">
                 <span className="text-2xl">🏇</span>
                 <span className="font-black text-base text-white tracking-wider">
-                  BETPLAY RACING
+                  SISTEMA HÍPICO
                 </span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
@@ -1060,7 +1060,7 @@ export function PortalInicioBetplay() {
 
           <div className="border-t border-slate-800 pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
             <div>
-              © {new Date().getFullYear()} BETPLAY RACING · Club del Dinero. Todos los derechos reservados.
+              © {new Date().getFullYear()} SISTEMA HÍPICO · Todos los derechos reservados.
             </div>
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-emerald-500" />

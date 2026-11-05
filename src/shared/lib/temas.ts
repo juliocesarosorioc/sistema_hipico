@@ -29,7 +29,7 @@ export const TEMAS_DISPONIBLES: InfoTema[] = [
   {
     id: 'oscuro',
     nombre: 'Oscuro Casino',
-    subtitulo: 'Estilo Betplay Dark',
+    subtitulo: 'Oscuro Tradicional',
     emoji: '🌙',
     colorMuestra: '#0b0f19',
     colorAcento: '#f59e0b',

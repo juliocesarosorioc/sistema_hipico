@@ -6,7 +6,7 @@ import { mensajeSinAcceso, useAuthStore } from "@/shared/store/useAuthStore";
 import { pedirRecuperacion, resolverCorreo } from "@/features/auth/lib/sesion";
 import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 import { sanitizarIdentificador } from "@/shared/lib/security";
-import { CloudflareTurnstileWidget } from "@/shared/components/ui/CloudflareTurnstileWidget";
+import { RecaptchaWidget } from "@/shared/components/ui/RecaptchaWidget";
 import { activarProteccionAntiClonacion } from "@/shared/lib/anti-clonacion";
 import {
   verificarBloqueoIntentos,
@@ -419,22 +419,25 @@ export default function PantallaLogin() {
           ) : null}
 
           
-          {/* Verificación de seguridad Anti-Bot Cloudflare Turnstile */}
+          {/* Verificación de seguridad Anti-Bot reCAPTCHA Oficial con Imágenes */}
           <div className="flex flex-col items-center justify-center my-3 space-y-1.5">
-            <CloudflareTurnstileWidget
-              onVerificado={(t) => setRecaptchaToken(t)}
+            <RecaptchaWidget
+              onVerificado={(t) => {
+                setRecaptchaToken(t);
+                useAuthStore.setState({ errorLogin: null });
+              }}
               onExpirado={() => setRecaptchaToken(null)}
             />
-            <div className="flex items-center justify-between w-full max-w-[320px] text-[10px] text-slate-400 px-1">
+            <div className="flex items-center justify-between w-full max-w-[304px] text-[10px] text-slate-400 px-1">
               <span className="flex items-center gap-1 font-medium">
-                <span>🛡️</span> Verificación Cloudflare
+                <span>🛡️</span> Verificación reCAPTCHA con imágenes
               </span>
               <a
                 href="/verificacion"
-                className="hover:text-[#f38020] hover:underline transition-colors"
-                title="Ver pantalla completa de verificación de seguridad Cloudflare"
+                className="hover:text-[#1a73e8] hover:underline transition-colors"
+                title="Ver pantalla completa de verificación de seguridad"
               >
-                Ver pantalla completa ↗
+                Acceso perimetral ↗
               </a>
             </div>
           </div>

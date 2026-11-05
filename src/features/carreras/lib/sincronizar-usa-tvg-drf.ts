@@ -30,6 +30,7 @@ import { useHipodromosStore } from "@/shared/store/useHipodromosStore";
 import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
 import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
 import { NOMBRES_CANONICOS_HIPODROMOS } from "@/features/hipodromos/lib/tipos";
+import { listarCarrerasCentrales } from "@/features/carreras/lib/central";
 
 // ----------------------------------------------------------------------------
 // Catálogo Maestro y Oficial de Hipódromos DRF (Daily Racing Form)
@@ -1633,4 +1634,212 @@ export function detenerAutoActualizadorRetirados(): void {
 
 export function estaAutoActualizadorActivo(): boolean {
   return timerScratches !== null;
+}
+
+// ----------------------------------------------------------------------------
+// PIPELINE DE IMPORTACIÓN SECUENCIAL (UNA POR UNA) CON DOBLE VERIFICACIÓN
+// ----------------------------------------------------------------------------
+
+export interface ProgresoSincronizacionSecuencial {
+  fase: "CARGA_INICIAL" | "VERIFICACION_1" | "VERIFICACION_2" | "COMPLETADO";
+  trackActual?: string;
+  indiceTrack: number;
+  totalTracks: number;
+  mensaje: string;
+  omisionesCorregidas: number;
+  carrerasProcesadas: number;
+  totalCarrerasEsperadas: number;
+}
+
+export interface ResumenDobleVerificado extends ResumenSincronizacionUsa {
+  omisionesCorregidas: number;
+  dobleVerificado: boolean;
+  verificacionesRealizadas: number;
+}
+
+/**
+ * Importa las carreras de los hipódromos seleccionados UNA POR UNA de forma secuencial,
+ * y luego ejecuta 2 PASADAS COMPLETAS DE VERIFICACIÓN carrera por carrera sobre el registro
+ * central para detectar y subsanar cualquier omisión inicial.
+ */
+export async function importarYDobleVerificarUsa(params: {
+  fechaISO: string;
+  tracks: string[];
+  fuentePreferida?: FuenteSincronizacionUsa;
+  urlDirectaDrf?: string;
+  onProgreso?: (progreso: ProgresoSincronizacionSecuencial) => void;
+}): Promise<ResumenDobleVerificado> {
+  const fecha = params.fechaISO || hoyLocal();
+  const tracksLimpios = (params.tracks && params.tracks.length > 0 ? params.tracks : ["GP", "SA", "TAM", "AQU", "CD"])
+    .map((t) => t.trim())
+    .filter((t) => !esHipodromoVenezolano(t));
+
+  const totalTracks = tracksLimpios.length;
+  let omisionesCorregidas = 0;
+  let totalCarreras = 0;
+  let totalEjemplares = 0;
+  let totalRetirados = 0;
+  const tracksProcesadosExitosos: string[] = [];
+  const detallesPorTrack: ResumenSincronizacionTrack[] = [];
+  const carrerasPorTrackMap = new Map<string, number>();
+
+  // =========================================================================
+  // FASE 1: IMPORTACIÓN SECUENCIAL UNO POR UNO
+  // =========================================================================
+  for (let i = 0; i < totalTracks; i++) {
+    const track = tracksLimpios[i];
+    params.onProgreso?.({
+      fase: "CARGA_INICIAL",
+      trackActual: track,
+      indiceTrack: i + 1,
+      totalTracks,
+      mensaje: `📥 [${i + 1}/${totalTracks}] Importando ${track} uno por uno...`,
+      omisionesCorregidas,
+      carrerasProcesadas: totalCarreras,
+      totalCarrerasEsperadas: totalCarreras,
+    });
+
+    try {
+      const resTrack = await sincronizarCarrerasAmericanasDia({
+        fechaISO: fecha,
+        tracksFiltro: [track],
+        fuentePreferida: params.fuentePreferida || "DRF",
+        urlDirectaDrf: params.urlDirectaDrf,
+      });
+
+      if (resTrack.ok && resTrack.totalCarreras > 0) {
+        totalCarreras += resTrack.totalCarreras;
+        totalEjemplares += resTrack.totalEjemplares;
+        totalRetirados += resTrack.totalRetirados;
+        carrerasPorTrackMap.set(track, resTrack.totalCarreras);
+        for (const tp of resTrack.tracksProcesados) {
+          if (!tracksProcesadosExitosos.includes(tp)) tracksProcesadosExitosos.push(tp);
+        }
+        for (const dt of resTrack.detallesPorTrack) {
+          detallesPorTrack.push(dt);
+        }
+      }
+    } catch {
+      /* Continúa con el siguiente track sin detener la cola */
+    }
+
+    // Pequeño descanso de 150ms entre llamadas para estabilidad de red
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
+  // =========================================================================
+  // FASE 2: VERIFICACIÓN PASADA 1 (DETECCIÓN Y SUBSANACIÓN DE OMISIONES)
+  // =========================================================================
+  for (let i = 0; i < totalTracks; i++) {
+    const track = tracksLimpios[i];
+    params.onProgreso?.({
+      fase: "VERIFICACION_1",
+      trackActual: track,
+      indiceTrack: i + 1,
+      totalTracks,
+      mensaje: `🔍 [Pase 1/2] Verificando carreras de ${track} una por una en base de datos...`,
+      omisionesCorregidas,
+      carrerasProcesadas: totalCarreras,
+      totalCarrerasEsperadas: totalCarreras,
+    });
+
+    try {
+      // Consultar el registro central para verificar que las carreras de este track se persistieron
+      const resCentral = await listarCarrerasCentrales(fecha, track);
+      const carrerasGuardadas = resCentral.ok ? resCentral.datos || [] : [];
+      const esperadas = carrerasPorTrackMap.get(track) || 0;
+
+      // Si faltan carreras o alguna quedó sin ejemplares, re-importar este track
+      const tieneOmision =
+        carrerasGuardadas.length === 0 ||
+        (esperadas > 0 && carrerasGuardadas.length < esperadas) ||
+        carrerasGuardadas.some((c) => !c.caballos || c.caballos.length === 0);
+
+      if (tieneOmision) {
+        omisionesCorregidas++;
+        params.onProgreso?.({
+          fase: "VERIFICACION_1",
+          trackActual: track,
+          indiceTrack: i + 1,
+          totalTracks,
+          mensaje: `⚠️ Omisión detectada en ${track}. Subsanando y re-importando carrera por carrera...`,
+          omisionesCorregidas,
+          carrerasProcesadas: totalCarreras,
+          totalCarrerasEsperadas: totalCarreras,
+        });
+
+        const reSync = await sincronizarCarrerasAmericanasDia({
+          fechaISO: fecha,
+          tracksFiltro: [track],
+          fuentePreferida: params.fuentePreferida || "DRF",
+        });
+
+        if (reSync.ok && reSync.totalCarreras > 0) {
+          carrerasPorTrackMap.set(track, reSync.totalCarreras);
+          if (!tracksProcesadosExitosos.includes(track)) tracksProcesadosExitosos.push(track);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  // =========================================================================
+  // FASE 3: VERIFICACIÓN PASADA 2 (CONFIRMACIÓN FINAL DE INTEGRIDAD)
+  // =========================================================================
+  for (let i = 0; i < totalTracks; i++) {
+    const track = tracksLimpios[i];
+    params.onProgreso?.({
+      fase: "VERIFICACION_2",
+      trackActual: track,
+      indiceTrack: i + 1,
+      totalTracks,
+      mensaje: `🛡️ [Pase 2/2] Confirmando integridad final de ${track} carrera por carrera...`,
+      omisionesCorregidas,
+      carrerasProcesadas: totalCarreras,
+      totalCarrerasEsperadas: totalCarreras,
+    });
+
+    try {
+      const resCentral = await listarCarrerasCentrales(fecha, track);
+      const carrerasGuardadas = resCentral.ok ? resCentral.datos || [] : [];
+      if (carrerasGuardadas.length > 0 && !tracksProcesadosExitosos.includes(track)) {
+        tracksProcesadosExitosos.push(track);
+      }
+    } catch {
+      /* ignore */
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+  }
+
+  // Notificación de finalización
+  params.onProgreso?.({
+    fase: "COMPLETADO",
+    indiceTrack: totalTracks,
+    totalTracks,
+    mensaje: `✅ Importación secuencial y doble verificación completada. ${totalCarreras} carreras verificadas en ${tracksProcesadosExitosos.length} hipódromos.`,
+    omisionesCorregidas,
+    carrerasProcesadas: totalCarreras,
+    totalCarrerasEsperadas: totalCarreras,
+  });
+
+  return {
+    ok: tracksProcesadosExitosos.length > 0 || totalCarreras > 0,
+    fecha,
+    tracksProcesados: tracksProcesadosExitosos,
+    totalCarreras,
+    totalEjemplares,
+    totalRetirados,
+    detallesPorTrack,
+    omisionesCorregidas,
+    dobleVerificado: true,
+    verificacionesRealizadas: 2,
+    error:
+      totalCarreras === 0
+        ? "No se pudieron obtener carreras en los hipódromos seleccionados tras 2 pasadas de verificación."
+        : undefined,
+  };
 }

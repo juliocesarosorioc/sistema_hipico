@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { cambiarClave } from "@/features/auth/lib/sesion";
 import { calcularFortalezaClave } from "@/shared/lib/security";
+import { RecaptchaWidget } from "@/shared/components/ui/RecaptchaWidget";
 
 /**
  * Puesta de contraseña nueva (la segunda mitad de "Olvidé mi contraseña").
@@ -28,6 +29,7 @@ export default function PaginaResetPassword() {
   const [verClave, setVerClave] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const fortaleza = useMemo(() => calcularFortalezaClave(nueva), [nueva]);
 
   useEffect(() => {
@@ -69,6 +71,10 @@ export default function PaginaResetPassword() {
     }
     if (nueva !== repetida) {
       setError("Las dos contraseñas no coinciden.");
+      return;
+    }
+    if (!recaptchaToken) {
+      setError("Por favor completa la verificación reCAPTCHA con imágenes antes de continuar.");
       return;
     }
     setGuardando(true);
@@ -229,7 +235,18 @@ export default function PaginaResetPassword() {
               </p>
             ) : null}
 
-            <button
+                        {/* Verificación reCAPTCHA con imágenes */}
+            <div className="flex flex-col items-center justify-center my-3">
+              <RecaptchaWidget
+                onVerificado={(t) => {
+                  setRecaptchaToken(t);
+                  setError(null);
+                }}
+                onExpirado={() => setRecaptchaToken(null)}
+              />
+            </div>
+
+<button
               type="submit"
               disabled={guardando}
               className="w-full rounded-lg bg-emerald-600 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
