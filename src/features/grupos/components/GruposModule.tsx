@@ -2198,7 +2198,7 @@ export function GruposModule() {
 
         >
 
-          <div className="w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
 
             <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-800 px-4 py-3 text-xs font-black uppercase tracking-wider text-white backdrop-blur sm:px-5">
 
@@ -2216,44 +2216,56 @@ export function GruposModule() {
 
             </div>
 
-            {/* Pestañas del Modal */}
-            <div className="flex border-b border-slate-200 bg-slate-100 px-4 pt-2 gap-2 sm:px-5 overflow-x-auto">
-              <button
-                type="button"
-                onClick={() => setPestanaModalGrupo("convenio")}
-                className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                  pestanaModalGrupo === "convenio"
-                    ? "bg-white text-indigo-700 border-indigo-600 shadow-sm"
-                    : "text-slate-600 border-transparent hover:text-slate-900 hover:bg-slate-200/60"
-                }`}
-              >
-                <span>🏢</span> Ficha y Convenio
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPestanaModalGrupo("participantes");
-                  setBusquedaParticipante("");
-                }}
-                className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                  pestanaModalGrupo === "participantes"
-                    ? "bg-white text-indigo-700 border-indigo-600 shadow-sm"
-                    : "text-slate-600 border-transparent hover:text-slate-900 hover:bg-slate-200/60"
-                }`}
-              >
-                <span>👥</span> Participantes ({participantesDelGrupo.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setPestanaModalGrupo("operadores")}
-                className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-t-lg transition-colors border-b-2 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                  pestanaModalGrupo === "operadores"
-                    ? "bg-white text-indigo-700 border-indigo-600 shadow-sm"
-                    : "text-slate-600 border-transparent hover:text-slate-900 hover:bg-slate-200/60"
-                }`}
-              >
-                <span>📱</span> Operadores Celular
-              </button>
+            {/* Pestañas de la Ficha de Grupo: diseño en grilla responsiva que nunca se desajusta ni oculta títulos */}
+            <div className="border-b border-slate-200 bg-slate-100 p-2 sm:px-5">
+              <nav className="grid grid-cols-3 gap-1.5 sm:gap-2" aria-label="Secciones de la ficha de grupo">
+                <button
+                  type="button"
+                  onClick={() => setPestanaModalGrupo("convenio")}
+                  title="Ficha y Convenio"
+                  className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 sm:py-2.5 text-center text-[11px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                    pestanaModalGrupo === "convenio"
+                      ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200"
+                      : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900"
+                  }`}
+                >
+                  <span className="shrink-0 text-sm">🏢</span>
+                  <span className="truncate">Ficha y Convenio</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPestanaModalGrupo("participantes");
+                    setBusquedaParticipante("");
+                  }}
+                  title="Participantes del Grupo"
+                  className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 sm:py-2.5 text-center text-[11px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                    pestanaModalGrupo === "participantes"
+                      ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200"
+                      : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900"
+                  }`}
+                >
+                  <span className="shrink-0 text-sm">👥</span>
+                  <span className="truncate">
+                    Participantes <span className="opacity-75 font-semibold text-[10px] sm:text-[11px]">({participantesDelGrupo.length})</span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPestanaModalGrupo("operadores")}
+                  title="Operadores Celular"
+                  className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 sm:py-2.5 text-center text-[11px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                    pestanaModalGrupo === "operadores"
+                      ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200"
+                      : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900"
+                  }`}
+                >
+                  <span className="shrink-0 text-sm">📱</span>
+                  <span className="truncate">Operadores Celular</span>
+                </button>
+              </nav>
             </div>
 
             {/* Contenido según la pestaña activa del modal */}
