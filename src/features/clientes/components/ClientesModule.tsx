@@ -500,7 +500,7 @@ export function ClientesModule() {
                       aria-label="Seleccionar la página"
                     />
                   </th>
-                  <th className={th + " w-[24%] min-w-[13.5rem]"} title="Nombre completo y alias del cliente">Cliente / Jugador</th>
+                  <th className={th + " w-[24%] min-w-[13.5rem]"} title="Seudónimo con el que se identifica el jugador">Seudónimo / Jugador</th>
                   <th className={th + " w-[18%] min-w-[11.5rem]"} title="Teléfono celular completo y contacto">Contacto / Teléfono</th>
                   <th className={th + " w-16 text-center"} title="Modo de juego">Modo</th>
                   <th className={th + " w-24 text-right"} title="Saldo actual en USD">Saldo</th>
@@ -526,41 +526,20 @@ export function ClientesModule() {
                       />
                     </td>
                     <td className={td}>
-                      {(() => {
-                        const nom = [c.nombre, c.apellido].filter(Boolean).map((s) => String(s).trim()).filter(Boolean).join(" ");
-                        const seud = String(c.seudonimo ?? "").trim();
-                        const principal = nom || seud || "—";
-                        const mostrarAlias = Boolean(seud && nom && seud.toLowerCase() !== nom.toLowerCase());
-
-                        return (
-                          <div className="flex flex-col gap-0.5 min-w-0 pr-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {c.es_socio ? (
-                                <span className="shrink-0 text-[10px] text-amber-500" title="Es socio / agencia">👑</span>
-                              ) : null}
-                              <span
-                                className="font-bold text-slate-900 break-words leading-tight"
-                                title={`Nombre: ${nom || "—"}${seud ? ` | Alias: ${seud}` : ""}`}
-                              >
-                                {principal}
-                              </span>
-                              {c.grupo_id ? (
-                                <span className="shrink-0 text-[9px] text-indigo-400" title="Pertenece a un grupo">🗃️</span>
-                              ) : null}
-                            </div>
-                            {mostrarAlias ? (
-                              <div className="flex items-center gap-1 mt-0.5">
-                                <span
-                                  className="inline-block max-w-full truncate rounded bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.2 text-[9.5px] font-semibold text-indigo-700 leading-tight"
-                                  title={`Alias / Seudónimo: ${seud}`}
-                                >
-                                  Alias: {seud}
-                                </span>
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })()}
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0 pr-1">
+                        {c.es_socio ? (
+                          <span className="shrink-0 text-[10px] text-amber-500" title="Es socio / agencia">👑</span>
+                        ) : null}
+                        <span
+                          className="font-bold text-slate-900 break-words leading-tight"
+                          title={c.seudonimo || c.nombre || ""}
+                        >
+                          {c.seudonimo?.trim() || c.nombre?.trim() || "—"}
+                        </span>
+                        {c.grupo_id ? (
+                          <span className="shrink-0 text-[9px] text-indigo-400" title="Pertenece a un grupo">🗃️</span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className={td}>
                       <div className="flex flex-col min-w-0 pr-1">
