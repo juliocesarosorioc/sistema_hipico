@@ -185,6 +185,8 @@
     "./agente-cordialidad-humana.test.ts",
     "./auditoria-saldos-contabilidad-incentivos.test.ts",
     "../src/features/grupos/lib/operadores-grupo.ts",
-    "./operadores-grupo.test.ts"
+    "./operadores-grupo.test.ts",
+    "../src/features/contabilidad/lib/cruces-jugadores.ts",
+    "./cruces-entre-jugadores.test.ts"
   ]
 }

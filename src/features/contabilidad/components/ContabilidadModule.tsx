@@ -23,6 +23,7 @@ import { supabase } from "@/core/supabase";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/components/ModalPagoAGanadorYConciliacion";
+import { ModalCruceJugadores } from "@/features/clientes/components/ModalCruceJugadores";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import {
   TabBancos,
@@ -110,6 +111,7 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
   const [asientos, setAsientos] = useState<AsientoNIIFResumen[]>([]);
   const [cargando, setCargando] = useState(true);
   const [modalPagosAbierto, setModalPagosAbierto] = useState(false);
+  const [modalCruceAbierto, setModalCruceAbierto] = useState(false);
   const [pestanaPagos, setPestanaPagos] = useState<"PAGAR_GANADORES" | "CONCILIAR_PAGOS">("PAGAR_GANADORES");
 
   /**
@@ -325,6 +327,14 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
           >
             <span>🔔</span> Conciliar Pagos
           </button>
+          <button
+            type="button"
+            onClick={() => setModalCruceAbierto(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-black text-white hover:bg-amber-500 shadow-sm transition"
+            title="Realizar cruce / transferencia de saldo entre jugadores con partida doble y captura de soporte obligatoria"
+          >
+            <span>🔀</span> Cruce entre Jugadores
+          </button>
           <Button
             variant="outline"
             size="sm"
@@ -414,6 +424,18 @@ export function ContabilidadModule({ tabInicial = "ingresos" }: { tabInicial?: T
           tasaVes={tasaVes}
           onRango={aplicarRango}
           onHecho={recargarBalance}
+        />
+      )}
+
+      {modalCruceAbierto && (
+        <ModalCruceJugadores
+          abierto={modalCruceAbierto}
+          onCerrar={() => setModalCruceAbierto(false)}
+          clientes={clientes}
+          onCruceExitoso={() => {
+            void cargar();
+            void recargarBalance();
+          }}
         />
       )}
 

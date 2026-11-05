@@ -7,6 +7,7 @@ import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { ModalCliente } from "@/features/clientes/components/ModalCliente";
 import { ModalCreacionRapidaCliente } from "@/features/clientes/components/ModalCreacionRapidaCliente";
 import { ModalPortalCliente } from "@/features/clientes/components/ModalPortalCliente";
+import { ModalCruceJugadores } from "@/features/clientes/components/ModalCruceJugadores";
 import { EstadoCuentaAcordeon } from "@/features/clientes/components/EstadoCuentaAcordeon";
 import { ReporteDestinatariosDevolucion } from "@/features/clientes/components/ReporteDestinatariosDevolucion";
 import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente";
@@ -154,6 +155,8 @@ export function ClientesModule() {
   const [clienteEstado, setClienteEstado] = useState<ClienteRow | null>(null);
   const [socioConvertir, setSocioConvertir] = useState("");
 
+  const [modalCruceAbierto, setModalCruceAbierto] = useState(false);
+  const [clienteEmisorCruceId, setClienteEmisorCruceId] = useState<string | null>(null);
   const [modalPagoGanadorAbierto, setModalPagoGanadorAbierto] = useState(false);
   const [clientePagoGanadorId, setClientePagoGanadorId] = useState<string | null>(null);
   const [vistaInicialPagos, setVistaInicialPagos] = useState<"pagar_ganadores" | "conciliacion">("pagar_ganadores");
@@ -384,6 +387,18 @@ export function ClientesModule() {
               <span >％</span> Devoluciones Masivas
             </Button>
           </Guard>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setClienteEmisorCruceId(null);
+              setModalCruceAbierto(true);
+            }}
+            className="!border-amber-400 !bg-amber-50 !font-black !text-amber-800 hover:!bg-amber-100"
+            title="Realizar cruce / transferencia de saldo entre jugadores con partida doble y captura de soporte obligatoria"
+          >
+            <span>🔀</span> Cruce entre Jugadores
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -695,6 +710,18 @@ export function ClientesModule() {
                             💸
                           </button>
                         ) : null}
+                                                <button
+                          type="button"
+                          title="Transferir saldo de este jugador a otro (Cruce)"
+                          aria-label="Cruce de saldo"
+                          onClick={() => {
+                            setClienteEmisorCruceId(String(c.id));
+                            setModalCruceAbierto(true);
+                          }}
+                          className="flex h-6 w-6 items-center justify-center rounded text-[13px] leading-none transition bg-amber-50 hover:bg-amber-100 text-amber-700"
+                        >
+                          🔀
+                        </button>
                         <Guard permiso="clientes:btn_editar" disabled>
                           <button
                             type="button"
@@ -960,6 +987,20 @@ export function ClientesModule() {
           </div>
         </div>
       ) : null}
+
+            <ModalCruceJugadores
+        abierto={modalCruceAbierto}
+        onCerrar={() => {
+          setModalCruceAbierto(false);
+          setClienteEmisorCruceId(null);
+        }}
+        clientes={clientes}
+        clienteEmisorInicialId={clienteEmisorCruceId}
+        onCruceExitoso={() => {
+          limpiarCacheClientes();
+          void recargar(grupoConsultado);
+        }}
+      />
 
       <ModalPagoAGanadorYConciliacion
         abierto={modalPagoGanadorAbierto}
