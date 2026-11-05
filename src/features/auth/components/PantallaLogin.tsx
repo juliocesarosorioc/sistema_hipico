@@ -14,6 +14,8 @@ import {
   limpiarIntentosFallidos,
 } from "@/features/seguridad/lib/seguimiento-usuarios";
 import { obtenerIpCliente } from "@/shared/lib/ip-detector";
+import { ModalRegistroUsuario } from "@/features/auth/components/ModalRegistroUsuario";
+import Link from "next/link";
 
 /**
  * Módulo de inicio de sesión.
@@ -41,6 +43,7 @@ export default function PantallaLogin() {
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const [ingresando, setIngresando] = useState(false);
   const [bloqueadoSegundos, setBloqueadoSegundos] = useState<number>(0);
+  const [modalRegistroAbierto, setModalRegistroAbierto] = useState(false);
   const yaNavegandoRef = useRef(false);
   const ipRef = useRef<string>("IP_LOCAL");
 
@@ -460,7 +463,7 @@ export default function PantallaLogin() {
           </button>
 
           {!recuperando ? (
-            <div className="pt-2">
+            <div className="space-y-2 pt-2">
               <button
                 type="button"
                 onClick={() => {
@@ -472,6 +475,32 @@ export default function PantallaLogin() {
               >
                 Olvid&eacute; mi contrase&ntilde;a
               </button>
+
+              <div className="relative my-3 flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-200" />
+                </div>
+                <span className="relative bg-white px-2 text-[10px] font-black uppercase text-slate-400">
+                  Opciones para nuevos usuarios
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setModalRegistroAbierto(true)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-amber-400/5 to-transparent px-3 py-2 text-xs font-black text-amber-700 transition hover:border-amber-500 hover:bg-amber-50"
+              >
+                <span>✨</span>
+                <span>¿No tienes cuenta? Solicitar Registro</span>
+              </button>
+
+              <Link
+                href="/comercial"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
+              >
+                <span>🌐</span>
+                <span>Ver Portal Comercial & Parámetros</span>
+              </Link>
             </div>
           ) : null}
         </form>
@@ -556,6 +585,14 @@ export default function PantallaLogin() {
           </p>
         </div>
       </div>
+
+      <ModalRegistroUsuario
+        abierto={modalRegistroAbierto}
+        onCerrar={() => setModalRegistroAbierto(false)}
+        onRegistroExitoso={(usr) => {
+          setUsuario(usr);
+        }}
+      />
     </main>
   );
 }

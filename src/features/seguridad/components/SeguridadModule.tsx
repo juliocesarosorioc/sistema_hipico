@@ -26,11 +26,12 @@ import type { Decision, ExcepcionUsuario, TipoCapacidad, TipoUsuario } from "@/f
 import { Guard } from "@/shared/components/ui/Guard";
 import { AuditoriaPanel } from "@/features/seguridad/components/AuditoriaPanel";
 import { SeccionUsuariosConectados } from "@/features/seguridad/components/SeccionUsuariosConectados";
+import { SeccionSolicitudesRegistro } from "@/features/seguridad/components/SeccionSolicitudesRegistro";
 import { listarClientes, type ClienteRow } from "@/features/clientes/lib/clientes";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 
-type Pestana = "esquema" | "reglas" | "tipos" | "usuarios" | "conectados" | "auditoria";
+type Pestana = "esquema" | "reglas" | "tipos" | "usuarios" | "conectados" | "solicitudes" | "auditoria";
 
 const CHOICES_TIPO: TipoCapacidad[] = ["ruta", "boton", "modal", "celda", "campo", "funcion"];
 
@@ -128,7 +129,7 @@ export default function SeguridadModule() {
   // useSearchParams para no obligar a la página a renderizarse en dynamic.
   useEffect(() => {
     const pedida = new URLSearchParams(window.location.search).get("pestana");
-    if (pedida && (["esquema", "reglas", "tipos", "usuarios", "conectados", "auditoria"] as string[]).includes(pedida)) {
+    if (pedida && (["esquema", "reglas", "tipos", "usuarios", "conectados", "solicitudes", "auditoria"] as string[]).includes(pedida)) {
       setPestana(pedida as Pestana);
     }
   }, []);
@@ -450,6 +451,7 @@ export default function SeguridadModule() {
             ["tipos", "Tipos de usuario"],
             ["usuarios", "Usuarios"],
             ["conectados", "🟢 Usuarios Conectados & Actividad"],
+            ["solicitudes", "📋 Solicitudes de Registro"],
             ["auditoria", "Auditoría"],
           ] as Array<[Pestana, string]>
         ).map(([id, texto]) => (
@@ -1079,6 +1081,13 @@ export default function SeguridadModule() {
             usuarioSeleccionadoId={usuarioSel}
             onSeleccionarUsuario={(id) => setUsuarioSel(id)}
           />
+        </div>
+      ) : null}
+
+      {/* PESTAÑA: SOLICITUDES DE REGISTRO */}
+      {pestana === "solicitudes" ? (
+        <div className="space-y-3">
+          <SeccionSolicitudesRegistro />
         </div>
       ) : null}
 

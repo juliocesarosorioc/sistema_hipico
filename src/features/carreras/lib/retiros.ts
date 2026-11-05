@@ -31,6 +31,8 @@ import {
   textoRetirados,
   extraerNumerosCaballoJugada,
   jugadaInvolucraRetirado,
+  identificarReactivados,
+  jugadaEsReactivable,
 } from "@/features/carreras/lib/retiros-nucleo";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { reflejarRetiradosMatriz } from "@/features/carreras/lib/maestro";
@@ -49,6 +51,8 @@ export {
   num,
   extraerNumerosCaballoJugada,
   jugadaInvolucraRetirado,
+  identificarReactivados,
+  jugadaEsReactivable,
 } from "@/features/carreras/lib/retiros-nucleo";
 
 export type EntradaRetiros = {
@@ -57,6 +61,8 @@ export type EntradaRetiros = {
   carrera: number | string;
   /** Lista COMPLETA (no un delta) de números retirados de la carrera. */
   numeros: NumeroRetirado[];
+  /** Opcional: lista de retiros previos para identificar reactivaciones sin re-consultar. */
+  previos?: NumeroRetirado[];
 };
 
 export type ResultadoRetiros = {
@@ -69,6 +75,8 @@ export type ResultadoRetiros = {
   tablasAfectadas: number;
   /** Tickets reembolsados (best-effort). */
   reembolsos: number;
+  /** Tickets reactivados cuando un ejemplar fue des-retirado (reactivado por error). */
+  reactivados: number;
   /** Premios recalculados por tabla (id → nuevo premio). */
   premios: Array<{ tabla: string; premio: number }>;
   errores?: string[];
@@ -97,16 +105,18 @@ async function propagarATablas(
   fecha: string,
   hipodromo: string,
   carrera: number,
-  retirados: Set<string>
+  retirados: Set<string>,
+  reactivados: string[] = []
 ): Promise<{
   tablas: number;
   premios: Array<{ tabla: string; premio: number }>;
   reembolsos: number;
+  reactivados: number;
   errores: string[];
 }> {
   const premios: Array<{ tabla: string; premio: number }> = [];
   const errores: string[] = [];
-  if (!supabase) return { tablas: 0, premios, reembolsos: 0, errores };
+  if (!supabase) return { tablas: 0, premios, reembolsos: 0, reactivados: 0, errores };
   let filas: Array<Record<string, unknown>> = [];
   try {
     // Filtro por clave canónica, no por texto: `.ilike('%LA RINCONADA%')` no
@@ -157,7 +167,15 @@ async function propagarATablas(
     })
   );
 
-  // El reembolso y anulación va FUERA del loop de tablas fijas: anula las jugadas
+  // 1. Reactivar jugadas de ejemplares des-retirados (reactivados por error)
+  let reactivadosTotal = 0;
+  if (reactivados.length) {
+    const resReact = await reactivarTicketsRetirados(fecha, hipodromo, carrera, reactivados, [...retirados]);
+    reactivadosTotal += resReact.reactivados;
+    errores.push(...resReact.avisos);
+  }
+
+  // 2. El reembolso y anulación va FUERA del loop de tablas fijas: anula las jugadas
   // que involucren al ejemplar retirado en todos los módulos (Taquilla, Puestos,
   // Pareos, Marcas, Tablas Fijas, Remates, Dupletas).
   let reembolsos = 0;
@@ -166,7 +184,120 @@ async function propagarATablas(
     reembolsos += r.reembolsados;
     errores.push(...r.avisos);
   }
-  return { tablas: filas.length, premios, reembolsos, errores };
+  return { tablas: filas.length, premios, reembolsos, reactivados: reactivadosTotal, errores };
+}
+
+/**
+ * Reactiva los tickets que estaban en estado 'Retirado' al reactivar un ejemplar
+ * que fue retirado por error, y descuenta al saldo del cliente el importe que se le
+ * había reembolsado.
+ */
+async function reactivarTicketsRetirados(
+  fecha: string,
+  hipodromo: string,
+  carrera: number,
+  reactivados: string[],
+  retiradosActuales: string[]
+): Promise<{ reactivados: number; avisos: string[] }> {
+  const avisos: string[] = [];
+  if (!supabase) return { reactivados: 0, avisos };
+  if (!reactivados.length) return { reactivados: 0, avisos };
+  let totalReactivados = 0;
+
+  // 1. Intentar RPC si existe
+  try {
+    const { data, error } = await supabase.rpc("club_reactivar_retirados", {
+      p_fecha: fecha,
+      p_hipodromo: hipodromo,
+      p_carrera: carrera,
+      p_numeros: reactivados.join(","),
+      p_retirados_vigentes: retiradosActuales.join(","),
+      p_usuario: null,
+    });
+    if (!error && data) {
+      const d = data as { reactivados?: number; avisos?: string[] };
+      for (const a of d.avisos ?? []) avisos.push(a);
+      totalReactivados += Number(d.reactivados ?? 0);
+    }
+  } catch {
+    /* fallback universal */
+  }
+
+  // 2. Reactivación transversal en tickets_apuestas
+  try {
+    const dia = String(fecha).slice(0, 10);
+    const claveHipo = claveHipodromo(hipodromo);
+    const { data: tickets, error: errTickets } = await supabase
+      .from("tickets_apuestas")
+      .select("id, hipodromo, carrera, nombre_jugada, caballo, ejemplar_numero, estado, anulada, monto_jugado, cliente_juega_id, fecha_registro, nota_auditoria")
+      .eq("carrera", carrera)
+      .or(filtroDiaJornada(dia))
+      .limit(1000);
+
+    if (errTickets) {
+      avisos.push(`Lectura tickets: ${errTickets.message}`);
+      return { reactivados: totalReactivados, avisos };
+    }
+
+    const afectados = ((tickets ?? []) as Array<Record<string, unknown>>).filter(
+      (tk) =>
+        claveHipodromo(String(tk.hipodromo ?? "")) === claveHipo &&
+        !tk.anulada &&
+        String(tk.estado ?? "").trim().toLowerCase() === "retirado" &&
+        jugadaEsReactivable(tk.caballo, tk.ejemplar_numero, tk.nombre_jugada, reactivados, retiradosActuales)
+    );
+
+    if (afectados.length > 0) {
+      const idsAfectados = afectados.map((tk) => tk.id).filter((id) => id != null);
+      if (idsAfectados.length > 0) {
+        const { error: errUpdate } = await supabase
+          .from("tickets_apuestas")
+          .update({
+            anulada: false,
+            estado: "Pendiente",
+            premio_pagar: 0,
+            monto_decidido: 0,
+            comision_pagada: 0,
+          })
+          .in("id", idsAfectados);
+
+        if (errUpdate) {
+          avisos.push(`Update tickets: ${errUpdate.message}`);
+        }
+      }
+
+      // Descontar del saldo del cliente el monto devuelto previamente
+      const cargosPorCliente = new Map<string, number>();
+      for (const tk of afectados) {
+        const monto = num(tk.monto_jugado);
+        const cid = String(tk.cliente_juega_id ?? "").trim();
+        if (monto > 0 && cid) {
+          cargosPorCliente.set(cid, (cargosPorCliente.get(cid) ?? 0) + monto);
+        }
+      }
+
+      if (cargosPorCliente.size > 0) {
+        await Promise.all(
+          [...cargosPorCliente.entries()].map(async ([cid, montoCargo]) => {
+            const { data: cli } = await supabase!
+              .from("clientes")
+              .select("saldo_actual")
+              .eq("id", cid)
+              .maybeSingle();
+            if (cli) {
+              const nuevoSaldo = Math.round((num(cli.saldo_actual) - montoCargo) * 100) / 100;
+              await supabase!.from("clientes").update({ saldo_actual: nuevoSaldo }).eq("id", cid);
+            }
+          })
+        );
+      }
+      totalReactivados += afectados.length;
+    }
+  } catch (e) {
+    avisos.push(`Reactivación transversal: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  return { reactivados: totalReactivados, avisos };
 }
 
 /**
@@ -298,6 +429,7 @@ export async function aplicarRetirosCarrera(entrada: EntradaRetiros): Promise<Re
         texto: textoRetirados(entrada.numeros),
         tablasAfectadas: 0,
         reembolsos: 0,
+        reactivados: 0,
         premios: [],
         error: (e as Error).message,
       };
@@ -313,6 +445,7 @@ export async function aplicarRetirosCarrera(entrada: EntradaRetiros): Promise<Re
     texto,
     tablasAfectadas: 0,
     reembolsos: 0,
+    reactivados: 0,
     premios: [],
   };
   if (!supabase) return { ...vacio, error: "Sin credenciales Supabase (.env.local)." };
@@ -320,8 +453,14 @@ export async function aplicarRetirosCarrera(entrada: EntradaRetiros): Promise<Re
 
   const errores: string[] = [];
   try {
-    // 1) CARRERA CENTRAL, 1b) MATRIZ `carreras` y 2) TABLAS FIJAS + REEMBOLSO en paralelo
-    // para máxima velocidad al retirar un ejemplar.
+    // 0) Identificar ejemplares que estaban retirados pero ya no lo están (fueron des-retirados/reactivados)
+    const retirosPrevios = entrada.previos
+      ? normalizarRetirados(entrada.previos)
+      : await leerRetirosCarrera(fecha, hipodromo, carrera);
+    const reactivados = identificarReactivados(retirosPrevios, retirados);
+
+    // 1) CARRERA CENTRAL, 1b) MATRIZ `carreras` y 2) TABLAS FIJAS + REEMBOLSO + REACTIVACIÓN en paralelo
+    // para máxima velocidad al retirar o reactivar un ejemplar.
     const clave = claveHipodromo(hipodromo);
     const set = new Set(retirados);
 
@@ -353,7 +492,7 @@ export async function aplicarRetirosCarrera(entrada: EntradaRetiros): Promise<Re
     const [errCentral, mat, prop] = await Promise.all([
       centralPromise,
       reflejarRetiradosMatriz(fecha, hipodromo, carrera, texto),
-      propagarATablas(fecha, hipodromo, carrera, set),
+      propagarATablas(fecha, hipodromo, carrera, set, reactivados),
     ]);
 
     if (errCentral) return { ...vacio, error: errCentral };
@@ -365,6 +504,7 @@ export async function aplicarRetirosCarrera(entrada: EntradaRetiros): Promise<Re
       texto,
       tablasAfectadas: prop.tablas,
       reembolsos: prop.reembolsos,
+      reactivados: prop.reactivados,
       premios: prop.premios,
       errores: errores.length ? errores : undefined,
     };
@@ -396,8 +536,14 @@ export async function alternarRetiroCarrera(opts: {
   const lista = new Set(actuales);
   if (opts.retirado) lista.add(n);
   else lista.delete(n);
-  const r = await aplicarRetirosCarrera({ fecha, hipodromo, carrera, numeros: [...lista] });
-  return { ...r, reembolsos: r.reembolsos };
+  const r = await aplicarRetirosCarrera({
+    fecha,
+    hipodromo,
+    carrera,
+    numeros: [...lista],
+    previos: actuales,
+  });
+  return { ...r, reembolsos: r.reembolsos, reactivados: r.reactivados };
 }
 
 /**

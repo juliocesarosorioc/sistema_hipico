@@ -190,6 +190,7 @@
     "./cruces-entre-jugadores.test.ts",
     "../src/features/liquidacion/lib/banqueros.ts",
     "./banqueros-tipos-jugadas.test.ts",
-    "./carreras-semaforo-hipodromo.test.ts"
+    "./carreras-semaforo-hipodromo.test.ts",
+    "./retiros-reactivacion.test.ts"
   ]
 }

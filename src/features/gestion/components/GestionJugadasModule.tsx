@@ -1925,13 +1925,15 @@ const hipodromosDelDia = useMemo(() => {
     // refrescan jugadas/clientes para reflejar anulaciones y reembolsos.
     recargarRegistroCentral();
     void recargarJugadasGuardadas();
-    if (r.reembolsos > 0) void recargarClientes();
+    if (r.reembolsos > 0 || (r.reactivados ?? 0) > 0) void recargarClientes();
     setAviso(
       lista.length
         ? `⛔ Retirados C${carrera}: ${r.retirados.join(", ")} · ${r.tablasAfectadas} tabla(s) sincronizada(s)` +
             (r.reembolsos ? ` · ${r.reembolsos} jugada(s) anulada(s)/reembolsada(s)` : "") +
+            (r.reactivados ? ` · 🔄 ${r.reactivados} jugada(s) reactivada(s)` : "") +
             (r.premios.length ? ` · premios recalculados: ${r.premios.length}` : "")
-        : `✔ C${carrera}: ${r.texto}`
+        : `✔ C${carrera}: ${r.texto}` +
+            (r.reactivados ? ` · 🔄 ${r.reactivados} jugada(s) reactivada(s)` : "")
     );
   };
 
@@ -1966,12 +1968,13 @@ const hipodromosDelDia = useMemo(() => {
     // Las jugadas sobre ejemplares retirados luego de cargarse permanecen visibles como Empate (no se deciden).
     recargarRegistroCentral();
     void recargarJugadasGuardadas();
-    if (r.reembolsos > 0) void recargarClientes();
+    if (r.reembolsos > 0 || (r.reactivados ?? 0) > 0) void recargarClientes();
     setAviso(
       retirado
         ? `⛔ N°${c.numero} RETIRADO de C${carrera} · ${r.tablasAfectadas} tabla(s) sincronizada(s)` +
             (r.reembolsos ? ` · ${r.reembolsos} jugada(s) anulada(s)/reembolsada(s)` : "")
-        : `↩ N°${c.numero} rehabilitado en C${carrera}.`
+        : `↩ N°${c.numero} rehabilitado en C${carrera}.` +
+            (r.reactivados ? ` · 🔄 ${r.reactivados} jugada(s) reactivada(s)` : "")
     );
   };
 

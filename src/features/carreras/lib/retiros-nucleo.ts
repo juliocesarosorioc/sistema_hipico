@@ -145,3 +145,42 @@ export function jugadaInvolucraRetirado(
   const ejemplares = extraerNumerosCaballoJugada(caballo, ejemplarNumero, nombreJugada);
   return ejemplares.some((e) => setRet.has(e));
 }
+
+/**
+ * Compara la lista previa de retirados contra la nueva lista y devuelve
+ * los ejemplares que estaban retirados previamente pero ya NO están en la nueva
+ * lista (es decir, fueron des-retirados / reactivados por haber sido retirados por error).
+ */
+export function identificarReactivados(
+  retiradosPrevios: Iterable<NumeroRetirado> | null | undefined,
+  retiradosNuevos: Iterable<NumeroRetirado> | null | undefined
+): string[] {
+  const previos = normalizarRetirados([...(retiradosPrevios ?? [])]);
+  const nuevos = new Set(normalizarRetirados([...(retiradosNuevos ?? [])]));
+  return previos.filter((n) => !nuevos.has(n));
+}
+
+/**
+ * Determina si una jugada que fue puesta en estado 'Retirado' debe reactivarse
+ * al des-retirar / reactivar uno o más ejemplares.
+ *
+ * Condiciones:
+ *   1. Involucra al menos a uno de los ejemplares reactivados.
+ *   2. NO involucra a ningún ejemplar que aún permanezca retirado en la carrera.
+ */
+export function jugadaEsReactivable(
+  caballo: unknown,
+  ejemplarNumero: unknown,
+  nombreJugada: unknown,
+  reactivados: Iterable<string | number> | null | undefined,
+  retiradosActuales: Iterable<string | number> | null | undefined
+): boolean {
+  // Debe involucrar al menos a uno de los reactivados
+  const tocaReactivado = jugadaInvolucraRetirado(caballo, ejemplarNumero, nombreJugada, reactivados);
+  if (!tocaReactivado) return false;
+
+  // NO debe involucrar a ningún ejemplar que aún siga retirado
+  const tocaSigueRetirado = jugadaInvolucraRetirado(caballo, ejemplarNumero, nombreJugada, retiradosActuales);
+  return !tocaSigueRetirado;
+}
+
