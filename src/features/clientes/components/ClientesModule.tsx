@@ -484,10 +484,10 @@ export function ClientesModule() {
 
           {/* Tabla compacta: una línea por jugador, scrollear dentro del bloque */}
           <div className="max-h-[calc(100vh-19rem)] min-h-64 overflow-auto rounded-2xl border border-line bg-white shadow-sm">
-            <table className="w-full table-fixed text-[11px]">
+            <table className="w-full min-w-[1080px] table-fixed text-[11px]">
               <thead className="border-b border-line">
                 <tr>
-                  <th className={th + " w-7"}>
+                  <th className={th + " w-8 text-center"}>
                     <input
                       type="checkbox"
                       className="h-3.5 w-3.5 accent-primary-600"
@@ -500,8 +500,8 @@ export function ClientesModule() {
                       aria-label="Seleccionar la página"
                     />
                   </th>
-                  <th className={th + " w-[34%] min-w-[20rem]"}>Jugador</th>
-                  <th className={th + " w-[11%]"}>Contacto</th>
+                  <th className={th + " w-[24%] min-w-[13.5rem]"} title="Nombre completo y alias del cliente">Cliente / Jugador</th>
+                  <th className={th + " w-[18%] min-w-[11.5rem]"} title="Teléfono celular completo y contacto">Contacto / Teléfono</th>
                   <th className={th + " w-16 text-center"} title="Modo de juego">Modo</th>
                   <th className={th + " w-24 text-right"} title="Saldo actual en USD">Saldo</th>
                   <th className={th + " w-28 text-right"} title="Monto total ganador o perdedor en carrera con devolución incluida">Resultado</th>
@@ -510,7 +510,7 @@ export function ClientesModule() {
                   <th className={th + " w-24 text-emerald-600"} title="Día y tasa de cuadre">Cuadre</th>
                   <th className={th + " w-24 text-amber-600"} title="Socio asignado">Socio</th>
                   <th className={th + " w-14 text-center"} title="Puerto y saldo visible al socio">Flags</th>
-                  <th className={th + " w-[9.5rem] text-center"}>Acciones</th>
+                  <th className={th + " w-36 text-center"}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -526,22 +526,72 @@ export function ClientesModule() {
                       />
                     </td>
                     <td className={td}>
-                      <div className="flex items-center gap-1.5">
-                        {c.es_socio ? (
-                          <span className="shrink-0 text-[9px] text-amber-500" title="Es socio">👑</span>
-                        ) : null}
-                        <span className="font-bold text-slate-800 break-words leading-snug" title={c.nombre || c.seudonimo || ""}>
-                          {c.seudonimo || c.nombre || "—"}
-                        </span>
-                        {c.grupo_id ? (
-                          <span className="shrink-0 text-[9px] text-indigo-400" title="Pertenece a un grupo">🗃️</span>
-                        ) : null}
-                      </div>
+                      {(() => {
+                        const nom = [c.nombre, c.apellido].filter(Boolean).map((s) => String(s).trim()).filter(Boolean).join(" ");
+                        const seud = String(c.seudonimo ?? "").trim();
+                        const principal = nom || seud || "—";
+                        const mostrarAlias = Boolean(seud && nom && seud.toLowerCase() !== nom.toLowerCase());
+
+                        return (
+                          <div className="flex flex-col gap-0.5 min-w-0 pr-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {c.es_socio ? (
+                                <span className="shrink-0 text-[10px] text-amber-500" title="Es socio / agencia">👑</span>
+                              ) : null}
+                              <span
+                                className="font-bold text-slate-900 break-words leading-tight"
+                                title={`Nombre: ${nom || "—"}${seud ? ` | Alias: ${seud}` : ""}`}
+                              >
+                                {principal}
+                              </span>
+                              {c.grupo_id ? (
+                                <span className="shrink-0 text-[9px] text-indigo-400" title="Pertenece a un grupo">🗃️</span>
+                              ) : null}
+                            </div>
+                            {mostrarAlias ? (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span
+                                  className="inline-block max-w-full truncate rounded bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.2 text-[9.5px] font-semibold text-indigo-700 leading-tight"
+                                  title={`Alias / Seudónimo: ${seud}`}
+                                >
+                                  Alias: {seud}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className={td}>
-                      <div className="truncate font-mono text-[10px] text-slate-700">{c.telefono || "—"}</div>
-                      <div className="truncate text-[10px] leading-tight text-slate-400">
-                        {c.email || c.cedula_rif || ""}
+                      <div className="flex flex-col min-w-0 pr-1">
+                        {c.telefono ? (
+                          <div className="flex items-center gap-1.5 whitespace-nowrap">
+                            <a
+                              href={`https://wa.me/${String(c.telefono).replace(/\D/g, "")}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Abrir WhatsApp con ${c.telefono}`}
+                              className="text-emerald-600 hover:text-emerald-700 font-bold text-[11px] leading-none shrink-0"
+                            >
+                              💬
+                            </a>
+                            <span className="font-mono text-[11px] font-bold text-slate-900 tracking-tight whitespace-nowrap select-all">
+                              {c.telefono}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-[10px] whitespace-nowrap">Sin teléfono</span>
+                        )}
+                        {c.cedula_rif || c.email ? (
+                          <div
+                            className="truncate text-[9.5px] leading-tight text-slate-500 mt-0.5"
+                            title={`${c.cedula_rif ? `Cédula/RIF: ${c.cedula_rif} ` : ""}${c.email || ""}`}
+                          >
+                            {c.cedula_rif ? <span className="font-semibold text-slate-600">{c.cedula_rif}</span> : null}
+                            {c.cedula_rif && c.email ? <span className="text-slate-300"> · </span> : null}
+                            {c.email ? <span className="text-slate-400">{c.email}</span> : null}
+                          </div>
+                        ) : null}
                       </div>
                     </td>
                     <td className={td + " text-center"}>
