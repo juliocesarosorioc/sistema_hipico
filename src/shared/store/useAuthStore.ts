@@ -856,9 +856,11 @@ export const useAuthStore = create<EstadoAuth>()(
         // Permite login de operadores tanto por usuario ('yes', 'ricardogunbold') como por teléfono celular (+584149327337 o 584149327337)
         if (!esUsuarioPrincipal(idLimpio) && supabase) {
           try {
+            const ipDetectada = await obtenerIpCliente().catch(() => "127.0.0.1");
             const { data: rpcRes, error: rpcErr } = await supabase.rpc("club_login_operador", {
               p_identificador: identificador,
               p_clave: clave,
+              p_ip: ipDetectada || "127.0.0.1",
             });
             if (!rpcErr && rpcRes && typeof rpcRes === "object") {
               const r = rpcRes as Record<string, unknown>;

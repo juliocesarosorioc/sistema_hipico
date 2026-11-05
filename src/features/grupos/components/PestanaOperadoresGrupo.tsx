@@ -10,6 +10,7 @@ import {
   desvincularOperadorDeGrupo,
   alternarEstadoOperador,
   generarMensajeWhatsappOperador,
+  enlaceWhatsappOperador,
   type OperadorGrupo,
 } from "@/features/grupos/lib/operadores-grupo";
 import { codigosPaisUnicos, componerTelefono, desglosarTelefono } from "@/shared/lib/vzla";
@@ -37,6 +38,7 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
 
   // Formulario de creación / edición
   const [modoForm, setModoForm] = useState<"crear" | "editar" | null>(null);
+  const [operadorRecienGuardado, setOperadorRecienGuardado] = useState<OperadorGrupo | null>(null);
   const [formUsuario, setFormUsuario] = useState("");
   const [formNombre, setFormNombre] = useState("");
   const [formClave, setFormClave] = useState("");
@@ -160,6 +162,10 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
       return;
     }
 
+    if (res.operador) {
+      setOperadorRecienGuardado(res.operador);
+    }
+
     toast(
       modoForm === "crear"
         ? `✅ Operador "${u}" creado y asignado al grupo ${grupoNombre}.`
@@ -241,6 +247,69 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
           </Button>
         </div>
       </div>
+
+      {/* AVISO DE OPERADOR RECIÉN GUARDADO — ENVÍO DE CREDENCIALES INMEDIATO */}
+      {operadorRecienGuardado && (
+        <div className="rounded-xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-50 via-teal-50 to-white p-4 shadow-sm animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">✅</span>
+                <h5 className="text-xs font-black text-emerald-950 uppercase tracking-wide">
+                  Operador Guardado en la Base de Datos
+                </h5>
+              </div>
+              <p className="text-xs text-emerald-900 font-bold">
+                {operadorRecienGuardado.nombre}{" "}
+                <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-300 text-indigo-900 text-[11px]">
+                  {operadorRecienGuardado.id}
+                </code>
+              </p>
+              <p className="text-[11px] text-emerald-800">
+                {operadorRecienGuardado.telefono
+                  ? `Móvil registrado: ${operadorRecienGuardado.telefono}. Puedes enviarle sus credenciales de acceso directo por WhatsApp.`
+                  : "Operador registrado. Copia sus credenciales de acceso para compartirlas con el operador."}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {operadorRecienGuardado.telefono ? (
+                <a
+                  href={enlaceWhatsappOperador({
+                    grupoNombre,
+                    usuario: operadorRecienGuardado.id,
+                    clave: operadorRecienGuardado.clave || "",
+                    nombre: operadorRecienGuardado.nombre,
+                    telefono: operadorRecienGuardado.telefono,
+                    codigoPais: operadorRecienGuardado.codigoPais,
+                  })}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-3 py-1.5 shadow-sm flex items-center gap-1.5 transition-colors"
+                >
+                  <span>💬</span> Enviar por WhatsApp
+                </a>
+              ) : null}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => copiarMensajeWhatsapp(operadorRecienGuardado)}
+                className="border-emerald-600 text-emerald-900 hover:bg-emerald-100 font-bold text-xs flex items-center gap-1"
+              >
+                <span>📋</span> Copiar Credenciales
+              </Button>
+              <button
+                type="button"
+                onClick={() => setOperadorRecienGuardado(null)}
+                className="text-slate-400 hover:text-slate-700 text-xs px-2 py-1 font-bold"
+                title="Cerrar aviso"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FORMULARIO DE CREAR / EDITAR OPERADOR */}
       {modoForm && (
@@ -545,19 +614,18 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
                     {/* Botón WhatsApp */}
                     {op.telefono ? (
                       <a
-                        href={`https://wa.me/${op.telefono.replace(/\D/g, "")}?text=${encodeURIComponent(
-                          generarMensajeWhatsappOperador({
-                            grupoNombre,
-                            usuario: op.id,
-                            clave: op.clave || "",
-                            nombre: op.nombre,
-                            telefono: op.telefono,
-                          })
-                        )}`}
+                        href={enlaceWhatsappOperador({
+                          grupoNombre,
+                          usuario: op.id,
+                          clave: op.clave || "",
+                          nombre: op.nombre,
+                          telefono: op.telefono,
+                          codigoPais: op.codigoPais,
+                        })}
                         target="_blank"
                         rel="noreferrer"
                         title={`Enviar credenciales por WhatsApp a ${op.telefono}`}
-                        className="flex items-center gap-1 rounded-lg bg-emerald-600 text-white px-2.5 py-1 text-xs font-bold hover:bg-emerald-500 transition-colors shadow-xs"
+                        className="flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-2.5 py-1 text-xs font-bold hover:bg-emerald-500 transition-colors shadow-xs"
                       >
                         <span>💬</span>
                         <span className="hidden sm:inline">WhatsApp</span>
@@ -567,9 +635,9 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
                         type="button"
                         onClick={() => copiarMensajeWhatsapp(op)}
                         title="Copiar datos de acceso para WhatsApp"
-                        className="flex items-center gap-1 rounded-lg bg-emerald-50 border border-emerald-300 px-2.5 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors shadow-xs"
+                        className="flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-300 px-2.5 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors shadow-xs"
                       >
-                        <span>💬</span>
+                        <span>📋</span>
                         <span className="hidden sm:inline">Copiar</span>
                       </button>
                     )}
