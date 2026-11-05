@@ -7,6 +7,13 @@
  * WhatsApp; este módulo concentra la lógica de negocio para poder probarla.
  */
 
+import {
+  detectarCordialidad,
+  generarRespuestaCordial,
+  type EvaluacionCordialidad,
+  type OpcionesRespuestaCordial,
+} from "@/features/ia-copiloto/lib/cordialidad";
+
 export interface ComandoApertura {
   hipodromo: string;
   carrera: number;
@@ -53,4 +60,25 @@ export function respuestaCarreraCerrada(): string {
 
 export function respuestaPizarra(pizarra: number[]): string {
   return `🏁🏆 *Pizarra oficial: ${pizarra.join("-")}* 🏆🏁\n🔢 Orden: ${pizarra.join(" - ")}\n⚙️ Procesando liquidación... ⏳`;
+}
+
+/**
+ * Detecta si el mensaje es una interacción de cortesía o saludo para el agente.
+ */
+export function parsearInteraccionCordial(
+  texto: string,
+  fechaReferencia?: Date | null
+): EvaluacionCordialidad | null {
+  const ev = detectarCordialidad(texto, fechaReferencia);
+  return ev.esCordial ? ev : null;
+}
+
+/**
+ * Genera la respuesta cordial humana y la contrapregunta proactiva para el grupo.
+ */
+export function respuestaCordial(
+  evaluacion: EvaluacionCordialidad,
+  opciones?: OpcionesRespuestaCordial
+): string {
+  return generarRespuestaCordial(evaluacion, opciones);
 }

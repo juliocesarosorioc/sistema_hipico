@@ -18,6 +18,10 @@ import {
   ejecutarAperturaCarrera,
   activarCentinelaCierreSimultaneo,
 } from "@/features/carreras/lib/cierre-simultaneo-carreras";
+import {
+  detectarCordialidad,
+  generarRespuestaCordial,
+} from "@/features/ia-copiloto/lib/cordialidad";
 
 export interface ClienteSesionSala {
   id: string;
@@ -660,11 +664,19 @@ export function SalaWhatsAppApp() {
       return;
     }
 
-    // 4. Conversación general
+    // 4. Conversación general y cordialidad humana empática
+    const evalCordial = detectarCordialidad(texto);
+    const textoFinal = evalCordial.esCordial
+      ? generarRespuestaCordial(evalCordial, {
+          nombre: cli.seudonimo || cli.nombre,
+          club: "Sala Oficial de Carreras",
+        })
+      : `🤖 Hola @${cli.nombre}, estoy atento a tus jugadas.\n\nPuedes enviar jugadas directas (ej: "100 al 5 con @SAM"), consultar "Mi saldo" o verificar el estado de la "Carrera actual". ¿En qué te puedo colaborar? 🏇`;
+
     const msgGen: MensajeChatSala = {
       id: `ia-${Date.now()}`,
       autor: "Agente IA Oficial",
-      texto: `🤖 Hola @${cli.nombre}, estoy atento a las jugadas. Puedes enviar jugadas como "100 al 5 con @SAM", consultar "Mi saldo" o "Carrera actual".`,
+      texto: textoFinal,
       hora,
       esMio: false,
       esIa: true,

@@ -14,6 +14,10 @@ import {
   type RespuestaTurnoAgente,
   herramienta_sincronizar_carreras_usa,
 } from "@/features/ia-copiloto/lib/agente-transaccional";
+import {
+  detectarCordialidad,
+  generarRespuestaCordial,
+} from "@/features/ia-copiloto/lib/cordialidad";
 import { HIPODROMOS_USA_DISPONIBLES } from "@/features/carreras/lib/sincronizar-usa-tvg-drf";
 import {
   guardarBloqueosJugadas,
@@ -466,6 +470,22 @@ export function consultarAsistenteIa(
   rolUsuario: string = "operador"
 ): ConsultaIaRespuesta {
   const textoLimpio = mensaje.trim().toLowerCase();
+
+  // 0. Detectar interacciones de cortesía y cordialidad humana
+  const evalCordial = detectarCordialidad(mensaje);
+  if (evalCordial.esPuroCordial) {
+    const respCordial = generarRespuestaCordial(evalCordial, {
+      rolUsuario,
+      club: "Club del Dinero",
+    });
+    return {
+      respuesta: respCordial,
+      resuelto: true,
+      sugerenciaEscalamiento: false,
+      categoriaDetectada: "duda_plataforma",
+      prioridadDetectada: "baja",
+    };
+  }
 
   // 1. Detectar si el usuario pide explícitamente soporte humano, un administrador o reporta un problema crítico
   const esPeticionHumanoOReclamo =

@@ -58,6 +58,11 @@ import {
   HIPODROMOS_USA_DISPONIBLES,
   type ResumenSincronizacionUsa,
 } from "@/features/carreras/lib/sincronizar-usa-tvg-drf";
+import {
+  detectarCordialidad,
+  generarRespuestaCordial,
+  type EvaluacionCordialidad,
+} from "@/features/ia-copiloto/lib/cordialidad";
 
 export { MENSAJE_CARRERA_CERRADA };
 
@@ -130,7 +135,8 @@ export interface RespuestaTurnoAgente {
     | "JUGADA_O_PROPUESTA"
     | "CAMBIO_ESTADO_CARRERA"
     | "ACLARATORIA"
-    | "SINCRONIZACION_USA";
+    | "SINCRONIZACION_USA"
+    | "RESPUESTA_CORDIAL";
   mensaje: string;
   mensajes: string[];
   notificacionesSaldo: string[];
@@ -962,6 +968,37 @@ export async function procesarTurnoAgente(
       tipoAccion: "CAMBIO_ESTADO_CARRERA",
       mensaje: msg,
       mensajes: [msg],
+      notificacionesSaldo: [],
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // 3B. CORDIALIDAD HUMANA Y CONVERSACIÓN EMPÁTICA (SALUDOS Y PREGUNTAS CORDIALES)
+  // --------------------------------------------------------------------------
+  const evalCordialidad = detectarCordialidad(
+    texto,
+    entrada.ahora ? new Date(entrada.ahora) : null
+  );
+
+  if (evalCordialidad.esPuroCordial) {
+    const textoCordial = generarRespuestaCordial(evalCordialidad, {
+      nombre: autor,
+      hora: entrada.ahora ? new Date(entrada.ahora) : null,
+      club: "Club del Dinero",
+    });
+
+    siguienteEstado.historialMensajes.push({
+      remitente: "agente",
+      texto: textoCordial,
+    });
+
+    return {
+      estado: siguienteEstado,
+      ok: true,
+      bloqueado: false,
+      tipoAccion: "RESPUESTA_CORDIAL",
+      mensaje: textoCordial,
+      mensajes: [textoCordial],
       notificacionesSaldo: [],
     };
   }

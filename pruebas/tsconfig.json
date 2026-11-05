@@ -181,6 +181,8 @@
     "./contabilidad-automatizada-grupos-honorarios.test.ts",
     "./sala-jugadas-whatsapp.test.ts",
     "./whatsapp-grupo-carrera-y-abono-admin.test.ts",
+    "../src/features/ia-copiloto/lib/cordialidad.ts",
+    "./agente-cordialidad-humana.test.ts",
     "./auditoria-saldos-contabilidad-incentivos.test.ts"
   ]
 }
