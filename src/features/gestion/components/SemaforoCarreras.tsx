@@ -92,12 +92,15 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   const tickets = useTaquillaStore((s) => s.tickets);
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
   const activos = useHipodromosActivos();
-  const hipo = hipoKey(hipodromo);
-  const nombreMostrar = nombrePropioHipodromo(hipodromo, activos);
+  const hipoLimpio = String(hipodromo ?? "").trim();
+  const claveHipo = claveHipodromo(hipoLimpio);
+  const tieneHipodromo = Boolean(hipoLimpio && claveHipo && hipoLimpio.toUpperCase() !== "SIN_HIPODROMO");
+  const hipo = tieneHipodromo ? hipoKey(hipoLimpio) : "";
+  const nombreMostrar = tieneHipodromo ? nombrePropioHipodromo(hipoLimpio, activos) : "";
   // Registro central (matriz `carreras` + resultados embebidos): la fuente de la
   // liquidación compartida. El hook deduplica la consulta con el módulo padre.
   const { carrerasDe } = useRegistroCentralOpts(fecha);
-  const centrales = useMemo(() => carrerasDe(hipodromo), [carrerasDe, hipodromo]);
+  const centrales = useMemo(() => (tieneHipodromo ? carrerasDe(hipoLimpio) : []), [carrerasDe, hipoLimpio, tieneHipodromo]);
 
   // Carreras con jugadas persistidas en BD (`tickets_apuestas`) para [fecha + hipódromo].
   // Garantiza que al reversar una liquidación o recargar la página, las carreras que
@@ -119,8 +122,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
     let vivo = true;
     const sb = supabase;
     const dia = String(fecha ?? "").slice(0, 10);
-    const claveHipo = claveHipodromo(hipodromo);
-    if (!sb || !dia || !claveHipo) {
+    if (!sb || !dia || !tieneHipodromo) {
       setCarrerasBdConJugadas([]);
       return () => { vivo = false; };
     }
@@ -129,7 +131,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
         const { data } = await sb
           .from("tickets_apuestas")
           .select("carrera, hipodromo, estado, anulada, nota_auditoria, fecha_carrera, fecha_registro")
-          .ilike("hipodromo", `%${hipodromo.trim()}%`)
+          .ilike("hipodromo", `%${hipoLimpio}%`)
           .order("id", { ascending: false })
           .limit(3000);
         if (!vivo) return;
@@ -158,9 +160,10 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       }
     })();
     return () => { vivo = false; };
-  }, [fecha, hipodromo, centrales, carrerasConJugadas?.length, recargaVersion]);
+  }, [fecha, hipodromo, centrales, carrerasConJugadas?.length, recargaVersion, tieneHipodromo, hipoLimpio, claveHipo]);
 
   const porCarrera = (n: number): { estado: EstadoCarrera; tieneVentas: boolean } => {
+    if (!tieneHipodromo) return { estado: "inactiva", tieneVentas: false };
     // TODO el cruce va acotado a `fecha`: una tabla o un registro del día
     // anterior con el mismo (hipódromo, carrera) jamás puede pintar el chip de HOY.
     const tabla = tablas.find(
@@ -219,9 +222,38 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
     return { estado: "inactiva", tieneVentas: false };
   };
 
+  // Si no hay hipódromo seleccionado, no deben aparecer carreras ni cambiar ningún color
+  if (!tieneHipodromo) {
+    return (
+      <div className={`rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-2.5 transition ${className}`}>
+        <div className="flex items-center justify-between gap-2">
+          <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+            <span className="text-sm">🏟️</span>
+            <span>Seleccione un <b>hipódromo</b> para visualizar y gestionar sus carreras</span>
+          </p>
+          {accionDerecha ? <div className="shrink-0">{accionDerecha}</div> : null}
+        </div>
+      </div>
+    );
+  }
+
   const todosNumeros = [...carreras, ...carrerasBdConJugadas, ...(carrerasConJugadas ?? [])];
   const maxCarrera = todosNumeros.length ? Math.max(...todosNumeros) : 0;
-  const total = Math.max(MANUAL_TOTAL, maxCarrera, activa ?? 0);
+  const total = manual ? Math.max(MANUAL_TOTAL, maxCarrera, activa ?? 0) : maxCarrera;
+
+  if (total === 0) {
+    return (
+      <div className={`rounded-xl border border-dashed border-amber-300 bg-amber-50/70 p-2.5 transition ${className}`}>
+        <div className="flex items-center justify-between gap-2">
+          <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
+            <span className="text-sm">⚠️</span>
+            <span>No hay carreras registradas para <b>{nombreMostrar}</b> el {fecha}.</span>
+          </p>
+          {accionDerecha ? <div className="shrink-0">{accionDerecha}</div> : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`rounded-2xl border border-line bg-surface p-3 ${className}`}>

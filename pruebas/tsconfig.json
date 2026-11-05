@@ -189,6 +189,7 @@
     "../src/features/contabilidad/lib/cruces-jugadores.ts",
     "./cruces-entre-jugadores.test.ts",
     "../src/features/liquidacion/lib/banqueros.ts",
-    "./banqueros-tipos-jugadas.test.ts"
+    "./banqueros-tipos-jugadas.test.ts",
+    "./carreras-semaforo-hipodromo.test.ts"
   ]
 }

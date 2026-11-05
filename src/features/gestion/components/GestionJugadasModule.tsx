@@ -3558,9 +3558,11 @@ const hipodromosDelDia = useMemo(() => {
         activa={carreraConfirmada ? carrera : null}
         manual={modoManual}
         carrerasConJugadas={
-          filasPreview.some((f) => !f.anulada) && !jugadasPorCarrera.includes(carrera)
-            ? [...jugadasPorCarrera, carrera]
-            : jugadasPorCarrera
+          hipodromoElegido
+            ? filasPreview.some((f) => !f.anulada) && !jugadasPorCarrera.includes(carrera)
+              ? [...jugadasPorCarrera, carrera]
+              : jugadasPorCarrera
+            : []
         }
         onSeleccionar={(n, info) => {
           void seleccionarCarreraConConfirmacion(n, info);
