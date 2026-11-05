@@ -60,6 +60,55 @@ export function EditorCaballos({ caballos, onChange, onQuitar, onAgregar, onAlte
     }
   };
 
+  /** Enfoca el input de valor de la fila anterior (o el último si estamos en el alta). */
+  const subirAnteriorValor = (indiceActual: number | "nuevo") => {
+    const cont = gridRef.current;
+    if (!cont) return;
+    const indiceDestino =
+      indiceActual === "nuevo"
+        ? caballos.length - 1
+        : indiceActual - 1;
+    if (indiceDestino < 0) return;
+    const anterior = cont.querySelector<HTMLInputElement>(
+      `input[data-valor-fila="${indiceDestino}"]`
+    );
+    if (anterior) {
+      anterior.focus();
+      anterior.select?.();
+    }
+  };
+
+  /** Navega verticalmente en la columna indicada (numero, nombre, valor). */
+  const navegarCeldaVertical = (
+    col: "numero" | "nombre" | "valor",
+    filaActual: number | "nuevo",
+    direccion: "arriba" | "abajo"
+  ) => {
+    const cont = gridRef.current;
+    if (!cont) return;
+    if (col === "valor") {
+      if (direccion === "abajo") bajarSiguienteValor(filaActual);
+      else subirAnteriorValor(filaActual);
+      return;
+    }
+    const total = caballos.length;
+    let destino: number | "nuevo" | null = null;
+    if (direccion === "abajo") {
+      if (filaActual === "nuevo") return;
+      destino = filaActual + 1 < total ? filaActual + 1 : "nuevo";
+    } else {
+      if (filaActual === "nuevo") destino = total > 0 ? total - 1 : null;
+      else if (filaActual > 0) destino = filaActual - 1;
+    }
+    if (destino === null) return;
+    const selector = `input[data-col="${col}"][data-fila="${destino}"]`;
+    const target = cont.querySelector<HTMLInputElement>(selector);
+    if (target) {
+      target.focus();
+      target.select?.();
+    }
+  };
+
   const agregar = () => {
     const nombre = nuevoNom.trim().toUpperCase();
     if (!nombre) {
@@ -106,8 +155,19 @@ export function EditorCaballos({ caballos, onChange, onQuitar, onAgregar, onAlte
             <input
               type="text"
               inputMode="numeric"
+              data-fila={i}
+              data-col="numero"
               value={String(c.numero ?? "")}
               onChange={(e) => onChange(i, { numero: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  navegarCeldaVertical("numero", i, "arriba");
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  navegarCeldaVertical("numero", i, "abajo");
+                }
+              }}
               placeholder="Nº"
               title={retirado ? "Ejemplar retirado" : invalidado ? "Ejemplar invalidado (no puede ganar)" : undefined}
               className={`${inp} text-center font-black ${retirado ? "opacity-60" : ""}`}
@@ -115,8 +175,19 @@ export function EditorCaballos({ caballos, onChange, onQuitar, onAgregar, onAlte
             />
             <input
               type="text"
+              data-fila={i}
+              data-col="nombre"
               value={String(c.nombre ?? "")}
               onChange={(e) => onChange(i, { nombre: e.target.value.toUpperCase() })}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  navegarCeldaVertical("nombre", i, "arriba");
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  navegarCeldaVertical("nombre", i, "abajo");
+                }
+              }}
               placeholder="Nombre del ejemplar"
               className={`${inp} ${retirado ? "text-slate-400 line-through" : invalidado ? "text-purple-700 line-through" : ""}`}
             />
@@ -135,12 +206,20 @@ export function EditorCaballos({ caballos, onChange, onQuitar, onAgregar, onAlte
               type="text"
               inputMode="decimal"
               data-valor-fila={i}
+              data-fila={i}
+              data-col="valor"
               value={c.valor_ejemplar != null ? String(c.valor_ejemplar) : ""}
               onChange={(e) => onChange(i, { valor_ejemplar: e.target.value })}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
                   bajarSiguienteValor(i);
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  bajarSiguienteValor(i);
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  subirAnteriorValor(i);
                 }
               }}
               placeholder="—"
@@ -210,17 +289,34 @@ export function EditorCaballos({ caballos, onChange, onQuitar, onAgregar, onAlte
           <input
             type="text"
             inputMode="numeric"
+            data-fila="nuevo"
+            data-col="numero"
             value={nuevoNum}
             onChange={(e) => setNuevoNum(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                navegarCeldaVertical("numero", "nuevo", "arriba");
+              }
+            }}
             placeholder="Nº"
             style={{ backgroundColor: colorDeNumero(nuevoNum), color: textoDeNumero(nuevoNum) }}
             className={`${inp} border-2 text-center font-black`}
           />
           <input
             type="text"
+            data-fila="nuevo"
+            data-col="nombre"
             value={nuevoNom}
             onChange={(e) => setNuevoNom(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && agregar()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                agregar();
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                navegarCeldaVertical("nombre", "nuevo", "arriba");
+              }
+            }}
             placeholder="Nuevo ejemplar…"
             className={inp}
           />
@@ -235,12 +331,17 @@ export function EditorCaballos({ caballos, onChange, onQuitar, onAgregar, onAlte
             type="text"
             inputMode="decimal"
             data-valor-fila="nuevo"
+            data-fila="nuevo"
+            data-col="valor"
             value={nuevoValor}
             onChange={(e) => setNuevoValor(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
                 agregar();
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                subirAnteriorValor("nuevo");
               }
             }}
             placeholder="—"
@@ -262,7 +363,7 @@ export function EditorCaballos({ caballos, onChange, onQuitar, onAgregar, onAlte
         </div>
       )}
       <span className="block text-right text-[9px] font-bold text-slate-400">
-        ✏️ Enter en Valor baja al siguiente. La moneda de la tabla se estipula según el grupo (no se muestra símbolo en la edición ni impresión).
+        ✏️ Flecha Arriba (↑) sube a la celda superior · Enter / Flecha Abajo (↓) en Valor baja a la siguiente.
       </span>
     </div>
   );

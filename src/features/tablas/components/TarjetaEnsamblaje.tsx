@@ -179,8 +179,22 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
               <input
                 type="text"
                 inputMode="numeric"
+                data-ensamblaje-num={i}
                 value={String(c.numero ?? "")}
                 onChange={(e) => setCaballo(i, { numero: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp" && i > 0) {
+                    e.preventDefault();
+                    const prev = (e.currentTarget.closest(".space-y-1") || document).querySelector<HTMLInputElement>(`input[data-ensamblaje-num="${i - 1}"]`);
+                    prev?.focus();
+                    prev?.select?.();
+                  } else if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    const next = (e.currentTarget.closest(".space-y-1") || document).querySelector<HTMLInputElement>(`input[data-ensamblaje-num="${i + 1}"]`);
+                    next?.focus();
+                    next?.select?.();
+                  }
+                }}
                 placeholder="Nº"
                 title="Número del ejemplar (editable)"
                 className="flex h-6 w-6 shrink-0 flex-none items-center justify-center rounded text-center text-[10px] font-bold leading-none outline-none focus:ring-1 focus:ring-indigo-500"
@@ -188,8 +202,22 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
               />
               <input
                 type="text"
+                data-ensamblaje-nom={i}
                 value={String(c.nombre ?? "")}
                 onChange={(e) => setCaballo(i, { nombre: e.target.value.toUpperCase() })}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp" && i > 0) {
+                    e.preventDefault();
+                    const prev = (e.currentTarget.closest(".space-y-1") || document).querySelector<HTMLInputElement>(`input[data-ensamblaje-nom="${i - 1}"]`);
+                    prev?.focus();
+                    prev?.select?.();
+                  } else if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    const next = (e.currentTarget.closest(".space-y-1") || document).querySelector<HTMLInputElement>(`input[data-ensamblaje-nom="${i + 1}"]`);
+                    next?.focus();
+                    next?.select?.();
+                  }
+                }}
                 placeholder="Nombre del ejemplar"
                 title="Nombre del ejemplar (editable)"
                 className="min-w-0 w-full rounded bg-transparent px-1 py-0.5 text-[14px] font-bold uppercase leading-none text-slate-800 outline-none focus:bg-white focus:ring-1 focus:ring-indigo-400"
@@ -198,8 +226,22 @@ export function TarjetaEnsamblaje({ draft, onChange, onPublicar, onQuitar }: Pro
               <input
                 type="text"
                 inputMode="decimal"
+                data-ensamblaje-valor={i}
                 value={String(c.valor_ejemplar ?? "")}
                 onChange={(e) => setCaballo(i, { valor_ejemplar: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp" && i > 0) {
+                    e.preventDefault();
+                    const prev = (e.currentTarget.closest(".space-y-1") || document).querySelector<HTMLInputElement>(`input[data-ensamblaje-valor="${i - 1}"]`);
+                    prev?.focus();
+                    prev?.select?.();
+                  } else if (e.key === "ArrowDown" || e.key === "Enter") {
+                    e.preventDefault();
+                    const next = (e.currentTarget.closest(".space-y-1") || document).querySelector<HTMLInputElement>(`input[data-ensamblaje-valor="${i + 1}"]`);
+                    next?.focus();
+                    next?.select?.();
+                  }
+                }}
                 placeholder={nac === "VE" ? "valor" : "M/L"}
                 className="w-14 rounded border border-slate-300 px-1 py-px text-right text-[17px] font-black text-blue-700 outline-none"
               />

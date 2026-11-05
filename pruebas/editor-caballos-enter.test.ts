@@ -47,6 +47,24 @@ ok(
 );
 ok("el input de valor es un `ref` de grilla", /useRef<HTMLDivElement>\(null\)/.test(src));
 
+console.log("\n[1B] Flecha Arriba (ArrowUp) sube a la celda superior");
+ok(
+  "ArrowUp llama a `subirAnteriorValor(i)`",
+  /e\.key === "ArrowUp"[\s\S]{0,80}subirAnteriorValor\(i\)/.test(src)
+);
+ok(
+  "busca el valor de la fila anterior `input[data-valor-fila=\"${indiceDestino}\"]`",
+  /input\[data-valor-fila="\$\{indiceDestino\}"\]/.test(src)
+);
+ok(
+  "en el alta `nuevo` ArrowUp sube al último ejemplar",
+  /indiceActual === "nuevo"\s*\?\s*caballos\.length - 1/.test(src)
+);
+ok(
+  "soporta navegación vertical con Flecha Arriba en número y nombre",
+  /navegarCeldaVertical\("numero", i, "arriba"\)/.test(src) && /navegarCeldaVertical\("nombre", i, "arriba"\)/.test(src)
+);
+
 console.log("\n[2] Grilla alineada (encabezados y retiros)");
 ok("una sola constante de columnas `COLS` para todas las filas", /const COLS = "grid grid-cols-\[/.test(src));
 ok("el encabezado «Valor» va a la derecha (como el input)", /text-right text-\[9px\] font-black[^>]*>Valor</.test(src));
