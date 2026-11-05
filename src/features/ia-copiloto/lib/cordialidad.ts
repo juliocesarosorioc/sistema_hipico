@@ -176,13 +176,13 @@ export function generarRespuestaCordial(
     case "IDENTIDAD": {
       return (
         `👋 ¡Hola${nombreTratamiento}! Soy tu **Asistente y Copiloto Inteligente de ${club}** 🏇🤖.\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `----------------------------------------\n` +
         `Estoy aquí para acompañarte durante toda la jornada:\n` +
         `• 💰 Consultar tu saldo y balance en tiempo real.\n` +
         `• 🏁 Seguir aperturas, cierres y pizarras oficiales.\n` +
         `• 📋 Guiarte con jugadas, tablas fijas y remates.\n` +
         `• 💳 Asistirte con registros contables y comprobantes de forma segura.\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `----------------------------------------\n` +
         `¿En qué te puedo colaborar en este momento? ¿Deseas revisar carreras o consultar tu cuenta? 🤝`
       );
     }

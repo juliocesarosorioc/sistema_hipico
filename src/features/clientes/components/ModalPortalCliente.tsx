@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { ModalEditorMensajeWhatsapp } from "@/shared/components/ui/ModalEditorMensajeWhatsapp";
 import {
   acortarEnlace,
   enlacePortalLargo,
@@ -76,9 +77,29 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
 
   if (!cliente) return null;
 
+  const [modalWaAbierto, setModalWaAbierto] = useState(false);
+  const [mensajeWa, setMensajeWa] = useState("");
+
   const copiar = (texto: string) => {
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(texto).catch(() => undefined);
     toast("Enlace copiado al portapapeles.", "success");
+  };
+
+  const armarMensajeWhatsApp = () => {
+    const enlaceFinal = linkCorto && linkCorto.startsWith("http") ? linkCorto : linkLargo;
+    const usuarioTxt = cliente.seudonimo || cliente.nombre || "";
+    return [
+      `🏇📱 *PORTAL DE CLIENTES — ACCESO OFICIAL*`,
+      `----------------------------------------`,
+      `👋 *¡Hola, ${usuarioTxt}!* Ya puedes ingresar a tu portal personal para consultar saldo, jugadas en vivo y resultados.`,
+      ``,
+      `👤 *Usuario:* *${usuarioTxt}*`,
+      `🔑 *Código:* \`${token}\``,
+      `🔒 *Contraseña:* \`${clavePortal}\``,
+      `🌐 *Enlace directo:* ${enlaceFinal}`,
+      `----------------------------------------`,
+      `🛡️ _Guarda este mensaje para ingresar siempre a tu cuenta._ ✨`,
+    ].join("\n");
   };
 
   const enviarWhatsApp = async () => {
@@ -88,25 +109,8 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
       cliente
     ).catch(() => undefined);
     limpiarCacheClientes();
-    const enlaceFinal = linkCorto && linkCorto.startsWith("http") ? linkCorto : linkLargo;
-    const usuarioTxt = cliente.seudonimo || cliente.nombre || "";
-    const mensaje = [
-      `🏇📱 *PORTAL DE CLIENTES — ACCESO OFICIAL*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `👋 *¡Hola, ${usuarioTxt}!* Ya puedes ingresar a tu portal personal para consultar saldo, jugadas en vivo y resultados.`,
-      ``,
-      `👤 *Usuario:* *${usuarioTxt}*`,
-      `🔑 *Código:* \`${token}\``,
-      `🔒 *Contraseña:* \`${clavePortal}\``,
-      `🌐 *Enlace directo:* ${enlaceFinal}`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `🛡️ _Guarda este mensaje para ingresar siempre a tu cuenta._ ✨`,
-    ].join("\n");
-    const telLimpio = String(cliente.telefono ?? "").replace(/\D+/g, "");
-    const codPais = String(cliente.codigo_pais ?? "").replace(/\D+/g, "");
-    const numWa = telLimpio ? `${codPais && !telLimpio.startsWith(codPais) ? codPais : ""}${telLimpio}` : "";
-    const urlWa = `https://wa.me/${numWa}?text=${encodeURIComponent(mensaje)}`;
-    window.open(urlWa, "_blank", "noopener,noreferrer");
+    setMensajeWa(armarMensajeWhatsApp());
+    setModalWaAbierto(true);
   };
 
   const guardar = async () => {
@@ -249,6 +253,17 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
         </div>
         <ToastHost />
       </div>
+
+      {/* Modal para ver, editar y enviar el mensaje a WhatsApp */}
+      <ModalEditorMensajeWhatsapp
+        abierto={modalWaAbierto}
+        onCerrar={() => setModalWaAbierto(false)}
+        titulo="Ver y Editar Invitación de WhatsApp"
+        destinatarioNombre={cliente.seudonimo || cliente.nombre || ""}
+        telefonoInicial={String(cliente.telefono || "")}
+        codigoPaisInicial={String(cliente.codigo_pais || "+58")}
+        mensajeInicial={mensajeWa}
+      />
     </div>
   );
 }

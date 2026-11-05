@@ -201,12 +201,13 @@ export async function enlaceWhatsAppTicket(t: TicketDisputa): Promise<string | n
   const mensaje = [
     `👋 *¡Hola, ${t.cliente_nombre ?? "cliente"}!* 🏇`,
     ``,
-    `🏆 *Club del Dinero* ━━━━━━━━━━━━`,
+    `🏆 *Club del Dinero*`,
+    `----------------------------------------`,
     `🎟️ *NOTIFICACIÓN DE TICKET RESUELTO:* *#T-${t.numero_ticket ?? String(t.id).slice(0, 6)}*`,
     ``,
     `✅ *Acción:* ${t.accion_aplicada ?? "Atendido"}${montoStr}`,
     `💬 *Respuesta de Taquilla:* ${t.respuesta_casa ?? "Tu requerimiento ha sido verificado con éxito."}`,
-    `━━━━━━━━━━━━━━━━━━━━`,
+    `----------------------------------------`,
     `🤝 _¡Gracias por tu confianza y preferencia!_ ✨`,
   ].join("\n");
   return `https://wa.me/${numeroInt}?text=${encodeURIComponent(mensaje)}`;

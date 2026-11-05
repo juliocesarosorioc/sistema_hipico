@@ -669,7 +669,7 @@ export function generarMensajeWhatsappOperador(opts: {
 
   return (
     `🏇 *SISTEMA HÍPICO — ACCESO DE TAQUILLA MÓVIL*\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `----------------------------------------\n` +
     `🏢 *Grupo:* ${opts.grupoNombre.toUpperCase()}${nombreTxt}${telTxt}\n` +
     `\n` +
     `📋 *CREDENCIALES DE INGRESO:*\n` +
@@ -678,7 +678,7 @@ export function generarMensajeWhatsappOperador(opts: {
     `\n` +
     `🌐 *Enlace de Ingreso:*\n` +
     `${url}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `----------------------------------------\n` +
     `✨ *Instrucciones:*\n` +
     `1️⃣ Abre el enlace en tu navegador móvil\n` +
     `2️⃣ Ingresa tu Usuario (o Teléfono) y tu Contraseña\n` +

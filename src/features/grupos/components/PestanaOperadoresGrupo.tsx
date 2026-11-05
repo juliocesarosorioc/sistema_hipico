@@ -17,6 +17,7 @@ import { codigosPaisUnicos, componerTelefono, desglosarTelefono } from "@/shared
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import { estaBorrado, type Hipodromo } from "@/features/hipodromos/lib/tipos";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
+import { ModalEditorMensajeWhatsapp } from "@/shared/components/ui/ModalEditorMensajeWhatsapp";
 
 type Props = {
   grupoId: string | number;
@@ -50,6 +51,38 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
 
   // Visibilidad de contraseñas en la tabla
   const [visibles, setVisibles] = useState<Record<string, boolean>>({});
+
+  // Modal para ver y editar mensaje antes de enviar a WhatsApp
+  const [modalWhatsapp, setModalWhatsapp] = useState<{
+    abierto: boolean;
+    destinatario: string;
+    telefono: string;
+    codigoPais: string;
+    mensaje: string;
+  }>({
+    abierto: false,
+    destinatario: "",
+    telefono: "",
+    codigoPais: "+58",
+    mensaje: "",
+  });
+
+  const abrirEditorWhatsapp = (op: OperadorGrupo) => {
+    const msg = generarMensajeWhatsappOperador({
+      grupoNombre,
+      usuario: op.id,
+      clave: op.clave || "",
+      nombre: op.nombre,
+      telefono: op.telefono,
+    });
+    setModalWhatsapp({
+      abierto: true,
+      destinatario: op.nombre ? `${op.nombre} (${op.id})` : op.id,
+      telefono: op.telefono || "",
+      codigoPais: op.codigoPais || "+58",
+      mensaje: msg,
+    });
+  };
 
   const refrescar = useCallback(async () => {
     setCargando(true);
@@ -273,23 +306,14 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
             </div>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {operadorRecienGuardado.telefono ? (
-                <a
-                  href={enlaceWhatsappOperador({
-                    grupoNombre,
-                    usuario: operadorRecienGuardado.id,
-                    clave: operadorRecienGuardado.clave || "",
-                    nombre: operadorRecienGuardado.nombre,
-                    telefono: operadorRecienGuardado.telefono,
-                    codigoPais: operadorRecienGuardado.codigoPais,
-                  })}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-3 py-1.5 shadow-sm flex items-center gap-1.5 transition-colors"
-                >
-                  <span>💬</span> Enviar por WhatsApp
-                </a>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => abrirEditorWhatsapp(operadorRecienGuardado)}
+                className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-3 py-1.5 shadow-sm flex items-center gap-1.5 transition-colors"
+                title="Ver, editar y enviar credenciales a WhatsApp"
+              >
+                <span>💬</span> Ver y Enviar por WhatsApp
+              </button>
               <Button
                 size="sm"
                 variant="outline"
@@ -612,35 +636,15 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
                   {/* ACCIONES */}
                   <div className="flex items-center gap-1.5 ml-auto">
                     {/* Botón WhatsApp */}
-                    {op.telefono ? (
-                      <a
-                        href={enlaceWhatsappOperador({
-                          grupoNombre,
-                          usuario: op.id,
-                          clave: op.clave || "",
-                          nombre: op.nombre,
-                          telefono: op.telefono,
-                          codigoPais: op.codigoPais,
-                        })}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={`Enviar credenciales por WhatsApp a ${op.telefono}`}
-                        className="flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-2.5 py-1 text-xs font-bold hover:bg-emerald-500 transition-colors shadow-xs"
-                      >
-                        <span>💬</span>
-                        <span className="hidden sm:inline">WhatsApp</span>
-                      </a>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => copiarMensajeWhatsapp(op)}
-                        title="Copiar datos de acceso para WhatsApp"
-                        className="flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-300 px-2.5 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors shadow-xs"
-                      >
-                        <span>📋</span>
-                        <span className="hidden sm:inline">Copiar</span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => abrirEditorWhatsapp(op)}
+                      title={`Ver, editar y enviar credenciales por WhatsApp a ${op.nombre || op.id}`}
+                      className="flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-2.5 py-1 text-xs font-bold hover:bg-emerald-500 transition-colors shadow-xs"
+                    >
+                      <span>💬</span>
+                      <span className="hidden sm:inline">WhatsApp</span>
+                    </button>
 
                     {/* Alternar Activo/Inactivo */}
                     <button
@@ -682,6 +686,17 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
           </div>
         </div>
       )}
+
+      {/* MODAL PARA VER Y EDITAR MENSAJE DE WHATSAPP */}
+      <ModalEditorMensajeWhatsapp
+        abierto={modalWhatsapp.abierto}
+        onCerrar={() => setModalWhatsapp((m) => ({ ...m, abierto: false }))}
+        titulo="Ver y Editar Credenciales para WhatsApp"
+        destinatarioNombre={modalWhatsapp.destinatario}
+        telefonoInicial={modalWhatsapp.telefono}
+        codigoPaisInicial={modalWhatsapp.codigoPais}
+        mensajeInicial={modalWhatsapp.mensaje}
+      />
     </div>
   );
 }

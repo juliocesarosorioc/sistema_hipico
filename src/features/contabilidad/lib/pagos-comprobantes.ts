@@ -973,14 +973,14 @@ export function formatearReciboWhatsappGanador(params: {
 
   return [
     `🏆 *PAGO DE GANANCIA PROCESADO* 🏆`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `----------------------------------------`,
     `👤 *Ganador:* *${params.clienteNombre}*`,
     `📅 *Fecha y Hora:* ${fh}`,
     `🏦 *Vía de Pago:* ${metodoBanco}`,
     `🔢 *Referencia:* \`${params.referencia}\``,
     `💵 *Monto Pagado:* 🟢 *$ ${formatearMontoSinMoneda(params.montoPagado)}*`,
     `📊 *Nuevo Saldo:* *$ ${formatearMontoSinMoneda(params.nuevoSaldo)}*`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `----------------------------------------`,
     `🖼️ _El comprobante digital ya se encuentra verificado y disponible en tu Portal de Cliente._ ✨`,
   ].join("\n");
 }

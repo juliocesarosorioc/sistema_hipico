@@ -71,91 +71,91 @@ export const PLANTILLAS_DEFAULT: PlantillaWsp[] = [
     label: "Saldo actual",
     grupo: "envio",
     variables: "{nombre} {saldo} {aval} {disponible} {club}",
-    txt: "👋 *¡Hola, {nombre}!* 🏇\n\n🏆 *{club}*\n━━━━━━━━━━━━━━━━━━━━\n📊 *ESTADO DE CUENTA:*\n\n💰 *Saldo Actual:* $ {saldo} USD\n🛡️ *Aval Vigente:* $ {aval} USD\n⚡ *Disponible para Jugar:* *$ {disponible} USD*\n━━━━━━━━━━━━━━━━━━━━\n✨ _¡Gracias por tu confianza y mucha suerte en tus jugadas!_ 🍀🏇",
+    txt: "👋 *¡Hola, {nombre}!* 🏇\n\n🏆 *{club}*\n----------------------------------------\n📊 *ESTADO DE CUENTA:*\n\n💰 *Saldo Actual:* $ {saldo} USD\n🛡️ *Aval Vigente:* $ {aval} USD\n⚡ *Disponible para Jugar:* *$ {disponible} USD*\n----------------------------------------\n✨ _¡Gracias por tu confianza y mucha suerte en tus jugadas!_ 🍀🏇",
   },
   {
     id: "aval",
     label: "Recordatorio de aval",
     grupo: "envio",
     variables: "{nombre} {aval} {club}",
-    txt: "⚠️ *RECORDATORIO DE AVAL* ⚠️\n\n👤 *Estimado(a) {nombre}:*\n🏇 *{club}*\n━━━━━━━━━━━━━━━━━━━━\n\n📌 Te recordamos que mantienes un aval pendiente por:\n🛡️ *Monto Aval:* *$ {aval} USD*\n\n💳 Para mantener tu cuenta activa y al día, por favor coordina tu abono o acércate a taquilla.\n━━━━━━━━━━━━━━━━━━━━\n🤝 _¡Agradecemos tu puntualidad y preferencia!_",
+    txt: "⚠️ *RECORDATORIO DE AVAL* ⚠️\n\n👤 *Estimado(a) {nombre}:*\n🏇 *{club}*\n----------------------------------------\n\n📌 Te recordamos que mantienes un aval pendiente por:\n🛡️ *Monto Aval:* *$ {aval} USD*\n\n💳 Para mantener tu cuenta activa y al día, por favor coordina tu abono o acércate a taquilla.\n----------------------------------------\n🤝 _¡Agradecemos tu puntualidad y preferencia!_",
   },
   {
     id: "bienvenida",
     label: "Bienvenida",
     grupo: "envio",
     variables: "{nombre} {saldo}",
-    txt: "🎉 *¡BIENVENIDO(A) A {club}!* 🏇\n\n👋 *Hola, {nombre}:*\nTu cuenta ha sido activada con éxito en nuestro sistema.\n\n💳 *Saldo Inicial:* 💰 *$ {saldo} USD*\n⚡ *Estado:* 🟢 Cuenta 100% Operativa\n\n━━━━━━━━━━━━━━━━━━━━\n🏇 _¡Te deseamos el mayor de los éxitos en cada carrera y excelentes jugadas!_ 🍀🔥",
+    txt: "🎉 *¡BIENVENIDO(A) A {club}!* 🏇\n\n👋 *Hola, {nombre}:*\nTu cuenta ha sido activada con éxito en nuestro sistema.\n\n💳 *Saldo Inicial:* 💰 *$ {saldo} USD*\n⚡ *Estado:* 🟢 Cuenta 100% Operativa\n\n----------------------------------------\n🏇 _¡Te deseamos el mayor de los éxitos en cada carrera y excelentes jugadas!_ 🍀🔥",
   },
   {
     id: "negativo",
     label: "Saldo pendiente por abonar",
     grupo: "envio",
     variables: "{nombre} {saldo} {club}",
-    txt: "🔔 *AVISO DE SALDO PENDIENTE* 🔔\n\n👤 *Hola, {nombre}:*\n🏇 *{club}*\n━━━━━━━━━━━━━━━━━━━━\n\n📉 Tu cuenta presenta un saldo pendiente por liquidar:\n🔴 *Saldo por Abonar:* *$ {saldo} USD*\n\n💳 Te solicitamos gestionar tu abono para reactivar tu cupo y seguir disfrutando del juego sin interrupciones.\n━━━━━━━━━━━━━━━━━━━━\n🙏 _¡Muchas gracias por tu atención y pronta gestión!_",
+    txt: "🔔 *AVISO DE SALDO PENDIENTE* 🔔\n\n👤 *Hola, {nombre}:*\n🏇 *{club}*\n----------------------------------------\n\n📉 Tu cuenta presenta un saldo pendiente por liquidar:\n🔴 *Saldo por Abonar:* *$ {saldo} USD*\n\n💳 Te solicitamos gestionar tu abono para reactivar tu cupo y seguir disfrutando del juego sin interrupciones.\n----------------------------------------\n🙏 _¡Muchas gracias por tu atención y pronta gestión!_",
   },
   {
     id: "personalizada",
     label: "Mensaje personalizado",
     grupo: "envio",
     variables: "{nombre}",
-    txt: "👋 *Hola, {nombre}:*\n🏇 *{club}*\n━━━━━━━━━━━━━━━━━━━━\n\n",
+    txt: "👋 *Hola, {nombre}:*\n🏇 *{club}*\n----------------------------------------\n\n",
   },
   {
     id: "reporte_general",
     label: "Reporte de saldos",
     grupo: "reporte",
     variables: "{fecha} {club} {lineas} {balance}",
-    txt: "📊 *REPORTE CONSOLIDADO DE SALDOS* 📊\n🏇 *{club}*\n📅 *Fecha:* {fecha}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n━━━━━━━━━━━━━━━━━━━━\n💰 *BALANCE GLOBAL (A favor de los clientes):* *$ {balance} USD*\n📌 _Reporte oficial generado por sistema._",
+    txt: "📊 *REPORTE CONSOLIDADO DE SALDOS* 📊\n🏇 *{club}*\n📅 *Fecha:* {fecha}\n----------------------------------------\n\n{lineas}\n----------------------------------------\n💰 *BALANCE GLOBAL (A favor de los clientes):* *$ {balance} USD*\n📌 _Reporte oficial generado por sistema._",
   },
   {
     id: "tablas_matriz",
     label: "Tablas Fijas (matriz)",
     grupo: "tablas",
     variables: "{fecha} {lineas} {totales}",
-    txt: "🏇🏆 *TABLAS FIJAS PUBLICADAS* 🏆🏇\n📅 *Jornada:* {fecha}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n🧮 *Total Ejemplares:* *{totales}*\n📌 *Normas:* Válida exclusivamente para la carrera y el ejemplar indicados. Presentar ticket en taquilla.",
+    txt: "🏇🏆 *TABLAS FIJAS PUBLICADAS* 🏆🏇\n📅 *Jornada:* {fecha}\n----------------------------------------\n\n{lineas}\n\n----------------------------------------\n🧮 *Total Ejemplares:* *{totales}*\n📌 *Normas:* Válida exclusivamente para la carrera y el ejemplar indicados. Presentar ticket en taquilla.",
   },
   {
     id: "tablas_reporte",
     label: "Reporte de Tablas",
     grupo: "tablas",
     variables: "{fecha} {lineas}",
-    txt: "📊📋 *REPORTE DE CONTROL — TABLAS FIJAS* 📋📊\n📅 *Fecha:* {fecha}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n🔒 *Control Interno:* Reporte de auditoría y conciliación de tablas fijas.",
+    txt: "📊📋 *REPORTE DE CONTROL — TABLAS FIJAS* 📋📊\n📅 *Fecha:* {fecha}\n----------------------------------------\n\n{lineas}\n\n----------------------------------------\n🔒 *Control Interno:* Reporte de auditoría y conciliación de tablas fijas.",
   },
   {
     id: "remates_pizarra",
     label: "Pizarra de Remates",
     grupo: "tablas",
     variables: "{remate} {hipodromo} {carrera} {fecha} {lineas} {incentivo} {total}",
-    txt: "🔨🏇 *PIZARRA OFICIAL DE REMATES* 🏇🔨\n🏛️ *{hipodromo}* · Carrera {carrera}\n📅 *Fecha:* {fecha}\n🏷️ *{remate}*\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n🎁 *Incentivo de la casa:*  {incentivo}\n\n━━━━━━━━━━━━━━━━━━━━\n💰 *TOTAL A PAGAR:* *{total}*\n🏁 _Pizarra oficial certificada para pago en taquilla._",
+    txt: "🔨🏇 *PIZARRA OFICIAL DE REMATES* 🏇🔨\n🏛️ *{hipodromo}* · Carrera {carrera}\n📅 *Fecha:* {fecha}\n🏷️ *{remate}*\n----------------------------------------\n\n{lineas}\n\n🎁 *Incentivo de la casa:*  {incentivo}\n\n----------------------------------------\n💰 *TOTAL A PAGAR:* *{total}*\n🏁 _Pizarra oficial certificada para pago en taquilla._",
   },
   {
     id: "marcas_resultados",
     label: "Marcas de la|Programa",
     grupo: "marcas",
     variables: "{nombre} {club} {fecha} {hipodromo} {carrera} {lineas} {premio}",
-    txt: "🎯🏇 *MARCAS OFICIALES — RESULTADOS* 🏇🎯\n👋 *Hola, {nombre}:*\n🏛️ *{club}*\n📅 *Fecha:* {fecha} · 📍 *Hipódromo:* {hipodromo} · 🏁 *Carrera:* C{carrera}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n💰 *Premio de la carrera:* *$ {premio} USD*\n📌 _Válido bajo las reglas oficiales de marcas del club. Juega con criterio._",
+    txt: "🎯🏇 *MARCAS OFICIALES — RESULTADOS* 🏇🎯\n👋 *Hola, {nombre}:*\n🏛️ *{club}*\n📅 *Fecha:* {fecha} · 📍 *Hipódromo:* {hipodromo} · 🏁 *Carrera:* C{carrera}\n----------------------------------------\n\n{lineas}\n\n----------------------------------------\n💰 *Premio de la carrera:* *$ {premio} USD*\n📌 _Válido bajo las reglas oficiales de marcas del club. Juega con criterio._",
   },
   {
     id: "marcas_duplicados",
     label: "Marcas repetidas",
     grupo: "marcas",
     variables: "{nombre} {club} {fecha} {lineas}",
-    txt: "⚠️📋 *ALERTA DE MARCAS REPETIDAS* 📋⚠️\n👤 *Estimado(a) {nombre}:*\n🏇 *{club}* · 📅 {fecha}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n🔍 *Atención:* Por favor revisa y valida tu ticket antes de solicitar cobro en taquilla.",
+    txt: "⚠️📋 *ALERTA DE MARCAS REPETIDAS* 📋⚠️\n👤 *Estimado(a) {nombre}:*\n🏇 *{club}* · 📅 {fecha}\n----------------------------------------\n\n{lineas}\n\n----------------------------------------\n🔍 *Atención:* Por favor revisa y valida tu ticket antes de solicitar cobro en taquilla.",
   },
   {
     id: "marcas_hoja",
     label: "Hoja de Marcas del día",
     grupo: "marcas",
     variables: "{fecha} {hipodromo} {lineas} {totales} {marcas}",
-    txt: "🏇📋 *PROGRAMA Y HOJA DE MARCAS DEL DÍA* 📋🏇\n📅 *Fecha Oficial:* {fecha}\n🏛️ *Hipódromo:* {hipodromo}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n🧮 *Total Carreras:* *{totales}* · 🎯 *Con Jugadas:* *{marcas}*\n📌 _Válidas únicamente para el día indicado. Presentar en taquilla._",
+    txt: "🏇📋 *PROGRAMA Y HOJA DE MARCAS DEL DÍA* 📋🏇\n📅 *Fecha Oficial:* {fecha}\n🏛️ *Hipódromo:* {hipodromo}\n----------------------------------------\n\n{lineas}\n\n----------------------------------------\n🧮 *Total Carreras:* *{totales}* · 🎯 *Con Jugadas:* *{marcas}*\n📌 _Válidas únicamente para el día indicado. Presentar en taquilla._",
   },
   {
     id: "dupleta_pizarra",
     label: "Pizarra de Dupleta",
     grupo: "dupleta",
     variables: "{club} {fecha} {hipodromo} {lineas} {premio}",
-    txt: "🎰🏇 *PIZARRA OFICIAL DE DUPLETA* 🏇🎰\n🏆 *{club}*\n📅 *Fecha:* {fecha} · 🏛️ *Hipódromo:* {hipodromo}\n━━━━━━━━━━━━━━━━━━━━\n\n{lineas}\n\n━━━━━━━━━━━━━━━━━━━━\n💰 *PREMIO ACUMULADO:* *$ {premio} USD*\n📌 _Válida exclusivamente para la jornada indicada. Presentar en taquilla._",
+    txt: "🎰🏇 *PIZARRA OFICIAL DE DUPLETA* 🏇🎰\n🏆 *{club}*\n📅 *Fecha:* {fecha} · 🏛️ *Hipódromo:* {hipodromo}\n----------------------------------------\n\n{lineas}\n\n----------------------------------------\n💰 *PREMIO ACUMULADO:* *$ {premio} USD*\n📌 _Válida exclusivamente para la jornada indicada. Presentar en taquilla._",
   },
 ];
 
@@ -249,6 +249,8 @@ export function cargarPlantillas(): PlantillaWsp[] {
       const leg = legacyMsj[p.id];
       if (leg && typeof leg.txt === "string" && leg.txt.trim() !== "") txt = leg.txt;
     }
+    // Auto-sanitizar caracteres multibyte propensos a corromperse en WhatsApp (rombo con interrogación)
+    txt = txt.replace(/━+/g, "----------------------------------------");
     return { ...p, txt };
   });
   cachePlantillas = lista;

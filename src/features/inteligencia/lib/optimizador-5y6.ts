@@ -223,16 +223,16 @@ function generarTextoWhatsAppCuadro5y6(data: {
   return (
     `🎟️ *CUADRO MAESTRO 5Y6 NACIONAL — IA GODET v4*\n` +
     `🏟️ *${data.hipodromo.toUpperCase()}* · 📅 ${data.fecha}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `----------------------------------------\n` +
     `📊 *Combinaciones:* ${data.combinaciones.toLocaleString("es-VE")}\n` +
     `💰 *Factor Multiplicador:* Bs. ${data.factor.toFixed(2)}\n` +
     `💵 *Monto Total:* Bs. ${data.costoTotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}\n` +
     `🎯 *Probabilidad Estimada (6 de 6):* ${data.coberturaPct}%\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `----------------------------------------\n` +
     `📌 *LÍNEAS FIJAS DEL CUADRO:*\n${lineasTxt}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `----------------------------------------\n` +
     `📋 *SELECCIÓN POR VÁLIDAS:*\n${detalleValidas}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `----------------------------------------\n` +
     `_Generado por el Laboratorio de Inteligencia Hípica Actuarial._`
   );
 }

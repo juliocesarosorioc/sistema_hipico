@@ -449,12 +449,12 @@ export function textoReporteWhatsApp(
   L.push(`🏢 Grupo: *${encabezado.grupo || "—"}*`);
   L.push(`📅 Rango: ${fechaLegible(encabezado.desde)} al ${fechaLegible(encabezado.hasta)}`);
   L.push("");
-  L.push("━━━━━━━━━━━━━━━━━━━━");
+  L.push("----------------------------------------");
   L.push(`💵 Volumen jugado: *${formatearDinero(kpis.volumen, kpis.moneda)}*`);
   L.push(`✅ Jugadas decididas: *${kpis.decididas}* de ${kpis.jugadas}`);
   L.push(`📊 % de convenio aplicado: *${kpis.pctAplicado}%*`);
   L.push(`🤝 *Comisión a favor del grupo: ${formatearDinero(kpis.comision, kpis.moneda)}*`);
-  L.push("━━━━━━━━━━━━━━━━━━━━");
+  L.push("----------------------------------------");
 
   const visibles = detalle.slice(0, topeFilas);
   if (visibles.length) {
