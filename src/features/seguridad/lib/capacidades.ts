@@ -734,6 +734,7 @@ export const PUERTAS: Array<{
   // dashboard. Es el mismo caso que /reset-password.
   { ruta: "/portal", publica: true, capacidad: "portal:ruta_portal" },
   { ruta: "/sala", publica: true },
+  { ruta: "/comercial", publica: true },
   // `/dashboard` es un ALIAS del escritorio: la pantalla real es `/inicio`
   // (dentro del grupo `(dashboard)`, la única fuente de verdad del App Router).
   // Se acepta con cualquiera de las dos capacidades del escritorio para que un

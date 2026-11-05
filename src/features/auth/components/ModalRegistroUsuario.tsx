@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { emitirToast } from "@/shared/lib/mensajeria";
-import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import {
   ETIQUETAS_ROL,
   generarMensajeWhatsAppAprobacion,
@@ -24,29 +23,14 @@ export function ModalRegistroUsuario({ abierto, onCerrar, adminTelefono = "", on
   const [telefono, setTelefono] = useState("");
   const [correo, setCorreo] = useState("");
   const [rol, setRol] = useState<RolSolicitado>("JUGADOR");
-  const [grupoId, setGrupoId] = useState("");
+  const [pruebaGratuita, setPruebaGratuita] = useState(false);
+  const [nombreGrupoNuevo, setNombreGrupoNuevo] = useState("");
   const [clave, setClave] = useState("");
   const [claveConfirm, setClaveConfirm] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [guardando, setGuardando] = useState(false);
-  const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
   const [solicitudEnviada, setSolicitudEnviada] = useState(false);
   const [whatsappInfo, setWhatsappInfo] = useState<{ texto: string; url: string } | null>(null);
-
-  useEffect(() => {
-    if (!abierto) return;
-    void (async () => {
-      try {
-        const gs = await listarGruposVenta();
-        setGrupos(gs);
-        if (gs.length > 0 && !grupoId) {
-          setGrupoId(String(gs[0].id));
-        }
-      } catch {
-        /* noop */
-      }
-    })();
-  }, [abierto, grupoId]);
 
   if (!abierto) return null;
 
@@ -56,6 +40,8 @@ export function ModalRegistroUsuario({ abierto, onCerrar, adminTelefono = "", on
     setTelefono("");
     setCorreo("");
     setRol("JUGADOR");
+    setPruebaGratuita(false);
+    setNombreGrupoNuevo("");
     setClave("");
     setClaveConfirm("");
     setMensaje("");
@@ -84,6 +70,10 @@ export function ModalRegistroUsuario({ abierto, onCerrar, adminTelefono = "", on
       emitirToast("Indique un número de WhatsApp válido para contactarlo.", "warning");
       return;
     }
+    if (pruebaGratuita && !nombreGrupoNuevo.trim()) {
+      emitirToast("Indique el nombre de su grupo o centro hípico para la prueba.", "warning");
+      return;
+    }
     if (clave && clave.length < 4) {
       emitirToast("La contraseña debe tener al menos 4 caracteres.", "warning");
       return;
@@ -94,16 +84,15 @@ export function ModalRegistroUsuario({ abierto, onCerrar, adminTelefono = "", on
     }
 
     setGuardando(true);
-    const grupoElegido = grupos.find((g) => String(g.id) === grupoId);
 
     const r = await registrarNuevaSolicitud({
       nombre,
       usuario: userLimpio,
       telefono,
       correo,
-      rol_solicitado: rol,
-      grupo_id: grupoId || null,
-      grupo_nombre: grupoElegido?.nombre || null,
+      rol_solicitado: pruebaGratuita ? "SOCIO_AGENCIA" : rol,
+      prueba_gratuita: pruebaGratuita,
+      nombre_grupo_nuevo: pruebaGratuita ? nombreGrupoNuevo.trim() : null,
       mensaje,
       clave_deseada: clave,
     });
@@ -122,8 +111,9 @@ export function ModalRegistroUsuario({ abierto, onCerrar, adminTelefono = "", on
         usuario: userLimpio,
         telefono,
         correo,
-        rol_solicitado: rol,
-        grupo_nombre: grupoElegido?.nombre || null,
+        rol_solicitado: pruebaGratuita ? "SOCIO_AGENCIA" : rol,
+        prueba_gratuita: pruebaGratuita,
+        nombre_grupo_nuevo: pruebaGratuita ? nombreGrupoNuevo.trim() : null,
         mensaje,
       },
       adminTelefono
@@ -131,7 +121,12 @@ export function ModalRegistroUsuario({ abierto, onCerrar, adminTelefono = "", on
 
     setWhatsappInfo(wa);
     setSolicitudEnviada(true);
-    emitirToast("¡Solicitud enviada! Notifique al administrador para activar su cuenta.", "success");
+    emitirToast(
+      pruebaGratuita
+        ? "¡Solicitud de prueba gratuita enviada! Notifique al administrador para activarla."
+        : "¡Solicitud enviada! Notifique al administrador para activar su cuenta.",
+      "success"
+    );
     if (onRegistroExitoso) onRegistroExitoso(userLimpio);
   };
 
@@ -351,26 +346,46 @@ export function ModalRegistroUsuario({ abierto, onCerrar, adminTelefono = "", on
                 </p>
               </div>
 
-              {/* Grupo o Sucursal */}
-              {grupos.length > 0 && (
-                <div>
-                  <label className="mb-1 block font-bold text-slate-300 text-[11px]">
-                    Grupo de Venta / Sucursal
-                  </label>
-                  <select
-                    value={grupoId}
-                    onChange={(e) => setGrupoId(e.target.value)}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-medium text-white outline-none focus:border-amber-400"
-                  >
-                    <option value="">— Ninguno / Asignación general —</option>
-                    {grupos.map((g) => (
-                      <option key={String(g.id)} value={String(g.id)}>
-                        {g.nombre} ({g.moneda || "USD"})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {/* Opción destacada: Registrar tu grupo y realizar prueba gratuita por 2 semanas */}
+              <div className="rounded-xl border border-amber-500/40 bg-gradient-to-r from-amber-500/15 via-amber-400/5 to-slate-950 p-3.5 transition">
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={pruebaGratuita}
+                    onChange={(e) => {
+                      const chk = e.target.checked;
+                      setPruebaGratuita(chk);
+                      if (chk) setRol("SOCIO_AGENCIA");
+                    }}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-700 bg-slate-900 text-amber-500 accent-amber-500 focus:ring-amber-400"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-1.5 font-black text-amber-300 text-xs">
+                      <span>🎁</span>
+                      <span>Registrar mi propio grupo y realizar prueba gratuita por 2 semanas</span>
+                    </div>
+                    <p className="mt-0.5 text-[10px] text-slate-300 leading-tight">
+                      Acceso completo durante 14 días para tu sala, banca o centro hípico. Tablas, Marcas, Remates y liquidación sin costo.
+                    </p>
+                  </div>
+                </label>
+
+                {pruebaGratuita && (
+                  <div className="mt-3 pt-3 border-t border-amber-500/20 space-y-1.5 animate-fadeIn">
+                    <label className="block font-bold text-amber-200 text-[11px]">
+                      Nombre de tu Grupo / Centro Hípico / Sala *
+                    </label>
+                    <input
+                      type="text"
+                      required={pruebaGratuita}
+                      value={nombreGrupoNuevo}
+                      onChange={(e) => setNombreGrupoNuevo(e.target.value)}
+                      placeholder="Ej: Inversiones El Campeón / Centro Hípico La Fusta"
+                      className="w-full rounded-lg border border-amber-500/50 bg-slate-950 px-3 py-2 text-xs font-medium text-white outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 placeholder:text-slate-600"
+                    />
+                  </div>
+                )}
+              </div>
 
               {/* Contraseña deseada */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

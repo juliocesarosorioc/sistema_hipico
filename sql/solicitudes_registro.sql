@@ -15,6 +15,8 @@ create table if not exists public.solicitudes_registro (
     rol_solicitado        text default 'JUGADOR',
     grupo_id              uuid references public.grupos_venta(id) on delete set null,
     grupo_nombre          text,
+    prueba_gratuita       boolean default false,
+    nombre_grupo_nuevo    text,
     mensaje               text,
     estado                text default 'PENDIENTE_APROBACION' 
                           check (estado in ('PENDIENTE_APROBACION', 'APROBADO', 'RECHAZADO')),

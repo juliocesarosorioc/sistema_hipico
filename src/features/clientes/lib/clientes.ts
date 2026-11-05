@@ -809,6 +809,8 @@ export function basePathActual(): string {
   if (envBase) return envBase.replace(/\/+$/, "");
   if (typeof window === "undefined") return "";
   const p = window.location.pathname.replace(/\/+$/, "");
+  const idxPortal = p.lastIndexOf("/portal");
+  if (idxPortal > 0) return p.slice(0, idxPortal);
   const rutasApp = [
     "/portal",
     "/clientes",

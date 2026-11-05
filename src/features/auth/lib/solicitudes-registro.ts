@@ -13,6 +13,8 @@ export type SolicitudRegistro = {
   rol_solicitado: RolSolicitado;
   grupo_id?: string | null;
   grupo_nombre?: string | null;
+  prueba_gratuita?: boolean;
+  nombre_grupo_nuevo?: string | null;
   mensaje?: string | null;
   estado?: EstadoSolicitud;
   revisado_por?: string | null;
@@ -78,6 +80,8 @@ export async function registrarNuevaSolicitud(datos: {
   rol_solicitado: RolSolicitado;
   grupo_id?: string | null;
   grupo_nombre?: string | null;
+  prueba_gratuita?: boolean;
+  nombre_grupo_nuevo?: string | null;
   mensaje?: string | null;
   clave_deseada?: string;
   ip_origen?: string | null;
@@ -100,6 +104,8 @@ export async function registrarNuevaSolicitud(datos: {
     rol_solicitado: datos.rol_solicitado,
     grupo_id: datos.grupo_id || null,
     grupo_nombre: datos.grupo_nombre || null,
+    prueba_gratuita: Boolean(datos.prueba_gratuita),
+    nombre_grupo_nuevo: datos.nombre_grupo_nuevo?.trim() || null,
     mensaje: datos.mensaje?.trim() || null,
     estado: "PENDIENTE_APROBACION",
     ip_origen: datos.ip_origen || null,
@@ -145,6 +151,8 @@ export function generarMensajeWhatsAppAprobacion(solicitud: {
   correo: string;
   rol_solicitado: RolSolicitado;
   grupo_nombre?: string | null;
+  prueba_gratuita?: boolean;
+  nombre_grupo_nuevo?: string | null;
   mensaje?: string | null;
 }, telefonoAdmin = ""): { texto: string; url: string } {
   const rolEtiqueta = ETIQUETAS_ROL[solicitud.rol_solicitado]?.titulo || solicitud.rol_solicitado;
@@ -161,11 +169,15 @@ export function generarMensajeWhatsAppAprobacion(solicitud: {
     `📱 *WhatsApp:* ${solicitud.telefono}`,
     solicitud.correo ? `✉️ *Correo:* ${solicitud.correo}` : "",
     `🎯 *Rol Solicitado:* ${rolEtiqueta}`,
-    solicitud.grupo_nombre ? `🏢 *Grupo / Sucursal:* ${solicitud.grupo_nombre}` : "",
+    solicitud.prueba_gratuita ? "🎁 *Plan Solicitado:* PRUEBA GRATUITA POR 2 SEMANAS (14 DÍAS)" : "",
+    solicitud.nombre_grupo_nuevo ? `🏢 *Grupo / Centro Hípico a Registrar:* ${solicitud.nombre_grupo_nuevo}` : "",
+    !solicitud.nombre_grupo_nuevo && solicitud.grupo_nombre ? `🏢 *Grupo:* ${solicitud.grupo_nombre}` : "",
     solicitud.mensaje ? `💬 *Nota:* "${solicitud.mensaje}"` : "",
     `📅 *Fecha de Solicitud:* ${fechaStr}`,
     "━━━━━━━━━━━━━━━━━━━━━━━━━",
-    "🔔 *Estimado Administrador:* He completado mi registro en la plataforma y solicito la *aprobación y activación* de mi cuenta para ingresar. ¡Muchas gracias!",
+    solicitud.prueba_gratuita
+      ? "🔔 *Estimado Administrador:* He completado mi solicitud de *prueba gratuita por 2 semanas* para mi grupo. Solicito la aprobación y activación para iniciar. ¡Muchas gracias!"
+      : "🔔 *Estimado Administrador:* He completado mi registro en la plataforma y solicito la *aprobación y activación* de mi cuenta para ingresar. ¡Muchas gracias!",
   ].filter(Boolean);
 
   const texto = lineas.join("\n");

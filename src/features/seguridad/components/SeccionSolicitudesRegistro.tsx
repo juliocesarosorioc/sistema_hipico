@@ -217,15 +217,25 @@ export function SeccionSolicitudesRegistro() {
                     </td>
 
                     <td className="px-3 py-3">
-                      <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 font-bold text-amber-800 border border-amber-200 text-[10px]">
-                        <span>{ETIQUETAS_ROL[sol.rol_solicitado]?.emoji || "👤"}</span>
-                        <span>{ETIQUETAS_ROL[sol.rol_solicitado]?.titulo || sol.rol_solicitado}</span>
-                      </span>
+                      <div className="flex flex-col gap-1 items-start">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 font-bold text-amber-800 border border-amber-200 text-[10px]">
+                          <span>{ETIQUETAS_ROL[sol.rol_solicitado]?.emoji || "👤"}</span>
+                          <span>{ETIQUETAS_ROL[sol.rol_solicitado]?.titulo || sol.rol_solicitado}</span>
+                        </span>
+                        {sol.prueba_gratuita ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-1.5 py-0.5 text-[9px] font-black text-purple-700 border border-purple-200">
+                            <span>🎁</span>
+                            <span>Prueba 2 Semanas</span>
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
 
                     <td className="px-3 py-3">
                       <span className="text-slate-700 font-medium">
-                        {sol.grupo_nombre || "General / Sin Asignar"}
+                        {sol.nombre_grupo_nuevo
+                          ? `🏛️ ${sol.nombre_grupo_nuevo} (Nuevo)`
+                          : sol.grupo_nombre || "General / Sin Asignar"}
                       </span>
                     </td>
 
