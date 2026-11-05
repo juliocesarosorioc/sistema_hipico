@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/core/supabase";
 import { SelectorGrupo } from "@/features/grupos/components/SelectorGrupo";
 import { SelectorTemas } from "@/shared/components/ui/SelectorTemas";
+import { BotonCargaRapidaSaldo } from "@/features/contabilidad/components/BotonCargaRapidaSaldo";
 import { RelojNavegador } from "@/shared/components/layout/RelojNavegador";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { rutaLoginConBasePath, limpiarAlmacenamientoSesionLocal } from "@/features/auth/lib/sesion";
@@ -347,6 +348,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         </div>
       )}
 
+      <BotonCargaRapidaSaldo />
       <SelectorTemas compacto />
       <RelojNavegador />
 

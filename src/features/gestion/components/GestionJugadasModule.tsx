@@ -46,6 +46,7 @@ import { Guard } from "@/shared/components/ui/Guard";
 import { fmtMoney, type EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { listarClientesVenta, listarGruposVenta, limpiarCacheClientesVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, telefonoMencionCliente, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { actualizarCliente } from "@/features/clientes/lib/clientes";
+import { BotonCargaRapidaSaldo } from "@/features/contabilidad/components/BotonCargaRapidaSaldo";
 import { guardarCrucesCarrera, leerCrucesCarrera, type CrucesCarreraOverride } from "@/features/gestion/lib/cruces-carrera";
 import {
   asociarReglasCrucesPuestosPorJugador,
@@ -5092,6 +5093,7 @@ const hipodromosDelDia = useMemo(() => {
             </div>
           )}
 
+          <BotonCargaRapidaSaldo />
           <button
             type="button"
             onClick={() => setModalControlCruces(true)}

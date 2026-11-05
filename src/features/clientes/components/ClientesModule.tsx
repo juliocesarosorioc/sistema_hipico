@@ -14,6 +14,7 @@ import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente"
 import { NotificacionesPortal } from "@/features/clientes/components/NotificacionesPortal";
 import { PanelBloqueoJugadasAdmin } from "@/features/portal/components/PanelBloqueoJugadasAdmin";
 import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/components/ModalPagoAGanadorYConciliacion";
+import { BotonCargaRapidaSaldo } from "@/features/contabilidad/components/BotonCargaRapidaSaldo";
 import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import {
   aplicarDevolucionMasiva,
@@ -368,6 +369,7 @@ export function ClientesModule() {
           )}
         </div>
         <div className="flex gap-2">
+          <BotonCargaRapidaSaldo />
           <Button
             variant="outline"
             size="sm"
