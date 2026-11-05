@@ -2902,9 +2902,10 @@ const hipodromosDelDia = useMemo(() => {
   ) => {
     if (carreraConfirmada && n === carrera) return;
     const estaAbierta =
-      info?.abierta !== undefined
+      modoManual ||
+      (info?.abierta !== undefined
         ? info.abierta
-        : carrerasPorDia.includes(n) || jugadasPorCarrera.includes(n);
+        : carrerasPorDia.includes(n) || jugadasPorCarrera.includes(n));
 
     if (!estaAbierta) {
       const ok = await confirmar({
@@ -2924,7 +2925,7 @@ const hipodromosDelDia = useMemo(() => {
         textoCancelar: "No",
       });
       if (!ok) return;
-    } else if (!carreraConfirmada) {
+    } else if (!carreraConfirmada && !modoManual) {
       const ok = await confirmar({
         titulo: `¿ABRIR CARRERA ${n} ?`,
         mensaje: `¿Confirmas abrir la Carrera ${n} (${nombreHipodromo})?`,
@@ -3533,14 +3534,21 @@ const hipodromosDelDia = useMemo(() => {
           >
             <span>👤+</span> Nuevo Cliente
           </button>
-          <label className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-cyan-200 bg-cyan-50/60 px-2 py-1 text-[10px] font-black uppercase text-cyan-700" title="Permite cargar jugadas y registrar carreras aunque la Gaceta IA no haya extraído nada (sin bloquear).">
+          <label
+            className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase transition-all shadow-2xs ${
+              modoManual
+                ? "border-cyan-500 bg-cyan-600 text-white shadow-cyan-600/20"
+                : "border-cyan-200 bg-cyan-50/70 text-cyan-800 hover:bg-cyan-100"
+            }`}
+            title="Permite cargar jugadas y registrar carreras aunque la Gaceta IA no haya extraído nada (sin bloquear)."
+          >
             <input
               type="checkbox"
               checked={modoManual}
               onChange={(e) => setModoManual(e.target.checked)}
-              className="h-3.5 w-3.5 accent-cyan-600"
+              className="h-3.5 w-3.5 accent-cyan-600 cursor-pointer"
             />
-            ✍️ Modo Manual
+            <span>✍️ Modo Manual</span>
           </label>
         </div>
       </div>
@@ -3572,7 +3580,7 @@ const hipodromosDelDia = useMemo(() => {
           void seleccionarCarreraConConfirmacion(n, info);
         }}
         accionDerecha={
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-nowrap">
+          <div className="grid grid-cols-2 gap-1.5 w-full sm:flex sm:items-center sm:gap-2 sm:w-auto">
             <button
               type="button"
               onClick={() => void solicitarLiquidarCarrera()}
@@ -3586,10 +3594,10 @@ const hipodromosDelDia = useMemo(() => {
                       ? "Sin jugadas cargadas: cargue información de jugadas antes de liquidar"
                       : "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)"
               }
-              className={`group relative inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all shadow-md shrink-0 whitespace-nowrap ${
+              className={`group relative col-span-2 sm:col-auto inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all shadow-md shrink-0 whitespace-nowrap ${
                 !listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada
                   ? "cursor-not-allowed bg-slate-300 text-slate-500 opacity-60 shadow-none ring-0"
-                  : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 shadow-emerald-600/35 ring-2 ring-emerald-400/60 hover:ring-emerald-300 hover:scale-[1.03] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]"
+                  : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 shadow-emerald-600/35 ring-2 ring-emerald-400/60 hover:ring-emerald-300 hover:scale-[1.02] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]"
               }`}
             >
               <span className="text-base sm:text-lg transition-transform duration-200 group-hover:scale-110 drop-shadow">
@@ -3605,7 +3613,7 @@ const hipodromosDelDia = useMemo(() => {
               onClick={() => setModalAgentePizarra(true)}
               disabled={bloqueoLiquidacionActivo}
               title="🤖 Agente de Pizarra Oficial (Cambio de Pizarra · Liquidación · Variación · Saldos)"
-              className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-2.5 sm:px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs transition-all hover:bg-indigo-50 hover:border-indigo-300 disabled:opacity-40 shrink-0 whitespace-nowrap"
+              className="col-span-1 sm:col-auto inline-flex h-9 sm:h-10 items-center justify-center gap-1 rounded-xl border border-indigo-200 bg-white px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-indigo-700 shadow-2xs transition-all hover:bg-indigo-50 hover:border-indigo-300 disabled:opacity-40 shrink-0 truncate"
             >
               <span className="text-sm">🔄</span>
               <span>Cambio de Pizarra</span>
@@ -3615,7 +3623,7 @@ const hipodromosDelDia = useMemo(() => {
               onClick={() => setModalEventoLibre(true)}
               disabled={bloqueoLiquidacionActivo}
               title="🎯 Evento Libre / Sportsbook P2P (MLB, NBA, NFL, Fútbol, Boxeo/UFC, Logros 10/6, 10A7, etc.)"
-              className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl border border-purple-300 bg-purple-700 px-2.5 sm:px-3 py-1.5 text-xs font-black text-white shadow-2xs transition-all hover:bg-purple-600 disabled:opacity-40 shrink-0 whitespace-nowrap"
+              className="col-span-1 sm:col-auto inline-flex h-9 sm:h-10 items-center justify-center gap-1 rounded-xl border border-purple-300 bg-purple-700 px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-black text-white shadow-2xs transition-all hover:bg-purple-600 disabled:opacity-40 shrink-0 truncate"
             >
               <span className="text-sm">🎯</span>
               <span>Evento Libre / P2P</span>

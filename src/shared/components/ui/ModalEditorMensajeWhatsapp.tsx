@@ -38,6 +38,7 @@ export function ModalEditorMensajeWhatsapp({
   const [codigoPais, setCodigoPais] = useState(codigoPaisInicial);
   const [mensaje, setMensaje] = useState(mensajeInicial);
   const [copiado, setCopiado] = useState(false);
+  const [copiandoImagen, setCopiandoImagen] = useState(false);
 
   useEffect(() => {
     if (abierto) {
@@ -45,6 +46,7 @@ export function ModalEditorMensajeWhatsapp({
       setCodigoPais(codigoPaisInicial || "+58");
       setMensaje(mensajeInicial);
       setCopiado(false);
+      setCopiandoImagen(false);
     }
   }, [abierto, telefonoInicial, codigoPaisInicial, mensajeInicial]);
 
@@ -58,6 +60,203 @@ export function ModalEditorMensajeWhatsapp({
       return digitosTel;
     }
     return `${digitosCod}${digitosTel}`;
+  };
+
+  /**
+   * Genera una tarjeta gráfica de alta resolución (PNG) con las credenciales
+   * para compartir por WhatsApp como imagen sin ningún problema de codificación de emojis.
+   */
+  const generarTarjetaCredencialesBlob = (): Promise<Blob | null> => {
+    return new Promise((resolve) => {
+      try {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(null);
+
+        // Extraer campos del mensaje
+        const mGrupo = mensaje.match(/(?:Grupo|GRUPO):\s*([^\n\r]+)/i);
+        const grupo = mGrupo ? mGrupo[1].replace(/[*_#`]/g, "").trim() : "SISTEMA HÍPICO";
+
+        const mUser = mensaje.match(/(?:Usuario|Móvil|Usuario\s*\/\s*Móvil):\s*`?([^`\n\r*]+)`?/i);
+        const usuario = mUser ? mUser[1].trim() : destinatarioNombre || "operador";
+
+        const mClave = mensaje.match(/(?:Contraseña|Clave):\s*`?([^`\n\r*]+)`?/i);
+        const clave = mClave ? mClave[1].trim() : "OP****";
+
+        const mUrl = mensaje.match(/https?:\/\/[^\s\n\r]+/i);
+        const urlLogin = mUrl ? mUrl[0] : "http://www.administracionhipica.ia.ve/login/";
+
+        const mOperador = mensaje.match(/(?:Operador):\s*([^\n\r]+)/i);
+        const operador = mOperador ? mOperador[1].replace(/[*_#`]/g, "").trim() : destinatarioNombre || "";
+
+        const mTel = mensaje.match(/(?:Móvil|Teléfono):\s*([^\n\r]+)/i);
+        const telTexto = mTel ? mTel[1].replace(/[*_#`]/g, "").trim() : telefono ? `${codigoPais} ${telefono}` : "";
+
+        // Dimensiones (DPI 2x)
+        const w = 720;
+        const h = 460;
+        canvas.width = w * 2;
+        canvas.height = h * 2;
+        ctx.scale(2, 2);
+
+        // Fondo degradado de lujo
+        const grad = ctx.createLinearGradient(0, 0, w, h);
+        grad.addColorStop(0, "#090d16");
+        grad.addColorStop(0.5, "#0f172a");
+        grad.addColorStop(1, "#1e293b");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Borde dorado de lujo
+        ctx.strokeStyle = "#f59e0b";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(12, 12, w - 24, h - 24);
+
+        ctx.strokeStyle = "rgba(245, 158, 11, 0.3)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(18, 18, w - 36, h - 36);
+
+        // Encabezado
+        ctx.fillStyle = "#f59e0b";
+        ctx.font = "bold 22px system-ui, Arial, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("SISTEMA HÍPICO", w / 2, 52);
+
+        ctx.fillStyle = "#38bdf8";
+        ctx.font = "bold 13px system-ui, Arial, sans-serif";
+        ctx.fillText("CREDENCIAL DE ACCESO — TAQUILLA MÓVIL", w / 2, 74);
+
+        // Línea divisoria
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+        ctx.beginPath();
+        ctx.moveTo(35, 90);
+        ctx.lineTo(w - 35, 90);
+        ctx.stroke();
+
+        // Datos del Grupo
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 16px system-ui, Arial, sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(`GRUPO: ${grupo.toUpperCase()}`, 40, 120);
+
+        if (operador || telTexto) {
+          ctx.fillStyle = "#94a3b8";
+          ctx.font = "13px system-ui, Arial, sans-serif";
+          const opTxt = [operador ? `Operador: ${operador}` : "", telTexto ? `Móvil: ${telTexto}` : ""].filter(Boolean).join(" · ");
+          ctx.fillText(opTxt, 40, 142);
+        }
+
+        // Cajas de Credenciales (Usuario y Clave)
+        const boxY = 166;
+        const boxW = (w - 100) / 2;
+        const boxH = 88;
+
+        // Caja 1: Usuario
+        ctx.fillStyle = "#1e293b";
+        ctx.fillRect(40, boxY, boxW, boxH);
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.5)";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(40, boxY, boxW, boxH);
+
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "bold 11px system-ui, Arial, sans-serif";
+        ctx.fillText("USUARIO / MÓVIL", 55, boxY + 28);
+
+        ctx.fillStyle = "#38bdf8";
+        ctx.font = "bold 20px monospace, Courier, sans-serif";
+        ctx.fillText(usuario, 55, boxY + 62);
+
+        // Caja 2: Contraseña
+        const box2X = 40 + boxW + 20;
+        ctx.fillStyle = "#1e293b";
+        ctx.fillRect(box2X, boxY, boxW, boxH);
+        ctx.strokeStyle = "rgba(16, 185, 129, 0.5)";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(box2X, boxY, boxW, boxH);
+
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "bold 11px system-ui, Arial, sans-serif";
+        ctx.fillText("CONTRASEÑA", box2X + 15, boxY + 28);
+
+        ctx.fillStyle = "#10b981";
+        ctx.font = "bold 22px monospace, Courier, sans-serif";
+        ctx.fillText(clave, box2X + 15, boxY + 62);
+
+        // Caja Enlace
+        const linkY = 274;
+        const linkW = w - 80;
+        const linkH = 65;
+
+        ctx.fillStyle = "#0f172a";
+        ctx.fillRect(40, linkY, linkW, linkH);
+        ctx.strokeStyle = "rgba(245, 158, 11, 0.4)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(40, linkY, linkW, linkH);
+
+        ctx.fillStyle = "#f59e0b";
+        ctx.font = "bold 11px system-ui, Arial, sans-serif";
+        ctx.fillText("ENLACE DIRECTO DE INGRESO:", 55, linkY + 25);
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 14px monospace, Courier, sans-serif";
+        ctx.fillText(urlLogin, 55, linkY + 48);
+
+        // Instrucciones al pie
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "11px system-ui, Arial, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("1. Abre el enlace en tu navegador móvil  ·  2. Ingresa tus datos  ·  3. ¡Listo para operar!", w / 2, 375);
+
+        ctx.fillStyle = "#64748b";
+        ctx.font = "italic 10px system-ui, Arial, sans-serif";
+        ctx.fillText("Credencial oficial autorizada · Guarda esta tarjeta en tus fotos para acceder rápidamente", w / 2, 400);
+
+        canvas.toBlob((blob) => resolve(blob), "image/png");
+      } catch {
+        resolve(null);
+      }
+    });
+  };
+
+  const handleCopiarImagen = async () => {
+    setCopiandoImagen(true);
+    try {
+      const blob = await generarTarjetaCredencialesBlob();
+      if (!blob) throw new Error("No se pudo generar la imagen");
+
+      if (typeof window !== "undefined" && navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new window.ClipboardItem({ "image/png": blob }),
+        ]);
+        toast("📸 ¡Tarjeta copiada como Imagen! Pégala (Ctrl+V) directo en WhatsApp.", "success");
+      } else {
+        // Fallback: descarga directa si el portapapeles de imágenes no está disponible
+        descargarBlob(blob, `credenciales-${destinatarioNombre || "operador"}.png`);
+        toast("⬇️ Tarjeta descargada en imagen PNG. Puedes adjuntarla en WhatsApp.", "success");
+      }
+    } catch {
+      toast("No se pudo copiar la imagen al portapapeles. Intentando descarga...", "warning");
+      try {
+        const blob = await generarTarjetaCredencialesBlob();
+        if (blob) descargarBlob(blob, `credenciales-${destinatarioNombre || "operador"}.png`);
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      setCopiandoImagen(false);
+    }
+  };
+
+  const descargarBlob = (blob: Blob, nombre: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombre;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
   };
 
   const handleAbrirWhatsapp = () => {
@@ -195,17 +394,32 @@ export function ModalEditorMensajeWhatsapp({
         </div>
 
         {/* Barra de Acciones */}
-        <div className="bg-slate-50 px-5 py-3.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleCopiar}
-            className="flex items-center gap-1.5 text-xs font-bold border-slate-300"
-          >
-            <span>{copiado ? "✅" : "📋"}</span>
-            <span>{copiado ? "¡Copiado!" : "Copiar Texto"}</span>
-          </Button>
+        <div className="bg-slate-50 px-4 sm:px-5 py-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCopiar}
+              className="flex items-center gap-1.5 text-xs font-bold border-slate-300"
+            >
+              <span>{copiado ? "✅" : "📋"}</span>
+              <span>{copiado ? "¡Texto Copiado!" : "Copiar Texto"}</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCopiarImagen}
+              disabled={copiandoImagen}
+              className="flex items-center gap-1.5 text-xs font-bold border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100 shadow-2xs"
+              title="Genera y copia una tarjeta gráfica oficial de alta resolución (PNG) para pegar directo en WhatsApp sin que los emojis se alteren"
+            >
+              <span>📸</span>
+              <span>{copiandoImagen ? "Generando..." : "Copiar como Imagen"}</span>
+            </Button>
+          </div>
 
           <div className="flex items-center gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={onCerrar} className="text-xs">

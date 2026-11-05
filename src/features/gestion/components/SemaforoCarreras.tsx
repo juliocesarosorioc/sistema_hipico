@@ -256,22 +256,31 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   }
 
   return (
-    <div className={`rounded-2xl border border-line bg-surface p-3 ${className}`}>
-      <div className="mb-2 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-600">
-        <span className="font-black uppercase tracking-wide"><span className="normal-case">{nombreMostrar}</span> · CARRERAS DEL {fecha}</span>
-        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm border border-slate-400 bg-slate-300" /> Azul-gris: Sin carrera registrada</span>
-        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-emerald-600" /> Verde: Carrera registrada</span>
-        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-amber-400 ring-1 ring-amber-500" /> Amarillo: Con jugadas (sin liquidar)</span>
-        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-red-600" /> Rojo: Liquidada</span>
-        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-slate-800 border border-slate-600 ring-1 ring-amber-500" /> Gris oscuro: Borrada (con jugadas)</span>
-        {manual && (
-          <span className="rounded-full bg-blue-600/15 px-2 py-0.5 font-black uppercase text-blue-700">
-            ✍️ Modo Manual — carreras sin Gaceta habilitadas
+    <div className={`rounded-2xl border border-line bg-surface p-2.5 sm:p-3 shadow-xs ${className}`}>
+      {/* Encabezado y Leyenda Responsive */}
+      <div className="mb-1.5 sm:mb-2 flex flex-wrap items-center justify-between gap-1.5 text-[10px] font-semibold text-slate-600">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <span className="font-black uppercase tracking-wide text-slate-800 text-[11px] sm:text-xs">
+            {nombreMostrar} <span className="text-slate-400 font-normal">·</span> C{activa ?? "—"} <span className="text-slate-400 font-normal">·</span> {fecha}
           </span>
-        )}
+          {manual && (
+            <span className="rounded-full bg-blue-600/15 px-2 py-0.5 font-black uppercase text-blue-700 text-[10px] tracking-tight">
+              ✍️ Modo Manual ({total} carreras)
+            </span>
+          )}
+        </div>
+        
+        <div className="hidden sm:flex flex-wrap items-center gap-2.5 text-[10px]">
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs border border-slate-400 bg-slate-300" /> Sin registro</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-emerald-600" /> Registrada</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-amber-400 ring-1 ring-amber-500" /> Con jugadas</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-red-600" /> Liquidada</span>
+        </div>
       </div>
-      <div className="flex items-center justify-between gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-2 min-h-[44px] items-center overflow-y-visible w-full">
-        <div className="ml-2 flex items-center gap-1.5 shrink-0 flex-nowrap">
+
+      {/* TIRA DE CARRERAS (Full width en móvil, táctil y sin botones tapando) */}
+      <div className="flex items-center justify-between gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-1 min-h-[44px] w-full">
+        <div className="flex items-center gap-1.5 shrink-0 flex-nowrap px-0.5">
           {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
             const { estado, tieneVentas } = porCarrera(n);
             const existe = manual || carreras.includes(n) || tieneVentas;
@@ -282,26 +291,35 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
               <button
                 key={n}
                 type="button"
-                onClick={() => existe && onSeleccionar(n, { abierta: estado !== "inactiva", estado })}
+                onClick={() => existe && onSeleccionar(n, { abierta: manual ? true : estado !== "inactiva", estado })}
                 disabled={!existe}
-                title={existe ? (manualSinRegistro ? `C${n} (sin carrera registrada)` : c.label) : `C${n} · No hay carrera registrada para ${fecha}`}
-                className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border-2 text-xs font-black transition-colors ${
+                title={existe ? (manualSinRegistro ? `C${n} (Modo Manual sin registro previo)` : c.label) : `C${n} · No hay carrera registrada para ${fecha}`}
+                className={`grid h-9 w-9 sm:h-8 sm:w-8 shrink-0 place-items-center rounded-xl border-2 text-xs font-black transition-all shadow-xs ${
                   !existe
-                    ? `cursor-not-allowed ${COLORES.inactiva.chip} opacity-90`
-                    : `hover:brightness-95 ${c.chip}`
-                } ${activaEsta ? "ring-2 ring-indigo-600 ring-offset-1" : ""}`}
+                    ? `cursor-not-allowed ${COLORES.inactiva.chip} opacity-80`
+                    : `hover:brightness-95 active:scale-95 ${c.chip}`
+                } ${activaEsta ? "ring-2 ring-indigo-600 ring-offset-1 scale-105 shadow-md" : ""}`}
               >
                 {n}
               </button>
             );
           })}
         </div>
+
+        {/* En Desktop: accionDerecha en la misma fila a la derecha */}
         {accionDerecha ? (
-          <div className="flex items-center gap-1.5 shrink-0 ml-auto whitespace-nowrap sticky right-0 bg-surface/95 backdrop-blur-xs pl-2 z-10">
+          <div className="hidden sm:flex items-center gap-1.5 shrink-0 ml-auto whitespace-nowrap pl-2">
             {accionDerecha}
           </div>
         ) : null}
       </div>
+
+      {/* En Móvil: accionDerecha en su propia barra dedicada abajo (sin desplazamiento lateral) */}
+      {accionDerecha ? (
+        <div className="sm:hidden mt-2 pt-2 border-t border-line/60 w-full">
+          {accionDerecha}
+        </div>
+      ) : null}
     </div>
   );
 }
