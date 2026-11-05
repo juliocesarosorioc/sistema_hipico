@@ -714,7 +714,7 @@ export const PUERTAS: Array<{
   // renovar el token se redirigiera al escritorio, el operador perdería la
   // página a medio cambiar la clave. "Pública" y "pantalla de acceso" son dos
   // preguntas distintas y por eso son dos banderas.
-  { ruta: "/", publica: true, acceso: true },
+  { ruta: "/", publica: true },
   { ruta: "/login", publica: true, acceso: true },
   // La página donde se pone la contraseña nueva. Es pública por necesidad: se
   // abre desde el enlace del correo, o sea sin sesión, y la

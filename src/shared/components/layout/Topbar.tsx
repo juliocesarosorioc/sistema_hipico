@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/core/supabase";
 import { SelectorGrupo } from "@/features/grupos/components/SelectorGrupo";
+import { SelectorTemas } from "@/shared/components/ui/SelectorTemas";
 import { RelojNavegador } from "@/shared/components/layout/RelojNavegador";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { rutaLoginConBasePath, limpiarAlmacenamientoSesionLocal } from "@/features/auth/lib/sesion";
@@ -346,6 +347,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         </div>
       )}
 
+      <SelectorTemas compacto />
       <RelojNavegador />
 
       <button

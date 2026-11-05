@@ -27,7 +27,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={inter.variable}>
+    <html lang="es" className={inter.variable} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("club_tema_visual")||"oscuro";document.documentElement.setAttribute("data-theme",t);if(t==="claro"){document.documentElement.classList.add("light-theme")}else{document.documentElement.classList.add("dark")}}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body>
         {/* Si faltan las credenciales de Supabase, la app entera entra en
             "modo local" y parece no abrir. Este banner dice POR QUÉ, en

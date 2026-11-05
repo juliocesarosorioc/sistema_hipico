@@ -958,3 +958,108 @@ body {
 .reporte-tipografia-nitida table {
   font-variant-numeric: tabular-nums;
 }
+
+
+/* ============================================================================
+   SISTEMA DE TEMAS VISUALES DINÁMICOS (Betplay Dark, Claro, Rojo, Verde, Azul, Astigmatismo)
+   ============================================================================ */
+
+:root {
+  --portal-bg: #090d16;
+  --portal-surface: #0f172a;
+  --portal-surface-card: #1e293b;
+  --portal-accent: #f59e0b;
+  --portal-accent-hover: #fbbf24;
+  --portal-text: #f8fafc;
+  --portal-text-muted: #94a3b8;
+  --portal-border: #334155;
+  --portal-glow: rgba(245, 158, 11, 0.25);
+}
+
+/* 1. TEMA OSCURO (Por defecto - Betplay Dark Casino) */
+[data-theme="oscuro"] {
+  --portal-bg: #090d16;
+  --portal-surface: #0f172a;
+  --portal-surface-card: #1e293b;
+  --portal-accent: #f59e0b;
+  --portal-accent-hover: #fbbf24;
+  --portal-text: #f8fafc;
+  --portal-text-muted: #94a3b8;
+  --portal-border: #334155;
+  --portal-glow: rgba(245, 158, 11, 0.25);
+}
+
+/* 2. TEMA CLARO DIAMANTE */
+[data-theme="claro"] {
+  --portal-bg: #f8fafc;
+  --portal-surface: #ffffff;
+  --portal-surface-card: #f1f5f9;
+  --portal-accent: #2563eb;
+  --portal-accent-hover: #1d4ed8;
+  --portal-text: #0f172a;
+  --portal-text-muted: #64748b;
+  --portal-border: #cbd5e1;
+  --portal-glow: rgba(37, 99, 235, 0.2);
+}
+
+/* 3. TEMA ROJO RUBÍ (Pasión Hípica) */
+[data-theme="rojo"] {
+  --portal-bg: #0f0507;
+  --portal-surface: #1a0a0d;
+  --portal-surface-card: #2c0e14;
+  --portal-accent: #ef4444;
+  --portal-accent-hover: #f87171;
+  --portal-text: #fff5f5;
+  --portal-text-muted: #fca5a5;
+  --portal-border: #5a1921;
+  --portal-glow: rgba(239, 68, 68, 0.3);
+}
+
+/* 4. TEMA VERDE TURF (Pista de Grama) */
+[data-theme="verde"] {
+  --portal-bg: #04120a;
+  --portal-surface: #072214;
+  --portal-surface-card: #0c3620;
+  --portal-accent: #10b981;
+  --portal-accent-hover: #34d399;
+  --portal-text: #f0fdf4;
+  --portal-text-muted: #86efac;
+  --portal-border: #166534;
+  --portal-glow: rgba(16, 185, 129, 0.3);
+}
+
+/* 5. TEMA AZUL COBALTO (Zafiro Deportivo) */
+[data-theme="azul"] {
+  --portal-bg: #050e1e;
+  --portal-surface: #0a1832;
+  --portal-surface-card: #10274f;
+  --portal-accent: #3b82f6;
+  --portal-accent-hover: #60a5fa;
+  --portal-text: #eff6ff;
+  --portal-text-muted: #93c5fd;
+  --portal-border: #1d4ed8;
+  --portal-glow: rgba(59, 130, 246, 0.3);
+}
+
+/* 6. TEMA PROTECCIÓN VISUAL (ANTI-ASTIGMATISMO & ANTI-FATIGA) */
+[data-theme="astigmatismo"] {
+  --portal-bg: #1c1813;
+  --portal-surface: #26211a;
+  --portal-surface-card: #332c23;
+  --portal-accent: #d4a373;
+  --portal-accent-hover: #e0b589;
+  --portal-text: #f5ede1;
+  --portal-text-muted: #c9bea9;
+  --portal-border: #4d4234;
+  --portal-glow: rgba(212, 163, 115, 0.2);
+}
+
+/* Ajustes ergonómicos especiales para Astigmatismo */
+[data-theme="astigmatismo"] body,
+[data-theme="astigmatismo"] input,
+[data-theme="astigmatismo"] button,
+[data-theme="astigmatismo"] table {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: 0.012em;
+}

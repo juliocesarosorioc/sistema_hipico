@@ -1,12 +1,11 @@
-import PaginaComercial from "@/features/comercial/components/PaginaComercial";
-import type { Metadata } from "next";
+import { PortalInicioBetplay } from "@/features/portal-inicio/components/PortalInicioBetplay";
 
-export const metadata: Metadata = {
-  title: "Sistema Hípico · Portal Comercial & Banca Digital",
+export const metadata = {
+  title: "Betplay Racing · Portal Comercial Hípico",
   description:
-    "Plataforma tecnológica profesional para gestión de apuestas hípicas, Tablas Fijas, Marcas 120/100, Banca Espejo 2.5%, Contabilidad NIIF y WhatsApp Bot.",
+    "Portal oficial de apuestas hípicas y gestión para agencias y salas: Tablas Fijas, Marcas 120/100, Remates y prueba gratuita de 2 semanas.",
 };
 
-export default function ComercialPage() {
-  return <PaginaComercial />;
+export default function PaginaComercial() {
+  return <PortalInicioBetplay />;
 }

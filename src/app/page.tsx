@@ -1,16 +1,12 @@
-import PantallaLogin from "@/features/auth/components/PantallaLogin";
+import { PortalInicioBetplay } from "@/features/portal-inicio/components/PortalInicioBetplay";
 
 /**
- * RAÍZ = LOGIN.
- *
- * Antes esta ruta hacía `redirect("/dashboard")`, que en un build estático se
- * traduce en un salto extra y, sin sesión, terminaba en el mismo redirect de
- * vuelta: la página "cargando" sin llegar a mostrar nada.
- *
- * Ahora la raíz ES la puerta, igual que en el sistema legacy (index.html era el
- * login). Con sesión ya abierta, `PantallaLogin` manda a /dashboard sola, así
- * que el operador que recarga la página no ve el formulario.
+ * Portal de Inicio Principal (Estilo Betplay Racing)
+ * 
+ * Acceso directo a carreras en vivo, modalidades (tablas, marcas, remates),
+ * promociones (prueba 2 semanas), noticias, red de afiliados, FAQ y
+ * modales directos de login y registro.
  */
 export default function RootPage() {
-  return <PantallaLogin />;
+  return <PortalInicioBetplay />;
 }
