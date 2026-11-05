@@ -47,7 +47,7 @@ export const CATALOGO_DRF_OFICIAL: Record<string, HipodromoUsaMeta> = {
   CD: { codigo: "CD", nombre: "Churchill Downs", drfCode: "CD", pais: "USA", estadoDefecto: "KY", tvgSlug: "churchill-downs" },
   FL: { codigo: "FL", nombre: "Finger Lakes", drfCode: "FL", pais: "USA", estadoDefecto: "NY", tvgSlug: "finger-lakes" },
   RP: { codigo: "RP", nombre: "Remington Park", drfCode: "RP", pais: "USA", estadoDefecto: "OK", tvgSlug: "remington-park" },
-  CT: { codigo: "CT", nombre: "Hollywood at Charles Town", drfCode: "CT", pais: "USA", estadoDefecto: "WV", tvgSlug: "charles-town" },
+  CT: { codigo: "CT", nombre: "Charles Town", drfCode: "CT", pais: "USA", estadoDefecto: "WV", tvgSlug: "charles-town" },
   DED: { codigo: "DED", nombre: "Delta Downs", drfCode: "DED", pais: "USA", estadoDefecto: "LA", tvgSlug: "delta-downs" },
   EVD: { codigo: "EVD", nombre: "Evangeline Downs", drfCode: "EVD", pais: "USA", estadoDefecto: "LA", tvgSlug: "evangeline-downs" },
   IND: { codigo: "IND", nombre: "Horseshoe Indianapolis", drfCode: "IND", pais: "USA", estadoDefecto: "IN", tvgSlug: "horseshoe-indianapolis" },
@@ -577,20 +577,21 @@ export function parsearDrfJsonRaces(
   fechaISO: string
 ): CarreraSincronizadaUsa[] {
   if (!data) return [];
-  const races = data?.entryDetails?.races || data?.races || data?.raceList || data?.data?.races || [];
+  const races = data?.races || data?.entryDetails?.races || data?.raceList || data?.data?.races || [];
   if (!Array.isArray(races)) return [];
 
   const carreras: CarreraSincronizadaUsa[] = [];
 
-  for (const r of races) {
-    const numC = Number(r.raceNumber ?? r.raceKey?.raceNumber ?? r.race_number ?? r.carrera) || 1;
+  for (let idx = 0; idx < races.length; idx++) {
+    const r = races[idx];
+    const numC = Number(r.raceKey?.raceNumber ?? r.raceNumber ?? r.race_number ?? r.carrera ?? idx + 1) || (idx + 1);
     const runners = r.runners || r.horses || r.entries || [];
     const caballos: EjemplarSincronizadoUsa[] = [];
     const retirados: string[] = [];
 
     for (const h of runners) {
       const num = String(
-        h.programNumber || h.program_number || h.cloth || h.postPosition || ""
+        h.programNumber || h.programNumberStripped || h.program_number || h.postPos || h.cloth || h.postPosition || ""
       ).trim().toUpperCase();
       const nombre = String(
         h.horseName || h.horse_name || h.name || ""
@@ -621,14 +622,19 @@ export function parsearDrfJsonRaces(
 
       const pesoKg = normalizarPesoKg(h.weight || h.assignedWeight || h.weightCarried);
       const ml = String(h.morningLineOdds || h.morning_line_odds || h.mlOdds || h.ml || "").trim() || undefined;
-      const isScr = Boolean(
-        h.scratched || h.isScratched || String(h.status || "").toUpperCase() === "SCR" || h.scratchIndicator
-      );
+
+      // REGLA CRUCIAL: En DRF scratchIndicator = "N" es ACTIVO y "Y" es RETIRADO.
+      const isScr =
+        String(h.scratchIndicator || "").toUpperCase() === "Y" ||
+        Boolean(h.scratched || h.isScratched) ||
+        String(h.status || "").toUpperCase() === "SCR";
+
+      const ppNum = Number(h.postPos || h.postPosition || h.pp) || (parseInt(num, 10) || undefined);
 
       caballos.push({
         numero: num || String(caballos.length + 1),
         nombre,
-        pp: Number(h.postPosition || h.pp) || (parseInt(num, 10) || undefined),
+        pp: ppNum,
         ml,
         jockey: jockey || undefined,
         jinete: jockey || undefined,
@@ -670,7 +676,22 @@ export async function detectarHipodromosActivosDia(fechaISO: string): Promise<st
   const fecha = fechaISO || hoyLocal();
   const fechaDrf = formatearFechaDrf(fecha);
 
-  // 1. Invocar Supabase Edge Function con accion "detectar_tracks"
+  // 1. API Route de Servidor Next.js (Node.js - Cero Bloqueo CORS de DRF)
+  try {
+    const resApi = await fetch(`/api/sincronizar-usa?accion=detectar_tracks&fecha=${fecha}`, {
+      cache: "no-store",
+    });
+    if (resApi.ok) {
+      const dataApi = await resApi.json();
+      if (dataApi && Array.isArray(dataApi.tracks) && dataApi.tracks.length > 0) {
+        return dataApi.tracks.map((t: string) => normalizarCodigoDrf(t)).filter(Boolean);
+      }
+    }
+  } catch {
+    /* fallback a edge function o local */
+  }
+
+  // 2. Invocar Supabase Edge Function con accion "detectar_tracks"
   if (supabase) {
     try {
       const { data, error } = await supabase.functions.invoke("sync-usa-races", {
@@ -688,7 +709,7 @@ export async function detectarHipodromosActivosDia(fechaISO: string): Promise<st
     }
   }
 
-  // 2. Consulta pública de tracks en DRF
+  // 3. Consulta pública de tracks en DRF (si corre en entorno con proxy/soporte)
   try {
     const resp = await fetch(`https://entries.drf.com/data/tracks/${fecha}`, {
       headers: {
@@ -711,7 +732,7 @@ export async function detectarHipodromosActivosDia(fechaISO: string): Promise<st
     /* fallback */
   }
 
-  // 3. Fallback inteligente según el día de la semana
+  // 4. Fallback inteligente según el día de la semana
   const diaSemana = new Date(`${fecha}T12:00:00Z`).getUTCDay();
   const tracksPorDia: Record<number, string[]> = {
     0: ["CD", "GP", "AQU", "SA", "DMR", "OP", "KEE", "TAM", "WO", "RP"],
@@ -1276,10 +1297,34 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
       fecha = carrerasObtenidas[0].fecha;
     }
   } else {
-    // CASO 2: Invocación a Supabase Edge Function `sync-usa-races`
-    let edgeOk = false;
+    // CASO 2: Invocación al API Route de Next.js en el Servidor (Node.js - Cero CORS)
+    let syncOk = false;
+    try {
+      const respApi = await fetch("/api/sincronizar-usa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accion: "sincronizar",
+          fecha,
+          tracks: tracksFiltro,
+          fuentePreferida: opciones?.fuentePreferida || "DRF",
+          urlDirectaDrf: urlDirecta || undefined,
+        }),
+      });
+      if (respApi.ok) {
+        const dataApi = await respApi.json();
+        if (dataApi && dataApi.ok && Array.isArray(dataApi.carreras) && dataApi.carreras.length > 0) {
+          carrerasObtenidas = dataApi.carreras as CarreraSincronizadaUsa[];
+          syncOk = true;
+        }
+      }
+    } catch {
+      /* fallback */
+    }
+
+    // CASO 2b: Fallback a Supabase Edge Function `sync-usa-races`
     const fechaDrf = formatearFechaDrf(fecha);
-    if (supabase) {
+    if (!syncOk && supabase) {
       try {
         const { data, error } = await supabase.functions.invoke("sync-usa-races", {
           body: {
@@ -1292,15 +1337,15 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
         });
         if (!error && data && data.ok && Array.isArray(data.carreras) && data.carreras.length > 0) {
           carrerasObtenidas = data.carreras as CarreraSincronizadaUsa[];
-          edgeOk = true;
+          syncOk = true;
         }
       } catch {
         /* fallback local */
       }
     }
 
-    // Fallback local: si la Edge Function no está desplegada en el entorno o no trajo carreras
-    if (!edgeOk || carrerasObtenidas.length === 0) {
+    // Fallback local: si ni el API Route ni la Edge Function trajeron carreras
+    if (!syncOk || carrerasObtenidas.length === 0) {
       for (const trackCode of tracksFiltro) {
         const codeNorm = normalizarCodigoDrf(trackCode);
         const meta = CATALOGO_DRF_OFICIAL[codeNorm] || HIPODROMOS_USA_DISPONIBLES.find(

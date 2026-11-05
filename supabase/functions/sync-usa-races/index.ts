@@ -553,12 +553,12 @@ Deno.serve(async (req) => {
     const htmlOTextoPegado = typeof body.htmlOTextoPegado === "string" ? body.htmlOTextoPegado.trim() : "";
     const hipodromoEspecifico = String(body.hipodromo || "Gulfstream Park").trim();
 
-    // 1. REGLA FUNDAMENTAL: Aislamiento Jurisdiccional USA (Prohibido Venezuela)
+    // 1. REGLA FUNDAMENTAL: Aislamiento Jurisdiccional USA (Prohibido Venezuela como La Rinconada o Valencia)
     if (esHipodromoVenezolano(hipodromoEspecifico)) {
       return json(
         {
           ok: false,
-          error: `JURISDICCIÓN EXCLUSIVA USA: '${hipodromoEspecifico}' es un hipódromo venezolano y queda 100% excluido del sincronizador de carreras americanas.`,
+          error: `JURISDICCIÓN EXCLUSIVA USA: '${hipodromoEspecifico}' (La Rinconada / Venezuela) queda 100% excluido del sincronizador de carreras americanas.`,
         },
         403
       );

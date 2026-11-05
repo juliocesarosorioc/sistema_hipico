@@ -472,10 +472,10 @@ export function CarrerasDiaModule() {
             type="button"
             onClick={() => setModalSincUsa(true)}
             className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-95 px-3 py-1.5 text-xs font-black uppercase text-slate-950 shadow-md transition-all"
-            title="Descarga directa desde feeds USA (DRF / TVG / TwinSpires) para cualquier fecha sin PDFs"
+            title="Sincronizar USA Hoy (TVG / DRF)"
           >
             <span>🇺🇸</span>
-            <span>Sincronizar USA en Vivo (Automático)</span>
+            <span>Sincronizar USA Hoy (TVG / DRF)</span>
           </button>
 
           {/* MODO 2: Importar Gacetas PDF (Multi-Fecha / Lote) */}
