@@ -733,25 +733,31 @@ export function normalizarPizarra(r: {
 export async function leerPizarra(fecha: string, hipodromo: string, carrera: number | string): Promise<PizarraCarrera | null> {
   if (!supabase) return null;
   try {
+    const hipLimpio = String(hipodromo ?? "")
+      .replace(/\([^)]*\)/g, "")
+      .replace(/^(hip[oó]dromo\s+de\s+|hip[oó]dromo\s+)/i, "")
+      .trim();
+    const patronHipo = hipLimpio.length >= 3 ? `%${hipLimpio}%` : `%${String(hipodromo).trim()}%`;
+
     const [resR, carR, tabR] = await Promise.all([
       supabase
         .from("resultados_carreras")
         .select("ganadores, orden_llegada, dividendos, retirados")
         .eq("fecha", fecha)
         .eq("carrera", carrera)
-        .ilike("hipodromo", `%${hipodromo}%`),
+        .ilike("hipodromo", patronHipo),
       supabase
         .from("carreras")
         .select("retirados, caballos")
         .eq("fecha", fecha)
         .eq("carrera", carrera)
-        .ilike("hipodromo", `%${hipodromo}%`),
+        .ilike("hipodromo", patronHipo),
       supabase
         .from("tablas_fijas")
         .select("retirados_oficiales, caballos")
         .eq("fecha", fecha)
         .eq("carrera", carrera)
-        .ilike("hipodromo", `%${hipodromo}%`),
+        .ilike("hipodromo", patronHipo),
     ]);
     let data = resR.data as Array<Record<string, unknown>> | null;
     if (resR.error && /retirados/i.test(resR.error.message)) {
@@ -760,7 +766,7 @@ export async function leerPizarra(fecha: string, hipodromo: string, carrera: num
         .select("ganadores, orden_llegada, dividendos")
         .eq("fecha", fecha)
         .eq("carrera", carrera)
-        .ilike("hipodromo", `%${hipodromo}%`);
+        .ilike("hipodromo", patronHipo);
       data = r2.data as Array<Record<string, unknown>> | null;
     }
     const retExtra: string[] = [];
@@ -788,6 +794,63 @@ export async function leerPizarra(fecha: string, hipodromo: string, carrera: num
         }
       }
     }
+
+    // Fallback 1: Si no hay puestos por fecha exacta, consultar resultados_carreras más reciente para este hipódromo y carrera
+    if (!basePizarra?.puestos?.length) {
+      try {
+        const rFallback = await supabase
+          .from("resultados_carreras")
+          .select("ganadores, orden_llegada, dividendos, retirados")
+          .eq("carrera", carrera)
+          .ilike("hipodromo", patronHipo)
+          .order("fecha", { ascending: false })
+          .limit(2);
+        for (const row of (rFallback.data ?? []) as Array<Record<string, unknown>>) {
+          const norm = normalizarPizarra(row);
+          if (norm?.puestos?.length) {
+            if (!basePizarra) {
+              basePizarra = norm;
+            } else {
+              basePizarra.puestos = norm.puestos;
+              basePizarra.puestosRaya = norm.puestosRaya;
+              if (!basePizarra.dividendos) basePizarra.dividendos = norm.dividendos;
+            }
+            break;
+          }
+        }
+      } catch {
+        /* best effort */
+      }
+    }
+
+    // Fallback 2: Consultar store en memoria central useCarrerasDiaStore
+    if (!basePizarra?.puestos?.length) {
+      try {
+        const { useCarrerasDiaStore } = await import("@/shared/store/useCarrerasDiaStore");
+        const enStore = useCarrerasDiaStore.getState().carreras.find((c) => {
+          const numOk = Number(c.carrera) === Number(carrera);
+          const hipoUpper = String(c.hipodromo ?? "").toUpperCase();
+          const hipoTarget = String(hipodromo ?? "").toUpperCase();
+          const hipoOk =
+            hipoUpper === hipoTarget ||
+            hipoUpper.includes(hipLimpio.toUpperCase()) ||
+            hipLimpio.toUpperCase().includes(hipoUpper);
+          return numOk && hipoOk && Array.isArray(c.ganadores) && c.ganadores.length > 0;
+        });
+        if (enStore?.ganadores?.length) {
+          const p = enStore.ganadores.map(String).map((s) => s.trim()).filter(Boolean);
+          if (!basePizarra) {
+            basePizarra = { puestos: p, puestosRaya: p, dividendos: null, retirados: [] };
+          } else if (!basePizarra.puestos.length) {
+            basePizarra.puestos = p;
+            basePizarra.puestosRaya = p;
+          }
+        }
+      } catch {
+        /* best effort */
+      }
+    }
+
     const puestosFinal = basePizarra?.puestos ?? [];
     const puestosRayaFinal = basePizarra?.puestosRaya ?? [];
     const retiradosFinal = filtrarRetiradosSinLlegada(
@@ -1821,8 +1884,48 @@ async function carreraReporte(
   if (!filas.some((f) => f.rol !== "CRUCE")) return null;
 
   const subtotal = Math.round(filas.reduce((a, f) => a + (f.resultado ?? 0), 0) * 100) / 100;
-  const puestos = pizarra?.puestos ?? [];
-  const puestosRaya = pizarra?.puestosRaya ?? [];
+  let puestos = pizarra?.puestos ?? [];
+  let puestosRaya = pizarra?.puestosRaya ?? [];
+
+  // Robustez: si puestos está vacío pero la carrera ya se pagó o tiene ganadores registrados
+  if (!puestos.length) {
+    try {
+      const { useCarrerasDiaStore } = await import("@/shared/store/useCarrerasDiaStore");
+      const cMem = useCarrerasDiaStore.getState().carreras.find((cd) => {
+        return (
+          Number(cd.carrera) === Number(numero) &&
+          (cd.hipodromo.toUpperCase() === hipodromo.toUpperCase() ||
+            cd.hipodromo.toLowerCase().includes(hipodromo.toLowerCase()) ||
+            hipodromo.toLowerCase().includes(cd.hipodromo.toLowerCase())) &&
+          Array.isArray(cd.ganadores) &&
+          cd.ganadores.length > 0
+        );
+      });
+      if (cMem?.ganadores?.length) {
+        puestos = cMem.ganadores.map(String).map((x) => x.trim()).filter(Boolean);
+        puestosRaya = puestos;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!puestos.length) {
+    // Si la carrera ya fue pagada y hay tickets ganadores, inferir el ganador de los tickets
+    const ganadoresDeTickets = new Set<string>();
+    for (const t of tickets) {
+      const estado = String(t.estado ?? "").toLowerCase();
+      const premio = Number(t.premio_pagar ?? 0);
+      if (estado.includes("ganador") || premio > 0) {
+        const num = String(t.caballo ?? t.ejemplar_numero ?? "").trim();
+        if (num && /^\d+$/.test(num)) ganadoresDeTickets.add(num);
+      }
+    }
+    if (ganadoresDeTickets.size > 0) {
+      puestos = [...ganadoresDeTickets];
+      puestosRaya = puestos;
+    }
+  }
   const pizarraRaya = hayDistanciamientoPizarra(puestos, puestosRaya) ? puestosRaya.join(" · ") : null;
   return {
     numero,

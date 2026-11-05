@@ -80,6 +80,7 @@ export function PagarCarreraModal() {
   const [tablaMensaje, setTablaMensaje] = useState("");
   const [reporteCarrera, setReporteCarrera] = useState<ReporteCarreraDatos | null>(null);
   const [cargandoReporte, setCargandoReporte] = useState(false);
+  const [ultimaPizarraPagada, setUltimaPizarraPagada] = useState<PizarraResultados["pizarra"] | null>(null);
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
 
   // Ítem 10: cartera para el disponible (saldo + aval) del reporte de liquidación.
@@ -173,8 +174,26 @@ export function PagarCarreraModal() {
     setCargandoReporte(true);
     try {
       const hip = hipodromo.trim().toUpperCase();
-      const c = await carreraReporteDetalle(jornada ?? hoyLocal(), hip, Number(carrera));
+      const num = Number(carrera);
+      const dia = jornada ?? (await jornadaDeCarrera(hip, num)) ?? hoyLocal();
+      const c =
+        (await carreraReporteDetalle(dia, hip, num)) ||
+        (await carreraReporteDetalle(hoyLocal(), hip, num));
       if (!c) return setReporteCarrera(null);
+      if ((!c.pizarra || c.pizarra.trim() === "") && ultimaPizarraPagada) {
+        const puestosPaz = [
+          ultimaPizarraPagada.primero,
+          ultimaPizarraPagada.segundo,
+          ultimaPizarraPagada.tercero,
+          ultimaPizarraPagada.cuarto,
+          ultimaPizarraPagada.quinto,
+        ]
+          .map((v) => (v != null ? String(v).trim() : ""))
+          .filter(Boolean);
+        if (puestosPaz.length > 0) {
+          c.pizarra = puestosPaz.join(" · ");
+        }
+      }
       // Logos FRESCOS de la cabecera (hipódromo + grupo): se leen en el momento,
       // así un logo incorporado después sale igual sin recargar la página. Los
       // grupos se leen una sola vez y se comparten para el nombre y el logo.
@@ -205,6 +224,7 @@ export function PagarCarreraModal() {
   const pagar = async (r: PizarraResultados) => {
     setCargandoResultados(false);
     setReporteCarrera(null);
+    setUltimaPizarraPagada(r.pizarra);
     if (!hipodromo.trim() || !carrera.trim()) {
       setResultado("Indica Hipódromo y N° de Carrera.");
       return;

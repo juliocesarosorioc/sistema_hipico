@@ -273,8 +273,30 @@ export function armarReporteCarrera(
   disponibleDe?: (nombre: string) => number | null | undefined,
   opciones?: OpcionesReporteCarrera
 ): ReporteCarreraDatos {
-  const puestos = (c.pizarra ?? "").split(/\s*·\s*/).filter(Boolean);
-  const puestosRaya = (c.pizarraRaya ?? "").split(/\s*·\s*/).filter(Boolean);
+  let puestos = (c.pizarra ?? "")
+    .split(/\s*·\s*|\s*,\s*|\s*-\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  let puestosRaya = (c.pizarraRaya ?? "")
+    .split(/\s*·\s*|\s*,\s*|\s*-\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // Fallback de contingencia: si la pizarra no viene explícita pero hay jugadas ganadoras con resultado neto > 0
+  if (puestos.length === 0 && Array.isArray(c.filas)) {
+    const ganadoresFilas = new Set<string>();
+    for (const f of c.filas) {
+      if (f.rol === "Juega" && (f.resultado ?? 0) > 0 && f.jugada !== "🔀 CRUCE") {
+        const cab = String(f.caballo ?? "").trim();
+        if (cab && /^\d+$/.test(cab)) ganadoresFilas.add(cab);
+      }
+    }
+    if (ganadoresFilas.size > 0) {
+      puestos = [...ganadoresFilas];
+      puestosRaya = puestos;
+    }
+  }
+
   const consigue = consiguePorJuega(c);
 
   const jugadasVivo: JugadaVivo[] = [];

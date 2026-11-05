@@ -47,6 +47,8 @@ type Props = {
   carreraInicial?: number;
   /** Fecha de la jornada en curso. */
   fechaInicial?: string;
+  /** Pizarra oficial cargada / recién liquidada (evita desfases de consulta). */
+  pizarraInicial?: string;
   /** Cuando viene directo de liquidar una carrera, muestra exclusivamente esa carrera liquidada. */
   modoExclusivoLiquidacion?: boolean;
 };
@@ -77,6 +79,7 @@ export default function ReporteLiquidacionModal({
   hipodromoInicial,
   carreraInicial,
   fechaInicial,
+  pizarraInicial,
   modoExclusivoLiquidacion = false,
 }: Props) {
   const [fecha, setFecha] = useState(fechaInicial || hoyLocal());
@@ -380,9 +383,26 @@ export default function ReporteLiquidacionModal({
       carreraReporteDetalle(fechaActiva, hipoActivo, carrActiva),
       logosFrescosDeCarrera({ hipodromo: hipoActivo, grupoId: logoGrupoId }),
     ])
-      .then(([c, frescos]) => {
+      .then(async ([c, frescos]) => {
         if (!vivo) return;
         if (!c) return setDetalle(null);
+        if ((!c.pizarra || c.pizarra.trim() === "") && pizarraInicial) {
+          c.pizarra = pizarraInicial;
+        }
+        if (!c.pizarra || c.pizarra.trim() === "") {
+          try {
+            const { leerResultadoOficial } = await import("@/features/carreras/lib/carreras-dia");
+            const ofi =
+              (await leerResultadoOficial(hipoActivo, carrActiva, fechaActiva)) ||
+              (await leerResultadoOficial(hipoActivo, carrActiva));
+            if (ofi?.puestos?.length) {
+              c.pizarra = ofi.puestos.join(" · ");
+              if (ofi.puestosRaya?.length) c.pizarraRaya = ofi.puestosRaya.join(" · ");
+            }
+          } catch {
+            /* ignore */
+          }
+        }
         setDetalle({ reporte: c, frescos });
       })
       .catch(() => vivo && setDetalle(null))
@@ -391,7 +411,7 @@ export default function ReporteLiquidacionModal({
       vivo = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [abierto, fecha, hipodromo, carrera, modoExclusivoLiquidacion, fechaInicial, hipodromoInicial, carreraInicial]);
+  }, [abierto, fecha, hipodromo, carrera, modoExclusivoLiquidacion, fechaInicial, hipodromoInicial, carreraInicial, pizarraInicial]);
 
   // Armado de la plantilla: corre por cada detalle nuevo Y por cada cambio del
   // filtro segmentado de modalidad de tiempo (recalcula filas y subtotales).

@@ -5455,6 +5455,20 @@ const hipodromosDelDia = useMemo(() => {
         hipodromoInicial={hipodromo}
         carreraInicial={carrera}
         fechaInicial={fecha}
+        pizarraInicial={
+          pizarraCentral?.pizarra?.primero
+            ? [
+                pizarraCentral.pizarra.primero,
+                pizarraCentral.pizarra.segundo,
+                pizarraCentral.pizarra.tercero,
+                pizarraCentral.pizarra.cuarto,
+                pizarraCentral.pizarra.quinto,
+              ]
+                .filter(Boolean)
+                .map(String)
+                .join(" · ")
+            : undefined
+        }
         modoExclusivoLiquidacion={modoExclusivoReporte}
       />
 

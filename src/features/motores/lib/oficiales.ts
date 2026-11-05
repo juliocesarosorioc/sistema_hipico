@@ -84,6 +84,28 @@ export function puestosDesdeOrdenLlegada(v: unknown): string[] {
     return (v as unknown[]).map(limpio).filter(Boolean);
   }
 
+  // Si viene como string (JSON serializado, formato Postgres "{1,2,3}", o "1,2,3" / "1 - 2 - 3")
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return [];
+    if ((s.startsWith("[") && s.endsWith("]")) || (s.startsWith("{") && s.endsWith("}"))) {
+      try {
+        const parsed = JSON.parse(s);
+        const res = puestosDesdeOrdenLlegada(parsed);
+        if (res.length > 0) return res;
+      } catch {
+        /* no es JSON estándar, procesar como texto */
+      }
+    }
+    const sinLlaves = s.replace(/^\{+|\}+$/g, "").trim();
+    const tokens = sinLlaves
+      .split(/[\s,·\/\-]+/)
+      .map((t) => t.trim())
+      .filter((t) => /^\d+$/.test(t));
+    if (tokens.length > 0) return tokens;
+    return [];
+  }
+
   if (typeof v !== "object") return [];
 
   // 2) PizarraCarrera {primero, segundo, …}
