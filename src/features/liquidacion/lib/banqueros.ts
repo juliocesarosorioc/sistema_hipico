@@ -12,7 +12,7 @@ import { exigirCapacidad } from "@/features/seguridad/lib/vigente";
 
 export const MODALIDADES_BANQUERO = ["TABLAS", "MARCAS", "DUPLETA", "REMATES", "WPS", "POLLAS"] as const;
 
-export type ModalidadBanquero = (typeof MODALIDADES_BANQUERO)[number];
+export type ModalidadBanquero = (typeof MODALIDADES_BANQUERO)[number] | string;
 
 export type BanqueroBase = "MONTO_DECIDIDO" | "MONTO_JUGADO" | "GANANCIA";
 
@@ -28,14 +28,35 @@ export type BanqueroConvenio = {
   activo: boolean;
 };
 
-export const ETIQUETA_MODALIDAD: Record<ModalidadBanquero, string> = {
+export const ETIQUETA_MODALIDAD: Record<string, string> = {
   TABLAS: "Tablas Fijas",
   MARCAS: "Marcas",
   DUPLETA: "Dupleta",
   REMATES: "Remates",
   WPS: "W.P.S.",
   POLLAS: "Pollas",
+  GANADOR: "Ganador",
+  PLACE: "Place",
+  SHOW: "Show",
+  EXACTA: "Exacta",
+  TRIFECTA: "Trifecta",
+  CUATRIFECTA: "Cuatrifecta",
+  DOBLE: "Doble",
+  TAQUILLA: "Taquilla General",
 };
+
+/**
+ * Obtiene la etiqueta amigable para cualquier modalidad o tipo de jugada.
+ */
+export function obtenerEtiquetaModalidad(modalidad: string): string {
+  const m = String(modalidad || "").trim().toUpperCase();
+  if (ETIQUETA_MODALIDAD[m]) return ETIQUETA_MODALIDAD[m];
+  return m
+    .toLowerCase()
+    .split(/[\s_]+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
 export const ETIQUETA_BASE: Record<BanqueroBase, string> = {
   MONTO_DECIDIDO: "Sobre el monto decidido (premio)",

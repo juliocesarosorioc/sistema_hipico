@@ -74,23 +74,15 @@ import {
 import {
 
   ETIQUETA_BASE,
-
   ETIQUETA_MODALIDAD,
-
   MODALIDADES_BANQUERO,
-
   eliminarBanquero,
-
   guardarBanquero,
-
   listarBanquerosGrupo,
-
+  obtenerEtiquetaModalidad,
   type BanqueroBase,
-
   type BanqueroConvenio,
-
   type ModalidadBanquero,
-
 } from "@/features/liquidacion/lib/banqueros";
 
 import { CamposComisionesConvenio } from "@/features/grupos/components/CamposComisionesConvenio";
@@ -244,6 +236,8 @@ export function GruposModule() {
   const [grupoConvenio, setGrupoConvenio] = useState("");
 
   const [banqueros, setBanqueros] = useState<FilaBanquero[]>([]);
+  const [filtroBanquero, setFiltroBanquero] = useState("");
+  const [banqueroMasivoId, setBanqueroMasivoId] = useState("");
 
 
 
@@ -548,13 +542,28 @@ export function GruposModule() {
 
 
 
-  const jugadoresGrupoConvenio = useMemo(
-
+  const miembrosGrupoConvenio = useMemo(
     () => (grupoConvenio ? miembrosDe(grupoConvenio) : []),
-
     [grupoConvenio, miembrosDe]
-
   );
+
+  const otrosClientesConvenio = useMemo(() => {
+    const idsMiembros = new Set(miembrosGrupoConvenio.map((c) => String(c.id)));
+    return clientes.filter((c) => !idsMiembros.has(String(c.id)));
+  }, [clientes, miembrosGrupoConvenio]);
+
+  const jugadoresGrupoConvenio = miembrosGrupoConvenio;
+
+  const banquerosFiltrados = useMemo(() => {
+    const q = filtroBanquero.trim().toUpperCase();
+    if (!q) return banqueros;
+    return banqueros.filter((b) => {
+      const et = obtenerEtiquetaModalidad(b.modalidad).toUpperCase();
+      const cliente = clientes.find((c) => String(c.id) === String(b.banquero_cliente_id));
+      const nomCliente = (cliente?.nombre || "").toUpperCase();
+      return b.modalidad.toUpperCase().includes(q) || et.includes(q) || nomCliente.includes(q);
+    });
+  }, [banqueros, filtroBanquero, clientes]);
 
 
 
@@ -867,102 +876,89 @@ export function GruposModule() {
 
 
 
-  const cargarConvenios = async (grupoId: string) => {
-
+  const cargarConvenios = async (grupoId: string, listaTipos: TipoJugadaRow[] = tipos) => {
     setGrupoConvenio(grupoId);
-
     if (!grupoId) {
-
       setBanqueros([]);
-
       return;
-
     }
 
     const bs = await listarBanquerosGrupo(grupoId);
-
     const mapaB = new Map<string, BanqueroConvenio>();
+    bs.forEach((b) => mapaB.set(String(b.modalidad).toUpperCase(), b));
 
-    bs.forEach((b) => mapaB.set(String(b.modalidad), b));
+    const modalidadesSet = new Set<string>();
+    // 1. Modalidades fijas principales
+    MODALIDADES_BANQUERO.forEach((m) => modalidadesSet.add(m));
+    // 2. Tipos de jugadas registrados en el sistema
+    listaTipos.forEach((t) => {
+      const nom = String(t.nombre ?? "").trim().toUpperCase();
+      if (nom) modalidadesSet.add(nom);
+    });
+    // 3. Convenios previamente registrados en el grupo
+    bs.forEach((b) => {
+      const nom = String(b.modalidad ?? "").trim().toUpperCase();
+      if (nom) modalidadesSet.add(nom);
+    });
+
+    const todas = Array.from(modalidadesSet);
 
     setBanqueros(
-
-      MODALIDADES_BANQUERO.map((m) => {
-
+      todas.map((m) => {
         const b = mapaB.get(m);
-
         return {
-
           modalidad: m,
-
           banquero_cliente_id: b?.banquero_cliente_id ? String(b.banquero_cliente_id) : "",
-
           cobra_comision: b?.cobra_comision ?? false,
-
-          comision_porcentaje: b != null ? String(b.comision_porcentaje ?? 0) : "2.5",
-
+          comision_porcentaje: b != null ? String(b.comision_porcentaje ?? 2.5) : "2.5",
           comision_base: (b?.comision_base as BanqueroBase) ?? "MONTO_DECIDIDO",
-
           activo: b?.activo ?? true,
-
         };
-
       })
-
     );
-
   };
 
-
+  const aplicarBanqueroMasivo = () => {
+    if (!banqueroMasivoId) {
+      return toast("Seleccione un cliente para asignar a todos.", "warning");
+    }
+    setBanqueros((bs) =>
+      bs.map((x) => ({
+        ...x,
+        banquero_cliente_id: banqueroMasivoId,
+      }))
+    );
+    const nombreB = clientes.find((c) => String(c.id) === banqueroMasivoId)?.nombre ?? banqueroMasivoId;
+    toast(`Se asignó a "${nombreB}" a todos los tipos de jugada. Presione "Guardar" en cada fila para confirmar.`, "info");
+  };
 
   const guardarBanqueroFila = async (f: FilaBanquero) => {
-
     if (!grupoConvenio) return toast("Seleccione el grupo para configurar su banquero.", "warning");
+    const etiquetaMod = obtenerEtiquetaModalidad(f.modalidad);
 
     if (!f.banquero_cliente_id) {
-
       const r = await eliminarBanquero(grupoConvenio, f.modalidad);
-
       if (!r.ok) return toast(r.error ?? "Error al quitar el banquero.", "error");
-
-      toast(`Banquero de ${ETIQUETA_MODALIDAD[f.modalidad]} quitado.`, "success");
-
+      toast(`Banquero de ${etiquetaMod} quitado.`, "success");
       return;
-
     }
 
     const nombre = clientes.find((c) => String(c.id) === String(f.banquero_cliente_id))?.nombre ?? null;
-
     const r = await guardarBanquero({
-
       grupo_id: grupoConvenio,
-
       modalidad: f.modalidad,
-
       banquero_cliente_id: f.banquero_cliente_id,
-
       banquero_nombre: nombre,
-
       cobra_comision: f.cobra_comision,
-
       comision_porcentaje: num(f.comision_porcentaje),
-
       comision_base: f.comision_base,
-
       activo: f.activo,
-
     });
-
     if (!r.ok) return toast(r.error ?? "Error al guardar el banquero.", "error");
-
     toast(
-
-      `Banquero de ${ETIQUETA_MODALIDAD[f.modalidad]}: ${nombre ?? "—"} · ${f.cobra_comision ? num(f.comision_porcentaje) + "%" : "sin comisión"}.`,
-
+      `Banquero de ${etiquetaMod}: ${nombre ?? "—"} · ${f.cobra_comision ? num(f.comision_porcentaje) + "%" : "sin comisión"}.`,
       "success"
-
     );
-
   };
 
 
@@ -1092,7 +1088,7 @@ export function GruposModule() {
         {(
           [
             { clave: "grupos", emoji: "📋", texto: "Grupos Registrados", n: grupos.length },
-            { clave: "banquero", emoji: "👔", texto: "Banquero por Modalidad", n: null },
+            { clave: "banquero", emoji: "👔", texto: "Banquero por Modalidad y Tipos", n: banqueros.filter((b) => !!b.banquero_cliente_id).length || null },
             { clave: "tipos", emoji: "🎲", texto: "Tipos de Jugada", n: tipos.length },
           ] as const
         ).map((t) => {
@@ -1575,9 +1571,11 @@ export function GruposModule() {
                           className={`rounded px-1.5 py-0.5 text-[9px] font-black ${
                             conCrucesGrupo ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
                           }`}
-                          title="Permisos de cruces de ejemplares"
+                          title={`Permisos de cruces: ⚡ Mismo ${g.cruce_mismo_ejemplar ? "Sí" : "No"} · Dif. ${g.cruce_diferente_ejemplar ? "Sí" : "No"}`}
                         >
-                          {conCrucesGrupo ? "🔀 Cruces" : "🚫 Sin Cruces"}
+                          {conCrucesGrupo ? (
+                            <span>🔀 Cruces (⚡ Mismo {g.cruce_mismo_ejemplar ? "Sí" : "No"} · Dif. {g.cruce_diferente_ejemplar ? "Sí" : "No"})</span>
+                          ) : "🚫 Sin Cruces"}
                         </span>
                       </div>
 
@@ -1848,6 +1846,21 @@ export function GruposModule() {
 
                       <>
 
+                        <button
+                          type="button"
+                          className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 hover:bg-amber-100 transition shadow-2xs"
+                          onClick={() => {
+                            setPestana("banquero");
+                            setFiltroBanquero(t.nombre);
+                            if (!grupoConvenio && gruposActivos.length > 0) {
+                              void cargarConvenios(String(gruposActivos[0].id));
+                            }
+                          }}
+                          title={`Configurar banquero para ${t.nombre}`}
+                        >
+                          👔 Banquero
+                        </button>
+
                         <button className="rounded px-1.5 py-1 text-xs font-bold text-slate-600 hover:bg-slate-200" onClick={() => setEditandoTipo(t)} title="Renombrar">
 
                           <span >✏️</span>
@@ -1887,241 +1900,280 @@ export function GruposModule() {
 
 
         {/* ---------------- Banquero por Modalidad — pestaña propia ---------------- */}
-
         <div className={pestana === "banquero" ? "space-y-5" : "hidden"}>
-
-        <div className="h-fit rounded-2xl border border-line bg-white p-4">
-
-          <h3 className="mb-2 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
-
-            <span className="mr-1 text-amber-500">👔</span> Banquero por Modalidad
-
-            <p className="mt-1 text-[10px] font-normal normal-case text-slate-400">
-
-              Cliente del grupo que toma el lado contrario de las jugadas. Al liquidar, su saldo se mueve en espejo
-
-              (si pierde el jugador gana el banquero y viceversa) y paga la comisión sobre el monto decidido, que
-
-              recibe el grupo. Sin banquero o con comisión en 0% no se le cobra nada.
-
-            </p>
-
-          </h3>
-
-          <div className="mb-2">
-
-            <label className={etiqueta}>Grupo</label>
-
-            <select
-
-              value={grupoConvenio}
-
-              onChange={(e) => void cargarConvenios(e.target.value)}
-
-              className={inp + " font-bold"}
-
-            >
-
-              <option value="">Seleccione un grupo...</option>
-
-              {gruposActivos.map((g) => (
-
-                <option key={String(g.id)} value={String(g.id)}>
-
-                  {g.nombre} ({g.moneda ?? "USD"})
-
-                </option>
-
-              ))}
-
-            </select>
-
-          </div>
-
-          {!grupoConvenio ? (
-
-            <p className="text-xs italic text-slate-400">Seleccione un grupo para configurar su banquero.</p>
-
-          ) : (
-
-            <div className="space-y-1.5">
-
-              {banqueros.map((f) => (
-
-                <div key={f.modalidad} className="rounded-lg border border-line bg-white px-2 py-1.5">
-
-                  <div className="flex items-center gap-2">
-
-                    <span className="w-24 shrink-0 text-[10px] font-black uppercase text-slate-600">
-
-                      {ETIQUETA_MODALIDAD[f.modalidad]}
-
-                    </span>
-
-                    <select
-
-                      value={f.banquero_cliente_id}
-
-                      onChange={(e) =>
-
-                        setBanqueros((bs) =>
-
-                          bs.map((x) => (x.modalidad === f.modalidad ? { ...x, banquero_cliente_id: e.target.value } : x))
-
-                        )
-
-                      }
-
-                      className={inp + " flex-1 text-[11px] font-bold"}
-
-                    >
-
-                      <option value="">— Sin banquero —</option>
-
-                      {jugadoresGrupoConvenio.map((c) => (
-
-                        <option key={String(c.id)} value={String(c.id)}>
-
-                          {c.nombre}
-
-                        </option>
-
-                      ))}
-
-                    </select>
-
-                    <Button
-
-                      variant="outline"
-
-                      size="sm"
-
-                      onClick={() =>
-
-                        setBanqueros((bs) => bs.map((x) => (x.modalidad === f.modalidad ? { ...x, activo: !x.activo } : x)))
-
-                      }
-
-                    >
-
-                      {f.activo ? "Activo" : "Inactivo"}
-
-                    </Button>
-
-                  </div>
-
-                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
-
-                    <label className="flex cursor-pointer items-center gap-1 text-[10px] font-bold text-slate-500">
-
-                      <input
-
-                        type="checkbox"
-
-                        className="rounded accent-primary-600"
-
-                        checked={f.cobra_comision}
-
-                        onChange={(e) =>
-
-                          setBanqueros((bs) =>
-
-                            bs.map((x) => (x.modalidad === f.modalidad ? { ...x, cobra_comision: e.target.checked } : x))
-
-                          )
-
-                        }
-
-                      />
-
-                      Cobrar comisión
-
-                    </label>
-
-                    <input
-
-                      type="number"
-
-                      step="0.01"
-
-                      min={0}
-
-                      value={f.comision_porcentaje}
-
-                      disabled={!f.cobra_comision}
-
-                      onChange={(e) =>
-
-                        setBanqueros((bs) =>
-
-                          bs.map((x) => (x.modalidad === f.modalidad ? { ...x, comision_porcentaje: e.target.value } : x))
-
-                        )
-
-                      }
-
-                      className="w-16 rounded border border-line px-1 py-0.5 text-right text-[11px] font-bold text-amber-700 outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-40"
-
-                    />
-
-                    <span className="text-[10px] font-black text-slate-400">%</span>
-
-                    <select
-
-                      value={f.comision_base}
-
-                      disabled={!f.cobra_comision}
-
-                      onChange={(e) =>
-
-                        setBanqueros((bs) =>
-
-                          bs.map((x) =>
-
-                            x.modalidad === f.modalidad ? { ...x, comision_base: e.target.value as BanqueroBase } : x
-
-                          )
-
-                        )
-
-                      }
-
-                      className="flex-1 rounded border border-line px-1 py-0.5 text-[10px] text-slate-600 outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-40"
-
-                    >
-
-                      {(Object.keys(ETIQUETA_BASE) as BanqueroBase[]).map((b) => (
-
-                        <option key={b} value={b}>
-
-                          {ETIQUETA_BASE[b]}
-
-                        </option>
-
-                      ))}
-
-                    </select>
-
-                    <Button variant="success" size="sm" onClick={() => void guardarBanqueroFila(f)}>
-
-                      <span className="mr-1">💾</span> Guardar
-
-                    </Button>
-
-                  </div>
-
-                </div>
-
-              ))}
-
+          <div className="h-fit rounded-2xl border border-line bg-white p-4">
+            <h3 className="mb-2 border-b border-line pb-2 text-xs font-black uppercase tracking-wider text-slate-700">
+              <span className="mr-1 text-amber-500">👔</span> Banqueros por Modalidad y Tipos de Jugada
+              <p className="mt-1 text-[10px] font-normal normal-case text-slate-500 leading-relaxed">
+                Asigna el banquero (cliente o socio) que toma el lado contrario de las jugadas de este grupo para cada modalidad (Tablas, Marcas, Dupleta, Remates, WPS, Pollas) o tipo de jugada (Ganador, Place, Show, Exacta, Trifecta, Cuatrifecta, Doble, etc.).
+                Al liquidar, el saldo del banquero se mueve en espejo del jugador y se le calcula la comisión pactada (por defecto 2.5%).
+              </p>
+            </h3>
+
+            <div className="mb-3">
+              <label className={etiqueta}>Grupo de Venta</label>
+              <select
+                value={grupoConvenio}
+                onChange={(e) => void cargarConvenios(e.target.value)}
+                className={inp + " font-bold text-sm"}
+              >
+                <option value="">Seleccione un grupo...</option>
+                {gruposActivos.map((g) => (
+                  <option key={String(g.id)} value={String(g.id)}>
+                    {g.nombre} ({g.moneda ?? "USD"})
+                  </option>
+                ))}
+              </select>
             </div>
 
-          )}
+            {!grupoConvenio ? (
+              <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs italic text-slate-400">
+                Seleccione un grupo para configurar su banquero.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {/* Barra de Asignación Masiva */}
+                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 shadow-2xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-black text-amber-900 flex items-center gap-1">
+                      <span>⚡</span> Asignar a todos:
+                    </span>
+                    <select
+                      value={banqueroMasivoId}
+                      onChange={(e) => setBanqueroMasivoId(e.target.value)}
+                      className={inp + " flex-1 min-w-[220px] text-xs font-bold bg-white border-amber-300"}
+                    >
+                      <option value="">— Seleccionar cliente / banquero masivo —</option>
+                      {miembrosGrupoConvenio.length > 0 && (
+                        <optgroup label="👥 Miembros del grupo">
+                          {miembrosGrupoConvenio.map((c) => (
+                            <option key={String(c.id)} value={String(c.id)}>
+                              {c.nombre} {c.adicional ? "(asociado)" : ""}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {otrosClientesConvenio.length > 0 && (
+                        <optgroup label={miembrosGrupoConvenio.length > 0 ? "🌐 Otros clientes y banqueros" : "👤 Todos los clientes / banqueros"}>
+                          {otrosClientesConvenio.map((c) => (
+                            <option key={String(c.id)} value={String(c.id)}>
+                              {c.nombre}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={aplicarBanqueroMasivo}
+                      className="border-amber-400 bg-white hover:bg-amber-100 text-amber-900 font-bold"
+                    >
+                      <span>⚡ Aplicar a todos</span>
+                    </Button>
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-amber-800/80">
+                    Establece el cliente seleccionado en todas las filas de este grupo. Luego guarde individualmente cada tipo o ajuste comisiones.
+                  </p>
+                </div>
 
+                {/* Filtro y contador */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
+                  <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+                    <input
+                      type="text"
+                      value={filtroBanquero}
+                      onChange={(e) => setFiltroBanquero(e.target.value)}
+                      placeholder="Buscar jugada (Ganador, Exacta, Tablas, etc.)..."
+                      className={inp + " max-w-sm text-xs"}
+                    />
+                    {filtroBanquero && (
+                      <button
+                        type="button"
+                        onClick={() => setFiltroBanquero("")}
+                        className="rounded px-1.5 py-0.5 text-xs text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                        title="Limpiar filtro"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    Mostrando {banquerosFiltrados.length} de {banqueros.length} tipos de jugadas
+                  </span>
+                </div>
+
+                {/* Listado de Filas */}
+                <div className="space-y-2">
+                  {banquerosFiltrados.length === 0 ? (
+                    <p className="p-4 text-center text-xs italic text-slate-400">
+                      No se encontraron tipos de jugada que coincidan con la búsqueda.
+                    </p>
+                  ) : (
+                    banquerosFiltrados.map((f) => {
+                      const esModalidadFija = (MODALIDADES_BANQUERO as readonly string[]).includes(f.modalidad);
+                      const tieneBanquero = Boolean(f.banquero_cliente_id);
+
+                      return (
+                        <div
+                          key={f.modalidad}
+                          className={`rounded-xl border p-2.5 transition ${
+                            tieneBanquero
+                              ? "border-emerald-200 bg-emerald-50/20"
+                              : "border-line bg-white"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Identificador y etiqueta */}
+                            <div className="flex items-center gap-1.5 min-w-[140px] shrink-0">
+                              <span
+                                className={`rounded px-1.5 py-0.5 text-[9px] font-black tracking-wide ${
+                                  esModalidadFija
+                                    ? "bg-indigo-100 text-indigo-700 border border-indigo-200"
+                                    : "bg-amber-100 text-amber-800 border border-amber-200"
+                                }`}
+                              >
+                                {esModalidadFija ? "MODALIDAD" : "JUGADA"}
+                              </span>
+                              <span className="text-xs font-black uppercase text-slate-800">
+                                {obtenerEtiquetaModalidad(f.modalidad)}
+                              </span>
+                            </div>
+
+                            {/* Selector de Banquero con todos los clientes disponibles */}
+                            <select
+                              value={f.banquero_cliente_id}
+                              onChange={(e) =>
+                                setBanqueros((bs) =>
+                                  bs.map((x) =>
+                                    x.modalidad === f.modalidad ? { ...x, banquero_cliente_id: e.target.value } : x
+                                  )
+                                )
+                              }
+                              className={
+                                inp +
+                                " flex-1 min-w-[200px] text-[11px] font-bold " +
+                                (tieneBanquero ? "border-emerald-300 text-emerald-900 bg-emerald-50/40" : "")
+                              }
+                            >
+                              <option value="">— Sin banquero asignado —</option>
+                              {miembrosGrupoConvenio.length > 0 && (
+                                <optgroup label="👥 Miembros del grupo seleccionado">
+                                  {miembrosGrupoConvenio.map((c) => (
+                                    <option key={String(c.id)} value={String(c.id)}>
+                                      {c.nombre} {c.adicional ? "(asociado)" : ""}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              {otrosClientesConvenio.length > 0 && (
+                                <optgroup
+                                  label={
+                                    miembrosGrupoConvenio.length > 0
+                                      ? "🌐 Otros clientes y banqueros de la plataforma"
+                                      : "👤 Todos los clientes / banqueros"
+                                  }
+                                >
+                                  {otrosClientesConvenio.map((c) => (
+                                    <option key={String(c.id)} value={String(c.id)}>
+                                      {c.nombre}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              {f.banquero_cliente_id &&
+                                !clientes.some((c) => String(c.id) === String(f.banquero_cliente_id)) && (
+                                  <option value={f.banquero_cliente_id}>
+                                    ID: {f.banquero_cliente_id}
+                                  </option>
+                                )}
+                            </select>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className={f.activo ? "border-emerald-300 text-emerald-700" : "text-slate-400"}
+                              onClick={() =>
+                                setBanqueros((bs) =>
+                                  bs.map((x) => (x.modalidad === f.modalidad ? { ...x, activo: !x.activo } : x))
+                                )
+                              }
+                            >
+                              {f.activo ? "Activo" : "Inactivo"}
+                            </Button>
+                          </div>
+
+                          {/* Ajustes de comisión */}
+                          <div className="mt-2 flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                            <label className="flex cursor-pointer items-center gap-1 text-[11px] font-bold text-slate-600">
+                              <input
+                                type="checkbox"
+                                className="rounded accent-primary-600"
+                                checked={f.cobra_comision}
+                                onChange={(e) =>
+                                  setBanqueros((bs) =>
+                                    bs.map((x) =>
+                                      x.modalidad === f.modalidad ? { ...x, cobra_comision: e.target.checked } : x
+                                    )
+                                  )
+                                }
+                              />
+                              Cobrar comisión
+                            </label>
+
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min={0}
+                                value={f.comision_porcentaje}
+                                disabled={!f.cobra_comision}
+                                onChange={(e) =>
+                                  setBanqueros((bs) =>
+                                    bs.map((x) =>
+                                      x.modalidad === f.modalidad ? { ...x, comision_porcentaje: e.target.value } : x
+                                    )
+                                  )
+                                }
+                                className="w-16 rounded border border-line px-1.5 py-0.5 text-right text-xs font-bold text-amber-700 outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-40"
+                              />
+                              <span className="text-[10px] font-black text-slate-500">%</span>
+                            </div>
+
+                            <select
+                              value={f.comision_base}
+                              disabled={!f.cobra_comision}
+                              onChange={(e) =>
+                                setBanqueros((bs) =>
+                                  bs.map((x) =>
+                                    x.modalidad === f.modalidad
+                                      ? { ...x, comision_base: e.target.value as BanqueroBase }
+                                      : x
+                                  )
+                                )
+                              }
+                              className="flex-1 min-w-[170px] rounded border border-line px-1.5 py-0.5 text-[11px] text-slate-700 outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-40"
+                            >
+                              {(Object.keys(ETIQUETA_BASE) as BanqueroBase[]).map((b) => (
+                                <option key={b} value={b}>
+                                  {ETIQUETA_BASE[b]}
+                                </option>
+                              ))}
+                            </select>
+
+                            <Button variant="success" size="sm" onClick={() => void guardarBanqueroFila(f)}>
+                              <span className="mr-1">💾</span> Guardar
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-
-        </div>
-
       </div>
 
 

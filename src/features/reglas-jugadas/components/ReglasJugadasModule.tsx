@@ -12,6 +12,7 @@
  * ni desde la consola.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/shared/components/ui/Button";
 import { Card } from "@/shared/components/ui/Card";
 import { Guard } from "@/shared/components/ui/Guard";
@@ -157,11 +158,19 @@ export function ReglasJugadasModule() {
             Motor de cálculo: comisión de la casa, base de cobro, pago si gana y cruces de cada jugada.
           </p>
         </div>
-        {local ? (
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-bold uppercase text-amber-700">
-            Sin conexión · catálogo de respaldo
-          </span>
-        ) : null}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/grupos"
+            className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-100 transition shadow-2xs"
+          >
+            <span>👔</span> Asignar Banqueros a Jugadas
+          </Link>
+          {local ? (
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-bold uppercase text-amber-700">
+              Sin conexión · catálogo de respaldo
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
