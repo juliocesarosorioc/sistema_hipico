@@ -579,7 +579,7 @@ export function PanelMarcas() {
                   <thead>
                     <tr className="border-b border-line bg-surface text-[9px] uppercase tracking-wider text-slate-500">
                       <th className="w-6 min-w-[24px] max-w-[28px] px-1 py-0.5 text-center font-bold" title="Carrera">C.</th>
-                      <th className={`px-2.5 py-0.5 text-left font-bold ${sepCls}`}>Marca</th>
+                      <th className={`w-[1%] whitespace-nowrap px-2 py-0.5 text-left font-bold ${sepCls}`}>Marca</th>
                       <th className={`px-2.5 py-0.5 text-left font-bold ${sepCls}`}>NV</th>
                       <th className={`px-2.5 py-0.5 text-left font-bold ${sepCls}`}>No valen</th>
                       <th className="border-l-4 border-slate-300 py-0.5 pl-3.5 pr-2.5 text-left font-bold text-violet-700">Deb.</th>
@@ -632,8 +632,8 @@ export function PanelMarcas() {
                             </span>
                           </td>
 
-                          <td className={`px-2.5 py-[1px] ${sepCls}`}>
-                            <span className="flex min-h-[19px] flex-wrap items-center justify-start gap-[2px]">
+                          <td className={`w-[1%] whitespace-nowrap px-2 py-[1px] ${sepCls}`}>
+                            <span className="flex min-h-[19px] w-fit flex-nowrap items-center justify-start gap-[2px] whitespace-nowrap">
                               {marcas.length === 0 ? (
                                 <span className="text-[11px] text-slate-400">—</span>
                               ) : (
@@ -805,8 +805,8 @@ export function PanelMarcas() {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={4} className="pt-2 pb-1 pr-2 align-top">
-                        <div className="rounded-lg border border-amber-400 bg-gradient-to-r from-amber-50 via-amber-50 to-yellow-100 p-2 shadow-sm">
+                      <td colSpan={6} className="pt-2 pb-1 pr-2 align-top">
+                        <div className="max-w-xl rounded-lg border border-amber-400 bg-gradient-to-r from-amber-50 via-amber-50 to-yellow-100 p-2 shadow-sm">
                           <div className="flex items-baseline gap-2 mb-0.5">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
                               Observación
@@ -820,7 +820,6 @@ export function PanelMarcas() {
                           </p>
                         </div>
                       </td>
-                      <td colSpan={2} />
                     </tr>
                   </tfoot>
                 </table>

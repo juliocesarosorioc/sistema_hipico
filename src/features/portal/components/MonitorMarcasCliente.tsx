@@ -238,9 +238,9 @@ export function MonitorMarcasCliente({
                 <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="border-b border-line bg-surface text-[9px] uppercase tracking-wider text-slate-500">
-                      <th className="px-3 py-2 text-left font-bold">Carrera</th>
-                      <th className={`px-3 py-2 text-left font-bold ${sepCls}`}>Marcas Oficiales</th>
-                      <th className={`px-3 py-2 text-left font-bold ${sepCls}`}>NV</th>
+                      <th className="w-16 whitespace-nowrap px-3 py-2 text-left font-bold">Carrera</th>
+                      <th className={`w-[1%] whitespace-nowrap px-3 py-2 text-left font-bold ${sepCls}`}>Marcas Oficiales</th>
+                      <th className={`w-[1%] whitespace-nowrap px-3 py-2 text-left font-bold ${sepCls}`}>NV</th>
                       <th className={`px-3 py-2 text-left font-bold ${sepCls}`}>No Valen</th>
                       <th className={`px-3 py-2 text-left font-bold ${sepCls}`}>Debutantes</th>
                       <th className="border-l-2 border-slate-300 py-2 px-3 text-right font-bold">
@@ -276,8 +276,8 @@ export function MonitorMarcasCliente({
                           </td>
 
                           {/* MARCAS */}
-                          <td className={`px-3 py-2.5 ${sepCls}`}>
-                            <div className="flex flex-wrap items-center gap-1">
+                          <td className={`w-[1%] whitespace-nowrap px-3 py-2.5 ${sepCls}`}>
+                            <div className="flex w-fit flex-nowrap items-center gap-1 whitespace-nowrap">
                               {marcas.length === 0 ? (
                                 <span className="text-slate-400">—</span>
                               ) : (
