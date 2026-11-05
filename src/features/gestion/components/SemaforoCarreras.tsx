@@ -26,6 +26,7 @@ type Props = {
   carrerasConJugadas?: number[];
   /** Acción adicional alineada a la derecha en la fila de carreras (p. ej. Liquidar Carrera). */
   accionDerecha?: ReactNode;
+  className?: string;
 };
 
 export type EstadoCarrera = "inactiva" | "abierta" | "con_jugadas" | "cerrada" | "borrada";
@@ -86,7 +87,7 @@ const MANUAL_TOTAL = 12;
  * pestaña, así que una carrera liquidada desde otra sesión/dispositivo se veía
  * verde. El central también aporta `aplicado_a_tablas` y los ganadores.
  */
-export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSeleccionar, manual, carrerasConJugadas, accionDerecha }: Props) {
+export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSeleccionar, manual, carrerasConJugadas, accionDerecha, className = "" }: Props) {
   const tablas = useTablasFijasStore((s) => s.tablas);
   const tickets = useTaquillaStore((s) => s.tickets);
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
@@ -223,7 +224,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   const total = Math.max(MANUAL_TOTAL, maxCarrera, activa ?? 0);
 
   return (
-    <div className="rounded-2xl border border-line bg-surface p-3">
+    <div className={`rounded-2xl border border-line bg-surface p-3 ${className}`}>
       <div className="mb-2 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-600">
         <span className="font-black uppercase tracking-wide"><span className="normal-case">{nombreMostrar}</span> · CARRERAS DEL {fecha}</span>
         <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm border border-slate-400 bg-slate-300" /> Azul-gris: Sin carrera registrada</span>

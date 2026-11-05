@@ -805,8 +805,8 @@ export function PanelMarcas() {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={6} className="pt-2 pb-1 pr-2 align-top">
-                        <div className="max-w-xl rounded-lg border border-amber-400 bg-gradient-to-r from-amber-50 via-amber-50 to-yellow-100 p-2 shadow-sm">
+                      <td colSpan={4} className="pt-2 pb-1 pr-1 align-top">
+                        <div className="w-full rounded-lg border border-amber-400 bg-gradient-to-r from-amber-50 via-amber-50 to-yellow-100 p-2 shadow-sm space-y-1">
                           <div className="flex items-baseline gap-2 mb-0.5">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
                               Observación
@@ -818,21 +818,18 @@ export function PanelMarcas() {
                           <p className="text-[10px] font-medium leading-tight text-amber-900">
                             Se juega <b className="font-bold">{PROPORCION}</b> para ganar <b className="font-bold">100</b>: la ganancia neta es 100/{PROPORCION} del monto. Aplica a todas las carreras de la hoja.
                           </p>
+                          <p className="mt-1 pt-1 border-t border-amber-300/70 text-[9.5px] font-bold text-amber-900/90 leading-tight">
+                            No valen debutantes a menos que se indique lo contrario en la carrera.
+                          </p>
                         </div>
                       </td>
+                      <td colSpan={2} />
                     </tr>
                   </tfoot>
                 </table>
               </div>
             </div>
           ))}
-
-          {/* COLETILLA: el default del modulo. Sin esto el operador tiene que
-              abrir el editor de cada carrera para saber si los debutantes
-              cuentan, que es justo lo que cambia el resultado. */}
-          <p className="px-1 text-[10px] font-semibold text-slate-500">
-            No valen debutantes a menos que se indique lo contrario en la carrera.
-          </p>
         </div>
       )}
 

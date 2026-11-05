@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
 import { Button } from "@/shared/components/ui/Button";
+import { DateInput } from "@/shared/components/ui/DateInput";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { getHorseColor } from "@/shared/lib/horseColors";
 import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
@@ -418,25 +420,45 @@ export function ModalMarcasEditor({
         </div>
 
         <div className="border-b border-cyan-100 bg-cyan-50/70 p-3">
-          <BuscadorJornada
-            fecha={dia}
-            onFecha={setDia}
-            hipodromo={hipodromo}
-            onHipodromo={setHipodromo}
-            hipodromos={catalogoHipodromos}
-            columnas={7}
-          />
-        </div>
+          <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-3">
+            {/* Controles de Fecha e Hipódromo */}
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0">
+              <div className="w-36">
+                <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
+                  1 · Fecha 📅
+                </label>
+                <DateInput
+                  value={dia}
+                  onFechaChange={setDia}
+                  className="w-full text-xs"
+                />
+              </div>
+              <div className="w-56">
+                <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
+                  2 · Hipódromo 🏟️
+                </label>
+                <SearchableSelect
+                  value={hipodromo}
+                  onChange={setHipodromo}
+                  options={catalogoHipodromos}
+                  placeholder="Seleccionar hipódromo…"
+                  className="w-full text-xs"
+                />
+              </div>
+            </div>
 
-        {/* Paso 3: Semáforo de carreras */}
-        <div className="px-4 pt-3">
-          <SemaforoCarreras
-            hipodromo={hipodromo}
-            fecha={dia}
-            carreras={carrerasPorDia}
-            activa={carreraSel}
-            onSeleccionar={setCarreraSel}
-          />
+            {/* Semáforo de carreras colocado al lado del hipódromo */}
+            <div className="flex-1 min-w-0">
+              <SemaforoCarreras
+                hipodromo={hipodromo}
+                fecha={dia}
+                carreras={carrerasPorDia}
+                activa={carreraSel}
+                onSeleccionar={setCarreraSel}
+                className="!p-2.5 !bg-white/90 !shadow-xs"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
@@ -466,40 +488,7 @@ export function ModalMarcasEditor({
                 </p>
               )}
 
-              {/* Entrada manual y por clic */}
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="min-w-64 flex-1">
-                  <span className={inputLbl}>
-                    Agregar por número (una o varias con "/") · ej. 1/2/3
-                  </span>
-                  <div className="flex gap-2">
-                    <input
-                      value={nuevo}
-                      onChange={(e) => setNuevo(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          agregarManual();
-                        }
-                      }}
-                      placeholder="1/2/3"
-                      className={inputCls}
-                    />
-                    <select
-                      value={columna}
-                      onChange={(e) => setColumna(e.target.value as Columna)}
-                      className={`${inputCls} w-36`}
-                    >
-                      <option value="marca">Marca</option>
-                      <option value="nv">NV</option>
-                      <option value="debutante">Debutante</option>
-                    </select>
-                    <Button variant="default" onClick={agregarManual} disabled={!nuevo.trim()}>
-                      Agregar
-                    </Button>
-                  </div>
-                </div>
-              </div>
+
 
               {/* Ejemplares + las tres columnas */}
               <div className="flex flex-col gap-2 lg:flex-row">
