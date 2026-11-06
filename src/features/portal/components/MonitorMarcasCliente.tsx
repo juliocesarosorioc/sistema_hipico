@@ -26,7 +26,7 @@ type Props = {
 
 const chipCls =
   "inline-flex h-[19px] shrink-0 items-center justify-center rounded-[3px] border px-[5px] text-[13px] font-bold leading-none tabular-nums";
-const sepCls = "border-l border-line";
+const sepCls = "md:border-l md:border-line";
 
 export function MonitorMarcasCliente({
   sesion,
@@ -233,10 +233,11 @@ export function MonitorMarcasCliente({
                 </span>
               </div>
 
-              {/* TABLA DE CARRERAS DE MARCAS */}
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left">
-                  <thead>
+              {/* TABLA DE CARRERAS DE MARCAS — en móvil se apila como tarjetas
+                  para que no exista desplazamiento lateral. */}
+              <div className="w-full overflow-hidden">
+                <table className="block w-full border-collapse text-left md:table">
+                  <thead className="hidden md:table-header-group">
                     <tr className="border-b border-line bg-surface text-[9px] uppercase tracking-wider text-slate-500">
                       <th className="w-16 whitespace-nowrap px-3 py-2 text-left font-bold">Carrera</th>
                       <th className={`w-[1%] whitespace-nowrap px-3 py-2 text-left font-bold ${sepCls}`}>Marcas Oficiales</th>
@@ -248,7 +249,7 @@ export function MonitorMarcasCliente({
                       </th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="block md:table-row-group">
                     {b.carreras.map((cfg, i) => {
                       const marcas = separarNumeros(cfg.marcas);
                       const nvs = separarNumeros(cfg.nv);
@@ -260,24 +261,32 @@ export function MonitorMarcasCliente({
                         <tr
                           key={`${cfg.hipodromo}-${cfg.carrera}`}
                           onClick={() => !cerrada && abrirCompra(cfg)}
-                          className={`border-t border-line/60 text-xs transition-colors ${
+                          className={`block border-t border-line/60 text-xs transition-colors md:table-row ${
                             cerrada
                               ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                               : "hover:bg-amber-50/60 cursor-pointer " + (i % 2 === 0 ? "bg-white" : "bg-slate-50/50")
                           }`}
                         >
-                          <td className="whitespace-nowrap px-3 py-2.5 font-black text-sm text-slate-900">
-                            C{cfg.carrera}
-                            {cerrada && (
-                              <span className="ml-1.5 rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">
-                                Cerrada
-                              </span>
-                            )}
+                          <td className="flex items-center justify-between gap-2 border-b border-slate-200/70 px-3 pb-1 pt-2 font-black text-sm text-slate-900 md:table-cell md:w-16 md:whitespace-nowrap md:border-0 md:px-3 md:py-2.5">
+                            <span>
+                              C{cfg.carrera}
+                              {cerrada && (
+                                <span className="ml-1.5 rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">
+                                  Cerrada
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 md:hidden">
+                              Carrera
+                            </span>
                           </td>
 
                           {/* MARCAS */}
-                          <td className={`w-[1%] whitespace-nowrap px-3 py-2.5 ${sepCls}`}>
-                            <div className="flex w-fit flex-nowrap items-center gap-1 whitespace-nowrap">
+                          <td className={`flex items-start justify-between gap-2 px-3 py-1.5 md:table-cell md:w-[1%] md:whitespace-nowrap md:px-3 md:py-2.5 ${sepCls}`}>
+                            <span className="shrink-0 pt-0.5 text-[10px] font-black uppercase tracking-wider text-slate-400 md:hidden">
+                              Marcas
+                            </span>
+                            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 md:w-fit md:flex-nowrap md:justify-start">
                               {marcas.length === 0 ? (
                                 <span className="text-slate-400">—</span>
                               ) : (
@@ -299,7 +308,10 @@ export function MonitorMarcasCliente({
                           </td>
 
                           {/* NV */}
-                          <td className={`px-3 py-2.5 ${sepCls}`}>
+                          <td className={`flex items-center justify-between gap-2 px-3 py-1.5 md:table-cell md:px-3 md:py-2.5 ${sepCls}`}>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 md:hidden">
+                              NV
+                            </span>
                             {nvs.length > 0 ? (
                               <span className={`${chipCls} border-red-300 bg-red-100 text-red-700`}>
                                 NV
@@ -310,8 +322,11 @@ export function MonitorMarcasCliente({
                           </td>
 
                           {/* NO VALEN */}
-                          <td className={`px-3 py-2.5 ${sepCls}`}>
-                            <div className="flex flex-wrap items-center gap-1">
+                          <td className={`flex items-start justify-between gap-2 px-3 py-1.5 md:table-cell md:px-3 md:py-2.5 ${sepCls}`}>
+                            <span className="shrink-0 pt-0.5 text-[10px] font-black uppercase tracking-wider text-slate-400 md:hidden">
+                              No valen
+                            </span>
+                            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 md:justify-start">
                               {nvs.length === 0 ? (
                                 <span className="text-slate-400">—</span>
                               ) : (
@@ -331,8 +346,11 @@ export function MonitorMarcasCliente({
                           </td>
 
                           {/* DEBUTANTES */}
-                          <td className={`px-3 py-2.5 ${sepCls}`}>
-                            <div className="flex items-center gap-1">
+                          <td className={`flex items-center justify-between gap-2 px-3 py-1.5 md:table-cell md:px-3 md:py-2.5 ${sepCls}`}>
+                            <span className="shrink-0 text-[10px] font-black uppercase tracking-wider text-slate-400 md:hidden">
+                              Debutantes
+                            </span>
+                            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 md:justify-start">
                               {noValenDeb ? (
                                 <span className={`${chipCls} border-red-300 bg-red-100 text-red-700`}>
                                   NV DEB.
@@ -351,7 +369,7 @@ export function MonitorMarcasCliente({
                           </td>
 
                           {/* ACCION: COMPRAR MARCAS */}
-                          <td className="border-l-2 border-slate-300 px-3 py-2.5 text-right">
+                          <td className="border-t border-slate-200/70 px-3 py-2 text-right md:table-cell md:border-0 md:border-l-2 md:border-slate-300 md:px-3 md:py-2.5">
                             <button
                               type="button"
                               disabled={cerrada || bloqueada}
@@ -359,7 +377,7 @@ export function MonitorMarcasCliente({
                                 e.stopPropagation();
                                 abrirCompra(cfg);
                               }}
-                              className={`rounded-lg px-3 py-1 text-xs font-black shadow-sm transition-all ${
+                              className={`w-full rounded-lg px-3 py-2 text-xs font-black shadow-sm transition-all md:w-auto md:py-1 ${
                                 cerrada || bloqueada
                                   ? "bg-slate-200 text-slate-400 cursor-not-allowed"
                                   : "bg-indigo-600 text-white hover:bg-indigo-500 hover:scale-105 active:scale-95"

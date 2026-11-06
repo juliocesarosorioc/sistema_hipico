@@ -65,6 +65,7 @@ import {
 import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 import { ModalActualizacionObligatoriaContacto } from "@/features/portal/components/ModalActualizacionObligatoriaContacto";
 import { ModalReportarPagoCliente } from "@/features/portal/components/ModalReportarPagoCliente";
+import { SalaWhatsAppApp } from "@/features/whatsapp-sala/components/SalaWhatsAppApp";
 import { GuiaInteractivaJugador } from "@/features/portal/components/GuiaInteractivaJugador";
 import { MisPagosYComprobantesView } from "@/features/portal/components/MisPagosYComprobantesView";
 import {
@@ -295,8 +296,8 @@ function LoginScreen(props: {
 
   const inp = "w-full border border-indigo-200 rounded-xl bg-white px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 font-mono";
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="flex min-h-screen w-full items-center justify-center overflow-x-hidden bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-3 sm:p-4">
+      <div className="w-full max-w-md min-w-0">
         <div className="mb-6 text-center text-white">
           <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-500/20 text-3xl">
             <span className="text-indigo-300">👔</span>
@@ -305,7 +306,7 @@ function LoginScreen(props: {
           <p className="mt-1 text-xs text-indigo-200/80">Consulta tu estado de cuenta, devoluciones y reclamos.</p>
         </div>
 
-        <div className="rounded-2xl bg-white/95 p-6 shadow-2xl backdrop-blur space-y-3">
+        <div className="space-y-3 rounded-2xl bg-white/95 p-4 shadow-2xl backdrop-blur sm:p-6">
           <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Seudónimo / Nombre</label>
           <input value={props.usuario} onChange={(e) => props.setUsuario(e.target.value.toUpperCase())} className={inp} placeholder="ej. EL MAGO" />
 
@@ -332,7 +333,7 @@ function LoginScreen(props: {
           
           {/* Verificación reCAPTCHA Anti-Bot */}
           {!props.autoEntrar && (
-            <div className="flex justify-center my-2">
+            <div className="my-2 flex w-full justify-center">
               <RecaptchaWidget
                 onVerificado={() => setCaptchaOk(true)}
                 onExpirado={() => setCaptchaOk(false)}
@@ -443,8 +444,12 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
     setSemanaSeleccionada(semanaActual);
   };
 
-  // Menú ocultable a la izquierda para todas las opciones
-  const [menuAbierto, setMenuAbierto] = useState(true);
+  // Menú ocultable a la izquierda para todas las opciones.
+  // En móvil arranca cerrado: abierto empujaba el contenido y dejaba el área
+  // de trabajo sin ancho (el menú se dibuja como panel flotante).
+  const [menuAbierto, setMenuAbierto] = useState(false);
+  // 💬 Mensajería tipo WhatsApp dentro del portal (modal a pantalla completa).
+  const [chatAbierto, setChatAbierto] = useState(false);
   // 👤 Mi Perfil (PROMPT #7): autogestión de datos personales en un modal.
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   // 🐎 Realizar Jugada + ➕ Jugada No Relacionada (PROMPT #6).
@@ -516,9 +521,9 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
   return (
     <div className="min-h-screen overflow-x-hidden bg-slate-100 flex flex-col">
       {/* Cabecera Superior del Portal de Jugadores: En el espacio superior izquierdo SIEMPRE se muestra el logo del grupo */}
-      <header className="sticky top-0 z-30 flex h-16 w-full shrink-0 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur shadow-xs">
+      <header className="sticky top-0 z-30 flex h-16 w-full shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white/95 px-2 backdrop-blur shadow-xs sm:px-4">
         {/* ESPACIO SUPERIOR IZQUIERDO: Toggle de menú + LOGO DEL GRUPO + Nombre del Grupo */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => setMenuAbierto((v) => !v)}
@@ -529,8 +534,8 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
             <span className="text-base font-bold">{menuAbierto ? "✕" : "☰"}</span>
           </button>
 
-          <div className="flex items-center gap-2.5 min-w-0" title={`Grupo: ${nombreGrupoActivo}`}>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-1 shadow-inner">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-2.5" title={`Grupo: ${nombreGrupoActivo}`}>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-1 shadow-inner sm:h-10 sm:w-10">
               {logoGrupoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -554,19 +559,25 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
         </div>
 
         {/* Lado derecho de la cabecera */}
-        <div className="flex items-center gap-2 shrink-0">
-                    <a
-            href="/sala"
-            className="flex items-center gap-1.5 rounded-xl border border-teal-400 bg-gradient-to-r from-teal-600 to-emerald-600 px-3 py-1.5 text-xs font-black text-white hover:brightness-110 transition shadow-sm"
-            title="Ir a la Sala de Chat WhatsApp / P2P"
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <button
+            type="button"
+            onClick={() => setChatAbierto(true)}
+            className="relative flex items-center gap-1.5 rounded-xl border border-teal-300 bg-gradient-to-r from-teal-600 to-emerald-600 px-2.5 py-1.5 text-xs font-black text-white shadow-md transition hover:brightness-110 sm:px-3"
+            title="Abrir la mensajería tipo WhatsApp de la sala"
+            aria-label="Abrir mensajería tipo WhatsApp"
           >
-            <span>💬</span>
-            <span className="hidden sm:inline">Sala Chat</span>
-          </a>
-<button
+            <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-300 opacity-75" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white" />
+            </span>
+            <span className="text-base leading-none">💬</span>
+            <span className="hidden min-[360px]:inline">Mensajería</span>
+          </button>
+          <button
             type="button"
             onClick={() => setModalReportarPagoAbierto(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-800 hover:bg-emerald-100 transition shadow-sm"
+            className="hidden items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-800 transition hover:bg-emerald-100 shadow-sm sm:flex"
             title="Reportar Pago / Subir Comprobante"
           >
             <span>💳</span>
@@ -575,7 +586,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
           <button
             type="button"
             onClick={() => setGuiaAbierta(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-100 transition shadow-sm"
+            className="hidden items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-black text-indigo-700 transition hover:bg-indigo-100 shadow-sm sm:flex"
             title="Guía Interactiva: ¿Cómo funciona mi portal?"
           >
             <span>🎓</span>
@@ -606,10 +617,16 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-[1600px] flex-1 gap-4 px-4 py-5">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-1 gap-4 px-2 py-3 sm:px-4 sm:py-5">
         {/* Menú ocultable a la izquierda para todas las opciones */}
         {menuAbierto ? (
-          <aside className="w-64 shrink-0 space-y-3">
+          <>
+            <div
+              className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-[1px] lg:hidden"
+              onClick={() => setMenuAbierto(false)}
+              aria-hidden="true"
+            />
+            <aside className="fixed inset-y-0 left-0 z-50 w-72 max-w-[86vw] shrink-0 space-y-3 overflow-y-auto bg-slate-100 p-3 shadow-2xl lg:static lg:z-auto lg:w-64 lg:max-w-none lg:overflow-visible lg:bg-transparent lg:p-0 lg:shadow-none">
             <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
               {/* Espacio del logo: SOLO el logo del grupo, a tamaño completo de la imagen */}
               <div className="-m-3 mb-3 overflow-hidden rounded-t-2xl bg-slate-950">
@@ -649,7 +666,12 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
                     <button
                       key={op.key}
                       type="button"
-                      onClick={() => setTab(op.key)}
+                      onClick={() => {
+                        setTab(op.key);
+                        if (typeof window !== "undefined" && window.innerWidth < 1024) {
+                          setMenuAbierto(false);
+                        }
+                      }}
                       className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-extrabold transition ${
                         activa
                           ? "bg-indigo-600 text-white shadow-md"
@@ -720,6 +742,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
               </div>
             </div>
           </aside>
+          </>
         ) : null}
 
         {/* Área central de contenido */}
@@ -878,6 +901,54 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
           }}
         />
       )}
+
+      {/* 💬 Acceso flotante y destacado a la Mensajería tipo WhatsApp */}
+      <button
+        type="button"
+        onClick={() => setChatAbierto(true)}
+        className="fixed bottom-4 right-3 z-30 flex items-center gap-2 rounded-full border-2 border-white bg-[#25D366] px-4 py-3 text-sm font-black text-slate-900 shadow-2xl transition hover:brightness-105 active:scale-95 sm:bottom-6 sm:right-6"
+        title="Abrir la mensajería tipo WhatsApp"
+        aria-label="Abrir la mensajería tipo WhatsApp"
+      >
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+        </svg>
+        <span className="hidden min-[400px]:inline">Mensajería</span>
+        <span className="absolute -right-0.5 -top-0.5 flex h-3 w-3">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+          <span className="relative inline-flex h-3 w-3 rounded-full bg-amber-400 ring-2 ring-white" />
+        </span>
+      </button>
+
+      {/* 💬 Mensajería tipo WhatsApp embebida (modal a pantalla completa) */}
+      {chatAbierto ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Mensajería tipo WhatsApp"
+          className="fixed inset-0 z-[80] flex flex-col bg-[#111b21]"
+        >
+          <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[#2a3942] bg-[#202c33] px-3 text-white">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-sm text-slate-900">
+                💬
+              </span>
+              <span className="truncate text-sm font-black">Mensajería · Sala WhatsApp</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setChatAbierto(false)}
+              className="shrink-0 rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/20"
+              aria-label="Cerrar mensajería"
+            >
+              ✕ Cerrar
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <SalaWhatsAppApp embebido />
+          </div>
+        </div>
+      ) : null}
 
       <PieDerechosAutor variante="claro" />
       <ToastHost />

@@ -68,14 +68,14 @@ export function RecaptchaWidget({
   };
 
   return (
-    <div className={`relative inline-block select-none ${className}`}>
+    <div className={`relative block w-full max-w-[320px] min-w-0 select-none ${className}`}>
       <div
-        className="flex h-[76px] w-[304px] sm:w-[320px] items-center justify-between rounded-lg border border-slate-300 bg-[#fbfbfb] px-3.5 py-2.5 shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-all hover:border-slate-400"
+        className="flex h-[76px] w-full min-w-0 items-center justify-between gap-1 rounded-lg border border-slate-300 bg-[#fbfbfb] px-2.5 py-2.5 shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-all hover:border-slate-400 sm:px-3.5"
       >
         {/* Casilla Interactiva 1-Clic */}
         <div
           onClick={handleVerificar}
-          className="flex items-center gap-3 cursor-pointer py-1 flex-1"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1 sm:gap-3"
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
@@ -112,24 +112,24 @@ export function RecaptchaWidget({
             )}
           </div>
 
-          <div className="flex flex-col leading-tight">
-            <span className="text-[13px] font-semibold text-slate-800 font-sans">
+          <div className="flex min-w-0 flex-col leading-tight">
+            <span className="truncate text-[12px] font-semibold text-slate-800 font-sans sm:text-[13px]">
               {verificado
                 ? "Verificación completada"
                 : verificando
                 ? "Verificando seguridad..."
                 : "No soy un robot"}
             </span>
-            <span className="text-[10px] text-slate-400 font-medium">
+            <span className="truncate text-[10px] text-slate-400 font-medium">
               {verificado ? "Conexión segura garantizada" : "Clic para verificar"}
             </span>
           </div>
         </div>
 
         {/* Marca de seguridad y privacidad perimetral */}
-        <div className="flex flex-col items-center justify-center text-center pl-2 border-l border-slate-200/80 shrink-0">
+        <div className="flex shrink-0 flex-col items-center justify-center border-l border-slate-200/80 pl-2 text-center">
           <svg
-            className="h-6 w-6 text-[#1a73e8]"
+            className="h-5 w-5 text-[#1a73e8] sm:h-6 sm:w-6"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -140,10 +140,10 @@ export function RecaptchaWidget({
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
             <path d="m9 12 2 2 4-4" />
           </svg>
-          <span className="text-[9px] font-black tracking-tight text-slate-600 mt-0.5">
+          <span className="mt-0.5 hidden text-[9px] font-black tracking-tight text-slate-600 min-[360px]:block">
             Seguridad
           </span>
-          <span className="text-[8px] text-slate-400">
+          <span className="mt-0.5 hidden text-[8px] text-slate-400 min-[360px]:block">
             SSL · Turnstile
           </span>
         </div>

@@ -67,7 +67,8 @@ function reproducirBeepWhatsApp() {
   }
 }
 
-export function SalaWhatsAppApp() {
+export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {}) {
+  const alturaRaiz = embebido ? "h-full" : "h-[100dvh]";
   const [sesion, setSesion] = useState<ClienteSesionSala | null>(null);
   const [cargandoAuth, setCargandoAuth] = useState(true);
 
@@ -1583,7 +1584,7 @@ export function SalaWhatsAppApp() {
   // ──────────────────────────────────────────────────────────────────────────
   if (cargandoAuth) {
     return (
-      <div className="flex h-[100dvh] w-full items-center justify-center bg-[#111b21] text-white">
+      <div className={`flex ${alturaRaiz} w-full items-center justify-center bg-[#111b21] text-white`}>
         <div className="flex flex-col items-center gap-3">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#00a884] border-t-transparent" />
           <span className="text-xs text-[#8696a0]">Conectando con el Agente IA Oficial...</span>
@@ -1601,7 +1602,7 @@ export function SalaWhatsAppApp() {
     );
 
     return (
-      <div className="flex min-h-[100dvh] w-full items-center justify-center bg-[#111b21] p-4 text-white font-sans select-none">
+      <div className={`flex ${embebido ? "min-h-full" : "min-h-[100dvh]"} w-full items-center justify-center bg-[#111b21] p-4 text-white font-sans select-none`}>
         <div className="w-full max-w-sm rounded-3xl bg-[#202c33] p-6 shadow-2xl border border-[#2a3942]">
           <div className="flex flex-col items-center gap-2 pb-5 text-center border-b border-[#2a3942]">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#00a884] text-white shadow-lg text-3xl">
@@ -1658,7 +1659,7 @@ export function SalaWhatsAppApp() {
   const esCerrada = carreraActiva.estado === "CERRADA" || carreraActiva.estado === "LIQUIDADA";
 
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden bg-[#111b21] font-sans">
+    <div className={`flex ${alturaRaiz} w-full overflow-hidden bg-[#111b21] font-sans`}>
       {/* Panel Izquierdo: Lista de Grupos y Canal Bot */}
       <div
         className={`${

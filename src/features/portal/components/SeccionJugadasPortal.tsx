@@ -228,56 +228,66 @@ export function SeccionJugadasPortal({
   };
 
   return (
-    <div className="space-y-4">
-      {/* Banner Informativo de Jugadas Activas en Vivo (solo modalidades no bloqueadas) */}
-      <BannerJugadasActivasPortal
-        tablas={tablas.filter((t) => !bloqueos.tablas_fijas && String(t.estado).toUpperCase() !== "BLOQUEADA")}
-        marcas={marcas.filter((m) => !bloqueos.marcas && String(m.estado).toUpperCase() !== "BLOQUEADA")}
-        dupletas={dupletas.filter((d) => !bloqueos.dupletas && String((d as any).estado).toUpperCase() !== "BLOQUEADA")}
-        pollas={pollas.filter((p) => !bloqueos.pollas && String(p.estado).toUpperCase() !== "BLOQUEADA")}
-        remates={remates.filter((r) => !bloqueos.remates && String(r.estado).toUpperCase() !== "BLOQUEADA")}
-        modalidadActiva={modalidad}
-        onSeleccionarModalidad={(m) => setModalidad(m)}
-      />
+    <div className="space-y-2 sm:space-y-4">
+      {/* Banner Informativo de Jugadas Activas en Vivo (solo modalidades no bloqueadas).
+          En móvil se oculta porque el selector del encabezado ya ofrece las mismas
+          modalidades y así el registro cabe sin desplazamientos innecesarios. */}
+      <div className="hidden sm:block">
+        <BannerJugadasActivasPortal
+          tablas={tablas.filter((t) => !bloqueos.tablas_fijas && String(t.estado).toUpperCase() !== "BLOQUEADA")}
+          marcas={marcas.filter((m) => !bloqueos.marcas && String(m.estado).toUpperCase() !== "BLOQUEADA")}
+          dupletas={dupletas.filter((d) => !bloqueos.dupletas && String((d as any).estado).toUpperCase() !== "BLOQUEADA")}
+          pollas={pollas.filter((p) => !bloqueos.pollas && String(p.estado).toUpperCase() !== "BLOQUEADA")}
+          remates={remates.filter((r) => !bloqueos.remates && String(r.estado).toUpperCase() !== "BLOQUEADA")}
+          modalidadActiva={modalidad}
+          onSeleccionarModalidad={(m) => setModalidad(m)}
+        />
+      </div>
 
       {/* Encabezado de la Sección de Jugadas */}
-      <div className="rounded-2xl bg-gradient-to-r from-indigo-950 via-indigo-900 to-slate-900 p-4 text-white shadow-md">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-widest text-indigo-300">
-              🏇 Centro de Jugadas en Línea · Cobro vinculado a tu grupo
+      <div className="rounded-2xl bg-gradient-to-r from-indigo-950 via-indigo-900 to-slate-900 p-3 text-white shadow-md sm:p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+          <div className="min-w-0">
+            <div className="text-[9px] font-black uppercase tracking-wider text-indigo-300 sm:text-[10px] sm:tracking-widest">
+              <span className="sm:hidden">🏇 Centro de Jugadas</span>
+              <span className="hidden sm:inline">🏇 Centro de Jugadas en Línea · Cobro vinculado a tu grupo</span>
             </div>
-            <h2 className="text-lg font-black">
-              Comprar Marcas, Tablas Fijas, Puestos, Remates, Dupletas y Pollas
+            <h2 className="text-sm font-black leading-tight sm:text-lg">
+              <span className="sm:hidden">Registrá tu jugada</span>
+              <span className="hidden sm:inline">
+                Comprar Marcas, Tablas Fijas, Puestos, Remates, Dupletas y Pollas
+              </span>
             </h2>
-            <p className="text-xs text-indigo-200/80">
+            <p className="hidden text-xs text-indigo-200/80 sm:block">
               Seleccioná la modalidad para ver el cuadro oficial de la casa y registrar tus jugadas.
             </p>
           </div>
-          <div className="flex items-center gap-3 rounded-xl bg-white/10 px-3.5 py-2 border border-white/15">
-            <div>
-              <div className="text-[9px] font-black uppercase tracking-wider text-indigo-200">
+          <div className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/10 px-2.5 py-1 sm:w-auto sm:px-3.5 sm:py-2">
+            <div className="min-w-0">
+              <div className="text-[8px] font-black uppercase tracking-wider text-indigo-200 sm:text-[9px]">
                 Grupo de Cobro
               </div>
-              <div className="text-xs font-black text-white">
+              <div className="truncate text-[11px] font-black text-white sm:text-xs">
                 {sesion.grupo?.nombre || "GRUPO OFICIAL"}
               </div>
             </div>
-            <div className="h-7 w-px bg-white/20" />
-            <div>
-              <div className="text-[9px] font-black uppercase tracking-wider text-emerald-200">
+            <div className="h-6 w-px shrink-0 bg-white/20 sm:h-7" />
+            <div className="shrink-0 text-right">
+              <div className="text-[8px] font-black uppercase tracking-wider text-emerald-200 sm:text-[9px]">
                 Disponible para jugar
               </div>
-              <div className="text-sm font-black font-mono text-emerald-300">
+              <div className="text-xs font-black font-mono text-emerald-300 sm:text-sm">
                 {formatoMoneda("USD", disponible)}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Selector de Modalidades Disponibles (las bloqueadas quedan INVISIBLES) */}
+        {/* Selector de Modalidades Disponibles (las bloqueadas quedan INVISIBLES).
+            En móvil son chips compactos de 1 línea (2 columnas en pantallas muy
+            angostas, 3 desde 360px) para dejarle espacio al cuadro de juego. */}
         {modalidadesVisibles.length > 0 ? (
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          <div className="mt-2 grid grid-cols-2 gap-1.5 min-[360px]:grid-cols-3 sm:mt-4 sm:gap-2 lg:grid-cols-6">
             {modalidadesVisibles.map((m) => {
               const activa = modalidad === m.id;
               return (
@@ -285,16 +295,16 @@ export function SeccionJugadasPortal({
                   key={m.id}
                   type="button"
                   onClick={() => setModalidad(m.id)}
-                  className={`flex flex-col justify-between rounded-xl border p-2.5 text-left transition-all ${
+                  className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left transition-all sm:flex-col sm:items-stretch sm:justify-between sm:rounded-xl sm:p-2.5 ${
                     activa
                       ? "border-amber-400 bg-white text-slate-900 shadow-lg ring-2 ring-amber-400/50"
                       : "border-white/15 bg-white/10 text-white hover:bg-white/20"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-base">{m.icono}</span>
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:justify-between">
+                    <span className="text-sm leading-none sm:text-base">{m.icono}</span>
                     <span
-                      className={`rounded-full px-1.5 py-0.5 text-[8.5px] font-black uppercase ${
+                      className={`hidden rounded-full px-1.5 py-0.5 text-[8.5px] font-black uppercase sm:inline-block ${
                         activa
                           ? "bg-emerald-600 text-white"
                           : "bg-emerald-500/30 text-emerald-200"
@@ -302,11 +312,14 @@ export function SeccionJugadasPortal({
                     >
                       🔓 Abierta
                     </span>
+                    {activa ? (
+                      <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 sm:hidden" />
+                    ) : null}
                   </div>
-                  <div className="mt-1.5">
-                    <div className="text-xs font-black">{m.etiqueta}</div>
+                  <div className="min-w-0 sm:mt-1.5">
+                    <div className="truncate text-[10.5px] font-black leading-tight sm:text-xs">{m.etiqueta}</div>
                     <div
-                      className={`text-[9.5px] line-clamp-1 ${
+                      className={`hidden text-[9.5px] line-clamp-1 sm:block ${
                         activa ? "text-slate-500" : "text-indigo-200/80"
                       }`}
                     >
@@ -318,7 +331,7 @@ export function SeccionJugadasPortal({
             })}
           </div>
         ) : (
-          <div className="mt-4 rounded-xl bg-white/5 border border-white/10 p-3 text-center text-xs text-indigo-200">
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-center text-xs text-indigo-200 sm:mt-4">
             🔒 Todas las modalidades de juego están temporalmente bloqueadas por la Administración.
           </div>
         )}
@@ -578,7 +591,7 @@ function ModalidadTablasFijasPorCaballo({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       {/* Cabecera estilo modal Administrador (solo lectura de parámetros) */}
-      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2">
+      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-3 py-2 text-white sm:px-4 sm:py-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-[10px] font-black uppercase tracking-widest text-indigo-300">
             🏁 Cuadro Oficial de Tablas Fijas (Vista Jugador · Solo Lectura de Configuración)
@@ -597,7 +610,7 @@ function ModalidadTablasFijasPorCaballo({
         )}
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="space-y-3 p-2 sm:space-y-4 sm:p-4">
         {/* Selectores de Hipódromo y Carrera */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex flex-wrap gap-1.5">
@@ -646,7 +659,94 @@ function ModalidadTablasFijasPorCaballo({
 
         {/* Tabla de Ejemplares con input de cantidad de tablas POR CABALLO */}
         {tablaActual && (
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <>
+            {/* Vista móvil: tarjetas apiladas, sin desplazamiento lateral */}
+            <div className="space-y-2 md:hidden">
+              {(tablaActual.caballos ?? []).map((f) => {
+                const retirado = Boolean(f.retirado || f.invalidado);
+                const numStr = String(f.numero);
+                const cant = cantidadesPorCaballo[numStr] ?? 0;
+                const costoUnit = Number(f.valor_ejemplar) || 0;
+                const subtotal = Math.round(costoUnit * cant * 100) / 100;
+                return (
+                  <div
+                    key={numStr}
+                    className={`rounded-xl border p-2.5 ${
+                      retirado
+                        ? "border-rose-200 bg-rose-50/50 text-slate-400"
+                        : cant > 0
+                          ? "border-indigo-300 bg-indigo-50/70"
+                          : "border-slate-200 bg-white"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-800 font-mono text-xs font-black text-white">
+                          {f.numero}
+                        </span>
+                        <span className={`min-w-0 truncate text-xs font-bold ${retirado ? "line-through" : "text-slate-800"}`}>
+                          {f.nombre || `Ejemplar #${f.numero}`}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-[11px] font-black text-indigo-900">
+                        {cant > 0 ? `${cant} · ${formatoMoneda(tablaActual.moneda || "USD", subtotal)}` : "—"}
+                      </span>
+                    </div>
+
+                    <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[10px] text-slate-600">
+                      <span>
+                        Valor: <b className="font-mono text-slate-800">{retirado ? "RETIRADO" : formatoMoneda(tablaActual.moneda || "USD", costoUnit)}</b>
+                      </span>
+                      <span>
+                        Premio: <b className="font-mono text-emerald-700">{retirado ? "—" : formatoMoneda(tablaActual.moneda || "USD", premioPorTablaActual)}</b>
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                        Tablas a comprar
+                      </span>
+                      {retirado ? (
+                        <span className="rounded bg-rose-100 px-2 py-0.5 text-[10px] font-black text-rose-700">
+                          RETIRADO
+                        </span>
+                      ) : (
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => fijarCantidadCaballo(numStr, cant - 1)}
+                            className="h-8 w-8 rounded-lg border border-slate-300 bg-white font-black text-slate-700 hover:bg-slate-100"
+                            aria-label="Restar tabla"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={0}
+                            max={999}
+                            value={cant || ""}
+                            placeholder="0"
+                            onChange={(e) => fijarCantidadCaballo(numStr, parseInt(e.target.value, 10) || 0)}
+                            className="w-14 rounded-lg border border-slate-300 px-2 py-1.5 text-center font-mono text-xs font-black outline-none focus:border-indigo-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => fijarCantidadCaballo(numStr, cant + 1)}
+                            className="h-8 w-8 rounded-lg border border-indigo-300 bg-indigo-50 font-black text-indigo-700 hover:bg-indigo-100"
+                            aria-label="Sumar tabla"
+                          >
+                            +
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Vista escritorio: tabla clásica */}
+            <div className="hidden overflow-x-auto rounded-xl border border-slate-200 md:block">
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-slate-100 text-left text-[10px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200">
@@ -739,7 +839,8 @@ function ModalidadTablasFijasPorCaballo({
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
 
         {/* Resumen de compra por caballo y botón de acción */}
@@ -923,7 +1024,7 @@ function ModalidadMarcasMultiplo6({
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2">
+      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-3 py-2 text-white sm:px-4 sm:py-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
             ⚔️ Cuadro Oficial de Marcas (Vista Jugador · Proporción Múltiplo de 6)
@@ -937,7 +1038,7 @@ function ModalidadMarcasMultiplo6({
         </span>
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="space-y-3 p-2 sm:space-y-4 sm:p-4">
         {marcas.length > 0 ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
@@ -1335,7 +1436,7 @@ function ModalidadPuestosPortal({
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-4 py-3 text-white">
+      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-3 py-2 text-white sm:px-4 sm:py-3">
         <div className="text-[10px] font-black uppercase tracking-widest text-indigo-300">
           🥇 Jugadas de Puestos y Proporciones (Vista Jugador)
         </div>
@@ -1344,7 +1445,7 @@ function ModalidadPuestosPortal({
         </div>
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="space-y-3 p-2 sm:space-y-4 sm:p-4">
         <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3 space-y-2">
           <label className="block text-[10px] font-black uppercase text-indigo-900">
             ⚡ Dictado Rápido de Jugada (Ej: &quot;juego 1p-1/2 2-5 400&quot; o &quot;consigo 1p de 2y5 con 300&quot;)
@@ -1357,7 +1458,7 @@ function ModalidadPuestosPortal({
                 if (e.key === "Enter") interpretarTextoRapido();
               }}
               placeholder='Ej: "juego 1p y 1/2 del 5 con 300" o "consigo 1p 2-5 300"'
-              className="flex-1 min-w-[220px] rounded-lg border border-indigo-300 bg-white px-3 py-1.5 font-mono text-xs font-bold text-slate-800"
+              className="min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-3 py-1.5 font-mono text-xs font-bold text-slate-800 sm:min-w-[220px]"
             />
             <Button size="sm" onClick={interpretarTextoRapido} className="bg-indigo-600 text-white font-black">
               ✨ Estructurar
@@ -1548,7 +1649,7 @@ function ModalidadRematesPortal({
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2">
+      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-3 py-2 text-white sm:px-4 sm:py-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
             🔨 Cuadro Oficial de Remate (Vista Jugador · Solo Lectura de Parámetros)
@@ -1564,7 +1665,7 @@ function ModalidadRematesPortal({
         </div>
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="space-y-3 p-2 sm:space-y-4 sm:p-4">
         <div className="flex flex-wrap gap-1.5">
           {remates.map((r) => (
             <button
@@ -1580,7 +1681,79 @@ function ModalidadRematesPortal({
           ))}
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-slate-200">
+        {/* Vista móvil: tarjetas apiladas, sin desplazamiento lateral */}
+        <div className="space-y-2 md:hidden">
+          {actual.caballos.map((c) => {
+            const numStr = String(c.numero);
+            const sugerido = Math.max(10, (Number(c.monto) || 0) + 5);
+            return (
+              <div
+                key={numStr}
+                className={`rounded-xl border p-2.5 ${
+                  c.retirado ? "border-rose-200 bg-rose-50/40 text-slate-400" : "border-slate-200 bg-white"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md bg-slate-800 px-1 font-mono text-xs font-black text-white">
+                      #{numStr}
+                    </span>
+                    <span className={`min-w-0 truncate text-xs font-bold ${c.retirado ? "line-through" : "text-slate-800"}`}>
+                      {c.nombre}
+                    </span>
+                  </div>
+                  <span className="shrink-0 font-mono text-xs font-black text-slate-900">
+                    {formatoMoneda("USD", c.monto)}
+                  </span>
+                </div>
+
+                <div className="mt-1 text-[10px] text-slate-600">
+                  Comprador actual:{" "}
+                  <b className="font-bold text-slate-800">{c.comprador || "CASA"}</b>
+                </div>
+
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    Tu oferta
+                  </span>
+                  {c.retirado ? (
+                    <span className="text-[10px] font-black text-rose-600">RETIRADO</span>
+                  ) : bloqueada ? (
+                    <button
+                      type="button"
+                      onClick={() => void onPedirDesbloqueo(actual.hipodromo, actual.carrera)}
+                      className="rounded bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-900 border border-amber-300"
+                    >
+                      🔓 Solicitar desbloqueo
+                    </button>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={1}
+                        value={montosPuja[numStr] ?? String(sugerido)}
+                        onChange={(e) =>
+                          setMontosPuja((prev) => ({ ...prev, [numStr]: e.target.value }))
+                        }
+                        className="w-20 rounded border border-slate-300 px-2 py-1 text-right font-mono text-xs font-bold"
+                      />
+                      <Button
+                        size="sm"
+                        disabled={enviando}
+                        onClick={() => void comprarCaballoRemate(numStr, c.nombre, c.monto)}
+                      >
+                        🛒 Comprar
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Vista escritorio: tabla clásica */}
+        <div className="hidden overflow-x-auto rounded-xl border border-slate-200 md:block">
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-slate-100 text-left text-[10px] font-black uppercase text-slate-600 border-b border-slate-200">
@@ -1734,7 +1907,7 @@ function ModalidadDupletasPortal({
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-4 py-3 text-white">
+      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-3 py-2 text-white sm:px-4 sm:py-3">
         <div className="text-[10px] font-black uppercase tracking-widest text-indigo-300">
           🔀 Cuadro Oficial de Dupletas (Vista Jugador)
         </div>
@@ -1743,7 +1916,7 @@ function ModalidadDupletasPortal({
         </div>
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="space-y-3 p-2 sm:space-y-4 sm:p-4">
         <div className="flex flex-wrap gap-1.5">
           {dupletas.map((d) => {
             const k = claveDeDupleta(d);
@@ -1934,7 +2107,7 @@ function ModalidadPollasPortal({
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-4 py-3 text-white flex flex-wrap items-center justify-between gap-2">
+      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 px-3 py-2 text-white sm:px-4 sm:py-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-[10px] font-black uppercase tracking-widest text-indigo-300">
             🎯 Cuadro Oficial de Polla Hípica (1ª a 6ª Válida)
@@ -1948,7 +2121,7 @@ function ModalidadPollasPortal({
         </span>
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="space-y-3 p-2 sm:space-y-4 sm:p-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
           {[0, 1, 2, 3, 4, 5].map((idx) => (
             <label key={idx} className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 block">

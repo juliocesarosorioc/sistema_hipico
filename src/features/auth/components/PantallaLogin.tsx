@@ -262,12 +262,12 @@ export default function PantallaLogin() {
 
   return (
     <main
-      className="flex min-h-screen items-center justify-center bg-slate-900 px-4 py-10 font-sans"
+      className="flex min-h-screen w-full items-center justify-center overflow-x-hidden bg-slate-900 px-3 py-6 font-sans sm:px-4 sm:py-10"
       style={{
         backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')",
       }}
     >
-      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-white p-8 shadow-2xl">
+      <div className="w-full max-w-md min-w-0 rounded-2xl border border-slate-800 bg-white p-4 shadow-2xl sm:p-8">
         <div className="mb-6 text-center">
           <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-600 text-2xl text-white shadow-lg">
             {/* Moneda: replica el icono de monedas del login legacy (html/index.html). */}
@@ -420,7 +420,7 @@ export default function PantallaLogin() {
 
           
           {/* Verificación de seguridad Anti-Bot reCAPTCHA Oficial con Imágenes */}
-          <div className="flex flex-col items-center justify-center my-3 space-y-1.5">
+          <div className="my-3 flex w-full flex-col items-center justify-center space-y-1.5">
             <RecaptchaWidget
               onVerificado={(t) => {
                 setRecaptchaToken(t);
@@ -428,7 +428,7 @@ export default function PantallaLogin() {
               }}
               onExpirado={() => setRecaptchaToken(null)}
             />
-            <div className="flex items-center justify-between w-full max-w-[304px] text-[10px] text-slate-400 px-1">
+            <div className="flex w-full max-w-[320px] flex-wrap items-center justify-center gap-x-2 gap-y-1 px-1 text-center text-[10px] text-slate-400 sm:justify-between sm:text-left">
               <span className="flex items-center gap-1 font-medium">
                 <span>🛡️</span> Verificación reCAPTCHA con imágenes
               </span>
