@@ -194,7 +194,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const total = novedades.length;
 
   return (
-    <header className="sticky top-0 z-50 flex h-[50px] shrink-0 items-center justify-between gap-2 border-b border-line bg-surface/90 px-3 sm:px-4 backdrop-blur transition-colors duration-200">
+    <header className="sticky top-0 z-50 flex h-[50px] shrink-0 items-center justify-between gap-2 border-b border-line bg-surface/90 px-3 sm:px-4 backdrop-blur transition-colors duration-200 overflow-x-clip">
       {/* ESPACIO SUPERIOR IZQUIERDO: Menú + LOGO DEL GRUPO */}
       <div className="flex items-center gap-2 min-w-0 shrink-0">
         {alAlternarMenu && (
@@ -227,7 +227,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
               <span className="text-base sm:text-lg leading-none">🪙</span>
             )}
           </div>
-          <div className="hidden lg:flex flex-col min-w-0 max-w-[140px] xl:max-w-[180px]">
+          <div className={`flex-col min-w-0 max-w-[140px] xl:max-w-[180px] ${menuVisible ? "hidden 2xl:flex" : "hidden lg:flex"}`}>
+
             <span className="truncate text-xs font-black tracking-tight text-[var(--app-text)] leading-tight">
               {nombreGrupo || "Club del Dinero"}
             </span>
@@ -239,7 +240,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
       </div>
 
       {/* Controles y módulos de la barra superior sin desbordamiento */}
-      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 shrink-0">
 
       {/* Campana de novedades: auditoría reciente del sistema. */}
       <div className="relative" data-campana>
@@ -259,7 +260,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
               }`}
             />
           </span>
-          <span className="hidden sm:inline">Novedades</span>
+          <span className="hidden 2xl:inline">Novedades</span>
           {total > 0 && (
             <span className="rounded-full bg-red-500 px-1.5 text-[10px] font-black leading-4 text-white">
               {total}
@@ -328,7 +329,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
               : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200"
           }`}
         >
-          <span className="hidden sm:inline">{modoOperador ? "🐎🎲 VISTA: OPERADOR" : "🛡️ VISTA: COMPLETA"}</span>
+          <span className="hidden 2xl:inline">{modoOperador ? "🐎🎲 VISTA: OPERADOR" : "🛡️ VISTA: COMPLETA"}</span>
+          <span className="hidden sm:inline 2xl:hidden">{modoOperador ? "🐎 OPERADOR" : "🛡️ COMPLETA"}</span>
           <span className="sm:hidden">{modoOperador ? "🐎 OPE" : "🛡️ ADM"}</span>
         </button>
       )}
@@ -355,17 +357,17 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         disabled={saliendo}
         onClick={() => void cerrarSesion()}
         title="Cerrar Sesión"
-        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-red-500/40 bg-red-500/10 px-3 text-xs font-black text-red-600 shadow-2xs transition-all hover:bg-red-600 hover:text-white hover:border-red-600 active:scale-95 disabled:opacity-50 disabled:pointer-events-none shrink-0 cursor-pointer"
+        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-red-500/40 bg-red-500/10 px-2.5 sm:px-3 text-xs font-black text-red-600 shadow-2xs transition-all hover:bg-red-600 hover:text-white hover:border-red-600 active:scale-95 disabled:opacity-50 disabled:pointer-events-none shrink-0 cursor-pointer"
       >
         {saliendo ? (
           <>
             <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-600 border-t-transparent" />
-            <span className="hidden sm:inline">Cerrando…</span>
+            <span className="hidden xl:inline">Cerrando…</span>
           </>
         ) : (
           <>
-            <span aria-hidden="true" className="text-sm font-black leading-none">⏻</span>
-            <span className="hidden sm:inline">Cerrar Sesión</span>
+            <span aria-hidden="true" className="text-base font-black leading-none">⏻</span>
+            <span className="hidden xl:inline">Cerrar Sesión</span>
           </>
         )}
       </button>

@@ -43,17 +43,18 @@ interface CategoriaDesafio {
   titulo: string;
   palabraClave: string;
   instruccion: string;
-  items: DesafioItem[];
+  itemsIniciales: DesafioItem[];
+  itemsReserva: DesafioItem[];
 }
 
-// Banco de retos con imágenes para reCAPTCHA visual
+// Banco amplio y robusto de retos con imágenes + reserva de reemplazo
 const RETOS_IMAGENES: CategoriaDesafio[] = [
   {
     id: "caballos",
     titulo: "Selecciona todas las imágenes con",
     palabraClave: "caballos de carreras",
-    instruccion: "Haz clic en verificar cuando ya no queden imágenes con caballos o jockeys.",
-    items: [
+    instruccion: "Haz clic en cada imagen con caballos o jockeys para actualizarla. Pulsa Verificar cuando ya no quede ninguna.",
+    itemsIniciales: [
       {
         id: "c1",
         url: "https://images.unsplash.com/photo-1553284965-83fd3e82fa5a?w=320&h=320&fit=crop&q=80",
@@ -127,13 +128,47 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-sky-700 to-blue-900",
       },
     ],
+    itemsReserva: [
+      {
+        id: "cr1",
+        url: "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=320&h=320&fit=crop&q=80",
+        esCorrecta: true,
+        alt: "Jockey en competencia",
+        fallbackIcono: "🏇",
+        fallbackColor: "from-amber-700 to-stone-900",
+      },
+      {
+        id: "dr1",
+        url: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=320&h=320&fit=crop&q=80",
+        esCorrecta: false,
+        alt: "Bosque verde",
+        fallbackIcono: "🌲",
+        fallbackColor: "from-emerald-800 to-slate-900",
+      },
+      {
+        id: "dr2",
+        url: "https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?w=320&h=320&fit=crop&q=80",
+        esCorrecta: false,
+        alt: "Flores de campo",
+        fallbackIcono: "🌸",
+        fallbackColor: "from-pink-700 to-rose-950",
+      },
+      {
+        id: "dr3",
+        url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=320&h=320&fit=crop&q=80",
+        esCorrecta: false,
+        alt: "Playa tropical",
+        fallbackIcono: "🏖️",
+        fallbackColor: "from-sky-600 to-blue-900",
+      },
+    ],
   },
   {
     id: "semaforos",
     titulo: "Selecciona todas las imágenes con",
     palabraClave: "semáforos",
-    instruccion: "Haz clic en verificar cuando ya no queden imágenes con semáforos viales.",
-    items: [
+    instruccion: "Haz clic en cada imagen con semáforos para actualizarla. Pulsa Verificar cuando ya no quede ninguna.",
+    itemsIniciales: [
       {
         id: "s1",
         url: "https://images.unsplash.com/photo-1508873696983-2df57046475a?w=320&h=320&fit=crop&q=80",
@@ -143,7 +178,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-stone-700 to-slate-900",
       },
       {
-        id: "d1",
+        id: "sd1",
         url: "https://images.unsplash.com/photo-1517649763962-0c623266ddc0?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Farola de calle",
@@ -159,7 +194,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-red-800 to-stone-900",
       },
       {
-        id: "d2",
+        id: "sd2",
         url: "https://images.unsplash.com/photo-1572945550744-57049dcbc1b3?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Señal de pare",
@@ -175,7 +210,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-emerald-800 to-slate-950",
       },
       {
-        id: "d3",
+        id: "sd3",
         url: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Puente peatonal",
@@ -191,7 +226,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-amber-700 to-stone-900",
       },
       {
-        id: "d4",
+        id: "sd4",
         url: "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Interior de edificio",
@@ -199,7 +234,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-zinc-700 to-zinc-900",
       },
       {
-        id: "d5",
+        id: "sd5",
         url: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Bosque con niebla",
@@ -207,13 +242,39 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-emerald-900 to-teal-950",
       },
     ],
+    itemsReserva: [
+      {
+        id: "sr1",
+        url: "https://images.unsplash.com/photo-1508873696983-2df57046475a?w=320&h=320&fit=crop&q=80",
+        esCorrecta: true,
+        alt: "Semáforo peatonal",
+        fallbackIcono: "🚦",
+        fallbackColor: "from-stone-700 to-slate-900",
+      },
+      {
+        id: "sdr1",
+        url: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=320&h=320&fit=crop&q=80",
+        esCorrecta: false,
+        alt: "Río de montaña",
+        fallbackIcono: "🏞️",
+        fallbackColor: "from-teal-800 to-slate-900",
+      },
+      {
+        id: "sdr2",
+        url: "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=320&h=320&fit=crop&q=80",
+        esCorrecta: false,
+        alt: "Gatito",
+        fallbackIcono: "🐱",
+        fallbackColor: "from-amber-700 to-stone-900",
+      },
+    ],
   },
   {
     id: "hidrantes",
     titulo: "Selecciona todas las imágenes con",
     palabraClave: "bocas o hidrantes de incendios",
-    instruccion: "Haz clic en verificar cuando ya no queden imágenes con hidrantes de bomberos.",
-    items: [
+    instruccion: "Haz clic en cada imagen con hidrantes para actualizarla. Pulsa Verificar cuando ya no quede ninguna.",
+    itemsIniciales: [
       {
         id: "h1",
         url: "https://images.unsplash.com/photo-1516574187841-cb9cc2ca948b?w=320&h=320&fit=crop&q=80",
@@ -223,7 +284,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-red-600 to-red-900",
       },
       {
-        id: "d1",
+        id: "hd1",
         url: "https://images.unsplash.com/photo-1520699049698-acd2fccb8cc8?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Contenedor de basura",
@@ -239,7 +300,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-yellow-600 to-amber-900",
       },
       {
-        id: "d2",
+        id: "hd2",
         url: "https://images.unsplash.com/photo-1563245372-f21724e3856d?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Parquímetro",
@@ -255,7 +316,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-red-700 to-stone-900",
       },
       {
-        id: "d3",
+        id: "hd3",
         url: "https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Tronco de árbol",
@@ -263,7 +324,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-amber-900 to-stone-950",
       },
       {
-        id: "d4",
+        id: "hd4",
         url: "https://images.unsplash.com/photo-1449824913935-59a10b8d2000?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Tráfico urbano general",
@@ -279,7 +340,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-red-600 to-rose-950",
       },
       {
-        id: "d5",
+        id: "hd5",
         url: "https://images.unsplash.com/photo-1470240731273-7821a6eeb6bd?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Sendero natural",
@@ -287,13 +348,39 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-emerald-800 to-teal-950",
       },
     ],
+    itemsReserva: [
+      {
+        id: "hr1",
+        url: "https://images.unsplash.com/photo-1516574187841-cb9cc2ca948b?w=320&h=320&fit=crop&q=80",
+        esCorrecta: true,
+        alt: "Hidrante rojo brillante",
+        fallbackIcono: "🚒",
+        fallbackColor: "from-red-600 to-red-900",
+      },
+      {
+        id: "hdr1",
+        url: "https://images.unsplash.com/photo-1485965120184-e220f721d03e?w=320&h=320&fit=crop&q=80",
+        esCorrecta: false,
+        alt: "Bicicleta estacionada",
+        fallbackIcono: "🚲",
+        fallbackColor: "from-blue-700 to-slate-900",
+      },
+      {
+        id: "hdr2",
+        url: "https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=320&h=320&fit=crop&q=80",
+        esCorrecta: false,
+        alt: "Perro trotando",
+        fallbackIcono: "🐕",
+        fallbackColor: "from-amber-700 to-stone-900",
+      },
+    ],
   },
   {
     id: "vehiculos",
     titulo: "Selecciona todas las imágenes con",
-    palabraClave: "vehículos o automóviles",
-    instruccion: "Haz clic en verificar cuando ya no queden imágenes con automóviles.",
-    items: [
+    palabraClave: "automóviles o vehículos",
+    instruccion: "Haz clic en cada imagen con automóviles para actualizarla. Pulsa Verificar cuando ya no quede ninguna.",
+    itemsIniciales: [
       {
         id: "v1",
         url: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=320&h=320&fit=crop&q=80",
@@ -303,7 +390,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-slate-800 to-zinc-950",
       },
       {
-        id: "d1",
+        id: "vd1",
         url: "https://images.unsplash.com/photo-1485965120184-e220f721d03e?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Bicicleta",
@@ -319,7 +406,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-blue-700 to-blue-950",
       },
       {
-        id: "d2",
+        id: "vd2",
         url: "https://images.unsplash.com/photo-1559827291-72ee739d0d9a?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Barco en el mar",
@@ -335,7 +422,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-red-800 to-stone-900",
       },
       {
-        id: "d3",
+        id: "vd3",
         url: "https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Perro",
@@ -343,7 +430,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-amber-700 to-stone-900",
       },
       {
-        id: "d4",
+        id: "vd4",
         url: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Paisaje natural",
@@ -359,7 +446,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-red-600 to-stone-950",
       },
       {
-        id: "d5",
+        id: "vd5",
         url: "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Gato",
@@ -367,13 +454,39 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-orange-700 to-stone-900",
       },
     ],
+    itemsReserva: [
+      {
+        id: "vr1",
+        url: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=320&h=320&fit=crop&q=80",
+        esCorrecta: true,
+        alt: "Coche rojo veloz",
+        fallbackIcono: "🚗",
+        fallbackColor: "from-red-700 to-stone-900",
+      },
+      {
+        id: "vdr1",
+        url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=320&h=320&fit=crop&q=80",
+        esCorrecta: false,
+        alt: "Playa",
+        fallbackIcono: "🏖️",
+        fallbackColor: "from-sky-700 to-indigo-950",
+      },
+      {
+        id: "vdr2",
+        url: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=320&h=320&fit=crop&q=80",
+        esCorrecta: false,
+        alt: "Árboles",
+        fallbackIcono: "🌲",
+        fallbackColor: "from-emerald-800 to-slate-900",
+      },
+    ],
   },
   {
     id: "pasos-peatonales",
     titulo: "Selecciona todas las imágenes con",
-    palabraClave: "pasos peatonales",
-    instruccion: "Haz clic en verificar cuando ya no queden imágenes con cruces de cebra.",
-    items: [
+    palabraClave: "pasos peatonales o cebras",
+    instruccion: "Haz clic en cada imagen con cruces peatonales para actualizarla. Pulsa Verificar cuando ya no quede ninguna.",
+    itemsIniciales: [
       {
         id: "p1",
         url: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=320&h=320&fit=crop&q=80",
@@ -383,7 +496,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-slate-700 to-zinc-900",
       },
       {
-        id: "d1",
+        id: "pd1",
         url: "https://images.unsplash.com/photo-1477959858617-67f30bc75b82?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Autopista sin cruces",
@@ -399,7 +512,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-amber-600 to-stone-900",
       },
       {
-        id: "d2",
+        id: "pd2",
         url: "https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Flores",
@@ -415,7 +528,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-blue-800 to-slate-950",
       },
       {
-        id: "d3",
+        id: "pd3",
         url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Playa tropical",
@@ -423,7 +536,7 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-sky-600 to-blue-900",
       },
       {
-        id: "d4",
+        id: "pd4",
         url: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Luces nocturnas",
@@ -439,12 +552,30 @@ const RETOS_IMAGENES: CategoriaDesafio[] = [
         fallbackColor: "from-stone-700 to-stone-900",
       },
       {
-        id: "d5",
+        id: "pd5",
         url: "https://images.unsplash.com/photo-1470240731273-7821a6eeb6bd?w=320&h=320&fit=crop&q=80",
         esCorrecta: false,
         alt: "Bosque",
         fallbackIcono: "🌲",
         fallbackColor: "from-emerald-900 to-teal-950",
+      },
+    ],
+    itemsReserva: [
+      {
+        id: "pr1",
+        url: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=320&h=320&fit=crop&q=80",
+        esCorrecta: true,
+        alt: "Paso peatonal blanco",
+        fallbackIcono: "🚶",
+        fallbackColor: "from-slate-700 to-zinc-900",
+      },
+      {
+        id: "pdr1",
+        url: "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=320&h=320&fit=crop&q=80",
+        esCorrecta: false,
+        alt: "Gato",
+        fallbackIcono: "🐱",
+        fallbackColor: "from-amber-700 to-stone-900",
       },
     ],
   },
@@ -470,13 +601,16 @@ export function RecaptchaWidget({
   const [cargandoCheckbox, setCargandoCheckbox] = useState(false);
   const [modalAbierto, setModalAbierto] = useState(false);
 
-  // Índice de categoría activa y elementos barajados
-  const [indiceReto, setIndiceReto] = useState(() => Math.floor(Math.random() * RETOS_IMAGENES.length));
-  const [itemsBarajados, setItemsBarajados] = useState<DesafioItem[]>([]);
+  // Reto actual
+  const [indiceReto, setIndiceReto] = useState(0);
+  const [itemsEnPantalla, setItemsEnPantalla] = useState<DesafioItem[]>([]);
+  const [reservaRestante, setReservaRestante] = useState<DesafioItem[]>([]);
+  const [celdasActualizandose, setCeldasActualizandose] = useState<Set<string>>(new Set());
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
   const [errorValidacion, setErrorValidacion] = useState<string | null>(null);
   const [verificandoRespuesta, setVerificandoRespuesta] = useState(false);
   const [imagenesFallidas, setImagenesFallidas] = useState<Set<string>>(new Set());
+  const [refrescandoGrid, setRefrescandoGrid] = useState(false);
 
   const onVerificadoRef = useRef(onVerificado);
   const onExpiradoRef = useRef(onExpirado);
@@ -486,16 +620,40 @@ export function RecaptchaWidget({
     onExpiradoRef.current = onExpirado;
   });
 
-  const retoActual = useMemo(() => RETOS_IMAGENES[indiceReto], [indiceReto]);
+  const retoActual = useMemo(() => RETOS_IMAGENES[indiceReto] || RETOS_IMAGENES[0], [indiceReto]);
 
-  // Cargar y barajar elementos cuando cambia el reto
-  const cargarNuevoReto = useCallback((nuevoIndice?: number) => {
-    const idx = nuevoIndice !== undefined ? nuevoIndice : Math.floor(Math.random() * RETOS_IMAGENES.length);
-    setIndiceReto(idx);
-    const reto = RETOS_IMAGENES[idx];
-    setItemsBarajados(mezclarArray(reto.items));
+  // Carga un reto garantizado diferente al actual y reinicia completamente todas las imágenes
+  const cargarNuevoReto = useCallback((fuerzaIndice?: number) => {
+    setRefrescandoGrid(true);
+    let nuevoIdx: number;
+    if (fuerzaIndice !== undefined) {
+      nuevoIdx = fuerzaIndice;
+    } else {
+      // Garantizar que SIEMPRE cambia al siguiente reto para que nunca repita la misma pantalla
+      nuevoIdx = (indiceReto + 1) % RETOS_IMAGENES.length;
+    }
+
+    setIndiceReto(nuevoIdx);
+    const reto = RETOS_IMAGENES[nuevoIdx];
+    setItemsEnPantalla(mezclarArray(reto.itemsIniciales));
+    setReservaRestante(mezclarArray(reto.itemsReserva));
     setSeleccionados(new Set());
+    setCeldasActualizandose(new Set());
     setErrorValidacion(null);
+    setImagenesFallidas(new Set()); // Limpiar errores de imágenes para recargar frescas
+
+    setTimeout(() => {
+      setRefrescandoGrid(false);
+    }, 200);
+  }, [indiceReto]);
+
+  // Inicializar al montar
+  useEffect(() => {
+    const idxInicial = Math.floor(Math.random() * RETOS_IMAGENES.length);
+    setIndiceReto(idxInicial);
+    const reto = RETOS_IMAGENES[idxInicial];
+    setItemsEnPantalla(mezclarArray(reto.itemsIniciales));
+    setReservaRestante(mezclarArray(reto.itemsReserva));
   }, []);
 
   // Al hacer clic en el checkbox "No soy un robot"
@@ -505,7 +663,6 @@ export function RecaptchaWidget({
     setCargandoCheckbox(true);
     setErrorValidacion(null);
 
-    // Simula comprobación inicial antes de presentar el reto con imágenes
     setTimeout(() => {
       setCargandoCheckbox(false);
       cargarNuevoReto();
@@ -513,56 +670,101 @@ export function RecaptchaWidget({
     }, 280);
   };
 
-  // Alternar selección de una imagen
-  const toggleSeleccion = (id: string) => {
+  /**
+   * ACTUALIZACIÓN DINÁMICA DE IMÁGENES AL HACER CLIC:
+   * Cuando el usuario hace clic sobre una imagen que coincide con el reto (ej. caballo):
+   * La casilla se desvanece con animación y se ACTUALIZA con una imagen de reserva.
+   * Si es un distractor que el usuario marcó por error, muestra alerta para que no se equivoque.
+   */
+  const handleClicCasilla = (item: DesafioItem, index: number) => {
+    if (celdasActualizandose.has(item.id)) return;
     setErrorValidacion(null);
-    setSeleccionados((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+
+    // Si la imagen ES correcta (coincide con el reto):
+    // Reproduce la animación oficial de desvanecimiento y actualiza por una nueva imagen
+    if (item.esCorrecta) {
+      setCeldasActualizandose((prev) => new Set(prev).add(item.id));
+
+      setTimeout(() => {
+        // Extraer reemplazo de la reserva si hay disponible
+        let nuevoItem: DesafioItem;
+        if (reservaRestante.length > 0) {
+          nuevoItem = reservaRestante[0];
+          setReservaRestante((prev) => prev.slice(1));
+        } else {
+          // Si no queda reserva, se reemplaza por un elemento neutro resuelto
+          nuevoItem = {
+            id: `resuelto_${item.id}_${Date.now()}`,
+            url: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=320&h=320&fit=crop&q=80",
+            esCorrecta: false,
+            alt: "Zona verificada",
+            fallbackIcono: "✅",
+            fallbackColor: "from-emerald-700 to-teal-900",
+          };
+        }
+
+        setItemsEnPantalla((prev) => {
+          const copia = [...prev];
+          copia[index] = nuevoItem;
+          return copia;
+        });
+
+        setCeldasActualizandose((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+      }, 380);
+    } else {
+      // Si el usuario hace clic en una imagen incorrecta, alterna selección visual y notifica
+      setSeleccionados((prev) => {
+        const next = new Set(prev);
+        if (next.has(item.id)) next.delete(item.id);
+        else next.add(item.id);
+        return next;
+      });
+    }
   };
 
-  // Validar selección de imágenes
+  // Validar reto:
+  // Se aprueba si ya NO quedan imágenes correctas en la cuadrícula y no se marcaron incorrectas
   const handleVerificarReto = () => {
     if (verificandoRespuesta) return;
     setVerificandoRespuesta(true);
 
     setTimeout(() => {
-      // Comprobar que todas las correctas fueron seleccionadas y ninguna incorrecta
-      const correctas = new Set(itemsBarajados.filter((i) => i.esCorrecta).map((i) => i.id));
-      const seleccionadasArr = Array.from(seleccionados);
+      // Contar cuántas imágenes con el objeto buscado quedan visibles en la cuadrícula
+      const correctasRestantes = itemsEnPantalla.filter((i) => i.esCorrecta);
+      const seleccionadasIncorrectas = Array.from(seleccionados).filter((id) => {
+        const item = itemsEnPantalla.find((i) => i.id === id);
+        return item && !item.esCorrecta;
+      });
 
-      const todasCorrectasElegidas =
-        Array.from(correctas).every((id) => seleccionados.has(id)) &&
-        seleccionadasArr.every((id) => correctas.has(id));
-
-      if (todasCorrectasElegidas && seleccionadasArr.length > 0) {
-        // ÉXITO: Usuario verificado como humano
+      // Si aún quedan imágenes con el objeto, o se marcaron distractores:
+      if (correctasRestantes.length > 0 || seleccionadasIncorrectas.length > 0) {
+        setVerificandoRespuesta(false);
+        setErrorValidacion(
+          correctasRestantes.length > 0
+            ? `Aún quedan ${correctasRestantes.length} imagen(es) con ${retoActual.palabraClave}. Haz clic en ellas para actualizarlas.`
+            : "Por favor desmarca las imágenes que no correspondan al objeto indicado."
+        );
+      } else {
+        // ÉXITO COMPLETO: Verificado como humano
         setVerificandoRespuesta(false);
         setModalAbierto(false);
         setVerificado(true);
-        const token = `recaptcha_v2_img_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
+        const token = `recaptcha_v2_ok_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
         onVerificadoRef.current?.(token);
-      } else {
-        // FALLO: Notificar y barajar a otro reto diferente
-        setVerificandoRespuesta(false);
-        setErrorValidacion("Por favor selecciona todas las imágenes correspondientes e inténtalo de nuevo.");
-        setTimeout(() => {
-          let siguiente = (indiceReto + 1) % RETOS_IMAGENES.length;
-          cargarNuevoReto(siguiente);
-        }, 900);
       }
     }, 450);
   };
 
-  // Manejo de lectura de voz accesible
+  // Lectura de voz accesible
   const reproducirAudioAccesible = () => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(
-        `Verificación reCAPTCHA. ${retoActual.titulo} ${retoActual.palabraClave}. ${retoActual.instruccion}`
+        `Desafío reCAPTCHA de seguridad. ${retoActual.titulo} ${retoActual.palabraClave}. ${retoActual.instruccion}`
       );
       u.lang = "es-ES";
       u.rate = 0.95;
@@ -572,9 +774,7 @@ export function RecaptchaWidget({
 
   return (
     <div className={`relative inline-block select-none ${className}`}>
-      {/* ============================================================== */}
-      {/* CHECKBOX OFICIAL reCAPTCHA v2 (Estilo Google)                  */}
-      {/* ============================================================== */}
+      {/* CHECKBOX OFICIAL reCAPTCHA v2 (Estilo Google) */}
       <div
         className="flex h-[78px] w-[304px] items-center justify-between rounded-[3px] border border-[#d3d3d3] bg-[#f9f9f9] px-3 py-2 shadow-[0_0_4px_1px_rgba(0,0,0,0.06)] transition-all hover:border-[#b0b0b0]"
       >
@@ -614,7 +814,7 @@ export function RecaptchaWidget({
           </span>
         </div>
 
-        {/* Marca oficial Google reCAPTCHA a la derecha */}
+        {/* Marca Google reCAPTCHA a la derecha */}
         <div className="flex flex-col items-center justify-center text-center pl-2 shrink-0">
           <svg
             className="h-8 w-8 text-[#1a73e8]"
@@ -662,55 +862,67 @@ export function RecaptchaWidget({
         </div>
       </div>
 
-      {/* ============================================================== */}
-      {/* MODAL DESAFÍO CON IMÁGENES (Google reCAPTCHA v2 Image Grid)   */}
-      {/* ============================================================== */}
+      {/* MODAL DESAFÍO CON IMÁGENES ACTUALIZABLES (Google reCAPTCHA v2 Image Grid) */}
       {modalAbierto && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-xs animate-in fade-in duration-200"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/65 p-3 sm:p-4 backdrop-blur-xs animate-in fade-in duration-200"
           role="dialog"
           aria-modal="true"
         >
           <div
-            className="relative w-full max-w-[390px] overflow-hidden rounded-md bg-white shadow-2xl border border-slate-300 animate-in zoom-in-95 duration-150"
+            className="relative w-full max-w-[390px] max-h-[94vh] flex flex-col overflow-hidden rounded-md bg-white shadow-2xl border border-slate-300 animate-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Cabecera Azul de Google reCAPTCHA */}
-            <div className="bg-[#1a73e8] p-4 text-white">
-              <span className="text-xs font-medium text-blue-100 block tracking-normal">
+            {/* Cabecera Azul de Google reCAPTCHA con botón de cerrar */}
+            <div className="bg-[#1a73e8] p-4 text-white relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setModalAbierto(false)}
+                className="absolute top-2.5 right-2.5 h-7 w-7 flex items-center justify-center rounded-full text-white/80 hover:text-white hover:bg-white/20 transition-colors text-lg font-bold"
+                title="Cerrar verificación"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+              <span className="text-xs font-medium text-blue-100 block tracking-normal pr-6">
                 {retoActual.titulo}
               </span>
-              <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white mt-0.5">
+              <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white mt-0.5 pr-6">
                 {retoActual.palabraClave}
               </h2>
-              <p className="text-[11px] text-blue-100 mt-1 leading-tight">
+              <p className="text-[11px] text-blue-100 mt-1 leading-tight pr-6">
                 {retoActual.instruccion}
               </p>
             </div>
 
-            {/* Cuadrícula 3x3 de Imágenes del Desafío */}
-            <div className="p-2 sm:p-3 bg-slate-100">
-              <div className="grid grid-cols-3 gap-1.5 bg-slate-200 p-1.5 rounded">
-                {itemsBarajados.map((item) => {
+            {/* Cuadrícula 3x3 de Imágenes con Actualización Dinámica */}
+            <div className="p-2 sm:p-3 bg-slate-100 overflow-y-auto">
+              <div className={`grid grid-cols-3 gap-1.5 bg-slate-200 p-1.5 rounded transition-opacity duration-150 ${refrescandoGrid ? "opacity-30" : "opacity-100"}`}>
+                {itemsEnPantalla.map((item, index) => {
                   const estaSeleccionado = seleccionados.has(item.id);
                   const estaFallida = imagenesFallidas.has(item.id);
+                  const estaActualizandose = celdasActualizandose.has(item.id);
 
                   return (
                     <div
-                      key={item.id}
-                      onClick={() => toggleSeleccion(item.id)}
-                      className={`relative aspect-square cursor-pointer overflow-hidden rounded-xs bg-slate-300 transition-all duration-150 select-none ${
-                        estaSeleccionado
-                          ? "ring-4 ring-[#1a73e8] scale-[0.96] shadow-md"
+                      key={`${item.id}_${index}`}
+                      onClick={() => handleClicCasilla(item, index)}
+                      className={`relative aspect-square cursor-pointer overflow-hidden rounded-xs bg-slate-300 transition-all duration-200 select-none ${
+                        estaActualizandose
+                          ? "scale-90 opacity-40 ring-2 ring-[#1a73e8]"
+                          : estaSeleccionado
+                          ? "ring-4 ring-amber-500 scale-[0.96] shadow-md"
                           : "hover:opacity-90 active:scale-95"
                       }`}
                     >
-                      {/* Imagen con fallback visual SVG/Emoji garantizado */}
+                      {/* Imagen con fallback visual SVG/Emoji garantizado y no-referrer */}
                       {!estaFallida ? (
                         <img
                           src={item.url}
                           alt={item.alt}
                           loading="eager"
+                          referrerPolicy="no-referrer"
+                          crossOrigin="anonymous"
                           onError={() => {
                             setImagenesFallidas((prev) => new Set(prev).add(item.id));
                           }}
@@ -727,21 +939,18 @@ export function RecaptchaWidget({
                         </div>
                       )}
 
-                      {/* Checkmark overlay de selección */}
-                      {estaSeleccionado && (
-                        <div className="absolute inset-0 bg-[#1a73e8]/25 flex items-start justify-end p-1.5 animate-in fade-in duration-100">
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1a73e8] text-white shadow-md">
-                            <svg
-                              className="h-4 w-4"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="3.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
+                      {/* Spinner animado cuando la imagen se está actualizando */}
+                      {estaActualizandose && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/70 animate-in fade-in duration-100">
+                          <div className="h-6 w-6 animate-spin rounded-full border-3 border-[#1a73e8] border-t-transparent" />
+                        </div>
+                      )}
+
+                      {/* Overlay si fue seleccionado un distractor */}
+                      {estaSeleccionado && !estaActualizandose && (
+                        <div className="absolute inset-0 bg-amber-500/25 flex items-start justify-end p-1.5 animate-in fade-in duration-100">
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white shadow-md text-xs font-black">
+                            ✓
                           </div>
                         </div>
                       )}
@@ -750,22 +959,23 @@ export function RecaptchaWidget({
                 })}
               </div>
 
-              {/* Mensaje de error / reintento si la selección no es correcta */}
+              {/* Mensaje de error / orientación */}
               {errorValidacion && (
-                <div className="mt-2 rounded bg-red-100 p-2 text-center text-xs font-bold text-red-700 animate-in shake duration-200">
-                  ⚠️ {errorValidacion}
+                <div className="mt-2 rounded bg-amber-50 border border-amber-300 p-2 text-center text-xs font-bold text-amber-900 animate-in shake duration-200">
+                  ℹ️ {errorValidacion}
                 </div>
               )}
             </div>
 
-            {/* Pie de controles: Recargar, Audio, Ayuda y Botón VERIFICAR */}
-            <div className="flex items-center justify-between border-t border-slate-200 bg-white px-3 py-2.5">
-              <div className="flex items-center gap-2 text-slate-500">
+            {/* Pie de controles: Recargar (🔄), Audio, Ayuda y Botón VERIFICAR */}
+            <div className="flex items-center justify-between border-t border-slate-200 bg-white px-3 py-2.5 shrink-0">
+              <div className="flex items-center gap-1.5 text-slate-500">
                 <button
                   type="button"
                   onClick={() => cargarNuevoReto()}
-                  title="Cargar nuevo reto de imágenes"
+                  title="Actualizar y cargar un nuevo reto de imágenes"
                   className="rounded p-1.5 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                  aria-label="Cargar nuevas imágenes"
                 >
                   <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
@@ -777,6 +987,7 @@ export function RecaptchaWidget({
                   onClick={reproducirAudioAccesible}
                   title="Escuchar desafío por audio"
                   className="rounded p-1.5 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                  aria-label="Audio del desafío"
                 >
                   <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
@@ -788,11 +999,17 @@ export function RecaptchaWidget({
                   type="button"
                   onClick={() => {
                     alert(
-                      "Verificación de Seguridad reCAPTCHA:\n\nPor favor haz clic en todas las fotos que correspondan al objeto indicado en la cabecera. Si no estás seguro, presiona el botón de recargar (🔄) para ver otras imágenes."
+                      "Verificación reCAPTCHA:\\n\\n" +
+                      "1. Haz clic en cada imagen que contenga el objeto indicado.\\n" +
+                      "2. Al hacer clic, la imagen se actualizará automáticamente por una nueva.\\n" +
+                      "3. Continúa haciendo clic hasta que ya no quede ninguna imagen con ese objeto.\\n" +
+                      "4. Finalmente presiona el botón azul 'VERIFICAR'.\\n" +
+                      "5. Si deseas cambiar de imágenes, pulsa el botón recargar (🔄)."
                     );
                   }}
-                  title="Información de ayuda"
+                  title="Ayuda de verificación"
                   className="rounded p-1.5 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                  aria-label="Ayuda"
                 >
                   <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" />
@@ -806,7 +1023,7 @@ export function RecaptchaWidget({
                 <button
                   type="button"
                   onClick={() => setModalAbierto(false)}
-                  className="rounded px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100 transition-colors"
+                  className="rounded px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100 transition-colors"
                 >
                   Cancelar
                 </button>
@@ -815,7 +1032,7 @@ export function RecaptchaWidget({
                   type="button"
                   onClick={handleVerificarReto}
                   disabled={verificandoRespuesta}
-                  className="flex items-center gap-1.5 rounded bg-[#1a73e8] px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow hover:bg-[#1557b0] active:scale-95 disabled:opacity-50 transition-all"
+                  className="flex items-center gap-1.5 rounded bg-[#1a73e8] px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow hover:bg-[#1557b0] active:scale-95 disabled:opacity-50 transition-all cursor-pointer"
                 >
                   {verificandoRespuesta ? (
                     <>

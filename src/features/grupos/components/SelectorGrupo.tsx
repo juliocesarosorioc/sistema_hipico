@@ -76,11 +76,11 @@ export function SelectorGrupo() {
       title="Grupo activo seleccionado"
     >
       <span aria-hidden="true">📁</span>
-      <span className="hidden sm:inline">Grupo:</span>
+      <span className="hidden 2xl:inline">Grupo:</span>
       <select
         value={grupoActivo ?? (grupos[0] ? String(grupos[0].id) : "")}
         onChange={(e) => cambiar(e.target.value)}
-        className="max-w-[13rem] bg-transparent text-xs font-black text-slate-900 outline-none cursor-pointer"
+        className="max-w-[7.5rem] sm:max-w-[9.5rem] 2xl:max-w-[13rem] truncate bg-transparent text-xs font-black text-slate-900 outline-none cursor-pointer"
         aria-label="Grupo activo seleccionado"
       >
         {grupos.map((g) => (

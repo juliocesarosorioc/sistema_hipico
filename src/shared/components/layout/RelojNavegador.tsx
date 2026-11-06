@@ -57,18 +57,27 @@ export function RelojNavegador() {
   return (
     <div
       aria-label="Fecha y hora actual del sistema"
-      className="ml-auto hidden min-w-[235px] shrink-0 items-center justify-end gap-2 rounded-lg border border-line bg-surfaceAlt px-2.5 py-1 text-right md:flex"
+      className="ml-auto hidden shrink-0 items-center justify-end rounded-lg border border-line bg-surfaceAlt px-2 py-1 text-right xl:flex"
     >
-      <span className="text-xs leading-none" aria-hidden="true">
-        🕒
-      </span>
-      <div className="flex flex-col items-end leading-tight">
-        <span className="truncate text-[10px] font-bold text-[var(--app-text-muted)]">
-          {reloj ? reloj.fechaTexto : "Cargando fecha…"}
+      {/* Vista Compacta (Hora únicamente) para pantallas medianas / con sidebar abierto */}
+      <div className="flex 2xl:hidden items-center gap-1.5 font-mono text-[11px] font-black tabular-nums tracking-tight text-[var(--app-text)]">
+        <span className="text-xs leading-none" aria-hidden="true">🕒</span>
+        <span>{reloj ? reloj.horaTexto : "--:--:--"}</span>
+      </div>
+
+      {/* Vista Completa (Fecha completa + Hora) en pantallas grandes 2xl (>1536px) */}
+      <div className="hidden 2xl:flex items-center gap-2 min-w-[210px] justify-end">
+        <span className="text-xs leading-none" aria-hidden="true">
+          🕒
         </span>
-        <span className="font-mono text-[11px] font-black tabular-nums tracking-tight text-[var(--app-text)]">
-          {reloj ? reloj.horaTexto : "--:--:--"}
-        </span>
+        <div className="flex flex-col items-end leading-tight">
+          <span className="truncate text-[10px] font-bold text-[var(--app-text-muted)]">
+            {reloj ? reloj.fechaTexto : "Cargando fecha…"}
+          </span>
+          <span className="font-mono text-[11px] font-black tabular-nums tracking-tight text-[var(--app-text)]">
+            {reloj ? reloj.horaTexto : "--:--:--"}
+          </span>
+        </div>
       </div>
     </div>
   );
