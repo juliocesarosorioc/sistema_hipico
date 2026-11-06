@@ -92,6 +92,12 @@ export function middleware(req: NextRequest) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
+  // [Seguridad] Bloquear escaneos de bots automatizados que prueban Server Actions falsas (ej. Next-Action: x)
+  const nextAction = req.headers.get("next-action");
+  if (nextAction) {
+    return new NextResponse("Not Found", { status: 404 });
+  }
+
   if (ES_PUBLICA(pathname)) return NextResponse.next();
 
   if (ES_PORTAL(pathname) || ES_SALA(pathname)) return NextResponse.next();

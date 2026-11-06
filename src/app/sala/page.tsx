@@ -3,6 +3,8 @@
 import React from "react";
 import { SalaWhatsAppApp } from "@/features/whatsapp-sala/components/SalaWhatsAppApp";
 
+export const dynamic = "force-dynamic";
+
 /**
  * /sala — Sala de Jugadas Móvil PWA con Interfaz WhatsApp y Agente IA Autónomo.
  * Totalmente aislada del dashboard para no interferir con las pantallas administrativas.
