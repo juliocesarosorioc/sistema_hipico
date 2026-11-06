@@ -10,7 +10,7 @@ import {
 } from "@/shared/lib/temas";
 
 export function useTema() {
-  const [tema, setTemaState] = useState<TipoTema>("oscuro");
+  const [tema, setTemaState] = useState<TipoTema>("claro");
   const [montado, setMontado] = useState(false);
 
   useEffect(() => {

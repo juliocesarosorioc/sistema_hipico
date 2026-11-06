@@ -91,9 +91,9 @@ export const TEMAS_DISPONIBLES: InfoTema[] = [
 
 const CLAVE_STORAGE = 'club_tema_visual';
 
-/** Obtiene el tema almacenado o 'oscuro' por defecto */
+/** Obtiene el tema almacenado o 'claro' por defecto */
 export function obtenerTemaActual(): TipoTema {
-  if (typeof window === 'undefined') return 'oscuro';
+  if (typeof window === 'undefined') return 'claro';
   try {
     const guardado = localStorage.getItem(CLAVE_STORAGE) as TipoTema;
     if (guardado && TEMAS_DISPONIBLES.some((t) => t.id === guardado)) {
@@ -102,7 +102,7 @@ export function obtenerTemaActual(): TipoTema {
   } catch {
     /* ignore */
   }
-  return 'oscuro';
+  return 'claro';
 }
 
 /** Aplica el tema al elemento raíz html y lo persiste en localStorage */
