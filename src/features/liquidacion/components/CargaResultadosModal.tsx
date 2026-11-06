@@ -145,6 +145,9 @@ export function CargaResultadosModal({
     setFilasRaya(Array.from({ length: minLugares }, () => ""));
     setMotivo("");
     setAlertaDuplicado(null);
+    // Auto-focar la primera casilla de posición al abrir el modal, para que el
+    // operador pueda teclear la llegada de corrido sin usar el mouse.
+    enfocarPosicion(0);
 
     // Precarga: si ya hay resultados cargados para esta carrera (aunque sea de
     // otra sesión, traídos del central), se rellena TODO el formulario en vez
