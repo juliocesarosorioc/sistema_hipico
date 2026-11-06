@@ -961,7 +961,7 @@ body {
 
 
 /* ============================================================================
-   SISTEMA DE TEMAS VISUALES GLOBAL
+   SISTEMA DE TEMAS VISUALES GLOBAL (ALTO CONTRASTE Y MÁXIMA NITIDEZ)
    (1. Oscuro Casino, 2. Claro Diamante, 3. Rojo Rubí, 4. Verde Turf, 5. Azul Cobalto, 6. Astigmatismo)
    ============================================================================ */
 
@@ -970,21 +970,21 @@ body {
 [data-theme="oscuro"] {
   color-scheme: dark;
   --app-bg-rgb: 9 13 22;
-  --app-surface-rgb: 15 23 42;
+  --app-surface-rgb: 17 24 39;
   --app-surface-alt-rgb: 30 41 59;
-  --app-border-rgb: 34 48 73;
+  --app-border-rgb: 42 56 79;
   --app-accent-rgb: 245 158 11;
 
   --app-bg: #090d16;
-  --app-surface: #0f172a;
+  --app-surface: #111827;
   --app-surface-alt: #1e293b;
-  --app-surface-card: #151e32;
-  --app-border: #223049;
-  --app-border-subtle: #1a2538;
+  --app-surface-card: #151f33;
+  --app-border: #2a384f;
+  --app-border-subtle: #1e293b;
 
-  --app-text: #f8fafc;
-  --app-text-muted: #94a3b8;
-  --app-text-dim: #64748b;
+  --app-text: #ffffff;
+  --app-text-muted: #cbd5e1;
+  --app-text-dim: #94a3b8;
 
   --app-accent: #f59e0b;
   --app-accent-hover: #fbbf24;
@@ -992,57 +992,57 @@ body {
   --app-accent-text: #090d16;
   --app-glow: rgba(245, 158, 11, 0.25);
 
-  --app-sidebar-bg: #0b1120;
-  --app-sidebar-surface: #111b2e;
-  --app-sidebar-border: #1e2d47;
-  --app-sidebar-text: #e2e8f0;
-  --app-sidebar-muted: #8092a8;
+  --app-sidebar-bg: #0c1220;
+  --app-sidebar-surface: #151e33;
+  --app-sidebar-border: #22314a;
+  --app-sidebar-text: #ffffff;
+  --app-sidebar-muted: #94a3b8;
   --app-sidebar-active-bg: #f59e0b;
-  --app-sidebar-active-text: #0b1120;
+  --app-sidebar-active-text: #090d16;
 
-  --app-topbar-bg: #0f172a;
-  --app-topbar-border: #223049;
-  --app-topbar-text: #f8fafc;
+  --app-topbar-bg: #111827;
+  --app-topbar-border: #2a384f;
+  --app-topbar-text: #ffffff;
 
-  --app-input-bg: #151e32;
-  --app-input-border: #2c3c58;
-  --app-input-text: #f8fafc;
+  --app-input-bg: #162035;
+  --app-input-border: #334460;
+  --app-input-text: #ffffff;
   --app-input-focus: #f59e0b;
 
-  --app-table-th-bg: #131d33;
-  --app-table-hover: #18233b;
+  --app-table-th-bg: #141d2f;
+  --app-table-hover: #1a263d;
 
   /* Portal mappings */
   --portal-bg: #090d16;
-  --portal-surface: #0f172a;
+  --portal-surface: #111827;
   --portal-surface-card: #1e293b;
   --portal-accent: #f59e0b;
   --portal-accent-hover: #fbbf24;
-  --portal-text: #f8fafc;
-  --portal-text-muted: #94a3b8;
-  --portal-border: #223049;
+  --portal-text: #ffffff;
+  --portal-text-muted: #cbd5e1;
+  --portal-border: #2a384f;
   --portal-glow: rgba(245, 158, 11, 0.25);
 }
 
 /* 2. TEMA CLARO DIAMANTE */
 [data-theme="claro"] {
   color-scheme: light;
-  --app-bg-rgb: 241 245 249;
+  --app-bg-rgb: 248 250 252;
   --app-surface-rgb: 255 255 255;
-  --app-surface-alt-rgb: 226 232 240;
+  --app-surface-alt-rgb: 241 245 249;
   --app-border-rgb: 203 213 225;
   --app-accent-rgb: 37 99 235;
 
-  --app-bg: #f1f5f9;
+  --app-bg: #f8fafc;
   --app-surface: #ffffff;
-  --app-surface-alt: #f8fafc;
+  --app-surface-alt: #f1f5f9;
   --app-surface-card: #ffffff;
   --app-border: #cbd5e1;
   --app-border-subtle: #e2e8f0;
 
   --app-text: #0f172a;
   --app-text-muted: #475569;
-  --app-text-dim: #94a3b8;
+  --app-text-dim: #64748b;
 
   --app-accent: #2563eb;
   --app-accent-hover: #1d4ed8;
@@ -1082,25 +1082,25 @@ body {
   --portal-glow: rgba(37, 99, 235, 0.2);
 }
 
-/* 3. TEMA ROJO RUBÍ (Pasión Hípica) */
+/* 3. TEMA ROJO RUBÍ (Pasión Hípica - Alto Contraste Carbón & Acento Carmesí) */
 [data-theme="rojo"] {
   color-scheme: dark;
-  --app-bg-rgb: 15 5 7;
-  --app-surface-rgb: 28 8 13;
-  --app-surface-alt-rgb: 45 15 21;
-  --app-border-rgb: 76 20 29;
+  --app-bg-rgb: 12 10 12;
+  --app-surface-rgb: 21 18 21;
+  --app-surface-alt-rgb: 32 26 30;
+  --app-border-rgb: 61 28 36;
   --app-accent-rgb: 239 68 68;
 
-  --app-bg: #0f0507;
-  --app-surface: #1c080d;
-  --app-surface-alt: #2d0f15;
-  --app-surface-card: #220a10;
-  --app-border: #4a131c;
-  --app-border-subtle: #360d14;
+  --app-bg: #0c0a0c;
+  --app-surface: #151215;
+  --app-surface-alt: #201a1e;
+  --app-surface-card: #191418;
+  --app-border: #3d1c24;
+  --app-border-subtle: #29151b;
 
-  --app-text: #fff5f5;
-  --app-text-muted: #fca5a5;
-  --app-text-dim: #e28080;
+  --app-text: #ffffff;
+  --app-text-muted: #e2e8f0;
+  --app-text-dim: #94a3b8;
 
   --app-accent: #ef4444;
   --app-accent-hover: #f87171;
@@ -1108,115 +1108,115 @@ body {
   --app-accent-text: #ffffff;
   --app-glow: rgba(239, 68, 68, 0.35);
 
-  --app-sidebar-bg: #140508;
-  --app-sidebar-surface: #20080d;
-  --app-sidebar-border: #3d0f17;
-  --app-sidebar-text: #ffe4e6;
-  --app-sidebar-muted: #f472b6;
+  --app-sidebar-bg: #0e0b0e;
+  --app-sidebar-surface: #1a1418;
+  --app-sidebar-border: #3d1c24;
+  --app-sidebar-text: #ffffff;
+  --app-sidebar-muted: #cbd5e1;
   --app-sidebar-active-bg: #ef4444;
   --app-sidebar-active-text: #ffffff;
 
-  --app-topbar-bg: #1c080d;
-  --app-topbar-border: #4a131c;
-  --app-topbar-text: #fff5f5;
+  --app-topbar-bg: #151215;
+  --app-topbar-border: #3d1c24;
+  --app-topbar-text: #ffffff;
 
-  --app-input-bg: #220a10;
-  --app-input-border: #521620;
-  --app-input-text: #fff5f5;
+  --app-input-bg: #1c1519;
+  --app-input-border: #4a212b;
+  --app-input-text: #ffffff;
   --app-input-focus: #ef4444;
 
-  --app-table-th-bg: #260c12;
-  --app-table-hover: #310f17;
+  --app-table-th-bg: #1c1519;
+  --app-table-hover: #261c22;
 
   /* Portal mappings */
-  --portal-bg: #0f0507;
-  --portal-surface: #1a0a0d;
-  --portal-surface-card: #2c0e14;
+  --portal-bg: #0c0a0c;
+  --portal-surface: #151215;
+  --portal-surface-card: #201a1e;
   --portal-accent: #ef4444;
   --portal-accent-hover: #f87171;
-  --portal-text: #fff5f5;
-  --portal-text-muted: #fca5a5;
-  --portal-border: #5a1921;
+  --portal-text: #ffffff;
+  --portal-text-muted: #e2e8f0;
+  --portal-border: #3d1c24;
   --portal-glow: rgba(239, 68, 68, 0.3);
 }
 
-/* 4. TEMA VERDE TURF (Pista de Grama) */
+/* 4. TEMA VERDE TURF (Pista de Grama - Alto Contraste Obsidiana & Acento Esmeralda) */
 [data-theme="verde"] {
   color-scheme: dark;
-  --app-bg-rgb: 3 18 8;
-  --app-surface-rgb: 7 34 18;
-  --app-surface-alt-rgb: 13 56 30;
-  --app-border-rgb: 19 83 44;
+  --app-bg-rgb: 8 13 10;
+  --app-surface-rgb: 15 23 18;
+  --app-surface-alt-rgb: 23 36 29;
+  --app-border-rgb: 27 66 42;
   --app-accent-rgb: 16 185 129;
 
-  --app-bg: #031208;
-  --app-surface: #072212;
-  --app-surface-alt: #0d381e;
-  --app-surface-card: #0a2d18;
-  --app-border: #13532c;
-  --app-border-subtle: #0d3d20;
+  --app-bg: #080d0a;
+  --app-surface: #0f1712;
+  --app-surface-alt: #17241d;
+  --app-surface-card: #131d17;
+  --app-border: #1b422a;
+  --app-border-subtle: #132e1e;
 
-  --app-text: #f0fdf4;
-  --app-text-muted: #86efac;
-  --app-text-dim: #5bb980;
+  --app-text: #ffffff;
+  --app-text-muted: #e2e8f0;
+  --app-text-dim: #94a3b8;
 
   --app-accent: #10b981;
   --app-accent-hover: #34d399;
   --app-accent-subtle: rgba(16, 185, 129, 0.2);
-  --app-accent-text: #031208;
+  --app-accent-text: #080d0a;
   --app-glow: rgba(16, 185, 129, 0.35);
 
-  --app-sidebar-bg: #04170a;
-  --app-sidebar-surface: #0a2816;
-  --app-sidebar-border: #134e2a;
-  --app-sidebar-text: #dcfce7;
-  --app-sidebar-muted: #6ee7b7;
+  --app-sidebar-bg: #0a100d;
+  --app-sidebar-surface: #132018;
+  --app-sidebar-border: #1b422a;
+  --app-sidebar-text: #ffffff;
+  --app-sidebar-muted: #cbd5e1;
   --app-sidebar-active-bg: #10b981;
-  --app-sidebar-active-text: #031208;
+  --app-sidebar-active-text: #080d0a;
 
-  --app-topbar-bg: #072212;
-  --app-topbar-border: #13532c;
-  --app-topbar-text: #f0fdf4;
+  --app-topbar-bg: #0f1712;
+  --app-topbar-border: #1b422a;
+  --app-topbar-text: #ffffff;
 
-  --app-input-bg: #0a2d18;
-  --app-input-border: #196b39;
-  --app-input-text: #f0fdf4;
+  --app-input-bg: #15221a;
+  --app-input-border: #225637;
+  --app-input-text: #ffffff;
   --app-input-focus: #10b981;
 
-  --app-table-th-bg: #0a2f19;
-  --app-table-hover: #104123;
+  --app-table-th-bg: #121d17;
+  --app-table-hover: #1a2b21;
 
   /* Portal mappings */
-  --portal-bg: #04120a;
-  --portal-surface: #072214;
-  --portal-surface-card: #0c3620;
+  --portal-bg: #080d0a;
+  --portal-surface: #0f1712;
+  --portal-surface-card: #17241d;
   --portal-accent: #10b981;
   --portal-accent-hover: #34d399;
-  --portal-text: #f0fdf4;
-  --portal-text-muted: #86efac;
-  --portal-border: #166534;
+  --portal-text: #ffffff;
+  --portal-text-muted: #e2e8f0;
+  --portal-border: #1b422a;
   --portal-glow: rgba(16, 185, 129, 0.3);
 }
 
-/* 5. TEMA AZUL COBALTO (Zafiro Deportivo) */
+/* 5. TEMA AZUL COBALTO (Zafiro Deportivo - Alto Contraste Noche & Acento Eléctrico) */
 [data-theme="azul"] {
   color-scheme: dark;
-  --app-bg-rgb: 4 13 26;
-  --app-surface-rgb: 8 23 48;
-  --app-surface-alt-rgb: 15 39 80;
-  --app-border-rgb: 23 61 120;
+  --app-bg-rgb: 8 12 20;
+  --app-surface-rgb: 15 23 38;
+  --app-surface-alt-rgb: 23 35 56;
+  --app-border-rgb: 34 56 92;
   --app-accent-rgb: 59 130 246;
 
-  --app-bg: #040d1a;
-  --app-surface: #081730;
-  --app-surface-alt: #0f2750;
-  --app-surface-card: #0b1f40;
-  --app-border: #173d78;
-  --app-border-subtle: #112d58;
+  --app-bg: #080c14;
+  --app-surface: #0f1726;
+  --app-surface-alt: #172338;
+  --app-surface-card: #131d30;
+  --app-border: #22385c;
+  --app-border-subtle: #172842;
 
-  --app-text: #eff6ff;
-  --app-text-muted: #93c5fd;
-  --app-text-dim: #60a5fa;
+  --app-text: #ffffff;
+  --app-text-muted: #e2e8f0;
+  --app-text-dim: #94a3b8;
 
   --app-accent: #3b82f6;
   --app-accent-hover: #60a5fa;
@@ -1224,98 +1224,98 @@ body {
   --app-accent-text: #ffffff;
   --app-glow: rgba(59, 130, 246, 0.35);
 
-  --app-sidebar-bg: #051021;
-  --app-sidebar-surface: #0a1f3d;
-  --app-sidebar-border: #13386b;
-  --app-sidebar-text: #dbeafe;
-  --app-sidebar-muted: #93c5fd;
+  --app-sidebar-bg: #0a101b;
+  --app-sidebar-surface: #121c2e;
+  --app-sidebar-border: #22385c;
+  --app-sidebar-text: #ffffff;
+  --app-sidebar-muted: #cbd5e1;
   --app-sidebar-active-bg: #3b82f6;
   --app-sidebar-active-text: #ffffff;
 
-  --app-topbar-bg: #081730;
-  --app-topbar-border: #173d78;
-  --app-topbar-text: #eff6ff;
+  --app-topbar-bg: #0f1726;
+  --app-topbar-border: #22385c;
+  --app-topbar-text: #ffffff;
 
-  --app-input-bg: #0b1f40;
-  --app-input-border: #1d4ed8;
-  --app-input-text: #eff6ff;
+  --app-input-bg: #142033;
+  --app-input-border: #284470;
+  --app-input-text: #ffffff;
   --app-input-focus: #3b82f6;
 
-  --app-table-th-bg: #0c2349;
-  --app-table-hover: #123062;
+  --app-table-th-bg: #131e33;
+  --app-table-hover: #1b2a47;
 
   /* Portal mappings */
-  --portal-bg: #050e1e;
-  --portal-surface: #0a1832;
-  --portal-surface-card: #10274f;
+  --portal-bg: #080c14;
+  --portal-surface: #0f1726;
+  --portal-surface-card: #172338;
   --portal-accent: #3b82f6;
   --portal-accent-hover: #60a5fa;
-  --portal-text: #eff6ff;
-  --portal-text-muted: #93c5fd;
-  --portal-border: #1d4ed8;
+  --portal-text: #ffffff;
+  --portal-text-muted: #e2e8f0;
+  --portal-border: #22385c;
   --portal-glow: rgba(59, 130, 246, 0.3);
 }
 
-/* 6. TEMA PROTECCIÓN VISUAL (ANTI-ASTIGMATISMO & ANTI-FATIGA) */
+/* 6. TEMA PROTECCIÓN VISUAL (ANTI-ASTIGMATISMO & ANTI-FATIGA - WCAG AAA MATE) */
 [data-theme="astigmatismo"] {
   color-scheme: dark;
-  --app-bg-rgb: 25 21 17;
-  --app-surface-rgb: 36 31 25;
-  --app-surface-alt-rgb: 51 44 36;
-  --app-border-rgb: 77 64 51;
+  --app-bg-rgb: 22 20 18;
+  --app-surface-rgb: 32 28 24;
+  --app-surface-alt-rgb: 43 38 33;
+  --app-border-rgb: 66 57 48;
   --app-accent-rgb: 212 163 115;
 
-  --app-bg: #191511;
-  --app-surface: #241f19;
-  --app-surface-alt: #332c24;
-  --app-surface-card: #2b251e;
-  --app-border: #4d4033;
-  --app-border-subtle: #3d3328;
+  --app-bg: #161412;
+  --app-surface: #201c18;
+  --app-surface-alt: #2b2621;
+  --app-surface-card: #25201b;
+  --app-border: #423930;
+  --app-border-subtle: #2d2620;
 
-  --app-text: #f5ece1;
-  --app-text-muted: #c8bba8;
-  --app-text-dim: #a89a85;
+  --app-text: #ffffff;
+  --app-text-muted: #dcd3c5;
+  --app-text-dim: #a39584;
 
   --app-accent: #d4a373;
   --app-accent-hover: #e0b68a;
   --app-accent-subtle: rgba(212, 163, 115, 0.2);
-  --app-accent-text: #191511;
+  --app-accent-text: #161412;
   --app-glow: rgba(212, 163, 115, 0.25);
 
-  --app-sidebar-bg: #1d1813;
-  --app-sidebar-surface: #29231c;
-  --app-sidebar-border: #42362b;
-  --app-sidebar-text: #ece2d5;
-  --app-sidebar-muted: #b8aa97;
+  --app-sidebar-bg: #181513;
+  --app-sidebar-surface: #24201c;
+  --app-sidebar-border: #423930;
+  --app-sidebar-text: #ffffff;
+  --app-sidebar-muted: #dcd3c5;
   --app-sidebar-active-bg: #d4a373;
-  --app-sidebar-active-text: #191511;
+  --app-sidebar-active-text: #161412;
 
-  --app-topbar-bg: #241f19;
-  --app-topbar-border: #4d4033;
-  --app-topbar-text: #f5ece1;
+  --app-topbar-bg: #201c18;
+  --app-topbar-border: #423930;
+  --app-topbar-text: #ffffff;
 
-  --app-input-bg: #2b251e;
-  --app-input-border: #594a3a;
-  --app-input-text: #f5ece1;
+  --app-input-bg: #28231d;
+  --app-input-border: #52473c;
+  --app-input-text: #ffffff;
   --app-input-focus: #d4a373;
 
-  --app-table-th-bg: #2d261f;
-  --app-table-hover: #383027;
+  --app-table-th-bg: #26211d;
+  --app-table-hover: #312b25;
 
   /* Portal mappings */
-  --portal-bg: #1c1813;
-  --portal-surface: #26211a;
-  --portal-surface-card: #332c23;
+  --portal-bg: #161412;
+  --portal-surface: #201c18;
+  --portal-surface-card: #2b2621;
   --portal-accent: #d4a373;
   --portal-accent-hover: #e0b589;
-  --portal-text: #f5ede1;
-  --portal-text-muted: #c9bea9;
-  --portal-border: #4d4234;
+  --portal-text: #ffffff;
+  --portal-text-muted: #dcd3c5;
+  --portal-border: #423930;
   --portal-glow: rgba(212, 163, 115, 0.2);
 }
 
 /* ============================================================================
-   REGLAS GLOBALES DE ADAPTACIÓN DE INTERFAZ POR TEMA
+   REGLAS GLOBALES DE ADAPTACIÓN DE INTERFAZ POR TEMA (MÁXIMA LEGIBILIDAD)
    ============================================================================ */
 
 /* Transición suave al alternar temas */
@@ -1334,11 +1334,12 @@ footer {
   color: var(--app-text);
 }
 
-/* Tarjetas y superficies blancas pasan al color de superficie del tema */
+/* Tarjetas y superficies */
 [data-theme]:not([data-theme="claro"]) .bg-white:not([data-forzar-blanco]),
 [data-theme]:not([data-theme="claro"]) .bg-surface {
   background-color: var(--app-surface) !important;
   color: var(--app-text);
+  border-color: var(--app-border);
 }
 
 /* Fondos neutros secundarios */
@@ -1355,7 +1356,7 @@ footer {
   color: var(--app-text);
 }
 
-/* Bordes y divisores neutros */
+/* Bordes y divisores nítidos */
 [data-theme]:not([data-theme="claro"]) .border-slate-200,
 [data-theme]:not([data-theme="claro"]) .border-gray-200,
 [data-theme]:not([data-theme="claro"]) .border-slate-300,
@@ -1374,15 +1375,15 @@ footer {
   border-color: var(--app-border) !important;
 }
 
-/* Tipografía neutra de títulos y textos primarios */
+/* Tipografía de máxima legibilidad: blanco puro y brillante para títulos y textos */
 [data-theme]:not([data-theme="claro"]) .text-slate-900,
 [data-theme]:not([data-theme="claro"]) .text-slate-800,
 [data-theme]:not([data-theme="claro"]) .text-gray-900,
 [data-theme]:not([data-theme="claro"]) .text-gray-800 {
-  color: var(--app-text) !important;
+  color: #ffffff !important;
 }
 
-/* Textos secundarios y atenuados */
+/* Textos secundarios legibles y contrastados */
 [data-theme]:not([data-theme="claro"]) .text-slate-700,
 [data-theme]:not([data-theme="claro"]) .text-slate-600,
 [data-theme]:not([data-theme="claro"]) .text-gray-700,
@@ -1397,33 +1398,35 @@ footer {
   color: var(--app-text-dim) !important;
 }
 
-/* Tablas de datos en todos los módulos */
+/* Tablas de datos en todos los módulos: encabezados contrastados y filas nítidas */
 [data-theme]:not([data-theme="claro"]) table th {
   background-color: var(--app-table-th-bg) !important;
-  color: var(--app-text) !important;
+  color: #ffffff !important;
   border-color: var(--app-border) !important;
+  font-weight: 800 !important;
 }
 
 [data-theme]:not([data-theme="claro"]) table td {
   border-color: var(--app-border) !important;
+  color: #ffffff;
 }
 
 [data-theme]:not([data-theme="claro"]) table tr:hover td {
   background-color: var(--app-table-hover) !important;
 }
 
-/* Entradas de formulario: Inputs, Selects, Textareas */
+/* Entradas de formulario: Inputs, Selects, Textareas con texto blanco */
 [data-theme]:not([data-theme="claro"]) input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([data-sin-tema]),
 [data-theme]:not([data-theme="claro"]) select:not([data-sin-tema]),
 [data-theme]:not([data-theme="claro"]) textarea:not([data-sin-tema]) {
   background-color: var(--app-input-bg) !important;
   border-color: var(--app-input-border) !important;
-  color: var(--app-input-text) !important;
+  color: #ffffff !important;
 }
 
 [data-theme]:not([data-theme="claro"]) select option {
   background-color: var(--app-surface) !important;
-  color: var(--app-text) !important;
+  color: #ffffff !important;
 }
 
 [data-theme]:not([data-theme="claro"]) input::placeholder,

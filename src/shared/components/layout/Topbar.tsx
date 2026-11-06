@@ -352,12 +352,22 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
 
       <button
         type="button"
+        disabled={saliendo}
         onClick={() => void cerrarSesion()}
         title="Cerrar Sesión"
-        className="inline-flex items-center gap-1 sm:gap-1.5 rounded-lg border border-danger-500/40 bg-danger-500/10 px-2 sm:px-3 py-1.5 text-xs font-bold text-danger-600 transition-colors hover:bg-danger-500 hover:text-white shrink-0"
+        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-red-500/40 bg-red-500/10 px-3 text-xs font-black text-red-600 shadow-2xs transition-all hover:bg-red-600 hover:text-white hover:border-red-600 active:scale-95 disabled:opacity-50 disabled:pointer-events-none shrink-0 cursor-pointer"
       >
-        <span aria-hidden="true">⏻</span>
-        <span className="hidden sm:inline">Cerrar Sesión</span>
+        {saliendo ? (
+          <>
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-600 border-t-transparent" />
+            <span className="hidden sm:inline">Cerrando…</span>
+          </>
+        ) : (
+          <>
+            <span aria-hidden="true" className="text-sm font-black leading-none">⏻</span>
+            <span className="hidden sm:inline">Cerrar Sesión</span>
+          </>
+        )}
       </button>
       </div>
     </header>

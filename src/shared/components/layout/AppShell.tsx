@@ -12,6 +12,7 @@ import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { esRutaPublica, esRolOperadorExclusivo, esRutaPermitidaOperador } from "@/features/seguridad/lib/capacidades";
 import { sincronizarYAuditarContabilidadCompleta } from "@/features/contabilidad/lib/motor-backfill-retroactivo";
+import { MonitorInactividadSesion } from "@/features/auth/components/MonitorInactividadSesion";
 
 const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
 const ES_SALA = (p: string) => p === "/sala" || p.startsWith("/sala/");
@@ -197,6 +198,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return (
       <div className="min-h-screen bg-background font-sans text-sm text-[var(--app-text)] transition-colors duration-200">
         {children}
+        <MonitorInactividadSesion />
       </div>
     );
   }
@@ -240,6 +242,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <ModalConfirmacionYResultado />
       {/* Widget Asistente Inteligente de Soporte & Escalamiento de Incidencias */}
       <WidgetAsistenteIa />
+      {/* Monitor de inactividad de sesión (15 min con aviso previo a los 14 min) */}
+      <MonitorInactividadSesion />
     </div>
   );
 }
