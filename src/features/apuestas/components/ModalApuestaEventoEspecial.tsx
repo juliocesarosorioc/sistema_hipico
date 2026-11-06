@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useTransition } from "react";
+import { DateInput } from "@/shared/components/ui/DateInput";
 import {
   listarApuestasEventosEspeciales,
   registrarApuestaEventoEspecial,
@@ -320,12 +321,10 @@ export function ModalApuestaEventoEspecial({
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-purple-300 mb-1">
                   Fecha del Evento <span className="text-rose-400">*</span>
                 </label>
-                <input
-                  type="date"
-                  required
+                <DateInput
                   value={fechaEvento}
-                  onChange={(e) => setFechaEvento(e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-purple-400 focus:outline-none"
+                  onFechaChange={(iso) => setFechaEvento(iso)}
+                  className="w-full my-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 />
               </div>
 
