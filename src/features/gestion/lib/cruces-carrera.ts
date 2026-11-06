@@ -54,8 +54,8 @@ export async function cargarOpcionesCrucesPuestos(opts: {
 
   const grupoAnterior = grupo.permite_cruces;
   const reglasGrupo: ModalidadesCruce = {
-    mismoEjemplar: grupo.cruce_mismo_ejemplar ?? grupoAnterior ?? false,
-    diferenteEjemplar: grupo.cruce_diferente_ejemplar ?? grupoAnterior ?? false,
+    mismoEjemplar: grupo.cruce_mismo_ejemplar ?? grupoAnterior ?? true,
+    diferenteEjemplar: grupo.cruce_diferente_ejemplar ?? grupoAnterior ?? true,
   };
   const reglasPorNombre: NonNullable<OpcionesCrucesPuestos["porJugadorPermanente"]> = {};
   for (const cliente of clientes) {
