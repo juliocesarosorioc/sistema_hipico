@@ -10,7 +10,6 @@ import { BotonCargaRapidaSaldo } from "@/features/contabilidad/components/BotonC
 import { RelojNavegador } from "@/shared/components/layout/RelojNavegador";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { rutaLoginConBasePath, limpiarAlmacenamientoSesionLocal } from "@/features/auth/lib/sesion";
-import { ModalGestionRapidaSaldo } from "@/features/contabilidad/components/ModalGestionRapidaSaldo";
 import { conCacheBust } from "@/shared/lib/logos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
 import { listarGruposVenta } from "@/features/grupos/lib/grupos";
@@ -67,7 +66,6 @@ const fmtMomento = (f: string | null): string => {
 export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {}) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
-  const [modalSaldoOperador, setModalSaldoOperador] = useState(false);
   const [novedades, setNovedades] = useState<Novedad[]>([]);
   const [cargando, setCargando] = useState(false);
 
@@ -362,11 +360,6 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         <span className="hidden sm:inline">Cerrar Sesión</span>
       </button>
       </div>
-
-      <ModalGestionRapidaSaldo
-        abierto={modalSaldoOperador}
-        onCerrar={() => setModalSaldoOperador(false)}
-      />
     </header>
   );
 }

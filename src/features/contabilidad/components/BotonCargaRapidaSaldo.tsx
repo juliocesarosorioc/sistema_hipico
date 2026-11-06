@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTema } from "@/shared/hooks/useTema";
 import { contarTareasPendientes } from "@/features/contabilidad/lib/cargas-rapidas-saldo";
 import { ModalCargaRapidaSaldoYAval } from "@/features/contabilidad/components/ModalCargaRapidaSaldoYAval";
 
@@ -8,13 +9,22 @@ export function BotonCargaRapidaSaldo({
   clienteInicialId,
   compacto = false,
   className = "",
+  texto,
 }: {
   clienteInicialId?: string;
   compacto?: boolean;
   className?: string;
+  texto?: string;
 }) {
+  const { tema } = useTema();
   const [modalAbierto, setModalAbierto] = useState(false);
   const [pendientes, setPendientes] = useState(0);
+
+  const esClaro = tema === "claro";
+  const esAstigmatismo = tema === "astigmatismo";
+  const esRojo = tema === "rojo";
+  const esVerde = tema === "verde";
+  const esAzul = tema === "azul";
 
   const actualizarConteo = async () => {
     try {
@@ -32,28 +42,59 @@ export function BotonCargaRapidaSaldo({
     return () => window.removeEventListener("hipico:cargas-rapidas-actualizadas", handler);
   }, []);
 
+  // Estilos visuales adaptativos según el tema activo y fondo de barra
+  let botonClase = "";
+  let badgeClase = "";
+
+  if (esClaro) {
+    botonClase = "border-blue-500/50 bg-blue-50/90 text-blue-900 hover:bg-blue-100 hover:border-blue-600 shadow-xs";
+    badgeClase = "bg-blue-600 text-white";
+  } else if (esAstigmatismo) {
+    botonClase = "border-[#d4a373]/60 bg-[#26211a] text-[#d4a373] hover:bg-[#332c23] hover:border-[#e0b589] shadow-xs";
+    badgeClase = "bg-[#d4a373] text-[#1c1813]";
+  } else if (esRojo) {
+    botonClase = "border-red-500/50 bg-red-950/40 text-red-200 hover:bg-red-900/60 hover:border-red-400 shadow-xs";
+    badgeClase = "bg-red-500 text-white";
+  } else if (esVerde) {
+    botonClase = "border-emerald-500/50 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-900/60 hover:border-emerald-400 shadow-xs";
+    badgeClase = "bg-emerald-500 text-white";
+  } else if (esAzul) {
+    botonClase = "border-blue-500/50 bg-blue-950/40 text-blue-200 hover:bg-blue-900/60 hover:border-blue-400 shadow-xs";
+    badgeClase = "bg-blue-500 text-white";
+  } else {
+    // Oscuro tradicional: En topbar con fondo claro o neutro, contraste garantizado
+    botonClase = "border-amber-500/50 bg-amber-500/15 text-amber-900 hover:bg-amber-500/25 hover:border-amber-600 dark:text-amber-300 dark:hover:text-white shadow-xs";
+    badgeClase = "bg-amber-500 text-slate-950";
+  }
+
+  const textoBoton = texto || "Carga Rápida";
+
   return (
     <>
       <button
         type="button"
         onClick={() => setModalAbierto(true)}
         title="Carga Rápida de Saldo o Aval (Colocar/Sumar Aval, Colocar/Sumar Pozo) sin comprobante inmediato. Queda como tarea pendiente de soporte y verificación."
-        className={`group relative inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-amber-600/20 px-2.5 sm:px-3 py-1.5 text-xs font-black text-amber-300 shadow-sm hover:border-amber-400 hover:bg-amber-500/30 hover:text-white transition-all active:scale-95 shrink-0 ${className}`}
+        className={`group relative inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 sm:px-3 text-xs font-black transition-all active:scale-95 shrink-0 cursor-pointer ${botonClase} ${className}`}
       >
-        <span className="text-sm font-black text-amber-400 group-hover:scale-110 transition-transform">
+        <span className="text-sm font-black transition-transform group-hover:scale-110">
           ⚡
         </span>
         {!compacto && (
-          <span className="hidden sm:inline tracking-tight">
-            Carga Rápida
-          </span>
+          <>
+            <span className="hidden sm:inline tracking-tight font-black">
+              {textoBoton}
+            </span>
+            <span className="sm:hidden font-bold">
+              {textoBoton.replace(" de Saldo", "")}
+            </span>
+          </>
         )}
-        <span className="sm:hidden font-bold">Saldo</span>
 
         {/* Badge de Tareas Pendientes */}
         {pendientes > 0 && (
           <span
-            className="flex items-center justify-center rounded-full bg-amber-400 px-1.5 py-0.2 text-[9px] font-black text-slate-950 shadow-xs animate-pulse"
+            className={`flex items-center justify-center rounded-full px-1.5 py-0.2 text-[9px] font-black shadow-xs animate-pulse ${badgeClase}`}
             title={`${pendientes} carga(s) rápida(s) pendiente(s) de soporte o verificación`}
           >
             {pendientes}

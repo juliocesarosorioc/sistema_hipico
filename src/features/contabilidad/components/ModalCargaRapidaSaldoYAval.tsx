@@ -725,9 +725,11 @@ export function ModalCargaRapidaSaldoYAval({
               <button
                 type="submit"
                 disabled={guardando}
-                className={`w-full rounded-2xl py-3 text-xs font-black uppercase tracking-wider active:scale-95 transition disabled:opacity-50 ${botonPrincipal}`}
+                className={`w-full rounded-2xl py-3 text-xs font-black uppercase tracking-wider active:scale-95 transition disabled:opacity-50 cursor-pointer shadow-md ${botonPrincipal}`}
               >
-                {guardando ? "Acreditando saldo..." : "⚡ Acreditar Saldo Inmediatamente"}
+                {guardando
+                  ? "Acreditando operación..."
+                  : `⚡ Aplicar ${ETIQUETAS_MODALIDAD[modalidad].titulo} Inmediatamente`}
               </button>
             </div>
           </form>
