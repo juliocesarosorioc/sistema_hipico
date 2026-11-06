@@ -14,6 +14,8 @@ interface Props {
   esOperadorOAdmin?: boolean;
   onCitar: (msg: MensajeSala) => void;
   onTomarPropuestaFifo: (msg: MensajeSala, montoOComando: string) => void;
+  onAnularPropuestaUsuario?: (msg: MensajeSala) => void;
+  onAnularPropuestaAdmin?: (msgId: string) => void;
   onEliminarMensajeOperador?: (msgId: string) => void;
 }
 
@@ -26,6 +28,8 @@ export function SalaBurbujaMensaje({
   esOperadorOAdmin,
   onCitar,
   onTomarPropuestaFifo,
+  onAnularPropuestaUsuario,
+  onAnularPropuestaAdmin,
   onEliminarMensajeOperador,
 }: Props) {
   const esMio = mensaje.esMio ?? false;
@@ -36,6 +40,20 @@ export function SalaBurbujaMensaje({
   const esImagenCarrera = mensaje.tipo === "IMAGEN_CARRERA";
   const esPizarra = mensaje.tipo === "PIZARRA";
   const esCerrada = carreraActiva.estado === "CERRADA" || carreraActiva.estado === "LIQUIDADA";
+
+  // Control de expiración de 3 minutos para propuestas
+  const creadoMs = mensaje.created_at ? new Date(mensaje.created_at).getTime() : Date.now();
+  const transcurridoMs = Date.now() - creadoMs;
+  const esExpirada = esPropuesta && transcurridoMs > 3 * 60 * 1000;
+  const esAnulada =
+    esPropuesta &&
+    ((mensaje.monto_disponible ?? 0) <= 0 &&
+      (mensaje.datos_jugada?.estado === "ANULADA" ||
+        mensaje.texto.toLowerCase().includes("anulada") ||
+        mensaje.texto.toLowerCase().includes("se fue")));
+  const tiempoRestanteSeg = Math.max(0, Math.ceil((3 * 60 * 1000 - transcurridoMs) / 1000));
+  const minRest = Math.floor(tiempoRestanteSeg / 60);
+  const segRest = tiempoRestanteSeg % 60;
 
   const horaFmt = mensaje.created_at
     ? new Date(mensaje.created_at).toLocaleTimeString("es-VE", {
@@ -156,7 +174,13 @@ export function SalaBurbujaMensaje({
 
         {/* Tarjeta Interactiva de Propuesta Abierta con FIFO */}
         {esPropuesta && mensaje.datos_jugada && (
-          <div className="mt-2.5 rounded-xl bg-black/40 p-2.5 border border-cyan-500/30">
+          <div className={`mt-2.5 rounded-xl bg-black/40 p-2.5 border transition-all ${
+            esAnulada
+              ? "border-rose-500/40 opacity-75"
+              : esExpirada
+              ? "border-amber-500/40 opacity-75"
+              : "border-cyan-500/30"
+          }`}>
             <div className="flex items-center justify-between text-xs pb-1.5">
               <div className="flex items-center gap-1.5">
                 {(() => {
@@ -164,7 +188,7 @@ export function SalaBurbujaMensaje({
                   return (
                     <span
                       style={{ backgroundColor: gualdrapa.bg, color: gualdrapa.text }}
-                      className="h-6 w-6 rounded-full flex items-center justify-center font-mono font-black text-xs"
+                      className="h-6 w-6 rounded-full flex items-center justify-center font-mono font-black text-xs shadow"
                     >
                       {mensaje.datos_jugada.caballo}
                     </span>
@@ -173,10 +197,30 @@ export function SalaBurbujaMensaje({
                 <span className="font-bold text-white">
                   {mensaje.datos_jugada.jugada} #{mensaje.datos_jugada.caballo}
                 </span>
+
+                {/* Badges de Estado */}
+                {esAnulada && (
+                  <span className="rounded bg-rose-900/90 border border-rose-500/60 px-1.5 py-0.5 text-[9px] font-black uppercase text-rose-200">
+                    🚫 Se fue
+                  </span>
+                )}
+                {esExpirada && !esAnulada && (
+                  <span className="rounded bg-amber-900/90 border border-amber-500/60 px-1.5 py-0.5 text-[9px] font-black uppercase text-amber-200">
+                    ⏳ Vencida (3m)
+                  </span>
+                )}
+                {!esAnulada && !esExpirada && (mensaje.monto_disponible ?? 0) > 0 && (
+                  <span className="text-[10px] text-cyan-300 font-mono flex items-center gap-1">
+                    ⏱️ {minRest}:{String(segRest).padStart(2, "0")}
+                  </span>
+                )}
               </div>
+
               <div className="text-right">
                 <span className="text-[10px] text-[#8696a0] block uppercase font-bold">Disponible</span>
-                <span className="font-mono font-black tabular-nums text-cyan-300">
+                <span className={`font-mono font-black tabular-nums ${
+                  esAnulada ? "line-through text-rose-400" : esExpirada ? "text-amber-400" : "text-cyan-300"
+                }`}>
                   ${Number(mensaje.monto_disponible ?? mensaje.monto_propuesto).toFixed(2)}
                 </span>
               </div>
@@ -186,7 +230,9 @@ export function SalaBurbujaMensaje({
             {mensaje.monto_propuesto && (
               <div className="w-full bg-[#111b21] rounded-full h-1.5 mb-2 overflow-hidden">
                 <div
-                  className="bg-cyan-400 h-1.5 rounded-full transition-all duration-300"
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    esAnulada ? "bg-rose-500" : esExpirada ? "bg-amber-500" : "bg-cyan-400"
+                  }`}
                   style={{
                     width: `${Math.min(
                       100,
@@ -200,48 +246,86 @@ export function SalaBurbujaMensaje({
               </div>
             )}
 
-            {/* Botones FIFO para que otros jugadores tomen la jugada */}
-            {!esMio &&
-              mensaje.autor_nombre.toUpperCase() !== nombreUsuarioActual.toUpperCase() &&
-              !esCerrada &&
-              (mensaje.monto_disponible ?? 1) > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-1 border-t border-[#2a3942]">
-                  <button
-                    type="button"
-                    onClick={() => onTomarPropuestaFifo(mensaje, "J")}
-                    className="flex-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs py-1.5 px-2 shadow active:scale-95 transition-all text-center font-mono tabular-nums"
-                  >
-                    ⚡ Jugar Todo (${Number(mensaje.monto_disponible).toFixed(0)})
-                  </button>
-                  {Number(mensaje.monto_disponible) >= 50 && (
-                    <button
-                      type="button"
-                      onClick={() => onTomarPropuestaFifo(mensaje, "50")}
-                      className="rounded-lg bg-[#2a3942] hover:bg-[#32424b] text-cyan-200 font-bold text-xs py-1.5 px-2.5 font-mono tabular-nums active:scale-95 transition-all"
-                    >
-                      $50
-                    </button>
-                  )}
-                  {Number(mensaje.monto_disponible) >= 20 && (
-                    <button
-                      type="button"
-                      onClick={() => onTomarPropuestaFifo(mensaje, "20")}
-                      className="rounded-lg bg-[#2a3942] hover:bg-[#32424b] text-cyan-200 font-bold text-xs py-1.5 px-2.5 font-mono tabular-nums active:scale-95 transition-all"
-                    >
-                      $20
-                    </button>
-                  )}
-                  {Number(mensaje.monto_disponible) >= 10 && (
-                    <button
-                      type="button"
-                      onClick={() => onTomarPropuestaFifo(mensaje, "10")}
-                      className="rounded-lg bg-[#2a3942] hover:bg-[#32424b] text-cyan-200 font-bold text-xs py-1.5 px-2.5 font-mono tabular-nums active:scale-95 transition-all"
-                    >
-                      $10
-                    </button>
-                  )}
+            {/* Acciones de la propuesta */}
+            <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-[#2a3942]">
+              {/* Botón para que el proponente anule su propia jugada ("Se fue") */}
+              {esMio && !esAnulada && !esExpirada && (mensaje.monto_disponible ?? 0) > 0 && onAnularPropuestaUsuario && (
+                <button
+                  type="button"
+                  onClick={() => onAnularPropuestaUsuario(mensaje)}
+                  className="rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-600/50 text-rose-200 font-bold text-[11px] py-1 px-2.5 active:scale-95 transition-all flex items-center gap-1"
+                >
+                  🚫 Retirar propuesta ("Se fue")
+                </button>
+              )}
+
+              {/* Botón exclusivo para que el Administrador / Operador anule propuestas por error de herramienta */}
+              {esOperadorOAdmin && !esAnulada && onAnularPropuestaAdmin && (
+                <button
+                  type="button"
+                  onClick={() => onAnularPropuestaAdmin(mensaje.id)}
+                  className="rounded-lg bg-amber-950/80 hover:bg-amber-900 border border-amber-600/50 text-amber-200 font-bold text-[11px] py-1 px-2.5 active:scale-95 transition-all flex items-center gap-1 ml-auto"
+                >
+                  ❌ Anular (Admin)
+                </button>
+              )}
+
+              {/* Mensaje de expirada o anulada si no se puede tomar */}
+              {esAnulada && (
+                <div className="text-[11px] text-rose-300 italic w-full text-center py-1">
+                  🚫 Esta propuesta fue retirada por el usuario o administración ("Se fue").
                 </div>
               )}
+              {esExpirada && !esAnulada && (
+                <div className="text-[11px] text-amber-300 italic w-full text-center py-1">
+                  ⏳ La propuesta superó la duración máxima de 3 minutos y ha expirado.
+                </div>
+              )}
+
+              {/* Botones FIFO para que otros jugadores o administradores tomen la jugada */}
+              {!esMio &&
+                !esCerrada &&
+                !esAnulada &&
+                !esExpirada &&
+                (mensaje.monto_disponible ?? 0) > 0 && (
+                  <div className="flex flex-wrap gap-1.5 w-full">
+                    <button
+                      type="button"
+                      onClick={() => onTomarPropuestaFifo(mensaje, "J")}
+                      className="flex-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs py-1.5 px-2 shadow active:scale-95 transition-all text-center font-mono tabular-nums"
+                    >
+                      ⚡ Jugar Todo (${Number(mensaje.monto_disponible).toFixed(0)})
+                    </button>
+                    {Number(mensaje.monto_disponible) >= 50 && (
+                      <button
+                        type="button"
+                        onClick={() => onTomarPropuestaFifo(mensaje, "50")}
+                        className="rounded-lg bg-[#2a3942] hover:bg-[#32424b] text-cyan-200 font-bold text-xs py-1.5 px-2.5 font-mono tabular-nums active:scale-95 transition-all"
+                      >
+                        $50
+                      </button>
+                    )}
+                    {Number(mensaje.monto_disponible) >= 20 && (
+                      <button
+                        type="button"
+                        onClick={() => onTomarPropuestaFifo(mensaje, "20")}
+                        className="rounded-lg bg-[#2a3942] hover:bg-[#32424b] text-cyan-200 font-bold text-xs py-1.5 px-2.5 font-mono tabular-nums active:scale-95 transition-all"
+                      >
+                        $20
+                      </button>
+                    )}
+                    {Number(mensaje.monto_disponible) >= 10 && (
+                      <button
+                        type="button"
+                        onClick={() => onTomarPropuestaFifo(mensaje, "10")}
+                        className="rounded-lg bg-[#2a3942] hover:bg-[#32424b] text-cyan-200 font-bold text-xs py-1.5 px-2.5 font-mono tabular-nums active:scale-95 transition-all"
+                      >
+                        $10
+                      </button>
+                    )}
+                  </div>
+                )}
+            </div>
           </div>
         )}
 

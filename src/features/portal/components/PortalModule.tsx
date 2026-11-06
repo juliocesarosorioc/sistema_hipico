@@ -132,6 +132,7 @@ export function PortalModule() {
 
   useEffect(() => {
     activarProteccionAntiClonacion();
+    try { document.documentElement.setAttribute('data-theme', 'claro'); document.documentElement.classList.add('light-theme'); document.documentElement.classList.remove('dark'); } catch {}
   }, []);
 
   const [autoId, setAutoId] = useState("");

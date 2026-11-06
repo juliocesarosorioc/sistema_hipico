@@ -31,7 +31,20 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("club_tema_visual")||"oscuro";document.documentElement.setAttribute("data-theme",t);if(t==="claro"){document.documentElement.classList.add("light-theme")}else{document.documentElement.classList.add("dark")}}catch(e){}})()`,
+            __html: `(function(){try{
+              var p = window.location.pathname || "";
+              var esPortal = p === "/portal" || p.indexOf("/portal") !== -1;
+              var def = esPortal ? "claro" : "oscuro";
+              var t = esPortal ? "claro" : (localStorage.getItem("club_tema_visual") || def);
+              document.documentElement.setAttribute("data-theme", t);
+              if (t === "claro") {
+                document.documentElement.classList.add("light-theme");
+                document.documentElement.classList.remove("dark");
+              } else {
+                document.documentElement.classList.add("dark");
+                document.documentElement.classList.remove("light-theme");
+              }
+            }catch(e){}})()`,
           }}
         />
       </head>

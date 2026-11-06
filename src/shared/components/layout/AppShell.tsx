@@ -190,7 +190,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (ES_PORTAL(pathname)) {
     return (
-      <div className="min-h-screen bg-background font-sans text-sm text-[var(--app-text)] transition-colors duration-200">
+      <div className="min-h-screen bg-slate-50 font-sans text-sm text-slate-900 transition-colors duration-200">
         {children}
         <MonitorInactividadSesion />
       </div>

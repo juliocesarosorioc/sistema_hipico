@@ -36,7 +36,7 @@ import {
   type FichaEstadoCuentaUnificada,
 } from "@/features/saldos/lib/contabilidad-central";
 import { redondearCentavos } from "@/shared/lib/dinero";
-import { obtenerIpCliente, validarIpSesion } from "@/shared/lib/ip-detector";
+import { obtenerIpCliente } from "@/shared/lib/ip-detector";
 import {
   normalizarEstadoJugada,
   validarGrupoExterno,
@@ -212,6 +212,16 @@ function cacheGuardada(): Cache | null {
   }
 }
 
+function actualizarIpCache(ip: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const c = cacheGuardada();
+    if (c) window.localStorage.setItem(CACHE_KEY, JSON.stringify({ ...c, ip }));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function cerrarSesion(): void {
   if (typeof window !== "undefined") window.localStorage.removeItem(CACHE_KEY);
 }
@@ -229,6 +239,26 @@ export function cerrarSesion(): void {
  * clientes registrados tengan acceso al Portal incluso si la Edge Function no está
  * activa o si el cliente aún no tenía token/clave persistidos en BD.
  */
+/** Identificador comparable: mayúsculas, sin acentos, sin "@", espacios colapsados. */
+function normalizarIdentificador(v: unknown): string {
+  return String(v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/^@+/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+/**
+ * Token / clave comparables: mayúsculas y sin espacios, guiones ni puntos.
+ * Los usuarios copian el código desde WhatsApp con espacios al final o lo
+ * dictan como "TK-12 34"; antes eso bastaba para un rechazo.
+ */
+function normalizarCredencial(v: unknown): string {
+  return String(v ?? "").replace(/[\s\-_.]/g, "").trim().toUpperCase();
+}
+
 async function resolverClientePortalFallback(opts: {
   linkId?: string;
   linkToken?: string;
@@ -238,9 +268,26 @@ async function resolverClientePortalFallback(opts: {
 }): Promise<ClienteRow | null> {
   if (!supabase) return null;
   try {
-    const { data, error } = await supabase.from("clientes").select("*");
-    if (error || !data) return null;
-    const originales = data as ClienteRow[];
+    // PostgREST corta cada consulta en 1000 filas: sin paginar, los clientes que
+    // quedaban más allá de esa posición NUNCA se encontraban y no podían entrar
+    // aunque escribieran todo bien. Se lee la tabla completa por bloques.
+    const originales: ClienteRow[] = [];
+    const BLOQUE = 1000;
+    for (let desde = 0; desde < 50000; desde += BLOQUE) {
+      const { data, error } = await supabase
+        .from("clientes")
+        .select("*")
+        .order("id", { ascending: true })
+        .range(desde, desde + BLOQUE - 1);
+      if (error) {
+        if (originales.length === 0) return null;
+        break;
+      }
+      const lote = (data ?? []) as ClienteRow[];
+      originales.push(...lote);
+      if (lote.length < BLOQUE) break;
+    }
+    if (originales.length === 0) return null;
     const filas = originales.map((c) => {
       const creds = credencialesPortalPorDefecto(c);
       return {
@@ -263,13 +310,13 @@ async function resolverClientePortalFallback(opts: {
       }
     };
 
-    const tkLink = String(opts.linkToken ?? "").trim().toUpperCase();
+    const tkLink = normalizarCredencial(opts.linkToken);
     const idLink = String(opts.linkId ?? "").trim().toLowerCase();
     if (idLink || tkLink) {
       const porId = filas.find((c) => {
         if (c.portal_habilitado === false) return false;
         const cId = String(c.id ?? "").toLowerCase();
-        const cTk = String(c.portal_token ?? "").trim().toUpperCase();
+        const cTk = normalizarCredencial(c.portal_token);
         if (idLink && tkLink) {
           return (cId === idLink || cId.startsWith(idLink)) && cTk === tkLink;
         }
@@ -281,24 +328,41 @@ async function resolverClientePortalFallback(opts: {
         return porId;
       }
     }
-    const u = String(opts.usuario ?? "").trim().toUpperCase();
-    const tk = String(opts.token ?? "").trim().toUpperCase();
-    const cl = String(opts.clave ?? "").trim().toUpperCase();
-    if (u) {
-      const candidato = filas.find(
-        (c) =>
-          String(c.nombre ?? "").trim().toUpperCase() === u ||
-          String(c.seudonimo ?? "").trim().toUpperCase() === u ||
-          String(c.id).toUpperCase() === u ||
-          String(c.id).toUpperCase().startsWith(u)
-      );
-      if (candidato && candidato.portal_habilitado !== false) {
-        const tkCand = String(candidato.portal_token ?? "").trim().toUpperCase();
-        const clCand = String(candidato.portal_clave ?? "").trim().toUpperCase();
-        if ((!tk || tk === tkCand) && (!cl || cl === clCand)) {
-          await sincronizarCredencialesSiFaltan(candidato);
-          return candidato;
-        }
+    const u = normalizarIdentificador(opts.usuario);
+    const tk = normalizarCredencial(opts.token);
+    const cl = normalizarCredencial(opts.clave);
+    // Sin token ni clave no se entra: antes, si ambos campos venían vacíos, la
+    // comparación se saltaba y bastaba con el nombre para abrir el portal.
+    if (u && (tk || cl)) {
+      const uAlfa = u.replace(/[^0-9A-Z]/g, "");
+      const uDigitos = u.replace(/\D/g, "");
+      // Se evalúan TODOS los clientes que coinciden con el identificador, no solo
+      // el primero. Antes `.find` tomaba el primer homónimo (mismo nombre en otro
+      // grupo, o un id que empieza igual) y, al no coincidir su clave, rechazaba
+      // al cliente correcto que venía después en la lista.
+      const candidatos = filas.filter((c) => {
+        if (c.portal_habilitado === false) return false;
+        const raw = c as Record<string, unknown>;
+        const id = String(c.id ?? "").toUpperCase();
+        if (normalizarIdentificador(c.nombre) === u) return true;
+        if (normalizarIdentificador(raw.seudonimo) === u) return true;
+        const completo = normalizarIdentificador(`${c.nombre ?? ""} ${raw.apellido ?? ""}`);
+        if (completo === u) return true;
+        if (id === u || (u.length >= 4 && id.startsWith(u))) return true;
+        const ced = normalizarIdentificador(raw.cedula_rif).replace(/[^0-9A-Z]/g, "");
+        if (uAlfa.length >= 5 && ced && ced === uAlfa) return true;
+        const tel = String(raw.telefono ?? "").replace(/\D/g, "");
+        if (uDigitos.length >= 7 && tel.length >= 7 && (tel.endsWith(uDigitos) || uDigitos.endsWith(tel))) return true;
+        return false;
+      });
+      const valido = candidatos.find((c) => {
+        const tokenOk = !tk || tk === normalizarCredencial(c.portal_token);
+        const claveOk = !cl || cl === normalizarCredencial(c.portal_clave);
+        return tokenOk && claveOk;
+      });
+      if (valido) {
+        await sincronizarCredencialesSiFaltan(valido);
+        return valido;
       }
     }
     return null;
@@ -319,31 +383,39 @@ export async function verificarSesionActiva(
   tokenSesion: string,
   ipSesion?: string
 ): Promise<{ valida: boolean; motivo?: string }> {
-  // Comprobación de IP si viene especificada
-  if (ipSesion && ipSesion !== "IP_LOCAL") {
-    try {
-      const ipActual = await obtenerIpCliente();
-      if (ipActual && ipActual !== "IP_LOCAL" && ipActual !== ipSesion) {
-        return {
-          valida: false,
-          motivo: `Sesión terminada por seguridad: Tu dirección IP cambió a ${ipActual} y no coincide con la IP autorizada (${ipSesion}). Solo se puede operar desde una única dirección IP.`,
-        };
-      }
-    } catch {
-      /* best-effort */
-    }
-  }
-
   if (!supabase) return { valida: true };
   try {
     const idStr = String(clienteId ?? "").trim();
     const { data, error } = await supabase
       .from("clientes")
-      .select("id, portal_token, portal_habilitado, direccion")
+      .select("*")
       .eq("id", idStr)
       .maybeSingle();
 
     if (error || !data) return { valida: true };
+
+    // Control de IP sin falsos bloqueos:
+    //  - Si la IP registrada en BD es OTRA distinta a la de esta sesión, otro
+    //    dispositivo inició sesión después → se cierra esta (una sola conexión).
+    //  - Si solo cambió la IP de ESTE dispositivo (datos móviles, router), la BD
+    //    aún tiene la IP de esta sesión → se re-vincula en silencio, sin expulsar.
+    //    Antes se expulsaba y, al volver a entrar, el login también lo rechazaba.
+    const ipBd = String((data as Record<string, unknown>).portal_ip_autorizada ?? "").trim();
+    if (ipSesion && ipSesion !== "IP_LOCAL" && ipBd && ipBd !== "IP_LOCAL" && ipBd !== ipSesion) {
+      return {
+        valida: false,
+        motivo: "Tu sesión se cerró porque se inició sesión con tu cuenta desde otro dispositivo o red. Solo se permite una conexión activa por usuario.",
+      };
+    }
+    try {
+      const ipActual = await obtenerIpCliente();
+      if (ipActual && ipActual !== "IP_LOCAL" && ipSesion && ipActual !== ipSesion && (!ipBd || ipBd === ipSesion)) {
+        await supabase.from("clientes").update({ portal_ip_autorizada: ipActual } as Record<string, unknown>).eq("id", idStr);
+        actualizarIpCache(ipActual);
+      }
+    } catch {
+      /* best-effort */
+    }
 
     if (data.portal_habilitado === false) {
       return {
@@ -401,15 +473,16 @@ export async function entrarPortal(opts: {
   const clienteRaw = cliente as Record<string, unknown>;
   const ipAutorizada = String(clienteRaw.portal_ip_autorizada ?? clienteRaw.portal_ip_sesion ?? "").trim();
 
-  if (ipAutorizada && ipActual && ipActual !== "IP_LOCAL") {
-    const valIp = validarIpSesion(ipActual, ipAutorizada);
-    if (!valIp.ok) {
-      return {
-        ok: false,
-        error: `Acceso restringido por IP: Este enlace está autorizado exclusivamente para la dirección IP ${ipAutorizada}. Tu IP actual detectada es ${ipActual}. Solo puedes trabajar desde la dirección IP vinculada.`,
-      };
-    }
-  } else if (!ipAutorizada && ipActual && ipActual !== "IP_LOCAL" && supabase) {
+  // Antes, la primera IP con la que entraba el cliente quedaba fija para
+  // siempre y cualquier entrada posterior desde otra IP se rechazaba aunque
+  // usuario, token y clave fueran correctos. Las IP de datos móviles y de los
+  // proveedores residenciales cambian solas (reinicio del router, cambio de
+  // antena), así que muchos clientes quedaban bloqueados sin motivo.
+  // Ahora las credenciales mandan: un ingreso correcto RE-VINCULA la IP actual.
+  // La regla de "una sola conexión activa" se mantiene, porque la sesión
+  // anterior en otro dispositivo queda con una IP distinta a la registrada y
+  // `verificarSesionActiva` la cierra.
+  if (ipActual && ipActual !== "IP_LOCAL" && ipActual !== ipAutorizada && supabase) {
     try {
       await supabase.from("clientes").update({ portal_ip_autorizada: ipActual } as Record<string, unknown>).eq("id", cliente.id);
     } catch {

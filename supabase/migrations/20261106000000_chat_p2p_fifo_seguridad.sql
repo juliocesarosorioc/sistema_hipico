@@ -240,6 +240,16 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'La propuesta ya no existe o fue cancelada.');
   END IF;
 
+  -- 1.1 Validar anulación previa
+  IF COALESCE(v_prop.datos_jugada->>'estado', '') = 'ANULADA' THEN
+    RETURN jsonb_build_object('ok', false, 'error', '🚫 Esta propuesta fue retirada ("Se fue").');
+  END IF;
+
+  -- 1.2 Validar duración máxima de 3 minutos (180 segundos)
+  IF EXTRACT(EPOCH FROM (NOW() - v_prop.created_at)) > 180 THEN
+    RETURN jsonb_build_object('ok', false, 'error', '⏳ Esta propuesta superó la duración máxima de 3 minutos y ha expirado.');
+  END IF;
+
   -- 2. Validar estado de la carrera en el grupo
   SELECT * INTO v_est
   FROM public.chat_estado_grupo

@@ -48,6 +48,7 @@ export interface MensajeSala {
     jugada: string;
     caballo: string;
     contraparte?: string | null;
+    estado?: "ACTIVA" | "ANULADA" | string;
   };
   solo_borrable_operador?: boolean;
   created_at: string;
@@ -339,6 +340,40 @@ export function detectarComandoOperador(texto: string): ComandoOperadorDetectado
   return null;
 }
 
+export const MAX_DURACION_PROPUESTA_MS = 3 * 60 * 1000; // 3 minutos de duración máxima
+
+export function esPropuestaExpirada(createdAt: string): boolean {
+  if (!createdAt) return false;
+  const t = new Date(createdAt).getTime();
+  if (isNaN(t)) return false;
+  return Date.now() - t > MAX_DURACION_PROPUESTA_MS;
+}
+
+export function tiempoRestantePropuestaMs(createdAt: string): number {
+  if (!createdAt) return 0;
+  const t = new Date(createdAt).getTime();
+  if (isNaN(t)) return 0;
+  return Math.max(0, MAX_DURACION_PROPUESTA_MS - (Date.now() - t));
+}
+
+// Comandos de anulación del usuario que propone:
+// "Se fue", "CF", "SF", "Sfue", "sefue", "cancelo", "ya no juego"
+export function detectarAnulacionUsuario(texto: string): boolean {
+  const t = texto.trim().toLowerCase();
+  return /^(?:se\s*fue|cf|sf|sfue|sefue|cancelo|cancelar|anulo|anular|ya\s+no\s+juego|no\s+juego\s+mas)$/i.test(t);
+}
+
+// Comando de anulación administrativa: /anular [id] o citar y decir /anular
+export function detectarComandoAnularAdmin(texto: string): { esAnularAdmin: boolean; propuestaId?: string } {
+  const t = texto.trim();
+  const m = /^(?:\/anular|anular\s+propuesta)(?:\s+([a-zA-Z0-9_\-]+))?$/i.exec(t);
+  if (m) {
+    return { esAnularAdmin: true, propuestaId: m[1] || undefined };
+  }
+  return { esAnularAdmin: false };
+}
+
+
 // ============================================================================
 // PARSER DE PROPUESTAS DE JUGADAS (MÓDULO 3)
 // ============================================================================
@@ -413,3 +448,4 @@ export function parsearPropuestaChat(texto: string): PropuestaParseada | null {
 
   return null;
 }
+

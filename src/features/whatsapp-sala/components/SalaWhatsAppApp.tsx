@@ -18,6 +18,9 @@ import {
   liquidarCarreraChatP2p,
   detectarComandoOperador,
   parsearPropuestaChat,
+  detectarAnulacionUsuario,
+  detectarComandoAnularAdmin,
+  esPropuestaExpirada,
 } from "../lib/chat-p2p";
 import { SalaHeaderWallet } from "./SalaHeaderWallet";
 import { SalaLeftPanelGrupos } from "./SalaLeftPanelGrupos";
@@ -150,8 +153,9 @@ export function SalaWhatsAppApp() {
           if (c && (c.nombre || c.id)) {
             const sesionDetectada: ClienteSesionSala = {
               id: String(c.id),
-              nombre: String(c.nombre || c.seudonimo || "Jugador"),
-              seudonimo: String(c.seudonimo || c.nombre || "Jugador"),
+              // En el chat SIEMPRE se muestra el seudónimo (nunca el nombre real)
+              nombre: String(c.seudonimo || c.nombre || "Jugador").toUpperCase(),
+              seudonimo: String(c.seudonimo || c.nombre || "Jugador").toUpperCase(),
               telefono: String(c.telefono || ""),
               saldo_actual: Number(c.saldo_actual || 0),
               aval: Number(c.aval || 0),
@@ -202,7 +206,9 @@ export function SalaWhatsAppApp() {
         if (guardada) {
           const parsed = JSON.parse(guardada) as ClienteSesionSala;
           if (parsed && parsed.id && parsed.nombre) {
-            setSesion(parsed);
+            // Sesiones guardadas antes de este cambio traían el nombre real
+            const alias = String(parsed.seudonimo || parsed.nombre).toUpperCase();
+            setSesion({ ...parsed, nombre: alias, seudonimo: alias });
             setCargandoAuth(false);
             return;
           }
@@ -250,6 +256,77 @@ export function SalaWhatsAppApp() {
       refrescarSaldo(sesion.id);
     }
   }, [sesion?.id, refrescarSaldo]);
+
+  // Garantiza que la identidad del chat sea el SEUDÓNIMO oficial de la ficha del
+  // cliente (la caché del portal puede venir sin el campo `seudonimo`).
+  useEffect(() => {
+    if (!supabase || !sesion?.id || sesion.id.startsWith("op-")) return;
+    let vivo = true;
+    void (async () => {
+      try {
+        const { data } = await supabase!
+          .from("clientes")
+          .select("seudonimo, nombre")
+          .eq("id", sesion.id)
+          .maybeSingle();
+        const alias = String(data?.seudonimo || data?.nombre || "").trim().toUpperCase();
+        if (vivo && alias && alias !== sesion.nombre) {
+          setSesion((prev) => {
+            if (!prev) return prev;
+            const act = { ...prev, nombre: alias, seudonimo: alias };
+            try {
+              localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(act));
+            } catch {
+              /* ignore */
+            }
+            return act;
+          });
+        }
+      } catch {
+        /* best-effort */
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [sesion?.id, sesion?.nombre]);
+
+  // Mapa autor_id → seudónimo para mostrar SIEMPRE el seudónimo, incluso en
+  // mensajes antiguos que se guardaron con el nombre real.
+  const [seudonimosPorId, setSeudonimosPorId] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!supabase) return;
+    const ids = Array.from(
+      new Set(
+        mensajes
+          .map((m) => m.autor_id)
+          .filter((id): id is string => Boolean(id) && !String(id).startsWith("op-") && !(String(id) in seudonimosPorId))
+      )
+    );
+    if (ids.length === 0) return;
+    void (async () => {
+      try {
+        const { data } = await supabase!.from("clientes").select("id, seudonimo, nombre").in("id", ids);
+        const nuevo: Record<string, string> = {};
+        for (const id of ids) nuevo[id] = "";
+        for (const c of (data ?? []) as Array<{ id: string; seudonimo?: string | null; nombre?: string | null }>) {
+          nuevo[String(c.id)] = String(c.seudonimo || c.nombre || "").trim().toUpperCase();
+        }
+        setSeudonimosPorId((prev) => ({ ...prev, ...nuevo }));
+      } catch {
+        /* best-effort */
+      }
+    })();
+  }, [mensajes, seudonimosPorId]);
+
+  const conSeudonimo = useCallback(
+    (m: MensajeSala | null | undefined): MensajeSala | null => {
+      if (!m) return null;
+      const alias = m.autor_id ? seudonimosPorId[String(m.autor_id)] : "";
+      return alias ? { ...m, autor_nombre: alias } : m;
+    },
+    [seudonimosPorId]
+  );
 
   // 4. Sincronizar grupos desde Supabase
   useEffect(() => {
@@ -536,7 +613,7 @@ export function SalaWhatsAppApp() {
   const ingresarComoClienteDirecto = (cli: any) => {
     const sesionNueva: ClienteSesionSala = {
       id: String(cli.id),
-      nombre: String(cli.nombre || cli.seudonimo || "Jugador").toUpperCase(),
+      nombre: String(cli.seudonimo || cli.nombre || "Jugador").toUpperCase(),
       seudonimo: String(cli.seudonimo || cli.nombre || "Jugador").toUpperCase(),
       telefono: String(cli.telefono || ""),
       saldo_actual: Number(cli.saldo_actual || 0),
@@ -556,6 +633,83 @@ export function SalaWhatsAppApp() {
     setSesion(null);
   };
 
+  const anularPropuestaEnChat = async (propAAnular: MensajeSala, motivo: "USUARIO" | "ADMIN") => {
+    const nowIso = new Date().toISOString();
+    // 1. Marcar como disponible 0 y estado ANULADA en el estado local
+    setMensajes((prev) =>
+      prev.map((m) =>
+        m.id === propAAnular.id
+          ? {
+              ...m,
+              monto_disponible: 0,
+              datos_jugada: m.datos_jugada
+                ? { ...m.datos_jugada, estado: "ANULADA" as const }
+                : undefined,
+            }
+          : m
+      )
+    );
+
+    // 2. Anuncio oficial en el chat del grupo (PÚBLICO PARA TODOS)
+    const avisoTexto =
+      motivo === "USUARIO"
+        ? `🚫 *¡Propuesta Retirada!* @${propAAnular.autor_nombre} retiró su jugada (${propAAnular.datos_jugada?.jugada || "1P"} #${propAAnular.datos_jugada?.caballo || "1"}) ("Se fue").`
+        : `⚠️ *Propuesta Anulada por Administración*: La jugada de @${propAAnular.autor_nombre} (${propAAnular.datos_jugada?.jugada || "1P"} #${propAAnular.datos_jugada?.caballo || "1"}) fue retirada por corrección de herramienta.`;
+
+    const msgAnuncio: MensajeSala = {
+      id: `anul-${Date.now()}`,
+      grupo_id: grupoActivoId,
+      autor_id: null,
+      autor_nombre: "Agente IA Oficial",
+      autor_rol: "BOT",
+      texto: avisoTexto,
+      tipo: "TEXTO",
+      reply_to_msg_id: propAAnular.id,
+      created_at: nowIso,
+      esMio: false,
+    };
+
+    setMensajes((prev) => [...prev, msgAnuncio]);
+
+    // Broadcast a toda la sala
+    canalRealtimeRef.current?.send({
+      type: "broadcast",
+      event: "mensaje_sala",
+      payload: msgAnuncio,
+    });
+
+    if (supabase) {
+      try {
+        await supabase
+          .from("chat_mensajes_sala")
+          .update({
+            monto_disponible: 0,
+            datos_jugada: propAAnular.datos_jugada
+              ? { ...propAAnular.datos_jugada, estado: "ANULADA" }
+              : null,
+          })
+          .eq("id", propAAnular.id);
+
+        await supabase.from("chat_mensajes_sala").insert([
+          {
+            id: msgAnuncio.id,
+            grupo_id: grupoActivoId,
+            autor_nombre: msgAnuncio.autor_nombre,
+            autor_rol: msgAnuncio.autor_rol,
+            texto: msgAnuncio.texto,
+            tipo: msgAnuncio.tipo,
+            reply_to_msg_id: propAAnular.id,
+          },
+        ]);
+      } catch (err: any) {
+        console.warn("[anularPropuestaEnChat] Error:", err?.message);
+      }
+    }
+
+    emitirToast(motivo === "USUARIO" ? "Propuesta retirada ('Se fue')" : "Propuesta anulada por Administración", "success");
+    if (propAAnular.autor_id) refrescarSaldo(propAAnular.autor_id);
+  };
+
   // ──────────────────────────────────────────────────────────────────────────
   // ENVIAR MENSAJE: EL AGENTE IA MODERA, CONVERSA Y EJECUTA EN TIEMPO REAL
   // ──────────────────────────────────────────────────────────────────────────
@@ -570,6 +724,138 @@ export function SalaWhatsAppApp() {
 
     const nowIso = new Date().toISOString();
     const msgId = crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    // ────────────────────────────────────────────────────────────────────────
+    // ANULACIÓN DE PROPUESTA POR EL USUARIO ("Se fue", "CF", "SF", "Sfue", "sefue", etc.)
+    // ────────────────────────────────────────────────────────────────────────
+    if (detectarAnulacionUsuario(texto)) {
+      let propAAnular: MensajeSala | undefined;
+      if (replyId) {
+        propAAnular = mensajes.find((m) => m.id === replyId && m.tipo === "PROPUESTA");
+      }
+      if (!propAAnular) {
+        propAAnular = [...mensajes]
+          .reverse()
+          .find(
+            (m) =>
+              m.tipo === "PROPUESTA" &&
+              m.autor_id === sesion.id &&
+              (m.monto_disponible ?? 0) > 0 &&
+              !esPropuestaExpirada(m.created_at)
+          );
+      }
+
+      if (propAAnular) {
+        await anularPropuestaEnChat(propAAnular, "USUARIO");
+      } else {
+        const msgAviso: MensajeSala = {
+          id: `bot-dm-${Date.now()}`,
+          grupo_id: grupoActivoId,
+          autor_id: null,
+          autor_nombre: "Agente IA Oficial",
+          autor_rol: "BOT",
+          texto: `ℹ️ @${sesion.nombre}: No tienes ninguna propuesta abierta en esta carrera para retirar.`,
+          tipo: "DM_PRIVADO",
+          destinatario_privado_id: sesion.id,
+          created_at: nowIso,
+          esMio: false,
+          esPrivadoParaMi: true,
+        };
+        setMensajes((prev) => [...prev, msgAviso]);
+      }
+      setEnviando(false);
+      return;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // ANULACIÓN ADMINISTRATIVA POR ERROR DE HERRAMIENTA (/anular)
+    // ────────────────────────────────────────────────────────────────────────
+    const cmdAnularAdmin = detectarComandoAnularAdmin(texto);
+    if (cmdAnularAdmin.esAnularAdmin) {
+      if (!sesion.esOperadorOAdmin) {
+        emitirToast("Solo operadores o administradores pueden anular propuestas", "warning");
+        setEnviando(false);
+        return;
+      }
+      let propAAnular = cmdAnularAdmin.propuestaId
+        ? mensajes.find((m) => m.id === cmdAnularAdmin.propuestaId)
+        : replyId
+        ? mensajes.find((m) => m.id === replyId)
+        : [...mensajes].reverse().find((m) => m.tipo === "PROPUESTA" && (m.monto_disponible ?? 0) > 0);
+
+      if (propAAnular) {
+        await anularPropuestaEnChat(propAAnular, "ADMIN");
+      } else {
+        emitirToast("No se encontró ninguna propuesta activa para anular", "warning");
+      }
+      setEnviando(false);
+      return;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MENSAJE DIRECTO (DM) EXCLUSIVO (/dm @usuario mensaje o /privado @usuario mensaje)
+    // ────────────────────────────────────────────────────────────────────────
+    const mDm = /^(?:\/dm|\/privado)\s+@?([a-zA-Z0-9_\-\.]+)\s+([\s\S]+)$/i.exec(texto);
+    if (mDm) {
+      const destNombre = mDm[1].trim().toUpperCase();
+      const dmTexto = mDm[2].trim();
+      const targetCli = clientesDisponibles.find(
+        (c) =>
+          String(c.nombre).toUpperCase() === destNombre ||
+          String(c.seudonimo).toUpperCase() === destNombre ||
+          String(c.id) === destNombre
+      );
+
+      const targetId = targetCli ? String(targetCli.id) : null;
+      if (!targetId) {
+        emitirToast(`No se encontró al usuario @${destNombre} para mensaje directo`, "warning");
+        setEnviando(false);
+        return;
+      }
+
+      const msgDm: MensajeSala = {
+        id: msgId,
+        grupo_id: grupoActivoId,
+        autor_id: sesion.id,
+        autor_nombre: sesion.nombre,
+        autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
+        texto: `🔒 (DM para @${targetCli.nombre || destNombre}): ${dmTexto}`,
+        tipo: "DM_PRIVADO",
+        destinatario_privado_id: targetId,
+        reply_to_msg_id: replyId,
+        created_at: nowIso,
+        esMio: true,
+        esPrivadoParaMi: true,
+      };
+
+      setMensajes((prev) => [...prev, msgDm]);
+      canalRealtimeRef.current?.send({
+        type: "broadcast",
+        event: "mensaje_sala",
+        payload: msgDm,
+      });
+
+      if (supabase) {
+        try {
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              id: msgDm.id,
+              grupo_id: grupoActivoId,
+              autor_id: sesion.id,
+              autor_nombre: sesion.nombre,
+              autor_rol: msgDm.autor_rol,
+              texto: msgDm.texto,
+              tipo: msgDm.tipo,
+              destinatario_privado_id: targetId,
+              reply_to_msg_id: replyId,
+            },
+          ]);
+        } catch { /* noop */ }
+      }
+
+      setEnviando(false);
+      return;
+    }
 
     // ────────────────────────────────────────────────────────────────────────
     // 1. COMANDOS EXCLUSIVOS DE OPERADOR (MÓDULO 4)
@@ -940,11 +1226,44 @@ export function SalaWhatsAppApp() {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // 4. RESPUESTA FIFO CITANDO UNA PROPUESTA
+    // 4. RESPUESTA FIFO CITANDO UNA PROPUESTA (Aceptación pública para toda la sala)
     // ────────────────────────────────────────────────────────────────────────
     if (replyId) {
       const msgPropuesta = mensajes.find((m) => m.id === replyId);
       if (msgPropuesta && msgPropuesta.tipo === "PROPUESTA") {
+        if (esPropuestaExpirada(msgPropuesta.created_at)) {
+          emitirToast("⏳ Esta propuesta superó los 3 minutos de duración y ha expirado.", "warning");
+          setEnviando(false);
+          return;
+        }
+
+        if ((msgPropuesta.monto_disponible ?? 0) <= 0) {
+          emitirToast("Esta parada ya fue completada o retirada.", "warning");
+          setEnviando(false);
+          return;
+        }
+
+        // Mensaje de respuesta del usuario (PÚBLICO PARA TODOS)
+        const msgAceptaUsuario: MensajeSala = {
+          id: msgId,
+          grupo_id: grupoActivoId,
+          autor_id: sesion.id,
+          autor_nombre: sesion.nombre,
+          autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
+          texto: `🗣️ @${sesion.nombre}: Tomo ${texto.toUpperCase() === "J" ? "todo" : `$${texto}`} contra @${msgPropuesta.autor_nombre}`,
+          tipo: "TEXTO",
+          reply_to_msg_id: replyId,
+          created_at: nowIso,
+          esMio: true,
+        };
+
+        setMensajes((prev) => [...prev, msgAceptaUsuario]);
+        canalRealtimeRef.current?.send({
+          type: "broadcast",
+          event: "mensaje_sala",
+          payload: msgAceptaUsuario,
+        });
+
         const resFifo = await procesarRespuestaJugadaFifo({
           grupoId: grupoActivoId,
           propuestaMsgId: replyId,
@@ -956,6 +1275,27 @@ export function SalaWhatsAppApp() {
         if (!resFifo.ok) {
           emitirToast(resFifo.error || "No se pudo concretar la jugada", "warning");
         } else {
+          // Confirmación Oficial de Concreción (PÚBLICA PARA TODOS)
+          const msgConcrecion: MensajeSala = {
+            id: `conc-${Date.now()}`,
+            grupo_id: grupoActivoId,
+            autor_id: null,
+            autor_nombre: "Agente IA Oficial",
+            autor_rol: "BOT",
+            texto: `✅ *¡Jugada Aceptada!* Ticket \`#${resFifo.numero_ticket}\`\n\n👤 **@${sesion.nombre}** casó **$${resFifo.monto_concretado?.toFixed(2)}** contra **@${msgPropuesta.autor_nombre}** en ${msgPropuesta.datos_jugada?.jugada || "1P"} #${msgPropuesta.datos_jugada?.caballo || "1"}.\n${resFifo.parada_completa ? "🏁 *Parada 100% completada.*" : `Quedan **$${resFifo.monto_restante_propuesta?.toFixed(2)}** disponibles.`}`,
+            tipo: "CONCRECION",
+            reply_to_msg_id: replyId,
+            created_at: new Date().toISOString(),
+            esMio: false,
+          };
+
+          setMensajes((prev) => [...prev, msgConcrecion]);
+          canalRealtimeRef.current?.send({
+            type: "broadcast",
+            event: "mensaje_sala",
+            payload: msgConcrecion,
+          });
+
           cargarMensajesYTickets(grupoActivoId, sesion.id);
           refrescarSaldo(sesion.id);
         }
@@ -1059,9 +1399,41 @@ export function SalaWhatsAppApp() {
     setEnviando(false);
   };
 
-  // Tomar propuesta FIFO desde los botones interactivos
+  // Tomar propuesta FIFO desde los botones interactivos (Público para toda la sala)
   const handleTomarPropuestaFifo = async (msgProp: MensajeSala, montoOComando: string) => {
     if (!sesion) return;
+
+    if (esPropuestaExpirada(msgProp.created_at)) {
+      emitirToast("⏳ Esta propuesta superó los 3 minutos de duración y ha expirado.", "warning");
+      return;
+    }
+
+    if ((msgProp.monto_disponible ?? 0) <= 0) {
+      emitirToast("Esta parada ya fue completada o retirada.", "warning");
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    // 1. Mostrar mensaje de respuesta de quien acepta (PÚBLICO PARA TODOS)
+    const msgAcepta: MensajeSala = {
+      id: `acepta-${Date.now()}`,
+      grupo_id: grupoActivoId,
+      autor_id: sesion.id,
+      autor_nombre: sesion.nombre,
+      autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
+      texto: `🗣️ @${sesion.nombre}: Tomo ${montoOComando === "J" ? "toda la parada" : `$${montoOComando}`} contra @${msgProp.autor_nombre}`,
+      tipo: "TEXTO",
+      reply_to_msg_id: msgProp.id,
+      created_at: nowIso,
+      esMio: true,
+    };
+    setMensajes((prev) => [...prev, msgAcepta]);
+    canalRealtimeRef.current?.send({
+      type: "broadcast",
+      event: "mensaje_sala",
+      payload: msgAcepta,
+    });
+
     const res = await procesarRespuestaJugadaFifo({
       grupoId: grupoActivoId,
       propuestaMsgId: msgProp.id,
@@ -1074,8 +1446,43 @@ export function SalaWhatsAppApp() {
       emitirToast(res.error || "No se pudo tomar la propuesta", "warning");
     } else {
       emitirToast(`Ticket #${res.numero_ticket} emitido ($${res.monto_concretado})`, "success");
+
+      // 2. Anuncio oficial de concreción para TODOS
+      const msgConc: MensajeSala = {
+        id: `conc-${Date.now()}`,
+        grupo_id: grupoActivoId,
+        autor_id: null,
+        autor_nombre: "Agente IA Oficial",
+        autor_rol: "BOT",
+        texto: `✅ *¡Jugada Aceptada!* Ticket \`#${res.numero_ticket}\`\n\n👤 **@${sesion.nombre}** casó **$${res.monto_concretado?.toFixed(2)}** contra **@${msgProp.autor_nombre}** en ${msgProp.datos_jugada?.jugada || "1P"} #${msgProp.datos_jugada?.caballo || "1"}.\n${res.parada_completa ? "🏁 *Parada 100% completada.*" : `Quedan **$${res.monto_restante_propuesta?.toFixed(2)}** disponibles.`}`,
+        tipo: "CONCRECION",
+        reply_to_msg_id: msgProp.id,
+        created_at: new Date().toISOString(),
+        esMio: false,
+      };
+
+      setMensajes((prev) => [...prev, msgConc]);
+      canalRealtimeRef.current?.send({
+        type: "broadcast",
+        event: "mensaje_sala",
+        payload: msgConc,
+      });
+
       cargarMensajesYTickets(grupoActivoId, sesion.id);
       refrescarSaldo(sesion.id);
+    }
+  };
+
+  // Manejador para anulación de propuesta por el propio usuario ("Se fue")
+  const handleAnularPropuestaUsuario = (msgProp: MensajeSala) => {
+    void anularPropuestaEnChat(msgProp, "USUARIO");
+  };
+
+  // Manejador para anulación administrativa por error de herramienta
+  const handleAnularPropuestaAdmin = (msgId: string) => {
+    const prop = mensajes.find((m) => m.id === msgId);
+    if (prop) {
+      void anularPropuestaEnChat(prop, "ADMIN");
     }
   };
 
@@ -1299,14 +1706,16 @@ export function SalaWhatsAppApp() {
             return (
               <SalaBurbujaMensaje
                 key={m.id}
-                mensaje={m}
-                mensajeCitado={citado}
+                mensaje={conSeudonimo(m)!}
+                mensajeCitado={conSeudonimo(citado)}
                 carreraActiva={carreraActiva}
                 nombreUsuarioActual={sesion.nombre}
                 tamanoLetra={tamanoLetra}
                 esOperadorOAdmin={sesion.esOperadorOAdmin}
                 onCitar={(msg) => setMensajeCitado(msg)}
                 onTomarPropuestaFifo={handleTomarPropuestaFifo}
+                onAnularPropuestaUsuario={handleAnularPropuestaUsuario}
+                onAnularPropuestaAdmin={handleAnularPropuestaAdmin}
                 onEliminarMensajeOperador={handleEliminarMensajeOperador}
               />
             );

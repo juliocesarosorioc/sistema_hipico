@@ -193,6 +193,21 @@ export function SeccionJugadasPortal({
   const estaBloqueada = Boolean(bloqueos[modalidad]);
   const disponible = sesion.resumen.disponible;
 
+  // Filtrado estricto: SI LAS JUGADAS ESTÁN BLOQUEADAS, NO PUEDE VERLAS NINGÚN CLIENTE
+  const modalidadesVisibles = useMemo(() => {
+    return MODALIDADES_PORTAL_META.filter((m) => !bloqueos[m.id]);
+  }, [bloqueos]);
+
+  // Si la modalidad actual fue bloqueada, saltar a la primera disponible
+  useEffect(() => {
+    if (bloqueos[modalidad]) {
+      const primeraLibre = MODALIDADES_PORTAL_META.find((m) => !bloqueos[m.id]);
+      if (primeraLibre) {
+        setModalidad(primeraLibre.id);
+      }
+    }
+  }, [bloqueos, modalidad]);
+
   const pedirDesbloqueo = async (hipodromo?: string, carrera?: number | string) => {
     setSolicitandoDesbloqueo(true);
     const r = await solicitarDesbloqueoJugada({
@@ -214,13 +229,13 @@ export function SeccionJugadasPortal({
 
   return (
     <div className="space-y-4">
-      {/* Banner Informativo de Jugadas Activas en Vivo */}
+      {/* Banner Informativo de Jugadas Activas en Vivo (solo modalidades no bloqueadas) */}
       <BannerJugadasActivasPortal
-        tablas={tablas}
-        marcas={marcas}
-        dupletas={dupletas}
-        pollas={pollas}
-        remates={remates}
+        tablas={tablas.filter((t) => !bloqueos.tablas_fijas && String(t.estado).toUpperCase() !== "BLOQUEADA")}
+        marcas={marcas.filter((m) => !bloqueos.marcas && String(m.estado).toUpperCase() !== "BLOQUEADA")}
+        dupletas={dupletas.filter((d) => !bloqueos.dupletas && String((d as any).estado).toUpperCase() !== "BLOQUEADA")}
+        pollas={pollas.filter((p) => !bloqueos.pollas && String(p.estado).toUpperCase() !== "BLOQUEADA")}
+        remates={remates.filter((r) => !bloqueos.remates && String(r.estado).toUpperCase() !== "BLOQUEADA")}
         modalidadActiva={modalidad}
         onSeleccionarModalidad={(m) => setModalidad(m)}
       />
@@ -236,7 +251,7 @@ export function SeccionJugadasPortal({
               Comprar Marcas, Tablas Fijas, Puestos, Remates, Dupletas y Pollas
             </h2>
             <p className="text-xs text-indigo-200/80">
-              Seleccioná la modalidad para ver el cuadro oficial de la casa (solo lectura) y registrar tus jugadas.
+              Seleccioná la modalidad para ver el cuadro oficial de la casa y registrar tus jugadas.
             </p>
           </div>
           <div className="flex items-center gap-3 rounded-xl bg-white/10 px-3.5 py-2 border border-white/15">
@@ -260,80 +275,67 @@ export function SeccionJugadasPortal({
           </div>
         </div>
 
-        {/* Selector de las 6 Modalidades */}
-        <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-          {MODALIDADES_PORTAL_META.map((m) => {
-            const activa = modalidad === m.id;
-            const bloq = Boolean(bloqueos[m.id]);
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setModalidad(m.id)}
-                className={`flex flex-col justify-between rounded-xl border p-2.5 text-left transition-all ${
-                  activa
-                    ? "border-amber-400 bg-white text-slate-900 shadow-lg ring-2 ring-amber-400/50"
-                    : "border-white/15 bg-white/10 text-white hover:bg-white/20"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-base">{m.icono}</span>
-                  <span
-                    className={`rounded-full px-1.5 py-0.5 text-[8.5px] font-black uppercase ${
-                      bloq
-                        ? "bg-rose-500 text-white"
-                        : activa
+        {/* Selector de Modalidades Disponibles (las bloqueadas quedan INVISIBLES) */}
+        {modalidadesVisibles.length > 0 ? (
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            {modalidadesVisibles.map((m) => {
+              const activa = modalidad === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setModalidad(m.id)}
+                  className={`flex flex-col justify-between rounded-xl border p-2.5 text-left transition-all ${
+                    activa
+                      ? "border-amber-400 bg-white text-slate-900 shadow-lg ring-2 ring-amber-400/50"
+                      : "border-white/15 bg-white/10 text-white hover:bg-white/20"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-base">{m.icono}</span>
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[8.5px] font-black uppercase ${
+                        activa
                           ? "bg-emerald-600 text-white"
                           : "bg-emerald-500/30 text-emerald-200"
-                    }`}
-                  >
-                    {bloq ? "🔒 Bloqueada" : "🔓 Abierta"}
-                  </span>
-                </div>
-                <div className="mt-1.5">
-                  <div className="text-xs font-black">{m.etiqueta}</div>
-                  <div
-                    className={`text-[9.5px] line-clamp-1 ${
-                      activa ? "text-slate-500" : "text-indigo-200/80"
-                    }`}
-                  >
-                    {m.descripcion}
+                      }`}
+                    >
+                      🔓 Abierta
+                    </span>
                   </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Banner si la modalidad está bloqueada por el Administrador */}
-      {estaBloqueada && (
-        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl leading-none">🔒</span>
-            <div>
-              <h3 className="text-sm font-black text-amber-950 uppercase">
-                Venta de {metaActual.etiqueta} bloqueada temporalmente por el Administrador
-              </h3>
-              <p className="text-xs text-amber-800 mt-0.5">
-                Podés visualizar toda la programación y configuración de {metaActual.etiqueta}, y solicitar al Administrador que habilite la compra.
-              </p>
-            </div>
+                  <div className="mt-1.5">
+                    <div className="text-xs font-black">{m.etiqueta}</div>
+                    <div
+                      className={`text-[9.5px] line-clamp-1 ${
+                        activa ? "text-slate-500" : "text-indigo-200/80"
+                      }`}
+                    >
+                      {m.descripcion}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
-          <Button
-            size="sm"
-            disabled={solicitandoDesbloqueo}
-            onClick={() => void pedirDesbloqueo()}
-            className="bg-amber-600 hover:bg-amber-500 text-white font-black"
-          >
-            {solicitandoDesbloqueo ? "Enviando solicitud…" : "🔓 Solicitar Desbloqueo al Administrador"}
-          </Button>
-        </div>
-      )}
+        ) : (
+          <div className="mt-4 rounded-xl bg-white/5 border border-white/10 p-3 text-center text-xs text-indigo-200">
+            🔒 Todas las modalidades de juego están temporalmente bloqueadas por la Administración.
+          </div>
+        )}
+      </div>
 
       {cargandoCatalogos ? (
         <Card className="p-8 text-center text-sm text-slate-400">
           ⏳ Cargando programación oficial de jugadas…
+        </Card>
+      ) : estaBloqueada || modalidadesVisibles.length === 0 ? (
+        /* Si la modalidad está bloqueada, NINGÚN cliente puede verla ni jugar. Queda 100% invisible */
+        <Card className="p-8 text-center text-sm text-slate-600 bg-white border border-slate-200 shadow-sm">
+          <div className="text-3xl mb-2">🔒</div>
+          <p className="font-bold text-slate-800 text-base">Modalidad no disponible</p>
+          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+            Esta opción de juego se encuentra bloqueada por la Administración.
+          </p>
         </Card>
       ) : (
         <>
