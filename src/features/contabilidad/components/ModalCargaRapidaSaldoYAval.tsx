@@ -47,8 +47,15 @@ export function ModalCargaRapidaSaldoYAval({
 
   const [pestana, setPestana] = useState<"formulario" | "tareas">("formulario");
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
+  
+  // Cliente Origen
   const [busquedaCliente, setBusquedaCliente] = useState("");
   const [clienteId, setClienteId] = useState("");
+
+  // Cliente Destino (para cruces entre jugadores)
+  const [busquedaClienteDestino, setBusquedaClienteDestino] = useState("");
+  const [clienteDestinoId, setClienteDestinoId] = useState("");
+
   const [modalidad, setModalidad] = useState<ModalidadCargaRapida>("SUMAR_POZO");
   const [monto, setMonto] = useState("");
   const [nota, setNota] = useState("");
@@ -132,6 +139,7 @@ export function ModalCargaRapidaSaldoYAval({
     return () => window.removeEventListener("paste", onPaste);
   }, [abierto, soporteModalAbierto]);
 
+  // Cliente Origen seleccionado
   const clienteSeleccionado = useMemo(() => {
     return (
       clientes.find((c) => String(c.id) === String(clienteId)) ||
@@ -146,24 +154,63 @@ export function ModalCargaRapidaSaldoYAval({
     return clientes.filter((c) => c.nombre.toUpperCase().includes(q)).slice(0, 20);
   }, [clientes, busquedaCliente]);
 
-  // Cálculo de vista previa
-  const { valorAnterior, valorNuevo } = useMemo(() => {
-    if (!clienteSeleccionado) return { valorAnterior: 0, valorNuevo: 0 };
+  // Cliente Destino seleccionado (para cruces)
+  const clienteDestinoSeleccionado = useMemo(() => {
+    return (
+      clientes.find((c) => String(c.id) === String(clienteDestinoId)) ||
+      clientes.find((c) => c.nombre.trim().toUpperCase() === busquedaClienteDestino.trim().toUpperCase()) ||
+      null
+    );
+  }, [clientes, clienteDestinoId, busquedaClienteDestino]);
+
+  const clientesDestinoFiltrados = useMemo(() => {
+    const q = busquedaClienteDestino.trim().toUpperCase();
+    const lista = clienteSeleccionado ? clientes.filter((c) => String(c.id) !== String(clienteSeleccionado.id)) : clientes;
+    if (!q) return lista.slice(0, 20);
+    return lista.filter((c) => c.nombre.toUpperCase().includes(q)).slice(0, 20);
+  }, [clientes, busquedaClienteDestino, clienteSeleccionado]);
+
+  // Cálculo de vista previa de impactos
+  const {
+    valorAnterior,
+    valorNuevo,
+    valorDestinoAnterior,
+    valorDestinoNuevo,
+  } = useMemo(() => {
+    if (!clienteSeleccionado) {
+      return { valorAnterior: 0, valorNuevo: 0, valorDestinoAnterior: 0, valorDestinoNuevo: 0 };
+    }
     const m = parseFloat(monto.replace(",", ".")) || 0;
     const saldo = Number(clienteSeleccionado.saldo_actual || 0);
     const aval = Number(clienteSeleccionado.aval || 0);
 
-    if (modalidad === "COLOCAR_AVAL") {
-      return { valorAnterior: aval, valorNuevo: m };
+    if (modalidad === "CRUCE_JUGADORES") {
+      const saldoDest = clienteDestinoSeleccionado ? Number(clienteDestinoSeleccionado.saldo_actual || 0) : 0;
+      return {
+        valorAnterior: saldo,
+        valorNuevo: saldo - m,
+        valorDestinoAnterior: saldoDest,
+        valorDestinoNuevo: saldoDest + m,
+      };
     }
-    if (modalidad === "SUMAR_AVAL") {
-      return { valorAnterior: aval, valorNuevo: aval + m };
+    if (modalidad === "SUMAR_POZO") {
+      return { valorAnterior: saldo, valorNuevo: saldo + m, valorDestinoAnterior: 0, valorDestinoNuevo: 0 };
+    }
+    if (modalidad === "DISMINUIR_POZO") {
+      return { valorAnterior: saldo, valorNuevo: saldo - m, valorDestinoAnterior: 0, valorDestinoNuevo: 0 };
     }
     if (modalidad === "COLOCAR_POZO") {
-      return { valorAnterior: saldo, valorNuevo: m };
+      return { valorAnterior: saldo, valorNuevo: m, valorDestinoAnterior: 0, valorDestinoNuevo: 0 };
     }
-    return { valorAnterior: saldo, valorNuevo: saldo + m };
-  }, [clienteSeleccionado, modalidad, monto]);
+    if (modalidad === "SUMAR_AVAL") {
+      return { valorAnterior: aval, valorNuevo: aval + m, valorDestinoAnterior: 0, valorDestinoNuevo: 0 };
+    }
+    if (modalidad === "DISMINUIR_AVAL") {
+      return { valorAnterior: aval, valorNuevo: Math.max(0, aval - m), valorDestinoAnterior: 0, valorDestinoNuevo: 0 };
+    }
+    // COLOCAR_AVAL
+    return { valorAnterior: aval, valorNuevo: m, valorDestinoAnterior: 0, valorDestinoNuevo: 0 };
+  }, [clienteSeleccionado, clienteDestinoSeleccionado, modalidad, monto]);
 
   if (!abierto || !montado) return null;
 
@@ -181,9 +228,21 @@ export function ModalCargaRapidaSaldoYAval({
     setError(null);
 
     if (!clienteSeleccionado) {
-      setError("Seleccione un cliente de la lista.");
+      setError("Seleccione el cliente para la operación.");
       return;
     }
+
+    if (modalidad === "CRUCE_JUGADORES") {
+      if (!clienteDestinoSeleccionado) {
+        setError("Seleccione el cliente destino a quien se le acreditará el saldo.");
+        return;
+      }
+      if (String(clienteDestinoSeleccionado.id) === String(clienteSeleccionado.id)) {
+        setError("El cliente origen y destino deben ser diferentes.");
+        return;
+      }
+    }
+
     const montoNum = parseFloat(monto.replace(",", "."));
     if (!Number.isFinite(montoNum) || montoNum <= 0) {
       setError("Ingrese un monto válido mayor a 0.");
@@ -195,6 +254,8 @@ export function ModalCargaRapidaSaldoYAval({
       const res = await realizarCargaRapidaSaldoYAval({
         cliente_id: String(clienteSeleccionado.id),
         cliente_nombre: clienteSeleccionado.nombre,
+        cliente_destino_id: modalidad === "CRUCE_JUGADORES" && clienteDestinoSeleccionado ? String(clienteDestinoSeleccionado.id) : undefined,
+        cliente_destino_nombre: modalidad === "CRUCE_JUGADORES" && clienteDestinoSeleccionado ? clienteDestinoSeleccionado.nombre : undefined,
         modalidad,
         monto: montoNum,
         nota: nota.trim(),
@@ -204,22 +265,17 @@ export function ModalCargaRapidaSaldoYAval({
       });
 
       if (!res.ok) {
-        setError(res.error || "No se pudo realizar la carga rápida.");
+        setError(res.error || "No se pudo realizar la operación.");
         return;
       }
 
-      emitirToast(
-        `⚡ ${ETIQUETAS_MODALIDAD[modalidad].titulo} aplicada con éxito a ${clienteSeleccionado.nombre}: $${valorAnterior.toFixed(
-          2
-        )} → $${valorNuevo.toFixed(2)}. ${
-          captureDataUrl
-            ? "Comprobante preliminar registrado."
-            : "Queda registrada como tarea pendiente para anexar soporte."
-        }`,
-        "success"
-      );
+      const mensajeExito = modalidad === "CRUCE_JUGADORES"
+        ? `🔄 Cruce aplicado: $${montoNum.toFixed(2)} transferidos de ${clienteSeleccionado.nombre} a ${clienteDestinoSeleccionado?.nombre}.`
+        : `⚡ ${ETIQUETAS_MODALIDAD[modalidad].titulo} aplicada a ${clienteSeleccionado.nombre}: $${valorAnterior.toFixed(2)} → $${valorNuevo.toFixed(2)}.`;
 
-      // Limpiar y resetear
+      emitirToast(mensajeExito, "success");
+
+      // Limpiar formulario
       setMonto("");
       setNota("");
       setCaptureDataUrl("");
@@ -258,7 +314,7 @@ export function ModalCargaRapidaSaldoYAval({
     });
 
     if (res.ok) {
-      emitirToast("📋 Soporte anexado correctamente a la carga rápida.", "success");
+      emitirToast("📋 Soporte anexado correctamente a la operación.", "success");
       setSoporteModalAbierto(false);
       setTareaSeleccionada(null);
       void cargarDatos();
@@ -270,10 +326,10 @@ export function ModalCargaRapidaSaldoYAval({
   const handleVerificarAdmin = async (id: string) => {
     const res = await verificarCargaRapidaAdmin(id);
     if (res.ok) {
-      emitirToast("✅ Incremento de saldo verificado y conciliado por administración.", "success");
+      emitirToast("🟢 Operación verificada y conciliada por administración.", "success");
       void cargarDatos();
     } else {
-      emitirToast(res.error || "No se pudo verificar el registro.", "error");
+      emitirToast(res.error || "No se pudo verificar la operación.", "error");
     }
   };
 
@@ -354,12 +410,12 @@ export function ModalCargaRapidaSaldoYAval({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto bg-black/75 p-3 sm:p-5 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto bg-black/80 p-3 sm:p-5 backdrop-blur-md animate-fadeIn"
       role="dialog"
       aria-modal="true"
     >
-      <div className={`relative w-full max-w-3xl overflow-hidden rounded-3xl border transition-colors ${modalBg}`}>
-        {/* Cabecera Adaptativa */}
+      <div className={`relative w-full max-w-4xl overflow-hidden rounded-3xl border transition-colors ${modalBg}`}>
+        {/* Cabecera Unificada con Nombre de Una Sola Palabra: "Saldos" */}
         <div className={`p-5 transition-colors ${cabeceraBg}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -369,18 +425,18 @@ export function ModalCargaRapidaSaldoYAval({
                 ⚡
               </span>
               <div>
-                <h2 className="text-lg font-black tracking-tight leading-tight">
-                  Carga Rápida de Saldo & Aval
+                <h2 className="text-xl font-black tracking-tight leading-tight">
+                  Saldos
                 </h2>
                 <p className={`text-xs ${esClaro ? "text-slate-500 font-medium" : esAstigmatismo ? "text-[#c9bea9]" : "text-amber-300"}`}>
-                  Acredita saldo o aval de inmediato · Comprobante diferido como tarea pendiente
+                  Acreditaciones, disminuciones, avales y cruces entre jugadores en tiempo real
                 </p>
               </div>
             </div>
             <button
               type="button"
               onClick={onCerrar}
-              className={`h-8 w-8 rounded-full flex items-center justify-center transition ${
+              className={`h-8 w-8 rounded-full flex items-center justify-center transition cursor-pointer ${
                 esClaro ? "bg-slate-200 text-slate-600 hover:bg-slate-300" : "bg-white/10 text-slate-400 hover:text-white"
               }`}
             >
@@ -388,12 +444,12 @@ export function ModalCargaRapidaSaldoYAval({
             </button>
           </div>
 
-          {/* Pestañas de Navegación Adaptativas */}
+          {/* Pestañas de Navegación */}
           <div className={`mt-4 flex gap-2 border-b ${esClaro ? "border-slate-200" : "border-slate-800"}`}>
             <button
               type="button"
               onClick={() => setPestana("formulario")}
-              className={`pb-2 px-3 text-xs font-black uppercase tracking-wider transition border-b-2 ${
+              className={`pb-2 px-3 text-xs font-black uppercase tracking-wider transition border-b-2 cursor-pointer ${
                 pestana === "formulario"
                   ? esClaro
                     ? "border-blue-600 text-blue-600"
@@ -405,12 +461,12 @@ export function ModalCargaRapidaSaldoYAval({
                   : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
-              ⚡ Nueva Carga Rápida
+              ⚡ Operaciones de Saldo
             </button>
             <button
               type="button"
               onClick={() => setPestana("tareas")}
-              className={`pb-2 px-3 text-xs font-black uppercase tracking-wider transition border-b-2 flex items-center gap-1.5 ${
+              className={`pb-2 px-3 text-xs font-black uppercase tracking-wider transition border-b-2 flex items-center gap-1.5 cursor-pointer ${
                 pestana === "tareas"
                   ? esClaro
                     ? "border-blue-600 text-blue-600"
@@ -422,7 +478,7 @@ export function ModalCargaRapidaSaldoYAval({
                   : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
-              <span>📋 Tareas Pendientes & Auditoría</span>
+              <span>📋 Auditoría & Tareas</span>
               {tareasPendientesTotal > 0 && (
                 <span className={`rounded-full px-2 py-0.2 text-[10px] font-black ${
                   esClaro ? "bg-blue-600 text-white" : "bg-amber-500 text-slate-950"
@@ -435,34 +491,20 @@ export function ModalCargaRapidaSaldoYAval({
         </div>
 
         {/* =========================================================================
-            PESTAÑA 1: FORMULARIO DE CARGA RÁPIDA
+            PESTAÑA 1: FORMULARIO PRINCIPAL DE SALDOS
             ========================================================================= */}
         {pestana === "formulario" && (
           <form onSubmit={handleCargaRapida} className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
             {error && (
-              <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-600 font-bold">
+              <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-500 font-bold">
                 ⚠️ {error}
               </div>
             )}
 
-            {/* Aviso de Sin Comprobante / Tarea Pendiente */}
-            <div className={`rounded-2xl border p-3.5 text-xs leading-relaxed flex items-start gap-3 ${
-              esClaro
-                ? "border-blue-200 bg-blue-50/80 text-blue-900"
-                : esAstigmatismo
-                ? "border-[#d4a373]/40 bg-[#d4a373]/10 text-[#f5ede1]"
-                : "border-amber-500/30 bg-amber-500/10 text-amber-200"
-            }`}>
-              <span className="text-xl">ℹ️</span>
-              <div className="flex-1">
-                <span className="font-bold">No se necesita comprobante en este momento:</span> El saldo o aval se acreditará inmediatamente en la cuenta del cliente para que no se detenga. Quedará registrado como <b>tarea pendiente</b> para que el operador anexe el voucher o la administración verifique el incremento.
-              </div>
-            </div>
-
-            {/* Selector de Cliente */}
+            {/* Selector de Cliente Origen */}
             <div>
               <label className={`block text-[11px] font-black uppercase mb-1 ${labelColor}`}>
-                Cliente / Jugador / Sala *
+                {modalidad === "CRUCE_JUGADORES" ? "1. Jugador Origen (de quien se debita el saldo) *" : "Cliente / Jugador / Sala *"}
               </label>
               <div className="relative">
                 <input
@@ -477,7 +519,7 @@ export function ModalCargaRapidaSaldoYAval({
                   className={`w-full rounded-xl border px-3.5 py-2.5 text-xs font-bold outline-none transition ${inputClase}`}
                 />
                 {busquedaCliente && !clienteSeleccionado && (
-                  <div className={`absolute left-0 right-0 top-full mt-1 z-20 max-h-48 overflow-y-auto rounded-xl border p-1 shadow-2xl ${
+                  <div className={`absolute left-0 right-0 top-full mt-1 z-30 max-h-48 overflow-y-auto rounded-xl border p-1 shadow-2xl ${
                     esClaro ? "border-slate-300 bg-white" : "border-slate-700 bg-slate-900"
                   }`}>
                     {clientesFiltrados.map((c) => (
@@ -488,7 +530,7 @@ export function ModalCargaRapidaSaldoYAval({
                           setClienteId(String(c.id));
                           setBusquedaCliente(c.nombre);
                         }}
-                        className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between transition ${
+                        className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between transition cursor-pointer ${
                           esClaro ? "hover:bg-slate-100 text-slate-800" : "hover:bg-slate-800 text-white"
                         }`}
                       >
@@ -521,13 +563,13 @@ export function ModalCargaRapidaSaldoYAval({
             </div>
 
             {/* ============================================================= */}
-            {/* LAS 4 MODALIDADES: SELECCIONE LA OPERACIÓN A REALIZAR *       */}
+            {/* LAS 7 MODALIDADES DE OPERACIÓN                                */}
             {/* ============================================================= */}
             <div>
               <label className={`block text-[11px] font-black uppercase mb-2 ${labelColor}`}>
                 Seleccione la Operación a Realizar *
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                 {(Object.keys(ETIQUETAS_MODALIDAD) as ModalidadCargaRapida[]).map((mod) => {
                   const cfg = ETIQUETAS_MODALIDAD[mod];
                   const sel = modalidad === mod;
@@ -568,16 +610,16 @@ export function ModalCargaRapidaSaldoYAval({
                       key={mod}
                       type="button"
                       onClick={() => setModalidad(mod)}
-                      className={`relative flex items-center gap-3.5 p-3.5 rounded-2xl text-left transition-all min-h-[82px] cursor-pointer ${tarjetaClase}`}
+                      className={`relative flex items-center gap-3 p-3 rounded-2xl text-left transition-all min-h-[76px] cursor-pointer ${tarjetaClase}`}
                     >
-                      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl shadow-xs ${
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg shadow-xs ${
                         sel
                           ? esClaro ? "bg-blue-600 text-white" : "bg-white/20"
                           : esClaro ? "bg-white border border-slate-200" : "bg-black/30"
                       }`}>
                         {cfg.emoji}
                       </div>
-                      <div className="flex-1 min-w-0 pr-6">
+                      <div className="flex-1 min-w-0 pr-5">
                         <div className={`font-black text-xs uppercase leading-tight ${
                           sel
                             ? esClaro ? "text-blue-950 font-black" : "text-white font-black"
@@ -585,7 +627,7 @@ export function ModalCargaRapidaSaldoYAval({
                         }`}>
                           {cfg.titulo}
                         </div>
-                        <p className={`mt-1 text-[11px] leading-snug line-clamp-2 ${
+                        <p className={`mt-0.5 text-[10px] leading-snug line-clamp-2 ${
                           sel
                             ? esClaro ? "text-blue-900 font-medium" : "text-slate-200"
                             : esClaro ? "text-slate-500" : "text-slate-400"
@@ -594,7 +636,7 @@ export function ModalCargaRapidaSaldoYAval({
                         </p>
                       </div>
                       {sel && (
-                        <div className={`absolute top-2.5 right-2.5 flex h-5 w-5 items-center justify-center rounded-full text-xs shadow-xs ${
+                        <div className={`absolute top-2 right-2 flex h-4 w-4 items-center justify-center rounded-full text-[10px] shadow-xs ${
                           esClaro ? "bg-blue-600 text-white" : esAstigmatismo ? "bg-[#d4a373] text-[#1c1813]" : "bg-amber-400 text-slate-950"
                         }`}>
                           <span className="font-black">✓</span>
@@ -606,7 +648,66 @@ export function ModalCargaRapidaSaldoYAval({
               </div>
             </div>
 
-            {/* Monto y Cálculo */}
+            {/* Si es CRUCE ENTRE JUGADORES: Selector de Cliente Destino */}
+            {modalidad === "CRUCE_JUGADORES" && (
+              <div className={`p-4 rounded-2xl border transition ${
+                esClaro ? "border-indigo-200 bg-indigo-50/70" : "border-indigo-500/30 bg-indigo-950/30"
+              }`}>
+                <label className={`block text-[11px] font-black uppercase mb-1 ${labelColor}`}>
+                  2. Jugador Destino (a quien se le acreditará el saldo) *
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={busquedaClienteDestino}
+                    onChange={(e) => {
+                      setBusquedaClienteDestino(e.target.value);
+                      setClienteDestinoId("");
+                    }}
+                    placeholder="Escriba el nombre del jugador receptor..."
+                    className={`w-full rounded-xl border px-3.5 py-2 text-xs font-bold outline-none transition ${inputClase}`}
+                  />
+                  {busquedaClienteDestino && !clienteDestinoSeleccionado && (
+                    <div className={`absolute left-0 right-0 top-full mt-1 z-30 max-h-48 overflow-y-auto rounded-xl border p-1 shadow-2xl ${
+                      esClaro ? "border-slate-300 bg-white" : "border-slate-700 bg-slate-900"
+                    }`}>
+                      {clientesDestinoFiltrados.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setClienteDestinoId(String(c.id));
+                            setBusquedaClienteDestino(c.nombre);
+                          }}
+                          className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between transition cursor-pointer ${
+                            esClaro ? "hover:bg-slate-100 text-slate-800" : "hover:bg-slate-800 text-white"
+                          }`}
+                        >
+                          <span className="font-bold">{c.nombre}</span>
+                          <span className="text-[10px] text-emerald-500 font-bold">
+                            Pozo: ${Number(c.saldo_actual || 0).toFixed(2)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {clienteDestinoSeleccionado && (
+                  <div className={`mt-2 flex items-center justify-between text-xs rounded-lg p-2 border ${cardSecundariaBg}`}>
+                    <span>
+                      📥 Receptor: <b>{clienteDestinoSeleccionado.nombre}</b>
+                    </span>
+                    <span>
+                      Pozo actual: <b className="text-emerald-500">${Number(clienteDestinoSeleccionado.saldo_actual || 0).toFixed(2)}</b>
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Monto y Previsualización de Impacto */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
               <div>
                 <label className={`block text-[11px] font-black uppercase mb-1 ${labelColor}`}>
@@ -631,14 +732,40 @@ export function ModalCargaRapidaSaldoYAval({
 
               {/* Vista previa en tiempo real */}
               <div className={`rounded-xl border p-3 text-xs transition ${cardSecundariaBg}`}>
-                <div className={`text-[10px] uppercase font-bold ${esClaro ? "text-slate-500" : "text-slate-400"}`}>
-                  {ETIQUETAS_MODALIDAD[modalidad].campo === "aval" ? "Aval del Cliente" : "Pozo del Cliente"}
-                </div>
-                <div className="mt-1 flex items-center gap-2 font-black text-sm">
-                  <span className={esClaro ? "text-slate-500" : "text-slate-400"}>${valorAnterior.toFixed(2)}</span>
-                  <span className={esClaro ? "text-slate-400" : "text-slate-500"}>→</span>
-                  <span className="text-emerald-500 text-base font-black">${valorNuevo.toFixed(2)}</span>
-                </div>
+                {modalidad === "CRUCE_JUGADORES" ? (
+                  <div>
+                    <div className="text-[10px] uppercase font-bold text-indigo-400 mb-1">
+                      Transferencia de Saldo:
+                    </div>
+                    <div className="space-y-0.5 text-[11px]">
+                      <div>
+                        {clienteSeleccionado ? clienteSeleccionado.nombre : "Origen"}:{" "}
+                        <span className="text-slate-400">${valorAnterior.toFixed(2)}</span> →{" "}
+                        <span className="text-rose-500 font-black">${valorNuevo.toFixed(2)}</span>
+                      </div>
+                      <div>
+                        {clienteDestinoSeleccionado ? clienteDestinoSeleccionado.nombre : "Destino"}:{" "}
+                        <span className="text-slate-400">${valorDestinoAnterior.toFixed(2)}</span> →{" "}
+                        <span className="text-emerald-500 font-black">${valorDestinoNuevo.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className={`text-[10px] uppercase font-bold ${esClaro ? "text-slate-500" : "text-slate-400"}`}>
+                      {ETIQUETAS_MODALIDAD[modalidad].campo === "aval" ? "Aval del Cliente" : "Pozo del Cliente"}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 font-black text-sm">
+                      <span className={esClaro ? "text-slate-500" : "text-slate-400"}>${valorAnterior.toFixed(2)}</span>
+                      <span className={esClaro ? "text-slate-400" : "text-slate-500"}>→</span>
+                      <span className={`text-base font-black ${
+                        modalidad.includes("DISMINUIR") ? "text-rose-500" : "text-emerald-500"
+                      }`}>
+                        ${valorNuevo.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -651,7 +778,7 @@ export function ModalCargaRapidaSaldoYAval({
                 type="text"
                 value={nota}
                 onChange={(e) => setNota(e.target.value)}
-                placeholder="Ej: Autorizado por José vía llamada / Pago pendiente de reporte..."
+                placeholder="Ej: Cobro en taquilla / Cruce solicitado por mensaje / Ajuste autorizado..."
                 className={`w-full rounded-xl border px-3 py-2 text-xs outline-none transition ${inputClase}`}
               />
             </div>
@@ -660,13 +787,13 @@ export function ModalCargaRapidaSaldoYAval({
             <div className={`rounded-2xl border p-3.5 space-y-2.5 transition ${cardSecundariaBg}`}>
               <div className="flex items-center justify-between">
                 <span className={`text-[11px] font-bold ${esClaro ? "text-slate-700" : "text-slate-300"}`}>
-                  📎 Anexar Comprobante Ahora (Opcional · Puedes hacerlo después)
+                  📎 Anexar Comprobante (Opcional · Puedes hacerlo después)
                 </span>
                 {captureDataUrl && (
                   <button
                     type="button"
                     onClick={() => setCaptureDataUrl("")}
-                    className="text-[10px] text-red-500 font-bold hover:underline"
+                    className="text-[10px] text-red-500 font-bold hover:underline cursor-pointer"
                   >
                     Quitar comprobante
                   </button>
@@ -711,7 +838,7 @@ export function ModalCargaRapidaSaldoYAval({
                       type="text"
                       value={bancoNombre}
                       onChange={(e) => setBancoNombre(e.target.value)}
-                      placeholder="Banco (ej: Banesco)"
+                      placeholder="Banco / Vía"
                       className={`rounded-lg border px-2 py-1 text-[11px] ${inputClase}`}
                     />
                     <input
@@ -734,7 +861,9 @@ export function ModalCargaRapidaSaldoYAval({
                 className={`w-full rounded-2xl py-3 text-xs font-black uppercase tracking-wider active:scale-95 transition disabled:opacity-50 cursor-pointer shadow-md ${botonPrincipal}`}
               >
                 {guardando
-                  ? "Acreditando operación..."
+                  ? "Procesando operación..."
+                  : modalidad === "CRUCE_JUGADORES"
+                  ? `🔄 Realizar Cruce de $${monto || "0.00"} entre Jugadores`
                   : `⚡ Aplicar ${ETIQUETAS_MODALIDAD[modalidad].titulo} Inmediatamente`}
               </button>
             </div>
@@ -742,76 +871,40 @@ export function ModalCargaRapidaSaldoYAval({
         )}
 
         {/* =========================================================================
-            PESTAÑA 2: TAREAS PENDIENTES & AUDITORÍA
+            PESTAÑA 2: LISTA DE AUDITORÍA Y TAREAS PENDIENTES
             ========================================================================= */}
         {pestana === "tareas" && (
           <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
             {/* Filtros de Estado */}
-            <div className={`flex flex-wrap items-center justify-between gap-2 border-b pb-3 ${
-              esClaro ? "border-slate-200" : "border-slate-800"
-            }`}>
-              <div className="flex flex-wrap gap-1.5 text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("TODAS")}
-                  className={`rounded-lg px-2.5 py-1 text-[11px] transition ${
-                    filtroEstado === "TODAS"
-                      ? esClaro ? "bg-slate-800 text-white" : "bg-slate-700 text-white"
-                      : esClaro ? "bg-slate-100 text-slate-600 hover:bg-slate-200" : "bg-slate-900 text-slate-400 hover:text-white"
-                  }`}
-                >
-                  Todas ({cargas.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("PENDIENTES")}
-                  className={`rounded-lg px-2.5 py-1 text-[11px] transition ${
-                    filtroEstado === "PENDIENTES"
-                      ? "bg-amber-500 text-slate-950 font-black"
-                      : esClaro ? "bg-amber-50 text-amber-700 hover:bg-amber-100" : "bg-slate-900 text-amber-400 hover:text-amber-300"
-                  }`}
-                >
-                  🟡 Pendientes de Soporte ({cargas.filter((c) => c.estado_soporte === "PENDIENTE_SOPORTE").length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("ANEXADAS")}
-                  className={`rounded-lg px-2.5 py-1 text-[11px] transition ${
-                    filtroEstado === "ANEXADAS"
-                      ? "bg-blue-600 text-white"
-                      : esClaro ? "bg-blue-50 text-blue-700 hover:bg-blue-100" : "bg-slate-900 text-blue-400 hover:text-blue-300"
-                  }`}
-                >
-                  🔵 Soporte Anexado ({cargas.filter((c) => c.estado_soporte === "SOPORTE_ANEXADO").length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEstado("VERIFICADAS")}
-                  className={`rounded-lg px-2.5 py-1 text-[11px] transition ${
-                    filtroEstado === "VERIFICADAS"
-                      ? "bg-emerald-600 text-white"
-                      : esClaro ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-slate-900 text-emerald-400 hover:text-emerald-300"
-                  }`}
-                >
-                  🟢 Verificadas ({cargas.filter((c) => c.estado_soporte === "VERIFICADO_ADMIN").length})
-                </button>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div className="flex flex-wrap gap-1.5 text-xs">
+                {(["TODAS", "PENDIENTES", "ANEXADAS", "VERIFICADAS"] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setFiltroEstado(f)}
+                    className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition cursor-pointer ${
+                      filtroEstado === f
+                        ? esClaro
+                          ? "bg-blue-600 text-white"
+                          : "bg-amber-500 text-slate-950 font-black"
+                        : esClaro
+                        ? "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
               </div>
-
-              <button
-                type="button"
-                onClick={() => void cargarDatos()}
-                className={`text-[11px] font-bold transition ${
-                  esClaro ? "text-slate-600 hover:text-slate-900" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                🔄 Actualizar
-              </button>
+              <span className={`text-[11px] font-bold ${esClaro ? "text-slate-500" : "text-slate-400"}`}>
+                Total: {cargasFiltradas.length} operaciones
+              </span>
             </div>
 
-            {/* Listado de Cargas */}
             {cargasFiltradas.length === 0 ? (
-              <div className={`py-12 text-center text-xs ${esClaro ? "text-slate-400" : "text-slate-500"}`}>
-                No hay cargas rápidas registradas en esta categoría.
+              <div className={`text-center py-12 text-xs italic ${esClaro ? "text-slate-400" : "text-slate-500"}`}>
+                No hay operaciones registradas con este filtro.
               </div>
             ) : (
               <div className="space-y-3">
@@ -824,19 +917,27 @@ export function ModalCargaRapidaSaldoYAval({
                   return (
                     <div
                       key={c.id}
-                      className={`rounded-2xl border p-4 space-y-2 transition ${
-                        esClaro ? "border-slate-200 bg-slate-50 hover:border-slate-300" : "border-slate-800 bg-slate-900/60 hover:border-slate-700"
+                      className={`rounded-2xl border p-4 space-y-2.5 transition ${
+                        esClaro
+                          ? "bg-slate-50/80 border-slate-200 hover:border-slate-300"
+                          : "bg-slate-900/60 border-slate-800 hover:border-slate-700"
                       }`}
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      {/* Fila Superior: Cliente + Modalidad + Estado */}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="text-xl">{cfg?.emoji || "⚡"}</span>
                           <div>
-                            <span className={`font-black text-sm ${esClaro ? "text-slate-900" : "text-white"}`}>
+                            <span className={`font-black text-xs ${esClaro ? "text-slate-900" : "text-white"}`}>
                               {c.cliente_nombre}
+                              {c.cliente_destino_nombre && (
+                                <span className="text-indigo-400 font-bold ml-1">
+                                  → {c.cliente_destino_nombre}
+                                </span>
+                              )}
                             </span>
-                            <span className={`ml-2 rounded px-2 py-0.5 text-[10px] font-bold ${
-                              esClaro ? "bg-slate-200 text-slate-800" : "bg-slate-800 text-amber-300"
+                            <span className={`ml-2 rounded px-1.5 py-0.2 text-[9px] font-black uppercase ${
+                              esClaro ? "bg-slate-200 text-slate-700" : "bg-slate-800 text-slate-300"
                             }`}>
                               {cfg?.titulo || c.modalidad}
                             </span>
@@ -871,8 +972,12 @@ export function ModalCargaRapidaSaldoYAval({
                         esClaro ? "bg-white border-slate-200" : "bg-slate-950/60 border-slate-800/80"
                       }`}>
                         <div>
-                          <span className={`block text-[9px] uppercase font-bold ${esClaro ? "text-slate-400" : "text-slate-500"}`}>Monto Cargado</span>
-                          <span className="font-black text-emerald-500 text-xs">${c.monto.toFixed(2)}</span>
+                          <span className={`block text-[9px] uppercase font-bold ${esClaro ? "text-slate-400" : "text-slate-500"}`}>Monto</span>
+                          <span className={`font-black text-xs ${
+                            c.modalidad.includes("DISMINUIR") ? "text-rose-500" : "text-emerald-500"
+                          }`}>
+                            ${c.monto.toFixed(2)}
+                          </span>
                         </div>
                         <div>
                           <span className={`block text-[9px] uppercase font-bold ${esClaro ? "text-slate-400" : "text-slate-500"}`}>Ajuste</span>
@@ -887,7 +992,7 @@ export function ModalCargaRapidaSaldoYAval({
                           </span>
                         </div>
                         <div>
-                          <span className={`block text-[9px] uppercase font-bold ${esClaro ? "text-slate-400" : "text-slate-500"}`}>Referencia / Banco</span>
+                          <span className={`block text-[9px] uppercase font-bold ${esClaro ? "text-slate-400" : "text-slate-500"}`}>Referencia / Vía</span>
                           <span className={`text-[10px] truncate block ${esClaro ? "text-slate-700" : "text-slate-300"}`}>
                             {c.referencia || "Sin referencia"}
                           </span>
@@ -901,53 +1006,53 @@ export function ModalCargaRapidaSaldoYAval({
                         </p>
                       )}
 
-                      {/* Acciones para Operador y Administración */}
-                      <div className={`pt-1 flex flex-wrap items-center justify-between gap-2 border-t ${
-                        esClaro ? "border-slate-200" : "border-slate-800/80"
-                      }`}>
-                        <div className="flex items-center gap-2">
-                          {c.comprobante_imagen && (
-                            <button
-                              type="button"
+                      {/* Miniatura de Voucher o Botón para Anexar */}
+                      <div className="flex items-center justify-between pt-1">
+                        {c.comprobante_imagen ? (
+                          <div className="flex items-center gap-2">
+                            <img
+                              src={c.comprobante_imagen}
+                              alt="Comprobante"
+                              className="h-9 w-9 object-cover rounded-lg border border-slate-400 cursor-pointer shadow-xs hover:scale-105 transition"
                               onClick={() => setVerCaptureGrande(c.comprobante_imagen || null)}
-                              className={`rounded-lg border px-2.5 py-1 text-[11px] font-bold transition inline-flex items-center gap-1 ${
-                                esClaro
-                                  ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                                  : "border-slate-700 bg-slate-800 text-slate-200 hover:text-white"
-                              }`}
-                            >
-                              <span>👁️</span> Ver Capture
-                            </button>
-                          )}
-
-                          {/* Botón para que el Operador o Admin anexe soporte */}
+                              title="Clic para ver comprobante en grande"
+                            />
+                            <div className="text-[10px]">
+                              <span className={`block font-bold ${esClaro ? "text-slate-700" : "text-slate-300"}`}>
+                                📎 Comprobante adjunto
+                              </span>
+                              {c.anexado_por && (
+                                <span className={esClaro ? "text-slate-400" : "text-slate-500"}>
+                                  Por {c.anexado_por}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
                           <button
                             type="button"
                             onClick={() => handleAbrirAnexarSoporte(c)}
-                            className={`rounded-lg border px-2.5 py-1 text-[11px] font-bold transition inline-flex items-center gap-1 ${
-                              esClaro
-                                ? "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100"
-                                : "border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
-                            }`}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs font-black text-amber-500 hover:bg-amber-500/20 transition cursor-pointer"
                           >
                             <span>📎</span>
-                            <span>{c.comprobante_imagen ? "Modificar Soporte" : "Anexar Soporte"}</span>
-                          </button>
-                        </div>
-
-                        {/* Botón de Verificación para Administración */}
-                        {!esVerificado && (
-                          <button
-                            type="button"
-                            onClick={() => void handleVerificarAdmin(c.id)}
-                            className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-1 text-[11px] font-black uppercase text-white shadow-xs transition inline-flex items-center gap-1"
-                          >
-                            <span>✅</span>
-                            <span>Verificar y Conciliar</span>
+                            <span>Anexar Comprobante / Voucher</span>
                           </button>
                         )}
 
-                        {esVerificado && c.verificado_por && (
+                        {/* Botón de Validación de Administración */}
+                        {(esPrincipal || usuario?.toLowerCase().includes("admin")) && !esVerificado && (
+                          <button
+                            type="button"
+                            onClick={() => handleVerificarAdmin(c.id)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-1 text-xs font-black text-white shadow-xs transition cursor-pointer"
+                            title="Verificar y conciliar administrativamente este movimiento"
+                          >
+                            <span>✓</span>
+                            <span>Verificar Conciliación</span>
+                          </button>
+                        )}
+
+                        {esVerificado && (
                           <span className="text-[10px] text-emerald-600 font-bold">
                             ✓ Verificado por {c.verificado_por}
                           </span>
@@ -972,12 +1077,12 @@ export function ModalCargaRapidaSaldoYAval({
           }`}>
             <div className={`flex items-center justify-between border-b pb-2 ${esClaro ? "border-slate-200" : "border-slate-800"}`}>
               <h3 className={`font-black text-sm ${esClaro ? "text-slate-900" : "text-white"}`}>
-                📎 Anexar Soporte a Carga Rápida
+                📎 Anexar Comprobante a Operación
               </h3>
               <button
                 type="button"
                 onClick={() => setSoporteModalAbierto(false)}
-                className={`transition ${esClaro ? "text-slate-400 hover:text-slate-700" : "text-slate-400 hover:text-white"}`}
+                className={`transition cursor-pointer ${esClaro ? "text-slate-400 hover:text-slate-700" : "text-slate-400 hover:text-white"}`}
               >
                 ✕
               </button>
@@ -1013,7 +1118,7 @@ export function ModalCargaRapidaSaldoYAval({
                   <button
                     type="button"
                     onClick={() => setSoporteImgTemp("")}
-                    className="absolute top-2 right-2 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-md"
+                    className="absolute top-2 right-2 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-md cursor-pointer"
                   >
                     Quitar
                   </button>
@@ -1030,7 +1135,7 @@ export function ModalCargaRapidaSaldoYAval({
                   type="text"
                   value={bancoTemp}
                   onChange={(e) => setBancoTemp(e.target.value)}
-                  placeholder="Ej: Pago Móvil Banesco / Zelle"
+                  placeholder="Ej: Pago Móvil / Zelle"
                   className={`w-full rounded-lg border px-2.5 py-1.5 text-xs ${inputClase}`}
                 />
               </div>
@@ -1052,7 +1157,7 @@ export function ModalCargaRapidaSaldoYAval({
               <button
                 type="button"
                 onClick={() => setSoporteModalAbierto(false)}
-                className={`w-1/2 rounded-xl border py-2 text-xs font-bold transition ${
+                className={`w-1/2 rounded-xl border py-2 text-xs font-bold transition cursor-pointer ${
                   esClaro ? "border-slate-300 text-slate-600 hover:bg-slate-100" : "border-slate-700 text-slate-300 hover:bg-slate-800"
                 }`}
               >
@@ -1061,7 +1166,7 @@ export function ModalCargaRapidaSaldoYAval({
               <button
                 type="button"
                 onClick={handleGuardarSoporte}
-                className={`w-1/2 rounded-xl py-2 text-xs font-black uppercase shadow-md active:scale-95 transition ${botonPrincipal}`}
+                className={`w-1/2 rounded-xl py-2 text-xs font-black uppercase shadow-md active:scale-95 transition cursor-pointer ${botonPrincipal}`}
               >
                 Guardar Soporte
               </button>
@@ -1087,7 +1192,7 @@ export function ModalCargaRapidaSaldoYAval({
             <button
               type="button"
               onClick={() => setVerCaptureGrande(null)}
-              className="absolute top-3 right-3 rounded-full bg-slate-900/90 p-2 text-white hover:bg-black"
+              className="absolute top-3 right-3 rounded-full bg-slate-900/90 p-2 text-white hover:bg-black cursor-pointer"
             >
               ✕
             </button>
@@ -1098,3 +1203,6 @@ export function ModalCargaRapidaSaldoYAval({
     document.body
   );
 }
+
+// Alias con el nuevo nombre unificado
+export const ModalSaldos = ModalCargaRapidaSaldoYAval;

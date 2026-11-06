@@ -47,6 +47,7 @@ import { fmtMoney, type EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { listarClientesVenta, listarGruposVenta, limpiarCacheClientesVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, telefonoMencionCliente, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { actualizarCliente } from "@/features/clientes/lib/clientes";
 import { BotonCargaRapidaSaldo } from "@/features/contabilidad/components/BotonCargaRapidaSaldo";
+import { ModalSaldos } from "@/features/contabilidad/components/ModalCargaRapidaSaldoYAval";
 import { guardarCrucesCarrera, leerCrucesCarrera, type CrucesCarreraOverride } from "@/features/gestion/lib/cruces-carrera";
 import {
   asociarReglasCrucesPuestosPorJugador,
@@ -83,7 +84,7 @@ import {
   type JugadaAdmin,
 } from "@/features/jugadas/lib/jugadas";
 import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
-import { ModalGestionRapidaSaldo } from "@/features/contabilidad/components/ModalGestionRapidaSaldo";
+
 import { ModalCreacionRapidaCliente } from "@/features/clientes/components/ModalCreacionRapidaCliente";
 import { marcarTicketsAdelantados } from "@/features/jugadas/lib/marcar-adelantadas";
 import { BarraCarrerasLiquidadas } from "@/features/gestion/components/BarraCarrerasLiquidadas";
@@ -249,7 +250,7 @@ export function GestionJugadasModule() {
   const [errorAccionPreview, setErrorAccionPreview] = useState("");
   const [recalculando, setRecalculando] = useState(false);
   const [recalculandoJornada, setRecalculandoJornada] = useState(false);
-  const [modalSaldoRapido, setModalSaldoRapido] = useState(false);
+  const [modalSaldos, setModalSaldos] = useState(false);
   const [modalCreacionRapidaCliente, setModalCreacionRapidaCliente] = useState(false);
   const [modalEventoLibre, setModalEventoLibre] = useState(false);
 
@@ -3164,7 +3165,7 @@ const hipodromosDelDia = useMemo(() => {
           setModalCreacionRapidaCliente(true);
           break;
         case "abrir_saldo_rapido":
-          setModalSaldoRapido(true);
+          setModalSaldos(true);
           break;
         case "abrir_carga_rapida":
           if (d.texto) setTextoCargaRapida(String(d.texto));
@@ -3251,16 +3252,17 @@ const hipodromosDelDia = useMemo(() => {
         </div>
       )}
 
-      {modalSaldoRapido && (
-        <ModalGestionRapidaSaldo
-          abierto={modalSaldoRapido}
-          onCerrar={() => setModalSaldoRapido(false)}
-          onGuardado={() => {
+
+
+      {modalSaldos && (
+        <ModalSaldos
+          abierto={modalSaldos}
+          onCerrar={() => setModalSaldos(false)}
+          onCompletado={() => {
             void recargarClientes();
           }}
         />
       )}
-
       {modalCreacionRapidaCliente && (
         <ModalCreacionRapidaCliente
           abierto={modalCreacionRapidaCliente}
@@ -3958,14 +3960,6 @@ const hipodromosDelDia = useMemo(() => {
             </Button>
           </Guard>
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setModalSaldoRapido(true)}
-            className="!border-emerald-400 !bg-emerald-50 !font-black !text-emerald-800 hover:!bg-emerald-100"
-          >
-            💵 Gestión Rápida de Saldos
-          </Button>
           {(() => {
             const avisos = filas
               .map((f, i) => avisoSaldo(f, proyeccionesCarga[i]?.cliente1 ?? null, proyeccionesCarga[i]?.cliente2 ?? null))
@@ -5120,17 +5114,7 @@ const hipodromosDelDia = useMemo(() => {
             )}
           </button>
 
-          {!modoOperador && !esOperadorFijo && (
-            <button
-              type="button"
-              onClick={() => setModalSaldoRapido(true)}
-              disabled={bloqueoLiquidacionActivo}
-              className="inline-flex items-center gap-1 rounded-md border border-emerald-400/50 bg-emerald-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-40"
-              title="Incrementar o disminuir saldo de un cliente adjuntando capture de comprobante"
-            >
-              <span>💵</span> Gestión Rápida de Saldos
-            </button>
-          )}
+          {!modoOperador && !esOperadorFijo && null}
           <span className="rounded-md bg-slate-800 px-2 py-0.5 font-bold text-slate-200">
             📅 {fecha}
           </span>

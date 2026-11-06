@@ -67,35 +67,30 @@ export function BotonCargaRapidaSaldo({
     badgeClase = "bg-amber-500 text-slate-950";
   }
 
-  const textoBoton = texto || "Carga Rápida";
+  const textoBoton = texto || "Saldos";
 
   return (
     <>
       <button
         type="button"
         onClick={() => setModalAbierto(true)}
-        title="Carga Rápida de Saldo o Aval (Colocar/Sumar Aval, Colocar/Sumar Pozo) sin comprobante inmediato. Queda como tarea pendiente de soporte y verificación."
+        title="Saldos: Acreditar saldo, disminuir saldo, avales y cruces entre jugadores de inmediato."
         className={`group relative inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 sm:px-3 text-xs font-black transition-all active:scale-95 shrink-0 cursor-pointer ${botonClase} ${className}`}
       >
         <span className="text-sm font-black transition-transform group-hover:scale-110">
           ⚡
         </span>
         {!compacto && (
-          <>
-            <span className="hidden sm:inline tracking-tight font-black">
-              {textoBoton}
-            </span>
-            <span className="sm:hidden font-bold">
-              {textoBoton.replace(" de Saldo", "")}
-            </span>
-          </>
+          <span className="tracking-tight font-black">
+            {textoBoton}
+          </span>
         )}
 
         {/* Badge de Tareas Pendientes */}
         {pendientes > 0 && (
           <span
             className={`flex items-center justify-center rounded-full px-1.5 py-0.2 text-[9px] font-black shadow-xs animate-pulse ${badgeClase}`}
-            title={`${pendientes} carga(s) rápida(s) pendiente(s) de soporte o verificación`}
+            title={`${pendientes} operación(es) pendiente(s) de soporte o verificación`}
           >
             {pendientes}
           </span>
@@ -111,3 +106,6 @@ export function BotonCargaRapidaSaldo({
     </>
   );
 }
+
+// Alias con el nuevo nombre unificado
+export const BotonSaldos = BotonCargaRapidaSaldo;
