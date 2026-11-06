@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import {
   ETIQUETAS_MODALIDAD,
   listarCargasRapidas,
@@ -31,6 +32,11 @@ export function ModalCargaRapidaSaldoYAval({
   const { tema } = useTema();
   const usuario = useAuthStore((s) => s.usuario);
   const esPrincipal = useAuthStore((s) => s.esPrincipal);
+  const [montado, setMontado] = useState(false);
+
+  useEffect(() => {
+    setMontado(true);
+  }, []);
 
   // Estados visuales del tema
   const esClaro = tema === "claro";
@@ -159,7 +165,7 @@ export function ModalCargaRapidaSaldoYAval({
     return { valorAnterior: saldo, valorNuevo: saldo + m };
   }, [clienteSeleccionado, modalidad, monto]);
 
-  if (!abierto) return null;
+  if (!abierto || !montado) return null;
 
   const tareasPendientesTotal = cargas.filter((c) => c.estado_soporte !== "VERIFICADO_ADMIN").length;
 
@@ -346,9 +352,9 @@ export function ModalCargaRapidaSaldoYAval({
     ? "bg-gradient-to-r from-blue-600 via-blue-500 to-blue-600 hover:brightness-110 text-white shadow-lg shadow-blue-600/20"
     : "bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:brightness-110 text-slate-950 font-black shadow-lg shadow-amber-500/20";
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[75] flex items-center justify-center overflow-y-auto bg-black/75 p-3 sm:p-5 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto bg-black/75 p-3 sm:p-5 backdrop-blur-sm animate-fadeIn"
       role="dialog"
       aria-modal="true"
     >
@@ -960,7 +966,7 @@ export function ModalCargaRapidaSaldoYAval({
           SUB-MODAL: ANEXAR SOPORTE / VOUCHER
           ========================================================================= */}
       {soporteModalAbierto && tareaSeleccionada && (
-        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/85 p-4">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/85 p-4">
           <div className={`w-full max-w-md rounded-2xl border p-5 space-y-4 shadow-2xl transition ${
             esClaro ? "bg-white text-slate-900 border-slate-300" : "bg-slate-900 text-white border-slate-700"
           }`}>
@@ -1069,7 +1075,7 @@ export function ModalCargaRapidaSaldoYAval({
           ========================================================================= */}
       {verCaptureGrande && (
         <div
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/90 p-4"
+          className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/90 p-4"
           onClick={() => setVerCaptureGrande(null)}
         >
           <div className="relative max-w-2xl max-h-[90vh]">
@@ -1088,6 +1094,7 @@ export function ModalCargaRapidaSaldoYAval({
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
