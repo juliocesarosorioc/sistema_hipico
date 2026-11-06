@@ -248,7 +248,7 @@ export function Sidebar({
   const nombreGrupoCabecera =
     (grupoNombre && grupoNombre.trim()) ||
     (nombreGrupoResuelto && nombreGrupoResuelto.trim()) ||
-    "Club del Dinero";
+    "Administración Hípica";
 
   const salir = useAuthStore((s) => s.salir);
   const [saliendo, setSaliendo] = useState(false);

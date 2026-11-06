@@ -8,7 +8,7 @@
 import { supabase } from "@/core/supabase";
 import { exigirCapacidad } from "@/features/seguridad/lib/vigente";
 
-export const CLUB_NOMBRE = "Club del Dinero";
+export const CLUB_NOMBRE = "Administración Hípica";
 
 export type PlantillaWsp = {
   id: string;

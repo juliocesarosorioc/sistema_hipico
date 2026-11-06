@@ -1,5 +1,5 @@
 -- ============================================================
---  LIMPIEZA TOTAL DE DATOS — CLUB DEL DINERO (Supabase)
+--  LIMPIEZA TOTAL DE DATOS — ADMINISTRACIÓN HÍPICA (Supabase)
 -- ============================================================
 --  IMPORTANTE:
 --  1) Ejecuta esto en Supabase -> SQL Editor (NUNCA en producción sin backup).

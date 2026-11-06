@@ -512,7 +512,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
   const nombreGrupoActivo =
     String(sesion.grupo?.nombre ?? "").trim() ||
     String((sesion.cliente as unknown as { grupo?: string }).grupo ?? "").trim() ||
-    "Club del Dinero";
+    "Administración Hípica";
 
   // Logo del grupo: sale de la data de la sesión (`grupos_venta.logo_url`, que
   // la Edge Function `portal-auth` devuelve junto con la config del grupo).
@@ -1069,7 +1069,7 @@ function ReporteDiarioView({
   const nombreGrupo =
     String(sesion.grupo?.nombre ?? "").trim() ||
     String((sesion.cliente as unknown as { grupo?: string }).grupo ?? "").trim() ||
-    "Club del Dinero";
+    "Administración Hípica";
 
   const todasLasFechas = useMemo(() => {
     const set = new Set<string>();

@@ -201,7 +201,7 @@ export async function enlaceWhatsAppTicket(t: TicketDisputa): Promise<string | n
   const mensaje = [
     `👋 *¡Hola, ${t.cliente_nombre ?? "cliente"}!* 🏇`,
     ``,
-    `🏆 *Club del Dinero*`,
+    `🏆 *Administración Hípica*`,
     `----------------------------------------`,
     `🎟️ *NOTIFICACIÓN DE TICKET RESUELTO:* *#T-${t.numero_ticket ?? String(t.id).slice(0, 6)}*`,
     ``,

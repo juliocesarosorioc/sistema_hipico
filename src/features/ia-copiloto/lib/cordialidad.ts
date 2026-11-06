@@ -139,7 +139,7 @@ export function generarRespuestaCordial(
     nombreRaw && !/^operador|admin|usuario|cliente$/i.test(nombreRaw)
       ? `, *${nombreRaw}*`
       : "";
-  const club = opciones?.club || "Club del Dinero";
+  const club = opciones?.club || "Administración Hípica";
   const momento = evaluacion.momentoDia;
 
   switch (evaluacion.tipo) {

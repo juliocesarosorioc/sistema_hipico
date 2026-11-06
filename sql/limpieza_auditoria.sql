@@ -1,5 +1,5 @@
 -- ============================================================
---  LIMPIEZA DE AUDITORIA — CLUB DEL DINERO (Supabase SQL Editor)
+--  LIMPIEZA DE AUDITORIA — ADMINISTRACIÓN HÍPICA (Supabase SQL Editor)
 -- ============================================================
 --  Ejecutar en Supabase -> SQL Editor (una sola vez).
 --  Crea una funcion segura (SECURITY DEFINER) que borra los

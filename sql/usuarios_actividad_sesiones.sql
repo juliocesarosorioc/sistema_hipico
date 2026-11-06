@@ -1,5 +1,5 @@
 -- ============================================================================
--- CLUB DEL DINERO - CONTROL DE SESIÓN ÚNICA, IP ÚNICA Y ACTIVIDAD DE USUARIOS
+-- ADMINISTRACIÓN HÍPICA - CONTROL DE SESIÓN ÚNICA, IP ÚNICA Y ACTIVIDAD DE USUARIOS
 -- ============================================================================
 -- [Módulo 1: Blindaje de Seguridad, Sesión Única, IP Única y Anti-Brute Force]
 --   1. Una sola conexión activa por usuario en tiempo real.

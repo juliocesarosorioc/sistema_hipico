@@ -984,7 +984,7 @@ export async function procesarTurnoAgente(
     const textoCordial = generarRespuestaCordial(evalCordialidad, {
       nombre: autor,
       hora: entrada.ahora ? new Date(entrada.ahora) : null,
-      club: "Club del Dinero",
+      club: "Administración Hípica",
     });
 
     siguienteEstado.historialMensajes.push({

@@ -384,7 +384,7 @@ export function ReporteSaldosVisual({
               Reporte Visual de Disponibilidad y Alerta de Saldos
             </h3>
             <h2 className="truncate text-lg font-extrabold tracking-tight text-white">
-              {grupo || "Club del Dinero"}
+              {grupo || "Administración Hípica"}
             </h2>
             <p className="mt-0.5 text-[10px] font-medium text-blue-100">
               {hipodromo ? `${hipodromo}` : "Jornada Activa"}

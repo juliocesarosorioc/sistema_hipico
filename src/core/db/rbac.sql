@@ -1,6 +1,6 @@
 -- ============================================================================
 -- RBAC LEGADO — Control de Acceso Basado en Roles (esquema relacional)
--- SPA "Club del Dinero" (Next.js). NO modifica archivos legacy.
+-- SPA "Administración Hípica" (Next.js). NO modifica archivos legacy.
 --
 -- !! ESTE ARCHIVO ESTÁ RETIRADO. NO ES LA FUENTE DE VERDAD DEL ACCESO. !!
 --

@@ -476,7 +476,7 @@ export function consultarAsistenteIa(
   if (evalCordial.esPuroCordial) {
     const respCordial = generarRespuestaCordial(evalCordial, {
       rolUsuario,
-      club: "Club del Dinero",
+      club: "Administración Hípica",
     });
     return {
       respuesta: respCordial,

@@ -11,7 +11,7 @@ const inter = {
 };
 
 export const metadata: Metadata = {
-  title: "Club del Dinero — Sistema Hípico",
+  title: "Administración Hípica — Sistema Hípico",
   description: "Plataforma de apuestas hípicas: carreras, hipódromos y boleto de apuestas en tiempo real.",
 };
 

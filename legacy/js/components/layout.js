@@ -126,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sidebarHTML = `
     <aside id="sidebarGlobal" class="fixed inset-y-0 left-0 w-64 bg-slate-900 text-slate-300 flex flex-col h-full shadow-xl z-40 shrink-0">
         <div class="sidebar-header border-b border-slate-700 p-5">
-            <h1 class="text-2xl font-bold text-white tracking-wide"><i class="fas fa-coins text-emerald-400 mr-2"></i><span class="logo-txt">Club del Dinero</span></h1>
+            <h1 class="text-2xl font-bold text-white tracking-wide"><i class="fas fa-coins text-emerald-400 mr-2"></i><span class="logo-txt">Administración Hípica</span></h1>
             <p class="text-xs text-slate-400 mt-2 font-bold tracking-widest uppercase flex items-center">
                 <i class="fas fa-circle text-emerald-500 text-[8px] mr-1"></i> ${sesion.rol}
             </p>

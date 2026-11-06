@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 
 export default function RenderizadoFuentesPage() {
-  const [textoPrueba, setTextoPrueba] = useState("Club del Dinero — Sistema Hípico $1.250,50 USD 🏇 C3 Pk5");
+  const [textoPrueba, setTextoPrueba] = useState("Administración Hípica — Sistema Hípico $1.250,50 USD 🏇 C3 Pk5");
   const [tamanoFuente, setTamanoFuente] = useState(16);
 
   const pesosInter = [

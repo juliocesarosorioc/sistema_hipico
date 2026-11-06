@@ -129,16 +129,16 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
           ? grupos.find((g) => String(g.id) === String(idBuscado))
           : (!esOperador && veTodosLosGrupos ? grupos[0] : null);
         if (encontrado) {
-          setNombreGrupo(encontrado.nombre || grupoNombre || "Club del Dinero");
+          setNombreGrupo(encontrado.nombre || grupoNombre || "Administración Hípica");
           setLogoGrupo((encontrado as { logo_url?: string | null }).logo_url ?? null);
         } else {
-          setNombreGrupo(grupoNombre || "Club del Dinero");
+          setNombreGrupo(grupoNombre || "Administración Hípica");
           setLogoGrupo(null);
         }
       })
       .catch(() => {
         if (vivo) {
-          setNombreGrupo(grupoNombre || "Club del Dinero");
+          setNombreGrupo(grupoNombre || "Administración Hípica");
           setLogoGrupo(null);
         }
       });
@@ -213,7 +213,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         {/* Logo del Grupo en el espacio superior izquierdo */}
         <div
           className="flex items-center gap-2 min-w-0"
-          title={`Grupo: ${nombreGrupo || "Club del Dinero"}`}
+          title={`Grupo: ${nombreGrupo || "Administración Hípica"}`}
         >
           <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-300 bg-white p-0.5 shadow-xs">
             {logoGrupo ? (
@@ -230,7 +230,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
           <div className={`flex-col min-w-0 max-w-[140px] xl:max-w-[180px] ${menuVisible ? "hidden 2xl:flex" : "hidden lg:flex"}`}>
 
             <span className="truncate text-xs font-black tracking-tight text-[var(--app-text)] leading-tight">
-              {nombreGrupo || "Club del Dinero"}
+              {nombreGrupo || "Administración Hípica"}
             </span>
             <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--app-text-muted)] leading-none">
               {esOperadorFijo || modoOperador ? "Operador" : "Banca Activa"}

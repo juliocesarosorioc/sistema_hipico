@@ -287,7 +287,7 @@ export default function PantallaLogin() {
               <path d="M16.71 13.88l.7.71-2.82 2.82" />
             </svg>
           </div>
-          <h1 className="text-2xl font-black uppercase tracking-wide text-slate-800">Club del Dinero</h1>
+          <h1 className="text-2xl font-black uppercase tracking-wide text-slate-800">Administración Hípica</h1>
           <p className="mt-1 text-xs font-bold text-slate-500">Panel Administrativo y Contable</p>
         </div>
 
