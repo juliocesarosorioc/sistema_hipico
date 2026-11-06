@@ -16,6 +16,8 @@ import type { OpcionHipodromo } from "@/features/tablas/lib/rpc";
 import { validarCarrera, generarMensajeParaAgenteIA } from "@/features/gaceta/lib/validador";
 import { compararEjemplares } from "@/features/gaceta/lib/numeros";
 import { emitirToast } from "@/shared/lib/mensajeria";
+import { ModalDiscrepanciasCarrera } from "./ModalDiscrepanciasCarrera";
+import { copiarAlPortapapelesUniversal } from "@/shared/lib/portapapeles";
 
 type Props = {
   index: number;
@@ -44,6 +46,7 @@ export function CarreraGacetaCard({
   hipodromos,
 }: Props) {
   const [mostrarAlertas, setMostrarAlertas] = useState(false);
+  const [modalDiscrepanciaAbierto, setModalDiscrepanciaAbierto] = useState(false);
   const numCarrera = carrera.carrera || index + 1;
   const ejemplares = Array.isArray(carrera.ejemplares) ? carrera.ejemplares : [];
   const suma = ejemplares.reduce((a, ej) => a + (aNum(ej.valor) ?? aNum(ej.pts) ?? 0), 0);
@@ -79,14 +82,13 @@ export function CarreraGacetaCard({
     set({ ejemplares: ejemplares.filter((_, k) => k !== pos) });
   };
 
-  const copiarInstruccionAgente = () => {
+  const copiarInstruccionAgente = async () => {
     const texto = generarMensajeParaAgenteIA(carrera, diagnostico, carrera.fecha || "");
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(texto).then(() => {
-        emitirToast(`📋 Reporte de discrepancia copiado para la Carrera ${numCarrera}.`, "success");
-      }).catch(() => {
-        emitirToast("No se pudo copiar al portapapeles.", "warning");
-      });
+    const ok = await copiarAlPortapapelesUniversal(texto);
+    if (ok) {
+      emitirToast(`📋 Reporte de discrepancia copiado para la Carrera ${numCarrera}.`, "success");
+    } else {
+      emitirToast("No se pudo copiar automáticamente al portapapeles.", "warning");
     }
   };
 
@@ -165,15 +167,15 @@ export function CarreraGacetaCard({
         <div className="mt-1 flex items-center justify-between gap-1 border-t border-white/20 pt-1 text-[8px]">
           <button
             type="button"
-            onClick={() => setMostrarAlertas(!mostrarAlertas)}
-            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-black uppercase transition-colors ${
+            onClick={() => setModalDiscrepanciaAbierto(true)}
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-black uppercase transition-colors cursor-pointer ${
               diagnostico.nivel === "completa"
                 ? "bg-emerald-500/30 text-emerald-200 hover:bg-emerald-500/40"
                 : diagnostico.nivel === "advertencia"
                 ? "bg-amber-400 text-amber-950 hover:bg-amber-300"
                 : "bg-red-500 text-white hover:bg-red-400 animate-pulse"
             }`}
-            title="Ver/Ocultar detalles de validación de esta carrera"
+            title="Ver auditoría de discrepancias de esta carrera"
           >
             {diagnostico.nivel === "completa" ? (
               <><span>✅</span> Verificada</>
@@ -456,14 +458,38 @@ export function CarreraGacetaCard({
           )}
           <button
             type="button"
-            onClick={copiarInstruccionAgente}
-            className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[9px] font-bold text-slate-600 hover:bg-slate-100 transition-colors"
-            title="Copiar reporte de discrepancia para el agente o chat"
+            onClick={() => setModalDiscrepanciaAbierto(true)}
+            className={`rounded px-2 py-1 text-[9px] font-bold transition-all shadow-2xs cursor-pointer flex items-center justify-center gap-1 ${
+              diagnostico.nivel === "incompleta"
+                ? "border border-red-400 bg-red-50 text-red-700 hover:bg-red-100 font-black"
+                : diagnostico.nivel === "advertencia"
+                ? "border border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 font-bold"
+                : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+            }`}
+            title="Ver auditoría de discrepancias: muestra inconsistencias, caballos faltantes, números duplicados o valida que la carrera esté completa."
           >
-            📋 Discrepancia
+            {diagnostico.nivel === "completa" ? (
+              <><span>✅</span> Discrepancias (0)</>
+            ) : (
+              <><span>⚠️</span> Discrepancias ({diagnostico.incidencias.length})</>
+            )}
           </button>
         </div>
       </div>
+
+      {/* Modal interactivo de auditoría y resolución de discrepancias */}
+      <ModalDiscrepanciasCarrera
+        abierto={modalDiscrepanciaAbierto}
+        onCerrar={() => setModalDiscrepanciaAbierto(false)}
+        carrera={carrera}
+        numCarrera={numCarrera}
+        diagnostico={diagnostico}
+        onOrdenar={() => set({ ejemplares: [...ejemplares].sort(compararEjemplares) })}
+        onAgregarCaballo={agregarCaballo}
+        onReverificar={onReverificar ? () => onReverificar(index) : undefined}
+        reverificando={reverificando}
+        hipodromos={hipodromos}
+      />
     </div>
   );
 }

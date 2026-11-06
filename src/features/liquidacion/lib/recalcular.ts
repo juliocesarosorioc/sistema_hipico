@@ -295,10 +295,8 @@ export async function revertirLiquidacionCarrera(opts: {
             const montoDecidido = esGanador ? (d.res.totalClienteNeto + d.res.gananciaCasa) : (perdidaParcial ? montoPerdido : m);
 
             if (incPct > 0) {
-              let baseInc = 0;
-              if (incBase === "GANANCIA") baseInc = gananciaBruta;
-              else if (incBase === "PERDIDA") baseInc = montoPerdido;
-              else baseInc = montoDecidido;
+              // Regla oficial: devolución gane o pierda sobre monto decidido
+              const baseInc = montoDecidido > 0 ? montoDecidido : (esGanador ? gananciaBruta : montoPerdido);
               if (baseInc > 0) {
                 montoIncTotal = sumarDinero(montoIncTotal, calcularComisionExacta(baseInc, incPct));
               }

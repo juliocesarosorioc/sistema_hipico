@@ -27,6 +27,7 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { emitirToast } from "@/shared/lib/mensajeria";
+import { copiarAlPortapapelesUniversal } from "@/shared/lib/portapapeles";
 import { useConfirmar } from "@/shared/store/useConfirmStore";
 import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
 import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
@@ -59,7 +60,34 @@ type PaginaGaceta = {
   orden: number;
   conTexto?: boolean;
   archivo?: string;
+  texto?: string;
 };
+
+function normalizarHipodromoAlCatalogo(nombreHipo: string | null | undefined, catalogo: OpcionHipodromo[]): string {
+  if (!catalogo || catalogo.length === 0) return String(nombreHipo || "HIPÓDROMO").trim().toUpperCase();
+  const raw = String(nombreHipo || "").trim().toUpperCase();
+  if (!raw) return catalogo[0].value;
+
+  const exacto = catalogo.find(
+    (h) => h.value.toUpperCase() === raw || h.label.toUpperCase() === raw
+  );
+  if (exacto) return exacto.value;
+
+  const limpioRaw = raw.replace(/[^A-Z0-9]/g, "");
+  const parcial = catalogo.find((h) => {
+    const limValue = h.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const limLabel = h.label.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return (
+      (limpioRaw.length >= 4 && limValue.includes(limpioRaw)) ||
+      (limValue.length >= 4 && limpioRaw.includes(limValue)) ||
+      (limpioRaw.length >= 4 && limLabel.includes(limpioRaw)) ||
+      (limLabel.length >= 4 && limpioRaw.includes(limLabel))
+    );
+  });
+  if (parcial) return parcial.value;
+
+  return catalogo[0].value;
+}
 
 function leerArchivoComoDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -171,7 +199,10 @@ async function renderPdfAPaginas(
  *
  * `tope` limita las páginas leídas (mismo criterio que el render).
  */
-async function extraerPdfComoTexto(file: File, tope?: number): Promise<string> {
+async function extraerPdfComoTexto(
+  file: File,
+  tope?: number
+): Promise<{ textoCompleto: string; paginasTexto: string[] }> {
   const lib = await cargarPdfJs();
   const buffer = await file.arrayBuffer();
   let doc: PdfDoc;
@@ -182,10 +213,12 @@ async function extraerPdfComoTexto(file: File, tope?: number): Promise<string> {
   }
   const total = tope && tope > 0 ? Math.min(tope, doc.numPages) : doc.numPages;
   const paginas: string[] = [];
+  const paginasTexto: string[] = [];
   try {
     for (let i = 1; i <= total; i++) {
       await new Promise((r) => setTimeout(r, 0));
       const page = await doc.getPage(i);
+      let pageText = "";
       try {
         const contenido = await page.getTextContent();
         const items = contenido?.items ?? [];
@@ -220,10 +253,12 @@ async function extraerPdfComoTexto(file: File, tope?: number): Promise<string> {
         } else {
           lineas = items.map((it) => `${it.str ?? ""}${it.hasEOL ? "\n" : " "}`).join("");
         }
+        pageText = lineas.trim();
         if (lineas.trim()) paginas.push(`--- PÁGINA ${i} ---\n${lineas}`);
       } catch {
         /* página sin capa de texto: se omite */
       }
+      paginasTexto.push(pageText);
       try {
         page.cleanup();
       } catch {
@@ -237,7 +272,7 @@ async function extraerPdfComoTexto(file: File, tope?: number): Promise<string> {
       /* noop */
     }
   }
-  return paginas.join("\n\n");
+  return { textoCompleto: paginas.join("\n\n"), paginasTexto };
 }
 
 const SQL_AVISO_KEY = "club_gaceta_sql_aviso";
@@ -735,13 +770,14 @@ export function GacetaIA() {
         const baseOrden = paginas.length;
         const nuevas: PaginaGaceta[] = [];
         const nuevosTextos: Array<{ nombre: string; texto: string }> = [];
-        const generar = (dataUrl: string, conTexto: boolean, archivo: string): PaginaGaceta => ({
+        const generar = (dataUrl: string, conTexto: boolean, archivo: string, texto?: string): PaginaGaceta => ({
           id: `${dataUrl.slice(0, 24)}-${baseOrden + nuevas.length}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           dataUrl,
           num: baseOrden + nuevas.length + 1,
           orden: baseOrden + nuevas.length,
           conTexto,
           archivo,
+          texto,
         });
         for (const f of arr) {
           try {
@@ -750,8 +786,11 @@ export function GacetaIA() {
               const tope = parseInt(topePaginas, 10);
               setEstado(`Leyendo el texto de ${f.name}...`);
               let textoExtraido = "";
+              let paginasTexto: string[] = [];
               try {
-                textoExtraido = await extraerPdfComoTexto(f, tope > 0 ? tope : undefined);
+                const resTxt = await extraerPdfComoTexto(f, tope > 0 ? tope : undefined);
+                textoExtraido = resTxt.textoCompleto;
+                paginasTexto = resTxt.paginasTexto;
               } catch {
                 /* sin capa de texto: se usa la vía de imágenes */
               }
@@ -766,7 +805,9 @@ export function GacetaIA() {
               if (tieneTexto) {
                 nuevosTextos.push({ nombre: f.name, texto: textoExtraido });
               }
-              for (const d of pag) nuevas.push(generar(d, tieneTexto, f.name));
+              for (let k = 0; k < pag.length; k++) {
+                nuevas.push(generar(pag[k], tieneTexto, f.name, paginasTexto[k] || ""));
+              }
             } else {
               const dataUrl = await leerArchivoComoDataUrl(f);
               nuevas.push(generar(dataUrl, false, f.name));
@@ -875,7 +916,19 @@ export function GacetaIA() {
 
       const listaTextos =
         docsConTextoActivos.length > 0
-          ? docsConTextoActivos
+          ? docsConTextoActivos.map((doc) => {
+              // Si el usuario seleccionó páginas específicas, enviamos ÚNICAMENTE el texto de esas páginas seleccionadas
+              const paginasDocSel = paginasSel.filter(
+                (p) => p.archivo === doc.nombre && p.texto && p.texto.trim().length > 0
+              );
+              if (paginasDocSel.length > 0) {
+                return {
+                  nombre: doc.nombre,
+                  texto: paginasDocSel.map((p) => p.texto).join("\n\n"),
+                };
+              }
+              return doc;
+            })
           : hayTexto
             ? [{ nombre: "documento", texto: textoDocumento }]
             : [];
@@ -972,6 +1025,7 @@ export function GacetaIA() {
       }
       const lista: CarreraRegistro[] = dedupe.lista.map((c) => ({
         ...c,
+        hipodromo: normalizarHipodromoAlCatalogo(c.hipodromo, hipodromos),
         archivoOrigen: (c as CarreraExtraida).archivoOrigen || undefined,
         // La fecha elegida para la jornada manda sobre fechas inferidas por IA:
         // evita que un encabezado erróneo o histórico desvíe la carrera.
@@ -1190,18 +1244,14 @@ export function GacetaIA() {
   }, [carreras]);
 
   // Copiar resumen de mensajería para WhatsApp / Operadores
-  const copiarMensajeMensajeria = useCallback(() => {
+  const copiarMensajeMensajeria = useCallback(async () => {
     const hiposUnicos = [...new Set(carreras.map((c) => String(c.hipodromo || "")).filter(Boolean))].join(" · ");
     const texto = generarMensajeResumenImportacion(reporteValidacion, fechaJornada, hiposUnicos);
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard
-        .writeText(texto)
-        .then(() => {
-          toast("📋 Reporte consolidado copiado para WhatsApp / Operadores.", "success");
-        })
-        .catch(() => {
-          toast("No se pudo copiar al portapapeles.", "warning");
-        });
+    const ok = await copiarAlPortapapelesUniversal(texto);
+    if (ok) {
+      toast("📋 Reporte consolidado copiado para WhatsApp / Operadores.", "success");
+    } else {
+      toast("No se pudo copiar automáticamente al portapapeles.", "warning");
     }
   }, [reporteValidacion, fechaJornada, carreras, toast]);
 
@@ -1394,7 +1444,7 @@ export function GacetaIA() {
           const fechaDestino = normalizarFechaIso(fechaJornadaRef.current) || hoyLocal();
           const carreraReg: CarreraRegistro = {
             carrera: nueva.carrera,
-            hipodromo: nueva.hipodromo || hipo,
+            hipodromo: normalizarHipodromoAlCatalogo(nueva.hipodromo || hipo, hipodromos),
             fecha: fechaDestino,
             distancia: nueva.distancia || 0,
             superficie: nueva.superficie || "ARENA",
@@ -1812,9 +1862,13 @@ export function GacetaIA() {
             {mostrarPromptAuditor && (
               <button
                 type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(PROMPT_EXTRACTOR_AUDITOR_HIPICO);
-                  toast("Prompt de precisión quirúrgica copiado al portapapeles", "success");
+                onClick={async () => {
+                  const ok = await copiarAlPortapapelesUniversal(PROMPT_EXTRACTOR_AUDITOR_HIPICO);
+                  if (ok) {
+                    toast("Prompt de precisión quirúrgica copiado al portapapeles", "success");
+                  } else {
+                    toast("No se pudo copiar al portapapeles", "warning");
+                  }
                 }}
                 className="text-[10px] font-bold text-slate-500 hover:text-slate-800 underline"
               >

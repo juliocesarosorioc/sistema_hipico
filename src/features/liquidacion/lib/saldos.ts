@@ -720,12 +720,10 @@ export async function aplicarLiquidacionSaldos(
             const gananciaBruta = esGanador ? Math.max(0, restarDinero(d.res.totalClienteNeto + d.res.gananciaCasa, m)) : 0;
             const montoDecidido = esGanador ? (d.res.totalClienteNeto + d.res.gananciaCasa) : (perdidaParcial ? montoPerdido : m);
 
-            // Cálculo incentivo cliente
+            // Cálculo incentivo cliente: sobre lo que gana Y sobre lo que pierde (monto decidido)
+            // Regla oficial: Si pierde 100 y su incentivo es 1%, se le devuelve 1.
             if (incPct > 0) {
-              let baseInc = 0;
-              if (incBase === "GANANCIA") baseInc = gananciaBruta;
-              else if (incBase === "PERDIDA") baseInc = montoPerdido;
-              else baseInc = montoDecidido;
+              const baseInc = montoDecidido > 0 ? montoDecidido : (esGanador ? gananciaBruta : montoPerdido);
               if (baseInc > 0) {
                 montoIncTotal = sumarDinero(montoIncTotal, calcularComisionExacta(baseInc, incPct));
               }
