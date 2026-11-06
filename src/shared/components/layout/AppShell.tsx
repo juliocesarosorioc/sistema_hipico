@@ -195,7 +195,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (ES_PORTAL(pathname)) {
     return (
-      <div className="min-h-screen bg-slate-100 font-sans text-sm text-slate-800">
+      <div className="min-h-screen bg-background font-sans text-sm text-[var(--app-text)] transition-colors duration-200">
         {children}
       </div>
     );
@@ -215,7 +215,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (!usuario) return <PantallaDeEspera />;
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-background text-[var(--app-text)] transition-colors duration-200">
       <Sidebar
         compacto={compacto}
         drawerAbierto={drawerAbierto}
@@ -232,7 +232,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       )}
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar alAlternarMenu={alternarMenu} menuVisible={menuVisible} />
-        <main className="flex-1 overflow-y-auto bg-gray-50">{children}</main>
+        <main className="flex-1 overflow-y-auto bg-background text-[var(--app-text)] transition-colors duration-200">{children}</main>
         <PieDerechosAutor variante="compacto" />
       </div>
       {/* Confirmación global y acuse de recibo obligatorio del operador */}

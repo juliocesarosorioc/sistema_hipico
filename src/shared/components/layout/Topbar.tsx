@@ -194,7 +194,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const total = novedades.length;
 
   return (
-    <header className="sticky top-0 z-50 flex h-[50px] shrink-0 items-center justify-between gap-2 border-b border-line bg-surface/90 px-3 sm:px-4 backdrop-blur">
+    <header className="sticky top-0 z-50 flex h-[50px] shrink-0 items-center justify-between gap-2 border-b border-line bg-surface/90 px-3 sm:px-4 backdrop-blur transition-colors duration-200">
       {/* ESPACIO SUPERIOR IZQUIERDO: Menú + LOGO DEL GRUPO */}
       <div className="flex items-center gap-2 min-w-0 shrink-0">
         {alAlternarMenu && (
@@ -204,7 +204,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
             aria-label={menuVisible ? "Ocultar los textos del menú (dejar solo íconos)" : "Mostrar el menú completo"}
             aria-expanded={menuVisible}
             title={menuVisible ? "Ocultar los textos del menú" : "Mostrar el menú completo"}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-lg leading-none text-slate-600 transition-colors hover:bg-surfaceAlt"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-lg leading-none text-[var(--app-text)] transition-colors hover:bg-surfaceAlt"
           >
             <span aria-hidden="true">{menuVisible ? "✕" : "☰"}</span>
           </button>
@@ -228,10 +228,10 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
             )}
           </div>
           <div className="hidden lg:flex flex-col min-w-0 max-w-[140px] xl:max-w-[180px]">
-            <span className="truncate text-xs font-black tracking-tight text-slate-900 leading-tight">
+            <span className="truncate text-xs font-black tracking-tight text-[var(--app-text)] leading-tight">
               {nombreGrupo || "Club del Dinero"}
             </span>
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 leading-none">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--app-text-muted)] leading-none">
               {esOperadorFijo || modoOperador ? "Operador" : "Banca Activa"}
             </span>
           </div>
@@ -249,7 +249,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
           aria-expanded={abierto}
           onClick={() => setAbierto((v) => !v)}
           title="Novedades del sistema"
-          className="inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 text-xs font-bold text-slate-700 transition-colors hover:bg-surfaceAlt"
+          className="inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 text-xs font-bold text-[var(--app-text)] transition-colors hover:bg-surfaceAlt"
         >
           <span className="relative text-base leading-none">
             🔔
@@ -267,8 +267,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
           )}
         </button>
         {abierto && (
-          <div className="absolute left-0 top-11 z-50 w-80 overflow-hidden rounded-2xl border border-line bg-white shadow-2xl">
-            <div className="flex items-center justify-between bg-slate-800 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white">
+          <div className="absolute left-0 top-11 z-50 w-80 overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl">
+            <div className="flex items-center justify-between border-b border-line bg-surfaceAlt px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-[var(--app-text)]">
               <span>🔔 Novedades</span>
               <span className="text-[10px] font-semibold normal-case tracking-normal text-slate-300">
                 auditoría

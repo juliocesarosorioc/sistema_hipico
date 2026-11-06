@@ -57,16 +57,16 @@ export function RelojNavegador() {
   return (
     <div
       aria-label="Fecha y hora actual del sistema"
-      className="ml-auto hidden min-w-[235px] shrink-0 items-center justify-end gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-right md:flex"
+      className="ml-auto hidden min-w-[235px] shrink-0 items-center justify-end gap-2 rounded-lg border border-line bg-surfaceAlt px-2.5 py-1 text-right md:flex"
     >
       <span className="text-xs leading-none" aria-hidden="true">
         🕒
       </span>
       <div className="flex flex-col items-end leading-tight">
-        <span className="truncate text-[10px] font-bold text-slate-600">
+        <span className="truncate text-[10px] font-bold text-[var(--app-text-muted)]">
           {reloj ? reloj.fechaTexto : "Cargando fecha…"}
         </span>
-        <span className="font-mono text-[11px] font-black tabular-nums tracking-tight text-slate-900">
+        <span className="font-mono text-[11px] font-black tabular-nums tracking-tight text-[var(--app-text)]">
           {reloj ? reloj.horaTexto : "--:--:--"}
         </span>
       </div>

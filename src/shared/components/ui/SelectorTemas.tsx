@@ -54,11 +54,7 @@ export function SelectorTemas({ compacto = false }: { compacto?: boolean }) {
           style={{ backgroundColor: infoActual.colorAcento }}
         />
         <span className="text-xs sm:text-sm">{infoActual.emoji}</span>
-        {!compacto && (
-          <span className="hidden sm:inline font-semibold tracking-wide">
-            {infoActual.nombre}
-          </span>
-        )}
+        <span className={compacto ? "hidden xl:inline font-bold tracking-wide text-xs" : "hidden sm:inline font-bold tracking-wide"}>{infoActual.nombre}</span>
         <svg
           className={`h-3 w-3 text-slate-400 transition-transform duration-200 ${abierto ? "rotate-180" : ""}`}
           fill="none"
@@ -87,7 +83,7 @@ export function SelectorTemas({ compacto = false }: { compacto?: boolean }) {
               ${abrirHaciaIzquierda ? "sm:right-0 sm:left-auto" : "sm:left-0 sm:right-auto"}
               sm:w-72 sm:max-w-xs
               mt-2 rounded-2xl
-              border border-slate-700/90 bg-slate-950/98 p-2.5
+              border border-[var(--app-border)] bg-[var(--app-surface)] p-2.5 text-[var(--app-text)]
               shadow-2xl backdrop-blur-xl ring-1 ring-white/10
             `}
             style={{
@@ -95,8 +91,8 @@ export function SelectorTemas({ compacto = false }: { compacto?: boolean }) {
               overflowY: "auto",
             }}
           >
-            <div className="px-2.5 py-1.5 border-b border-slate-800/80 flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+            <div className="px-2.5 py-1.5 border-b border-[var(--app-border)] flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-[var(--app-text-muted)]">
                 Personalizar Tema
               </span>
               <span className="text-[10px] text-amber-400 font-bold">6 Estilos</span>
@@ -115,8 +111,8 @@ export function SelectorTemas({ compacto = false }: { compacto?: boolean }) {
                     }}
                     className={`w-full flex items-center gap-2.5 rounded-xl p-2 text-left transition-all cursor-pointer ${
                       seleccionado
-                        ? "bg-slate-800/90 text-white shadow-xs ring-1 ring-amber-500/50"
-                        : "text-slate-300 hover:bg-slate-900 hover:text-white"
+                        ? "bg-[var(--app-surface-alt)] text-[var(--app-text)] shadow-xs ring-1 ring-[var(--app-accent)] font-bold"
+                        : "text-[var(--app-text-muted)] hover:bg-[var(--app-surface-alt)] hover:text-[var(--app-text)]"
                     }`}
                   >
                     {/* Icono + Paleta */}
@@ -166,7 +162,7 @@ export function SelectorTemas({ compacto = false }: { compacto?: boolean }) {
               })}
             </div>
 
-            <div className="mt-2 pt-2 border-t border-slate-800/80 px-2 py-0.5 text-[9px] text-slate-400 text-center">
+            <div className="mt-2 pt-2 border-t border-[var(--app-border)] px-2 py-0.5 text-[9px] text-[var(--app-text-muted)] text-center">
               💡 <span className="text-amber-300 font-semibold">Protección Visual</span> reduce la fatiga y halos en pantallas.
             </div>
           </div>

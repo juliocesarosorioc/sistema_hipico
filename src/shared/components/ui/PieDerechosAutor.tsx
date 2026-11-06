@@ -20,10 +20,10 @@ export function PieDerechosAutor({
   if (variante === "compacto") {
     return (
       <footer
-        className={`border-t border-slate-200/80 bg-white/90 px-4 py-2 text-center text-[10px] font-semibold text-slate-600 ${className}`}
+        className={`border-t border-line bg-surface/90 px-4 py-2 text-center text-[10px] font-semibold text-[var(--app-text-muted)] ${className}`}
       >
         <span>
-          © {anio} <strong className="font-black text-slate-900">Inversiones Club Sensación, C.A.</strong> — Todos los derechos reservados · Propiedad Intelectual y Software Protegidos · Prohibida su reproducción, distribución o ingeniería inversa total o parcial sin autorización escrita.
+          © {anio} <strong className="font-black text-[var(--app-text)]">Inversiones Club Sensación, C.A.</strong> — Todos los derechos reservados · Propiedad Intelectual y Software Protegidos · Prohibida su reproducción, distribución o ingeniería inversa total o parcial sin autorización escrita.
         </span>
       </footer>
     );

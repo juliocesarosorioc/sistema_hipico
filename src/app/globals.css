@@ -961,23 +961,58 @@ body {
 
 
 /* ============================================================================
-   SISTEMA DE TEMAS VISUALES DINÁMICOS (Betplay Dark, Claro, Rojo, Verde, Azul, Astigmatismo)
+   SISTEMA DE TEMAS VISUALES GLOBAL
+   (1. Oscuro Casino, 2. Claro Diamante, 3. Rojo Rubí, 4. Verde Turf, 5. Azul Cobalto, 6. Astigmatismo)
    ============================================================================ */
 
-:root {
-  --portal-bg: #090d16;
-  --portal-surface: #0f172a;
-  --portal-surface-card: #1e293b;
-  --portal-accent: #f59e0b;
-  --portal-accent-hover: #fbbf24;
-  --portal-text: #f8fafc;
-  --portal-text-muted: #94a3b8;
-  --portal-border: #334155;
-  --portal-glow: rgba(245, 158, 11, 0.25);
-}
-
 /* 1. TEMA OSCURO (Por defecto - Betplay Dark Casino) */
+:root,
 [data-theme="oscuro"] {
+  color-scheme: dark;
+  --app-bg-rgb: 9 13 22;
+  --app-surface-rgb: 15 23 42;
+  --app-surface-alt-rgb: 30 41 59;
+  --app-border-rgb: 34 48 73;
+  --app-accent-rgb: 245 158 11;
+
+  --app-bg: #090d16;
+  --app-surface: #0f172a;
+  --app-surface-alt: #1e293b;
+  --app-surface-card: #151e32;
+  --app-border: #223049;
+  --app-border-subtle: #1a2538;
+
+  --app-text: #f8fafc;
+  --app-text-muted: #94a3b8;
+  --app-text-dim: #64748b;
+
+  --app-accent: #f59e0b;
+  --app-accent-hover: #fbbf24;
+  --app-accent-subtle: rgba(245, 158, 11, 0.15);
+  --app-accent-text: #090d16;
+  --app-glow: rgba(245, 158, 11, 0.25);
+
+  --app-sidebar-bg: #0b1120;
+  --app-sidebar-surface: #111b2e;
+  --app-sidebar-border: #1e2d47;
+  --app-sidebar-text: #e2e8f0;
+  --app-sidebar-muted: #8092a8;
+  --app-sidebar-active-bg: #f59e0b;
+  --app-sidebar-active-text: #0b1120;
+
+  --app-topbar-bg: #0f172a;
+  --app-topbar-border: #223049;
+  --app-topbar-text: #f8fafc;
+
+  --app-input-bg: #151e32;
+  --app-input-border: #2c3c58;
+  --app-input-text: #f8fafc;
+  --app-input-focus: #f59e0b;
+
+  --app-table-th-bg: #131d33;
+  --app-table-hover: #18233b;
+
+  /* Portal mappings */
   --portal-bg: #090d16;
   --portal-surface: #0f172a;
   --portal-surface-card: #1e293b;
@@ -985,12 +1020,57 @@ body {
   --portal-accent-hover: #fbbf24;
   --portal-text: #f8fafc;
   --portal-text-muted: #94a3b8;
-  --portal-border: #334155;
+  --portal-border: #223049;
   --portal-glow: rgba(245, 158, 11, 0.25);
 }
 
 /* 2. TEMA CLARO DIAMANTE */
 [data-theme="claro"] {
+  color-scheme: light;
+  --app-bg-rgb: 241 245 249;
+  --app-surface-rgb: 255 255 255;
+  --app-surface-alt-rgb: 226 232 240;
+  --app-border-rgb: 203 213 225;
+  --app-accent-rgb: 37 99 235;
+
+  --app-bg: #f1f5f9;
+  --app-surface: #ffffff;
+  --app-surface-alt: #f8fafc;
+  --app-surface-card: #ffffff;
+  --app-border: #cbd5e1;
+  --app-border-subtle: #e2e8f0;
+
+  --app-text: #0f172a;
+  --app-text-muted: #475569;
+  --app-text-dim: #94a3b8;
+
+  --app-accent: #2563eb;
+  --app-accent-hover: #1d4ed8;
+  --app-accent-subtle: rgba(37, 99, 235, 0.12);
+  --app-accent-text: #ffffff;
+  --app-glow: rgba(37, 99, 235, 0.25);
+
+  --app-sidebar-bg: #0f172a;
+  --app-sidebar-surface: #1e293b;
+  --app-sidebar-border: #334155;
+  --app-sidebar-text: #f8fafc;
+  --app-sidebar-muted: #94a3b8;
+  --app-sidebar-active-bg: #2563eb;
+  --app-sidebar-active-text: #ffffff;
+
+  --app-topbar-bg: #ffffff;
+  --app-topbar-border: #cbd5e1;
+  --app-topbar-text: #0f172a;
+
+  --app-input-bg: #ffffff;
+  --app-input-border: #cbd5e1;
+  --app-input-text: #0f172a;
+  --app-input-focus: #2563eb;
+
+  --app-table-th-bg: #f1f5f9;
+  --app-table-hover: #f8fafc;
+
+  /* Portal mappings */
   --portal-bg: #f8fafc;
   --portal-surface: #ffffff;
   --portal-surface-card: #f1f5f9;
@@ -1004,6 +1084,51 @@ body {
 
 /* 3. TEMA ROJO RUBÍ (Pasión Hípica) */
 [data-theme="rojo"] {
+  color-scheme: dark;
+  --app-bg-rgb: 15 5 7;
+  --app-surface-rgb: 28 8 13;
+  --app-surface-alt-rgb: 45 15 21;
+  --app-border-rgb: 76 20 29;
+  --app-accent-rgb: 239 68 68;
+
+  --app-bg: #0f0507;
+  --app-surface: #1c080d;
+  --app-surface-alt: #2d0f15;
+  --app-surface-card: #220a10;
+  --app-border: #4a131c;
+  --app-border-subtle: #360d14;
+
+  --app-text: #fff5f5;
+  --app-text-muted: #fca5a5;
+  --app-text-dim: #e28080;
+
+  --app-accent: #ef4444;
+  --app-accent-hover: #f87171;
+  --app-accent-subtle: rgba(239, 68, 68, 0.2);
+  --app-accent-text: #ffffff;
+  --app-glow: rgba(239, 68, 68, 0.35);
+
+  --app-sidebar-bg: #140508;
+  --app-sidebar-surface: #20080d;
+  --app-sidebar-border: #3d0f17;
+  --app-sidebar-text: #ffe4e6;
+  --app-sidebar-muted: #f472b6;
+  --app-sidebar-active-bg: #ef4444;
+  --app-sidebar-active-text: #ffffff;
+
+  --app-topbar-bg: #1c080d;
+  --app-topbar-border: #4a131c;
+  --app-topbar-text: #fff5f5;
+
+  --app-input-bg: #220a10;
+  --app-input-border: #521620;
+  --app-input-text: #fff5f5;
+  --app-input-focus: #ef4444;
+
+  --app-table-th-bg: #260c12;
+  --app-table-hover: #310f17;
+
+  /* Portal mappings */
   --portal-bg: #0f0507;
   --portal-surface: #1a0a0d;
   --portal-surface-card: #2c0e14;
@@ -1017,6 +1142,51 @@ body {
 
 /* 4. TEMA VERDE TURF (Pista de Grama) */
 [data-theme="verde"] {
+  color-scheme: dark;
+  --app-bg-rgb: 3 18 8;
+  --app-surface-rgb: 7 34 18;
+  --app-surface-alt-rgb: 13 56 30;
+  --app-border-rgb: 19 83 44;
+  --app-accent-rgb: 16 185 129;
+
+  --app-bg: #031208;
+  --app-surface: #072212;
+  --app-surface-alt: #0d381e;
+  --app-surface-card: #0a2d18;
+  --app-border: #13532c;
+  --app-border-subtle: #0d3d20;
+
+  --app-text: #f0fdf4;
+  --app-text-muted: #86efac;
+  --app-text-dim: #5bb980;
+
+  --app-accent: #10b981;
+  --app-accent-hover: #34d399;
+  --app-accent-subtle: rgba(16, 185, 129, 0.2);
+  --app-accent-text: #031208;
+  --app-glow: rgba(16, 185, 129, 0.35);
+
+  --app-sidebar-bg: #04170a;
+  --app-sidebar-surface: #0a2816;
+  --app-sidebar-border: #134e2a;
+  --app-sidebar-text: #dcfce7;
+  --app-sidebar-muted: #6ee7b7;
+  --app-sidebar-active-bg: #10b981;
+  --app-sidebar-active-text: #031208;
+
+  --app-topbar-bg: #072212;
+  --app-topbar-border: #13532c;
+  --app-topbar-text: #f0fdf4;
+
+  --app-input-bg: #0a2d18;
+  --app-input-border: #196b39;
+  --app-input-text: #f0fdf4;
+  --app-input-focus: #10b981;
+
+  --app-table-th-bg: #0a2f19;
+  --app-table-hover: #104123;
+
+  /* Portal mappings */
   --portal-bg: #04120a;
   --portal-surface: #072214;
   --portal-surface-card: #0c3620;
@@ -1030,6 +1200,51 @@ body {
 
 /* 5. TEMA AZUL COBALTO (Zafiro Deportivo) */
 [data-theme="azul"] {
+  color-scheme: dark;
+  --app-bg-rgb: 4 13 26;
+  --app-surface-rgb: 8 23 48;
+  --app-surface-alt-rgb: 15 39 80;
+  --app-border-rgb: 23 61 120;
+  --app-accent-rgb: 59 130 246;
+
+  --app-bg: #040d1a;
+  --app-surface: #081730;
+  --app-surface-alt: #0f2750;
+  --app-surface-card: #0b1f40;
+  --app-border: #173d78;
+  --app-border-subtle: #112d58;
+
+  --app-text: #eff6ff;
+  --app-text-muted: #93c5fd;
+  --app-text-dim: #60a5fa;
+
+  --app-accent: #3b82f6;
+  --app-accent-hover: #60a5fa;
+  --app-accent-subtle: rgba(59, 130, 246, 0.2);
+  --app-accent-text: #ffffff;
+  --app-glow: rgba(59, 130, 246, 0.35);
+
+  --app-sidebar-bg: #051021;
+  --app-sidebar-surface: #0a1f3d;
+  --app-sidebar-border: #13386b;
+  --app-sidebar-text: #dbeafe;
+  --app-sidebar-muted: #93c5fd;
+  --app-sidebar-active-bg: #3b82f6;
+  --app-sidebar-active-text: #ffffff;
+
+  --app-topbar-bg: #081730;
+  --app-topbar-border: #173d78;
+  --app-topbar-text: #eff6ff;
+
+  --app-input-bg: #0b1f40;
+  --app-input-border: #1d4ed8;
+  --app-input-text: #eff6ff;
+  --app-input-focus: #3b82f6;
+
+  --app-table-th-bg: #0c2349;
+  --app-table-hover: #123062;
+
+  /* Portal mappings */
   --portal-bg: #050e1e;
   --portal-surface: #0a1832;
   --portal-surface-card: #10274f;
@@ -1043,6 +1258,51 @@ body {
 
 /* 6. TEMA PROTECCIÓN VISUAL (ANTI-ASTIGMATISMO & ANTI-FATIGA) */
 [data-theme="astigmatismo"] {
+  color-scheme: dark;
+  --app-bg-rgb: 25 21 17;
+  --app-surface-rgb: 36 31 25;
+  --app-surface-alt-rgb: 51 44 36;
+  --app-border-rgb: 77 64 51;
+  --app-accent-rgb: 212 163 115;
+
+  --app-bg: #191511;
+  --app-surface: #241f19;
+  --app-surface-alt: #332c24;
+  --app-surface-card: #2b251e;
+  --app-border: #4d4033;
+  --app-border-subtle: #3d3328;
+
+  --app-text: #f5ece1;
+  --app-text-muted: #c8bba8;
+  --app-text-dim: #a89a85;
+
+  --app-accent: #d4a373;
+  --app-accent-hover: #e0b68a;
+  --app-accent-subtle: rgba(212, 163, 115, 0.2);
+  --app-accent-text: #191511;
+  --app-glow: rgba(212, 163, 115, 0.25);
+
+  --app-sidebar-bg: #1d1813;
+  --app-sidebar-surface: #29231c;
+  --app-sidebar-border: #42362b;
+  --app-sidebar-text: #ece2d5;
+  --app-sidebar-muted: #b8aa97;
+  --app-sidebar-active-bg: #d4a373;
+  --app-sidebar-active-text: #191511;
+
+  --app-topbar-bg: #241f19;
+  --app-topbar-border: #4d4033;
+  --app-topbar-text: #f5ece1;
+
+  --app-input-bg: #2b251e;
+  --app-input-border: #594a3a;
+  --app-input-text: #f5ece1;
+  --app-input-focus: #d4a373;
+
+  --app-table-th-bg: #2d261f;
+  --app-table-hover: #383027;
+
+  /* Portal mappings */
   --portal-bg: #1c1813;
   --portal-surface: #26211a;
   --portal-surface-card: #332c23;
@@ -1052,6 +1312,128 @@ body {
   --portal-text-muted: #c9bea9;
   --portal-border: #4d4234;
   --portal-glow: rgba(212, 163, 115, 0.2);
+}
+
+/* ============================================================================
+   REGLAS GLOBALES DE ADAPTACIÓN DE INTERFAZ POR TEMA
+   ============================================================================ */
+
+/* Transición suave al alternar temas */
+body,
+header,
+aside,
+main,
+nav,
+footer {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
+}
+
+/* Adaptación universal para todos los temas oscuros y coloreados (no-claro) */
+[data-theme]:not([data-theme="claro"]) body {
+  background-color: var(--app-bg);
+  color: var(--app-text);
+}
+
+/* Tarjetas y superficies blancas pasan al color de superficie del tema */
+[data-theme]:not([data-theme="claro"]) .bg-white:not([data-forzar-blanco]),
+[data-theme]:not([data-theme="claro"]) .bg-surface {
+  background-color: var(--app-surface) !important;
+  color: var(--app-text);
+}
+
+/* Fondos neutros secundarios */
+[data-theme]:not([data-theme="claro"]) .bg-gray-50,
+[data-theme]:not([data-theme="claro"]) .bg-slate-50 {
+  background-color: var(--app-bg) !important;
+  color: var(--app-text);
+}
+
+[data-theme]:not([data-theme="claro"]) .bg-gray-100,
+[data-theme]:not([data-theme="claro"]) .bg-slate-100,
+[data-theme]:not([data-theme="claro"]) .bg-surfaceAlt {
+  background-color: var(--app-surface-alt) !important;
+  color: var(--app-text);
+}
+
+/* Bordes y divisores neutros */
+[data-theme]:not([data-theme="claro"]) .border-slate-200,
+[data-theme]:not([data-theme="claro"]) .border-gray-200,
+[data-theme]:not([data-theme="claro"]) .border-slate-300,
+[data-theme]:not([data-theme="claro"]) .border-gray-300,
+[data-theme]:not([data-theme="claro"]) .border-slate-100,
+[data-theme]:not([data-theme="claro"]) .border-gray-100,
+[data-theme]:not([data-theme="claro"]) .border-line,
+[data-theme]:not([data-theme="claro"]) .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+[data-theme]:not([data-theme="claro"]) .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+[data-theme]:not([data-theme="claro"]) .divide-line > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--app-border) !important;
+}
+
+[data-theme]:not([data-theme="claro"]) .border-slate-700,
+[data-theme]:not([data-theme="claro"]) .border-slate-800 {
+  border-color: var(--app-border) !important;
+}
+
+/* Tipografía neutra de títulos y textos primarios */
+[data-theme]:not([data-theme="claro"]) .text-slate-900,
+[data-theme]:not([data-theme="claro"]) .text-slate-800,
+[data-theme]:not([data-theme="claro"]) .text-gray-900,
+[data-theme]:not([data-theme="claro"]) .text-gray-800 {
+  color: var(--app-text) !important;
+}
+
+/* Textos secundarios y atenuados */
+[data-theme]:not([data-theme="claro"]) .text-slate-700,
+[data-theme]:not([data-theme="claro"]) .text-slate-600,
+[data-theme]:not([data-theme="claro"]) .text-gray-700,
+[data-theme]:not([data-theme="claro"]) .text-gray-600 {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme]:not([data-theme="claro"]) .text-slate-500,
+[data-theme]:not([data-theme="claro"]) .text-gray-500,
+[data-theme]:not([data-theme="claro"]) .text-slate-400,
+[data-theme]:not([data-theme="claro"]) .text-gray-400 {
+  color: var(--app-text-dim) !important;
+}
+
+/* Tablas de datos en todos los módulos */
+[data-theme]:not([data-theme="claro"]) table th {
+  background-color: var(--app-table-th-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+}
+
+[data-theme]:not([data-theme="claro"]) table td {
+  border-color: var(--app-border) !important;
+}
+
+[data-theme]:not([data-theme="claro"]) table tr:hover td {
+  background-color: var(--app-table-hover) !important;
+}
+
+/* Entradas de formulario: Inputs, Selects, Textareas */
+[data-theme]:not([data-theme="claro"]) input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([data-sin-tema]),
+[data-theme]:not([data-theme="claro"]) select:not([data-sin-tema]),
+[data-theme]:not([data-theme="claro"]) textarea:not([data-sin-tema]) {
+  background-color: var(--app-input-bg) !important;
+  border-color: var(--app-input-border) !important;
+  color: var(--app-input-text) !important;
+}
+
+[data-theme]:not([data-theme="claro"]) select option {
+  background-color: var(--app-surface) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme]:not([data-theme="claro"]) input::placeholder,
+[data-theme]:not([data-theme="claro"]) textarea::placeholder {
+  color: var(--app-text-dim) !important;
+}
+
+/* Scrollbars temáticas */
+[data-theme]:not([data-theme="claro"]) ::-webkit-scrollbar-thumb {
+  background-color: var(--app-border);
 }
 
 /* Ajustes ergonómicos especiales para Astigmatismo */

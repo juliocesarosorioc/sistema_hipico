@@ -327,14 +327,14 @@ export function DashboardGrupos() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-black text-slate-800">
-          <span className="mr-2 text-amber-500">🥧</span> Centro de Control del Grupo
+    <div className="space-y-3">
+      {/* ENCABEZADO COMPACTO: Título + Actualizar + Selector de Grupo */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-lg font-black text-slate-800">
+          <span className="mr-1.5 text-amber-500">🥧</span> Centro de Control del Grupo
         </h1>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Tecla Actualizar */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <Button
             variant="outline"
             size="sm"
@@ -343,6 +343,7 @@ export function DashboardGrupos() {
               void recargarCierres();
             }}
             title="Actualizar datos y cierres del Centro de Control"
+            className="h-8 px-2.5 text-xs font-bold"
           >
             <span className="mr-1">🔄</span> Actualizar
           </Button>
@@ -350,7 +351,7 @@ export function DashboardGrupos() {
           <select
             value={grupoId}
             onChange={(e) => setGrupoId(e.target.value)}
-            className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-bold uppercase text-slate-700 outline-none"
+            className="h-8 rounded-lg border border-line bg-surface px-2.5 text-xs font-bold uppercase text-slate-700 outline-none cursor-pointer"
             aria-label="Grupo de venta"
           >
             {grupos.map((g) => (
@@ -362,15 +363,16 @@ export function DashboardGrupos() {
         </div>
       </div>
 
-      {/* ---------- SEMANA ACTIVA ---------- */}
-      <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[11px] font-black uppercase tracking-wider text-slate-600">
-            <span className="mr-1 text-indigo-500">🗓️</span> Semana Activa
-          </h2>
+      {/* ---------- SEMANA ACTIVA (COMPACTA CON ACTIVAR SEMANA ARRIBA) ---------- */}
+      <section className="rounded-xl border border-line bg-surface p-3 sm:p-3.5 shadow-xs">
+        {/* CABECERA: Título + Estado + ACTIVAR SEMANA (SUBIDO ARRIBA) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 pb-2.5">
           <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <span className="text-indigo-500">🗓️</span> Semana Activa
+            </h2>
             <span
-              className={`rounded-full px-3 py-0.5 text-[10px] font-black uppercase ring-1 ${
+              className={`rounded-full px-2.5 py-0.5 text-[9.5px] font-black uppercase ring-1 ${
                 semanaCerrada
                   ? "bg-red-500/15 text-red-700 ring-red-300"
                   : "bg-emerald-500/15 text-emerald-700 ring-emerald-300"
@@ -378,24 +380,74 @@ export function DashboardGrupos() {
             >
               {semanaCerrada ? "CERRADA" : "ABIERTA"}
             </span>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase text-slate-500">
-              Inicio {etiquetaDia(grupoDiaInicio)} · Corte {etiquetaDia(grupoDiaFin)}
+            <span className="rounded-full bg-surfaceAlt px-2 py-0.5 text-[9px] font-bold uppercase text-slate-500">
+              {etiquetaDia(grupoDiaInicio)} → {etiquetaDia(grupoDiaFin)}
             </span>
           </div>
+
+          {/* BOTÓN / ACCIÓN SUBIDA: ACTIVAR SEMANA */}
+          {semana && grupo && !editandoVigente && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={abrirEditorVigente}
+              title="Elegir y activar la semana operativa del grupo"
+              className="h-7.5 px-3 text-xs font-black border-amber-500/60 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 shadow-xs"
+            >
+              <span className="mr-1">📌</span>
+              {semana.fijada ? "Cambiar Semana Activa" : "Activar Semana"}
+            </Button>
+          )}
         </div>
+
+        {/* FORMULARIO EDITAR / ACTIVAR SEMANA (SUBIDO ARRIBA) */}
+        {editandoVigente && semana && (
+          <div className="my-2.5 flex flex-wrap items-end gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 p-2.5">
+            <label className="block">
+              <span className="mb-0.5 block text-[9px] font-black uppercase tracking-wider text-slate-600">
+                Semana que empieza el
+              </span>
+              <DateInput
+                value={inicioVigente}
+                onFechaChange={(val) => setInicioVigente(val)}
+                className="w-36 text-xs font-bold"
+              />
+            </label>
+            <Button size="sm" onClick={() => void aplicarVigente(inicioVigente || null)} disabled={guardando}>
+              {guardando ? <span className="mr-1">⏳</span> : <span className="mr-1">📌</span>} Activar Semana
+            </Button>
+            {semana.fijada ? (
+              <Button size="sm" variant="outline" onClick={() => void aplicarVigente(null)} disabled={guardando}>
+                Usar semana del calendario
+              </Button>
+            ) : null}
+            <Button size="sm" variant="outline" onClick={() => setEditandoVigente(false)}>
+              Cancelar
+            </Button>
+            <p className="w-full text-[10px] font-semibold text-slate-500">
+              Seleccione la fecha de inicio de la semana que desea activar. Solo estará activa la semana que usted elija.
+            </p>
+          </div>
+        )}
 
         {semana && grupo ? (
           <>
-            <p className="text-xs font-bold text-slate-700">
-              Rango: <span className="text-indigo-600">{formatearCab(semana.inicio)}</span> →{" "}
-              <span className="text-indigo-600">{formatearCab(semana.fin)}</span>{" "}
-              <span className="font-semibold text-slate-400">· {grupo.nombre.toUpperCase()}</span>
-            </p>
+            {/* RANGO Y GRUPO EN LÍNEA COMPACTA */}
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-1 text-[11px] font-bold text-slate-700">
+              <p>
+                Rango: <span className="text-indigo-600 font-black">{formatearCab(semana.inicio)}</span> →{" "}
+                <span className="text-indigo-600 font-black">{formatearCab(semana.fin)}</span>{" "}
+                <span className="font-semibold text-slate-400">· {grupo.nombre.toUpperCase()}</span>
+              </p>
+              {semana.fijada && (
+                <span className="text-[10px] font-bold text-amber-600">
+                  📌 Semana fijada manualmente
+                </span>
+              )}
+            </div>
 
-            {/* Días de la semana fiscal (código de colores del legacy).
-                Cada día es CLICKEABLE: selecciona ESE día para cerrarlo o
-                reabrirlo sin tocar el resto de la semana. */}
-            <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-7">
+            {/* GRILLA DE DÍAS COMPACTA */}
+            <div className="mt-2 grid grid-cols-4 gap-1.5 sm:grid-cols-7">
               {semana.dias.map((d) => {
                 const sel = diaSeleccionado === d.fecha;
                 const etiqueta =
@@ -406,21 +458,21 @@ export function DashboardGrupos() {
                     type="button"
                     onClick={() => setDiaSeleccionado(sel ? null : d.fecha)}
                     title={`${d.fecha} — ${etiqueta}. Clic para cerrar/reabrir SOLO este día.`}
-                    className={`rounded-lg border-2 px-2 py-2 text-center transition ${COLOR_ESTADO[d.estado]} ${
+                    className={`rounded-lg border-2 px-1.5 py-1.5 text-center transition ${COLOR_ESTADO[d.estado]} ${
                       sel ? "ring-2 ring-indigo-500 ring-offset-1" : "hover:brightness-105"
                     }`}
                   >
-                    <p className="text-[10px] font-black uppercase tracking-wide">{d.etiqueta}</p>
-                    <p className="mt-0.5 text-[9px] opacity-80">{etiqueta}</p>
+                    <p className="text-[9.5px] font-black uppercase tracking-tight">{d.etiqueta}</p>
+                    <p className="text-[8.5px] font-bold opacity-85 leading-tight">{etiqueta}</p>
                   </button>
                 );
               })}
             </div>
 
-            {/* Acciones del día elegido (cierre/reapertura por día) */}
-            {diaSeleccionado ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 px-3 py-2">
-                <span className="text-[11px] font-black uppercase text-indigo-800">
+            {/* ACCIONES DEL DÍA ELEGIDO (COMPACTO) */}
+            {diaSeleccionado && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50/70 px-2.5 py-1.5">
+                <span className="text-[10.5px] font-black uppercase text-indigo-800">
                   📅 {formatearCab(diaSeleccionado)}
                   {cerrados.has(diaSeleccionado) ? " · CERRADO" : ""}
                 </span>
@@ -436,7 +488,7 @@ export function DashboardGrupos() {
                     }}
                     title="Borra la foto del cierre de ESTE día para poder reconsolidarlo"
                   >
-                    <span className="mr-1">🔓</span> Reabrir este día
+                    <span className="mr-1">🔓</span> Reabrir día
                   </Button>
                 ) : (
                   <Button
@@ -445,31 +497,31 @@ export function DashboardGrupos() {
                     onClick={() => void prepararCierre("DIA", diaSeleccionado)}
                     title="Consolida el balance de caja de ESTE día (incluso sin jugadas)"
                   >
-                    {calculando ? <span className="mr-1">⏳</span> : <span className="mr-1">🔒</span>} Cerrar este día
+                    {calculando ? <span className="mr-1">⏳</span> : <span className="mr-1">🔒</span>} Cerrar día
                   </Button>
                 )}
                 <Button size="sm" variant="ghost" onClick={() => setDiaSeleccionado(null)}>
-                  Quitar selección
+                  ✕
                 </Button>
               </div>
-            ) : null}
+            )}
 
-            {/* Leyenda */}
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
-              <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Cerrado</span>
-              <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-blue-500" /> Hoy</span>
-              <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-red-500" /> Sin cerrar</span>
-              <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-gray-300" /> Pendiente</span>
-              <span className="inline-flex items-center gap-1 text-indigo-600">👆 Clic en un día para cerrarlo o reabrirlo solo</span>
+            {/* LEYENDA COMPACTA */}
+            <div className="mt-2 flex flex-wrap items-center gap-2.5 text-[9px] font-semibold text-slate-500">
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Cerrado</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500" /> Hoy</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" /> Sin cerrar</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-gray-300" /> Pendiente</span>
+              <span className="inline-flex items-center gap-1 text-indigo-600 font-bold ml-auto">👆 Clic en un día para seleccionarlo</span>
             </div>
 
-            {/* Edición del ciclo + acciones de cierre */}
-            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+            {/* EDICIÓN DE CICLO + BOTONES DE ACCIÓN COMPACTOS */}
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-line/70 pt-2.5">
               {editandoCiclo ? (
-                <div className="flex flex-wrap items-end gap-2 rounded-xl border border-indigo-200 bg-indigo-50/60 p-2">
+                <div className="flex flex-wrap items-end gap-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-2">
                   <label className="block">
                     <span className="mb-0.5 block text-[9px] font-black uppercase tracking-wider text-slate-500">Día Inicio</span>
-                    <select value={diaInicio} onChange={(e) => setDiaInicio(e.target.value)} className="rounded-lg border border-line bg-white px-2 py-1 text-xs font-bold outline-none">
+                    <select value={diaInicio} onChange={(e) => setDiaInicio(e.target.value)} className="rounded-lg border border-line bg-surface px-2 py-1 text-xs font-bold outline-none">
                       {DIAS_SEMANA.map((d) => (
                         <option key={d.valor} value={d.valor}>{d.nombre}</option>
                       ))}
@@ -477,7 +529,7 @@ export function DashboardGrupos() {
                   </label>
                   <label className="block">
                     <span className="mb-0.5 block text-[9px] font-black uppercase tracking-wider text-slate-500">Día Corte</span>
-                    <select value={diaFin} onChange={(e) => setDiaFin(e.target.value)} className="rounded-lg border border-line bg-white px-2 py-1 text-xs font-bold outline-none">
+                    <select value={diaFin} onChange={(e) => setDiaFin(e.target.value)} className="rounded-lg border border-line bg-surface px-2 py-1 text-xs font-bold outline-none">
                       {DIAS_SEMANA.map((d) => (
                         <option key={d.valor} value={d.valor}>{d.nombre}</option>
                       ))}
@@ -492,15 +544,16 @@ export function DashboardGrupos() {
                 </div>
               ) : (
                 <>
-                  <Button size="sm" variant="outline" onClick={abrirEditor} title="Cambiar los días de inicio y corte de la semana fiscal">
-                    <span className="mr-1">✏️</span> Editar Fecha Inicio / Fin
+                  <Button size="sm" variant="outline" onClick={abrirEditor} title="Cambiar los días de inicio y corte de la semana fiscal" className="h-8 text-xs">
+                    <span className="mr-1">✏️</span> Ciclo Semana
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
                     disabled={calculando || cerrando}
                     onClick={() => void prepararCierre("DIA")}
-                    title="Consolida el balance de caja de HOY. Para cerrar otro día de la semana, hacé clic en su recuadro."
+                    title="Consolida el balance de caja de HOY"
+                    className="h-8 text-xs font-bold"
                   >
                     {calculando ? <span className="mr-1">⏳</span> : <span className="mr-1">🔒</span>} Cierre de Hoy
                   </Button>
@@ -510,6 +563,7 @@ export function DashboardGrupos() {
                     disabled={calculando || cerrando}
                     onClick={() => void prepararCierre("SEMANA")}
                     title="Consolida el balance de la semana fiscal del grupo"
+                    className="h-8 text-xs font-bold text-indigo-600 hover:text-indigo-700"
                   >
                     {calculando ? <span className="mr-1">⏳</span> : <span className="mr-1">🏁</span>} Cerrar Semana
                   </Button>
@@ -518,75 +572,34 @@ export function DashboardGrupos() {
                     variant="outline"
                     onClick={() => setVerHistorial(true)}
                     title="Histórico de cierres de día y de semana"
+                    className="h-8 text-xs"
                   >
                     <span className="mr-1">🕙</span> Semanas Anteriores
                   </Button>
                 </>
               )}
             </div>
-
-            {/* ---------- SEMANA VIGENTE ---------- */}
-            <div className="mt-2 border-t border-line pt-3">
-              {editandoVigente ? (
-                <div className="flex flex-wrap items-end gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 p-2">
-                  <label className="block">
-                    <span className="mb-0.5 block text-[9px] font-black uppercase tracking-wider text-slate-600">
-                      Semana que empieza el
-                    </span>
-                    <DateInput
-                      value={inicioVigente}
-                      onFechaChange={(val) => setInicioVigente(val)}
-                      className="w-36 text-xs font-bold"
-                    />
-                  </label>
-                  <Button size="sm" onClick={() => void aplicarVigente(inicioVigente || null)} disabled={guardando}>
-                    {guardando ? <span className="mr-1">⏳</span> : <span className="mr-1">📌</span>} Activar Semana
-                  </Button>
-                  {semana.fijada ? (
-                    <Button size="sm" variant="outline" onClick={() => void aplicarVigente(null)} disabled={guardando}>
-                      Usar semana del calendario
-                    </Button>
-                  ) : null}
-                  <Button size="sm" variant="outline" onClick={() => setEditandoVigente(false)}>
-                    Cancelar
-                  </Button>
-                  <p className="w-full text-[10px] font-semibold text-slate-500">
-                    Seleccione la fecha de inicio de la semana que desea activar. Solo estará activa la semana que usted elija.
-                  </p>
-                </div>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={abrirEditorVigente}
-                  title="Elegir y activar la semana operativa del grupo"
-                >
-                  <span className="mr-1">📌</span>
-                  {semana.fijada ? "Cambiar Semana Activa" : "Activar Semana"}
-                </Button>
-              )}
-            </div>
           </>
         ) : (
-          <p className="rounded-xl border border-dashed border-line bg-gray-50 px-3 py-4 text-center text-xs font-semibold text-slate-400">
+          <p className="rounded-xl border border-dashed border-line bg-surfaceAlt px-3 py-3 text-center text-xs font-semibold text-slate-400">
             Sin grupos. Cree un grupo de venta en «Grupos y Convenios» para activar la Semana Activa.
           </p>
         )}
       </section>
 
-      {/* ---------- ACCESOS RÁPIDOS ---------- */}
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+      {/* ---------- ACCESOS RÁPIDOS COMPACTOS ---------- */}
+      <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
         {ACCESOS.map((a) => (
           <div
             key={a.txt}
-            className="flex flex-col items-center justify-between gap-2 rounded-2xl border border-line bg-white p-4 text-center shadow-sm transition-shadow hover:shadow-md"
+            className="flex flex-col items-center justify-between gap-1.5 rounded-xl border border-line bg-surface p-2.5 text-center shadow-xs transition-shadow hover:shadow-sm"
           >
-            <span className="text-3xl">{a.emoji}</span>
+            <span className="text-2xl">{a.emoji}</span>
             <span className="w-full text-xs font-black uppercase leading-tight tracking-wide text-slate-700">{a.txt}</span>
             {a.href ? (
               <Link
                 href={a.href}
-                className="w-full rounded-lg bg-indigo-600 py-1.5 text-center text-[10px] font-black uppercase tracking-widest text-white transition-colors hover:bg-indigo-700"
+                className="w-full rounded-md bg-indigo-600 py-1 text-center text-[10px] font-black uppercase tracking-widest text-white transition-colors hover:bg-indigo-700"
               >
                 Abrir
               </Link>
@@ -594,7 +607,7 @@ export function DashboardGrupos() {
               <button
                 type="button"
                 onClick={() => enDesarrollo(a.txt)}
-                className="w-full rounded-lg border border-line bg-slate-50 py-1.5 text-center text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:bg-slate-100"
+                className="w-full rounded-md border border-line bg-surfaceAlt py-1 text-center text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:opacity-80"
               >
                 Pronto
               </button>

@@ -1,6 +1,6 @@
 const colors = require("tailwindcss/colors");
 
-/** Design System centralizado — paleta semántica (área central en tema claro). */
+/** Design System centralizado — paleta semántica reactiva al tema visual activo */
 module.exports = {
   // Solo se escanea `src/`: el sistema legacy se eliminó y su carpeta ya no
   // existe. Los globs apuntaban a `./legacy/html` y `./legacy/js`, así que
@@ -16,10 +16,11 @@ module.exports = {
         mono: ["'Inter'", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],
       },
       colors: {
-        background: colors.gray[50],
-        surface: colors.white,
-        surfaceAlt: colors.gray[100],
-        line: colors.gray[200],
+        background: "rgb(var(--app-bg-rgb, 248 250 252) / <alpha-value>)",
+        surface: "rgb(var(--app-surface-rgb, 255 255 255) / <alpha-value>)",
+        surfaceAlt: "rgb(var(--app-surface-alt-rgb, 241 245 249) / <alpha-value>)",
+        line: "rgb(var(--app-border-rgb, 203 213 225) / <alpha-value>)",
+        accent: "rgb(var(--app-accent-rgb, 245 158 11) / <alpha-value>)",
         primary: colors.cyan,
         secondary: colors.blue,
         success: colors.emerald,
