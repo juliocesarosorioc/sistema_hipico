@@ -147,8 +147,8 @@ export function CarreraGacetaCard({
             <button
               type="button"
               onClick={() => onEliminar?.()}
-              title="Eliminar esta carrera del registro"
-              aria-label="Eliminar esta carrera"
+              title="Quitar de la vista de edición (permanece registrada en la base de datos para jugadas)"
+              aria-label="Quitar de la vista de edición"
               className="rounded px-0.5 text-[11px] leading-none transition-colors hover:bg-white/20"
             >
               🗑️

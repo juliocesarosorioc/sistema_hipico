@@ -45,6 +45,7 @@ import {
 } from "@/features/reportes/components/ReporteDiarioTabla";
 import { ModalRealizarJugadaUsuario } from "@/features/portal/components/ModalRealizarJugadaUsuario";
 import { SeccionJugadasPortal } from "@/features/portal/components/SeccionJugadasPortal";
+import { SeccionGacetasPortal } from "@/features/portal/components/SeccionGacetasPortal";
 import { ModalJugadaNoRelacionada } from "@/features/portal/components/ModalJugadaNoRelacionada";
 import { dentroDeVentana, type CicloGrupo } from "@/features/portal/lib/ventana-reclamos";
 import { DateInput } from "@/shared/components/ui/DateInput";
@@ -104,7 +105,7 @@ function isoLocal(d: Date): string {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 }
 
-type TabPortal = "resumen" | "jugadas" | "reporte" | "reportar" | "tickets" | "pagos" | "comprar" | "datos" | "externos";
+type TabPortal = "resumen" | "jugadas" | "reporte" | "gacetas" | "reportar" | "tickets" | "pagos" | "comprar" | "datos" | "externos";
 
 const BADGE: Record<string, string> = {
   Ganador: "bg-emerald-100 text-emerald-700",
@@ -396,6 +397,7 @@ function LoginScreen(props: {
 const OPCIONES_MENU_PORTAL: { key: TabPortal; icono: string; label: string; badge?: string }[] = [
   { key: "reporte", icono: "📊", label: "Reporte del Día" },
   { key: "resumen", icono: "🗒️", label: "Resumen y movimientos" },
+  { key: "gacetas", icono: "📰", label: "Gacetas y Retrospectos", badge: "PDF" },
   { key: "pagos", icono: "💳", label: "Mis Pagos y Comprobantes" },
   { key: "externos", icono: "📓", label: "Mi Control en Otros Grupos" },
   { key: "jugadas", icono: "⚔️", label: "Jugadas" },
@@ -616,7 +618,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
                 )}
               </div>
               <div className="mb-2 flex justify-center">
-                <CapsulaUsuarioConTorta sesion={sesion} nombreGrupo={nombreGrupoActivo} />
+                <CapsulaUsuarioConTorta sesion={sesion} nombreGrupo={nombreGrupoActivo ?? undefined} />
               </div>
               <div className="mb-2 flex items-center justify-between px-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
@@ -762,6 +764,12 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
           <div className="min-w-0 space-y-4">
             {tab === "reporte" ? <ReporteDiarioView sesion={sesion} semana={verTodoHistorico ? null : semanaSeleccionada} /> : null}
             {tab === "resumen" ? <ResumenView sesion={sesion} onCambio={onActualizar} semana={verTodoHistorico ? null : semanaSeleccionada} /> : null}
+            {tab === "gacetas" ? (
+              <SeccionGacetasPortal
+                nombreJugador={sesion.cliente.nombre}
+                nombreGrupo={nombreGrupoActivo}
+              />
+            ) : null}
             {tab === "pagos" ? (
               <MisPagosYComprobantesView
                 cliente={sesion.cliente}

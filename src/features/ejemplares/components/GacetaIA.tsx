@@ -34,6 +34,7 @@ import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { numeroDeCarrera, carrerasFaltantes, ordenarCarrerasYEjemplares } from "@/features/gaceta/lib/numeros";
 import { CarreraGacetaCard } from "@/features/ejemplares/components/CarreraGacetaCard";
+import { ModalAlmacenarGacetas } from "@/features/ejemplares/components/ModalAlmacenarGacetas";
 import { listarHipodromos, publicarTablasLote, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
 import type { TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
 import { supabase } from "@/core/supabase";
@@ -381,6 +382,7 @@ export function GacetaIA() {
   /** INDICADOR: carreras ya cargadas en el Ensamblaje vs. las del día. */
   const [cargadas, setCargadas] = useState(0);
   const [enviadasHoy, setEnviadasHoy] = useState(0);
+  const [modalRepositorioAbierto, setModalRepositorioAbierto] = useState(false);
   /** Catálogo de hipódromos activos: para mostrar el nombre propio en las cards. */
   const [hipodromos, setHipodromos] = useState<OpcionHipodromo[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1208,22 +1210,21 @@ export function GacetaIA() {
     (i: number) => {
       const c = carreras[i];
       if (!c) return;
-      const fElim = String(c.fecha || fechaJornadaRef.current || hoyLocal()).slice(0, 10);
-      const hElim = String(c.hipodromo ?? "").trim().toUpperCase();
-      const nElim = Number(c.carrera) || 0;
-      if (hElim && nElim > 0) {
-        void eliminarCarreraCentral(fElim, hElim, nElim);
-        useRegistroCentral.getState().eliminarCarrera(fElim, hElim, nElim);
-        useCarrerasDiaStore.getState().eliminarCarrera(hElim, nElim, fElim);
-      }
+      // Regla oficial: Retirar la tarjeta de la sección de edición SOLO la quita de la vista de trabajo local.
+      // NO se elimina de la base de datos central ni de Carreras del Día, manteniéndose activa para jugadas.
       setCarreras((prev) => {
         const rest = prev.filter((_, k) => k !== i);
         persistirRegistro(rest);
         return rest;
       });
       const resto = carreras.length - 1;
-      setEstado(`Carrera C${c.carrera ?? i + 1} del ${c.hipodromo || "programa"} eliminada permanentemente.`);
-      toast(resto > 0 ? `Carrera eliminada (quedan ${resto}).` : "Registro vacío tras eliminar la carrera.", "info");
+      setEstado(`Carrera C${c.carrera ?? i + 1} del ${c.hipodromo || "programa"} retirada de la vista de edición.`);
+      toast(
+        resto > 0
+          ? `Carrera retirada de la edición (permanece registrada en la base de datos para jugadas). Quedan ${resto}.`
+          : "Vista de edición despejada (las carreras permanecen registradas en la base de datos para jugadas).",
+        "info"
+      );
     },
     [carreras, toast]
   );
@@ -2280,6 +2281,15 @@ export function GacetaIA() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setModalRepositorioAbierto(true)}
+              className="border-indigo-400 bg-indigo-600 text-white hover:bg-indigo-700 font-black shadow-xs"
+              title="Repositorio para almacenar gacetas y ponerlas a disposición en el portal de jugadores para ver y descargar."
+            >
+              📚 Repositorio de Gacetas (Portal)
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               disabled={sincronizando || enviando}
               onClick={agregarCarreraManual}
               className="border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 font-black"
@@ -2678,6 +2688,15 @@ export function GacetaIA() {
           </div>
         </div>
       )}
+
+      {/* Modal Repositorio de Gacetas Hípicas */}
+      <ModalAlmacenarGacetas
+        abierto={modalRepositorioAbierto}
+        onCerrar={() => setModalRepositorioAbierto(false)}
+        hipodromos={hipodromos}
+        hipodromoSugerido={carreras[0]?.hipodromo}
+        fechaSugerida={fechaJornadaRef.current}
+      />
 
       <ToastHost />
     </div>
