@@ -554,7 +554,15 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
 
         {/* Lado derecho de la cabecera */}
         <div className="flex items-center gap-2 shrink-0">
-          <button
+                    <a
+            href="/sala"
+            className="flex items-center gap-1.5 rounded-xl border border-teal-400 bg-gradient-to-r from-teal-600 to-emerald-600 px-3 py-1.5 text-xs font-black text-white hover:brightness-110 transition shadow-sm"
+            title="Ir a la Sala de Chat WhatsApp / P2P"
+          >
+            <span>💬</span>
+            <span className="hidden sm:inline">Sala Chat</span>
+          </a>
+<button
             type="button"
             onClick={() => setModalReportarPagoAbierto(true)}
             className="flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-800 hover:bg-emerald-100 transition shadow-sm"

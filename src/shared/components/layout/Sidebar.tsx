@@ -75,6 +75,7 @@ export const CATEGORIAS_OPERADOR: Categoria[] = [
     emoji: "📂",
     items: [
       { href: "/inicio", emoji: "🏠", txt: "Inicio", visibleSiempre: true },
+      { href: "/sala", emoji: "💬", txt: "Sala Chat P2P", visibleSiempre: true },
       { href: "/apuestas", emoji: "🐎", txt: "Apuestas", visibleSiempre: true },
       { href: "/saldos-reportes", emoji: "💵", txt: "Reportes", visibleSiempre: true },
       { href: "/clientes", emoji: "🧾", txt: "Clientes", visibleSiempre: true },
@@ -102,6 +103,7 @@ export const CATEGORIAS: Categoria[] = [
     emoji: "📂",
     items: [
       { href: "/inicio", emoji: "🏠", txt: "Inicio" },
+      { href: "/sala", emoji: "💬", txt: "Sala Chat P2P", visibleSiempre: true },
       { href: "/apuestas", emoji: "🐎", txt: "Apuestas", visibleSiempre: true },
       { href: "/saldos-reportes", emoji: "💵", txt: "Reportes" },
       { href: "/clientes", emoji: "🧾", txt: "Clientes" },
