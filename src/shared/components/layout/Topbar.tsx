@@ -196,7 +196,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const total = novedades.length;
 
   return (
-    <header className="sticky top-0 z-40 flex h-[50px] shrink-0 items-center justify-between gap-2 border-b border-line bg-surface/90 px-3 sm:px-4 backdrop-blur overflow-hidden">
+    <header className="sticky top-0 z-50 flex h-[50px] shrink-0 items-center justify-between gap-2 border-b border-line bg-surface/90 px-3 sm:px-4 backdrop-blur">
       {/* ESPACIO SUPERIOR IZQUIERDO: Menú + LOGO DEL GRUPO */}
       <div className="flex items-center gap-2 min-w-0 shrink-0">
         {alAlternarMenu && (
