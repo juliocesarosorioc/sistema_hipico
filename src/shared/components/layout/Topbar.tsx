@@ -348,7 +348,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         </div>
       )}
 
-      <BotonCargaRapidaSaldo />
+      <BotonCargaRapidaSaldo compacto />
       <SelectorTemas compacto />
       <RelojNavegador />
 
