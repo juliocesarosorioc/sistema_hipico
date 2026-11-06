@@ -3460,7 +3460,7 @@ const hipodromosDelDia = useMemo(() => {
 
       {/* Inputs superiores */}
       <div className="grid gap-1.5 rounded-xl border border-line bg-surface p-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto_minmax(0,1.1fr)_auto_auto]">
-        <div>
+        <div data-tour="tour-fecha">
           <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">1 · Fecha 📅</label>
           <DateInput
             value={fecha}
@@ -3468,7 +3468,7 @@ const hipodromosDelDia = useMemo(() => {
             className="w-full text-xs font-bold"
           />
         </div>
-        <div>
+        <div data-tour="tour-hipodromo">
           <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">2 · Hipódromo</label>
           <SearchableSelect
             options={hipodromosDelDia}
@@ -3477,7 +3477,7 @@ const hipodromosDelDia = useMemo(() => {
             placeholder="Buscar hipódromo…"
           />
         </div>
-        <div>
+        <div data-tour="tour-retirados">
           <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
             Retirados · C{carrera}
           </label>
@@ -3518,7 +3518,7 @@ const hipodromosDelDia = useMemo(() => {
             className="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
-        <div>
+        <div data-tour="tour-comision">
           <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">COM %</label>
           <input
             value={comision}
@@ -3537,6 +3537,7 @@ const hipodromosDelDia = useMemo(() => {
             <span>👤+</span> Nuevo Cliente
           </button>
           <label
+            data-tour="tour-modo-manual"
             className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase transition-all shadow-2xs ${
               modoManual
                 ? "border-cyan-500 bg-cyan-600 text-white shadow-cyan-600/20"
@@ -3565,6 +3566,7 @@ const hipodromosDelDia = useMemo(() => {
           ② Seleccione la <b>carrera</b> en el semáforo para habilitar la carga de jugadas.
         </div>
       )}
+      <div data-tour="tour-carrera-semaforo" className="w-full">
       <SemaforoCarreras
         hipodromo={hipodromo}
         fecha={fecha}
@@ -3584,6 +3586,7 @@ const hipodromosDelDia = useMemo(() => {
         accionDerecha={
           <div className="grid grid-cols-2 gap-1.5 w-full sm:flex sm:items-center sm:gap-2 sm:w-auto">
             <button
+              data-tour="tour-liquidar-carrera"
               type="button"
               onClick={() => void solicitarLiquidarCarrera()}
               disabled={!listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada}
@@ -3633,6 +3636,7 @@ const hipodromosDelDia = useMemo(() => {
           </div>
         }
       />
+      </div>
 
       {/* Tabla de Carga Individual (clon 1:1 del legacy) */}
       {!listoParaCargar ? (
@@ -3669,26 +3673,7 @@ const hipodromosDelDia = useMemo(() => {
           </span>
         </div>
 
-        {/* Barra móvil rápida cuando la carrera aún no tiene ejemplares registrados */}
-        {caballosDeCarrera.length === 0 && (
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-cyan-200 bg-cyan-50/70 px-2.5 py-1.5 text-[10px]">
-            <span className="font-black uppercase tracking-wide text-cyan-800">
-              📱 Configurar Ejemplares C{carrera} (1 toque):
-            </span>
-            <div className="flex flex-wrap items-center gap-1">
-              {[6, 8, 10, 12, 14, 16].map((cant) => (
-                <button
-                  key={cant}
-                  type="button"
-                  onClick={() => void registrarCantidadEjemplaresRapido(cant)}
-                  className="rounded-md border border-cyan-300 bg-white px-2 py-0.5 text-[10px] font-black text-cyan-800 shadow-2xs hover:bg-cyan-100 active:scale-95"
-                >
-                  {cant} ej.
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+
 
         {/* Modal dedicado de W.P.S. (Win, Place, Show) */}
         <ModalWpsApuestas
@@ -3722,7 +3707,7 @@ const hipodromosDelDia = useMemo(() => {
 
 
         {/* Panel lateral de ejemplares (tabla fija publicada o Carreras del Día) */}
-        <div className={caballosDeCarrera.length ? "flex flex-col gap-2 lg:flex-row" : ""}>
+        <div data-tour="tour-ejemplares-padron" className={caballosDeCarrera.length ? "flex flex-col gap-2 lg:flex-row" : ""}>
           {caballosDeCarrera.length > 0 && (
             <aside className="shrink-0 rounded-xl border border-line bg-white p-1.5 shadow-sm lg:w-[20%]">
               <p className="px-1 pb-1 text-[9px] font-black uppercase leading-none tracking-wide text-slate-500">
@@ -4548,6 +4533,7 @@ const hipodromosDelDia = useMemo(() => {
             >
               💰 Ver Reporte de Saldos Actualizados WhatsApp
             </button>
+            <div data-tour="tour-reporte-visual-disponibilidad" className="inline-block">
             <BotonIconoReporteSaldosVisual
               etiqueta="Reporte Visual de Disponibilidad y Alerta de Saldos"
               grupo={grupoCabecera}
@@ -4568,6 +4554,7 @@ const hipodromosDelDia = useMemo(() => {
                 modoJuego: (c as { modo_juego?: string }).modo_juego || (esClienteLibre(c) ? "libre" : "aval"),
               }))}
             />
+            </div>
           </div>
 
           {visorWhatsappTipo && (
@@ -5167,6 +5154,7 @@ const hipodromosDelDia = useMemo(() => {
             📊 Historial
           </button>
           <button
+            data-tour="tour-reporte-final-whatsapp"
             type="button"
             disabled={bloqueoLiquidacionActivo}
             onClick={() => {
@@ -5199,6 +5187,7 @@ const hipodromosDelDia = useMemo(() => {
           )}
           {puedeEditarJugadas && (
             <button
+              data-tour="tour-editar-reliquidar"
               type="button"
               onClick={() => setModalEditarJugadas(true)}
               disabled={!listoParaCargar || bloqueoLiquidacionActivo}
