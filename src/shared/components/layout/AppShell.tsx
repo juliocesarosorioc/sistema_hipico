@@ -188,12 +188,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   // botón deshabilitado, a que el store sepa quién es.
   if (ES_LOGIN(pathname)) return <>{children}</>;
 
-  // PUERTA DE ENTRADA del resto: hasta que la sesión real de Supabase no se
-  // haya verificado, NO se dibuja nada. Antes se pintaba el shell y sus
-  // controles con los permisos en caché y luego se expulsaba al usuario: el
-  // contenido había salido a la pantalla antes de comprobar el acceso.
-  if (!inicializada) return <PantallaDeEspera />;
-
   if (ES_PORTAL(pathname)) {
     return (
       <div className="min-h-screen bg-background font-sans text-sm text-[var(--app-text)] transition-colors duration-200">
@@ -205,11 +199,17 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (ES_SALA(pathname)) {
     return (
-      <div className="h-screen w-screen overflow-hidden bg-[#efeae2]">
+      <div className="h-[100dvh] w-screen overflow-hidden bg-[#111b21]">
         {children}
       </div>
     );
   }
+
+  // PUERTA DE ENTRADA del resto: hasta que la sesión real de Supabase no se
+  // haya verificado, NO se dibuja nada. Antes se pintaba el shell y sus
+  // controles con los permisos en caché y luego se expulsaba al usuario: el
+  // contenido había salido a la pantalla antes de comprobar el acceso.
+  if (!inicializada) return <PantallaDeEspera />;
 
   // Ruta protegida sin sesión: se está redirigiendo a /login (lo hacen
   // AuthBootstrap y RutaProtegida). Se mantiene la espera en vez de dibujar el
