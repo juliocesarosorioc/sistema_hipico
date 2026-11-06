@@ -40,7 +40,7 @@ type PdfDoc = {
   numPages: number;
   getPage: (n: number) => Promise<{
     getViewport: (o: { scale: number }) => { width: number; height: number };
-    getTextContent: () => Promise<{ items: Array<{ str?: string; hasEOL?: boolean }> }>;
+    getTextContent: () => Promise<{ items: Array<{ str?: string; hasEOL?: boolean; transform?: number[] }> }>;
     render: (p: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<void> };
     cleanup: () => void;
   }>;
@@ -85,9 +85,38 @@ export async function extraerPaginasTextoPdf(
       const page = await doc.getPage(i);
       try {
         const contenido = await page.getTextContent();
-        const lineas = (contenido?.items ?? [])
-          .map((it) => `${it.str ?? ""}${it.hasEOL ? "\n" : " "}`)
-          .join("");
+        const items = contenido?.items ?? [];
+        const conCoords = items.filter(
+          (it) => Array.isArray(it.transform) && it.transform.length >= 6 && (it.str ?? "").trim().length > 0
+        );
+
+        let lineas = "";
+        if (conCoords.length > items.length * 0.4) {
+          // Ordenamiento espacial (Y desc, X asc) con tolerancia vertical de línea
+          const filas: Array<{ y: number; partes: Array<{ x: number; str: string }> }> = [];
+          const TOLERANCIA_Y = 3.5;
+          for (const it of items) {
+            const txt = String(it.str ?? "");
+            if (!txt.trim()) continue;
+            const x = Array.isArray(it.transform) ? Number(it.transform[4]) || 0 : 0;
+            const y = Array.isArray(it.transform) ? Number(it.transform[5]) || 0 : 0;
+            let fila = filas.find((f) => Math.abs(f.y - y) <= TOLERANCIA_Y);
+            if (!fila) {
+              fila = { y, partes: [] };
+              filas.push(fila);
+            }
+            fila.partes.push({ x, str: txt });
+          }
+          filas.sort((a, b) => b.y - a.y);
+          lineas = filas
+            .map((f) => {
+              f.partes.sort((a, b) => a.x - b.x);
+              return f.partes.map((p) => p.str).join(" ");
+            })
+            .join("\n");
+        } else {
+          lineas = items.map((it) => `${it.str ?? ""}${it.hasEOL ? "\n" : " "}`).join("");
+        }
         if (lineas.trim()) paginas.push(lineas);
       } catch {
         // Página sin texto directo

@@ -1,27 +1,24 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/core/supabase";
-import { redondearCentavos, sumarDinero, restarDinero } from "@/shared/lib/dinero";
-import { esSinTope } from "@/features/taquilla/lib/reparto";
 import {
-  parsearMensajeJugada,
-  type DatosJugada,
-} from "@/features/portal/lib/gramatica-concrecion-hipica";
-import {
-  EVENTO_ESTADO_CARRERA_CAMBIADO,
-  alternarEstadoCarreraGlobal,
-} from "@/features/portal/lib/bloqueo-jugadas";
-import {
-  consultarEstadoCarreraActual,
-  ejecutarCierreCarrera,
-  ejecutarAperturaCarrera,
-  activarCentinelaCierreSimultaneo,
-} from "@/features/carreras/lib/cierre-simultaneo-carreras";
-import {
-  detectarCordialidad,
-  generarRespuestaCordial,
-} from "@/features/ia-copiloto/lib/cordialidad";
+  type EstadoCarreraGrupo,
+  type MensajeSala,
+  type TicketP2P,
+  type SaldoPrivado,
+  type GrupoSala,
+  obtenerMiSaldoPrivado,
+  procesarRespuestaJugadaFifo,
+  liquidarCarreraChatP2p,
+  detectarComandoOperador,
+  parsearPropuestaChat,
+} from "../lib/chat-p2p";
+import { SalaHeaderWallet } from "./SalaHeaderWallet";
+import { SalaLeftPanelGrupos } from "./SalaLeftPanelGrupos";
+import { SalaRightPanelCarrera } from "./SalaRightPanelCarrera";
+import { SalaBurbujaMensaje } from "./SalaBurbujaMensaje";
+import { emitirToast } from "@/shared/lib/mensajeria";
 
 export interface ClienteSesionSala {
   id: string;
@@ -36,36 +33,10 @@ export interface ClienteSesionSala {
   esOperadorOAdmin?: boolean;
 }
 
-export interface MensajeChatSala {
-  id: string;
-  autor: string;
-  autorId?: string;
-  texto: string;
-  hora: string;
-  esMio: boolean;
-  esIa: boolean;
-  esConcrecion?: boolean;
-  esPropuestaAbierta?: boolean;
-  propuestaData?: {
-    jugador: string;
-    rol: "JUEGA" | "DA";
-    monto: number;
-    jugada: string;
-    caballo: string;
-  };
-  concrecionData?: {
-    juega: string;
-    da: string;
-    monto: number;
-    jugada: string;
-    caballo: string;
-    ticketId?: string | number;
-  };
-}
+const STORAGE_SESSION_KEY = "hipico_sala_session_v2";
+const STORAGE_FONT_KEY = "hipico_chat_font_size";
+const GRUPO_DEFAULT_ID = "d290daa1-a44b-4ed4-bb8a-03db4ecc32b0";
 
-const STORAGE_KEY = "hipico_sala_session_v1";
-
-// Sintetizador Web Audio para feedback de WhatsApp (sin archivos externos)
 function reproducirBeepWhatsApp() {
   if (typeof window === "undefined") return;
   try {
@@ -92,7 +63,7 @@ export function SalaWhatsAppApp() {
   const [sesion, setSesion] = useState<ClienteSesionSala | null>(null);
   const [cargandoAuth, setCargandoAuth] = useState(true);
 
-  // Formulario Onboarding
+  // Formulario Onboarding / Login
   const [formNombre, setFormNombre] = useState("");
   const [formTelefono, setFormTelefono] = useState("");
   const [pasoOtp, setPasoOtp] = useState(false);
@@ -100,29 +71,75 @@ export function SalaWhatsAppApp() {
   const [codigoGenerado, setCodigoGenerado] = useState("");
   const [errorLogin, setErrorLogin] = useState<string | null>(null);
 
-  // Estado del Chat y Carrera Activa
-  const [mensajes, setMensajes] = useState<MensajeChatSala[]>([]);
-  const [inputTexto, setInputTexto] = useState("");
-  const [grabandoVoz, setGrabandoVoz] = useState(false);
-  const [carreraActiva, setCarreraActiva] = useState({
-    hipodromo: "LA RINCONADA",
-    carrera: 7,
-    estado: "ABIERTA" as "ABIERTA" | "CERRADA",
-    horaPartida: null as string | null,
-  });
-  const [enviando, setEnviando] = useState(false);
-  const chatBottomRef = useRef<HTMLDivElement>(null);
-  const canalRealtimeRef = useRef<any>(null);
+  // Multi-Grupo y Estado del Chat
+  const [grupos, setGrupos] = useState<GrupoSala[]>([
+    { id: GRUPO_DEFAULT_ID, nombre: "Sala Oficial La Rinconada & USA", descripcion: "Paradas P2P en vivo", activo: true },
+    { id: "grupo-vip-1", nombre: "Sala Clásicos VIP", descripcion: "Apuestas mayores y pollas", activo: false },
+  ]);
+  const [grupoActivoId, setGrupoActivoId] = useState<string>(GRUPO_DEFAULT_ID);
 
-  // 1. Cargar sesión previa guardada en el dispositivo
+  // Estado de Carrera Activa por Grupo
+  const [carreraActiva, setCarreraActiva] = useState<EstadoCarreraGrupo>({
+    grupo_id: GRUPO_DEFAULT_ID,
+    hipodromo: "LA RINCONADA",
+    carrera: 1,
+    fecha: new Date().toISOString().slice(0, 10),
+    estado: "ABIERTA",
+    distancia: "1200m",
+    superficie: "Arena",
+    ejemplares: [],
+  });
+
+  // Saldo Privado del Usuario Actual
+  const [saldoPrivado, setSaldoPrivado] = useState<SaldoPrivado | null>(null);
+
+  // Escala Dinámica de Tamaño de Letra (12px - 24px)
+  const [tamanoLetra, setTamanoLetra] = useState<number>(15);
+
+  // Mensajes y Tickets
+  const [mensajes, setMensajes] = useState<MensajeSala[]>([]);
+  const [tickets, setTickets] = useState<TicketP2P[]>([]);
+  const [mensajeCitado, setMensajeCitado] = useState<MensajeSala | null>(null);
+  const [inputTexto, setInputTexto] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [grabandoVoz, setGrabandoVoz] = useState(false);
+
+  // Paneles responsive
+  const [panelDerechoAbierto, setPanelDerechoAbierto] = useState(false);
+  const [mostrarGruposMovil, setMostrarGruposMovil] = useState(false);
+
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  // 1. Cargar tamaño de letra persistido
   useEffect(() => {
     try {
-      const guardada = localStorage.getItem(STORAGE_KEY);
+      const f = localStorage.getItem(STORAGE_FONT_KEY);
+      if (f) {
+        const val = parseInt(f, 10);
+        if (val >= 12 && val <= 24) setTamanoLetra(val);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleCambiarTamanoLetra = (nuevoTamano: number) => {
+    setTamanoLetra(nuevoTamano);
+    try {
+      localStorage.setItem(STORAGE_FONT_KEY, String(nuevoTamano));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // 2. Cargar sesión previa guardada
+  useEffect(() => {
+    try {
+      const guardada = localStorage.getItem(STORAGE_SESSION_KEY);
       if (guardada) {
         const parsed = JSON.parse(guardada) as ClienteSesionSala;
         if (parsed && parsed.id && parsed.nombre) {
           setSesion(parsed);
-          refrescarSaldoEnBase(parsed.id);
         }
       }
     } catch {
@@ -132,207 +149,268 @@ export function SalaWhatsAppApp() {
     }
   }, []);
 
-  // 2. Cargar carrera activa real desde Supabase para hoy
-  useEffect(() => {
-    async function sincronizarCarreraActiva() {
-      if (!supabase) return;
-      try {
-        const hoy = new Date().toISOString().slice(0, 10);
-        const { data } = await supabase
-          .from("carreras")
-          .select("hipodromo, carrera, estado, hora, hora_partida")
-          .eq("fecha", hoy)
-          .order("carrera", { ascending: true });
-
-        if (data && data.length > 0) {
-          const abierta = data.find((c) => String(c.estado).toUpperCase() === "ABIERTA");
-          const cElegida = abierta || data[data.length - 1];
-          const est = String(cElegida.estado || "ABIERTA").toUpperCase();
-          const cerrada = est === "CERRADA" || est === "LIQUIDADA" || est === "RESULTADOS";
-          setCarreraActiva({
-            hipodromo: cElegida.hipodromo || "LA RINCONADA",
-            carrera: Number(cElegida.carrera) || 1,
-            estado: cerrada ? "CERRADA" : "ABIERTA",
-            horaPartida: cElegida.hora_partida || cElegida.hora || null,
-          });
-        }
-      } catch {
-        /* fallback */
-      }
+  // 3. Refrescar Saldo Privado (RPC obtener_mi_saldo_privado)
+  const refrescarSaldo = useCallback(async (clienteId?: string) => {
+    const cid = clienteId || sesion?.id;
+    if (!cid) return;
+    const res = await obtenerMiSaldoPrivado(cid);
+    if (res.ok) {
+      setSaldoPrivado(res);
     }
-    sincronizarCarreraActiva();
-  }, []);
-
-  // 3. Centinela Automático de Cierre Simultáneo (DRF / TVG / TwinSpires / Hora Partida)
-  useEffect(() => {
-    if (carreraActiva.estado !== "ABIERTA") return;
-
-    const cancelarCentinela = activarCentinelaCierreSimultaneo({
-      hipodromo: carreraActiva.hipodromo,
-      carrera: carreraActiva.carrera,
-      horaPartida: carreraActiva.horaPartida,
-      intervaloMs: 20000,
-      onCierreDetectado: (fuente, detalle) => {
-        console.log(`[Centinela] Carrera cerrada automáticamente por ${fuente}: ${detalle}`);
-      },
-    });
-
-    return () => {
-      cancelarCentinela();
-    };
-  }, [carreraActiva.hipodromo, carreraActiva.carrera, carreraActiva.estado, carreraActiva.horaPartida]);
-
-  // 4. Canal de Tiempo Real Multi-Dispositivo (Supabase Realtime Broadcast)
-  useEffect(() => {
-    if (!supabase) return;
-    const canal = supabase
-      .channel("sala-whatsapp-realtime")
-      .on("broadcast", { event: "mensaje_sala" }, ({ payload }) => {
-        if (!payload) return;
-        // Si el mensaje es de otro usuario o del bot para todos
-        if (payload.autorId !== sesion?.id) {
-          reproducirBeepWhatsApp();
-          setMensajes((prev) => {
-            if (prev.some((m) => m.id === payload.id)) return prev;
-            return [...prev, { ...payload, esMio: false }];
-          });
-        }
-      })
-      .on("broadcast", { event: "cierre_carrera" }, ({ payload }) => {
-        if (payload) {
-          setCarreraActiva((prev) => ({
-            ...prev,
-            hipodromo: payload.hipodromo || prev.hipodromo,
-            carrera: Number(payload.carrera) || prev.carrera,
-            estado: "CERRADA",
-          }));
-        }
-      })
-      .subscribe();
-
-    canalRealtimeRef.current = canal;
-
-    return () => {
-      canal.unsubscribe();
-    };
   }, [sesion?.id]);
 
-  // 5. Escuchar cambios de apertura/cierre de carrera en tiempo real (Simultáneo / Admin / Operador)
   useEffect(() => {
-    const handlerEstado = (e: any) => {
-      const detail = e.detail;
-      if (!detail) return;
-      const nuevoEst = String(detail.estado).toUpperCase();
-      const esCerrada = nuevoEst === "CERRADA" || nuevoEst === "LIQUIDADA";
-      const estadoFinal = esCerrada ? "CERRADA" : "ABIERTA";
-
-      setCarreraActiva((prev) => ({
-        ...prev,
-        hipodromo: detail.hipodromo || prev.hipodromo,
-        carrera: Number(detail.carrera) || prev.carrera,
-        estado: estadoFinal,
-      }));
-
-      // Notificación del Agente IA en la sala
-      const hora = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", hour12: true });
-      if (esCerrada) {
-        setMensajes((prev) => [
-          ...prev,
-          {
-            id: `ia-cierre-${Date.now()}`,
-            autor: "Agente IA Oficial",
-            texto: `🚨 *¡CARRERA CERRADA!*\n\nLa Carrera ${detail.carrera || carreraActiva.carrera} de ${detail.hipodromo || carreraActiva.hipodromo} ha sido **CERRADA** (por el Operador/Administrador o por cierre oficial simultáneo DRF/TVG/TwinSpires).\n\n⛔ **Taquilla Bloqueada**: No se aceptan más jugadas para esta carrera.`,
-            hora,
-            esMio: false,
-            esIa: true,
-          },
-        ]);
-      } else {
-        setMensajes((prev) => [
-          ...prev,
-          {
-            id: `ia-apertura-${Date.now()}`,
-            autor: "Agente IA Oficial",
-            texto: `🟢 *¡CARRERA ABIERTA!*\n\nLa Carrera ${detail.carrera || carreraActiva.carrera} de ${detail.hipodromo || carreraActiva.hipodromo} está **ABIERTA** para recibir jugadas y propuestas.`,
-            hora,
-            esMio: false,
-            esIa: true,
-          },
-        ]);
-      }
-    };
-
-    if (typeof window !== "undefined") {
-      window.addEventListener(EVENTO_ESTADO_CARRERA_CAMBIADO, handlerEstado);
+    if (sesion?.id) {
+      refrescarSaldo(sesion.id);
     }
-    return () => {
-      if (typeof window !== "undefined") {
-        window.removeEventListener(EVENTO_ESTADO_CARRERA_CAMBIADO, handlerEstado);
-      }
-    };
-  }, [carreraActiva]);
+  }, [sesion?.id, refrescarSaldo]);
 
-  // Refrescar saldo del cliente desde la base
-  const refrescarSaldoEnBase = async (clienteId: string) => {
+  // 4. Sincronizar grupos desde Supabase
+  useEffect(() => {
+    async function cargarGrupos() {
+      if (!supabase) return;
+      try {
+        const { data } = await supabase.from("grupos").select("id, nombre, descripcion").order("nombre");
+        if (data && data.length > 0) {
+          setGrupos(data.map((g) => ({ id: String(g.id), nombre: g.nombre, descripcion: g.descripcion || undefined })));
+        }
+      } catch {
+        /* fallback a grupos estáticos */
+      }
+    }
+    cargarGrupos();
+  }, []);
+
+  // 5. Cargar estado de carrera del grupo activo
+  const cargarEstadoCarreraGrupo = useCallback(async (grupoId: string) => {
     if (!supabase) return;
     try {
+      // Primero buscar en chat_estado_grupo
       const { data } = await supabase
-        .from("clientes")
-        .select("id, nombre, seudonimo, saldo_actual, aval, libre, modo_juego, grupo_id")
-        .eq("id", clienteId)
+        .from("chat_estado_grupo")
+        .select("*")
+        .eq("grupo_id", grupoId)
         .maybeSingle();
+
       if (data) {
-        setSesion((prev) => {
-          if (!prev) return null;
-          const actualizado = {
-            ...prev,
-            saldo_actual: Number(data.saldo_actual || 0),
-            aval: Number(data.aval || 0),
-            libre: Boolean(data.libre || String(data.modo_juego).toLowerCase() === "libre"),
-            modo_juego: String(data.modo_juego || "aval"),
-          };
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(actualizado));
-          return actualizado;
+        setCarreraActiva({
+          id: data.id,
+          grupo_id: data.grupo_id,
+          hipodromo: data.hipodromo,
+          carrera: data.carrera,
+          fecha: data.fecha,
+          estado: data.estado as any,
+          distancia: data.distancia || "1200m",
+          superficie: data.superficie || "Arena",
+          hora: data.hora,
+          ejemplares: (data.ejemplares as any) || [],
         });
+      } else {
+        // Fallback: traer la carrera activa del día
+        const hoy = new Date().toISOString().slice(0, 10);
+        const { data: cData } = await supabase
+          .from("carreras")
+          .select("hipodromo, carrera, estado, hora, distancia, superficie")
+          .eq("fecha", hoy)
+          .order("carrera", { ascending: true })
+          .limit(1);
+
+        if (cData && cData.length > 0) {
+          const c = cData[0];
+          setCarreraActiva((prev) => ({
+            ...prev,
+            hipodromo: c.hipodromo || "LA RINCONADA",
+            carrera: Number(c.carrera) || 1,
+            estado: String(c.estado).toUpperCase() === "CERRADA" ? "CERRADA" : "ABIERTA",
+            distancia: c.distancia || "1200m",
+            superficie: c.superficie || "Arena",
+          }));
+        }
       }
     } catch {
       /* ignore */
     }
-  };
+  }, []);
 
-  // Cargar mensajes iniciales de bienvenida
-  useEffect(() => {
-    if (!sesion) return;
-    const hora = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", hour12: true });
-    const esLibre = sesion.libre || String(sesion.modo_juego).toLowerCase() === "libre";
-    const saldoTxt = esLibre
-      ? "⭐ Tu cuenta tiene **Estatus LIBRE** (sin limitaciones de saldo para apostar)."
-      : `💰 Tu disponible actual es **$${(sesion.saldo_actual + sesion.aval).toFixed(2)}** (Saldo $${sesion.saldo_actual.toFixed(2)} + Aval $${sesion.aval.toFixed(2)}).`;
+  // 6. Cargar mensajes y tickets del grupo activo
+  const cargarMensajesYTickets = useCallback(async (grupoId: string, clienteId?: string) => {
+    if (!supabase) return;
+    try {
+      const cid = clienteId || sesion?.id;
 
-    const estadoTxt =
-      carreraActiva.estado === "ABIERTA"
-        ? `🟢 Carrera en curso: **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})** · **ABIERTA**`
-        : `🔴 Carrera en curso: **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})** · **CERRADA**`;
+      // Mensajes: RLS ya filtra los privados, pero reforzamos en cliente
+      const { data: msgs } = await supabase
+        .from("chat_mensajes_sala")
+        .select("*")
+        .eq("grupo_id", grupoId)
+        .order("created_at", { ascending: true })
+        .limit(100);
 
-    setMensajes([
-      {
-        id: "msg-bienvenida-1",
-        autor: "Agente IA Oficial",
-        texto: `👋 ¡Hola @${sesion.seudonimo || sesion.nombre}! Bienvenido a la Sala de Jugadas Oficial.\n\n${saldoTxt}\n\n${estadoTxt}\nPuedes proponer jugadas libremente o responder a propuestas de otros compañeros.`,
-        hora,
-        esMio: false,
-        esIa: true,
-      },
-    ]);
+      if (msgs) {
+        const formateados: MensajeSala[] = msgs
+          .filter((m: any) => {
+            if (!m.destinatario_privado_id) return true;
+            return m.destinatario_privado_id === cid || m.autor_id === cid;
+          })
+          .map((m: any) => ({
+            id: m.id,
+            grupo_id: m.grupo_id,
+            autor_id: m.autor_id,
+            autor_nombre: m.autor_nombre,
+            autor_rol: m.autor_rol,
+            texto: m.texto,
+            tipo: m.tipo,
+            destinatario_privado_id: m.destinatario_privado_id,
+            reply_to_msg_id: m.reply_to_msg_id,
+            propuesta_id: m.propuesta_id,
+            monto_propuesto: m.monto_propuesto ? Number(m.monto_propuesto) : undefined,
+            monto_disponible: m.monto_disponible ? Number(m.monto_disponible) : undefined,
+            datos_jugada: m.datos_jugada,
+            solo_borrable_operador: m.solo_borrable_operador,
+            created_at: m.created_at,
+            esMio: Boolean(cid && m.autor_id === cid),
+            esPrivadoParaMi: Boolean(m.destinatario_privado_id && m.destinatario_privado_id === cid),
+          }));
+        setMensajes(formateados);
+      }
+
+      // Tickets P2P de esta carrera
+      const { data: tkts } = await supabase
+        .from("chat_tickets_p2p")
+        .select("*")
+        .eq("grupo_id", grupoId)
+        .order("numero_ticket", { ascending: true })
+        .limit(100);
+
+      if (tkts) {
+        setTickets(tkts as any);
+      }
+    } catch {
+      /* ignore */
+    }
   }, [sesion?.id]);
 
-  // Scroll automático hacia el final del chat
+  // Recargar al cambiar de grupo
+  useEffect(() => {
+    if (!grupoActivoId) return;
+    cargarEstadoCarreraGrupo(grupoActivoId);
+    cargarMensajesYTickets(grupoActivoId, sesion?.id);
+  }, [grupoActivoId, sesion?.id, cargarEstadoCarreraGrupo, cargarMensajesYTickets]);
+
+  // 7. Suscripción Supabase Realtime para Mensajes, Estado y Tickets
+  useEffect(() => {
+    if (!supabase || !sesion?.id || !grupoActivoId) return;
+
+    const canal = supabase
+      .channel(`chat-sala-canal-${grupoActivoId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_mensajes_sala",
+          filter: `grupo_id=eq.${grupoActivoId}`,
+        },
+        (payload: any) => {
+          const m = payload.new;
+          if (!m) return;
+          // Validar privacidad DM
+          if (m.destinatario_privado_id && m.destinatario_privado_id !== sesion.id && m.autor_id !== sesion.id) {
+            return;
+          }
+
+          reproducirBeepWhatsApp();
+          setMensajes((prev) => {
+            if (prev.some((x) => x.id === m.id)) return prev;
+            return [
+              ...prev,
+              {
+                id: m.id,
+                grupo_id: m.grupo_id,
+                autor_id: m.autor_id,
+                autor_nombre: m.autor_nombre,
+                autor_rol: m.autor_rol,
+                texto: m.texto,
+                tipo: m.tipo,
+                destinatario_privado_id: m.destinatario_privado_id,
+                reply_to_msg_id: m.reply_to_msg_id,
+                propuesta_id: m.propuesta_id,
+                monto_propuesto: m.monto_propuesto ? Number(m.monto_propuesto) : undefined,
+                monto_disponible: m.monto_disponible ? Number(m.monto_disponible) : undefined,
+                datos_jugada: m.datos_jugada,
+                solo_borrable_operador: m.solo_borrable_operador,
+                created_at: m.created_at,
+                esMio: m.autor_id === sesion.id,
+                esPrivadoParaMi: m.destinatario_privado_id === sesion.id,
+              },
+            ];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chat_mensajes_sala",
+          filter: `grupo_id=eq.${grupoActivoId}`,
+        },
+        (payload: any) => {
+          const m = payload.new;
+          if (!m) return;
+          setMensajes((prev) =>
+            prev.map((item) =>
+              item.id === m.id
+                ? {
+                    ...item,
+                    monto_disponible: m.monto_disponible ? Number(m.monto_disponible) : 0,
+                  }
+                : item
+            )
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "chat_tickets_p2p",
+          filter: `grupo_id=eq.${grupoActivoId}`,
+        },
+        () => {
+          cargarMensajesYTickets(grupoActivoId, sesion.id);
+          refrescarSaldo(sesion.id);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "chat_estado_grupo",
+          filter: `grupo_id=eq.${grupoActivoId}`,
+        },
+        () => {
+          cargarEstadoCarreraGrupo(grupoActivoId);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      canal.unsubscribe();
+    };
+  }, [grupoActivoId, sesion?.id, cargarMensajesYTickets, cargarEstadoCarreraGrupo, refrescarSaldo]);
+
+  // Auto-scroll al final del chat
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mensajes]);
 
-  // Manejo de Onboarding / Login Móvil OTP
-  const solicitarOtp = async (e: React.FormEvent) => {
+  // ──────────────────────────────────────────────────────────────────────────
+  // ONBOARDING / LOGIN MÓVIL OTP
+  // ──────────────────────────────────────────────────────────────────────────
+  const solicitarOtp = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorLogin(null);
     const nomLimpio = formNombre.trim().toUpperCase();
@@ -352,7 +430,7 @@ export function SalaWhatsAppApp() {
     setPasoOtp(true);
   };
 
-  const confirmarOtp = (e: React.FormEvent) => {
+  const confirmarOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (codigoOtp.trim() !== codigoGenerado) {
       setErrorLogin("Código incorrecto. Ingresa el código mostrado.");
@@ -363,8 +441,26 @@ export function SalaWhatsAppApp() {
     const telLimpio = formTelefono.trim();
     const esAdminOperador = /ADMIN|OPERADOR|ARELY|JULIO/i.test(nomLimpio);
 
+    // Buscar si ya existe en tabla clientes por nombre o crear id
+    let clienteId = crypto.randomUUID ? crypto.randomUUID() : `cli-${Date.now()}`;
+    if (supabase) {
+      try {
+        const { data: cliExistente } = await supabase
+          .from("clientes")
+          .select("id, nombre, saldo_actual, aval, libre, modo_juego")
+          .ilike("nombre", nomLimpio)
+          .maybeSingle();
+
+        if (cliExistente) {
+          clienteId = cliExistente.id;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
     const nuevaSesion: ClienteSesionSala = {
-      id: crypto.randomUUID ? crypto.randomUUID() : `cli-${Date.now()}`,
+      id: clienteId,
       nombre: nomLimpio,
       seudonimo: nomLimpio,
       telefono: telLimpio,
@@ -372,29 +468,390 @@ export function SalaWhatsAppApp() {
       aval: 0,
       libre: true,
       modo_juego: "libre",
-      grupo_id: "d290daa1-a44b-4ed4-bb8a-03db4ecc32b0",
+      grupo_id: grupoActivoId,
       esOperadorOAdmin: esAdminOperador,
     };
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nuevaSesion));
+    localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(nuevaSesion));
     setSesion(nuevaSesion);
     setPasoOtp(false);
+    refrescarSaldo(clienteId);
   };
 
   const cerrarSesion = () => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_SESSION_KEY);
     setSesion(null);
     setPasoOtp(false);
     setFormNombre("");
     setFormTelefono("");
   };
 
-  // Dictado por voz (Micrófono nativo)
+  // ──────────────────────────────────────────────────────────────────────────
+  // ENVIAR MENSAJE & PROCESAMIENTO AUTÓNOMO
+  // ──────────────────────────────────────────────────────────────────────────
+  const enviarMensaje = async (textoPersonalizado?: string) => {
+    const texto = (textoPersonalizado ?? inputTexto).trim();
+    if (!texto || !sesion || enviando) return;
+
+    setEnviando(true);
+    setInputTexto("");
+    const replyId = mensajeCitado?.id || null;
+    setMensajeCitado(null);
+
+    const horaLocal = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", hour12: true });
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MÓDULO 4: COMANDOS EXCLUSIVOS DE OPERADOR
+    // ────────────────────────────────────────────────────────────────────────
+    const cmdOp = detectarComandoOperador(texto);
+    if (cmdOp) {
+      if (!sesion.esOperadorOAdmin) {
+        // Enviar respuesta PRIVADA aclarando que el comando es exclusivo de operadores
+        if (supabase) {
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              grupo_id: grupoActivoId,
+              autor_id: null,
+              autor_nombre: "Agente IA Oficial",
+              autor_rol: "BOT",
+              texto: `⛔ @${sesion.nombre}: Los comandos de apertura, cierre y pizarra son exclusivos de Operadores y Administradores.`,
+              tipo: "DM_PRIVADO",
+              destinatario_privado_id: sesion.id,
+              reply_to_msg_id: replyId,
+            },
+          ]);
+        }
+        setEnviando(false);
+        return;
+      }
+
+      // 4.1 ABRIR CARRERA
+      if (cmdOp.tipo === "ABRIR_CARRERA") {
+        const hipoNuevo = cmdOp.hipodromo || carreraActiva.hipodromo;
+        const cNum = cmdOp.carrera;
+
+        // Actualizar chat_estado_grupo
+        if (supabase) {
+          await supabase.from("chat_estado_grupo").upsert(
+            {
+              grupo_id: grupoActivoId,
+              hipodromo: hipoNuevo,
+              carrera: cNum,
+              fecha: new Date().toISOString().slice(0, 10),
+              estado: "ABIERTA",
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "grupo_id" }
+          );
+
+          // Insertar automáticamente tarjeta gráfica de carrera (MÓDULO 4.2)
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              grupo_id: grupoActivoId,
+              autor_id: sesion.id,
+              autor_nombre: sesion.nombre,
+              autor_rol: "OPERADOR",
+              texto: `🟢 Carrera ABIERTA: ${hipoNuevo} Carrera ${cNum}`,
+              tipo: "IMAGEN_CARRERA",
+              solo_borrable_operador: true,
+            },
+          ]);
+        }
+
+        setCarreraActiva((prev) => ({
+          ...prev,
+          hipodromo: hipoNuevo,
+          carrera: cNum,
+          estado: "ABIERTA",
+        }));
+        setEnviando(false);
+        return;
+      }
+
+      // 4.2 CERRAR CARRERA
+      if (cmdOp.tipo === "CERRAR_CARRERA") {
+        if (supabase) {
+          await supabase
+            .from("chat_estado_grupo")
+            .update({ estado: "CERRADA", updated_at: new Date().toISOString() })
+            .eq("grupo_id", grupoActivoId);
+
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              grupo_id: grupoActivoId,
+              autor_id: sesion.id,
+              autor_nombre: sesion.nombre,
+              autor_rol: "OPERADOR",
+              texto: `🚨 *¡CARRERA CERRADA!*\n\n${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera}) ha sido **CERRADA** por el operador. No se admiten más jugadas.`,
+              tipo: "ESTADO_CARRERA",
+            },
+          ]);
+        }
+
+        setCarreraActiva((prev) => ({ ...prev, estado: "CERRADA" }));
+        setEnviando(false);
+        return;
+      }
+
+      // 4.3 PUBLICAR PIZARRA CONTEXTUAL Y LIQUIDAR
+      if (cmdOp.tipo === "PIZARRA") {
+        await liquidarCarreraChatP2p({
+          grupoId: grupoActivoId,
+          pizarra: cmdOp.pizarra,
+          operadorNombre: sesion.nombre,
+        });
+        setEnviando(false);
+        return;
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MÓDULO 2: PRIVACIDAD ESTRICTA DEL SALDO
+    // ────────────────────────────────────────────────────────────────────────
+    if (/^saldo$|^disponible$|^cuanto tengo$|^mi saldo$/i.test(texto)) {
+      const s = await obtenerMiSaldoPrivado(sesion.id);
+      const dispTxt = s.libre
+        ? "⭐ Tu cuenta tiene **Estatus LIBRE** (sin limitaciones de saldo)."
+        : `💰 Tu Saldo Disponible es **$${s.disponible.toFixed(2)}** (Saldo: $${s.saldo_actual.toFixed(2)} + Aval: $${s.aval.toFixed(2)}${
+            s.riesgo_en_curso > 0 ? ` - En Juego: $${s.riesgo_en_curso.toFixed(2)}` : ""
+          }).`;
+
+      // Enviar con destinatario_privado_id = sesion.id para que NO ensucie el chat público
+      if (supabase) {
+        await supabase.from("chat_mensajes_sala").insert([
+          {
+            grupo_id: grupoActivoId,
+            autor_id: null,
+            autor_nombre: "Agente IA Oficial",
+            autor_rol: "BOT",
+            texto: dispTxt,
+            tipo: "DM_PRIVADO",
+            destinatario_privado_id: sesion.id,
+            reply_to_msg_id: replyId,
+          },
+        ]);
+      }
+      setEnviando(false);
+      return;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MÓDULO 3: PROPUESTAS DE JUGADA Y MOTOR FIFO
+    // ────────────────────────────────────────────────────────────────────────
+    const prop = parsearPropuestaChat(texto);
+    if (prop) {
+      // 1. Validar que la carrera esté abierta
+      if (carreraActiva.estado === "CERRADA" || carreraActiva.estado === "LIQUIDADA") {
+        if (supabase) {
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              grupo_id: grupoActivoId,
+              autor_id: null,
+              autor_nombre: "Agente IA Oficial",
+              autor_rol: "BOT",
+              texto: `⛔ @${sesion.nombre}: La carrera ${carreraActiva.hipodromo} C${carreraActiva.carrera} está **CERRADA**. No se aceptan jugadas.`,
+              tipo: "DM_PRIVADO",
+              destinatario_privado_id: sesion.id,
+              reply_to_msg_id: replyId,
+            },
+          ]);
+        }
+        setEnviando(false);
+        return;
+      }
+
+      // 2. Validar que el caballo no esté retirado
+      const retirado = carreraActiva.ejemplares?.some(
+        (ej) => String(ej.numero) === String(prop.caballo) && ej.retirado
+      );
+      if (retirado) {
+        if (supabase) {
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              grupo_id: grupoActivoId,
+              autor_id: null,
+              autor_nombre: "Agente IA Oficial",
+              autor_rol: "BOT",
+              texto: `⚠️ @${sesion.nombre}: El ejemplar #${prop.caballo} está marcado como **RETIRADO**.`,
+              tipo: "DM_PRIVADO",
+              destinatario_privado_id: sesion.id,
+              reply_to_msg_id: replyId,
+            },
+          ]);
+        }
+        setEnviando(false);
+        return;
+      }
+
+      // 3. Validar fondos del proponente
+      const s = await obtenerMiSaldoPrivado(sesion.id);
+      let montoReal = prop.monto;
+      if (!s.libre) {
+        if (s.disponible <= 0) {
+          if (supabase) {
+            await supabase.from("chat_mensajes_sala").insert([
+              {
+                grupo_id: grupoActivoId,
+                autor_id: null,
+                autor_nombre: "Agente IA Oficial",
+                autor_rol: "BOT",
+                texto: `⚠️ @${sesion.nombre}: Tu disponible es $0.00. No puedes proponer jugadas sin saldo.`,
+                tipo: "DM_PRIVADO",
+                destinatario_privado_id: sesion.id,
+                reply_to_msg_id: replyId,
+              },
+            ]);
+          }
+          setEnviando(false);
+          return;
+        }
+
+        // Si pide más de lo disponible, topar al máximo disponible
+        if (montoReal > s.disponible) {
+          montoReal = s.disponible;
+        }
+      }
+
+      // 4. Si es concreción directa con contraparte (ej. "100 al 5 con @SAM")
+      if (prop.contraparte) {
+        const ticketNum = Math.floor(100000 + Math.random() * 900000);
+        const juegaNombre = prop.rol === "JUEGA" ? sesion.nombre : prop.contraparte;
+        const daNombre = prop.rol === "DA" ? sesion.nombre : prop.contraparte;
+
+        if (supabase) {
+          await supabase.from("chat_tickets_p2p").insert([
+            {
+              numero_ticket: ticketNum,
+              grupo_id: grupoActivoId,
+              juega_id: prop.rol === "JUEGA" ? sesion.id : null,
+              juega_nombre: juegaNombre,
+              da_id: prop.rol === "DA" ? sesion.id : null,
+              da_nombre: daNombre,
+              monto: montoReal,
+              jugada: prop.jugada,
+              caballo: prop.caballo,
+              carrera: carreraActiva.carrera,
+              hipodromo: carreraActiva.hipodromo,
+              fecha: new Date().toISOString().slice(0, 10),
+              estado: "PENDIENTE",
+            },
+          ]);
+
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              grupo_id: grupoActivoId,
+              autor_id: null,
+              autor_nombre: "Agente IA Oficial",
+              autor_rol: "BOT",
+              texto: `✅ *¡Aquí jugaron!*\n\n🏇 **${prop.jugada}** al ejemplar **#${prop.caballo}** por **$${montoReal.toFixed(2)}**\n👤 Juega: **@${juegaNombre}**\n🛡️ Da: **@${daNombre}**\n🎫 Ticket Oficial: \`#${ticketNum}\`\n\nRegistrado en base de datos en tiempo real.`,
+              tipo: "CONCRECION",
+            },
+          ]);
+        }
+
+        refrescarSaldo(sesion.id);
+        setEnviando(false);
+        return;
+      }
+
+      // 5. Propuesta Abierta a la Sala (Esperando respuestas FIFO)
+      const rolTxt = prop.rol === "JUEGA" ? "Juega" : "Da";
+      if (supabase) {
+        await supabase.from("chat_mensajes_sala").insert([
+          {
+            grupo_id: grupoActivoId,
+            autor_id: sesion.id,
+            autor_nombre: sesion.nombre,
+            autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
+            texto: `📢 **@${sesion.nombre}** ${rolTxt} **${prop.jugada}** al **#${prop.caballo}** por **$${montoReal.toFixed(2)}**.`,
+            tipo: "PROPUESTA",
+            monto_propuesto: montoReal,
+            monto_disponible: montoReal,
+            datos_jugada: {
+              jugador: sesion.nombre,
+              rol: prop.rol,
+              monto: montoReal,
+              jugada: prop.jugada,
+              caballo: prop.caballo,
+            },
+          },
+        ]);
+      }
+
+      setEnviando(false);
+      return;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // RESPUESTA FIFO CUANDO EL USUARIO CITA UNA PROPUESTA PREVIA
+    // ────────────────────────────────────────────────────────────────────────
+    if (replyId) {
+      const msgPropuesta = mensajes.find((m) => m.id === replyId);
+      if (msgPropuesta && msgPropuesta.tipo === "PROPUESTA") {
+        const resFifo = await procesarRespuestaJugadaFifo({
+          grupoId: grupoActivoId,
+          propuestaMsgId: replyId,
+          respondeUsuarioId: sesion.id,
+          respondeNombre: sesion.nombre,
+          montoOComando: texto,
+        });
+
+        if (!resFifo.ok) {
+          emitirToast(resFifo.error || "No se pudo concretar la jugada", "warning");
+        } else {
+          refrescarSaldo(sesion.id);
+        }
+
+        setEnviando(false);
+        return;
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MENSAJE DE CHAT LIBRE
+    // ────────────────────────────────────────────────────────────────────────
+    if (supabase) {
+      await supabase.from("chat_mensajes_sala").insert([
+        {
+          grupo_id: grupoActivoId,
+          autor_id: sesion.id,
+          autor_nombre: sesion.nombre,
+          autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
+          texto,
+          tipo: "TEXTO",
+          reply_to_msg_id: replyId,
+        },
+      ]);
+    }
+
+    setEnviando(false);
+  };
+
+  // Tomar propuesta FIFO desde los botones interactivos
+  const handleTomarPropuestaFifo = async (msgProp: MensajeSala, montoOComando: string) => {
+    if (!sesion) return;
+    const res = await procesarRespuestaJugadaFifo({
+      grupoId: grupoActivoId,
+      propuestaMsgId: msgProp.id,
+      respondeUsuarioId: sesion.id,
+      respondeNombre: sesion.nombre,
+      montoOComando,
+    });
+
+    if (!res.ok) {
+      emitirToast(res.error || "No se pudo tomar la propuesta", "warning");
+    } else {
+      emitirToast(`Ticket #${res.numero_ticket} emitido ($${res.monto_concretado})`, "success");
+      refrescarSaldo(sesion.id);
+    }
+  };
+
+  // Dictado por voz nativo
   const alternarDictadoVoz = () => {
     if (typeof window === "undefined") return;
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRec) {
-      alert("Tu dispositivo no soporta dictado de voz nativo en este navegador. Puedes escribir el texto directamente.");
+      alert("Tu dispositivo no soporta dictado de voz nativo en este navegador.");
       return;
     }
 
@@ -407,14 +864,10 @@ export function SalaWhatsAppApp() {
       const rec = new SpeechRec();
       rec.lang = "es-VE";
       rec.interimResults = false;
-      rec.maxAlternatives = 1;
-
       rec.onstart = () => setGrabandoVoz(true);
       rec.onresult = (evt: any) => {
         const trans = evt.results?.[0]?.[0]?.transcript;
-        if (trans) {
-          setInputTexto(trans);
-        }
+        if (trans) setInputTexto(trans);
         setGrabandoVoz(false);
       };
       rec.onerror = () => setGrabandoVoz(false);
@@ -425,290 +878,61 @@ export function SalaWhatsAppApp() {
     }
   };
 
-  // Enviar mensaje en el chat y emitir broadcast
-  const enviarMensaje = async (textoPersonalizado?: string) => {
-    const texto = (textoPersonalizado ?? inputTexto).trim();
-    if (!texto || !sesion || enviando) return;
-
-    const hora = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", hour12: true });
-    const nuevoMsgId = `usr-${Date.now()}`;
-
-    const msgUsuario: MensajeChatSala = {
-      id: nuevoMsgId,
-      autor: sesion.seudonimo || sesion.nombre,
-      autorId: sesion.id,
-      texto,
-      hora,
-      esMio: true,
-      esIa: false,
-    };
-
-    setMensajes((prev) => [...prev, msgUsuario]);
-    setInputTexto("");
-    setEnviando(true);
-
-    // Emitir broadcast a otros dispositivos
-    if (canalRealtimeRef.current) {
-      canalRealtimeRef.current.send({
-        type: "broadcast",
-        event: "mensaje_sala",
-        payload: msgUsuario,
-      });
-    }
-
-    // Procesar con el Agente IA de forma autónoma
-    setTimeout(async () => {
-      await procesarRespuestaIa(texto, sesion);
-      setEnviando(false);
-    }, 450);
-  };
-
-  // Procesamiento autónomo del Agente IA
-  const procesarRespuestaIa = async (texto: string, cli: ClienteSesionSala) => {
-    const hora = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", hour12: true });
-    const tLower = texto.toLowerCase();
-
-    // 0. Comandos de Operador/Admin: Cerrar o Abrir carrera
-    if (/cerrar\s+carrera|cierra\s+carrera/i.test(tLower)) {
-      await ejecutarCierreCarrera({
-        hipodromo: carreraActiva.hipodromo,
-        carrera: carreraActiva.carrera,
-        fuente: cli.esOperadorOAdmin ? "OPERADOR" : "ADMIN",
-        operadorNombre: cli.nombre,
-        motivo: "Cierre manual solicitado desde la Sala",
-      });
-      return;
-    }
-
-    if (/abrir\s+carrera|abre\s+carrera/i.test(tLower)) {
-      await ejecutarAperturaCarrera({
-        hipodromo: carreraActiva.hipodromo,
-        carrera: carreraActiva.carrera,
-        operadorNombre: cli.nombre,
-      });
-      return;
-    }
-
-    // 1. Consulta de saldo
-    if (/saldo|disponible|cuanto tengo/i.test(tLower)) {
-      const libre = esSinTope({ libre: cli.libre, modo_juego: cli.modo_juego, saldo_actual: cli.saldo_actual, aval: cli.aval });
-      const dispTotal = cli.saldo_actual + cli.aval;
-      const resp = libre
-        ? `⭐ @${cli.nombre}: Tu cuenta tiene **Estatus LIBRE** (puedes jugar lo que quieras sin limitaciones de saldo ni topes).`
-        : `💰 @${cli.nombre}: Tu saldo es **$${cli.saldo_actual.toFixed(2)}** y cuentas con aval de **$${cli.aval.toFixed(2)}** (Disponible total: **$${dispTotal.toFixed(2)}**).`;
-
-      const msgIa: MensajeChatSala = {
-        id: `ia-${Date.now()}`,
-        autor: "Agente IA Oficial",
-        texto: resp,
-        hora,
-        esMio: false,
-        esIa: true,
-      };
-
-      setMensajes((prev) => [...prev, msgIa]);
-      return;
-    }
-
-    // 2. Consulta de carrera
-    if (/carrera|abierta|programa|que corre/i.test(tLower)) {
-      const estColor = carreraActiva.estado === "ABIERTA" ? "🟢 ABIERTA" : "🔴 CERRADA";
-      const msgIa: MensajeChatSala = {
-        id: `ia-${Date.now()}`,
-        autor: "Agente IA Oficial",
-        texto: `📍 Carrera Activa: **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})**.\nEstado: **${estColor}**.\n${
-          carreraActiva.estado === "ABIERTA"
-            ? "Hagan sus jugadas antes de la partida."
-            : "⛔ Carrera cerrada. No se admiten más jugadas."
-        }`,
-        hora,
-        esMio: false,
-        esIa: true,
-      };
-
-      setMensajes((prev) => [...prev, msgIa]);
-      return;
-    }
-
-    // 3. Parser de Jugada / Propuesta P2P
-    const parsed = parsearMensajeJugada(texto);
-    if (parsed.ok && parsed.datos) {
-      // 🚨 VALIDACIÓN ESTRICTA: SI LA CARRERA ESTÁ CERRADA, RECHAZAR DE INMEDIATO
-      if (carreraActiva.estado === "CERRADA") {
-        const msgIa: MensajeChatSala = {
-          id: `ia-${Date.now()}`,
-          autor: "Agente IA Oficial",
-          texto: `⛔ @${cli.nombre}: La carrera **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})** está **CERRADA** por el Operador/Administrador o por cierre oficial simultáneo (DRF/TVG/TwinSpires).\n\nNo se admiten más jugadas para esta carrera.`,
-          hora,
-          esMio: false,
-          esIa: true,
-        };
-        setMensajes((prev) => [...prev, msgIa]);
-        return;
-      }
-
-      const d = parsed.datos;
-      const libre = esSinTope({ libre: cli.libre, modo_juego: cli.modo_juego, saldo_actual: cli.saldo_actual, aval: cli.aval });
-      const disponible = cli.saldo_actual + cli.aval;
-
-      // Validación de fondos (omite completamente si es LIBRE)
-      if (!libre && disponible < d.monto) {
-        const msgIa: MensajeChatSala = {
-          id: `ia-${Date.now()}`,
-          autor: "Agente IA Oficial",
-          texto: `⚠️ @${cli.nombre}: Tu disponible es $${disponible.toFixed(2)}, no cubre el monto pedido de $${d.monto.toFixed(2)}.`,
-          hora,
-          esMio: false,
-          esIa: true,
-        };
-        setMensajes((prev) => [...prev, msgIa]);
-        return;
-      }
-
-      // Propuesta registrada en la sala
-      const rolTexto = d.rol === "JUEGA" ? "JUEGA" : "DA";
-      const contraparteMatch = /con\s+@?([a-zA-Z0-9_-]+)/i.exec(texto);
-      const contraparte = contraparteMatch ? contraparteMatch[1].toUpperCase() : null;
-
-      if (contraparte) {
-        // Concreción directa contraparte
-        const ticketId = Math.floor(100000 + Math.random() * 900000);
-        const msgConcrecion: MensajeChatSala = {
-          id: `ia-${Date.now()}`,
-          autor: "Agente IA Oficial",
-          texto: `✅ *¡Aquí jugaron!*\n\n🏇 **${d.jugada}** al ejemplar **${d.caballos}** por **$${d.monto.toFixed(2)}**\n👤 Juega: **@${cli.nombre}**\n🛡️ Da: **@${contraparte}**\n🎫 Ticket Oficial: \`#${ticketId}\`\n\nRegistrado y asentado en la plataforma en tiempo real.`,
-          hora,
-          esMio: false,
-          esIa: true,
-          esConcrecion: true,
-          concrecionData: {
-            juega: cli.nombre,
-            da: contraparte,
-            monto: d.monto,
-            jugada: d.jugada,
-            caballo: d.caballos,
-            ticketId,
-          },
-        };
-
-        setMensajes((prev) => [...prev, msgConcrecion]);
-        reproducirBeepWhatsApp();
-
-        // Broadcast a todos
-        if (canalRealtimeRef.current) {
-          canalRealtimeRef.current.send({
-            type: "broadcast",
-            event: "mensaje_sala",
-            payload: msgConcrecion,
-          });
-        }
-
-        // Registrar en Supabase en tiempo real
-        if (supabase) {
-          try {
-            await supabase.from("apuestas_eventos_especiales").insert([
-              {
-                fecha: new Date().toISOString().slice(0, 10),
-                evento: `[SALA IA] ${d.jugada} al ${d.caballos} (${cli.nombre} vs ${contraparte})`,
-                cliente_id: cli.id,
-                cliente_nombre: cli.nombre,
-                monto: d.monto,
-                pago_potencial: d.monto * 2,
-                logro_cuota: "1P",
-                estado: "PENDIENTE",
-                ganador_seleccionado: false,
-                nota: `EVENTO_LIBRE_P2P:${JSON.stringify({
-                  id: `sala-${ticketId}`,
-                  fecha: new Date().toISOString().slice(0, 10),
-                  concepto: `${d.jugada} al ${d.caballos}`,
-                  jugador1Nombre: cli.nombre,
-                  riesgoJugador1: d.monto,
-                  jugador2Nombre: contraparte,
-                  riesgoJugador2: d.monto,
-                  estado: "PENDIENTE",
-                })}`,
-              },
-            ]);
-          } catch {
-            /* ignore */
-          }
-        }
-      } else {
-        // Propuesta abierta a la sala con botón de acción para la contraparte
-        const msgPropuesta: MensajeChatSala = {
-          id: `ia-${Date.now()}`,
-          autor: "Agente IA Oficial",
-          texto: `📢 Propuesta Abierta: **@${cli.nombre}** ${rolTexto} **${d.jugada}** al **${d.caballos}** por **$${d.monto.toFixed(2)}**.\n¿Quién la toma?`,
-          hora,
-          esMio: false,
-          esIa: true,
-          esPropuestaAbierta: true,
-          propuestaData: {
-            jugador: cli.nombre,
-            rol: d.rol === "JUEGA" ? "JUEGA" : "DA",
-            monto: d.monto,
-            jugada: d.jugada,
-            caballo: d.caballos,
-          },
-        };
-
-        setMensajes((prev) => [...prev, msgPropuesta]);
-        if (canalRealtimeRef.current) {
-          canalRealtimeRef.current.send({
-            type: "broadcast",
-            event: "mensaje_sala",
-            payload: msgPropuesta,
-          });
-        }
-      }
-      return;
-    }
-
-    // 4. Conversación general y cordialidad humana empática
-    const evalCordial = detectarCordialidad(texto);
-    const textoFinal = evalCordial.esCordial
-      ? generarRespuestaCordial(evalCordial, {
-          nombre: cli.seudonimo || cli.nombre,
-          club: "Sala Oficial de Carreras",
-        })
-      : `🤖 Hola @${cli.nombre}, estoy atento a tus jugadas.\n\nPuedes enviar jugadas directas (ej: "100 al 5 con @SAM"), consultar "Mi saldo" o verificar el estado de la "Carrera actual". ¿En qué te puedo colaborar? 🏇`;
-
-    const msgGen: MensajeChatSala = {
-      id: `ia-${Date.now()}`,
-      autor: "Agente IA Oficial",
-      texto: textoFinal,
-      hora,
-      esMio: false,
-      esIa: true,
-    };
-    setMensajes((prev) => [...prev, msgGen]);
-  };
-
-  // Toggle rápido de Operador / Administrador
+  // Toggle rápido de Operador Apertura / Cierre
   const toggleEstadoCarrera = async () => {
-    if (carreraActiva.estado === "ABIERTA") {
-      await ejecutarCierreCarrera({
-        hipodromo: carreraActiva.hipodromo,
-        carrera: carreraActiva.carrera,
-        fuente: sesion?.esOperadorOAdmin ? "OPERADOR" : "ADMIN",
-        operadorNombre: sesion?.nombre || "OPERADOR",
-        motivo: "Cierre manual desde barra de control de la Sala",
-      });
-    } else {
-      await ejecutarAperturaCarrera({
-        hipodromo: carreraActiva.hipodromo,
-        carrera: carreraActiva.carrera,
-        operadorNombre: sesion?.nombre || "OPERADOR",
-      });
+    if (!sesion?.esOperadorOAdmin || !supabase) return;
+    const nuevo = carreraActiva.estado === "ABIERTA" ? "CERRADA" : "ABIERTA";
+
+    await supabase
+      .from("chat_estado_grupo")
+      .update({ estado: nuevo, updated_at: new Date().toISOString() })
+      .eq("grupo_id", grupoActivoId);
+
+    const txt =
+      nuevo === "ABIERTA"
+        ? `🟢 *CARRERA ABIERTA*: ${carreraActiva.hipodromo} C${carreraActiva.carrera}`
+        : `🚨 *CARRERA CERRADA*: ${carreraActiva.hipodromo} C${carreraActiva.carrera}`;
+
+    await supabase.from("chat_mensajes_sala").insert([
+      {
+        grupo_id: grupoActivoId,
+        autor_id: sesion.id,
+        autor_nombre: sesion.nombre,
+        autor_rol: "OPERADOR",
+        texto: txt,
+        tipo: "ESTADO_CARRERA",
+      },
+    ]);
+
+    setCarreraActiva((prev) => ({ ...prev, estado: nuevo as any }));
+  };
+
+  // Eliminar mensaje gráfico solo por operador
+  const handleEliminarMensajeOperador = async (msgId: string) => {
+    if (!sesion?.esOperadorOAdmin || !supabase) return;
+    try {
+      await supabase.from("chat_mensajes_sala").delete().eq("id", msgId);
+      setMensajes((prev) => prev.filter((m) => m.id !== msgId));
+      emitirToast("Tarjeta eliminada por el operador", "info");
+    } catch {
+      /* ignore */
     }
   };
 
   // ──────────────────────────────────────────────────────────────────────────
-  // RENDER: PANTALLA DE ONBOARDING / ACCESO MÓVIL
+  // RENDER: ONBOARDING / LOGIN MÓVIL
   // ──────────────────────────────────────────────────────────────────────────
+  if (cargandoAuth) {
+    return (
+      <div className="flex h-[100dvh] w-full items-center justify-center bg-[#111b21] text-white">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#00a884] border-t-transparent" />
+      </div>
+    );
+  }
+
   if (!sesion) {
     return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-[#111b21] p-4 text-white font-sans">
+      <div className="flex min-h-[100dvh] w-full items-center justify-center bg-[#111b21] p-4 text-white font-sans select-none">
         <div className="w-full max-w-sm rounded-3xl bg-[#202c33] p-6 shadow-2xl border border-[#2a3942]">
           <div className="flex flex-col items-center gap-2 pb-6 text-center border-b border-[#2a3942]">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#00a884] text-white shadow-lg text-3xl">
@@ -716,7 +940,7 @@ export function SalaWhatsAppApp() {
             </div>
             <h1 className="text-xl font-bold tracking-tight text-[#e9edef]">Sala WhatsApp Oficial</h1>
             <p className="text-xs text-[#8696a0]">
-              Vincula tu teléfono para interactuar directamente con el Agente IA y tus jugadas.
+              Vincula tu celular para interactuar con tus jugadas P2P, paradas y saldo privado.
             </p>
           </div>
 
@@ -815,233 +1039,197 @@ export function SalaWhatsAppApp() {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // RENDER: SALA DE CHAT WHATSAPP COMPLETA
+  // RENDER: INTERFAZ DUAL (MÓVIL PWA 100dvh + DESKTOP WHATSAPP WEB)
   // ──────────────────────────────────────────────────────────────────────────
-  const esLibre = sesion.libre || String(sesion.modo_juego).toLowerCase() === "libre";
-  const dispTotal = sesion.saldo_actual + sesion.aval;
-  const esCerrada = carreraActiva.estado === "CERRADA";
+  const esCerrada = carreraActiva.estado === "CERRADA" || carreraActiva.estado === "LIQUIDADA";
 
   return (
-    <div className="flex h-screen w-full flex-col bg-[#efeae2] font-sans overflow-hidden">
-      {/* ── 1. HEADER NATIVO WHATSAPP ── */}
-      <header className="flex h-16 w-full items-center justify-between bg-[#008069] px-4 text-white shadow-md z-20">
-        <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-full bg-[#128c7e] text-xl font-bold shadow-sm border border-white/20">
-            🐎
-            <span
-              className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#008069] ${
-                esCerrada ? "bg-red-500" : "bg-emerald-400"
-              }`}
-            />
-          </div>
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-sm text-white">SALA OFICIAL HÍPICA</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span
-                className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                  esCerrada ? "bg-red-600 text-white" : "bg-emerald-700 text-emerald-100"
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${esCerrada ? "bg-white" : "bg-emerald-300 animate-pulse"}`}
-                />
-                {carreraActiva.hipodromo} C{carreraActiva.carrera} · {carreraActiva.estado}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Saldo Pill & Sesión */}
-        <div className="flex items-center gap-2">
-          {sesion.esOperadorOAdmin && (
-            <button
-              onClick={toggleEstadoCarrera}
-              title={esCerrada ? "Abrir Carrera" : "Cerrar Carrera"}
-              className={`rounded-full px-2.5 py-1 text-[10px] font-bold shadow-sm transition-all ${
-                esCerrada
-                  ? "bg-emerald-500 text-white hover:bg-emerald-600"
-                  : "bg-red-600 text-white hover:bg-red-700 animate-pulse"
-              }`}
-            >
-              {esCerrada ? "🟢 Abrir" : "🔴 Cerrar"}
-            </button>
-          )}
-
-          <div className="rounded-full bg-black/20 px-3 py-1 text-right backdrop-blur-sm border border-white/10">
-            <div className="text-[9px] uppercase font-bold text-emerald-200">
-              {sesion.nombre}
-            </div>
-            <div className="text-xs font-mono font-black text-white">
-              {esLibre ? (
-                <span className="text-amber-300">⭐ LIBRE</span>
-              ) : (
-                `$${dispTotal.toFixed(2)}`
-              )}
-            </div>
-          </div>
-          <button
-            onClick={cerrarSesion}
-            title="Cerrar sesión / Cambiar móvil"
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-black/20 hover:bg-black/30 text-white text-xs transition-colors"
-          >
-            🚪
-          </button>
-        </div>
-      </header>
-
-      {/* ── 2. CUERPO DE MENSAJES (WALLPAPER WHATSAPP) ── */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#efeae2]">
-        {/* Banner de Encriptación y Reglas */}
-        <div className="mx-auto my-1 max-w-xs rounded-xl bg-[#ffeecd] px-3 py-1.5 text-center shadow-sm border border-[#ffdc9c]">
-          <p className="text-[10px] text-[#54656f] leading-snug">
-            🔒 <b>Control Centralizado:</b> Apertura y Cierre gestionados por Operador/Admin y sincronizados con DRF/TVG/TwinSpires.
-          </p>
-        </div>
-
-        {/* Lista de Mensajes */}
-        {mensajes.map((m) => {
-          if (m.esIa) {
-            return (
-              <div key={m.id} className="flex flex-col items-start max-w-[85%] sm:max-w-[70%]">
-                <div
-                  className={`rounded-2xl rounded-tl-sm p-3.5 shadow-sm text-sm text-[#111b21] ${
-                    m.esConcrecion
-                      ? "bg-emerald-50 border-2 border-emerald-400 shadow-md"
-                      : "bg-white border border-[#e9edef]"
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 pb-1 text-[11px] font-bold text-[#00a884]">
-                    <span>🤖 Agente IA Oficial</span>
-                    <span className="text-xs">✓</span>
-                  </div>
-                  <div className="whitespace-pre-wrap leading-relaxed">{m.texto}</div>
-
-                  {/* Botón de acción interactiva si es una propuesta abierta de otro jugador */}
-                  {m.esPropuestaAbierta && m.propuestaData && m.propuestaData.jugador !== sesion.nombre && !esCerrada && (
-                    <div className="mt-2.5 pt-2 border-t border-slate-100">
-                      <button
-                        onClick={() =>
-                          enviarMensaje(
-                            `${m.propuestaData!.rol === "JUEGA" ? "Doy" : "Juego"} ${m.propuestaData!.monto} al ${
-                              m.propuestaData!.caballo
-                            } con @${m.propuestaData!.jugador}`
-                          )
-                        }
-                        className="w-full rounded-xl bg-[#00a884] py-1.5 px-3 text-xs font-bold text-white shadow-sm hover:bg-[#02906f] active:scale-95 transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <span>🛡️ Tomar jugada de @{m.propuestaData.jugador} (${m.propuestaData.monto})</span>
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="pt-1 text-right text-[10px] text-[#667781] font-mono">{m.hora}</div>
-                </div>
-              </div>
-            );
-          }
-
-          if (m.esMio) {
-            return (
-              <div key={m.id} className="flex flex-col items-end">
-                <div className="max-w-[85%] sm:max-w-[70%] rounded-2xl rounded-tr-sm bg-[#d9fdd3] p-3 shadow-sm text-sm text-[#111b21]">
-                  <div className="whitespace-pre-wrap leading-relaxed">{m.texto}</div>
-                  <div className="flex items-center justify-end gap-1 pt-1 text-[10px] text-[#667781]">
-                    <span className="font-mono">{m.hora}</span>
-                    <span className="font-bold text-[#53bdeb]">✓✓</span>
-                  </div>
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <div key={m.id} className="flex flex-col items-start max-w-[85%] sm:max-w-[70%]">
-              <div className="rounded-2xl rounded-tl-sm bg-white p-3 shadow-sm text-sm text-[#111b21] border border-[#e9edef]">
-                <div className="font-bold text-xs text-[#1f729f] pb-0.5">{m.autor}</div>
-                <div className="whitespace-pre-wrap leading-relaxed">{m.texto}</div>
-                <div className="pt-1 text-right text-[10px] text-[#667781] font-mono">{m.hora}</div>
-              </div>
-            </div>
-          );
-        })}
-        <div ref={chatBottomRef} />
-      </div>
-
-      {/* ── 3. CHIPS RÁPIDOS DE JUGADAS ── */}
-      <div className="flex gap-2 overflow-x-auto bg-[#f0f2f5] px-3 py-2 border-t border-[#e9edef] scrollbar-none">
-        <button
-          onClick={() => enviarMensaje("100 al 5 con @SAM")}
-          disabled={esCerrada}
-          className="whitespace-nowrap rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#00a884] shadow-sm border border-emerald-200 hover:bg-emerald-50 active:scale-95 disabled:opacity-40"
-        >
-          🏇 100 al 5 con @SAM
-        </button>
-        <button
-          onClick={() => enviarMensaje("Doy 50 al 2")}
-          disabled={esCerrada}
-          className="whitespace-nowrap rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm border border-slate-200 hover:bg-slate-50 active:scale-95 disabled:opacity-40"
-        >
-          🛡️ Doy 50 al 2
-        </button>
-        <button
-          onClick={() => enviarMensaje("Mi saldo")}
-          className="whitespace-nowrap rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm border border-slate-200 hover:bg-slate-50 active:scale-95"
-        >
-          💰 Mi saldo
-        </button>
-        <button
-          onClick={() => enviarMensaje("Carrera actual")}
-          className="whitespace-nowrap rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm border border-slate-200 hover:bg-slate-50 active:scale-95"
-        >
-          📍 Carrera actual
-        </button>
-      </div>
-
-      {/* ── 4. BARRA DE INPUT ESTILO WHATSAPP CON MICRÓFONO ── */}
-      <div className="flex items-center gap-2 bg-[#f0f2f5] px-3 py-2 border-t border-[#e9edef]">
-        <input
-          type="text"
-          value={inputTexto}
-          onChange={(e) => setInputTexto(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              enviarMensaje();
-            }
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-[#111b21] font-sans">
+      {/* ── PANEL IZQUIERDO: LISTA DE GRUPOS Y CANAL BOT (ESCRITORIO & MÓVIL MODAL) ── */}
+      <div
+        className={`${
+          mostrarGruposMovil ? "fixed inset-0 z-50 flex" : "hidden md:flex"
+        } h-full shrink-0`}
+      >
+        <SalaLeftPanelGrupos
+          grupos={grupos}
+          grupoActivoId={grupoActivoId}
+          onSeleccionarGrupo={(gid) => {
+            setGrupoActivoId(gid);
+            setMostrarGruposMovil(false);
           }}
-          placeholder={
-            grabandoVoz
-              ? "🎙️ Escuchando dictado de jugada..."
-              : esCerrada
-                ? "⛔ Carrera cerrada (no se aceptan jugadas)..."
-                : "Escribe una jugada (ej. 100 al 5 con @SAM)..."
-          }
-          className={`flex-1 rounded-2xl bg-white px-4 py-2.5 text-sm text-[#111b21] placeholder-[#8696a0] border shadow-sm focus:border-[#00a884] focus:outline-none transition-all ${
-            grabandoVoz ? "border-red-500 bg-red-50 ring-2 ring-red-400 animate-pulse" : "border-transparent"
-          }`}
+          nombreUsuario={sesion.nombre}
+        />
+      </div>
+
+      {/* ── PANEL CENTRAL: CHAT ACTIVO Y CARRERA EN VIVO ── */}
+      <div className="flex flex-1 flex-col h-full bg-[#0b141a] min-w-0 relative">
+        {/* 1. Header con Billetera y Controles */}
+        <SalaHeaderWallet
+          carreraActiva={carreraActiva}
+          saldo={saldoPrivado}
+          nombreUsuario={sesion.nombre}
+          esOperadorOAdmin={sesion.esOperadorOAdmin}
+          tamanoLetra={tamanoLetra}
+          onCambiarTamanoLetra={handleCambiarTamanoLetra}
+          onTogglePanelDerecho={() => setPanelDerechoAbierto(!panelDerechoAbierto)}
+          panelDerechoAbierto={panelDerechoAbierto}
+          onToggleEstadoCarrera={toggleEstadoCarrera}
+          onCerrarSesion={cerrarSesion}
         />
 
-        {/* Botón de Dictado de Voz / Micrófono */}
-        <button
-          onClick={alternarDictadoVoz}
-          title={grabandoVoz ? "Detener dictado" : "Dictar jugada por voz"}
-          className={`flex h-10 w-10 items-center justify-center rounded-full text-white shadow-md active:scale-95 transition-all ${
-            grabandoVoz ? "bg-red-500 animate-bounce" : "bg-[#128c7e] hover:bg-[#008069]"
-          }`}
-        >
-          🎙️
-        </button>
+        {/* 2. Cuerpo de Mensajes con Fondo WhatsApp */}
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 bg-[#0b141a]">
+          {/* Banner de Encriptación y Reglas */}
+          <div className="mx-auto my-1 max-w-sm rounded-xl bg-[#182229] px-3 py-1.5 text-center shadow-sm border border-[#222e35]">
+            <p className="text-[10px] text-[#8696a0] leading-snug">
+              🔒 <b>Privacidad Estricta:</b> Tu saldo solo lo ves tú. Paradas emparejadas en tiempo real bajo orden FIFO.
+            </p>
+          </div>
 
-        <button
-          onClick={() => enviarMensaje()}
-          disabled={!inputTexto.trim() || enviando}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-[#00a884] text-white shadow-md hover:bg-[#02906f] active:scale-95 disabled:opacity-50 transition-all"
-        >
-          ➤
-        </button>
+          {/* Mensajes del chat */}
+          {mensajes.map((m) => {
+            const citado = m.reply_to_msg_id
+              ? mensajes.find((x) => x.id === m.reply_to_msg_id)
+              : null;
+            return (
+              <SalaBurbujaMensaje
+                key={m.id}
+                mensaje={m}
+                mensajeCitado={citado}
+                carreraActiva={carreraActiva}
+                nombreUsuarioActual={sesion.nombre}
+                tamanoLetra={tamanoLetra}
+                esOperadorOAdmin={sesion.esOperadorOAdmin}
+                onCitar={(msg) => setMensajeCitado(msg)}
+                onTomarPropuestaFifo={handleTomarPropuestaFifo}
+                onEliminarMensajeOperador={handleEliminarMensajeOperador}
+              />
+            );
+          })}
+          <div ref={chatBottomRef} />
+        </div>
+
+        {/* 3. Previsualización de Mensaje Citado */}
+        {mensajeCitado && (
+          <div className="flex items-center justify-between bg-[#1f2c34] px-4 py-2 border-t border-[#2a3942] text-xs">
+            <div className="flex flex-col min-w-0">
+              <span className="font-bold text-[#00a884] text-[11px]">
+                Respondiendo a @{mensajeCitado.autor_nombre}
+              </span>
+              <span className="text-[#8696a0] truncate">{mensajeCitado.texto}</span>
+            </div>
+            <button
+              onClick={() => setMensajeCitado(null)}
+              className="text-[#8696a0] hover:text-white p-1 text-sm"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* 4. Chips Rápidos de Jugadas */}
+        <div className="flex gap-2 overflow-x-auto bg-[#202c33] px-3 py-1.5 border-t border-[#222e35] scrollbar-none select-none">
+          <button
+            onClick={() => enviarMensaje("Saldo")}
+            className="whitespace-nowrap rounded-full bg-[#111b21] px-3 py-1 text-xs font-semibold text-[#00a884] shadow-sm border border-[#00a884]/40 hover:bg-[#182229] active:scale-95"
+          >
+            💰 Mi Saldo (Privado)
+          </button>
+          <button
+            onClick={() => enviarMensaje("100 al 5 con @SAM")}
+            disabled={esCerrada}
+            className="whitespace-nowrap rounded-full bg-[#111b21] px-3 py-1 text-xs font-semibold text-slate-200 shadow-sm border border-[#2a3942] hover:bg-[#182229] active:scale-95 disabled:opacity-40"
+          >
+            🏇 100 al 5 con @SAM
+          </button>
+          <button
+            onClick={() => enviarMensaje("Doy 50 al 2")}
+            disabled={esCerrada}
+            className="whitespace-nowrap rounded-full bg-[#111b21] px-3 py-1 text-xs font-semibold text-slate-200 shadow-sm border border-[#2a3942] hover:bg-[#182229] active:scale-95 disabled:opacity-40"
+          >
+            🛡️ Doy 50 al 2
+          </button>
+          {sesion.esOperadorOAdmin && (
+            <button
+              onClick={() => enviarMensaje(`Abierta ${carreraActiva.hipodromo} ${carreraActiva.carrera}`)}
+              className="whitespace-nowrap rounded-full bg-emerald-950/50 px-3 py-1 text-xs font-semibold text-emerald-300 shadow-sm border border-emerald-500/40 hover:bg-emerald-900/50 active:scale-95"
+            >
+              🟢 Comando Abrir
+            </button>
+          )}
+        </div>
+
+        {/* 5. Barra Inferior Fija de Input Estilo WhatsApp */}
+        <div className="flex items-center gap-2 bg-[#202c33] px-3 py-2 border-t border-[#222e35]">
+          {/* Botón selector de grupos en móvil */}
+          <button
+            type="button"
+            onClick={() => setMostrarGruposMovil(!mostrarGruposMovil)}
+            className="md:hidden flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#111b21] text-white hover:bg-[#2a3942] text-sm"
+            title="Cambiar de grupo"
+          >
+            💬
+          </button>
+
+          <input
+            type="text"
+            value={inputTexto}
+            onChange={(e) => setInputTexto(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                enviarMensaje();
+              }
+            }}
+            placeholder={
+              grabandoVoz
+                ? "🎙️ Escuchando jugada por dictado de voz..."
+                : esCerrada
+                ? "⛔ Carrera cerrada (no se admiten jugadas)..."
+                : "Escribe un mensaje o propuesta (ej. Juego 1p 7 100)..."
+            }
+            className={`flex-1 rounded-2xl bg-[#2a3942] px-4 py-2.5 text-sm text-[#e9edef] placeholder-[#8696a0] border shadow-sm focus:border-[#00a884] focus:outline-none transition-all ${
+              grabandoVoz ? "border-red-500 bg-red-950/40 animate-pulse" : "border-transparent"
+            }`}
+          />
+
+          {/* Botón Dictado de Voz Nativo */}
+          <button
+            type="button"
+            onClick={alternarDictadoVoz}
+            title={grabandoVoz ? "Detener dictado" : "Dictar por voz"}
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white shadow-md active:scale-95 transition-all ${
+              grabandoVoz ? "bg-red-500 animate-bounce" : "bg-[#128c7e] hover:bg-[#008069]"
+            }`}
+          >
+            🎙️
+          </button>
+
+          {/* Botón Enviar */}
+          <button
+            type="button"
+            onClick={() => enviarMensaje()}
+            disabled={!inputTexto.trim() || enviando}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#00a884] text-white shadow-md hover:bg-[#02906f] active:scale-95 disabled:opacity-40 transition-all"
+          >
+            ➤
+          </button>
+        </div>
       </div>
+
+      {/* ── PANEL DERECHO COLAPSABLE: EJEMPLARES Y TICKETS ACTIVOS ── */}
+      <SalaRightPanelCarrera
+        carreraActiva={carreraActiva}
+        tickets={tickets}
+        abierto={panelDerechoAbierto}
+        onCerrar={() => setPanelDerechoAbierto(false)}
+        nombreUsuario={sesion.nombre}
+        onEjemplarClick={(num) => {
+          setInputTexto(`Juego 1p ${num} 50`);
+          setPanelDerechoAbierto(false);
+        }}
+      />
     </div>
   );
 }

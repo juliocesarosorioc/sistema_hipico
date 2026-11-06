@@ -35,6 +35,7 @@ import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { numeroDeCarrera, carrerasFaltantes, ordenarCarrerasYEjemplares } from "@/features/gaceta/lib/numeros";
 import { CarreraGacetaCard } from "@/features/ejemplares/components/CarreraGacetaCard";
 import { ModalAlmacenarGacetas } from "@/features/ejemplares/components/ModalAlmacenarGacetas";
+import { ejecutarEdicionCarreraAdmin } from "@/features/carreras/lib/editar-carrera-admin";
 import { listarHipodromos, publicarTablasLote, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
 import type { TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
 import { supabase } from "@/core/supabase";
@@ -1362,6 +1363,23 @@ export function GacetaIA() {
       });
       setCarreraRegistrandoIndex(index);
       try {
+        const fechaTarget = normalizarFechaIso(carreraOrdenada.fecha) || normalizarFechaIso(fechaJornadaRef.current) || hoyLocal();
+        const hipoTarget = carreraOrdenada.hipodromo || "LA RINCONADA";
+        const cNumTarget = Number(carreraOrdenada.carrera) || 1;
+
+        // Actualización atómica en carreras, tablas_fijas y chat_estado_grupo mediante RPC editar_carrera_admin
+        await ejecutarEdicionCarreraAdmin({
+          fechaActual: fechaTarget,
+          hipodromoActual: hipoTarget,
+          carreraActual: cNumTarget,
+          nuevaFecha: fechaTarget,
+          nuevoHipodromo: hipoTarget,
+          nuevaCarrera: cNumTarget,
+          distancia: carreraOrdenada.distancia ? `${carreraOrdenada.distancia}m` : undefined,
+          superficie: carreraOrdenada.superficie,
+          ejemplares: carreraOrdenada.ejemplares,
+        });
+
         await registrarCarrerasEnElDia([carreraOrdenada], undefined, false, true);
       } finally {
         setCarreraRegistrandoIndex(null);
