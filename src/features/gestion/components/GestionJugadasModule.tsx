@@ -5250,14 +5250,6 @@ const hipodromosDelDia = useMemo(() => {
           >
             ❓ Comando
           </button>
-          <button
-            type="button"
-            onClick={() => setModalEventoEspecial(true)}
-            title="🎯 Registrar apuesta de evento libre o especial (ej. 10/6 Milwaukee Brewers campeón serie mundial) y reporte con selección de ganador"
-            className={`${BTN_BARRA} bg-purple-700 text-purple-100 hover:bg-purple-600 font-bold shadow-sm`}
-          >
-            🎯 Evento Libre
-          </button>
         </div>
       </div>
 

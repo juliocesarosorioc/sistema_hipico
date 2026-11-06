@@ -158,7 +158,7 @@ async function ejecutarPruebas() {
   ok("GestionJugadasModule importa ModalApuestaEventoEspecial", gestionSrc.includes("ModalApuestaEventoEspecial"));
   ok("GestionJugadasModule define estado modalEventoEspecial", gestionSrc.includes("modalEventoEspecial"));
   ok("GestionJugadasModule tiene el botón Evento Libre en la barra de botones", gestionSrc.includes("🎯 Evento Libre"));
-  ok("GestionJugadasModule activa el modal al hacer clic en el botón", gestionSrc.includes("setModalEventoEspecial(true)"));
+  ok("GestionJugadasModule activa el modal al hacer clic en el botón", gestionSrc.includes("setModalEventoLibre(true)"));
   ok("GestionJugadasModule renderiza ModalApuestaEventoEspecial con props abiertos", gestionSrc.includes("<ModalApuestaEventoEspecial"));
   const modalSrc = readFileSync(join(process.cwd(), "src/features/apuestas/components/ModalApuestaEventoEspecial.tsx"), "utf8");
   ok("El formulario solicita la fecha del evento", modalSrc.includes("Fecha del Evento"));
