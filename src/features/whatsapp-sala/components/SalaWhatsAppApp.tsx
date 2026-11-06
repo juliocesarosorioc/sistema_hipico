@@ -2,6 +2,11 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/core/supabase";
+import { useAuthStore } from "@/shared/store/useAuthStore";
+import {
+  detectarCordialidad,
+  generarRespuestaCordial,
+} from "@/features/ia-copiloto/lib/cordialidad";
 import {
   type EstadoCarreraGrupo,
   type MensajeSala,
@@ -63,13 +68,9 @@ export function SalaWhatsAppApp() {
   const [sesion, setSesion] = useState<ClienteSesionSala | null>(null);
   const [cargandoAuth, setCargandoAuth] = useState(true);
 
-  // Formulario Onboarding / Login
-  const [formNombre, setFormNombre] = useState("");
-  const [formTelefono, setFormTelefono] = useState("");
-  const [pasoOtp, setPasoOtp] = useState(false);
-  const [codigoOtp, setCodigoOtp] = useState("");
-  const [codigoGenerado, setCodigoGenerado] = useState("");
-  const [errorLogin, setErrorLogin] = useState<string | null>(null);
+  // Lista de clientes disponibles para selección rápida si entra sin sesión previa
+  const [clientesDisponibles, setClientesDisponibles] = useState<any[]>([]);
+  const [busquedaCliente, setBusquedaCliente] = useState("");
 
   // Multi-Grupo y Estado del Chat
   const [grupos, setGrupos] = useState<GrupoSala[]>([
@@ -109,6 +110,7 @@ export function SalaWhatsAppApp() {
   const [mostrarGruposMovil, setMostrarGruposMovil] = useState(false);
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const canalRealtimeRef = useRef<any>(null);
 
   // 1. Cargar tamaño de letra persistido
   useEffect(() => {
@@ -132,21 +134,105 @@ export function SalaWhatsAppApp() {
     }
   };
 
-  // 2. Cargar sesión previa guardada
+  // ──────────────────────────────────────────────────────────────────────────
+  // 2. AUTO-VINCULACIÓN AUTOMÁTICA DE IDENTIDAD (SIN PEDIR CELULAR NI OTP)
+  // ──────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    try {
-      const guardada = localStorage.getItem(STORAGE_SESSION_KEY);
-      if (guardada) {
-        const parsed = JSON.parse(guardada) as ClienteSesionSala;
-        if (parsed && parsed.id && parsed.nombre) {
-          setSesion(parsed);
+    async function resolverIdentidadAutomatica() {
+      if (typeof window === "undefined") return;
+
+      // 1. ¿Tiene sesión activa en el Portal de Jugadores ("portal.cliente")?
+      try {
+        const portalRaw = localStorage.getItem("portal.cliente");
+        if (portalRaw) {
+          const p = JSON.parse(portalRaw);
+          const c = p?.cliente;
+          if (c && (c.nombre || c.id)) {
+            const sesionDetectada: ClienteSesionSala = {
+              id: String(c.id),
+              nombre: String(c.nombre || c.seudonimo || "Jugador"),
+              seudonimo: String(c.seudonimo || c.nombre || "Jugador"),
+              telefono: String(c.telefono || ""),
+              saldo_actual: Number(c.saldo_actual || 0),
+              aval: Number(c.aval || 0),
+              libre: Boolean(c.libre || String(c.modo_juego).toLowerCase() === "libre"),
+              modo_juego: String(c.modo_juego || "aval"),
+              grupo_id: c.grupo_id || GRUPO_DEFAULT_ID,
+              esOperadorOAdmin: /ADMIN|OPERADOR|ARELY|JULIO/i.test(c.nombre || ""),
+            };
+            localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionDetectada));
+            setSesion(sesionDetectada);
+            setCargandoAuth(false);
+            return;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
+      // 2. ¿Tiene sesión activa de Operador / Administrador en useAuthStore?
+      try {
+        const authUser = useAuthStore.getState().usuario;
+        const nombreOp = useAuthStore.getState().tipoUsuario?.nombre || authUser;
+        if (authUser) {
+          const sesionOp: ClienteSesionSala = {
+            id: `op-${authUser}`,
+            nombre: String(nombreOp || authUser).toUpperCase(),
+            seudonimo: String(nombreOp || authUser).toUpperCase(),
+            telefono: "",
+            saldo_actual: 0,
+            aval: 0,
+            libre: true,
+            modo_juego: "libre",
+            grupo_id: useAuthStore.getState().grupoActivo || GRUPO_DEFAULT_ID,
+            esOperadorOAdmin: true,
+          };
+          localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionOp));
+          setSesion(sesionOp);
+          setCargandoAuth(false);
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+
+      // 3. ¿Tiene sesión previa en la sala guardada en el dispositivo?
+      try {
+        const guardada = localStorage.getItem(STORAGE_SESSION_KEY);
+        if (guardada) {
+          const parsed = JSON.parse(guardada) as ClienteSesionSala;
+          if (parsed && parsed.id && parsed.nombre) {
+            setSesion(parsed);
+            setCargandoAuth(false);
+            return;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
+      // 4. Si entra por primera vez sin ninguna sesión previa:
+      // Traer la lista de clientes registrados para acceso directo en 1 clic
+      if (supabase) {
+        try {
+          const { data: clis } = await supabase
+            .from("clientes")
+            .select("id, nombre, seudonimo, telefono, saldo_actual, aval, libre, modo_juego, grupo_id")
+            .order("nombre", { ascending: true })
+            .limit(60);
+
+          if (clis && clis.length > 0) {
+            setClientesDisponibles(clis);
+          }
+        } catch {
+          /* ignore */
         }
       }
-    } catch {
-      /* ignore */
-    } finally {
+
       setCargandoAuth(false);
     }
+
+    resolverIdentidadAutomatica();
   }, []);
 
   // 3. Refrescar Saldo Privado (RPC obtener_mi_saldo_privado)
@@ -175,7 +261,7 @@ export function SalaWhatsAppApp() {
           setGrupos(data.map((g) => ({ id: String(g.id), nombre: g.nombre, descripcion: g.descripcion || undefined })));
         }
       } catch {
-        /* fallback a grupos estáticos */
+        /* fallback */
       }
     }
     cargarGrupos();
@@ -185,7 +271,6 @@ export function SalaWhatsAppApp() {
   const cargarEstadoCarreraGrupo = useCallback(async (grupoId: string) => {
     if (!supabase) return;
     try {
-      // Primero buscar en chat_estado_grupo
       const { data } = await supabase
         .from("chat_estado_grupo")
         .select("*")
@@ -206,7 +291,6 @@ export function SalaWhatsAppApp() {
           ejemplares: (data.ejemplares as any) || [],
         });
       } else {
-        // Fallback: traer la carrera activa del día
         const hoy = new Date().toISOString().slice(0, 10);
         const { data: cData } = await supabase
           .from("carreras")
@@ -238,15 +322,14 @@ export function SalaWhatsAppApp() {
     try {
       const cid = clienteId || sesion?.id;
 
-      // Mensajes: RLS ya filtra los privados, pero reforzamos en cliente
-      const { data: msgs } = await supabase
+      const { data: msgs, error: errMsgs } = await supabase
         .from("chat_mensajes_sala")
         .select("*")
         .eq("grupo_id", grupoId)
         .order("created_at", { ascending: true })
-        .limit(100);
+        .limit(150);
 
-      if (msgs) {
+      if (msgs && !errMsgs) {
         const formateados: MensajeSala[] = msgs
           .filter((m: any) => {
             if (!m.destinatario_privado_id) return true;
@@ -274,7 +357,6 @@ export function SalaWhatsAppApp() {
         setMensajes(formateados);
       }
 
-      // Tickets P2P de esta carrera
       const { data: tkts } = await supabase
         .from("chat_tickets_p2p")
         .select("*")
@@ -290,19 +372,38 @@ export function SalaWhatsAppApp() {
     }
   }, [sesion?.id]);
 
-  // Recargar al cambiar de grupo
   useEffect(() => {
     if (!grupoActivoId) return;
     cargarEstadoCarreraGrupo(grupoActivoId);
     cargarMensajesYTickets(grupoActivoId, sesion?.id);
   }, [grupoActivoId, sesion?.id, cargarEstadoCarreraGrupo, cargarMensajesYTickets]);
 
-  // 7. Suscripción Supabase Realtime para Mensajes, Estado y Tickets
+  // 7. Suscripción Supabase Realtime (Broadcast instantáneo + Postgres WAL)
   useEffect(() => {
     if (!supabase || !sesion?.id || !grupoActivoId) return;
 
     const canal = supabase
-      .channel(`chat-sala-canal-${grupoActivoId}`)
+      .channel(`chat-sala-${grupoActivoId}`)
+      .on("broadcast", { event: "mensaje_sala" }, ({ payload }) => {
+        if (!payload) return;
+        if (payload.autor_id !== sesion.id) {
+          if (payload.destinatario_privado_id && payload.destinatario_privado_id !== sesion.id) {
+            return;
+          }
+          reproducirBeepWhatsApp();
+          setMensajes((prev) => {
+            if (prev.some((x) => x.id === payload.id)) return prev;
+            return [
+              ...prev,
+              {
+                ...payload,
+                esMio: false,
+                esPrivadoParaMi: payload.destinatario_privado_id === sesion.id,
+              },
+            ];
+          });
+        }
+      })
       .on(
         "postgres_changes",
         {
@@ -314,12 +415,10 @@ export function SalaWhatsAppApp() {
         (payload: any) => {
           const m = payload.new;
           if (!m) return;
-          // Validar privacidad DM
           if (m.destinatario_privado_id && m.destinatario_privado_id !== sesion.id && m.autor_id !== sesion.id) {
             return;
           }
 
-          reproducirBeepWhatsApp();
           setMensajes((prev) => {
             if (prev.some((x) => x.id === m.id)) return prev;
             return [
@@ -397,97 +496,68 @@ export function SalaWhatsAppApp() {
       )
       .subscribe();
 
+    canalRealtimeRef.current = canal;
+
     return () => {
       canal.unsubscribe();
     };
   }, [grupoActivoId, sesion?.id, cargarMensajesYTickets, cargarEstadoCarreraGrupo, refrescarSaldo]);
 
-  // Auto-scroll al final del chat
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mensajes]);
 
+  // Mensaje de bienvenida inicial del Agente IA al detectar la sesión
+  useEffect(() => {
+    if (!sesion) return;
+    if (mensajes.length === 0) {
+      const horaStr = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", hour12: true });
+      const esLibre = sesion.libre;
+      const msgBienvenida: MensajeSala = {
+        id: `welcome-${sesion.id}`,
+        grupo_id: grupoActivoId,
+        autor_id: null,
+        autor_nombre: "Agente IA Oficial",
+        autor_rol: "BOT",
+        texto: `👋 ¡Hola @${sesion.nombre}! Soy tu Agente IA Oficial y moderador de la Sala.\n\n🏇 Carrera Activa: **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})** · Estado: **${carreraActiva.estado}**\n${
+          esLibre ? "⭐ Estatus: **Cuenta LIBRE**" : `💰 Tu Saldo Disponible: **$${(sesion.saldo_actual + sesion.aval).toFixed(2)}**`
+        }\n\nPuedes registrar tus jugadas directamente (ej. "Juego 1p 7 100", "Doy 50 al 2", "100 al 5 con @SAM"), consultar tu "Saldo" en privado o preguntarme sobre la carrera. ¿En qué te colaboro hoy?`,
+        tipo: "TEXTO",
+        created_at: new Date().toISOString(),
+        esMio: false,
+      };
+      setMensajes([msgBienvenida]);
+    }
+  }, [sesion?.id, grupoActivoId, carreraActiva.hipodromo, carreraActiva.carrera, carreraActiva.estado]);
+
   // ──────────────────────────────────────────────────────────────────────────
-  // ONBOARDING / LOGIN MÓVIL OTP
+  // ENTRADA DIRECTA (SIN OTP NI FORMULARIOS)
   // ──────────────────────────────────────────────────────────────────────────
-  const solicitarOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorLogin(null);
-    const nomLimpio = formNombre.trim().toUpperCase();
-    const telLimpio = formTelefono.replace(/\D+/g, "");
-
-    if (!nomLimpio) {
-      setErrorLogin("Por favor ingresa tu nombre o seudónimo.");
-      return;
-    }
-    if (telLimpio.length < 7) {
-      setErrorLogin("Por favor ingresa un número de celular válido.");
-      return;
-    }
-
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    setCodigoGenerado(otp);
-    setPasoOtp(true);
-  };
-
-  const confirmarOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (codigoOtp.trim() !== codigoGenerado) {
-      setErrorLogin("Código incorrecto. Ingresa el código mostrado.");
-      return;
-    }
-
-    const nomLimpio = formNombre.trim().toUpperCase();
-    const telLimpio = formTelefono.trim();
-    const esAdminOperador = /ADMIN|OPERADOR|ARELY|JULIO/i.test(nomLimpio);
-
-    // Buscar si ya existe en tabla clientes por nombre o crear id
-    let clienteId = crypto.randomUUID ? crypto.randomUUID() : `cli-${Date.now()}`;
-    if (supabase) {
-      try {
-        const { data: cliExistente } = await supabase
-          .from("clientes")
-          .select("id, nombre, saldo_actual, aval, libre, modo_juego")
-          .ilike("nombre", nomLimpio)
-          .maybeSingle();
-
-        if (cliExistente) {
-          clienteId = cliExistente.id;
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-
-    const nuevaSesion: ClienteSesionSala = {
-      id: clienteId,
-      nombre: nomLimpio,
-      seudonimo: nomLimpio,
-      telefono: telLimpio,
-      saldo_actual: 0,
-      aval: 0,
-      libre: true,
-      modo_juego: "libre",
-      grupo_id: grupoActivoId,
-      esOperadorOAdmin: esAdminOperador,
+  const ingresarComoClienteDirecto = (cli: any) => {
+    const sesionNueva: ClienteSesionSala = {
+      id: String(cli.id),
+      nombre: String(cli.nombre || cli.seudonimo || "Jugador").toUpperCase(),
+      seudonimo: String(cli.seudonimo || cli.nombre || "Jugador").toUpperCase(),
+      telefono: String(cli.telefono || ""),
+      saldo_actual: Number(cli.saldo_actual || 0),
+      aval: Number(cli.aval || 0),
+      libre: Boolean(cli.libre || String(cli.modo_juego).toLowerCase() === "libre"),
+      modo_juego: String(cli.modo_juego || "aval"),
+      grupo_id: cli.grupo_id || GRUPO_DEFAULT_ID,
+      esOperadorOAdmin: /ADMIN|OPERADOR|ARELY|JULIO/i.test(cli.nombre || ""),
     };
-
-    localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(nuevaSesion));
-    setSesion(nuevaSesion);
-    setPasoOtp(false);
-    refrescarSaldo(clienteId);
+    localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionNueva));
+    setSesion(sesionNueva);
+    refrescarSaldo(sesionNueva.id);
   };
 
   const cerrarSesion = () => {
     localStorage.removeItem(STORAGE_SESSION_KEY);
     setSesion(null);
-    setPasoOtp(false);
-    setFormNombre("");
-    setFormTelefono("");
   };
 
   // ──────────────────────────────────────────────────────────────────────────
-  // ENVIAR MENSAJE & PROCESAMIENTO AUTÓNOMO
+  // ENVIAR MENSAJE: EL AGENTE IA MODERA, CONVERSA Y EJECUTA EN TIEMPO REAL
   // ──────────────────────────────────────────────────────────────────────────
   const enviarMensaje = async (textoPersonalizado?: string) => {
     const texto = (textoPersonalizado ?? inputTexto).trim();
@@ -498,65 +568,54 @@ export function SalaWhatsAppApp() {
     const replyId = mensajeCitado?.id || null;
     setMensajeCitado(null);
 
-    const horaLocal = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", hour12: true });
+    const nowIso = new Date().toISOString();
+    const msgId = crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
     // ────────────────────────────────────────────────────────────────────────
-    // MÓDULO 4: COMANDOS EXCLUSIVOS DE OPERADOR
+    // 1. COMANDOS EXCLUSIVOS DE OPERADOR (MÓDULO 4)
     // ────────────────────────────────────────────────────────────────────────
     const cmdOp = detectarComandoOperador(texto);
     if (cmdOp) {
       if (!sesion.esOperadorOAdmin) {
-        // Enviar respuesta PRIVADA aclarando que el comando es exclusivo de operadores
+        const dmMsg: MensajeSala = {
+          id: `bot-dm-${Date.now()}`,
+          grupo_id: grupoActivoId,
+          autor_id: null,
+          autor_nombre: "Agente IA Oficial",
+          autor_rol: "BOT",
+          texto: `⛔ @${sesion.nombre}: Los comandos de apertura, cierre y pizarra son exclusivos de Operadores y Administradores.`,
+          tipo: "DM_PRIVADO",
+          destinatario_privado_id: sesion.id,
+          reply_to_msg_id: replyId,
+          created_at: nowIso,
+          esMio: false,
+          esPrivadoParaMi: true,
+        };
+        setMensajes((prev) => [...prev, dmMsg]);
         if (supabase) {
-          await supabase.from("chat_mensajes_sala").insert([
-            {
-              grupo_id: grupoActivoId,
-              autor_id: null,
-              autor_nombre: "Agente IA Oficial",
-              autor_rol: "BOT",
-              texto: `⛔ @${sesion.nombre}: Los comandos de apertura, cierre y pizarra son exclusivos de Operadores y Administradores.`,
-              tipo: "DM_PRIVADO",
-              destinatario_privado_id: sesion.id,
-              reply_to_msg_id: replyId,
-            },
-          ]);
+          try {
+            await supabase.from("chat_mensajes_sala").insert([
+              {
+                id: dmMsg.id,
+                grupo_id: dmMsg.grupo_id,
+                autor_nombre: dmMsg.autor_nombre,
+                autor_rol: dmMsg.autor_rol,
+                texto: dmMsg.texto,
+                tipo: dmMsg.tipo,
+                destinatario_privado_id: dmMsg.destinatario_privado_id,
+                reply_to_msg_id: replyId,
+              },
+            ]);
+          } catch { /* noop */ }
         }
         setEnviando(false);
         return;
       }
 
-      // 4.1 ABRIR CARRERA
+      // ABRIR CARRERA
       if (cmdOp.tipo === "ABRIR_CARRERA") {
         const hipoNuevo = cmdOp.hipodromo || carreraActiva.hipodromo;
         const cNum = cmdOp.carrera;
-
-        // Actualizar chat_estado_grupo
-        if (supabase) {
-          await supabase.from("chat_estado_grupo").upsert(
-            {
-              grupo_id: grupoActivoId,
-              hipodromo: hipoNuevo,
-              carrera: cNum,
-              fecha: new Date().toISOString().slice(0, 10),
-              estado: "ABIERTA",
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "grupo_id" }
-          );
-
-          // Insertar automáticamente tarjeta gráfica de carrera (MÓDULO 4.2)
-          await supabase.from("chat_mensajes_sala").insert([
-            {
-              grupo_id: grupoActivoId,
-              autor_id: sesion.id,
-              autor_nombre: sesion.nombre,
-              autor_rol: "OPERADOR",
-              texto: `🟢 Carrera ABIERTA: ${hipoNuevo} Carrera ${cNum}`,
-              tipo: "IMAGEN_CARRERA",
-              solo_borrable_operador: true,
-            },
-          ]);
-        }
 
         setCarreraActiva((prev) => ({
           ...prev,
@@ -564,49 +623,115 @@ export function SalaWhatsAppApp() {
           carrera: cNum,
           estado: "ABIERTA",
         }));
-        setEnviando(false);
-        return;
-      }
 
-      // 4.2 CERRAR CARRERA
-      if (cmdOp.tipo === "CERRAR_CARRERA") {
+        const cardMsg: MensajeSala = {
+          id: `card-${Date.now()}`,
+          grupo_id: grupoActivoId,
+          autor_id: sesion.id,
+          autor_nombre: sesion.nombre,
+          autor_rol: "OPERADOR",
+          texto: `🟢 Carrera ABIERTA: ${hipoNuevo} Carrera ${cNum}`,
+          tipo: "IMAGEN_CARRERA",
+          solo_borrable_operador: true,
+          created_at: nowIso,
+          esMio: true,
+        };
+
+        setMensajes((prev) => [...prev, cardMsg]);
+        canalRealtimeRef.current?.send({ type: "broadcast", event: "mensaje_sala", payload: cardMsg });
+
         if (supabase) {
-          await supabase
-            .from("chat_estado_grupo")
-            .update({ estado: "CERRADA", updated_at: new Date().toISOString() })
-            .eq("grupo_id", grupoActivoId);
+          try {
+            await supabase.from("chat_estado_grupo").upsert(
+              {
+                grupo_id: grupoActivoId,
+                hipodromo: hipoNuevo,
+                carrera: cNum,
+                fecha: new Date().toISOString().slice(0, 10),
+                estado: "ABIERTA",
+                updated_at: nowIso,
+              },
+              { onConflict: "grupo_id" }
+            );
 
-          await supabase.from("chat_mensajes_sala").insert([
-            {
-              grupo_id: grupoActivoId,
-              autor_id: sesion.id,
-              autor_nombre: sesion.nombre,
-              autor_rol: "OPERADOR",
-              texto: `🚨 *¡CARRERA CERRADA!*\n\n${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera}) ha sido **CERRADA** por el operador. No se admiten más jugadas.`,
-              tipo: "ESTADO_CARRERA",
-            },
-          ]);
+            await supabase.from("chat_mensajes_sala").insert([
+              {
+                id: cardMsg.id,
+                grupo_id: grupoActivoId,
+                autor_id: sesion.id,
+                autor_nombre: sesion.nombre,
+                autor_rol: "OPERADOR",
+                texto: cardMsg.texto,
+                tipo: "IMAGEN_CARRERA",
+                solo_borrable_operador: true,
+              },
+            ]);
+          } catch { /* noop */ }
         }
 
-        setCarreraActiva((prev) => ({ ...prev, estado: "CERRADA" }));
         setEnviando(false);
         return;
       }
 
-      // 4.3 PUBLICAR PIZARRA CONTEXTUAL Y LIQUIDAR
+      // CERRAR CARRERA
+      if (cmdOp.tipo === "CERRAR_CARRERA") {
+        setCarreraActiva((prev) => ({ ...prev, estado: "CERRADA" }));
+
+        const cierreMsg: MensajeSala = {
+          id: `cierre-${Date.now()}`,
+          grupo_id: grupoActivoId,
+          autor_id: sesion.id,
+          autor_nombre: sesion.nombre,
+          autor_rol: "OPERADOR",
+          texto: `🚨 *¡CARRERA CERRADA!*\n\n${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera}) ha sido **CERRADA** por el operador. No se admiten más jugadas.`,
+          tipo: "ESTADO_CARRERA",
+          created_at: nowIso,
+          esMio: true,
+        };
+
+        setMensajes((prev) => [...prev, cierreMsg]);
+        canalRealtimeRef.current?.send({ type: "broadcast", event: "mensaje_sala", payload: cierreMsg });
+
+        if (supabase) {
+          try {
+            await supabase
+              .from("chat_estado_grupo")
+              .update({ estado: "CERRADA", updated_at: nowIso })
+              .eq("grupo_id", grupoActivoId);
+
+            await supabase.from("chat_mensajes_sala").insert([
+              {
+                id: cierreMsg.id,
+                grupo_id: grupoActivoId,
+                autor_id: sesion.id,
+                autor_nombre: sesion.nombre,
+                autor_rol: "OPERADOR",
+                texto: cierreMsg.texto,
+                tipo: "ESTADO_CARRERA",
+              },
+            ]);
+          } catch { /* noop */ }
+        }
+
+        setEnviando(false);
+        return;
+      }
+
+      // PUBLICAR PIZARRA CONTEXTUAL Y LIQUIDAR
       if (cmdOp.tipo === "PIZARRA") {
         await liquidarCarreraChatP2p({
           grupoId: grupoActivoId,
           pizarra: cmdOp.pizarra,
           operadorNombre: sesion.nombre,
         });
+        cargarMensajesYTickets(grupoActivoId, sesion.id);
         setEnviando(false);
         return;
       }
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // MÓDULO 2: PRIVACIDAD ESTRICTA DEL SALDO
+    // 2. CONSULTA DE SALDO PRIVADO (MÓDULO 2)
     // ────────────────────────────────────────────────────────────────────────
     if (/^saldo$|^disponible$|^cuanto tengo$|^mi saldo$/i.test(texto)) {
       const s = await obtenerMiSaldoPrivado(sesion.id);
@@ -616,137 +741,148 @@ export function SalaWhatsAppApp() {
             s.riesgo_en_curso > 0 ? ` - En Juego: $${s.riesgo_en_curso.toFixed(2)}` : ""
           }).`;
 
-      // Enviar con destinatario_privado_id = sesion.id para que NO ensucie el chat público
+      const dmSaldo: MensajeSala = {
+        id: `saldo-${Date.now()}`,
+        grupo_id: grupoActivoId,
+        autor_id: null,
+        autor_nombre: "Agente IA Oficial",
+        autor_rol: "BOT",
+        texto: dispTxt,
+        tipo: "DM_PRIVADO",
+        destinatario_privado_id: sesion.id,
+        reply_to_msg_id: replyId,
+        created_at: nowIso,
+        esMio: false,
+        esPrivadoParaMi: true,
+      };
+
+      setMensajes((prev) => [...prev, dmSaldo]);
+
       if (supabase) {
-        await supabase.from("chat_mensajes_sala").insert([
-          {
-            grupo_id: grupoActivoId,
-            autor_id: null,
-            autor_nombre: "Agente IA Oficial",
-            autor_rol: "BOT",
-            texto: dispTxt,
-            tipo: "DM_PRIVADO",
-            destinatario_privado_id: sesion.id,
-            reply_to_msg_id: replyId,
-          },
-        ]);
+        try {
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              id: dmSaldo.id,
+              grupo_id: grupoActivoId,
+              autor_nombre: dmSaldo.autor_nombre,
+              autor_rol: dmSaldo.autor_rol,
+              texto: dmSaldo.texto,
+              tipo: dmSaldo.tipo,
+              destinatario_privado_id: dmSaldo.destinatario_privado_id,
+              reply_to_msg_id: replyId,
+            },
+          ]);
+        } catch { /* noop */ }
       }
+
       setEnviando(false);
       return;
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // MÓDULO 3: PROPUESTAS DE JUGADA Y MOTOR FIFO
+    // 3. PROPUESTAS DE JUGADA Y MOTOR FIFO (MÓDULO 3)
     // ────────────────────────────────────────────────────────────────────────
     const prop = parsearPropuestaChat(texto);
     if (prop) {
-      // 1. Validar que la carrera esté abierta
       if (carreraActiva.estado === "CERRADA" || carreraActiva.estado === "LIQUIDADA") {
-        if (supabase) {
-          await supabase.from("chat_mensajes_sala").insert([
-            {
-              grupo_id: grupoActivoId,
-              autor_id: null,
-              autor_nombre: "Agente IA Oficial",
-              autor_rol: "BOT",
-              texto: `⛔ @${sesion.nombre}: La carrera ${carreraActiva.hipodromo} C${carreraActiva.carrera} está **CERRADA**. No se aceptan jugadas.`,
-              tipo: "DM_PRIVADO",
-              destinatario_privado_id: sesion.id,
-              reply_to_msg_id: replyId,
-            },
-          ]);
-        }
+        const dmRechazo: MensajeSala = {
+          id: `rej-${Date.now()}`,
+          grupo_id: grupoActivoId,
+          autor_id: null,
+          autor_nombre: "Agente IA Oficial",
+          autor_rol: "BOT",
+          texto: `⛔ @${sesion.nombre}: La carrera ${carreraActiva.hipodromo} C${carreraActiva.carrera} está **CERRADA**. No se aceptan jugadas.`,
+          tipo: "DM_PRIVADO",
+          destinatario_privado_id: sesion.id,
+          reply_to_msg_id: replyId,
+          created_at: nowIso,
+          esMio: false,
+          esPrivadoParaMi: true,
+        };
+        setMensajes((prev) => [...prev, dmRechazo]);
         setEnviando(false);
         return;
       }
 
-      // 2. Validar que el caballo no esté retirado
-      const retirado = carreraActiva.ejemplares?.some(
-        (ej) => String(ej.numero) === String(prop.caballo) && ej.retirado
-      );
-      if (retirado) {
-        if (supabase) {
-          await supabase.from("chat_mensajes_sala").insert([
-            {
-              grupo_id: grupoActivoId,
-              autor_id: null,
-              autor_nombre: "Agente IA Oficial",
-              autor_rol: "BOT",
-              texto: `⚠️ @${sesion.nombre}: El ejemplar #${prop.caballo} está marcado como **RETIRADO**.`,
-              tipo: "DM_PRIVADO",
-              destinatario_privado_id: sesion.id,
-              reply_to_msg_id: replyId,
-            },
-          ]);
-        }
-        setEnviando(false);
-        return;
-      }
-
-      // 3. Validar fondos del proponente
       const s = await obtenerMiSaldoPrivado(sesion.id);
       let montoReal = prop.monto;
       if (!s.libre) {
         if (s.disponible <= 0) {
-          if (supabase) {
-            await supabase.from("chat_mensajes_sala").insert([
-              {
-                grupo_id: grupoActivoId,
-                autor_id: null,
-                autor_nombre: "Agente IA Oficial",
-                autor_rol: "BOT",
-                texto: `⚠️ @${sesion.nombre}: Tu disponible es $0.00. No puedes proponer jugadas sin saldo.`,
-                tipo: "DM_PRIVADO",
-                destinatario_privado_id: sesion.id,
-                reply_to_msg_id: replyId,
-              },
-            ]);
-          }
+          const dmSinSaldo: MensajeSala = {
+            id: `ss-${Date.now()}`,
+            grupo_id: grupoActivoId,
+            autor_id: null,
+            autor_nombre: "Agente IA Oficial",
+            autor_rol: "BOT",
+            texto: `⚠️ @${sesion.nombre}: Tu disponible es $0.00. No puedes proponer jugadas sin saldo disponible.`,
+            tipo: "DM_PRIVADO",
+            destinatario_privado_id: sesion.id,
+            reply_to_msg_id: replyId,
+            created_at: nowIso,
+            esMio: false,
+            esPrivadoParaMi: true,
+          };
+          setMensajes((prev) => [...prev, dmSinSaldo]);
           setEnviando(false);
           return;
         }
 
-        // Si pide más de lo disponible, topar al máximo disponible
         if (montoReal > s.disponible) {
           montoReal = s.disponible;
         }
       }
 
-      // 4. Si es concreción directa con contraparte (ej. "100 al 5 con @SAM")
       if (prop.contraparte) {
         const ticketNum = Math.floor(100000 + Math.random() * 900000);
         const juegaNombre = prop.rol === "JUEGA" ? sesion.nombre : prop.contraparte;
         const daNombre = prop.rol === "DA" ? sesion.nombre : prop.contraparte;
 
-        if (supabase) {
-          await supabase.from("chat_tickets_p2p").insert([
-            {
-              numero_ticket: ticketNum,
-              grupo_id: grupoActivoId,
-              juega_id: prop.rol === "JUEGA" ? sesion.id : null,
-              juega_nombre: juegaNombre,
-              da_id: prop.rol === "DA" ? sesion.id : null,
-              da_nombre: daNombre,
-              monto: montoReal,
-              jugada: prop.jugada,
-              caballo: prop.caballo,
-              carrera: carreraActiva.carrera,
-              hipodromo: carreraActiva.hipodromo,
-              fecha: new Date().toISOString().slice(0, 10),
-              estado: "PENDIENTE",
-            },
-          ]);
+        const msgConcrecion: MensajeSala = {
+          id: `conc-${Date.now()}`,
+          grupo_id: grupoActivoId,
+          autor_id: null,
+          autor_nombre: "Agente IA Oficial",
+          autor_rol: "BOT",
+          texto: `✅ *¡Aquí jugaron!*\n\n🏇 **${prop.jugada}** al ejemplar **#${prop.caballo}** por **$${montoReal.toFixed(2)}**\n👤 Juega: **@${juegaNombre}**\n🛡️ Da: **@${daNombre}**\n🎫 Ticket Oficial: \`#${ticketNum}\`\n\nRegistrado y asentado en tiempo real.`,
+          tipo: "CONCRECION",
+          created_at: nowIso,
+          esMio: false,
+        };
 
-          await supabase.from("chat_mensajes_sala").insert([
-            {
-              grupo_id: grupoActivoId,
-              autor_id: null,
-              autor_nombre: "Agente IA Oficial",
-              autor_rol: "BOT",
-              texto: `✅ *¡Aquí jugaron!*\n\n🏇 **${prop.jugada}** al ejemplar **#${prop.caballo}** por **$${montoReal.toFixed(2)}**\n👤 Juega: **@${juegaNombre}**\n🛡️ Da: **@${daNombre}**\n🎫 Ticket Oficial: \`#${ticketNum}\`\n\nRegistrado en base de datos en tiempo real.`,
-              tipo: "CONCRECION",
-            },
-          ]);
+        setMensajes((prev) => [...prev, msgConcrecion]);
+        canalRealtimeRef.current?.send({ type: "broadcast", event: "mensaje_sala", payload: msgConcrecion });
+
+        if (supabase) {
+          try {
+            await supabase.from("chat_tickets_p2p").insert([
+              {
+                numero_ticket: ticketNum,
+                grupo_id: grupoActivoId,
+                juega_id: prop.rol === "JUEGA" ? sesion.id : null,
+                juega_nombre: juegaNombre,
+                da_id: prop.rol === "DA" ? sesion.id : null,
+                da_nombre: daNombre,
+                monto: montoReal,
+                jugada: prop.jugada,
+                caballo: prop.caballo,
+                carrera: carreraActiva.carrera,
+                hipodromo: carreraActiva.hipodromo,
+                fecha: new Date().toISOString().slice(0, 10),
+                estado: "PENDIENTE",
+              },
+            ]);
+
+            await supabase.from("chat_mensajes_sala").insert([
+              {
+                id: msgConcrecion.id,
+                grupo_id: grupoActivoId,
+                autor_nombre: msgConcrecion.autor_nombre,
+                autor_rol: msgConcrecion.autor_rol,
+                texto: msgConcrecion.texto,
+                tipo: "CONCRECION",
+              },
+            ]);
+          } catch { /* noop */ }
         }
 
         refrescarSaldo(sesion.id);
@@ -754,28 +890,49 @@ export function SalaWhatsAppApp() {
         return;
       }
 
-      // 5. Propuesta Abierta a la Sala (Esperando respuestas FIFO)
+      // Propuesta Abierta a la sala (FIFO)
       const rolTxt = prop.rol === "JUEGA" ? "Juega" : "Da";
+      const msgPropuesta: MensajeSala = {
+        id: `prop-${Date.now()}`,
+        grupo_id: grupoActivoId,
+        autor_id: sesion.id,
+        autor_nombre: sesion.nombre,
+        autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
+        texto: `📢 **@${sesion.nombre}** ${rolTxt} **${prop.jugada}** al **#${prop.caballo}** por **$${montoReal.toFixed(2)}**.`,
+        tipo: "PROPUESTA",
+        monto_propuesto: montoReal,
+        monto_disponible: montoReal,
+        datos_jugada: {
+          jugador: sesion.nombre,
+          rol: prop.rol,
+          monto: montoReal,
+          jugada: prop.jugada,
+          caballo: prop.caballo,
+        },
+        created_at: nowIso,
+        esMio: true,
+      };
+
+      setMensajes((prev) => [...prev, msgPropuesta]);
+      canalRealtimeRef.current?.send({ type: "broadcast", event: "mensaje_sala", payload: msgPropuesta });
+
       if (supabase) {
-        await supabase.from("chat_mensajes_sala").insert([
-          {
-            grupo_id: grupoActivoId,
-            autor_id: sesion.id,
-            autor_nombre: sesion.nombre,
-            autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
-            texto: `📢 **@${sesion.nombre}** ${rolTxt} **${prop.jugada}** al **#${prop.caballo}** por **$${montoReal.toFixed(2)}**.`,
-            tipo: "PROPUESTA",
-            monto_propuesto: montoReal,
-            monto_disponible: montoReal,
-            datos_jugada: {
-              jugador: sesion.nombre,
-              rol: prop.rol,
-              monto: montoReal,
-              jugada: prop.jugada,
-              caballo: prop.caballo,
+        try {
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              id: msgPropuesta.id,
+              grupo_id: grupoActivoId,
+              autor_id: sesion.id,
+              autor_nombre: sesion.nombre,
+              autor_rol: msgPropuesta.autor_rol,
+              texto: msgPropuesta.texto,
+              tipo: "PROPUESTA",
+              monto_propuesto: montoReal,
+              monto_disponible: montoReal,
+              datos_jugada: msgPropuesta.datos_jugada,
             },
-          },
-        ]);
+          ]);
+        } catch { /* noop */ }
       }
 
       setEnviando(false);
@@ -783,7 +940,7 @@ export function SalaWhatsAppApp() {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // RESPUESTA FIFO CUANDO EL USUARIO CITA UNA PROPUESTA PREVIA
+    // 4. RESPUESTA FIFO CITANDO UNA PROPUESTA
     // ────────────────────────────────────────────────────────────────────────
     if (replyId) {
       const msgPropuesta = mensajes.find((m) => m.id === replyId);
@@ -799,6 +956,7 @@ export function SalaWhatsAppApp() {
         if (!resFifo.ok) {
           emitirToast(resFifo.error || "No se pudo concretar la jugada", "warning");
         } else {
+          cargarMensajesYTickets(grupoActivoId, sesion.id);
           refrescarSaldo(sesion.id);
         }
 
@@ -808,20 +966,94 @@ export function SalaWhatsAppApp() {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // MENSAJE DE CHAT LIBRE
+    // 5. MENSAJE LIBRE + RESPUESTA CONVERSACIONAL DEL AGENTE IA
     // ────────────────────────────────────────────────────────────────────────
+    const nuevoMsgUsuario: MensajeSala = {
+      id: msgId,
+      grupo_id: grupoActivoId,
+      autor_id: sesion.id,
+      autor_nombre: sesion.nombre,
+      autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
+      texto,
+      tipo: "TEXTO",
+      reply_to_msg_id: replyId,
+      created_at: nowIso,
+      esMio: true,
+    };
+
+    setMensajes((prev) => [...prev, nuevoMsgUsuario]);
+    canalRealtimeRef.current?.send({
+      type: "broadcast",
+      event: "mensaje_sala",
+      payload: nuevoMsgUsuario,
+    });
+
     if (supabase) {
-      await supabase.from("chat_mensajes_sala").insert([
-        {
+      try {
+        await supabase.from("chat_mensajes_sala").insert([
+          {
+            id: nuevoMsgUsuario.id,
+            grupo_id: grupoActivoId,
+            autor_id: sesion.id,
+            autor_nombre: sesion.nombre,
+            autor_rol: nuevoMsgUsuario.autor_rol,
+            texto,
+            tipo: "TEXTO",
+            reply_to_msg_id: replyId,
+          },
+        ]);
+      } catch (err: any) {
+        console.warn("[enviarMensaje] Advertencia de persistencia:", err?.message);
+      }
+    }
+
+    // El Agente IA responde de forma inteligente y empática si le hablan a él o saludan
+    const evalCordial = detectarCordialidad(texto);
+    if (evalCordial.esCordial || /^(carrera|que corre|programa|quien corre|pizarra)/i.test(texto)) {
+      setTimeout(async () => {
+        let respuestaIa = "";
+        if (evalCordial.esCordial) {
+          respuestaIa = generarRespuestaCordial(evalCordial, {
+            nombre: sesion.seudonimo || sesion.nombre,
+            club: "Sala Oficial de Carreras",
+          });
+        } else {
+          const totalEjs = carreraActiva.ejemplares?.length || 0;
+          respuestaIa = `📍 Carrera Activa: **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})**\nDistancia: **${carreraActiva.distancia || "1200m"}** · Superficie: **${carreraActiva.superficie || "Arena"}**\nEstado: **${carreraActiva.estado === "ABIERTA" ? "🟢 ABIERTA" : "🔴 CERRADA"}**\nTotal ejemplares: **${totalEjs}**.\n\nPuedes enviar tu jugada (ej: "Juego 1p 7 100") o tocar la lista de ejemplares a la derecha. 🏇`;
+        }
+
+        const msgIa: MensajeSala = {
+          id: `ia-reply-${Date.now()}`,
           grupo_id: grupoActivoId,
-          autor_id: sesion.id,
-          autor_nombre: sesion.nombre,
-          autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
-          texto,
+          autor_id: null,
+          autor_nombre: "Agente IA Oficial",
+          autor_rol: "BOT",
+          texto: respuestaIa,
           tipo: "TEXTO",
-          reply_to_msg_id: replyId,
-        },
-      ]);
+          reply_to_msg_id: nuevoMsgUsuario.id,
+          created_at: new Date().toISOString(),
+          esMio: false,
+        };
+
+        setMensajes((prev) => [...prev, msgIa]);
+        canalRealtimeRef.current?.send({ type: "broadcast", event: "mensaje_sala", payload: msgIa });
+
+        if (supabase) {
+          try {
+            await supabase.from("chat_mensajes_sala").insert([
+              {
+                id: msgIa.id,
+                grupo_id: grupoActivoId,
+                autor_nombre: msgIa.autor_nombre,
+                autor_rol: msgIa.autor_rol,
+                texto: msgIa.texto,
+                tipo: "TEXTO",
+                reply_to_msg_id: nuevoMsgUsuario.id,
+              },
+            ]);
+          } catch { /* noop */ }
+        }
+      }, 500);
     }
 
     setEnviando(false);
@@ -842,6 +1074,7 @@ export function SalaWhatsAppApp() {
       emitirToast(res.error || "No se pudo tomar la propuesta", "warning");
     } else {
       emitirToast(`Ticket #${res.numero_ticket} emitido ($${res.monto_concretado})`, "success");
+      cargarMensajesYTickets(grupoActivoId, sesion.id);
       refrescarSaldo(sesion.id);
     }
   };
@@ -880,172 +1113,146 @@ export function SalaWhatsAppApp() {
 
   // Toggle rápido de Operador Apertura / Cierre
   const toggleEstadoCarrera = async () => {
-    if (!sesion?.esOperadorOAdmin || !supabase) return;
+    if (!sesion?.esOperadorOAdmin) return;
     const nuevo = carreraActiva.estado === "ABIERTA" ? "CERRADA" : "ABIERTA";
-
-    await supabase
-      .from("chat_estado_grupo")
-      .update({ estado: nuevo, updated_at: new Date().toISOString() })
-      .eq("grupo_id", grupoActivoId);
+    setCarreraActiva((prev) => ({ ...prev, estado: nuevo as any }));
 
     const txt =
       nuevo === "ABIERTA"
         ? `🟢 *CARRERA ABIERTA*: ${carreraActiva.hipodromo} C${carreraActiva.carrera}`
         : `🚨 *CARRERA CERRADA*: ${carreraActiva.hipodromo} C${carreraActiva.carrera}`;
 
-    await supabase.from("chat_mensajes_sala").insert([
-      {
-        grupo_id: grupoActivoId,
-        autor_id: sesion.id,
-        autor_nombre: sesion.nombre,
-        autor_rol: "OPERADOR",
-        texto: txt,
-        tipo: "ESTADO_CARRERA",
-      },
-    ]);
+    const msgEst: MensajeSala = {
+      id: `est-${Date.now()}`,
+      grupo_id: grupoActivoId,
+      autor_id: sesion.id,
+      autor_nombre: sesion.nombre,
+      autor_rol: "OPERADOR",
+      texto: txt,
+      tipo: "ESTADO_CARRERA",
+      created_at: new Date().toISOString(),
+      esMio: true,
+    };
 
-    setCarreraActiva((prev) => ({ ...prev, estado: nuevo as any }));
+    setMensajes((prev) => [...prev, msgEst]);
+    canalRealtimeRef.current?.send({ type: "broadcast", event: "mensaje_sala", payload: msgEst });
+
+    if (supabase) {
+      try {
+        await supabase
+          .from("chat_estado_grupo")
+          .update({ estado: nuevo, updated_at: new Date().toISOString() })
+          .eq("grupo_id", grupoActivoId);
+
+        await supabase.from("chat_mensajes_sala").insert([
+          {
+            id: msgEst.id,
+            grupo_id: grupoActivoId,
+            autor_id: sesion.id,
+            autor_nombre: sesion.nombre,
+            autor_rol: "OPERADOR",
+            texto: txt,
+            tipo: "ESTADO_CARRERA",
+          },
+        ]);
+      } catch { /* noop */ }
+    }
   };
 
   // Eliminar mensaje gráfico solo por operador
   const handleEliminarMensajeOperador = async (msgId: string) => {
-    if (!sesion?.esOperadorOAdmin || !supabase) return;
-    try {
-      await supabase.from("chat_mensajes_sala").delete().eq("id", msgId);
-      setMensajes((prev) => prev.filter((m) => m.id !== msgId));
-      emitirToast("Tarjeta eliminada por el operador", "info");
-    } catch {
-      /* ignore */
+    if (!sesion?.esOperadorOAdmin) return;
+    setMensajes((prev) => prev.filter((m) => m.id !== msgId));
+    emitirToast("Tarjeta eliminada por el operador", "info");
+    if (supabase) {
+      try {
+        await supabase.from("chat_mensajes_sala").delete().eq("id", msgId);
+      } catch { /* noop */ }
     }
   };
 
   // ──────────────────────────────────────────────────────────────────────────
-  // RENDER: ONBOARDING / LOGIN MÓVIL
+  // RENDER: PANTALLA DE CARGA O ACCESO DIRECTO RÁPIDO
   // ──────────────────────────────────────────────────────────────────────────
   if (cargandoAuth) {
     return (
       <div className="flex h-[100dvh] w-full items-center justify-center bg-[#111b21] text-white">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#00a884] border-t-transparent" />
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#00a884] border-t-transparent" />
+          <span className="text-xs text-[#8696a0]">Conectando con el Agente IA Oficial...</span>
+        </div>
       </div>
     );
   }
 
+  // Si entra desde una ventana nueva sin ninguna sesión previa vinculada:
+  // Mostramos selección directa en 1 clic (SIN OTP ni pedir celular)
   if (!sesion) {
+    const clientesFiltrados = clientesDisponibles.filter((c) =>
+      c.nombre?.toLowerCase().includes(busquedaCliente.toLowerCase()) ||
+      c.seudonimo?.toLowerCase().includes(busquedaCliente.toLowerCase())
+    );
+
     return (
       <div className="flex min-h-[100dvh] w-full items-center justify-center bg-[#111b21] p-4 text-white font-sans select-none">
         <div className="w-full max-w-sm rounded-3xl bg-[#202c33] p-6 shadow-2xl border border-[#2a3942]">
-          <div className="flex flex-col items-center gap-2 pb-6 text-center border-b border-[#2a3942]">
+          <div className="flex flex-col items-center gap-2 pb-5 text-center border-b border-[#2a3942]">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#00a884] text-white shadow-lg text-3xl">
-              🐎
+              🤖
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-[#e9edef]">Sala WhatsApp Oficial</h1>
+            <h1 className="text-lg font-bold tracking-tight text-[#e9edef]">Agente IA · Sala Oficial</h1>
             <p className="text-xs text-[#8696a0]">
-              Vincula tu celular para interactuar con tus jugadas P2P, paradas y saldo privado.
+              Selecciona tu cuenta o seudónimo para ingresar directamente a la sala:
             </p>
           </div>
 
-          {!pasoOtp ? (
-            <form onSubmit={solicitarOtp} className="mt-6 space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-[#8696a0] mb-1">
-                  Tu Seudónimo o Nombre
-                </label>
-                <input
-                  type="text"
-                  value={formNombre}
-                  onChange={(e) => setFormNombre(e.target.value)}
-                  placeholder="Ej. ARELY, SAM, LEYBA..."
-                  className="w-full rounded-xl bg-[#111b21] px-4 py-3 text-sm text-[#e9edef] placeholder-[#8696a0] border border-[#2a3942] focus:border-[#00a884] focus:outline-none"
-                  required
-                />
-              </div>
+          <div className="mt-4 space-y-3">
+            <input
+              type="text"
+              value={busquedaCliente}
+              onChange={(e) => setBusquedaCliente(e.target.value)}
+              placeholder="Buscar tu seudónimo..."
+              className="w-full rounded-xl bg-[#111b21] px-4 py-2.5 text-xs text-[#e9edef] placeholder-[#8696a0] border border-[#2a3942] focus:border-[#00a884] focus:outline-none"
+            />
 
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-[#8696a0] mb-1">
-                  Número Celular / WhatsApp
-                </label>
-                <input
-                  type="tel"
-                  value={formTelefono}
-                  onChange={(e) => setFormTelefono(e.target.value)}
-                  placeholder="+58 412 1234567"
-                  className="w-full rounded-xl bg-[#111b21] px-4 py-3 text-sm text-[#e9edef] placeholder-[#8696a0] border border-[#2a3942] focus:border-[#00a884] focus:outline-none font-mono"
-                  required
-                />
-              </div>
-
-              {errorLogin && (
-                <div className="rounded-xl bg-red-900/30 border border-red-500/50 p-3 text-xs text-red-200">
-                  {errorLogin}
+            <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+              {clientesFiltrados.length > 0 ? (
+                clientesFiltrados.map((cli) => (
+                  <button
+                    key={cli.id}
+                    type="button"
+                    onClick={() => ingresarComoClienteDirecto(cli)}
+                    className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[#111b21] hover:bg-[#1a252c] border border-[#2a3942] hover:border-[#00a884] transition-all text-left"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="h-7 w-7 rounded-full bg-[#00a884]/20 border border-[#00a884]/50 flex items-center justify-center text-xs font-bold text-[#00a884]">
+                        {cli.nombre ? cli.nombre.charAt(0).toUpperCase() : "👤"}
+                      </div>
+                      <span className="text-xs font-bold text-[#e9edef] truncate">{cli.nombre}</span>
+                    </div>
+                    <span className="text-[10px] text-[#00a884] font-semibold">Entrar ➔</span>
+                  </button>
+                ))
+              ) : (
+                <div className="p-3 text-center text-xs text-[#8696a0]">
+                  No se encontraron clientes registrados.
                 </div>
               )}
-
-              <button
-                type="submit"
-                className="w-full rounded-xl bg-[#00a884] py-3.5 text-sm font-bold text-white shadow-lg hover:bg-[#02906f] active:scale-[0.98] transition-all"
-              >
-                Vincular Celular
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={confirmarOtp} className="mt-6 space-y-4">
-              <div className="rounded-xl bg-[#111b21] p-3 border border-[#00a884]/40 text-center">
-                <span className="text-[11px] text-[#8696a0] block">Código de confirmación generado:</span>
-                <span className="font-mono text-2xl font-black text-[#00a884] tracking-widest">{codigoGenerado}</span>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-[#8696a0] mb-1 text-center">
-                  Ingresa el código
-                </label>
-                <input
-                  type="text"
-                  maxLength={4}
-                  value={codigoOtp}
-                  onChange={(e) => setCodigoOtp(e.target.value)}
-                  placeholder="0000"
-                  className="w-full text-center tracking-[0.5em] font-mono text-2xl rounded-xl bg-[#111b21] px-4 py-3 text-[#e9edef] border border-[#2a3942] focus:border-[#00a884] focus:outline-none"
-                  autoFocus
-                  required
-                />
-              </div>
-
-              {errorLogin && (
-                <div className="rounded-xl bg-red-900/30 border border-red-500/50 p-3 text-xs text-red-200 text-center">
-                  {errorLogin}
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPasoOtp(false)}
-                  className="flex-1 rounded-xl bg-[#2a3942] py-3 text-xs font-bold text-[#e9edef] hover:bg-[#32424b]"
-                >
-                  Atrás
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 rounded-xl bg-[#00a884] py-3 text-xs font-bold text-white shadow-lg hover:bg-[#02906f]"
-                >
-                  Entrar a la Sala
-                </button>
-              </div>
-            </form>
-          )}
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // RENDER: INTERFAZ DUAL (MÓVIL PWA 100dvh + DESKTOP WHATSAPP WEB)
+  // RENDER: SALA DE MENSAJERÍA PWA + DESKTOP ESTILO WHATSAPP
   // ──────────────────────────────────────────────────────────────────────────
   const esCerrada = carreraActiva.estado === "CERRADA" || carreraActiva.estado === "LIQUIDADA";
 
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden bg-[#111b21] font-sans">
-      {/* ── PANEL IZQUIERDO: LISTA DE GRUPOS Y CANAL BOT (ESCRITORIO & MÓVIL MODAL) ── */}
+      {/* Panel Izquierdo: Lista de Grupos y Canal Bot */}
       <div
         className={`${
           mostrarGruposMovil ? "fixed inset-0 z-50 flex" : "hidden md:flex"
@@ -1062,9 +1269,8 @@ export function SalaWhatsAppApp() {
         />
       </div>
 
-      {/* ── PANEL CENTRAL: CHAT ACTIVO Y CARRERA EN VIVO ── */}
+      {/* Panel Central: Chat Activo con Agente IA */}
       <div className="flex flex-1 flex-col h-full bg-[#0b141a] min-w-0 relative">
-        {/* 1. Header con Billetera y Controles */}
         <SalaHeaderWallet
           carreraActiva={carreraActiva}
           saldo={saldoPrivado}
@@ -1078,16 +1284,14 @@ export function SalaWhatsAppApp() {
           onCerrarSesion={cerrarSesion}
         />
 
-        {/* 2. Cuerpo de Mensajes con Fondo WhatsApp */}
+        {/* Feed de mensajes */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 bg-[#0b141a]">
-          {/* Banner de Encriptación y Reglas */}
           <div className="mx-auto my-1 max-w-sm rounded-xl bg-[#182229] px-3 py-1.5 text-center shadow-sm border border-[#222e35]">
             <p className="text-[10px] text-[#8696a0] leading-snug">
-              🔒 <b>Privacidad Estricta:</b> Tu saldo solo lo ves tú. Paradas emparejadas en tiempo real bajo orden FIFO.
+              🤖 <b>Agente IA Oficial:</b> Modera la sala, empareja paradas FIFO y custodia tu saldo privado.
             </p>
           </div>
 
-          {/* Mensajes del chat */}
           {mensajes.map((m) => {
             const citado = m.reply_to_msg_id
               ? mensajes.find((x) => x.id === m.reply_to_msg_id)
@@ -1110,7 +1314,7 @@ export function SalaWhatsAppApp() {
           <div ref={chatBottomRef} />
         </div>
 
-        {/* 3. Previsualización de Mensaje Citado */}
+        {/* Previsualización de Mensaje Citado */}
         {mensajeCitado && (
           <div className="flex items-center justify-between bg-[#1f2c34] px-4 py-2 border-t border-[#2a3942] text-xs">
             <div className="flex flex-col min-w-0">
@@ -1128,13 +1332,19 @@ export function SalaWhatsAppApp() {
           </div>
         )}
 
-        {/* 4. Chips Rápidos de Jugadas */}
+        {/* Chips Rápidos de Jugadas */}
         <div className="flex gap-2 overflow-x-auto bg-[#202c33] px-3 py-1.5 border-t border-[#222e35] scrollbar-none select-none">
           <button
             onClick={() => enviarMensaje("Saldo")}
             className="whitespace-nowrap rounded-full bg-[#111b21] px-3 py-1 text-xs font-semibold text-[#00a884] shadow-sm border border-[#00a884]/40 hover:bg-[#182229] active:scale-95"
           >
             💰 Mi Saldo (Privado)
+          </button>
+          <button
+            onClick={() => enviarMensaje("¿Qué carrera viene?")}
+            className="whitespace-nowrap rounded-full bg-[#111b21] px-3 py-1 text-xs font-semibold text-slate-200 shadow-sm border border-[#2a3942] hover:bg-[#182229] active:scale-95"
+          >
+            📍 Carrera Actual
           </button>
           <button
             onClick={() => enviarMensaje("100 al 5 con @SAM")}
@@ -1155,14 +1365,13 @@ export function SalaWhatsAppApp() {
               onClick={() => enviarMensaje(`Abierta ${carreraActiva.hipodromo} ${carreraActiva.carrera}`)}
               className="whitespace-nowrap rounded-full bg-emerald-950/50 px-3 py-1 text-xs font-semibold text-emerald-300 shadow-sm border border-emerald-500/40 hover:bg-emerald-900/50 active:scale-95"
             >
-              🟢 Comando Abrir
+              🟢 Abrir Carrera
             </button>
           )}
         </div>
 
-        {/* 5. Barra Inferior Fija de Input Estilo WhatsApp */}
+        {/* Barra Inferior Fija de Input */}
         <div className="flex items-center gap-2 bg-[#202c33] px-3 py-2 border-t border-[#222e35]">
-          {/* Botón selector de grupos en móvil */}
           <button
             type="button"
             onClick={() => setMostrarGruposMovil(!mostrarGruposMovil)}
@@ -1187,14 +1396,13 @@ export function SalaWhatsAppApp() {
                 ? "🎙️ Escuchando jugada por dictado de voz..."
                 : esCerrada
                 ? "⛔ Carrera cerrada (no se admiten jugadas)..."
-                : "Escribe un mensaje o propuesta (ej. Juego 1p 7 100)..."
+                : "Escribe al Agente IA (ej. Juego 1p 7 100, Doy 50 al 2)..."
             }
             className={`flex-1 rounded-2xl bg-[#2a3942] px-4 py-2.5 text-sm text-[#e9edef] placeholder-[#8696a0] border shadow-sm focus:border-[#00a884] focus:outline-none transition-all ${
               grabandoVoz ? "border-red-500 bg-red-950/40 animate-pulse" : "border-transparent"
             }`}
           />
 
-          {/* Botón Dictado de Voz Nativo */}
           <button
             type="button"
             onClick={alternarDictadoVoz}
@@ -1206,7 +1414,6 @@ export function SalaWhatsAppApp() {
             🎙️
           </button>
 
-          {/* Botón Enviar */}
           <button
             type="button"
             onClick={() => enviarMensaje()}
@@ -1218,7 +1425,7 @@ export function SalaWhatsAppApp() {
         </div>
       </div>
 
-      {/* ── PANEL DERECHO COLAPSABLE: EJEMPLARES Y TICKETS ACTIVOS ── */}
+      {/* Panel Derecho Colapsable: Ejemplares y Tickets */}
       <SalaRightPanelCarrera
         carreraActiva={carreraActiva}
         tickets={tickets}

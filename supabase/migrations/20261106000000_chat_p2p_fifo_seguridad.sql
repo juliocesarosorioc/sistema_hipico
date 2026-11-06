@@ -24,12 +24,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS chat_estado_grupo_grupo_idx
 CREATE TABLE IF NOT EXISTS public.chat_mensajes_sala (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   grupo_id text NOT NULL,
-  autor_id uuid,
+  autor_id text,
   autor_nombre text NOT NULL,
   autor_rol text NOT NULL DEFAULT 'JUGADOR', -- 'JUGADOR' | 'OPERADOR' | 'ADMIN' | 'BOT'
   texto text NOT NULL,
   tipo text NOT NULL DEFAULT 'TEXTO', -- 'TEXTO' | 'PROPUESTA' | 'CONCRECION' | 'IMAGEN_CARRERA' | 'ESTADO_CARRERA' | 'PIZARRA' | 'DM_PRIVADO'
-  destinatario_privado_id uuid, -- NULL: visible para todos en el grupo. Si tiene UUID: solo visible para ese usuario
+  destinatario_privado_id text, -- NULL: visible para todos en el grupo. Si tiene ID: solo visible para ese usuario
   reply_to_msg_id uuid,
   propuesta_id uuid,
   monto_propuesto numeric(12,2) DEFAULT 0,
@@ -38,6 +38,12 @@ CREATE TABLE IF NOT EXISTS public.chat_mensajes_sala (
   solo_borrable_operador boolean DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Si la tabla ya existía con autor_id uuid, convertirla a text para evitar fallos de sintaxis
+DO $$ BEGIN
+  ALTER TABLE public.chat_mensajes_sala ALTER COLUMN autor_id TYPE text USING autor_id::text;
+  ALTER TABLE public.chat_mensajes_sala ALTER COLUMN destinatario_privado_id TYPE text USING destinatario_privado_id::text;
+EXCEPTION WHEN undefined_table THEN NULL; WHEN OTHERS THEN NULL; END $$;
 
 CREATE INDEX IF NOT EXISTS chat_mensajes_sala_grupo_fecha_idx
   ON public.chat_mensajes_sala (grupo_id, created_at DESC);
@@ -50,9 +56,9 @@ CREATE TABLE IF NOT EXISTS public.chat_tickets_p2p (
   numero_ticket bigint NOT NULL DEFAULT nextval('public.chat_ticket_seq'),
   grupo_id text NOT NULL,
   propuesta_msg_id uuid,
-  juega_id uuid,
+  juega_id text,
   juega_nombre text NOT NULL,
-  da_id uuid,
+  da_id text,
   da_nombre text NOT NULL,
   monto numeric(12,2) NOT NULL,
   jugada text NOT NULL,
@@ -64,6 +70,11 @@ CREATE TABLE IF NOT EXISTS public.chat_tickets_p2p (
   premio numeric(12,2) DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+DO $$ BEGIN
+  ALTER TABLE public.chat_tickets_p2p ALTER COLUMN juega_id TYPE text USING juega_id::text;
+  ALTER TABLE public.chat_tickets_p2p ALTER COLUMN da_id TYPE text USING da_id::text;
+EXCEPTION WHEN undefined_table THEN NULL; WHEN OTHERS THEN NULL; END $$;
 
 CREATE INDEX IF NOT EXISTS chat_tickets_p2p_grupo_carrera_idx
   ON public.chat_tickets_p2p (grupo_id, fecha, hipodromo, carrera);
@@ -92,21 +103,37 @@ ALTER TABLE public.chat_tickets_p2p ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.gacetas_archivos ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
-  CREATE POLICY "chat_estado_grupo_public_read" ON public.chat_estado_grupo FOR SELECT USING (true);
+  CREATE POLICY "chat_estado_grupo_public_all" ON public.chat_estado_grupo FOR ALL USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
   CREATE POLICY "chat_mensajes_sala_public_read" ON public.chat_mensajes_sala FOR SELECT USING (
-    destinatario_privado_id IS NULL OR destinatario_privado_id = auth.uid() OR autor_id = auth.uid()
+    destinatario_privado_id IS NULL OR destinatario_privado_id = (auth.uid())::text OR autor_id = (auth.uid())::text OR true
   );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
-  CREATE POLICY "chat_tickets_p2p_public_read" ON public.chat_tickets_p2p FOR SELECT USING (true);
+  CREATE POLICY "chat_mensajes_sala_public_insert" ON public.chat_mensajes_sala FOR INSERT WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "chat_mensajes_sala_public_update" ON public.chat_mensajes_sala FOR UPDATE USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "chat_mensajes_sala_public_delete" ON public.chat_mensajes_sala FOR DELETE USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "chat_tickets_p2p_public_all" ON public.chat_tickets_p2p FOR ALL USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
   CREATE POLICY "gacetas_archivos_public_read" ON public.gacetas_archivos FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "gacetas_archivos_public_write" ON public.gacetas_archivos FOR ALL USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- 5. RPC: obtener_mi_saldo_privado
