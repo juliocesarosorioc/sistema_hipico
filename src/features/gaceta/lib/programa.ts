@@ -127,8 +127,57 @@ export async function leerProgramaPorFecha(fecha: string): Promise<ResPrograma> 
       .select("fecha, hipodromos, carreras, resumen, creado_por, updated_at")
       .eq("fecha", fecha)
       .maybeSingle();
-    if (error) return { ok: true, data: null };
-    return { ok: true, data: build(data as Record<string, unknown> | null) };
+    if (!error && data) {
+      const progConstruido = build(data as Record<string, unknown> | null);
+      if (progConstruido && progConstruido.carreras.length > 0) {
+        return { ok: true, data: progConstruido };
+      }
+    }
+
+    // Fallback: Si programa_dia no tiene carreras, cargar desde la matriz central `carreras`
+    const { data: cRows } = await supabase
+      .from("carreras")
+      .select("fecha, hipodromo, carrera, hora, distancia, superficie, premio, caballos")
+      .eq("fecha", fecha)
+      .order("carrera", { ascending: true });
+
+    if (cRows && cRows.length > 0) {
+      const hipos = [...new Set(cRows.map((r) => String(r.hipodromo).toUpperCase()))];
+      const carrs: CarreraPrograma[] = cRows.map((r) => ({
+        hipodromo: String(r.hipodromo).toUpperCase(),
+        fecha: String(r.fecha),
+        carrera: Number(r.carrera),
+        hora: r.hora || null,
+        distancia: r.distancia ? Number(r.distancia) || 0 : 0,
+        superficie: r.superficie || "ARENA",
+        premio: r.premio ? Number(r.premio) || 0 : 0,
+        caballos: (Array.isArray(r.caballos) ? r.caballos : []).map((cb: any) => ({
+          numero: cb.numero ?? "",
+          nombre: String(cb.nombre ?? "").toUpperCase(),
+          nacionalidad: String(cb.nacionalidad ?? "VE").toUpperCase() || "VE",
+          valor: Number(cb.valor ?? 0) || 0,
+          ejemplar_id: cb.ejemplar_id ?? null,
+          jockey: cb.jockey ? String(cb.jockey) : undefined,
+          entrenador: cb.entrenador ? String(cb.entrenador) : undefined,
+          peso: cb.peso !== undefined ? cb.peso : undefined,
+          pp: cb.pp != null ? cb.pp : undefined,
+          ml: cb.ml ? String(cb.ml) : undefined,
+          retirado: Boolean(cb.retirado),
+        })),
+      }));
+      return {
+        ok: true,
+        data: {
+          fecha,
+          hipodromos: hipos,
+          carreras: carrs,
+          resumen: `${carrs.length} carrera(s) · ${hipos.join(", ")}`,
+          creado_por: "matriz_central",
+        },
+      };
+    }
+
+    return { ok: true, data: null };
   } catch {
     return { ok: true, data: null };
   }
@@ -168,7 +217,8 @@ function rpcAusente(e: unknown): boolean {
  */
 async function registrarCarrerasEnMatriz(
   fecha: string,
-  carreras: CarreraPrograma[]
+  carreras: CarreraPrograma[],
+  fusionarEjemplares = false
 ): Promise<{ ok: boolean; guardadas: number; error?: string }> {
   const validas = carreras.filter((c) => c.hipodromo && Number(c.carrera) > 0);
   if (!validas.length) return { ok: true, guardadas: 0 };
@@ -184,12 +234,8 @@ async function registrarCarrerasEnMatriz(
         distancia: c.distancia ? String(c.distancia) : null,
         superficie: c.superficie ?? null,
         premio: c.premio ?? null,
-        origen: "ia",
-        // El programa llega por LOTES: la lista de ejemplares se ACUMULA con la
-        // que ya está guardada (por número de gualdrapa). Sin esto, un lote
-        // parcial borraba los ejemplares del lote anterior y la carrera se
-        // quedaba con la mitad del padrón.
-        fusionar_ejemplares: true,
+        origen: "manual",
+        fusionar_ejemplares: fusionarEjemplares,
       }))
     );
     if (!res.ok) {
@@ -211,9 +257,10 @@ async function registrarCarrerasEnMatriz(
 
 async function confirmarCargaEnCatalogo(
   fecha: string,
-  carreras: CarreraPrograma[]
+  carreras: CarreraPrograma[],
+  fusionarEjemplares = false
 ): Promise<{ ok: boolean; error?: string }> {
-  const resultado = await registrarCarrerasEnMatriz(fecha, carreras);
+  const resultado = await registrarCarrerasEnMatriz(fecha, carreras, fusionarEjemplares);
   if (resultado.ok) return { ok: true };
   return {
     ok: false,
@@ -226,7 +273,7 @@ async function confirmarCargaEnCatalogo(
 export async function guardarPrograma(
   p: ProgramaDia,
   creadoPor?: string,
-  opciones: { registrarEnMatriz?: boolean } = {}
+  opciones: { registrarEnMatriz?: boolean; fusionarEjemplares?: boolean } = {}
 ): Promise<{ ok: boolean; data?: ProgramaDia; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
   const fecha = p.fecha || hoyLocal();
@@ -241,13 +288,13 @@ export async function guardarPrograma(
     try {
       const { error: errUpsert } = await supabase.from("programa_dia").upsert(normP, { onConflict: "fecha" });
       if (opciones.registrarEnMatriz !== false) {
-        const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
+        const matriz = await confirmarCargaEnCatalogo(fecha, carreras, opciones.fusionarEjemplares ?? false);
         if (!matriz.ok && errUpsert) return { ok: false, error: `${errUpsert.message} | ${matriz.error}` };
       }
       return { ok: true, data: normP };
     } catch (e) {
       if (opciones.registrarEnMatriz !== false) {
-        const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
+        const matriz = await confirmarCargaEnCatalogo(fecha, carreras, opciones.fusionarEjemplares ?? false);
         if (matriz.ok) return { ok: true, data: normP };
       }
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -265,7 +312,7 @@ export async function guardarPrograma(
       return await persistirDirecto();
     }
     if (opciones.registrarEnMatriz !== false) {
-      const matriz = await confirmarCargaEnCatalogo(fecha, carreras);
+      const matriz = await confirmarCargaEnCatalogo(fecha, carreras, opciones.fusionarEjemplares ?? false);
       if (!matriz.ok) return { ok: false, error: matriz.error };
     }
     return { ok: true, data: normP };

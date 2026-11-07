@@ -30,18 +30,24 @@ Extrae el 100% de los parámetros internos de cada carrera y de cada ejemplar en
    - "condicion_lote": Código corto (ej. "Clm 16000b", "OClm 50000n1x").
    - "condicion_lote_completa": Línea técnica completa después de Purse (ej. "Purse 24.000 TCENTRIES 1ST LRL NOVEMBER 6 5.5F ... CLAIMING 16000-12500 Para Ejemplares de 3 y mas años").
 
-2. IDENTIDAD DEL EJEMPLAR, PEDIGRÍ, STUD, JINETE, PESO Y DÍAS SIN CORRER:
+2. IDENTIDAD DEL EJEMPLAR, PEDIGRÍ, STUD, JINETE, PESO, ENTRENADOR Y MORNING LINE:
+   ⚠️ PROHIBICIÓN ABSOLUTA Y REGLA CRÍTICA DE IDENTIDAD (CERO CONFUSIÓN):
+   - PROHIBIDO TERMINANTEMENTE colocar el nombre de un Jockey, Jinete o Entrenador en el campo "nombre" del caballo.
+   - Textos con iniciales y puntos (ej. "I. Ortiz, Jr.", "J.L. Ortiz", "J. Rosario", "F. Prat", "T. Gaffalione", "K. Carmouche", "B. Baffert", "S.M. Asmussen", "B.H. Cox", "W.I. Mott", "C. Brown", "T. Pletcher") o que terminen en Jr./Sr./III SON PERSONAS FÍSICAS, JAMÁS son el nombre de un caballo.
+   - El campo "nombre" debe contener EXCLUSIVAMENTE el nombre propio del caballo en mayúsculas (ej. "FLIGHTLINE", "WHITE ABARRIO", "AMERICAN EXAMPLE", "FORTE", "CODY'S WISH"). Si una línea empieza con el número y el jockey (ej. "1 I. Ortiz, Jr. 122 B. Baffert 5-2"), busca el nombre del ejemplar en la fila inmediatamente superior o contigua.
+   - "jinete": Nombre del Jockey de HOY (ej. "I. Ortiz, Jr.", "J. Rosario", "F. Prat").
+   - "entrenador": Nombre del Entrenador de HOY extraído de la columna "Jin/Kgs/Ent" (ej. "B. Baffert", "S.M. Asmussen", "B.H. Cox", "T. Pletcher"). ¡OBLIGATORIO EXTRAERLO!
+   - "morning_line": Cotización oficial previa de la mañana (ej. "5-2", "3-1", "9-5", "8-1", "12-1", "20-1", "5/2"). ¡OBLIGATORIO EXTRAERLO!
    - Reconstruye cualquier nombre o Morning Line desplazado al pie de página emparejándolo con su fila superior.
    - "numero_programa": Número o llave en la columna izquierda ("1", "1A", "2"...).
    - "puesto_partida": Columna "PP" entera.
    - "nombre" y "pais_origen": Si el nombre incluye sufijo "(IRE)", "(GB)", "(FR)", "(BRZ)", "(CHI)", "(MEX)", extráelo en "pais_origen"; si no tiene sufijo, "pais_origen": "USA".
    - "stud": Nombre completo después de "Stud:".
    - "sexo", "pelaje", "anio_nacimiento", "padre", "madre", "abuelo_materno": De la línea de pedigrí (ej. "CZ3a-Candy Ride en Sauvecito p. Cairo Prince" -> sexo: "C", pelaje: "Z", edad: 3 años -> anio_nacimiento = anio_carrera - 3, padre: "Candy Ride", madre: "Sauvecito", abuelo_materno: "Cairo Prince").
-   - "jinete", "peso_kg" (convirtiendo coma a punto, ej. 55.3), "entrenador": Tomados exclusivamente de la columna "Jin/Kgs/Ent" de HOY.
+   - "peso_kg": Peso de hoy en kg o lbs (convirtiendo coma a punto, ej. 55.3 o 122).
    - "dias_sin_correr": Entero extraído de "XXd S/C" (ej. "36d S/C" -> 36; "0d S/C" -> 0).
    - "campana_resumen" y "ganancias_usd": De "Act: (12-2-1-4) $62.739".
    - "es_elegible": true si tiene marca "AE" o "MTO" (fusionando páginas de continuación del mismo número de carrera).
-   - "morning_line": ej. "5/2", "8/1", etc.
 
 3. CARRERAS PREVIAS DEL EJEMPLAR (ARRAY "carreras_previas"):
    Por cada fila del historial ("Fec Hip Dist PP 1 2 Ll Kgs Jin/Div Ganador Cps Lote Rat TG TE"), extrae:

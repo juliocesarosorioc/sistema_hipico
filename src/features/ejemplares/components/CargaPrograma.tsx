@@ -432,36 +432,63 @@ export function CargaPrograma() {
     if (!hipo) return toast("Seleccione o escriba el hipódromo.", "warning");
     if (!carreras.length) return toast("Agregue al menos una carrera al programa.", "warning");
 
-    const pref = carreras.map((c) => ({
-      ...c,
-      hipodromo: hipo,
-      fecha,
-      caballos: (c.caballos || []).filter((cb) => cb.nombre.trim()),
-    }));
-    if (!pref.some((c) => c.caballos.length)) return toast("Cada carrera debe tener al menos un ejemplar con nombre.", "warning");
-
     setGuardando(true);
-    // 1) Vinculación masiva al padrón `ejemplares` (crea los no registrados).
-    const tot = await registrarEjemplares(pref as unknown as Array<Record<string, unknown>>);
-    // 2) UPSERT masivo en `programa_dia` (merge con carreras de otros hipódromos).
-    const otras = (programa?.carreras ?? []).filter((c) => c.hipodromo !== hipo);
-    const merged = [...otras, ...pref];
-    const hipodromos = [...new Set([...(programa?.hipodromos ?? []), hipo].map((h) => String(h).toUpperCase().trim()).filter(Boolean))];
-    const res = await guardarPrograma({ fecha, hipodromos, carreras: merged }, usuario);
-    setGuardando(false);
+    try {
+      const pref = carreras.map((c, idx) => ({
+        ...c,
+        carrera: Number(c.carrera ?? idx + 1),
+        hipodromo: hipo,
+        fecha,
+        caballos: (c.caballos || [])
+          .filter((cb) => Boolean(cb && cb.nombre && String(cb.nombre).trim()))
+          .map((cb) => ({
+            ...cb,
+            numero: String(cb.numero).trim(),
+            nombre: String(cb.nombre).trim().toUpperCase(),
+            nacionalidad: cb.nacionalidad || "VE",
+            jockey: cb.jockey ? String(cb.jockey).trim() : undefined,
+            entrenador: cb.entrenador ? String(cb.entrenador).trim() : undefined,
+            peso: cb.peso !== undefined && String(cb.peso).trim() !== "" ? cb.peso : undefined,
+            ml: cb.ml ? String(cb.ml).trim() : undefined,
+          })),
+      }));
 
-    if (!res.ok) return toast(res.error ?? "Error al guardar el programa.", "error");
-    if (res.data) setPrograma(res.data);
-    // `guardarPrograma` ya dio de alta las carreras en la matriz maestra
-    // `carreras`; se invalida la caché para que Tablas, Marcas, Gestión,
-    // Dupletas y Remates las vean de inmediato sin recargar.
-    useRegistroCentral.getState().invalidarCarreras();
-    setGuardado(`Programa guardado · ${pref.length} carrera(s) · ${totalEjemplares} ejemplar(es) · ${new Date().toLocaleTimeString("es-VE")}`);
-    toast(
-      `✅ Programa guardado: ${pref.length} carrera(s) en la matriz de carreras, ${totalEjemplares} ejemplar(es). Padrón: ${tot.nuevos} nuevo(s), ${tot.vinculados} vinculado(s)${tot.fallidos ? `, ${tot.fallidos} fallido(s)` : ""}.`,
-      "success"
-    );
-    if (pref.some((c) => c.caballos.length)) setCarreras(pref);
+      if (!pref.some((c) => c.caballos.length > 0)) {
+        setGuardando(false);
+        return toast("Cada carrera debe tener al menos un ejemplar con nombre.", "warning");
+      }
+
+      // 1) Vinculación masiva al padrón `ejemplares` (crea los no registrados).
+      const tot = await registrarEjemplares(pref as unknown as Array<Record<string, unknown>>);
+
+      // 2) UPSERT en `programa_dia` y catálogo central `carreras` sin fusión acumulada
+      const otras = (programa?.carreras ?? []).filter((c) => c.hipodromo !== hipo);
+      const merged = [...otras, ...pref];
+      const hipodromos = [...new Set([...(programa?.hipodromos ?? []), hipo].map((h) => String(h).toUpperCase().trim()).filter(Boolean))];
+
+      const res = await guardarPrograma(
+        { fecha, hipodromos, carreras: merged },
+        usuario,
+        { registrarEnMatriz: true, fusionarEjemplares: false }
+      );
+
+      setGuardando(false);
+
+      if (!res.ok) return toast(res.error ?? "Error al guardar el programa.", "error");
+      if (res.data) setPrograma(res.data);
+
+      useRegistroCentral.getState().invalidarCarreras();
+      setGuardado(`Programa guardado · ${pref.length} carrera(s) · ${totalEjemplares} ejemplar(es) · ${new Date().toLocaleTimeString("es-VE")}`);
+      toast(
+        `✅ Programa guardado: ${pref.length} carrera(s) actualizadas en la matriz maestra, ${totalEjemplares} ejemplar(es). Padrón: ${tot.nuevos} nuevo(s), ${tot.vinculados} vinculado(s)${tot.fallidos ? `, ${tot.fallidos} fallido(s)` : ""}.`,
+        "success"
+      );
+      setCarreras(pref);
+    } catch (err: any) {
+      setGuardando(false);
+      console.error("[CargaPrograma] Error guardando programa:", err);
+      toast("Error al guardar programa: " + (err?.message || String(err)), "error");
+    }
   };
 
   return (
@@ -889,9 +916,22 @@ export function CargaPrograma() {
                 <Card key={`${c.carrera ?? i}-${i}`} className="w-full overflow-hidden">
                   {/* Cabecera de la carrera */}
                   <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surfaceAlt/60 px-4 py-2.5">
-                    <h3 className="mr-2 text-xs font-black uppercase tracking-wider text-primary-700">
-                      Carrera {c.carrera ?? i + 1}ª
-                    </h3>
+                    <div className="flex items-center gap-1.5 mr-2">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-primary-700">Carrera</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={c.carrera ?? i + 1}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setCarrera(i, { carrera: isNaN(val) || val <= 0 ? 1 : val });
+                        }}
+                        className="w-16 rounded-lg border border-primary-300 bg-white px-2 py-1 text-center font-black text-xs text-primary-900 shadow-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        title="Número oficial de la carrera (editable)"
+                      />
+                      <span className="text-xs font-black text-primary-700">ª</span>
+                    </div>
                     <span className="rounded-full bg-primary-600 px-2 py-0.5 text-[9px] font-black uppercase text-white">
                       {(c.caballos || []).filter((cb) => cb.nombre).length} ejemplares
                     </span>

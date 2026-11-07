@@ -47,6 +47,9 @@ type Props = {
   /** Hipódromo activo; "" = sin filtro. */
   filtro: string;
   onFiltro: (hipodromo: string) => void;
+  /** Carrera activa (opcional); null = todas las carreras. */
+  carreraFiltro?: number | null;
+  onCarreraFiltro?: (carrera: number | null) => void;
   fecha: string;
   onFecha: (fecha: string) => void;
   /** Permite dejar la fecha VACÍA = "todos los días". Tablas Fijas lo usa para
@@ -68,6 +71,8 @@ export function MonitorHipodromos({
   grupos,
   filtro,
   onFiltro,
+  carreraFiltro,
+  onCarreraFiltro,
   fecha,
   onFecha,
   permitirTodos = false,
@@ -154,15 +159,30 @@ export function MonitorHipodromos({
                   {carreras
                     .slice()
                     .sort((a, b) => Number(a.carrera || 0) - Number(b.carrera || 0))
-                    .map((c) => (
-                      <span
-                        key={String(c.id ?? c.carrera)}
-                        className={`mon-chip ${claseEstadoCarrera(c.estado, c.ventas)}`}
-                        title={`${nombreHipo} C${c.carrera} · ${c.estado ?? "Programada"} · ${c.ventas ?? 0} venta(s)`}
-                      >
-                        C{c.carrera}
-                      </span>
-                    ))}
+                    .map((c) => {
+                      const numC = Number(c.carrera || 0);
+                      const esCarreraSeleccionada = activo && carreraFiltro === numC;
+                      return (
+                        <span
+                          key={String(c.id ?? c.carrera)}
+                          onClick={(e) => {
+                            if (onCarreraFiltro) {
+                              e.stopPropagation();
+                              onFiltro(hipodromo);
+                              onCarreraFiltro(esCarreraSeleccionada ? null : numC);
+                            }
+                          }}
+                          className={`mon-chip ${claseEstadoCarrera(c.estado, c.ventas)} ${
+                            esCarreraSeleccionada
+                              ? "ring-2 ring-amber-400 font-black scale-110 shadow-md"
+                              : "hover:scale-105 transition-transform"
+                          }`}
+                          title={`${nombreHipo} C${c.carrera} · ${c.estado ?? "Programada"} · ${c.ventas ?? 0} venta(s) (Clic para filtrar)`}
+                        >
+                          C{c.carrera}
+                        </span>
+                      );
+                    })}
                 </span>
               </button>
             );

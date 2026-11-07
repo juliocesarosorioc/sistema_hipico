@@ -554,6 +554,20 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         .maybeSingle();
 
       if (data) {
+        let ejs = (data.ejemplares as any) || [];
+        if (!ejs || ejs.length === 0) {
+          const hoy = data.fecha || new Date().toISOString().slice(0, 10);
+          const { data: cRow } = await supabase
+            .from("carreras")
+            .select("caballos, distancia, superficie, hora")
+            .eq("fecha", hoy)
+            .eq("hipodromo", data.hipodromo)
+            .eq("carrera", data.carrera)
+            .maybeSingle();
+          if (cRow?.caballos) {
+            ejs = cRow.caballos;
+          }
+        }
         setCarreraActiva({
           id: data.id,
           grupo_id: data.grupo_id,
@@ -564,13 +578,13 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           distancia: data.distancia || "1200m",
           superficie: data.superficie || "Arena",
           hora: data.hora,
-          ejemplares: (data.ejemplares as any) || [],
+          ejemplares: ejs,
         });
       } else {
         const hoy = new Date().toISOString().slice(0, 10);
         const { data: cData } = await supabase
           .from("carreras")
-          .select("hipodromo, carrera, estado, hora, distancia, superficie")
+          .select("hipodromo, carrera, estado, hora, distancia, superficie, caballos")
           .eq("fecha", hoy)
           .order("carrera", { ascending: true })
           .limit(1);
@@ -584,6 +598,8 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
             estado: String(c.estado).toUpperCase() === "CERRADA" ? "CERRADA" : "ABIERTA",
             distancia: c.distancia || "1200m",
             superficie: c.superficie || "Arena",
+            hora: c.hora,
+            ejemplares: (c.caballos as any) || [],
           }));
         }
       }
@@ -2082,6 +2098,70 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     }
   };
 
+  // Cambio interactivo del número de carrera activa
+  const handleCambiarNumeroCarrera = async (nuevaCarrera: number) => {
+    const cNum = Math.max(1, Math.min(30, nuevaCarrera));
+    const hipoActual = carreraActiva.hipodromo || "LA RINCONADA";
+    const fechaActual = carreraActiva.fecha || new Date().toISOString().slice(0, 10);
+
+    // 1. Inmediatamente actualizar el número de carrera en la UI
+    setCarreraActiva((prev) => ({
+      ...prev,
+      carrera: cNum,
+    }));
+
+    // 2. Consultar en Supabase los datos de esa carrera y sus ejemplares
+    if (supabase) {
+      try {
+        const { data } = await supabase
+          .from("carreras")
+          .select("id, hipodromo, carrera, estado, distancia, superficie, hora, caballos")
+          .eq("fecha", fechaActual)
+          .eq("hipodromo", hipoActual)
+          .eq("carrera", cNum)
+          .maybeSingle();
+
+        const ejs = (data?.caballos as any) || [];
+        const nuevoEstado = data?.estado
+          ? String(data.estado).toUpperCase() === "CERRADA"
+            ? "CERRADA"
+            : "ABIERTA"
+          : carreraActiva.estado;
+
+        setCarreraActiva((prev) => ({
+          ...prev,
+          carrera: cNum,
+          estado: nuevoEstado as any,
+          distancia: data?.distancia || prev.distancia,
+          superficie: data?.superficie || prev.superficie,
+          hora: data?.hora || prev.hora,
+          ejemplares: ejs,
+        }));
+
+        // Si es operador o admin, sincronizar chat_estado_grupo para que toda la sala refleje el cambio
+        if (sesion?.esOperadorOAdmin) {
+          await supabase.from("chat_estado_grupo").upsert(
+            {
+              grupo_id: grupoActivoId,
+              hipodromo: hipoActual,
+              carrera: cNum,
+              fecha: fechaActual,
+              estado: nuevoEstado,
+              distancia: data?.distancia || carreraActiva.distancia,
+              superficie: data?.superficie || carreraActiva.superficie,
+              hora: data?.hora || carreraActiva.hora,
+              ejemplares: ejs,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "grupo_id" }
+          );
+        }
+      } catch (e) {
+        console.warn("Error actualizando carrera activa:", e);
+      }
+    }
+  };
+
   // Eliminar mensaje gráfico solo por operador
   const handleEliminarMensajeOperador = async (msgId: string) => {
     if (!sesion?.esOperadorOAdmin) return;
@@ -2268,6 +2348,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           onTogglePanelDerecho={() => setPanelDerechoAbierto(!panelDerechoAbierto)}
           panelDerechoAbierto={panelDerechoAbierto}
           onToggleEstadoCarrera={toggleEstadoCarrera}
+          onCambiarNumeroCarrera={handleCambiarNumeroCarrera}
           onCerrarSesion={cerrarSesion}
         />
 

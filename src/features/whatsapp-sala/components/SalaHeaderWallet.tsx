@@ -15,6 +15,7 @@ interface Props {
   onTogglePanelDerecho: () => void;
   panelDerechoAbierto: boolean;
   onToggleEstadoCarrera?: () => void;
+  onCambiarNumeroCarrera?: (carrera: number) => void;
   onCerrarSesion: () => void;
 }
 
@@ -30,6 +31,7 @@ export function SalaHeaderWallet({
   onTogglePanelDerecho,
   panelDerechoAbierto,
   onToggleEstadoCarrera,
+  onCambiarNumeroCarrera,
   onCerrarSesion,
 }: Props) {
   const [ocultarSaldo, setOcultarSaldo] = useState(false);
@@ -94,7 +96,7 @@ export function SalaHeaderWallet({
               {nombreGrupo ? ` · ${nombreGrupo}` : ""}
             </span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span
               className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${
                 esCerrada ? "bg-red-700/90 text-white" : "bg-emerald-800/80 text-emerald-100"
@@ -104,15 +106,59 @@ export function SalaHeaderWallet({
                 className={`h-1.5 w-1.5 rounded-full ${esCerrada ? "bg-white" : "bg-emerald-300 animate-pulse"}`}
               />
               <span className="font-mono tabular-nums uppercase">
-                {carreraActiva.hipodromo} C{carreraActiva.carrera} · {carreraActiva.estado}
+                {carreraActiva.hipodromo} · {carreraActiva.estado}
               </span>
             </span>
+
+            {/* Selector interactivo de Número de Carrera */}
+            <div className="flex items-center rounded-lg bg-black/30 border border-white/20 px-1 py-0.5 shadow-inner">
+              <button
+                type="button"
+                disabled={carreraActiva.carrera <= 1}
+                onClick={() => onCambiarNumeroCarrera && onCambiarNumeroCarrera(Math.max(1, carreraActiva.carrera - 1))}
+                className="px-1 text-[11px] font-black hover:text-amber-300 disabled:opacity-30 cursor-pointer"
+                title="Carrera anterior"
+              >
+                ◀
+              </button>
+              <select
+                value={carreraActiva.carrera}
+                onChange={(e) => onCambiarNumeroCarrera && onCambiarNumeroCarrera(Number(e.target.value))}
+                className="bg-transparent text-[11px] font-black text-amber-300 font-mono focus:outline-none cursor-pointer"
+                title="Seleccionar número de carrera activa"
+              >
+                {Array.from({ length: 16 }, (_, idx) => idx + 1).map((n) => (
+                  <option key={n} value={n} className="bg-[#202c33] text-white">
+                    C{n}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={carreraActiva.carrera >= 16}
+                onClick={() => onCambiarNumeroCarrera && onCambiarNumeroCarrera(carreraActiva.carrera + 1)}
+                className="px-1 text-[11px] font-black hover:text-amber-300 disabled:opacity-30 cursor-pointer"
+                title="Siguiente carrera"
+              >
+                ▶
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 2. Solo la opción de Cerrar / Abrir Carrera para Administrador y Operador */}
+      {/* 2. Opciones de Carrera y Ver Ejemplares */}
       <div className="flex items-center gap-2 shrink-0">
+        <button
+          type="button"
+          onClick={onTogglePanelDerecho}
+          title="Ver ejemplares e inscritos de esta carrera"
+          className="inline-flex items-center gap-1.5 rounded-xl bg-black/25 hover:bg-black/40 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm border border-white/10 active:scale-95 transition-all cursor-pointer"
+        >
+          <span>🏇</span>
+          <span className="hidden sm:inline">Ejemplares (C{carreraActiva.carrera})</span>
+        </button>
+
         {esOperadorOAdmin && onToggleEstadoCarrera && (
           <button
             type="button"

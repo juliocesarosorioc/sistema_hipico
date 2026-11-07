@@ -68,13 +68,35 @@ const vacioModal = (): ModalForm => ({
   hipodromo: "",
 });
 
-/** Parsea un textarea o línea de ejemplares: cada línea o coma "numero nombre" (o solo numero). */
+/** Parsea un textarea o línea de ejemplares: cada línea o coma "numero nombre" (o con slash "num nombre / jockey / entrenador / ml"). */
 function parsearEjemplares(txt: string): EjemplarCarreraCentral[] {
   const salida: EjemplarCarreraCentral[] = [];
   const normalizado = txt.includes("\n") ? txt : txt.replace(/[,;]+/g, "\n");
   for (const lineaRaw of normalizado.split("\n")) {
     const linea = lineaRaw.trim();
     if (!linea) continue;
+
+    // Si viene separado por barras '/'
+    if (linea.includes("/")) {
+      const partes = linea.split("/").map((p) => p.trim());
+      const trozo0 = partes[0].split(/\s+/);
+      const numero = trozo0[0]?.replace(/^N[:ºo]?/i, "").trim() ?? "";
+      const nombre = trozo0.slice(1).join(" ").trim();
+      const jockey = partes[1] || undefined;
+      const entrenador = partes[2] || undefined;
+      const ml = partes[3] || undefined;
+      if (numero) {
+        salida.push({
+          numero,
+          nombre: nombre ? nombre.toUpperCase() : undefined,
+          jockey: jockey || undefined,
+          entrenador: entrenador || undefined,
+          ml: ml || undefined,
+        });
+      }
+      continue;
+    }
+
     const trozos = linea.split(/\s+/);
     const numero = trozos[0]?.replace(/^N[:ºo]?/i, "").trim() ?? "";
     const nombre = trozos.slice(1).join(" ").trim();
@@ -87,7 +109,14 @@ function parsearEjemplares(txt: string): EjemplarCarreraCentral[] {
 /** Texto editable de ejemplares a partir de la lista persistida. */
 function ejemplaresATexto(caballos: EjemplarCarreraCentral[] | undefined): string {
   return (caballos ?? [])
-    .map((c) => (c.nombre ? `${c.numero} ${c.nombre}` : c.numero))
+    .map((c) => {
+      const base = c.nombre ? `${c.numero} ${c.nombre}` : `${c.numero}`;
+      const extras: string[] = [];
+      if (c.jockey) extras.push(c.jockey);
+      if (c.entrenador) extras.push(c.entrenador);
+      if (c.ml) extras.push(c.ml);
+      return extras.length > 0 ? `${base} / ${extras.join(" / ")}` : base;
+    })
     .join("\n");
 }
 
@@ -119,6 +148,7 @@ export function CarrerasDiaModule() {
   const [modalSincUsa, setModalSincUsa] = useState(false);
   const [modalGacetaPdf, setModalGacetaPdf] = useState(false);
   const [autoSyncActivo, setAutoSyncActivo] = useState(() => estaAutoActualizadorActivo());
+  const [carreraFiltro, setCarreraFiltro] = useState<number | null>(null);
 
   const alternarAutoSync = useCallback(() => {
     if (autoSyncActivo) {
@@ -187,9 +217,18 @@ export function CarrerasDiaModule() {
     void refrescar();
   }, [fecha, refrescar]);
 
-  const carreras = useMemo(() => {
+  const listaNumerosCarrerasDisponibles = useMemo(() => {
     const h = claveHipodromo(hipodromo);
     const filtradas = h ? todas.filter((c) => claveHipodromo(c.hipodromo) === h) : todas;
+    return [...new Set(filtradas.map((c) => Number(c.carrera) || 0).filter((n) => n > 0))].sort((a, b) => a - b);
+  }, [todas, hipodromo]);
+
+  const carreras = useMemo(() => {
+    const h = claveHipodromo(hipodromo);
+    let filtradas = h ? todas.filter((c) => claveHipodromo(c.hipodromo) === h) : todas;
+    if (carreraFiltro != null) {
+      filtradas = filtradas.filter((c) => Number(c.carrera) === carreraFiltro);
+    }
     return [...filtradas]
       .sort((a, b) => (Number(a.carrera) || 0) - (Number(b.carrera) || 0))
       .map((c) => ({
@@ -198,7 +237,7 @@ export function CarrerasDiaModule() {
           (x, y) => (parseInt(String(x.numero), 10) || 0) - (parseInt(String(y.numero), 10) || 0)
         ),
       }));
-  }, [todas, hipodromo]);
+  }, [todas, hipodromo, carreraFiltro]);
 
   const conEjemplares = useMemo(() => carreras.filter((c) => (c.caballos?.length ?? 0) > 0), [carreras]);
   const sinEjemplares = useMemo(() => carreras.filter((c) => (c.caballos?.length ?? 0) === 0), [carreras]);
@@ -263,73 +302,96 @@ export function CarrerasDiaModule() {
             ? parsearEjemplares(textoEj)
             : [];
 
+    // Si estamos editando, preservamos metadata previa (jockey, entrenador, peso, ml, pp) si no fue redefinida en el texto
+    const caballosFinales = caballos.map((cab) => {
+      const previo = (modal.editar?.caballos as any[])?.find(
+        (p) => String(p.numero).trim() === String(cab.numero).trim()
+      );
+      return {
+        ...previo,
+        ...cab,
+        nombre: cab.nombre || previo?.nombre || null,
+        numero: String(cab.numero).trim(),
+        jockey: cab.jockey || previo?.jockey || null,
+        entrenador: cab.entrenador || previo?.entrenador || null,
+        ml: cab.ml || previo?.ml || null,
+        peso: cab.peso || previo?.peso || null,
+      };
+    });
+
     setGuardando(true);
 
-    if (modal.editar) {
-      const fechaAnt = modal.editar.fecha || fecha;
-      const hipoAnt = (modal.editar.hipodromo || hipodromo).trim().toUpperCase();
-      const numAnt = Number(modal.editar.carrera);
+    try {
+      if (modal.editar) {
+        const fechaAnt = modal.editar.fecha || fecha;
+        const hipoAnt = (modal.editar.hipodromo || hipodromo).trim().toUpperCase();
+        const numAnt = Number(modal.editar.carrera);
 
-      if (fechaObj !== fechaAnt || hipoObj !== hipoAnt || num !== numAnt) {
-        const rEd = await editarCarreraRegistrada({
-          id: modal.editar.id ? String(modal.editar.id) : undefined,
-          fechaAntigua: fechaAnt,
-          hipodromoAntiguo: hipoAnt,
-          carreraAntigua: numAnt,
-          fechaNueva: fechaObj,
-          hipodromoNuevo: hipoObj,
-          carreraNueva: num,
-          distanciaNueva: modal.distancia.trim() || undefined,
-          horaNueva: modal.hora.trim() || undefined,
-        });
-        if (!rEd.ok) {
-          setGuardando(false);
-          return toast("Error al editar carrera: " + (rEd.error ?? "desconocido"), "error");
+        if (fechaObj !== fechaAnt || hipoObj !== hipoAnt || num !== numAnt) {
+          const rEd = await editarCarreraRegistrada({
+            id: modal.editar.id ? String(modal.editar.id) : undefined,
+            fechaAntigua: fechaAnt,
+            hipodromoAntiguo: hipoAnt,
+            carreraAntigua: numAnt,
+            fechaNueva: fechaObj,
+            hipodromoNuevo: hipoObj,
+            carreraNueva: num,
+            distanciaNueva: modal.distancia.trim() || undefined,
+            horaNueva: modal.hora.trim() || undefined,
+          });
+          if (!rEd.ok) {
+            setGuardando(false);
+            return toast("Error al editar carrera: " + (rEd.error ?? "desconocido"), "error");
+          }
         }
       }
+
+      const r = await guardarCarreraCentral({
+        fecha: fechaObj,
+        hipodromo: hipoObj,
+        carrera: num,
+        caballos: caballosFinales,
+        distancia: modal.distancia.trim() || null,
+        superficie: modal.superficie.trim().toUpperCase() || null,
+        premio: modal.premio.trim() ? Number(modal.premio) : null,
+        hora: modal.hora.trim() || null,
+      });
+      setGuardando(false);
+      if (!r.ok) return toast("Error al guardar: " + (r.error ?? "desconocido"), "error");
+
+      const ret = await aplicarRetirosCarrera({
+        fecha: fechaObj,
+        hipodromo: hipoObj,
+        carrera: num,
+        numeros: parsearRetirados(modal.retirados),
+      });
+      if (!ret.ok) {
+        console.warn("Aviso al aplicar retiros de carrera:", ret.error);
+      }
+
+      useRegistroCentral.getState().invalidarCarreras();
+
+      const base = modal.editar
+        ? `✏️ Carrera C${num} (${hipoObj}) actualizada (${caballosFinales.length} ejemplar(es)).`
+        : `✅ Carrera C${num} (${hipoObj}) registrada (${caballosFinales.length} ejemplar(es)).`;
+      const detalle = ret.retirados?.length
+        ? ` ⛔ Retirados ${ret.retirados.join(",")}`
+        : "";
+      toast(base + detalle, "success");
+
+      // Cerrar modal tras editar o preparar siguiente número si era nueva carrera
+      if (modal.editar) {
+        setModal(vacioModal());
+      } else {
+        const siguienteNum = String(num + 1);
+        setModal({ ...vacioModal(), abierta: true, carrera: siguienteNum, ejemplares: esSoloNumero ? textoEj : "" });
+      }
+      await refrescar();
+    } catch (err: any) {
+      setGuardando(false);
+      console.error("[CarrerasDiaModule] Error guardando carrera:", err);
+      toast("Error al guardar carrera: " + (err?.message || String(err)), "error");
     }
-
-    const r = await guardarCarreraCentral({
-      fecha: fechaObj,
-      hipodromo: hipoObj,
-      carrera: num,
-      caballos,
-      distancia: modal.distancia.trim() || null,
-      superficie: modal.superficie.trim().toUpperCase() || null,
-      premio: modal.premio.trim() ? Number(modal.premio) : null,
-      hora: modal.hora.trim() || null,
-    });
-    setGuardando(false);
-    if (!r.ok) return toast("Error al guardar: " + (r.error ?? "desconocido"), "error");
-
-    const ret = await aplicarRetirosCarrera({
-      fecha: fechaObj,
-      hipodromo: hipoObj,
-      carrera: num,
-      numeros: parsearRetirados(modal.retirados),
-    });
-    if (!ret.ok) {
-      console.warn("Aviso al aplicar retiros de carrera:", ret.error);
-    }
-
-    useRegistroCentral.getState().invalidarCarreras();
-
-    const base = modal.editar
-      ? `✏️ Carrera C${num} (${hipoObj}) actualizada (${caballos.length} ejemplar(es)).`
-      : `✅ Carrera C${num} (${hipoObj}) registrada (${caballos.length} ejemplar(es)).`;
-    const detalle = ret.retirados?.length
-      ? ` ⛔ Retirados ${ret.retirados.join(",")}`
-      : "";
-    toast(base + detalle, "success");
-
-    // Cerrar modal tras editar o preparar siguiente número si era nueva carrera
-    if (modal.editar) {
-      setModal(vacioModal());
-    } else {
-      const siguienteNum = String(num + 1);
-      setModal({ ...vacioModal(), abierta: true, carrera: siguienteNum, ejemplares: esSoloNumero ? textoEj : "" });
-    }
-    await refrescar();
   };
 
   const alternarVerificada = async (c: CarreraCentral) => {
@@ -522,7 +584,12 @@ export function CarrerasDiaModule() {
         <MonitorHipodromos
           grupos={gruposMonitor}
           filtro={hipodromo}
-          onFiltro={(h) => setHipodromo(h)}
+          onFiltro={(h) => {
+            setHipodromo(h);
+            setCarreraFiltro(null);
+          }}
+          carreraFiltro={carreraFiltro}
+          onCarreraFiltro={(c) => setCarreraFiltro(c)}
           fecha={fecha}
           onFecha={(f) => setFecha(f || "")}
           vacio={
@@ -532,6 +599,43 @@ export function CarrerasDiaModule() {
           }
         />
       </div>
+
+      {/* Barra de Selección Rápida de Números de Carrera */}
+      {listaNumerosCarrerasDisponibles.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-cyan-200 bg-white p-2.5 shadow-xs">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 mr-1 flex items-center gap-1">
+            <span>🏁</span> Carrera:
+          </span>
+          <button
+            type="button"
+            onClick={() => setCarreraFiltro(null)}
+            className={`rounded-lg px-2.5 py-1 text-xs font-black transition-all ${
+              carreraFiltro === null
+                ? "bg-cyan-700 text-white shadow-sm"
+                : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            Todas ({listaNumerosCarrerasDisponibles.length})
+          </button>
+          {listaNumerosCarrerasDisponibles.map((num) => {
+            const estaActiva = carreraFiltro === num;
+            return (
+              <button
+                key={num}
+                type="button"
+                onClick={() => setCarreraFiltro(estaActiva ? null : num)}
+                className={`rounded-lg px-3 py-1 text-xs font-black transition-all font-mono tabular-nums ${
+                  estaActiva
+                    ? "bg-amber-500 text-slate-950 shadow-md ring-2 ring-amber-300 scale-105"
+                    : "border border-cyan-200 bg-cyan-50/70 text-cyan-800 hover:bg-cyan-100 hover:scale-102"
+                }`}
+              >
+                C{num}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Barra de Selección y Eliminación Masiva de Carreras */}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">

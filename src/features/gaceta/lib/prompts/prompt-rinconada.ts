@@ -20,19 +20,24 @@ Ignora portadas, publicidad e índices ("CORREN ESTA SEMANA"). Extrae el 100% de
    - "orden_rating_gaceta": lista ordenada de ejemplares por rating.
 
 2. DATOS DEL EJEMPLAR, IDENTIDAD, PEDIGRÍ E IMPLEMENTOS:
+   ⚠️ PROHIBICIÓN ABSOLUTA Y REGLA CRÍTICA DE IDENTIDAD (CERO CONFUSIÓN):
+   - PROHIBIDO TERMINANTEMENTE colocar el nombre de un Jockey, Jinete o Entrenador en el campo "nombre" del caballo.
+   - Nombres con iniciales y puntos (ej. "R. Capriles", "J. Lugo", "C.L. Uzcátegui", "R. D'Angelo") o con paréntesis de estadística "(35)" SON PERSONAS FÍSICAS (JINETES O ENTRENADORES), JAMÁS son caballos.
+   - El campo "nombre" debe contener EXCLUSIVAMENTE el nombre propio del ejemplar en mayúsculas (ej. "CATIRE PEDRO", "GRAN SOL", "WATER CHESTNUT", "TEMPLADA", "ST. PIERRE").
+   - "jinete": Nombre del Jinete limpiando estadísticas entre paréntesis (ej. "R.Capriles(35)" -> "R. Capriles").
+   - "entrenador": Nombre del Entrenador (ej. "R. D'Angelo", "C.L. Uzcátegui"). ¡OBLIGATORIO EXTRAERLO!
+   - "morning_line": Dividendo probable oficial si aparece (ej. "2/1", "5/2", "9/5", "8/1", "1/5").
    - "numero_programa": Número oficial de la columna izquierda ("N°"). ¡CRÍTICO EN 1600 METROS!: En 1600m (ej. 6ª y 12ª carrera) "numero_programa" es la columna izquierda (1 al 6 o 1 al 11) y "puesto_partida" es la columna "PP" (9 al 14 o 4 al 14).
    - "puesto_partida": Puesto de partida real asignado (columna "PP").
-   - "nombre": Nombre del ejemplar. Si tiene sufijo como "(USA)", "(CHI)", "(ARG)", extrae ese código en "pais_origen"; si no tiene sufijo, "pais_origen": "VEN".
+   - "pais_origen": Si tiene sufijo como "(USA)", "(CHI)", "(ARG)", extrae ese código en "pais_origen"; si no tiene sufijo, "pais_origen": "VEN".
    - "fecha_nacimiento": Fecha impresa debajo de los implementos en formato DD/MM/YY convertida a "YYYY-MM-DD" (ej. "24/03/20" -> "2020-03-24").
    - "anio_nacimiento": Año numérico de nacimiento extraído de fecha_nacimiento o edad.
    - "stud": Nombre del Stud y descripción de la divisa (camisa, mangas y gorra).
    - "sexo", "pelaje", "padre", "madre", "abuelo_materno": Extraídos de la línea "Y.A.6a The Great War - Rosa Linda p. Taconeo" (ej. sexo: "Y", pelaje: "A", padre: "The Great War", madre: "Rosa Linda", abuelo_materno: "Taconeo").
    - "haras_criador", "dias_sin_correr" y "ganancias_usd": Extraídos del pie derecho del ejemplar (ej. "91sc/La Primavera US$. 1.723,80" -> dias_sin_correr: 91, haras_criador: "La Primavera", ganancias_usd: 1723.80).
-   - "jinete", "entrenador": Limpia los números de estadística entre paréntesis ("R.Capriles(35)" -> "R. Capriles").
    - "peso_base_kg", "descargo_kg", "peso_kg": Si dice "57.5-3", peso_base_kg = 57.5, descargo_kg = 3.0, peso_kg = 54.5.
    - "implementos": Línea exacta de aperos (ej. "L.CC.V.Gr.BB.M.La.").
    - "campana_resumen" y "comentario": Ej. "De 23-2(7), De 7-0(7)" y "PRIMER FAVORITO (B-L)".
-   - "morning_line": dividendo probable si aparece, o null.
 
 3. CARRERAS PREVIAS DEL EJEMPLAR (ARRAY "carreras_previas"):
    Por cada fila de actuación pasada del ejemplar, extrae:

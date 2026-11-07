@@ -290,12 +290,29 @@ export function esNombreJockeyPersona(str: string | null | undefined): boolean {
   if (!str) return false;
   const s = String(str).trim();
   if (s.length < 2) return true;
-  // Iniciales con punto: "I. Ortiz", "I. Ortiz, Jr.", "J. Rosario", "F. Prat", "B. H. Cox", "J. R. Velazquez"
+
+  // 1. Inicial con punto seguida de apellido o de otra inicial:
+  // "I. Ortiz", "I. Ortiz, Jr.", "J. Rosario", "F. Prat", "B. H. Cox", "J.L. Ortiz", "J. R. Velazquez", "R. Capriles"
   if (/^[A-Z]\.\s*[A-Z]/i.test(s)) return true;
   if (/^[A-Z]\.\s*[A-Z]\.\s*[A-Z]/i.test(s)) return true;
-  if (/,\s*Jr\.?$/i.test(s) || /\bJr\.?$/i.test(s) || /\bIII\b/i.test(s) || /\bII\b/i.test(s)) return true;
-  if (/^[A-Z]\.\s*[A-Z]\.?$/i.test(s)) return true;
-  if (/^(?:JOCKEY|TRAINER|OWNER|SIRE|DAM|TR:|JK:|TRAIN:|JOCK:)[\s:]/i.test(s)) return true;
+
+  // 2. Iniciales sin punto: "J L Ortiz", "I Ortiz Jr", "J R Velazquez"
+  if (/^[A-Z]\s+[A-Z]\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]{3,}/i.test(s)) return true;
+  if (/^[A-Z]\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]{3,}\s*(?:Jr|Sr|III|II)\.?$/i.test(s)) return true;
+
+  // 3. Sufijos personales típicos de jockeys/entrenadores
+  if (/,\s*Jr\.?$/i.test(s) || /\b(?:Jr|Sr|III|II)\.?$/i.test(s)) return true;
+
+  // 4. Paréntesis con estadísticas de jockeys en Venezuela (ej. "R.Capriles(35)", "L.Funez.Jr.(20)")
+  if (/\(\d{1,3}\)$/.test(s)) return true;
+
+  // 5. Palabras clave de rol hípico
+  if (/^(?:JOCKEY|TRAINER|OWNER|SIRE|DAM|TR:|JK:|TRAIN:|JOCK:|JIN:|PREP:)[\s:]/i.test(s)) return true;
+
+  // 6. Lista de jockeys y entrenadores hipercomunes de USA y VE si aparecen aislados
+  const CONOCIDOS = /^(?:ORTIZ|ROSARIO|PRAT|SAEZ|GAFFALIONE|VELAZQUEZ|CASTELLANO|CARMOUCHE|BAFFERT|PLETCHER|BROWN|COX|ASMUSSEN|MOTT|DIODORO|CAPRILES|LUGO|RODRIGUEZ|HERNANDEZ|LOPEZ|FRANCO|CANCEL|ALVARADO|BERRIOS|RISPOLI|FRESU|BRAVO|LANERIE|LEZCANO|VARGAS|GONZALEZ|CENTENO|SANCHEZ|DE LA CRUZ|ARRIETA|MACHADO|JARAMILLO|MEDINA|CHAVEZ|GUTIERREZ|CASTILLO|MENA|ESPINOZA|DESORMEAUX|GEROUX|BRIDGMOHAN|BEJARANO|BAEZ|BARBOSA|TOLEDO|CONCEPCION|TORREALBA|QUEVEDO|MELEAN|BRICEÑO|SARMIENTO|FUENTES|JIMENEZ|CALDERON|MORALES|PEREZ|RAMIREZ|REYES|SUAREZ)$/i;
+  if (CONOCIDOS.test(s)) return true;
+
   return false;
 }
 
@@ -446,6 +463,13 @@ export function parsearPaginaRetrospectosNativo(
 
       const ml = m[6]?.trim();
 
+      // Buscar Entrenador en la línea
+      let entrenador: string | undefined = undefined;
+      const mTrainer = l.match(/(?:1[1-2][0-9]|5[0-9][.,][0-9]|5[0-9])\s+([A-Z][a-zA-Z'.\-]+(?:\s+[A-Z][a-zA-Z'.\-]+){1,2})/);
+      if (mTrainer && mTrainer[1] && esNombreJockeyPersona(mTrainer[1])) {
+        entrenador = mTrainer[1].trim();
+      }
+
       // PROTECCIÓN CRÍTICA: Si el nombre capturado es en realidad un Jockey (ej: "I. Ortiz, Jr." o "J. Rosario")
       if (esNombreJockeyPersona(nombre)) {
         if (jockey && !esNombreJockeyPersona(jockey)) {
@@ -472,6 +496,7 @@ export function parsearPaginaRetrospectosNativo(
           nombre,
           pp: parseInt(numProg.replace(/[^0-9]/g, ""), 10) || undefined,
           jinete: jockey || undefined,
+          entrenador: entrenador || undefined,
           peso: pesoNum,
           ml: ml || undefined,
           retirado: false,
@@ -502,17 +527,29 @@ export function parsearPaginaRetrospectosNativo(
         continue;
       }
 
-      // Buscar ML en las cercanías
-      const contexto = textoCompleto.slice(mBlock.index, mBlock.index + 200);
+      // Buscar ML, peso, jockey y entrenador en las cercanías
+      const contexto = textoCompleto.slice(mBlock.index, mBlock.index + 250);
       const mML = contexto.match(/\b(\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}|9-5|5-2|3-1|8-1|10-1|12-1|15-1|20-1)\b/);
       const mPeso = contexto.match(/\b(1[1-2][0-9]|5[0-9][.,][0-9]|5[0-9])\b/);
       const condicion = contexto.includes("(AE)") ? "AE" : contexto.includes("(MTO)") ? "MTO" : null;
+
+      let jockeyBlock: string | undefined;
+      let trainerBlock: string | undefined;
+      const personas = contexto.match(/\b[A-Z]\.\s*[A-Z][a-zA-Z'.\-]+(?:\s+[A-Z][a-zA-Z'.\-]+)?/g);
+      if (personas && personas.length > 0) {
+        jockeyBlock = personas[0].trim();
+        if (personas.length > 1) {
+          trainerBlock = personas[1].trim();
+        }
+      }
 
       nombresVistos.add(nombreKey);
       ejemplares.push({
         numero: numProg,
         nombre,
         pp: parseInt(numProg.replace(/[^0-9]/g, ""), 10) || undefined,
+        jinete: jockeyBlock || undefined,
+        entrenador: trainerBlock || undefined,
         peso: mPeso ? parseFloat(mPeso[1].replace(",", ".")) : undefined,
         ml: mML ? mML[1] : undefined,
         retirado: false,

@@ -23,6 +23,7 @@ import {
   segmentarPorCarreras,
   parsearPaginaRetrospectosNativo,
   parsearGacetaRetrospectosNativo,
+  esNombreJockeyPersona,
 } from "@/features/gaceta/lib/segmentar";
 import type { CarreraRegistro } from "@/features/gaceta/lib/ui";
 
@@ -111,6 +112,13 @@ export const PROMPT_EXTRACTOR_AUDITOR_HIPICO = `# ROL DEL SISTEMA
 Eres un Motor Auditor y Extractor Hípico de Precisión Quirúrgica especializado en procesar gacetas de Estados Unidos ("Sistema Profesional de Retrospectos") y de Venezuela ("Gaceta Hípica" - La Rinconada / Valencia).
 Tu objetivo es extraer el 100% de las carreras y ejemplares sin omitir un solo caballo, reconstruyendo columnas desplazadas y auditando cada campo antes de responder.
 Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional ni bloques markdown.
+
+⚠️ REGLA DE ORO DE IDENTIDAD (PROHIBIDO CONFUNDIR JOCKEYS CON CABALLOS):
+- JAMÁS coloques el nombre de un Jockey, Jinete o Entrenador en el campo "nombre" del caballo.
+- Nombres con iniciales y puntos (ej. "I. Ortiz, Jr.", "J.L. Ortiz", "J. Rosario", "F. Prat", "T. Gaffalione", "K. Carmouche", "B. Baffert", "S.M. Asmussen", "B.H. Cox", "C.L. Uzcátegui", "R. Capriles") o que terminen en Jr./Sr./III SON PERSONAS FÍSICAS, NUNCA caballos.
+- El campo "nombre" es EXCLUSIVAMENTE el nombre propio del ejemplar equino en mayúsculas (ej. "FLIGHTLINE", "WHITE ABARRIO", "AMERICAN EXAMPLE", "CATIRE PEDRO", "GRAN SOL").
+- El campo "entrenador" es OBLIGATORIO: extrae las iniciales y apellido del preparador (ej. "B. Baffert", "T. Pletcher", "R. D'Angelo").
+- El campo "morning_line" / "ml" es OBLIGATORIO: extrae la cotización oficial de la mañana (ej. "5-2", "3-1", "9-5", "8-1", "12-1", "2/1").
 
 ---
 
@@ -558,6 +566,15 @@ function limpiarNombreEjemplar(
 
   // 5) Limpiar signos sobrantes en bordes
   s = s.replace(/^[-•*.,:;/_#]+|[-•*,:;/_#]+$/g, "").replace(/\s+/g, " ").trim();
+
+  // 6) PROTECCIÓN CRÍTICA DE IDENTIDAD (Anti-Jockeys como nombres de ejemplares)
+  if (esNombreJockeyPersona(s)) {
+    if (!ej.jockey || String(ej.jockey).trim() === "") {
+      ej.jockey = s;
+    }
+    // Reemplaza el nombre de persona por un identificador de ejemplar seguro
+    s = ej.numero ? `EJEMPLAR ${ej.numero}` : "";
+  }
 
   return s;
 }
