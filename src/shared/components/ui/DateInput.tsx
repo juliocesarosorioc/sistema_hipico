@@ -363,7 +363,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
   return (
     <div
       ref={contenedorRef}
-      className={`relative inline-flex flex-col gap-0.5 ${className.includes("w-full") ? "w-full" : "w-auto max-w-full"}`}
+      className={`relative inline-flex flex-col gap-0.5 min-w-[130px] ${className.includes("w-full") ? "w-full" : "w-auto max-w-full"}`}
     >
       {label ? (
         <label htmlFor={inputId} className="text-[11px] font-semibold text-[var(--app-text-muted)] block mb-0.5">
@@ -371,13 +371,13 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
         </label>
       ) : null}
 
-      {/* Contenedor unificado: DÍA / MES / AÑO adaptado dinámicamente al tema visual */}
+      {/* Contenedor unificado: DÍA / MES / AÑO adaptado dinámicamente al tema visual y protegido contra deformación */}
       <div
-        className={`relative inline-flex items-center justify-between rounded-lg border border-[var(--app-border)] bg-[var(--app-surface)] px-2 text-xs text-[var(--app-text)] font-medium
+        className={`relative inline-flex items-center justify-between rounded-lg border border-[var(--app-border)] bg-[var(--app-surface)] px-1.5 text-xs text-[var(--app-text)] font-medium whitespace-nowrap min-w-[130px] shrink-0
           focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500
           disabled:cursor-not-allowed disabled:opacity-50 ${className.includes("h-") ? "" : "h-9"} ${className}`}
       >
-        <div className="flex items-center">
+        <div className="flex items-center shrink-0">
           {/* Campo DÍA */}
           <input
             id={inputId}
@@ -395,7 +395,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             onPaste={handlePaste}
             onFocus={(e) => e.target.select()}
             data-sin-tema
-            className="w-[1.35rem] text-center bg-transparent border-none outline-none font-bold text-[var(--app-text)] placeholder:text-[var(--app-text-dim)] p-0 text-xs shadow-none ring-0 focus:ring-0 focus:outline-none"
+            className="w-[1.2rem] text-center bg-transparent border-none outline-none font-bold text-[var(--app-text)] placeholder:text-[var(--app-text-dim)] p-0 text-xs shadow-none ring-0 focus:ring-0 focus:outline-none"
             {...rest}
           />
 
@@ -417,7 +417,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             onPaste={handlePaste}
             onFocus={(e) => e.target.select()}
             data-sin-tema
-            className="w-[1.35rem] text-center bg-transparent border-none outline-none font-bold text-[var(--app-text)] placeholder:text-[var(--app-text-dim)] p-0 text-xs shadow-none ring-0 focus:ring-0 focus:outline-none"
+            className="w-[1.2rem] text-center bg-transparent border-none outline-none font-bold text-[var(--app-text)] placeholder:text-[var(--app-text-dim)] p-0 text-xs shadow-none ring-0 focus:ring-0 focus:outline-none"
           />
 
           <span className="text-[var(--app-text-muted)] font-bold select-none px-0.5 text-xs">/</span>
@@ -438,7 +438,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             onPaste={handlePaste}
             onFocus={(e) => e.target.select()}
             data-sin-tema
-            className="w-[2.4rem] text-center bg-transparent border-none outline-none font-bold text-[var(--app-text)] placeholder:text-[var(--app-text-dim)] p-0 text-xs shadow-none ring-0 focus:ring-0 focus:outline-none"
+            className="w-[2.2rem] text-center bg-transparent border-none outline-none font-bold text-[var(--app-text)] placeholder:text-[var(--app-text-dim)] p-0 text-xs shadow-none ring-0 focus:ring-0 focus:outline-none"
           />
         </div>
 

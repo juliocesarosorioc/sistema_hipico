@@ -3481,8 +3481,8 @@ const hipodromosDelDia = useMemo(() => {
       )}
 
       {/* Inputs superiores */}
-      <div className="grid gap-2 rounded-xl border border-line bg-surface p-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto_minmax(0,1.1fr)_auto_auto] items-start">
-        <div data-tour="tour-fecha">
+      <div className="flex flex-wrap items-start gap-2.5 rounded-xl border border-line bg-surface p-2.5">
+        <div data-tour="tour-fecha" className="w-[140px] shrink-0">
           <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">1 · Fecha 📅</label>
           <DateInput
             value={fecha}
@@ -3490,7 +3490,7 @@ const hipodromosDelDia = useMemo(() => {
             className="w-full h-9 text-xs font-bold"
           />
         </div>
-        <div data-tour="tour-hipodromo">
+        <div data-tour="tour-hipodromo" className="min-w-[180px] flex-1">
           <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">2 · Hipódromo</label>
           <SearchableSelect
             options={hipodromosDelDia}
@@ -3500,7 +3500,7 @@ const hipodromosDelDia = useMemo(() => {
             inputClassName="w-full h-9 rounded-lg border border-line bg-surface px-3 text-xs font-bold normal-case text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
-        <div data-tour="tour-retirados">
+        <div data-tour="tour-retirados" className="shrink-0">
           <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">
             Retirados · C{carrera}
           </label>
@@ -3530,7 +3530,7 @@ const hipodromosDelDia = useMemo(() => {
             </Button>
           </div>
         </div>
-        <div>
+        <div className="min-w-[200px] flex-1">
           <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">
             📝 Observaciones (al pie)
           </label>
@@ -3541,7 +3541,7 @@ const hipodromosDelDia = useMemo(() => {
             className="w-full h-9 rounded-lg border border-line bg-surface px-3 text-xs leading-none text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
-        <div data-tour="tour-comision">
+        <div data-tour="tour-comision" className="w-16 shrink-0">
           <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">COM %</label>
           <input
             value={comision}
@@ -3550,7 +3550,7 @@ const hipodromosDelDia = useMemo(() => {
             className="w-16 h-9 rounded-lg border border-line bg-surface px-2 text-center text-xs font-bold leading-none text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
-        <div>
+        <div className="shrink-0">
           <span className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide opacity-0 select-none pointer-events-none" aria-hidden="true">&nbsp;</span>
           <div className="flex items-center gap-1.5 whitespace-nowrap">
             <button
