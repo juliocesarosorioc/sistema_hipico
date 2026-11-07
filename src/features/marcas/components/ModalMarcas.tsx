@@ -26,9 +26,9 @@ import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModal
 import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
 import { marcarTicketsAdelantados } from "@/features/jugadas/lib/marcar-adelantadas";
 
-const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
+const inputLbl = "mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500";
 const inputCls =
-  "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500";
+  "w-full h-9 rounded-lg border border-line bg-surface px-3 text-xs font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-slate-400";
 
 /**
  * Solo venta y resultado. La CONFIGURACION de marcas, NV y debutantes vive en su
@@ -376,12 +376,15 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabecera */}
-        <div className="flex items-center justify-between gap-2 bg-cyan-700 px-4 py-2.5 text-white">
-          <div>
-            <h3 className="text-sm font-extrabold uppercase tracking-wide">🏷️ Marcas · <span className="normal-case">{etiqueta}</span></h3>
-            <p className="text-[10px] font-semibold text-cyan-100">
-              {fecha} · {caballos.length} ejemplar(es) registrado(s)
-            </p>
+        <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-cyan-800 to-teal-800 px-4 py-3 text-white">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-base">🏷️</span>
+            <div>
+              <h3 className="text-sm font-extrabold uppercase tracking-wide">Marcas · <span className="normal-case">{etiqueta}</span></h3>
+              <p className="text-[10px] font-semibold text-cyan-200">
+                {fecha} · {caballos.length} ejemplar(es) registrado(s)
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {/* Modalidad de TIEMPO de la marca que se va a vender (PROMPT #4). */}
@@ -390,11 +393,16 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
               type="button"
               onClick={() => setReporteAbierto(true)}
               title="Reporte de marcas jugadas"
-              className="rounded-lg border border-white/30 bg-white/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide transition-colors hover:bg-white/20"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/30 bg-white/10 px-2.5 text-xs font-bold uppercase tracking-wide transition-colors hover:bg-white/20"
             >
-              📈 Reporte
+              <span>📈</span>
+              <span>Reporte</span>
             </button>
-            <button type="button" onClick={onCerrar} className="text-lg leading-none hover:text-cyan-200">
+            <button
+              type="button"
+              onClick={onCerrar}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white/80 hover:bg-white/10 hover:text-white"
+            >
               ✕
             </button>
           </div>
@@ -413,7 +421,7 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                 </p>
               ) : (
                 <>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                     <label className="block">
                       <span className={inputLbl}>Grupo</span>
                       <SearchableSelect
@@ -453,7 +461,7 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                           </>
                         )}
                       </p>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
                         {jugables.length === 0 ? (
                           <span className="text-[11px] font-semibold text-slate-400">Sin caballos jugables</span>
                         ) : (
@@ -465,9 +473,9 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                                 type="button"
                                 onClick={() => setCaballo(c.numero)}
                                 title={etiquetaCaballo(c)}
-                                className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors ${
+                                className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-bold transition-all ${
                                   activo
-                                    ? "border-cyan-600 bg-cyan-700 text-white"
+                                    ? "border-cyan-600 bg-cyan-700 text-white shadow-xs"
                                     : "border-line bg-surface text-slate-700 hover:bg-cyan-50"
                                 }`}
                               >
@@ -488,7 +496,7 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                     */}
                     <div className="block sm:col-span-2">
                       <span className={inputLbl}>Rival del match</span>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
                         {analisis.candidatos.length === 0 ? (
                           <span className="text-[11px] font-semibold text-slate-400">Sin rival legal</span>
                         ) : (
@@ -501,9 +509,9 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                                 type="button"
                                 onClick={() => setRival(n)}
                                 title={ej ? etiquetaCaballo(ej) : `Caballo ${n}`}
-                                className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors ${
+                                className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-bold transition-all ${
                                   activo
-                                    ? "border-cyan-600 bg-cyan-700 text-white"
+                                    ? "border-cyan-600 bg-cyan-700 text-white shadow-xs"
                                     : "border-line bg-surface text-slate-700 hover:bg-cyan-50"
                                 }`}
                               >
@@ -516,62 +524,68 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                       </div>
                     </div>
 
-                    <label className="block">
+                    <label className="block sm:col-span-2">
                       <span className={inputLbl}>Monto (se juega 120 para ganar 100)</span>
-                      <input
-                        value={monto}
-                        onChange={(e) => setMonto(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            void solicitarVenta();
-                          }
-                        }}
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        className={inputCls}
-                      />
+                      <div className="relative">
+                        <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-xs font-bold text-slate-400">
+                          $
+                        </span>
+                        <input
+                          value={monto}
+                          onChange={(e) => setMonto(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void solicitarVenta();
+                            }
+                          }}
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          className={`${inputCls} pl-7`}
+                        />
+                      </div>
                     </label>
                   </div>
 
                   {/* Previsualización del matchup */}
                   <div
-                    className={`rounded-lg border px-3 py-2 text-xs font-bold ${
-                      analisis.valido ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"
+                    className={`rounded-xl border p-3 text-xs font-bold transition-all ${
+                      analisis.valido
+                        ? "border-emerald-300 bg-emerald-50/80 text-emerald-900 shadow-2xs"
+                        : "border-amber-300 bg-amber-50/80 text-amber-900 shadow-2xs"
                     }`}
                   >
-                    {analisis.valido ? (
-                      <>
-                        <div>{analisis.mensaje}</div>
-                        {analisis.candidatos.length > 1 && (
-                          <div className="mt-0.5 text-[11px] font-semibold opacity-80">
-                            Rivales legales: {analisis.candidatos.join(" · ")}
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{analisis.valido ? "⚔️" : "ℹ️"}</span>
+                      <div className="flex-1">
+                        <div>{analisis.mensaje || "Elija el caballo para ver contra quién juega."}</div>
+                        {analisis.valido && analisis.candidatos.length > 1 && (
+                          <div className="mt-1 text-[11px] font-semibold text-emerald-700">
+                            Rivales legales: <b>{analisis.candidatos.join(" · ")}</b>
                           </div>
                         )}
-                      </>
-                    ) : (
-                      <div>{analisis.mensaje || "Elija el caballo para ver contra quién juega."}</div>
-                    )}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-700">
-                    <div className="flex justify-between">
-                      <span>Monto</span>
-                      <span className="font-black">${numeros.monto.toFixed(2)}</span>
+                  <div className="space-y-1.5 rounded-xl border border-line bg-surfaceAlt/60 p-3 text-xs font-semibold text-slate-700">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1 text-slate-500">💵 Monto</span>
+                      <span className="font-extrabold text-slate-900">${numeros.monto.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Ganancia neta (100/120)</span>
-                      <span className="font-black text-emerald-700">${numeros.gananciaNeta.toFixed(2)}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1 text-emerald-700">✨ Ganancia neta (100/120)</span>
+                      <span className="font-extrabold text-emerald-700">${numeros.gananciaNeta.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between border-t border-slate-200 pt-1">
-                      <span>Pago bruto si gana</span>
-                      <span className="font-black">${numeros.pagoBruto.toFixed(2)}</span>
+                    <div className="flex items-center justify-between border-t border-line/60 pt-1.5">
+                      <span className="flex items-center gap-1 font-bold text-slate-800">🏆 Pago bruto si gana</span>
+                      <span className="text-sm font-black text-slate-900">${numeros.pagoBruto.toFixed(2)}</span>
                     </div>
                     {cliente && !esClienteLibre(cliente) ? (
                       <>
-                        <div className="flex justify-between">
-                          <span>Saldo del cliente</span>
-                          <span className={saldo < 0 ? "font-black text-red-600" : "font-black"}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">💳 Saldo del cliente</span>
+                          <span className={saldo < 0 ? "font-extrabold text-red-600" : "font-extrabold text-slate-800"}>
                             ${saldo.toFixed(2)}
                           </span>
                         </div>
@@ -583,14 +597,14 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                           explicación de por qué el botón está bloqueado.
                         */}
                         {aval > 0 && (
-                          <div className="flex justify-between">
-                            <span className="text-amber-700">+ Aval (crédito)</span>
-                            <span className="font-black text-amber-700">${aval.toFixed(2)}</span>
+                          <div className="flex items-center justify-between text-amber-700">
+                            <span>🛡️ + Aval (crédito)</span>
+                            <span className="font-extrabold">${aval.toFixed(2)}</span>
                           </div>
                         )}
-                        <div className="flex justify-between border-t border-slate-200 pt-1">
-                          <span>Disponible para jugar</span>
-                          <span className={faltaSaldo ? "font-black text-red-600" : "font-black text-emerald-700"}>
+                        <div className="flex items-center justify-between border-t border-line/60 pt-1.5">
+                          <span className="font-bold text-slate-700">✅ Disponible para jugar</span>
+                          <span className={faltaSaldo ? "font-extrabold text-red-600" : "font-extrabold text-emerald-700"}>
                             ${disponible.toFixed(2)}
                           </span>
                         </div>
@@ -606,9 +620,9 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                         )}
                       </>
                     ) : (
-                      <div className="flex justify-between border-t border-slate-200 pt-1">
-                        <span>Saldo del cliente</span>
-                        <span className={faltaSaldo ? "font-black text-red-600" : "font-black"}>
+                      <div className="flex items-center justify-between border-t border-line/60 pt-1.5">
+                        <span className="text-slate-500">💳 Saldo del cliente</span>
+                        <span className={faltaSaldo ? "font-extrabold text-red-600" : "font-extrabold text-slate-800"}>
                           ${esClienteLibre(cliente) ? "libre" : saldo.toFixed(2)}
                         </span>
                       </div>
@@ -619,11 +633,12 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
 
                   <Button
                     variant="success"
-                    className="w-full"
+                    className="h-10 w-full font-bold shadow-md"
                     onClick={solicitarVenta}
                     disabled={vendiendo || !analisis.valido || !grupoId || !clienteId || !Number(monto) || faltaSaldo}
                   >
-                    {vendiendo ? "Registrando…" : "🧾 Revisar jugada"}
+                    <span>{vendiendo ? "⏳" : "🧾"}</span>
+                    <span>{vendiendo ? "Registrando…" : "Revisar jugada"}</span>
                   </Button>
                 </>
               )}

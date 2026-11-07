@@ -455,74 +455,101 @@ export function PanelMarcas() {
         placeholderHipodromo="Todos los activos"
         acciones={
           <>
-            <Button onClick={() => void refrescar()} disabled={cargando}>
-              {cargando ? "Cargando…" : "Actualizar"}
-            </Button>
-            <Button
-              variant="default"
+            <button
+              type="button"
+              onClick={() => void refrescar()}
+              disabled={cargando}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-xs font-bold text-slate-700 shadow-2xs transition-colors hover:bg-surfaceAlt focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Recargar jornada y marcas"
+            >
+              <span className={cargando ? "animate-spin" : ""}>🔄</span>
+              <span>{cargando ? "Cargando…" : "Actualizar"}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setEditor({ hipodromo, carrera: null, fecha })}
-              className="bg-violet-600 hover:bg-violet-500"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 px-3 text-xs font-bold text-white shadow-2xs transition-all hover:from-violet-500 hover:to-purple-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
               title="Abrir el editor de marcas, NV y debutantes de la jornada"
             >
-              🏷️ Configurar jornada
-            </Button>
-        {/* Reporte de las marcas JUGADAS: al lado de Configurar jornada, sobre la
-            misma barra de filtros, para no tener que entrar carrera por carrera
-            (como en el modal de venta) y leer la jornada completa de un vistazo. */}
-            <Button
-              variant="default"
+              <span>🏷️</span>
+              <span>Configurar jornada</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setReporteAbierto(true)}
-              className="bg-cyan-600 hover:bg-cyan-500"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-teal-600 px-3 text-xs font-bold text-white shadow-2xs transition-all hover:from-cyan-500 hover:to-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
               title="Ver el reporte de las marcas jugadas del día"
             >
-              📈 Reporte de marcas
-            </Button>
+              <span>📈</span>
+              <span>Reporte de marcas</span>
+            </button>
 
-        {/* ENVÍO DE LA HOJA: el mismo resumen que se ve acá, por WhatsApp o
-            como archivo PNG / JPG / PDF (captura A4 como Tablas Fijas). */}
-            <div className="flex flex-wrap items-center gap-1.5 border-l border-line pl-3">
-          <Button
-            variant="success"
-            size="md"
-            onClick={enviarWsp}
-            disabled={!conDatos || Boolean(exportando)}
-            title="Enviar la hoja de marcas del día por WhatsApp"
-          >
-            📤 WhatsApp
-          </Button>
-          <Button
-            variant="default"
-            size="md"
-            onClick={() => void enviarGrupo()}
-            disabled={!conDatos || Boolean(exportando) || enviandoGrupo}
-            className="bg-sky-600 hover:bg-sky-500"
-            title="Enviar la hoja de marcas al grupo vinculado por la API de WhatsApp (sin abrir wa.me)"
-          >
-            {enviandoGrupo ? "⏳ Enviando…" : "📤 Al grupo"}
-          </Button>
-          {(["PNG", "JPG", "PDF"] as ImgFormato[]).map((f) => (
-            <Button
-              key={f}
-              variant="outline"
-              size="md"
-              onClick={() => void exportar(f)}
-              disabled={!conDatos || Boolean(exportando)}
-              title={`Descargar la hoja de marcas en ${f}`}
-            >
-              {f}
-            </Button>
-          ))}
-          {exportando && (
-            <span className="text-[10px] font-black uppercase text-primary-600">{exportando}</span>
-          )}
-        </div>
-            <div className="text-xs text-slate-500">
-          {visibles.length} carrera{visibles.length === 1 ? "" : "s"} ·{" "}
-          {visibles.filter((c) => configDe(c)).length} con marcas ·{" "}
-          <span className={conAvisos.length ? "font-bold text-amber-600" : ""}>
-            {conAvisos.length} por corregir
-          </span>
-        </div>
+            {/* ENVÍO DE LA HOJA: el mismo resumen que se ve acá, por WhatsApp o
+                como archivo PNG / JPG / PDF (captura A4 como Tablas Fijas). */}
+            <div className="flex items-center gap-1 rounded-lg border border-line bg-surfaceAlt/60 p-0.5">
+              <button
+                type="button"
+                onClick={enviarWsp}
+                disabled={!conDatos || Boolean(exportando)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-600 px-2.5 text-xs font-bold text-white shadow-2xs transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Enviar la hoja de marcas del día por WhatsApp"
+              >
+                <span>💬</span>
+                <span>WhatsApp</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void enviarGrupo()}
+                disabled={!conDatos || Boolean(exportando) || enviandoGrupo}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-sky-600 px-2.5 text-xs font-bold text-white shadow-2xs transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Enviar la hoja de marcas al grupo vinculado por la API de WhatsApp (sin abrir wa.me)"
+              >
+                <span>{enviandoGrupo ? "⏳" : "📤"}</span>
+                <span>{enviandoGrupo ? "Enviando…" : "Al grupo"}</span>
+              </button>
+              <div className="mx-0.5 h-4 w-px bg-line" />
+              {(["PNG", "JPG", "PDF"] as ImgFormato[]).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => void exportar(f)}
+                  disabled={!conDatos || Boolean(exportando)}
+                  className="inline-flex h-8 items-center rounded-md border border-line bg-surface px-2 text-[11px] font-bold text-slate-700 transition-colors hover:bg-surfaceAlt disabled:cursor-not-allowed disabled:opacity-50"
+                  title={`Descargar la hoja de marcas en ${f}`}
+                >
+                  {f}
+                </button>
+              ))}
+              {exportando && (
+                <span className="px-1 text-[10px] font-black uppercase text-primary-600 animate-pulse">{exportando}</span>
+              )}
+            </div>
+
+            <div className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-surfaceAlt/80 px-3 text-xs font-semibold text-slate-600">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-slate-400" />
+                <span><b>{visibles.length}</b> {visibles.length === 1 ? "carrera" : "carreras"}</span>
+              </span>
+              <span className="text-slate-300">·</span>
+              <span className="flex items-center gap-1 text-primary-700">
+                <span>🏷️</span>
+                <span><b>{visibles.filter((c) => configDe(c)).length}</b> con marcas</span>
+              </span>
+              {conAvisos.length > 0 ? (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span className="flex items-center gap-1 font-bold text-amber-600">
+                    <span className="inline-block h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                    <span>{conAvisos.length} por corregir</span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-slate-400 text-[11px]">0 por corregir</span>
+                </>
+              )}
+            </div>
           </>
         }
       />

@@ -27,9 +27,9 @@ import {
 import { FACTOR_BRUTO, FACTOR_GANANCIA, PROPORCION } from "@/features/marcas/lib/jerarquia";
 import { useConfirmar } from "@/shared/store/useConfirmStore";
 
-const inputLbl = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
+const inputLbl = "mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500";
 const inputCls =
-  "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500";
+  "w-full h-9 rounded-lg border border-line bg-surface px-3 text-xs font-bold text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500";
 
 export type ModalMarcasEditorProps = {
   /** Carrera desde la que se abrio, si se abrio desde una fila. */
@@ -403,38 +403,41 @@ export function ModalMarcasEditor({
         className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-cyan-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-2 bg-cyan-700 px-4 py-2.5 text-white">
-          <div>
-            <h3 className="text-sm font-extrabold uppercase tracking-wide">🏷️ Editor de Marcas</h3>
-            <p className="text-[10px] font-semibold text-cyan-100">
-              Día → Hipódromo → Carrera (semáforo) · se juega {PROPORCION} para ganar 100
-            </p>
+        <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-cyan-800 to-teal-800 px-4 py-3 text-white">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-base">🏷️</span>
+            <div>
+              <h3 className="text-sm font-extrabold uppercase tracking-wide">Editor de Marcas</h3>
+              <p className="text-[10px] font-semibold text-cyan-200">
+                Día → Hipódromo → Carrera (semáforo) · se juega {PROPORCION} para ganar 100
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onCerrar}
-            className="rounded-lg px-3 py-1 text-sm font-black text-white hover:bg-cyan-800"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white/80 hover:bg-white/10 hover:text-white"
           >
             ✕
           </button>
         </div>
 
         <div className="border-b border-cyan-100 bg-cyan-50/70 p-3">
-          <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-3">
+          <div className="flex flex-col xl:flex-row items-stretch xl:items-start gap-3">
             {/* Controles de Fecha e Hipódromo */}
-            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0">
+            <div className="flex flex-wrap sm:flex-nowrap items-start gap-2.5 shrink-0">
               <div className="w-36">
-                <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
+                <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">
                   1 · Fecha 📅
                 </label>
                 <DateInput
                   value={dia}
                   onFechaChange={setDia}
-                  className="w-full text-xs"
+                  className="w-full h-9 text-xs font-bold"
                 />
               </div>
               <div className="w-56">
-                <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
+                <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">
                   2 · Hipódromo 🏟️
                 </label>
                 <SearchableSelect
@@ -442,7 +445,7 @@ export function ModalMarcasEditor({
                   onChange={setHipodromo}
                   options={catalogoHipodromos}
                   placeholder="Seleccionar hipódromo…"
-                  className="w-full text-xs"
+                  inputClassName="w-full h-9 rounded-lg border border-line bg-surface px-3 text-xs font-bold normal-case text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                 />
               </div>
             </div>
@@ -655,26 +658,43 @@ export function ModalMarcasEditor({
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="success" onClick={() => void guardar()} disabled={guardando || !revision.valida}>
-                  {guardando ? "Guardando…" : "💾 Guardar"}
-                </Button>
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-line/60">
+                <button
+                  type="button"
+                  onClick={() => void guardar()}
+                  disabled={guardando || !revision.valida}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 text-xs font-bold text-white shadow-2xs transition-colors hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span>{guardando ? "⏳" : "💾"}</span>
+                  <span>{guardando ? "Guardando…" : "Guardar"}</span>
+                </button>
                 {fila.config && (
                   <>
-                    <Button variant="outline" onClick={() => void alternarEstado()}>
-                      {fila.config.estado === "Abierta" ? "⏸️ Cerrar ventas" : "▶️ Abrir ventas"}
-                    </Button>
-                    <Button variant="danger" onClick={() => void borrar()}>
-                      🗑️ Borrar
-                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => void alternarEstado()}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-xs font-bold text-slate-700 shadow-2xs transition-colors hover:bg-surfaceAlt"
+                    >
+                      <span>{fila.config.estado === "Abierta" ? "⏸️" : "▶️"}</span>
+                      <span>{fila.config.estado === "Abierta" ? "Cerrar ventas" : "Abrir ventas"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void borrar()}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-red-600 px-3 text-xs font-bold text-white shadow-2xs transition-colors hover:bg-red-500"
+                    >
+                      <span>🗑️</span>
+                      <span>Borrar</span>
+                    </button>
                   </>
                 )}
-                <span className="text-[10px] font-bold uppercase text-slate-500">
-                  Estado:{" "}
-                  <span className={fila.config?.estado === "Abierta" ? "text-emerald-600" : "text-slate-500"}>
+                <div className="ml-auto inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-surfaceAlt/80 px-3 text-xs font-bold">
+                  <span className="text-slate-500">Estado:</span>
+                  <span className={fila.config?.estado === "Abierta" ? "text-emerald-600 inline-flex items-center gap-1.5" : "text-slate-500"}>
+                    {fila.config?.estado === "Abierta" && <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
                     {fila.config ? fila.config.estado : "Sin configurar"}
                   </span>
-                </span>
+                </div>
               </div>
             </>
           )}

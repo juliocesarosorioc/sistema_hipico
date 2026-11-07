@@ -39,9 +39,9 @@ const COLUMNAS: Record<number, string> = {
 const SPAN_ACCIONES: Record<number, string> = {
   4: "lg:col-span-2",
   5: "lg:col-span-3",
-  6: "lg:col-span-3",
-  7: "lg:col-span-4",
-  8: "lg:col-span-5",
+  6: "lg:col-span-4",
+  7: "lg:col-span-5",
+  8: "lg:col-span-6",
 };
 
 export type PropsBuscadorJornada = {
@@ -93,22 +93,22 @@ export function BuscadorJornada({
 
   return (
     <div
-      className={`grid gap-1.5 rounded-xl border border-line bg-surface p-2 ${COLUMNAS[columnas] ?? COLUMNAS[7]} ${className}`}
+      className={`grid gap-2 rounded-xl border border-line bg-surface p-2.5 ${COLUMNAS[columnas] ?? COLUMNAS[7]} ${className}`}
     >
       <div>
-        <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
+        <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">
           1 · Fecha 📅
         </label>
         <DateInput
           value={fecha}
           disabled={disabled}
           onFechaChange={onFecha}
-          className="py-1 px-2 text-[13px]"
+          className="w-full h-9 text-xs font-bold"
         />
       </div>
 
       <div>
-        <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
+        <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">
           2 · Hipódromo
         </label>
         <SearchableSelect
@@ -118,7 +118,7 @@ export function BuscadorJornada({
           placeholder={placeholderHipodromo}
           allowCustom={false}
           disabled={disabled}
-          inputClassName="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight font-bold normal-case text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-slate-400"
+          inputClassName="w-full h-9 rounded-lg border border-line bg-surface px-3 text-xs font-bold normal-case text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-slate-400"
         />
       </div>
 
@@ -126,7 +126,7 @@ export function BuscadorJornada({
 
       {acciones && (
         <div
-          className={`flex flex-wrap items-end justify-end gap-2 pb-0.5 ${SPAN_ACCIONES[columnas] ?? SPAN_ACCIONES[7]}`}
+          className={`flex flex-wrap items-center justify-end gap-2 self-end min-h-[36px] ${SPAN_ACCIONES[columnas] ?? SPAN_ACCIONES[7]}`}
         >
           {acciones}
         </div>
