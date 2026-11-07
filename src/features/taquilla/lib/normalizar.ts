@@ -427,15 +427,47 @@ export function resolverClientes(restantes: string[], clientes: ClienteRef[]): R
     cliente2Norm: null,
     correcciones: [],
   };
-  const tokens = restantes.filter((t) => {
-    const n = normalizarNombre(t);
-    return n && !CONECTORES.has(n);
-  });
-  if (tokens.length === 0) return vacio;
+  if (!restantes || restantes.length === 0) return vacio;
 
-  const catalogo: CatalogoCliente[] = clientes
+  const catalogo: CatalogoCliente[] = (clientes ?? [])
     .map((c) => ({ nombre: String(c.nombre ?? "").trim(), norm: normalizarNombre(c.nombre) }))
     .filter((c) => c.norm && c.nombre);
+
+  // 1) Si hay conector explícito entre palabras ("y", "con", "e", "contra", "da")
+  const idxConector = restantes.findIndex((t, i) => {
+    if (i === 0 || i === restantes.length - 1) return false;
+    const n = normalizarNombre(t);
+    return CONECTORES.has(n) || n === "contra" || n === "da";
+  });
+
+  if (idxConector > 0 && idxConector < restantes.length - 1) {
+    const rawSeg1 = restantes.slice(0, idxConector).filter(Boolean);
+    const rawSeg2 = restantes.slice(idxConector + 1).filter(Boolean);
+    if (rawSeg1.length > 0 && rawSeg2.length > 0) {
+      const texto1 = rawSeg1.join(" ");
+      const texto2 = rawSeg2.join(" ");
+      const m1 = catalogo.length ? mejorMatchCliente(texto1, catalogo) : null;
+      const m2 = catalogo.length ? mejorMatchCliente(texto2, catalogo) : null;
+      const correcciones: string[] = [];
+      if (m1 && normalizarNombre(texto1) !== m1.norm) correcciones.push(`«${texto1}» → ${m1.nombre}`);
+      if (m2 && normalizarNombre(texto2) !== m2.norm) correcciones.push(`«${texto2}» → ${m2.nombre}`);
+      return {
+        cliente1: m1?.nombre ?? texto1,
+        cliente1Score: m1?.score ?? 0,
+        cliente1Norm: m1?.norm ?? null,
+        cliente2: m2?.nombre ?? texto2,
+        cliente2Score: m2?.score ?? 0,
+        cliente2Norm: m2?.norm ?? null,
+        correcciones,
+      };
+    }
+  }
+
+  const tokens = restantes.filter((t) => {
+    const n = normalizarNombre(t);
+    return n && !CONECTORES.has(n) && n !== "contra" && n !== "da";
+  });
+  if (tokens.length === 0) return vacio;
 
   // Sin catálogo (lista no cargada o vacía): idéntico al parser legacy.
   if (catalogo.length === 0) {
@@ -493,22 +525,37 @@ export function resolverClientes(restantes: string[], clientes: ClienteRef[]): R
   }
 
   const texto1 = mejor.seg1.join(" ");
-  const texto2 = mejor.seg2.join(" ");
   const correcciones: string[] = [];
   if (normalizarNombre(texto1) !== mejor.m1.norm) {
     correcciones.push(`«${texto1}» → ${mejor.m1.nombre}`);
   }
-  if (mejor.m2 && normalizarNombre(texto2) !== mejor.m2.norm) {
-    correcciones.push(`«${texto2}» → ${mejor.m2.nombre}`);
+
+  // Si mejor.m2 existió, usarlo; si no existió pero quedaron tokens después de seg1:
+  // los tokens restantes son el cliente 2 (dador/banca/invitado)
+  const tokensSobrantes = tokens.slice(mejor.seg1.length);
+  let nombreC2 = "";
+  let scoreC2 = 0;
+  let normC2: string | null = null;
+
+  if (mejor.m2) {
+    nombreC2 = mejor.m2.nombre;
+    scoreC2 = mejor.m2.score;
+    normC2 = mejor.m2.norm;
+    const texto2 = mejor.seg2.join(" ");
+    if (normalizarNombre(texto2) !== mejor.m2.norm) {
+      correcciones.push(`«${texto2}» → ${mejor.m2.nombre}`);
+    }
+  } else if (tokensSobrantes.length > 0) {
+    nombreC2 = tokensSobrantes.join(" ");
   }
 
   return {
     cliente1: mejor.m1.nombre,
     cliente1Score: mejor.m1.score,
     cliente1Norm: mejor.m1.norm,
-    cliente2: mejor.m2?.nombre ?? "",
-    cliente2Score: mejor.m2?.score ?? 0,
-    cliente2Norm: mejor.m2?.norm ?? null,
+    cliente2: nombreC2,
+    cliente2Score: scoreC2,
+    cliente2Norm: normC2,
     correcciones,
   };
 }

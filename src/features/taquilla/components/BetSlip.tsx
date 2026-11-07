@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
-import { validarComando, detectarModalidad } from "@/features/taquilla/lib/validar";
+import { validarComando, detectarModalidad, clasificarLineaRapida } from "@/features/taquilla/lib/validar";
+import { resolverClientes } from "@/features/taquilla/lib/normalizar";
 import { calcularReparto } from "@/features/taquilla/lib/reparto";
 import { venderJugada, claveIdempotenciaJugada } from "@/features/taquilla/lib/venta";
 import { Input } from "@/shared/components/ui/Input";
@@ -155,10 +156,36 @@ export function BetSlip() {
     return Number.isFinite(n) && n >= 0 ? n : 5;
   }, [comision]);
 
+  // Detección inteligente si el operador tipea los nombres de cliente dentro del comando (ej: "100 2n Pedro Juan")
+  useEffect(() => {
+    const t = String(comando ?? "").trim();
+    if (!t) return;
+    const clas = clasificarLineaRapida(t);
+    if (clas && clas.ok && clas.restantes && clas.restantes.length > 0) {
+      const res = resolverClientes(clas.restantes, clientes);
+      if (res.cliente1 && !cliente1) setCliente1(res.cliente1);
+      if (res.cliente2 && !cliente2) setCliente2(res.cliente2);
+      if (clas.caballo && !caballo) setCaballo(clas.caballo);
+    }
+  }, [comando, clientes, cliente1, cliente2, caballo]);
+
   const caballoOk = caballoValido(caballo);
+
+  const comandoNormalizado = useMemo(() => {
+    const t = String(comando ?? "").trim();
+    if (!t) return "";
+    const vDirecta = validarComando(t, comisionNum, caballoOk ?? undefined);
+    if (vDirecta.ok) return t;
+    const clas = clasificarLineaRapida(t);
+    if (clas && clas.ok && clas.monto && clas.jugada) {
+      return `${clas.monto} ${clas.jugada}`;
+    }
+    return t;
+  }, [comando, comisionNum, caballoOk]);
+
   const validacion = useMemo(
-    () => validarComando(comando, comisionNum, caballoOk ?? undefined),
-    [comando, caballoOk, comisionNum]
+    () => validarComando(comandoNormalizado, comisionNum, caballoOk ?? undefined),
+    [comandoNormalizado, caballoOk, comisionNum]
   );
 
   const reparto = useMemo(
@@ -369,15 +396,20 @@ export function BetSlip() {
             />
           </div>
           <div className="col-span-2">
-            <div className="mb-1 text-[11px] font-semibold text-slate-600">
-              Cliente 2 (da) <span className="font-normal text-slate-400">— opcional</span>
+            <div className="mb-1 flex items-center justify-between text-[11px] font-semibold text-slate-600">
+              <span>Cliente 2 (da) <span className="font-normal text-slate-400">— opcional</span></span>
+              {c2 ? (
+                <span className={saldoDeCliente(c2) < 0 ? "text-danger-600" : "text-slate-500"}>
+                  saldo {saldoDeCliente(c2).toFixed(0)} · disp {textoDisponible(c2)}
+                </span>
+              ) : null}
             </div>
             <SearchableSelect
               options={opcionesClientes}
               value={cliente2}
               onChange={setCliente2}
               placeholder="Cliente 2 (dador)…"
-              allowCustom={false}
+              allowCustom={true}
               displayValue={cliente2}
             />
           </div>

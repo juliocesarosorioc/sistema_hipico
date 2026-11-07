@@ -3221,28 +3221,6 @@ const hipodromosDelDia = useMemo(() => {
         </div>
       )}
 
-      {/* Botón persistente de Liquidar Carrera: siempre visible cuando hay una carrera seleccionada y liquidable */}
-      {carreraConfirmada && !carreraLiquidada && !bloqueoLiquidacionActivo && (
-        <div className="flex items-center gap-2 mt-2">
-          <button
-            data-tour="tour-liquidar-carrera-global"
-            type="button"
-            onClick={() => void solicitarLiquidarCarrera()}
-            disabled={!listoParaCargar}
-            className="flex items-center gap-2 rounded-xl border border-emerald-400 bg-gradient-to-r from-emerald-400 via-green-500 to-teal-500 px-4 py-2 text-xs sm:text-sm font-black uppercase tracking-wider text-white shadow-emerald-600/35 ring-2 ring-emerald-400/60 hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 hover:scale-[1.02] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]"
-            title={listoParaCargar ? "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)" : "Elija hipódromo y carrera para liquidar"}
-          >
-            <span className="text-base sm:text-lg transition-transform duration-200 group-hover:scale-110 drop-shadow">
-              🏆
-            </span>
-            <span>Liquidar Carrera</span>
-            <span className="hidden md:inline-flex items-center rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-extrabold tracking-normal text-emerald-100 opacity-90 shadow-2xs">
-              Ctrl+Y
-            </span>
-          </button>
-        </div>
-      )}
-
       {principalSinGrupoSeleccionado && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-amber-400 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-950 shadow-md">
           <div className="flex items-center gap-2.5">

@@ -279,8 +279,8 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       </div>
 
       {/* TIRA DE CARRERAS (Full width en móvil, táctil y sin botones tapando) */}
-      <div className="flex items-center justify-between gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-1 min-h-[44px] w-full">
-        <div className="flex items-center gap-1.5 shrink-0 flex-nowrap px-0.5">
+      <div className="flex items-center justify-between gap-2 overflow-x-auto overflow-y-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-2 min-h-[48px] w-full">
+        <div className="flex items-center gap-1.5 shrink-0 flex-nowrap px-2">
           {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
             const { estado, tieneVentas } = porCarrera(n);
             const existe = manual || carreras.includes(n) || tieneVentas;
@@ -298,7 +298,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
                   !existe
                     ? `cursor-not-allowed ${COLORES.inactiva.chip} opacity-80`
                     : `hover:brightness-95 active:scale-95 ${c.chip}`
-                } ${activaEsta ? "ring-2 ring-indigo-600 ring-offset-1 scale-105 shadow-md" : ""}`}
+                } ${activaEsta ? "ring-2 ring-indigo-600 ring-offset-2 ring-offset-surface shadow-md" : ""}`}
               >
                 {n}
               </button>
