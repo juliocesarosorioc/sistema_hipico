@@ -138,7 +138,7 @@ export async function listarGruposVenta(): Promise<GrupoVenta[]> {
     return [];
   }
   ultimoErrorGrupos = null;
-  const activos = grupos.filter((g) => g.activo !== false).map((g) => aplicarOverridesCicloGrupo(g));
+  const activos = grupos.filter((g) => g.activo !== false && !(g as any).eliminado_en).map((g) => aplicarOverridesCicloGrupo(g));
   cacheGruposVenta = activos;
   return activos;
 }
@@ -462,7 +462,9 @@ export async function listarGruposAdmin(force = false): Promise<GrupoRow[]> {
     return [];
   }
   ultimoErrorGrupos = null;
-  const enriquecidos = grupos.map((g) => aplicarOverridesCicloGrupo(g));
+  const enriquecidos = grupos
+    .filter((g) => g.activo !== false && !(g as any).eliminado_en)
+    .map((g) => aplicarOverridesCicloGrupo(g));
   cacheGruposAdmin = enriquecidos;
   return enriquecidos;
 }

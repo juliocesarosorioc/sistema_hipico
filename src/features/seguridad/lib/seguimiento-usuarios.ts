@@ -85,6 +85,8 @@ export function generarSesionIdSeguro(): string {
   return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+let tablaSesionDisponible = true;
+
 /**
  * Verifica si el usuario ya tiene una sesión activa (Sesión Única).
  * Retorna la sesión existente si está en línea (< 5 minutos de inactividad).
@@ -95,7 +97,7 @@ export async function verificarSesionActivaExistente(usuarioId: string): Promise
   sesionActivaId?: string;
   ultimoLatido?: string;
 } | null> {
-  if (!supabase || !usuarioId) return null;
+  if (!supabase || !usuarioId || !tablaSesionDisponible) return null;
   try {
     const limiteInactivo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data, error } = await supabase
@@ -107,7 +109,20 @@ export async function verificarSesionActivaExistente(usuarioId: string): Promise
       .order("ultimo_latido", { ascending: false })
       .limit(1);
 
-    if (error || !data || data.length === 0) {
+    if (error) {
+      if (
+        error.code === "42P01" ||
+        error.code === "PGRST204" ||
+        error.code === "PGRST200" ||
+        error.message?.includes("does not exist") ||
+        (error as any).status === 400
+      ) {
+        tablaSesionDisponible = false;
+      }
+      return { tieneSesionActiva: false };
+    }
+
+    if (!data || data.length === 0) {
       return { tieneSesionActiva: false };
     }
 
@@ -448,7 +463,7 @@ export async function purgarActividadAntigua10Dias(): Promise<number> {
     /* ignore */
   }
 
-  if (supabase) {
+  if (supabase && tablaSesionDisponible) {
     try {
       const { data } = await supabase.rpc("club_purgar_actividad_10_dias");
       if (typeof data === "number") borrados += data;
@@ -531,7 +546,7 @@ export async function registrarLatidoPresencia(params: {
     /* ignore */
   }
 
-  if (supabase) {
+  if (supabase && tablaSesionDisponible) {
     try {
       await supabase.from("usuario_sesion").upsert(
         [
@@ -610,7 +625,7 @@ export async function registrarActividad(params: {
     /* ignore */
   }
 
-  if (supabase) {
+  if (supabase && tablaSesionDisponible) {
     try {
       await supabase.rpc("club_registrar_actividad_usuario", {
         p_sesion_id: sesionId,
@@ -676,7 +691,7 @@ export async function consultarUsuariosConectados(): Promise<UsuarioSesionInfo[]
   const limite10Dias = ahora - MS_RETENCION;
   let sesiones: UsuarioSesionInfo[] = [];
 
-  if (supabase) {
+  if (supabase && tablaSesionDisponible) {
     try {
       const { data, error } = await supabase
         .from("usuario_sesion")
@@ -780,7 +795,7 @@ export async function consultarActividadUsuario(usuarioId: string): Promise<{
   const limite10DiasIso = new Date(Date.now() - MS_RETENCION).toISOString();
   let actividades: UsuarioActividadItem[] = [];
 
-  if (supabase) {
+  if (supabase && tablaSesionDisponible) {
     try {
       const { data, error } = await supabase
         .from("usuario_actividad")

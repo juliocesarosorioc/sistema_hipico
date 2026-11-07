@@ -1,4 +1,5 @@
 import { supabase } from "@/core/supabase";
+import { invalidarCacheGrupos } from "@/features/grupos/lib/grupos";
 
 export interface SalaChat {
   id: string;
@@ -307,7 +308,7 @@ export async function editarGrupoVenta(
 }
 
 /**
- * Elimina o desactiva un Grupo de Venta.
+ * Elimina o desactiva un Grupo de Venta asegurando que desaparezca de la vista.
  */
 export async function eliminarGrupoVenta(
   grupoId: string
@@ -316,18 +317,31 @@ export async function eliminarGrupoVenta(
 
   if (supabase) {
     try {
-      await supabase
-        .from("grupos_venta")
-        .update({ activo: false })
-        .eq("id", grupoId);
+      // 1. Desvincular clientes del grupo eliminado para evitar violaciones foráneas
+      await supabase.from("clientes").update({ grupo_id: null }).eq("grupo_id", grupoId);
+      await supabase.from("chat_salas").delete().eq("grupo_id", grupoId);
+      await supabase.from("clientes_grupos").delete().eq("grupo_id", grupoId);
+      await supabase.from("operadores_grupos").delete().eq("grupo_id", grupoId);
 
-      await supabase
-        .from("chat_salas")
-        .update({ activo: false })
-        .eq("grupo_id", grupoId);
+      // 2. Intentar borrado físico en grupos_venta
+      const { error: errDel } = await supabase.from("grupos_venta").delete().eq("id", grupoId);
+      if (errDel) {
+        // Soft delete en caso de tickets históricos u otras relaciones foráneas
+        await supabase
+          .from("grupos_venta")
+          .update({ activo: false, eliminado_en: new Date().toISOString() })
+          .eq("id", grupoId);
+      }
     } catch {
       /* ignore */
     }
+  }
+
+  // 3. Invalidar la memoria caché del cliente
+  invalidarCacheGrupos();
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hipico:grupos-actualizados"));
   }
 
   return { ok: true };
