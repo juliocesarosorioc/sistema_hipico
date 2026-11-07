@@ -35,7 +35,10 @@ export function SalaRightPanelCarrera({
   const totalMontoTickets = ticketsFiltrados.reduce((acc, t) => acc + Number(t.monto || 0), 0);
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-40 flex w-full max-w-sm flex-col bg-[#111b21] text-[#e9edef] shadow-2xl border-l border-[#222e35] select-none animate-in slide-in-from-right duration-200">
+    <aside
+      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif' }}
+      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-sm flex-col bg-[#111b21] text-[#e9edef] shadow-2xl border-l border-[#222e35] select-none animate-in slide-in-from-right duration-200 antialiased"
+    >
       {/* 1. Header del panel */}
       <div className="flex h-16 items-center justify-between bg-[#202c33] px-4 border-b border-[#222e35]">
         <div className="flex flex-col">

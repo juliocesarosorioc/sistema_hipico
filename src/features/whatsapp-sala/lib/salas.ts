@@ -199,3 +199,133 @@ export async function crearSalaEnGrupo(
 
   return { ok: true, sala: nuevaSala };
 }
+
+
+/**
+ * Edita el nombre y descripción de una sala existente.
+ */
+export async function editarSala(
+  salaId: string,
+  grupoId: string,
+  nuevoNombre: string,
+  nuevaDescripcion?: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!salaId || !grupoId) return { ok: false, error: "Datos de sala inválidos." };
+  const nomLimpio = nuevoNombre.trim();
+  if (!nomLimpio) return { ok: false, error: "El nombre no puede estar vacío." };
+
+  // 1. Supabase
+  if (supabase) {
+    try {
+      await supabase
+        .from("chat_salas")
+        .update({
+          nombre: nomLimpio,
+          descripcion: nuevaDescripcion?.trim() || "Sala oficial de jugadas",
+        })
+        .eq("id", salaId);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // 2. Local
+  const actuales = getLocalSalas(grupoId);
+  const editadas = actuales.map((s) =>
+    s.id === salaId
+      ? { ...s, nombre: nomLimpio, descripcion: nuevaDescripcion?.trim() || s.descripcion }
+      : s
+  );
+  setLocalSalas(grupoId, editadas);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hipico:salas-actualizadas", { detail: { grupoId } }));
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Elimina una sala del grupo.
+ */
+export async function eliminarSala(
+  salaId: string,
+  grupoId: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!salaId || !grupoId) return { ok: false, error: "Datos de sala inválidos." };
+
+  // 1. Supabase
+  if (supabase) {
+    try {
+      await supabase
+        .from("chat_salas")
+        .delete()
+        .eq("id", salaId);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // 2. Local
+  const actuales = getLocalSalas(grupoId);
+  const filtradas = actuales.filter((s) => s.id !== salaId);
+  setLocalSalas(grupoId, filtradas);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("hipico:salas-actualizadas", { detail: { grupoId } }));
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Edita el nombre de un Grupo de Venta.
+ */
+export async function editarGrupoVenta(
+  grupoId: string,
+  nuevoNombre: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!grupoId) return { ok: false, error: "ID de grupo inválido." };
+  const nom = nuevoNombre.trim().toUpperCase();
+  if (!nom) return { ok: false, error: "El nombre no puede estar vacío." };
+
+  if (supabase) {
+    try {
+      await supabase
+        .from("grupos_venta")
+        .update({ nombre: nom })
+        .eq("id", grupoId);
+    } catch (e: any) {
+      console.warn("Error al actualizar grupo:", e?.message);
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Elimina o desactiva un Grupo de Venta.
+ */
+export async function eliminarGrupoVenta(
+  grupoId: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!grupoId) return { ok: false, error: "ID de grupo inválido." };
+
+  if (supabase) {
+    try {
+      await supabase
+        .from("grupos_venta")
+        .update({ activo: false })
+        .eq("id", grupoId);
+
+      await supabase
+        .from("chat_salas")
+        .update({ activo: false })
+        .eq("grupo_id", grupoId);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return { ok: true };
+}

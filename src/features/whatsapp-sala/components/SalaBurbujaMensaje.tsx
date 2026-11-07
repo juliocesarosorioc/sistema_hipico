@@ -90,7 +90,10 @@ export function SalaBurbujaMensaje({
             <span>🏁</span> Pizarra Oficial & Liquidación de Sala
           </div>
           <div
-            style={{ fontSize: `${tamanoLetra}px` }}
+            style={{
+          fontSize: `${tamanoLetra}px`,
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif',
+        }}
             className="whitespace-pre-wrap pt-2 leading-relaxed text-[#e9edef]"
           >
             {mensaje.texto}
@@ -111,7 +114,10 @@ export function SalaBurbujaMensaje({
       }`}
     >
       <div
-        style={{ fontSize: `${tamanoLetra}px` }}
+        style={{
+          fontSize: `${tamanoLetra}px`,
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif',
+        }}
         className={`group relative max-w-[88%] sm:max-w-[75%] rounded-2xl p-3 shadow-sm select-text transition-all ${
           esPrivado
             ? "bg-purple-950/90 text-purple-100 border-2 border-purple-500/70 shadow-md"

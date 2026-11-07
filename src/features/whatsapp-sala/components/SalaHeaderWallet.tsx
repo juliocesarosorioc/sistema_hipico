@@ -61,7 +61,10 @@ export function SalaHeaderWallet({
   const enJuego = saldo?.riesgo_en_curso ?? 0;
 
   return (
-    <header className="flex h-16 w-full items-center justify-between bg-[#008069] px-3 sm:px-4 text-white shadow-md z-30 select-none">
+    <header
+      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif' }}
+      className="flex h-16 w-full items-center justify-between bg-[#008069] px-3 sm:px-4 text-white shadow-md z-30 select-none antialiased"
+    >
       {/* 1. Logo / Info de Sala y Carrera Activa */}
       <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
         <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#128c7e] text-xl font-bold shadow-sm border border-white/20">

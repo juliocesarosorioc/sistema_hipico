@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { generarSalasDefaultGrupo, listarSalasPorGrupo, crearSalaEnGrupo } from "../src/features/whatsapp-sala/lib/salas";
+import {
+  generarSalasDefaultGrupo,
+  listarSalasPorGrupo,
+  crearSalaEnGrupo,
+  editarSala,
+  eliminarSala,
+} from "../src/features/whatsapp-sala/lib/salas";
 
 async function runTests() {
   console.log("=== PRUEBAS: CADA GRUPO TIENE SUS PROPIAS SALAS ===");
@@ -45,7 +51,26 @@ async function runTests() {
 
   console.log("✓ Caso 4: Aislamiento total de salas entre grupos verificado OK");
 
-  console.log("🎉 TODAS LAS PRUEBAS DE SALAS INDEPENDIENTES POR GRUPO PASARON (4/4)");
+  // 5. Editar sala existente
+  const salaIdParaEditar = resCrearG1.sala.id;
+  const resEdicion = await editarSala(salaIdParaEditar, "grupo_caracas", "Sala Caracas VIP Modificada", "Nueva descripcion");
+  assert.ok(resEdicion.ok, "Debe permitir editar la sala");
+  const listadoG1Actualizado = await listarSalasPorGrupo("grupo_caracas", "Caracas");
+  const salaEditada = listadoG1Actualizado.find((s) => s.id === salaIdParaEditar);
+  assert.equal(salaEditada?.nombre, "Sala Caracas VIP Modificada");
+  assert.equal(salaEditada?.descripcion, "Nueva descripcion");
+
+  console.log("✓ Caso 5: Edición de sala verificada OK");
+
+  // 6. Eliminar sala
+  const resEliminar = await eliminarSala(salaIdParaEditar, "grupo_caracas");
+  assert.ok(resEliminar.ok, "Debe permitir eliminar la sala");
+  const listadoG1Final = await listarSalasPorGrupo("grupo_caracas", "Caracas");
+  assert.ok(!listadoG1Final.some((s) => s.id === salaIdParaEditar), "La sala eliminada ya no debe aparecer en el listado");
+
+  console.log("✓ Caso 6: Eliminación de sala verificada OK");
+
+  console.log("🎉 TODAS LAS PRUEBAS DE SALAS INDEPENDIENTES, EDICIÓN Y ELIMINACIÓN PASARON (6/6)");
 }
 
 runTests().catch((e) => {

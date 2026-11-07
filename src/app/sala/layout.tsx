@@ -16,5 +16,15 @@ export const viewport: Viewport = {
 };
 
 export default function SalaLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <div
+      style={{
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif',
+      }}
+      className="antialiased"
+    >
+      {children}
+    </div>
+  );
 }

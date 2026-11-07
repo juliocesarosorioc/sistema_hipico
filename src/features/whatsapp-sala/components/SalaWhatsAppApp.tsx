@@ -27,7 +27,15 @@ import { SalaLeftPanelGrupos } from "./SalaLeftPanelGrupos";
 import { SalaRightPanelCarrera } from "./SalaRightPanelCarrera";
 import { SalaBurbujaMensaje } from "./SalaBurbujaMensaje";
 import { emitirToast } from "@/shared/lib/mensajeria";
-import { listarSalasPorGrupo, crearSalaEnGrupo, type SalaChat } from "../lib/salas";
+import {
+  listarSalasPorGrupo,
+  crearSalaEnGrupo,
+  editarSala,
+  eliminarSala,
+  editarGrupoVenta,
+  eliminarGrupoVenta,
+  type SalaChat,
+} from "../lib/salas";
 import { type GrupoVentaItem } from "./SalaLeftPanelGrupos";
 import { listarGruposVenta } from "@/features/grupos/lib/grupos";
 
@@ -418,6 +426,75 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
       return { ok: true };
     } catch (e: any) {
       return { ok: false, error: e.message || "Error al crear la sala" };
+    }
+  };
+
+  // 4d. Administrador: Editar sala existente
+  const handleEditarSala = async (salaId: string, nuevoNombre: string, descripcion?: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!sesion?.esOperadorOAdmin) return { ok: false, error: "Sin permiso." };
+    try {
+      const res = await editarSala(salaId, grupoSeleccionadoId, nuevoNombre, descripcion);
+      if (!res.ok) return res;
+      const gObj = gruposVenta.find((g) => String(g.id) === String(grupoSeleccionadoId));
+      const sList = await listarSalasPorGrupo(grupoSeleccionadoId, gObj?.nombre);
+      setSalas(sList);
+      emitirToast("Sala actualizada", "success");
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e.message || "Error al editar la sala" };
+    }
+  };
+
+  // 4e. Administrador: Eliminar sala
+  const handleEliminarSala = async (salaId: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!sesion?.esOperadorOAdmin) return { ok: false, error: "Sin permiso." };
+    try {
+      const res = await eliminarSala(salaId, grupoSeleccionadoId);
+      if (!res.ok) return res;
+      const gObj = gruposVenta.find((g) => String(g.id) === String(grupoSeleccionadoId));
+      const sList = await listarSalasPorGrupo(grupoSeleccionadoId, gObj?.nombre);
+      setSalas(sList);
+      if (grupoActivoId === salaId) {
+        setGrupoActivoId(sList[0]?.id || "bot-privado");
+      }
+      emitirToast("Sala eliminada", "info");
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e.message || "Error al eliminar la sala" };
+    }
+  };
+
+  // 4f. Administrador: Editar nombre de grupo de venta
+  const handleEditarGrupo = async (grupoId: string, nuevoNombre: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!sesion?.esOperadorOAdmin) return { ok: false, error: "Sin permiso." };
+    try {
+      const res = await editarGrupoVenta(grupoId, nuevoNombre);
+      if (!res.ok) return res;
+      setGruposVenta((prev) =>
+        prev.map((g) => (String(g.id) === String(grupoId) ? { ...g, nombre: nuevoNombre.trim().toUpperCase() } : g))
+      );
+      emitirToast("Grupo renombrado", "success");
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e.message || "Error al renombrar el grupo" };
+    }
+  };
+
+  // 4g. Administrador: Eliminar / desactivar grupo de venta
+  const handleEliminarGrupo = async (grupoId: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!sesion?.esOperadorOAdmin) return { ok: false, error: "Sin permiso." };
+    try {
+      const res = await eliminarGrupoVenta(grupoId);
+      if (!res.ok) return res;
+      const filtrados = gruposVenta.filter((g) => String(g.id) !== String(grupoId));
+      setGruposVenta(filtrados);
+      if (filtrados.length > 0) {
+        setGrupoSeleccionadoId(String(filtrados[0].id));
+      }
+      emitirToast("Grupo desactivado", "info");
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e.message || "Error al eliminar el grupo" };
     }
   };
 
@@ -1735,7 +1812,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
   const esCerrada = carreraActiva.estado === "CERRADA" || carreraActiva.estado === "LIQUIDADA";
 
   return (
-    <div className={`flex ${alturaRaiz} w-full overflow-hidden bg-[#111b21] font-sans`}>
+    <div className={`flex ${alturaRaiz} w-full overflow-hidden bg-[#111b21] antialiased`} style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
       {/* Panel Izquierdo: Lista de Grupos y Canal Bot */}
       <div
         className={`${
@@ -1746,12 +1823,16 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           gruposVenta={gruposVenta}
           grupoSeleccionadoId={grupoSeleccionadoId}
           onCambiarGrupo={(gid) => setGrupoSeleccionadoId(gid)}
+          onEditarGrupo={handleEditarGrupo}
+          onEliminarGrupo={handleEliminarGrupo}
           salas={salas}
           salaActivaId={grupoActivoId}
           onSeleccionarSala={(sid) => {
             setGrupoActivoId(sid);
             setMostrarGruposMovil(false);
           }}
+          onEditarSala={handleEditarSala}
+          onEliminarSala={handleEliminarSala}
           nombreUsuario={sesion.nombre}
           esOperadorOAdmin={sesion.esOperadorOAdmin}
           onCrearSala={handleCrearNuevaSala}
