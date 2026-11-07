@@ -1,10 +1,16 @@
 /**
- * Build ESTÁTICO para GitHub Pages.
+ * Build ESTÁTICO para GitHub Pages / Dominio Personalizado.
  *
- * GitHub Pages sirve el repositorio en `https://<usuario>.github.io/sistema_hipico/`,
- * es decir, bajo un SUBPATH. Este script es igual a `build:export` pero además
- * informa `NEXT_PUBLIC_BASE_PATH=/sistema_hipico`, que `next.config.mjs` usa
- * como `basePath`+`assetPrefix` para que los enlaces y los assets apunten bien.
+ * Soporta simultáneamente:
+ *   - Dominio raíz personalizado: https://administracionhipica.ia.ve/ (basePath = "")
+ *   - Subpath de GitHub Pages: https://<usuario>.github.io/sistema_hipico/ (espejo en /sistema_hipico)
+ *
+ * Además post-procesa `out/`:
+ *   1. Genera `CNAME` con `administracionhipica.ia.ve` para mantener el dominio personalizado vinculado.
+ *   2. Crea `.nojekyll` para que GitHub Pages no ignore `_next/`.
+ *   3. Genera copias `<ruta>.html` (ej. `login.html`) para evitar 404 en accesos sin trailing slash.
+ *   4. Genera espejo `/sistema_hipico/_next` para compatibilidad retroactiva.
+ *   5. Inyecta fallback SPA en `404.html`.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -43,13 +49,14 @@ process.on("SIGINT", () => {
 const esWindows = process.platform === "win32";
 const npx = esWindows ? "npx.cmd" : "npx";
 
+// En producción para administracionhipica.ia.ve, el basePath por defecto es vacío ("")
 const hijo = spawn(npx, ["next", "build"], {
   stdio: "inherit",
   shell: esWindows,
   env: {
     ...process.env,
     NEXT_OUTPUT: "export",
-    NEXT_PUBLIC_BASE_PATH: process.env.NEXT_PUBLIC_BASE_PATH || "/sistema_hipico",
+    NEXT_PUBLIC_BASE_PATH: process.env.NEXT_PUBLIC_BASE_PATH ?? "",
   },
 });
 
@@ -69,14 +76,19 @@ hijo.on("exit", (code) => {
 
 function postProcesarExportGithubPages() {
   if (!fs.existsSync(outDir)) return;
-  console.log("\n[post-build] Optimizando salida para GitHub Pages...");
+  console.log("\n[post-build] Optimizando salida para GitHub Pages & Dominio Personalizado...");
 
-  // 1. Asegurar archivo .nojekyll en out/ para que GitHub Pages no ignore /_next
+  // 1. CNAME para vincular el dominio personalizado administracionhipica.ia.ve
+  const cnamePath = path.join(outDir, "CNAME");
+  fs.writeFileSync(cnamePath, "administracionhipica.ia.ve", "utf8");
+  console.log("  ✓ CNAME creado: administracionhipica.ia.ve");
+
+  // 2. Asegurar archivo .nojekyll en out/ para que GitHub Pages no ignore /_next
   const nojekyllPath = path.join(outDir, ".nojekyll");
   fs.writeFileSync(nojekyllPath, "", "utf8");
   console.log("  ✓ .nojekyll creado en out/");
 
-  // 2. Generar alias <ruta>.html para cada carpeta con index.html (ej. out/login.html para /login)
+  // 3. Generar alias <ruta>.html para cada carpeta con index.html (ej. out/login.html para /login)
   const items = fs.readdirSync(outDir, { withFileTypes: true });
   for (const item of items) {
     if (item.isDirectory() && !item.name.startsWith("_")) {
@@ -89,7 +101,29 @@ function postProcesarExportGithubPages() {
     }
   }
 
-  // 3. Fallback inteligente SPA en out/404.html
+  // 4. Espejo /sistema_hipico para compatibilidad total si se accede con subpath
+  try {
+    const subpathDir = path.join(outDir, "sistema_hipico");
+    if (!fs.existsSync(subpathDir)) {
+      fs.mkdirSync(subpathDir, { recursive: true });
+    }
+    const nextSrc = path.join(outDir, "_next");
+    const nextDest = path.join(subpathDir, "_next");
+    if (fs.existsSync(nextSrc) && !fs.existsSync(nextDest)) {
+      fs.cpSync(nextSrc, nextDest, { recursive: true });
+      console.log("  ✓ Espejo /sistema_hipico/_next creado para compatibilidad");
+    }
+    const idxSrc = path.join(outDir, "index.html");
+    const idxDest = path.join(subpathDir, "index.html");
+    if (fs.existsSync(idxSrc) && !fs.existsSync(idxDest)) {
+      fs.copyFileSync(idxSrc, idxDest);
+      console.log("  ✓ Espejo /sistema_hipico/index.html creado para compatibilidad");
+    }
+  } catch (err) {
+    console.warn("  ⚠ Advertencia creando espejo subpath:", err?.message);
+  }
+
+  // 5. Fallback inteligente SPA en out/404.html
   const path404 = path.join(outDir, "404.html");
   if (fs.existsSync(path404)) {
     let contenido404 = fs.readFileSync(path404, "utf8");
