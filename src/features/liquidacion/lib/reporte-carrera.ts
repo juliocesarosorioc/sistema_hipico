@@ -26,6 +26,7 @@ import {
   type ModalidadCruceCarrera,
 } from "@/features/taquilla/lib/cruces-y-tapas";
 import { calcularEstadoCuentaCliente, calcularResumenContableCliente } from "@/features/saldos/lib/contabilidad-central";
+import { resolverSeudonimoClienteSync, obtenerMapaSeudonimosClientesSync } from "@/features/clientes/lib/clientes";
 
 export { colorDiscoNumero, calcularEstadoCuentaCliente, calcularResumenContableCliente };
 export {
@@ -265,6 +266,10 @@ export type OpcionesReporteCarrera = {
   telefonoDe?: (nombre: string) => string | null | undefined;
   /** Observaciones adicionales de jugadas recortadas por exceso de saldo durante la carga. */
   observacionesExcesoExtra?: ObservacionOrdenExceso[];
+  /** Mapa explícito de resolución de seudónimos (id/nombre -> seudónimo). */
+  mapaSeudonimos?: Map<string, string>;
+  /** Cartera de clientes para enriquecer el mapa de seudónimos. */
+  clientes?: Array<{ id?: string | number; nombre?: string | null; seudonimo?: string | null }>;
 };
 
 export function armarReporteCarrera(
@@ -299,6 +304,45 @@ export function armarReporteCarrera(
 
   const consigue = consiguePorJuega(c);
 
+  const mapaSeud = new Map<string, string>();
+  const syncMap = obtenerMapaSeudonimosClientesSync();
+  if (syncMap) {
+    for (const [k, v] of syncMap) mapaSeud.set(k, v);
+  }
+  if (opciones?.mapaSeudonimos) {
+    for (const [k, v] of opciones.mapaSeudonimos) mapaSeud.set(k, v);
+  }
+  if (Array.isArray(opciones?.clientes)) {
+    for (const cli of opciones.clientes) {
+      const alias = String(cli.seudonimo || cli.nombre || "").trim();
+      if (!alias) continue;
+      if (cli.id != null) {
+        mapaSeud.set(String(cli.id), alias);
+        mapaSeud.set(String(cli.id).toLowerCase(), alias);
+      }
+      if (cli.nombre) {
+        mapaSeud.set(String(cli.nombre).trim(), alias);
+        mapaSeud.set(String(cli.nombre).trim().toUpperCase(), alias);
+        mapaSeud.set(normalizarNombreCliente(cli.nombre), alias);
+      }
+      if (cli.seudonimo) {
+        mapaSeud.set(String(cli.seudonimo).trim(), alias);
+        mapaSeud.set(String(cli.seudonimo).trim().toUpperCase(), alias);
+        mapaSeud.set(normalizarNombreCliente(cli.seudonimo), alias);
+      }
+    }
+  }
+
+  const resolverAlias = (identidad: unknown, id?: unknown): string => {
+    const raw = String(identidad ?? "").trim();
+    if (!raw || raw === "—" || raw === "-") return raw;
+    if (id != null) {
+      const porId = resolverSeudonimoClienteSync(String(id), mapaSeud);
+      if (porId && porId !== String(id)) return porId;
+    }
+    return resolverSeudonimoClienteSync(raw, mapaSeud);
+  };
+
   const jugadasVivo: JugadaVivo[] = [];
   const adelantadas: {
     tablas: Adelantada[];
@@ -327,7 +371,8 @@ export function armarReporteCarrera(
   const usadoProgresivoPorCliente = new Map<string, number>();
 
   const registrarNombreCliente = (raw: string, clienteId?: string): string => {
-    const nombreNormalizado = normalizarNombreCliente(raw);
+    const alias = resolverAlias(raw, clienteId);
+    const nombreNormalizado = normalizarNombreCliente(alias || raw);
     const idNormalizado = String(clienteId ?? "").trim();
     const clave = idNormalizado
       ? identidadPorId.get(idNormalizado.toUpperCase()) ?? `id:${idNormalizado.toUpperCase()}`
@@ -336,9 +381,19 @@ export function armarReporteCarrera(
         : "";
     if (!clave) return "";
     const existente = nombreVisiblePorClave.get(clave);
-    const limpio = String(raw ?? "").trim();
-    if (!existente || (existente === existente.toLowerCase() && limpio === limpio.toUpperCase())) {
-      nombreVisiblePorClave.set(clave, limpio);
+    const nombreElegido = alias || String(raw ?? "").trim();
+    if (!existente) {
+      nombreVisiblePorClave.set(clave, nombreElegido);
+    } else {
+      const idRaw = String(clienteId ?? "").trim();
+      const esAliasExplicito =
+        (idRaw && (mapaSeud.has(idRaw) || mapaSeud.has(idRaw.toLowerCase()))) ||
+        (raw && (mapaSeud.has(String(raw).trim()) || mapaSeud.has(normalizarNombreCliente(raw))));
+      if (esAliasExplicito) {
+        nombreVisiblePorClave.set(clave, nombreElegido);
+      } else if (existente === existente.toLowerCase() && nombreElegido === nombreElegido.toUpperCase()) {
+        nombreVisiblePorClave.set(clave, nombreElegido);
+      }
     }
     if (nombreNormalizado && !idNormalizado) identidadPorNombre.set(nombreNormalizado, clave);
     if (idNormalizado) identidadPorId.set(idNormalizado.toUpperCase(), clave);
@@ -365,7 +420,8 @@ export function armarReporteCarrera(
       ordenJuego += 1;
       const i = indiceTicketDe(f.id) ?? `t-${correlativo++}`;
       const cons = consigue.get(i);
-      const da = resolverContraparteModalidad(f.jugada, cons?.cliente ?? "", f.tipoJugada);
+      const consCliente = cons ? resolverAlias(cons.cliente) : "";
+      const da = resolverContraparteModalidad(f.jugada, consCliente, f.tipoJugada);
       const jugo =
         f.tipoJugada === "MARCA" || f.tipoJugada === "TABLA"
           ? f.jugada
@@ -376,7 +432,7 @@ export function armarReporteCarrera(
       const resultadoDa = cons ? cons.resultado : null;
 
       const filaVivo: JugadaVivo = {
-        juega: f.cliente,
+        juega: resolverAlias(f.cliente, f.clienteId),
         aposto: apostoJuega,
         jugo,
         caballo: f.caballo,

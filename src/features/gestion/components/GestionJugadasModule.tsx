@@ -98,6 +98,7 @@ import {
   exportarReporteCarreraImagen,
   type FiltroSaldosWhatsapp,
 } from "@/features/liquidacion/lib/reporte-imagen";
+import { resolverSeudonimoCliente } from "@/features/liquidacion/lib/reportes";
 import {
   armarFilasPreview,
   resumenPreview,
@@ -512,11 +513,21 @@ export function GestionJugadasModule() {
    * fecha lo dice (`estado` "Liquidada" o el resultado ya aplicado a tablas).
    */
   const carreraLiquidada = useMemo(() => {
-    const c = carrerasDelDia.find((x) => Number(x.carrera) === carrera);
-    if (!c) return false;
-    const est = String(c.estado ?? "").toLowerCase();
-    return est === "liquidada" || est === "cerrada" || c.aplicado_a_tablas === true || (c.ganadores?.length ?? 0) > 0;
-  }, [carrerasDelDia, carrera]);
+    const c = carrerasDelDia.find((x) => Number(x.carrera) === Number(carrera));
+    const est = String(c?.estado ?? "").toLowerCase();
+    const centralLiq = est === "liquidada" || c?.aplicado_a_tablas === true;
+    if (centralLiq) return true;
+    if (pizarraCentral?.pizarra && (pizarraCentral.pizarra.primero || pizarraCentral.llenas > 0) && (c?.aplicado_a_tablas === true || est === "liquidada")) {
+      return true;
+    }
+    if (jugadasGuardadas.some((j) => {
+      const e = String(j.estado ?? "").toLowerCase();
+      return e === "ganador" || e === "perdedor" || e === "liquidada";
+    })) {
+      return true;
+    }
+    return false;
+  }, [carrerasDelDia, carrera, pizarraCentral, jugadasGuardadas]);
 
   const tieneResultadoCargado = carreraLiquidada || Boolean(pizarraCentral);
 
@@ -1509,6 +1520,28 @@ const hipodromosDelDia = useMemo(() => {
   const totalesPreview = useMemo(() => resumenPreview(filasPreview), [filasPreview]);
   const filasPreviewEnVivo = useMemo(() => filasPreview.filter((f) => !f.anulada && !f.esAdelantada), [filasPreview]);
   const filasPreviewAdelantadas = useMemo(() => filasPreview.filter((f) => !f.anulada && f.esAdelantada), [filasPreview]);
+
+  const carrerasLiquidadasDelDia = useMemo(() => {
+    const setNums = new Set<number>();
+    if (carreraLiquidada && carrera) {
+      setNums.add(Number(carrera));
+    }
+    for (const c of carrerasDelDia) {
+      const est = String(c.estado ?? "").toLowerCase();
+      if (est === "liquidada" || est === "cerrada" || c.aplicado_a_tablas === true || (c.ganadores?.length ?? 0) > 0) {
+        setNums.add(Number(c.carrera));
+      }
+    }
+    if (pizarraCentral?.pizarra && carrera) {
+      setNums.add(Number(carrera));
+    }
+    for (const f of filasPreview) {
+      if (f.estadoLiquidacion === "Liquidada" && carrera) {
+        setNums.add(Number(carrera));
+      }
+    }
+    return [...setNums];
+  }, [carreraLiquidada, carrera, carrerasDelDia, pizarraCentral, filasPreview]);
 
   const abrirResultados = useCallback(async () => {
     if (!listoParaCargar) return;
@@ -2585,6 +2618,14 @@ const hipodromosDelDia = useMemo(() => {
       setReapertura(false);
       setPizarraCentral(null);
       setUltimaPizarra(null);
+      // Resetear inmediatamente en memoria el estado de las jugadas para desbloquear la re-liquidación
+      setJugadasGuardadas((prev) =>
+        prev.map((j) => ({
+          ...j,
+          estado: "Pendiente",
+          premio_pagar: 0,
+        }))
+      );
       if (filasPreview.some((f) => !f.anulada) || r.tickets > 0) {
         setJugadasPorCarrera((prev) => (prev.includes(carrera) ? prev : [...prev, carrera]));
       } else {
@@ -2592,8 +2633,11 @@ const hipodromosDelDia = useMemo(() => {
       }
       recargarRegistroCentral();
       void recargarClientes();
-      void recargarJugadasGuardadas();
+      await recargarJugadasGuardadas();
       setModalReversar(false);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("hipico:carreras-actualizadas"));
+      }
       if (r.ok) {
         void notificarTareaEjecutadaOperador({
           titulo: "Liquidación Reversada",
@@ -2774,6 +2818,9 @@ const hipodromosDelDia = useMemo(() => {
         void recargarClientes();
         void recargarJugadasGuardadas();
         recargarRegistroCentral();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("hipico:carreras-actualizadas"));
+        }
         const pizarraTxt =
           [piz.pizarra.primero, piz.pizarra.segundo, piz.pizarra.tercero, piz.pizarra.cuarto, piz.pizarra.quinto]
             .filter(Boolean)
@@ -3630,6 +3677,7 @@ const hipodromosDelDia = useMemo(() => {
               : jugadasPorCarrera
             : []
         }
+        carrerasLiquidadas={carrerasLiquidadasDelDia}
         onSeleccionar={(n, info) => {
           void seleccionarCarreraConConfirmacion(n, info);
         }}
@@ -4824,11 +4872,11 @@ const hipodromosDelDia = useMemo(() => {
                         ...filasPreviewEnVivo.map((f) => {
                           const estaLiquidada = carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0;
                           return {
-                            juega: f.cliente1,
+                            juega: resolverSeudonimoCliente(f.cliente1) || f.cliente1,
                             aposto: f.monto,
                             jugo: f.jugada,
                             caballo: f.caballo,
-                            da: f.cliente2,
+                            da: resolverSeudonimoCliente(f.cliente2) || f.cliente2,
                             apostoDa: f.monto,
                             resultado: estaLiquidada
                               ? f.lado1.estado === "GANO"
@@ -4857,12 +4905,12 @@ const hipodromosDelDia = useMemo(() => {
                         ...filasPreviewAdelantadas.map((f) => {
                           const estaLiquidada = carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0;
                           return {
-                            juega: f.cliente1,
+                            juega: resolverSeudonimoCliente(f.cliente1) || f.cliente1,
                             aposto: f.aposto1 ?? f.monto,
                             jugo: f.jugada,
                             caballo: f.caballo,
                             precioTabla: f.precioTabla,
-                            da: f.cliente2,
+                            da: resolverSeudonimoCliente(f.cliente2) || f.cliente2,
                             apostoDa: f.aposto2 ?? f.monto,
                             resultado: estaLiquidada
                               ? f.lado1.estado === "GANO"
@@ -4896,8 +4944,8 @@ const hipodromosDelDia = useMemo(() => {
                         ...proyeccionesCarga
                           .map((p, idx): ObservacionOrdenExceso | null => {
                             if (!p.observacionExceso || p.montoSolicitado <= 0) return null;
-                            const nom1 = p.cliente1?.nombre ?? filas[idx]?.cliente1 ?? "Jugador 1";
-                            const nom2 = p.cliente2?.nombre ?? filas[idx]?.cliente2 ?? "Banca";
+                            const nom1 = p.cliente1?.seudonimo || p.cliente1?.nombre || resolverSeudonimoCliente(filas[idx]?.cliente1) || "Jugador 1";
+                            const nom2 = p.cliente2?.seudonimo || p.cliente2?.nombre || resolverSeudonimoCliente(filas[idx]?.cliente2) || "Banca";
                             const tel1 = telefonoMencionCliente(p.cliente1);
                             const tel2 = telefonoMencionCliente(p.cliente2);
                             const jug = filas[idx]?.caballo?.trim()
@@ -5287,11 +5335,18 @@ const hipodromosDelDia = useMemo(() => {
           ) : (
             <button
               type="button"
-              disabled
-              title="Esta carrera aún no está liquidada (el botón se activa al liquidar)"
-              className={`${BTN_BARRA} bg-slate-700/40 text-slate-400 opacity-50 cursor-not-allowed hidden sm:inline-flex`}
+              onClick={() => void solicitarLiquidarCarrera()}
+              disabled={!listoParaCargar || bloqueoLiquidacionActivo}
+              title={
+                !listoParaCargar
+                  ? "Elija hipódromo y carrera para liquidar"
+                  : filasPreview.filter((f) => !f.anulada).length === 0
+                    ? "Sin jugadas cargadas: cargue información de jugadas antes de liquidar"
+                    : "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)"
+              }
+              className={`${BTN_BARRA} bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:brightness-110 shadow-sm disabled:cursor-not-allowed disabled:bg-slate-700/40 disabled:text-slate-400 disabled:opacity-50`}
             >
-              🔄 Reversar Liquidación
+              🏆 Liquidar Carrera
             </button>
           )}
           <button
@@ -5531,6 +5586,10 @@ const hipodromosDelDia = useMemo(() => {
       <CargaResultadosModal
         abierto={modalResultados}
         onCerrar={() => setModalResultados(false)}
+        onReversar={() => {
+          setModalResultados(false);
+          setModalReversar(true);
+        }}
         hipodromo={hipodromo}
         carrera={String(carrera)}
         caballos={caballosDeCarrera.length ? caballosDeCarrera : null}

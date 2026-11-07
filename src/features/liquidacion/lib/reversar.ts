@@ -42,6 +42,7 @@ import { listarPollas, cambiarEstadoPolla } from "@/features/pollas/lib/pollas";
 import { modalidadDeTicket, planearReversion, resumirReversion } from "@/features/liquidacion/lib/reversar-nucleo";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
+import { useRegistroCentral } from "@/shared/store/useRegistroCentral";
 
 const NUM = (v: unknown): number => {
   const n = parseFloat(String(v ?? ""));
@@ -362,6 +363,22 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
         pago: null,
       });
     }
+    const reg = useRegistroCentral.getState();
+    const carreraActual = (reg.porFecha[dia] ?? []).find(
+      (c) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo) && Number(c.carrera) === Number(carrera)
+    );
+    if (carreraActual) {
+      reg.registrarCarrera({
+        ...carreraActual,
+        fecha: dia,
+        hipodromo,
+        carrera,
+        estado: "Programada",
+        ganadores: [],
+        aplicado_a_tablas: false,
+      });
+    }
+    reg.invalidarCarreras();
   } catch {
     // best-effort en entorno node/test
   }

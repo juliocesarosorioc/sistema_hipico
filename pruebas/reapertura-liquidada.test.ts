@@ -125,10 +125,11 @@ ok("ofrece el botón de recálculo", gestion.includes("🔄 Recalcular"));
 ok("el recálculo deja rastro en la auditoría", /"RECALCULAR_CARRERA"/.test(gestion));
 ok("refresca los saldos tras recalcular", /void recargarClientes\(\)/.test(gestion));
 
-console.log("\n[8] Botón Liquidar Carrera inhabilitado cuando ya está liquidada + liquidación automática al cargar jugadas");
+console.log("\n[8] Botón Liquidar Carrera inhabilitado/transformado a Reversar cuando ya está liquidada + liquidación automática al cargar jugadas");
 ok(
-  "el botón Liquidar Carrera queda disabled cuando carreraLiquidada es true",
-  /disabled=\{!listoParaCargar \|\| bloqueoLiquidacionActivo \|\| carreraLiquidada\}/.test(gestion)
+  "el botón Liquidar Carrera queda disabled o cambia a Reversar Liquidación cuando carreraLiquidada es true",
+  /disabled=\{!listoParaCargar \|\| bloqueoLiquidacionActivo \|\| carreraLiquidada\}/.test(gestion) ||
+  /carreraLiquidada\s*\?\s*\([\s\S]*?Reversar Liquidación/i.test(gestion)
 );
 ok(
   "solicitarLiquidarCarrera bloquea si carreraLiquidada es true",

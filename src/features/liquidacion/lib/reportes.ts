@@ -148,30 +148,89 @@ function cifra(v: unknown): number {
 let mapaSeudonimosReporte: Map<string, string> | null = null;
 let mapaSeudonimosReporteTs = 0;
 
-async function cargarMapaSeudonimosReporte(): Promise<Map<string, string>> {
+function normalizarNombreBusquedaReportes(v: unknown): string {
+  return String(v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+export async function cargarMapaSeudonimosReporte(): Promise<Map<string, string>> {
   if (mapaSeudonimosReporte && Date.now() - mapaSeudonimosReporteTs < 15_000) {
     return mapaSeudonimosReporte;
   }
-  if (!supabase) return new Map();
+  let mapa = new Map<string, string>();
+  if (!supabase) return mapa;
 
-  const { data, error } = await supabase.from("clientes").select("id, nombre, seudonimo");
-  if (error) throw error;
-
-  const mapa = new Map<string, string>();
-  for (const cliente of (data ?? []) as Array<{
-    id?: string | number;
-    nombre?: string | null;
-    seudonimo?: string | null;
-  }>) {
-    const alias = txt(cliente.seudonimo) || txt(cliente.nombre);
-    if (!alias) continue;
-    if (cliente.id != null) mapa.set(String(cliente.id), alias);
-    if (cliente.nombre) mapa.set(normalizarNombreCliente(cliente.nombre), alias);
-    if (cliente.seudonimo) mapa.set(normalizarNombreCliente(cliente.seudonimo), alias);
+  try {
+    const { data, error } = await supabase.from("clientes").select("id, nombre, seudonimo");
+    if (!error && Array.isArray(data) && data.length > 0) {
+      for (const cliente of data as Array<{
+        id?: string | number;
+        nombre?: string | null;
+        seudonimo?: string | null;
+      }>) {
+        const alias = txt(cliente.seudonimo) || txt(cliente.nombre);
+        if (!alias) continue;
+        if (cliente.id != null) {
+          mapa.set(String(cliente.id), alias);
+          mapa.set(String(cliente.id).toLowerCase(), alias);
+        }
+        if (cliente.nombre) {
+          const nom = txt(cliente.nombre);
+          mapa.set(nom, alias);
+          mapa.set(nom.toUpperCase(), alias);
+          mapa.set(normalizarNombreBusquedaReportes(nom), alias);
+          mapa.set(normalizarNombreCliente(nom), alias);
+        }
+        if (cliente.seudonimo) {
+          const seud = txt(cliente.seudonimo);
+          mapa.set(seud, alias);
+          mapa.set(seud.toUpperCase(), alias);
+          mapa.set(normalizarNombreBusquedaReportes(seud), alias);
+          mapa.set(normalizarNombreCliente(seud), alias);
+        }
+      }
+    } else {
+      const { cargarMapaSeudonimosClientes } = await import("@/features/clientes/lib/clientes");
+      mapa = await cargarMapaSeudonimosClientes();
+    }
+  } catch {
+    try {
+      const { cargarMapaSeudonimosClientes } = await import("@/features/clientes/lib/clientes");
+      mapa = await cargarMapaSeudonimosClientes();
+    } catch {
+      /* ignore */
+    }
   }
+
   mapaSeudonimosReporte = mapa;
   mapaSeudonimosReporteTs = Date.now();
   return mapa;
+}
+
+export function obtenerMapaSeudonimosReporteSync(): Map<string, string> | null {
+  return mapaSeudonimosReporte;
+}
+
+export function resolverSeudonimoCliente(
+  identificador: unknown,
+  mapa?: Map<string, string> | null
+): string {
+  const raw = txt(identificador);
+  if (!raw || raw === "—" || raw === "-") return raw;
+  const m = mapa ?? mapaSeudonimosReporte;
+  if (!m) return raw;
+  return (
+    m.get(raw) ||
+    m.get(raw.toUpperCase()) ||
+    m.get(normalizarNombreBusquedaReportes(raw)) ||
+    m.get(normalizarNombreCliente(raw)) ||
+    m.get(raw.toLowerCase()) ||
+    raw
+  );
 }
 
 function comisionCobradaTicket(f: Record<string, unknown>, calculada: number): number {
@@ -1730,18 +1789,18 @@ async function carreraReporte(
     const clienteJuegaId = txt(f.cliente_juega_id);
     const clienteJuegaRaw = txt(f.cliente_juega_nombre) || clienteJuegaId || clienteJuega;
     const clienteJuegaNombre =
-      mapaSeudonimos.get(clienteJuegaId) ||
-      mapaSeudonimos.get(normalizarNombreCliente(clienteJuegaRaw)) ||
-      clienteJuegaRaw;
+      (clienteJuegaId && resolverSeudonimoCliente(clienteJuegaId, mapaSeudonimos) !== clienteJuegaId
+        ? resolverSeudonimoCliente(clienteJuegaId, mapaSeudonimos)
+        : resolverSeudonimoCliente(clienteJuegaRaw, mapaSeudonimos)) || clienteJuegaRaw;
     const clienteConsigueId = txt(f.cliente_consigue_id) || txt(f.banquero_cliente_id);
     const clienteConsigueRaw =
       txt(f.banquero_nombre) ||
       txt(f.cliente_consigue_nombre) ||
       clienteConsigueId;
     const clienteConsigueVisible =
-      mapaSeudonimos.get(clienteConsigueId) ||
-      mapaSeudonimos.get(normalizarNombreCliente(clienteConsigueRaw)) ||
-      clienteConsigueRaw;
+      (clienteConsigueId && resolverSeudonimoCliente(clienteConsigueId, mapaSeudonimos) !== clienteConsigueId
+        ? resolverSeudonimoCliente(clienteConsigueId, mapaSeudonimos)
+        : resolverSeudonimoCliente(clienteConsigueRaw, mapaSeudonimos)) || clienteConsigueRaw;
     const clienteConsigueNombre = resolverContraparteModalidad(
       f.nombre_jugada,
       clienteConsigueVisible,

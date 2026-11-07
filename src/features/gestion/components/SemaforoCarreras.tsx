@@ -24,6 +24,8 @@ type Props = {
   manual?: boolean;
   /** Números de carrera que tienen jugadas cargadas (sesión o BD del módulo padre). */
   carrerasConJugadas?: number[];
+  /** Números de carrera que ya están liquidadas (módulo padre / estado en vivo). */
+  carrerasLiquidadas?: number[];
   /** Acción adicional alineada a la derecha en la fila de carreras (p. ej. Liquidar Carrera). */
   accionDerecha?: ReactNode;
   className?: string;
@@ -87,7 +89,18 @@ const MANUAL_TOTAL = 12;
  * pestaña, así que una carrera liquidada desde otra sesión/dispositivo se veía
  * verde. El central también aporta `aplicado_a_tablas` y los ganadores.
  */
-export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSeleccionar, manual, carrerasConJugadas, accionDerecha, className = "" }: Props) {
+export function SemaforoCarreras({
+  hipodromo,
+  fecha,
+  carreras,
+  activa,
+  onSeleccionar,
+  manual,
+  carrerasConJugadas,
+  carrerasLiquidadas,
+  accionDerecha,
+  className = "",
+}: Props) {
   const tablas = useTablasFijasStore((s) => s.tablas);
   const tickets = useTaquillaStore((s) => s.tickets);
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
@@ -106,6 +119,8 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
   // Garantiza que al reversar una liquidación o recargar la página, las carreras que
   // tienen jugadas cargadas se pinten en AMARILLO (`con_jugadas`).
   const [carrerasBdConJugadas, setCarrerasBdConJugadas] = useState<number[]>([]);
+  // Carreras liquidadas detectadas directamente en la base de datos central (`resultados_carreras`).
+  const [carrerasBdLiquidadas, setCarrerasBdLiquidadas] = useState<number[]>([]);
   const [recargaVersion, setRecargaVersion] = useState(0);
 
   useEffect(() => {
@@ -124,19 +139,43 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
     const dia = String(fecha ?? "").slice(0, 10);
     if (!sb || !dia || !tieneHipodromo) {
       setCarrerasBdConJugadas([]);
+      setCarrerasBdLiquidadas([]);
       return () => { vivo = false; };
     }
     void (async () => {
       try {
-        const { data } = await sb
-          .from("tickets_apuestas")
-          .select("carrera, hipodromo, estado, anulada, nota_auditoria, fecha_carrera, fecha_registro")
-          .ilike("hipodromo", `%${hipoLimpio}%`)
-          .order("id", { ascending: false })
-          .limit(3000);
+        const [ticketsRes, resultadosRes] = await Promise.all([
+          sb
+            .from("tickets_apuestas")
+            .select("carrera, hipodromo, estado, anulada, nota_auditoria, fecha_carrera, fecha_registro")
+            .ilike("hipodromo", `%${hipoLimpio}%`)
+            .order("id", { ascending: false })
+            .limit(3000),
+          sb
+            .from("resultados_carreras")
+            .select("carrera, hipodromo, ganadores, orden_llegada, aplicado_a_tablas")
+            .eq("fecha", dia),
+        ]);
+
         if (!vivo) return;
+
+        const setLiq = new Set<number>();
+        if (resultadosRes.data && Array.isArray(resultadosRes.data)) {
+          for (const r of resultadosRes.data as Array<Record<string, unknown>>) {
+            if (claveHipodromo(String(r.hipodromo ?? "")) !== claveHipo) continue;
+            const tieneGan = Array.isArray(r.ganadores) && r.ganadores.length > 0;
+            const tieneLleg = Array.isArray(r.orden_llegada) && r.orden_llegada.length > 0;
+            const tieneTab = r.aplicado_a_tablas === true;
+            if (tieneGan || tieneLleg || tieneTab) {
+              const num = Number(r.carrera);
+              if (Number.isFinite(num) && num > 0) setLiq.add(num);
+            }
+          }
+        }
+        setCarrerasBdLiquidadas([...setLiq]);
+
         const setNums = new Set<number>();
-        for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+        for (const r of (ticketsRes.data ?? []) as Array<Record<string, unknown>>) {
           if (Boolean(r.anulada)) continue;
           const est = String(r.estado ?? "").trim().toLowerCase();
           if (est.startsWith("anul")) continue;
@@ -160,7 +199,7 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
       }
     })();
     return () => { vivo = false; };
-  }, [fecha, hipodromo, centrales, carrerasConJugadas?.length, recargaVersion, tieneHipodromo, hipoLimpio, claveHipo]);
+  }, [fecha, hipodromo, centrales, carrerasConJugadas?.length, carrerasLiquidadas?.length, recargaVersion, tieneHipodromo, hipoLimpio, claveHipo]);
 
   const porCarrera = (n: number): { estado: EstadoCarrera; tieneVentas: boolean } => {
     if (!tieneHipodromo) return { estado: "inactiva", tieneVentas: false };
@@ -201,7 +240,9 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
         estCentral === "liquidada" ||
         estCentral === "cerrada" ||
         central?.aplicado_a_tablas === true ||
-        (central?.ganadores?.length ?? 0) > 0;
+        (central?.ganadores?.length ?? 0) > 0 ||
+        Boolean(carrerasLiquidadas?.includes(n)) ||
+        carrerasBdLiquidadas.includes(n);
 
     const conVentas =
       tickets.some(
@@ -237,7 +278,13 @@ export function SemaforoCarreras({ hipodromo, fecha, carreras, activa, onSelecci
     );
   }
 
-  const todosNumeros = [...carreras, ...carrerasBdConJugadas, ...(carrerasConJugadas ?? [])];
+  const todosNumeros = [
+    ...carreras,
+    ...carrerasBdConJugadas,
+    ...(carrerasConJugadas ?? []),
+    ...(carrerasLiquidadas ?? []),
+    ...carrerasBdLiquidadas,
+  ];
   const maxCarrera = todosNumeros.length ? Math.max(...todosNumeros) : 0;
   const total = manual ? Math.max(MANUAL_TOTAL, maxCarrera, activa ?? 0) : maxCarrera;
 

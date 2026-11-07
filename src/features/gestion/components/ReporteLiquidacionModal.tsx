@@ -443,9 +443,10 @@ export default function ReporteLiquidacionModal({
         logoHipodromo: detalle.frescos.logoHipodromo ?? logoHipodromo,
         logoGrupo: detalle.frescos.logoGrupo ?? logoGrupo,
         filtroModalidad,
+        clientes,
       })
     );
-  }, [detalle, nombreGrupo, disponibleDe, liquidada, logoHipodromo, logoGrupo, filtroModalidad]);
+  }, [detalle, nombreGrupo, disponibleDe, liquidada, logoHipodromo, logoGrupo, filtroModalidad, clientes]);
 
   const itemsLiquidadasExtra = useMemo<ItemCarreraLiquidada[]>(() => {
     return carrerasDia

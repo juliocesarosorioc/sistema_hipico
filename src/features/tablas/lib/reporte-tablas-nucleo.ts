@@ -242,8 +242,8 @@ export function normalizarVenta(
   const cnom = texto(row.cliente_juega_nombre);
   // En los reportes SIEMPRE toma el seudónimo del usuario
   const aliasResuelto =
-    (cid && mapaSeudonimos?.get(cid)) ||
-    (cnom && mapaSeudonimos?.get(cnom.toUpperCase())) ||
+    (cid && (mapaSeudonimos?.get(cid) || mapaSeudonimos?.get(cid.toLowerCase()))) ||
+    (cnom && (mapaSeudonimos?.get(cnom) || mapaSeudonimos?.get(cnom.toUpperCase()) || mapaSeudonimos?.get(cnom.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().replace(/\s+/g, " ").toUpperCase()))) ||
     cnom ||
     cid;
   const jugador = aliasResuelto || "(sin jugador)";

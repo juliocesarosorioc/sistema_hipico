@@ -564,6 +564,15 @@ export async function listarClientes(force = false, grupoIdOverride?: string | n
 let cacheMapaSeudonimos: Map<string, string> | null = null;
 let cacheMapaSeudonimosTs = 0;
 
+function normalizarNombreBusquedaClientes(v: unknown): string {
+  return String(v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
 /**
  * Mapa centralizado de resolución de seudónimos para reportes.
  * En los reportes el usuario SIEMPRE debe identificarse por su SEUDÓNIMO.
@@ -576,15 +585,36 @@ export async function cargarMapaSeudonimosClientes(force = false): Promise<Map<s
   const mapa = new Map<string, string>();
   if (!supabase) return mapa;
   try {
-    const { data } = await supabase
+    let rows: Array<{ id?: string | number; nombre?: string | null; seudonimo?: string | null }> = [];
+    const { data, error } = await supabase
       .from("clientes")
       .select("id, nombre, seudonimo");
-    for (const c of (data ?? []) as Array<{ id?: string | number; nombre?: string | null; seudonimo?: string | null }>) {
+    if (!error && Array.isArray(data) && data.length > 0) {
+      rows = data;
+    } else {
+      const fall = await listarClientes(true).catch(() => []);
+      rows = fall.map((c) => ({ id: c.id, nombre: c.nombre, seudonimo: c.seudonimo }));
+    }
+
+    for (const c of rows) {
       const alias = String(c.seudonimo || c.nombre || "").trim();
       if (!alias) continue;
-      if (c.id != null) mapa.set(String(c.id), alias);
-      if (c.nombre) mapa.set(String(c.nombre).trim().toUpperCase(), alias);
-      if (c.seudonimo) mapa.set(String(c.seudonimo).trim().toUpperCase(), alias);
+      if (c.id != null) {
+        mapa.set(String(c.id), alias);
+        mapa.set(String(c.id).toLowerCase(), alias);
+      }
+      if (c.nombre) {
+        const nom = String(c.nombre).trim();
+        mapa.set(nom, alias);
+        mapa.set(nom.toUpperCase(), alias);
+        mapa.set(normalizarNombreBusquedaClientes(nom), alias);
+      }
+      if (c.seudonimo) {
+        const seud = String(c.seudonimo).trim();
+        mapa.set(seud, alias);
+        mapa.set(seud.toUpperCase(), alias);
+        mapa.set(normalizarNombreBusquedaClientes(seud), alias);
+      }
     }
     cacheMapaSeudonimos = mapa;
     cacheMapaSeudonimosTs = Date.now();
@@ -592,6 +622,27 @@ export async function cargarMapaSeudonimosClientes(force = false): Promise<Map<s
     /* best effort */
   }
   return mapa;
+}
+
+export function obtenerMapaSeudonimosClientesSync(): Map<string, string> | null {
+  return cacheMapaSeudonimos;
+}
+
+export function resolverSeudonimoClienteSync(
+  identificador: unknown,
+  mapa?: Map<string, string> | null
+): string {
+  const raw = String(identificador ?? "").trim();
+  if (!raw || raw === "—" || raw === "-") return raw;
+  const m = mapa ?? cacheMapaSeudonimos;
+  if (!m) return raw;
+  return (
+    m.get(raw) ||
+    m.get(raw.toUpperCase()) ||
+    m.get(normalizarNombreBusquedaClientes(raw)) ||
+    m.get(raw.toLowerCase()) ||
+    raw
+  );
 }
 
 export function limpiarCacheClientes(): void {

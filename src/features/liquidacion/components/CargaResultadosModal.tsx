@@ -89,6 +89,8 @@ type Props = {
   /** Cantidad de jugadas registradas para esta carrera. Si es 0 y no está liquidada, no se liquida. */
   cantidadJugadas?: number;
   onConfirmar: (r: PizarraResultados, motivo?: string) => void;
+  /** Acción para reversar la liquidación previa si la carrera ya está liquidada. */
+  onReversar?: () => void;
 };
 
 /**
@@ -114,6 +116,7 @@ export function CargaResultadosModal({
   editandoLiquidada = false,
   cantidadJugadas,
   onConfirmar,
+  onReversar,
 }: Props) {
   const sinJugadas = typeof cantidadJugadas === "number" && cantidadJugadas === 0 && !editandoLiquidada;
   const [filas, setFilas] = useState<Fila[]>([]);
@@ -779,7 +782,12 @@ export function CargaResultadosModal({
           <div className="mt-1.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-slate-200/90 bg-gradient-to-r from-slate-50 via-white to-emerald-50/40 p-2 sm:p-2.5 shadow-xs">
             {/* Estado / validación contextual de la liquidación */}
             <div className="flex items-center gap-2 text-xs">
-              {sinJugadas ? (
+              {editandoLiquidada ? (
+                <div className="inline-flex items-center gap-1.5 rounded-lg bg-rose-50 px-2.5 py-1 font-bold text-rose-700 border border-rose-300 text-[11px]">
+                  <span>🔒</span>
+                  <span>Carrera ya liquidada · Para volver a liquidar primero debe reversar la liquidación</span>
+                </div>
+              ) : sinJugadas ? (
                 <div className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1 font-bold text-sky-800 border border-sky-300 text-[11px]">
                   <span>ℹ️</span>
                   <span>Sin jugadas cargadas · No se liquidará hasta cargar información</span>
@@ -816,9 +824,25 @@ export function CargaResultadosModal({
               >
                 Cancelar (Esc)
               </button>
-              <button
-                type="button"
-                onClick={confirmar}
+              {editandoLiquidada ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCerrar();
+                    onReversar?.();
+                  }}
+                  className="group relative inline-flex items-center justify-center gap-2.5 rounded-2xl px-6 sm:px-7 py-2.5 sm:py-3 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 hover:from-rose-500 hover:to-red-500 shadow-lg shadow-rose-600/35 ring-4 ring-rose-400/40 hover:scale-[1.02] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)]"
+                  title="🔄 Reversar la liquidación de esta carrera para abrirla de nuevo y permitir volver a liquidar"
+                >
+                  <span className="text-base sm:text-lg leading-none transition-transform duration-200 group-hover:scale-125 drop-shadow">
+                    🔄
+                  </span>
+                  <span className="drop-shadow-xs">Reversar Liquidación</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={confirmar}
                 disabled={faltaMotivo || !validacionPizarra.ok || llenas === 0 || sinJugadas}
                 className={`group relative inline-flex items-center justify-center gap-2.5 rounded-2xl px-6 sm:px-7 py-2.5 sm:py-3 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all ${
                   !validacionPizarra.ok || llenas === 0 || faltaMotivo || sinJugadas
@@ -845,6 +869,7 @@ export function CargaResultadosModal({
                   ↵ Enter
                 </span>
               </button>
+              )}
             </div>
           </div>
         </div>

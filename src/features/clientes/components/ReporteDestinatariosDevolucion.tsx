@@ -10,6 +10,7 @@ import {
 } from "@/features/clientes/lib/comisiones-socios";
 import { type ClienteRow, listarClientes } from "@/features/clientes/lib/clientes";
 import { emitirToast } from "@/shared/lib/mensajeria";
+import { ModalRecalculoSemana } from "./ModalRecalculoSemana";
 
 interface Props {
   clientes?: ClienteRow[];
@@ -24,6 +25,7 @@ export function ReporteDestinatariosDevolucion({ clientes = [], tickets = [], on
   const [aplicando, setAplicando] = useState(false);
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
   const [ticketsCargados, setTicketsCargados] = useState<any[]>(tickets);
+  const [modalRecalculoAbierto, setModalRecalculoAbierto] = useState(false);
 
   useEffect(() => {
     if (tickets && tickets.length > 0) {
@@ -120,6 +122,17 @@ export function ReporteDestinatariosDevolucion({ clientes = [], tickets = [], on
           >
             <span>{aplicando ? "⏳" : "⚡"}</span>
             <span>{aplicando ? "Aplicando…" : "Aplicar Parámetros"}</span>
+          </button>
+
+          {/* Botón Recalcular Semana */}
+          <button
+            type="button"
+            onClick={() => setModalRecalculoAbierto(true)}
+            title="Recalcula y acredita a los saldos los nuevos incentivos y comisiones de la semana"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-purple-400/40 bg-purple-500/20 px-3 py-2 text-xs font-black text-purple-200 hover:bg-purple-500/30 transition-all"
+          >
+            <span>🔄</span>
+            <span>Recalcular Semana</span>
           </button>
 
           {/* Botón Copiar Texto WhatsApp */}
@@ -286,6 +299,13 @@ export function ReporteDestinatariosDevolucion({ clientes = [], tickets = [], on
           })}
         </div>
       </div>
+
+
+      <ModalRecalculoSemana
+        abierto={modalRecalculoAbierto}
+        onCerrar={() => setModalRecalculoAbierto(false)}
+        onRecalculoCompletado={() => onRecargar?.()}
+      />
     </div>
   );
 }

@@ -864,10 +864,20 @@ function mapearJugada(r: TicketApuestaJugada, mapaSeudonimos?: Map<string, strin
 
   const resolverSeudonimo = (nom?: string | null, id?: unknown): string => {
     if (!mapaSeudonimos) return String(nom ?? "—");
-    if (id != null && mapaSeudonimos.has(String(id))) return mapaSeudonimos.get(String(id))!;
-    const nomNorm = String(nom ?? "").trim().toUpperCase();
-    if (nomNorm && mapaSeudonimos.has(nomNorm)) return mapaSeudonimos.get(nomNorm)!;
-    return String(nom ?? "—");
+    if (id != null) {
+      const idStr = String(id).trim();
+      if (mapaSeudonimos.has(idStr)) return mapaSeudonimos.get(idStr)!;
+      if (mapaSeudonimos.has(idStr.toLowerCase())) return mapaSeudonimos.get(idStr.toLowerCase())!;
+    }
+    const nomStr = String(nom ?? "").trim();
+    if (nomStr) {
+      if (mapaSeudonimos.has(nomStr)) return mapaSeudonimos.get(nomStr)!;
+      const nomUpper = nomStr.toUpperCase();
+      if (mapaSeudonimos.has(nomUpper)) return mapaSeudonimos.get(nomUpper)!;
+      const nomNorm = nomUpper.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+      if (mapaSeudonimos.has(nomNorm)) return mapaSeudonimos.get(nomNorm)!;
+    }
+    return nomStr || "—";
   };
 
   const cJuega = resolverSeudonimo(r.cliente_juega_nombre, (r as Record<string, unknown>).cliente_juega_id);

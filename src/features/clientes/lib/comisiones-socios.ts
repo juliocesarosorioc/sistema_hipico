@@ -138,7 +138,7 @@ export interface ReporteDestinatariosDevolucionData {
   granTotal: number;
 }
 
-function normalizar(s?: string | null): string {
+export function normalizar(s?: string | null): string {
   if (!s) return "";
   return s
     .trim()
@@ -447,18 +447,58 @@ export function calcularReporteDestinatariosDevolucion(params?: {
   const tickets = params?.tickets || [];
   const clientes = params?.clientes || [];
 
-  // Lista única de destinatarios (Socios y Jugadores con devolución propia)
-  const destinatarios = [
-    { nombre: "ARRAEZ", pctPropio: 1.00 },
-    { nombre: "EDDIE", pctPropio: 1.25, esSocio: true },
-    { nombre: "FORTUNA", pctPropio: 1.00 },
-    { nombre: "INFANTINO", pctPropio: 1.00 },
-    { nombre: "MEMPHIS", pctPropio: 1.00, esSocio: true },
-    { nombre: "PARTNER", pctPropio: 1.50, esSocio: true },
-    { nombre: "RUSSO", pctPropio: 1.00 },
-    { nombre: "SAM", pctPropio: 1.50 },
-    { nombre: "THOR", pctPropio: 1.00, esSocio: true },
-  ];
+  // Lista dinámica de destinatarios (Socios y Jugadores con devolución propia o afiliados)
+  const mapaDestinatarios = new Map<string, { nombre: string; pctPropio: number; esSocio?: boolean }>();
+
+  // Fallback con los parámetros predeterminados para asegurar que nunca se pierdan los preconfigurados
+  for (const r of PARAMETROS_PREDETERMINADOS_DEVOLUCION) {
+    const n = normalizar(r.nombre);
+    if (n) {
+      mapaDestinatarios.set(n, {
+        nombre: r.nombre.toUpperCase(),
+        pctPropio: r.devolucionPropiaPct,
+        esSocio: r.esSocio,
+      });
+    }
+  }
+
+  // Enriquecer e incorporar dinámicamente con todos los clientes cargados
+  if (clientes && clientes.length > 0) {
+    const sociosAsignadosSet = new Set<string>();
+    for (const c of clientes) {
+      const socRef = String(c.socio_asignado || (c as any).socioAsignado || "").trim();
+      if (socRef) {
+        sociosAsignadosSet.add(normalizar(socRef));
+      }
+    }
+
+    for (const c of clientes) {
+      const nombreReal = String(c.nombre || c.seudonimo || "").trim();
+      const norm = normalizar(nombreReal);
+      if (!norm) continue;
+
+      const devPct = Number(c.devolucion ?? (c as any).incentivo_pct ?? 0) || 0;
+      const esSoc = Boolean(
+        c.es_socio ||
+        (c as any).esSocio ||
+        sociosAsignadosSet.has(norm) ||
+        (c.id != null && sociosAsignadosSet.has(normalizar(String(c.id))))
+      );
+
+      if (devPct > 0 || esSoc || mapaDestinatarios.has(norm)) {
+        const previo = mapaDestinatarios.get(norm);
+        mapaDestinatarios.set(norm, {
+          nombre: nombreReal.toUpperCase(),
+          pctPropio: devPct > 0 ? devPct : (previo?.pctPropio ?? 0),
+          esSocio: esSoc || Boolean(previo?.esSocio),
+        });
+      }
+    }
+  }
+
+  const destinatarios = Array.from(mapaDestinatarios.values()).sort((a, b) =>
+    a.nombre.localeCompare(b.nombre)
+  );
 
   const items: ItemReporteDestinatario[] = [];
   let granTotalPropia = 0;

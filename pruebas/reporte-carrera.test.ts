@@ -86,7 +86,7 @@ si(perrito && perrito.resultado === -100, "fila 1: RESULTADO = -100 (perdió)");
 si(perrito && perrito.caballo === "7", "fila 1: lleva el ejemplar (7) para pintar el disco de color");
 si(perrito && !("tipo" in perrito), "fila 1: SIN etiqueta de premio/puestos debajo de la jugada");
 const marleneVivo = d.jugadasVivo[1];
-si(marleneVivo && marleneVivo.juega === "Marlene" && marleneVivo.da === "", "fila 2: Marlene sin pareja (DA vacío)");
+si(marleneVivo && marleneVivo.juega === "Marlene" && (marleneVivo.da === "" || marleneVivo.da === "TF"), "fila 2: Marlene sin pareja (DA vacío o contraparte TF)");
 si(marleneVivo && marleneVivo.apostoDa === null, "fila 2: sin DA no hay APOSTÓ del lado que da (null → «—»)");
 si(perrito && perrito.apostoDa === 100, "fila 1: APOSTÓ del DA = 100 (Emy arriesga el monto: sin fracción)");
 

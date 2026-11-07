@@ -613,7 +613,7 @@ export function normalizarTickets(
         fecha,
         horaCarga: juega.horaCarga,
         rol: "Juega",
-        cliente: String((juega.clienteId && optsUnificados?.mapaSeudonimos?.get(String(juega.clienteId))) || (juega.clienteNombre && optsUnificados?.mapaSeudonimos?.get(String(juega.clienteNombre).trim().toUpperCase())) || juega.clienteNombre),
+        cliente: String((juega.clienteId && (optsUnificados?.mapaSeudonimos?.get(String(juega.clienteId)) || optsUnificados?.mapaSeudonimos?.get(String(juega.clienteId).toLowerCase()))) || (juega.clienteNombre && (optsUnificados?.mapaSeudonimos?.get(String(juega.clienteNombre).trim().toUpperCase()) || optsUnificados?.mapaSeudonimos?.get(String(juega.clienteNombre).trim()))) || juega.clienteNombre),
         jugada: juega.jugada,
         caballo: juega.caballo,
         estado: juega.estado,
@@ -653,7 +653,7 @@ export function normalizarTickets(
         fecha,
         horaCarga: consigue.horaCarga,
         rol: "Consigue",
-        cliente: String((consigue.clienteId && optsUnificados?.mapaSeudonimos?.get(String(consigue.clienteId))) || (consigue.clienteNombre && optsUnificados?.mapaSeudonimos?.get(String(consigue.clienteNombre).trim().toUpperCase())) || consigue.clienteNombre),
+        cliente: String((consigue.clienteId && (optsUnificados?.mapaSeudonimos?.get(String(consigue.clienteId)) || optsUnificados?.mapaSeudonimos?.get(String(consigue.clienteId).toLowerCase()))) || (consigue.clienteNombre && (optsUnificados?.mapaSeudonimos?.get(String(consigue.clienteNombre).trim().toUpperCase()) || optsUnificados?.mapaSeudonimos?.get(String(consigue.clienteNombre).trim()))) || consigue.clienteNombre),
         jugada: consigue.jugada,
         caballo: consigue.caballo,
         estado: consigue.estado,
@@ -803,8 +803,19 @@ async function leerPorRespaldo(opts: OpcionesReporteDiario): Promise<ResultadoRe
     const alias = String(c.seudonimo || c.nombre || "").trim();
     if (alias) {
       mapaSeudonimos.set(idStr, alias);
-      if (c.nombre) mapaSeudonimos.set(String(c.nombre).trim().toUpperCase(), alias);
-      if (c.seudonimo) mapaSeudonimos.set(String(c.seudonimo).trim().toUpperCase(), alias);
+      mapaSeudonimos.set(idStr.toLowerCase(), alias);
+      if (c.nombre) {
+        const nom = String(c.nombre).trim();
+        mapaSeudonimos.set(nom, alias);
+        mapaSeudonimos.set(nom.toUpperCase(), alias);
+        mapaSeudonimos.set(nom.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase(), alias);
+      }
+      if (c.seudonimo) {
+        const seud = String(c.seudonimo).trim();
+        mapaSeudonimos.set(seud, alias);
+        mapaSeudonimos.set(seud.toUpperCase(), alias);
+        mapaSeudonimos.set(seud.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase(), alias);
+      }
     }
     if (c.nombre) devolucionPorCliente.set(String(c.nombre).trim().toUpperCase(), pct);
     if (c.seudonimo) devolucionPorCliente.set(String(c.seudonimo).trim().toUpperCase(), pct);

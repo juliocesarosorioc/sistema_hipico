@@ -195,6 +195,8 @@
     "./cruce-rol-consigue.test.ts",
     "../src/features/whatsapp-sala/lib/salas.ts",
     "./salas-por-grupo.test.ts",
-    "./certificacion-exhaustiva-cruces.test.ts"
+    "./certificacion-exhaustiva-cruces.test.ts",
+    "../src/features/clientes/lib/recalculo-semanal.ts",
+    "./recalculo-semanal-devoluciones.test.ts"
   ]
 }

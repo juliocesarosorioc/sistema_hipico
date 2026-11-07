@@ -38,7 +38,7 @@ import {
   categoriaJugadaAdelantada,
   type CategoriaJugadaAdelantada,
 } from "@/features/liquidacion/lib/reporte-carrera";
-import { pagoPotencialTablaFija } from "@/features/liquidacion/lib/reportes";
+import { pagoPotencialTablaFija, resolverSeudonimoCliente } from "@/features/liquidacion/lib/reportes";
 import { evaluarPuestoPorPosicion } from "@/features/motores/lib/puestos";
 import { esJugadaAnuladaOExcluida } from "@/features/saldos/lib/contabilidad-central";
 import { jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros-nucleo";
@@ -59,7 +59,9 @@ export type JugadaPersistida = {
   /** Tasa de comisión del ticket (%), la que retiene la casa sobre la ganancia. */
   comision_porcentaje?: number | null;
   estado?: string | null;
+  cliente_juega_id?: string | number | null;
   cliente_juega_nombre?: string | null;
+  cliente_consigue_id?: string | number | null;
   cliente_consigue_nombre?: string | null;
   anulada?: boolean | null;
   es_adelantada?: boolean | null;
@@ -550,6 +552,18 @@ function filaDesdePersistida(
     }
   }
 
+  const c1Final =
+    (j.cliente_juega_id && resolverSeudonimoCliente(j.cliente_juega_id) !== j.cliente_juega_id
+      ? resolverSeudonimoCliente(j.cliente_juega_id)
+      : resolverSeudonimoCliente(cliente1Resuelto)) || cliente1Resuelto;
+
+  const c2Raw = TXT(j.cliente_consigue_nombre) || TXT(sesion?.cliente2);
+  const c2Visible =
+    (j.cliente_consigue_id && resolverSeudonimoCliente(j.cliente_consigue_id) !== j.cliente_consigue_id
+      ? resolverSeudonimoCliente(j.cliente_consigue_id)
+      : resolverSeudonimoCliente(c2Raw)) || c2Raw;
+  const c2Final = resolverContraparteModalidad(nombreJug, c2Visible);
+
   return {
     clave: `db-${ticketId ?? nombreJug}-${caballo}`,
     ticketId,
@@ -560,8 +574,8 @@ function filaDesdePersistida(
     ...(cantidadTablas !== undefined ? { cantidadTablas } : {}),
     aposto1,
     aposto2,
-    cliente1: cliente1Resuelto,
-    cliente2: resolverContraparteModalidad(nombreJug, j.cliente_consigue_nombre || sesion?.cliente2),
+    cliente1: c1Final,
+    cliente2: c2Final,
     estado,
     estadoLiquidacion: estadoLiquidacionDe(estado),
     validada: true,
@@ -596,6 +610,9 @@ function filaDesdeSesion(
   const estado = involucraRetirado ? "Retirado" : "Pendiente";
   const { lado1, lado2, aposto1, aposto2 } = ladosDeLaJugada(monto, estado, 0, 0, nombreJug);
   const esAdel = Boolean(t.esAdelantada) || esNombreModalidadAdelantada(nombreJug);
+  const c1Final = resolverSeudonimoCliente(t.cliente1) || TXT(t.cliente1);
+  const c2Raw = resolverSeudonimoCliente(t.cliente2) || TXT(t.cliente2);
+  const c2Final = resolverContraparteModalidad(nombreJug, c2Raw);
   return {
     clave: `ses-${t.id ?? ticketId ?? nombreJug}`,
     ticketId,
@@ -604,8 +621,8 @@ function filaDesdeSesion(
     monto,
     aposto1,
     aposto2,
-    cliente1: TXT(t.cliente1),
-    cliente2: resolverContraparteModalidad(nombreJug, t.cliente2),
+    cliente1: c1Final,
+    cliente2: c2Final,
     estado,
     estadoLiquidacion: involucraRetirado ? "Liquidada" : "Pendiente",
     validada: ticketId !== null,

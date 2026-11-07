@@ -165,6 +165,9 @@ async function conectarRealtimeCarreras(): Promise<void> {
       .on("postgres_changes", { event: "*", schema: "public", table: "carreras" }, () => {
         set((s) => ({ versionCarreras: s.versionCarreras + 1 }));
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "resultados_carreras" }, () => {
+        set((s) => ({ versionCarreras: s.versionCarreras + 1 }));
+      })
       .subscribe();
   } catch {
     // Sin realtime (publicación no aplicada o red): queda el refresco por

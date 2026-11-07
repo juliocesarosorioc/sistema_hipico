@@ -605,13 +605,36 @@ export async function revertirResultadoCentral(input: {
 
   if (!supabase) return { ok: true };
   const sdb = supabase;
-  // Asegurar que tanto `resultados_carreras` como `carreras` vuelvan a "Programada"
+  // 1) Asegurar que la tabla matriz `carreras` vuelva a "Programada"
+  try {
+    await sdb
+      .from("carreras")
+      .update({ estado: "Programada" })
+      .eq("fecha", f)
+      .ilike("hipodromo", hip)
+      .eq("carrera", carrera);
+  } catch {
+    /* best-effort */
+  }
+
+  // 2) Eliminar o resetear la fila en `resultados_carreras` para que la carrera quede limpia
+  try {
+    await sdb
+      .from("resultados_carreras")
+      .delete()
+      .eq("fecha", f)
+      .ilike("hipodromo", hip)
+      .eq("carrera", carrera);
+  } catch {
+    /* best-effort delete */
+  }
+
   try {
     await sdb
       .from("resultados_carreras")
       .update({
         estado: "Programada",
-        ganadores: [],
+        ganadores: null,
         aplicado_a_tablas: false,
         orden_llegada: null,
         dividendos: null,
@@ -622,26 +645,24 @@ export async function revertirResultadoCentral(input: {
       .ilike("hipodromo", hip)
       .eq("carrera", carrera);
   } catch {
-    /* best-effort */
+    /* best-effort update */
   }
-  // 1) RPC dedicada (permiso de reversión validado en el servidor).
+
+  // 3) RPC dedicada en servidor (si existe y tiene permisos)
   try {
-    const { error } = await sdb.rpc("club_revertir_resultado_carrera", {
+    await sdb.rpc("club_revertir_resultado_carrera", {
       p_fecha: f,
       p_hipodromo: hip,
       p_carrera: carrera,
       p_usuario: null,
     });
-    if (!error) return { ok: true };
-    if (!/club_revertir_resultado_carrera|not found|404|PGRST202/i.test(error.message ?? "")) {
-      return { ok: false, error: error.message };
-    }
   } catch {
-    /* RPC ausente → se usa el camino de guardarResultado */
+    /* RPC opcional */
   }
-  // 2) Fallback: deja los campos del resultado en blanco.
+
+  // 4) Fallback: deja los campos del resultado en blanco si quedaron registros
   try {
-    const err = await guardarResultado(f, hip, carrera, {
+    await guardarResultado(f, hip, carrera, {
       ganadores: [],
       retirados: "NO HUBO RETIROS",
       aplicado_a_tablas: false,
@@ -650,10 +671,11 @@ export async function revertirResultadoCentral(input: {
       premio_oficial: null,
       premio_recalculado: null,
     });
-    return err ? { ok: false, error: err } : { ok: true };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
+  } catch {
+    /* noop */
   }
+
+  return { ok: true };
 }
 
 

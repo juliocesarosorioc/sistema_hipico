@@ -8,6 +8,7 @@ import { ModalCliente } from "@/features/clientes/components/ModalCliente";
 import { ModalCreacionRapidaCliente } from "@/features/clientes/components/ModalCreacionRapidaCliente";
 import { ModalPortalCliente } from "@/features/clientes/components/ModalPortalCliente";
 import { ModalCruceJugadores } from "@/features/clientes/components/ModalCruceJugadores";
+import { ModalRecalculoSemana } from "@/features/clientes/components/ModalRecalculoSemana";
 import { EstadoCuentaAcordeon } from "@/features/clientes/components/EstadoCuentaAcordeon";
 import { ReporteDestinatariosDevolucion } from "@/features/clientes/components/ReporteDestinatariosDevolucion";
 import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente";
@@ -157,6 +158,7 @@ export function ClientesModule() {
   const [socioConvertir, setSocioConvertir] = useState("");
 
   const [modalCruceAbierto, setModalCruceAbierto] = useState(false);
+  const [abrirRecalculoSemana, setAbrirRecalculoSemana] = useState(false);
   const [clienteEmisorCruceId, setClienteEmisorCruceId] = useState<string | null>(null);
   const [modalPagoGanadorAbierto, setModalPagoGanadorAbierto] = useState(false);
   const [clientePagoGanadorId, setClientePagoGanadorId] = useState<string | null>(null);
@@ -400,6 +402,15 @@ export function ClientesModule() {
             title="Realizar cruce / transferencia de saldo entre jugadores con partida doble y captura de soporte obligatoria"
           >
             <span>🔀</span> Cruce entre Jugadores
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAbrirRecalculoSemana(true)}
+            className="!border-purple-400 !bg-purple-50 !font-black !text-purple-800 hover:!bg-purple-100"
+            title="Recalcular devoluciones e incentivos de la semana para todos los jugadores y socios tras actualizar parámetros"
+          >
+            <span>🔄</span> Recalcular Semana
           </Button>
           <Button
             variant="outline"
@@ -990,7 +1001,15 @@ export function ClientesModule() {
         </div>
       ) : null}
 
-            <ModalCruceJugadores
+      
+      <ModalRecalculoSemana
+        abierto={abrirRecalculoSemana}
+        onCerrar={() => setAbrirRecalculoSemana(false)}
+        onRecalculoCompletado={() => void recargar(grupoConsultado)}
+        grupoId={grupoConsultado}
+      />
+
+      <ModalCruceJugadores
         abierto={modalCruceAbierto}
         onCerrar={() => {
           setModalCruceAbierto(false);

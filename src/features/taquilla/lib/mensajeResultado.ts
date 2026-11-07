@@ -37,6 +37,7 @@ import {
   agruparAdelantadasPorSeccion,
   esJugadaAdelantadaReporte,
 } from "@/features/liquidacion/lib/reporte-carrera";
+import { resolverSeudonimoCliente } from "@/features/liquidacion/lib/reportes";
 import {
   esMarca,
   esTablaFija,
@@ -167,11 +168,11 @@ export function resultadoDeJugada(
   if (t.ganador === undefined && res.indeterminado) ganador = "pendiente";
 
   const relacion: JugadaRelacion = {
-    clienteJuega: String(t.cliente1 ?? "—"),
+    clienteJuega: resolverSeudonimoCliente(t.cliente1) || String(t.cliente1 ?? "—"),
     jugada: esNini ? normalizarNini(tipo) : String(tipo || "?").trim().toUpperCase(),
     caballo: String(t.caballo ?? "").trim(),
     monto: montoFinal,
-    clienteConsigue: t.cliente2 ? String(t.cliente2) : undefined,
+    clienteConsigue: t.cliente2 ? (resolverSeudonimoCliente(t.cliente2) || String(t.cliente2)) : undefined,
     modalidad: esNini ? "NINI" : "GENERICA",
     ...(t.precioTabla !== undefined ? { precioPorTablaUnitario: t.precioTabla } : {}),
     ...(t.cantidadTablas !== undefined ? { cantidadTablas: t.cantidadTablas } : {}),
@@ -230,11 +231,11 @@ export function jugadaRelacionDeTicket(t: TicketMensaje): JugadaRelacion {
   const { tipo, monto } = dividirComando(t.comando);
   const montoFinal = monto != null && monto > 0 ? monto : t.monto;
   return {
-    clienteJuega: String(t.cliente1 ?? "—"),
+    clienteJuega: resolverSeudonimoCliente(t.cliente1) || String(t.cliente1 ?? "—"),
     jugada: String(tipo ?? "").trim().toUpperCase(),
     caballo: String(t.caballo ?? "").trim(),
     monto: montoFinal,
-    clienteConsigue: t.cliente2 ? String(t.cliente2) : undefined,
+    clienteConsigue: t.cliente2 ? (resolverSeudonimoCliente(t.cliente2) || String(t.cliente2)) : undefined,
     ...(t.precioTabla !== undefined ? { precioPorTablaUnitario: t.precioTabla } : {}),
     ...(t.cantidadTablas !== undefined ? { cantidadTablas: t.cantidadTablas } : {}),
     ...(t.esAdelantada !== undefined ? { esAdelantada: t.esAdelantada } : {}),
