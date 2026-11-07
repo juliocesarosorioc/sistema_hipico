@@ -142,7 +142,8 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
   const [mensajeCitado, setMensajeCitado] = useState<MensajeSala | null>(null);
   const [inputTexto, setInputTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
-  const [grabandoVoz, setGrabandoVoz] = useState(false);
+  const [imagenAdjunta, setImagenAdjunta] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Paneles responsive
   const [panelDerechoAbierto, setPanelDerechoAbierto] = useState(false);
@@ -966,10 +967,12 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
   // ──────────────────────────────────────────────────────────────────────────
   const enviarMensaje = async (textoPersonalizado?: string) => {
     const texto = (textoPersonalizado ?? inputTexto).trim();
-    if (!texto || !sesion || enviando) return;
+    if ((!texto && !imagenAdjunta) || !sesion || enviando) return;
 
+    const imagenUrlParaEnviar = imagenAdjunta || undefined;
     setEnviando(true);
     setInputTexto("");
+    setImagenAdjunta(null);
     const replyId = mensajeCitado?.id || null;
     setMensajeCitado(null);
 
@@ -1273,15 +1276,23 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         return;
       }
 
-      // ABRIR CARRERA
+      // ABRIR CARRERA (Segmentado por Hipódromo del Chat y alimenta la BD)
       if (cmdOp.tipo === "ABRIR_CARRERA") {
-        const hipoNuevo = cmdOp.hipodromo || carreraActiva.hipodromo;
+        const salaSeleccionada = salas.find((s) => s.id === grupoActivoId);
+        const hipoChat =
+          salaSeleccionada?.hipodromo ||
+          (salaSeleccionada?.nombre?.toUpperCase().includes("RINCONADA") ? "LA RINCONADA" : null) ||
+          (salaSeleccionada?.nombre?.toUpperCase().includes("VALENCIA") ? "VALENCIA" : null);
+
+        const hipoNuevo = cmdOp.hipodromo || hipoChat || carreraActiva.hipodromo || "LA RINCONADA";
         const cNum = cmdOp.carrera;
+        const fechaHoy = new Date().toISOString().slice(0, 10);
 
         setCarreraActiva((prev) => ({
           ...prev,
           hipodromo: hipoNuevo,
           carrera: cNum,
+          fecha: fechaHoy,
           estado: "ABIERTA",
         }));
 
@@ -1303,12 +1314,25 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
 
         if (supabase) {
           try {
+            // 1. Alimenta la base de datos de carreras correspondientes
+            await supabase.from("carreras").upsert(
+              {
+                fecha: fechaHoy,
+                hipodromo: hipoNuevo,
+                carrera: cNum,
+                estado: "PROGRAMADA",
+                updated_at: nowIso,
+              },
+              { onConflict: "fecha,hipodromo,carrera" }
+            );
+
+            // 2. Alimenta el estado del chat / grupo
             await supabase.from("chat_estado_grupo").upsert(
               {
                 grupo_id: grupoActivoId,
                 hipodromo: hipoNuevo,
                 carrera: cNum,
-                fecha: new Date().toISOString().slice(0, 10),
+                fecha: fechaHoy,
                 estado: "ABIERTA",
                 updated_at: nowIso,
               },
@@ -1378,13 +1402,110 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         return;
       }
 
-      // PUBLICAR PIZARRA CONTEXTUAL Y LIQUIDAR
+      // PUBLICAR PIZARRA CONTEXTUAL, LIQUIDAR Y TOTALIZAR INFORME TIPO WHATSAPP
       if (cmdOp.tipo === "PIZARRA") {
-        await liquidarCarreraChatP2p({
+        const resLiq = await liquidarCarreraChatP2p({
           grupoId: grupoActivoId,
           pizarra: cmdOp.pizarra,
           operadorNombre: sesion.nombre,
         });
+
+        // Actualizar estado en carreras de la base de datos
+        const fechaHoy = new Date().toISOString().slice(0, 10);
+        if (supabase) {
+          try {
+            await supabase
+              .from("carreras")
+              .update({
+                pizarra_oficial: cmdOp.pizarra,
+                estado: "FINALIZADA",
+                updated_at: nowIso,
+              })
+              .eq("fecha", carreraActiva.fecha || fechaHoy)
+              .eq("hipodromo", carreraActiva.hipodromo)
+              .eq("carrera", carreraActiva.carrera);
+          } catch {
+            /* noop */
+          }
+        }
+
+        // Generar informe de resultados tipo WhatsApp (quién gana, quién pierde, y totalizado)
+        const cabGanador = cmdOp.pizarra.split(/[- ,/]+/)[0]?.trim();
+        const ticketsCarrera = tickets.filter(
+          (t) =>
+            Number(t.carrera) === Number(carreraActiva.carrera) &&
+            String(t.hipodromo).toUpperCase().trim() === String(carreraActiva.hipodromo).toUpperCase().trim()
+        );
+
+        const balancePorJugador = new Map<string, number>();
+        const detallesJugadas: string[] = [];
+
+        for (const t of ticketsCarrera) {
+          const ganoJuega = String(t.caballo).trim() === cabGanador;
+          const monto = Number(t.monto) || 0;
+          if (ganoJuega) {
+            balancePorJugador.set(t.juega_nombre, (balancePorJugador.get(t.juega_nombre) || 0) + monto);
+            balancePorJugador.set(t.da_nombre, (balancePorJugador.get(t.da_nombre) || 0) - monto);
+            detallesJugadas.push(`✅ *Ticket #${t.numero_ticket}*: ${t.juega_nombre} GANA +${monto.toFixed(2)} (#${t.caballo}) vs ${t.da_nombre}`);
+          } else {
+            balancePorJugador.set(t.da_nombre, (balancePorJugador.get(t.da_nombre) || 0) + monto);
+            balancePorJugador.set(t.juega_nombre, (balancePorJugador.get(t.juega_nombre) || 0) - monto);
+            detallesJugadas.push(`❌ *Ticket #${t.numero_ticket}*: ${t.da_nombre} COBRA +${monto.toFixed(2)} vs ${t.juega_nombre} (#${t.caballo})`);
+          }
+        }
+
+        const positivos = [...balancePorJugador.entries()].filter(([_, b]) => b > 0);
+        const negativos = [...balancePorJugador.entries()].filter(([_, b]) => b < 0);
+
+        let textoInformeWhatsapp = `🏁 *INFORME OFICIAL DE RESULTADOS Y LIQUIDACIÓN*\n🏇 *${carreraActiva.hipodromo}* · Carrera ${carreraActiva.carrera}\n📅 ${carreraActiva.fecha || fechaHoy}\n🥇 Pizarra Oficial: *${cmdOp.pizarra}* (Ganador: #${cabGanador})\n`;
+
+        if (detallesJugadas.length > 0) {
+          textoInformeWhatsapp += `\n📋 *DETALLE DE JUGADAS:*\n` + detallesJugadas.slice(0, 30).join("\n") + `\n`;
+        }
+
+        if (positivos.length > 0) {
+          textoInformeWhatsapp += `\n🟢 *POSITIVOS (+):*\n` + positivos.map(([nom, bal]) => `• ${nom}: +${bal.toFixed(2)}`).join("\n");
+        }
+        if (negativos.length > 0) {
+          textoInformeWhatsapp += `\n\n🔴 *NEGATIVOS (-):*\n` + negativos.map(([nom, bal]) => `• ${nom}: -${Math.abs(bal).toFixed(2)}`).join("\n");
+        }
+
+        const totalVolumen = ticketsCarrera.reduce((acc, t) => acc + Number(t.monto || 0), 0);
+        textoInformeWhatsapp += `\n\n📊 *TOTALIZACIÓN:* ${ticketsCarrera.length} tickets liquidados · Volumen Total: ${totalVolumen.toFixed(2)}`;
+
+        const msgReporte: MensajeSala = {
+          id: `reporte-${Date.now()}`,
+          grupo_id: grupoActivoId,
+          autor_id: null,
+          autor_nombre: "Agente IA Oficial",
+          autor_rol: "BOT",
+          texto: textoInformeWhatsapp,
+          tipo: "PIZARRA",
+          created_at: nowIso,
+          esMio: false,
+        };
+
+        setMensajes((prev) => [...prev, msgReporte]);
+        canalRealtimeRef.current?.send({ type: "broadcast", event: "mensaje_sala", payload: msgReporte });
+
+        if (supabase) {
+          try {
+            await supabase.from("chat_mensajes_sala").insert([
+              {
+                id: msgReporte.id,
+                grupo_id: grupoActivoId,
+                autor_id: null,
+                autor_nombre: "Agente IA Oficial",
+                autor_rol: "BOT",
+                texto: textoInformeWhatsapp,
+                tipo: "PIZARRA",
+              },
+            ]);
+          } catch {
+            /* noop */
+          }
+        }
+
         cargarMensajesYTickets(grupoActivoId, sesion.id);
         setEnviando(false);
         return;
@@ -1695,8 +1816,9 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
       autor_id: sesion.id,
       autor_nombre: sesion.nombre,
       autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
-      texto,
+      texto: texto || "🖼️ [Imagen adjunta]",
       tipo: "TEXTO",
+      imagen_url: imagenUrlParaEnviar || undefined,
       reply_to_msg_id: replyId,
       created_at: nowIso,
       esMio: true,
@@ -1718,8 +1840,9 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
             autor_id: sesion.id,
             autor_nombre: sesion.nombre,
             autor_rol: nuevoMsgUsuario.autor_rol,
-            texto,
+            texto: nuevoMsgUsuario.texto,
             tipo: "TEXTO",
+            imagen_url: imagenUrlParaEnviar || null,
             reply_to_msg_id: replyId,
           },
         ]);
@@ -1867,35 +1990,39 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     }
   };
 
-  // Dictado por voz nativo
-  const alternarDictadoVoz = () => {
-    if (typeof window === "undefined") return;
-    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRec) {
-      alert("Tu dispositivo no soporta dictado de voz nativo en este navegador.");
-      return;
+  // Adjunto de imagen (solo Administrador mediante pegado o selección de archivo)
+  const handlePasteImagen = (e: React.ClipboardEvent) => {
+    if (!sesion?.esAdmin) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf("image") !== -1) {
+        const blob = item.getAsFile();
+        if (blob) {
+          const reader = new FileReader();
+          reader.onload = (uploadEvent) => {
+            const base64 = uploadEvent.target?.result as string;
+            setImagenAdjunta(base64);
+          };
+          reader.readAsDataURL(blob);
+          e.preventDefault();
+          break;
+        }
+      }
     }
+  };
 
-    if (grabandoVoz) {
-      setGrabandoVoz(false);
-      return;
-    }
-
-    try {
-      const rec = new SpeechRec();
-      rec.lang = "es-VE";
-      rec.interimResults = false;
-      rec.onstart = () => setGrabandoVoz(true);
-      rec.onresult = (evt: any) => {
-        const trans = evt.results?.[0]?.[0]?.transcript;
-        if (trans) setInputTexto(trans);
-        setGrabandoVoz(false);
+  const handleSelectImagenArchivo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!sesion?.esAdmin) return;
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        const base64 = uploadEvent.target?.result as string;
+        setImagenAdjunta(base64);
       };
-      rec.onerror = () => setGrabandoVoz(false);
-      rec.onend = () => setGrabandoVoz(false);
-      rec.start();
-    } catch {
-      setGrabandoVoz(false);
+      reader.readAsDataURL(file);
     }
   };
 
@@ -2190,57 +2317,84 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         )}
 
         {/* Barra Inferior Fija de Input */}
-        <div className="flex items-center gap-2 bg-[#202c33] px-3 py-2 border-t border-[#222e35]">
-          <button
-            type="button"
-            onClick={() => setMostrarGruposMovil(!mostrarGruposMovil)}
-            className="md:hidden flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#111b21] text-white hover:bg-[#2a3942] text-sm"
-            title="Cambiar de grupo"
-          >
-            💬
-          </button>
+        <div className="flex flex-col bg-[#202c33] border-t border-[#222e35]">
+          {imagenAdjunta && (
+            <div className="flex items-center justify-between border-b border-[#2a3942] bg-[#111b21] px-3 py-1.5 text-xs text-[#00a884]">
+              <div className="flex items-center gap-2 min-w-0">
+                <img src={imagenAdjunta} alt="Vista previa" className="h-8 w-8 rounded object-cover border border-[#00a884]/60" />
+                <span className="text-xs font-bold truncate">🖼️ Imagen adjunta (Solo Administrador)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImagenAdjunta(null)}
+                className="h-5 w-5 rounded-full bg-[#202c33] hover:bg-[#2a3942] text-slate-300 flex items-center justify-center text-xs ml-2 cursor-pointer"
+                title="Quitar imagen"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
-          <input
-            type="text"
-            value={inputTexto}
-            onChange={(e) => setInputTexto(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                enviarMensaje();
+          <div className="flex items-center gap-2 px-3 py-2">
+            <button
+              type="button"
+              onClick={() => setMostrarGruposMovil(!mostrarGruposMovil)}
+              className="md:hidden flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#111b21] text-white hover:bg-[#2a3942] text-sm"
+              title="Cambiar de grupo"
+            >
+              💬
+            </button>
+
+            {sesion?.esAdmin && (
+              <>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleSelectImagenArchivo}
+                  accept="image/*"
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Adjuntar imagen (Pegando o seleccionando archivo · Solo Administrador)"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#111b21] hover:bg-[#2a3942] text-[#00a884] text-base shadow-sm cursor-pointer active:scale-95 transition-all"
+                >
+                  📎
+                </button>
+              </>
+            )}
+
+            <input
+              type="text"
+              value={inputTexto}
+              onChange={(e) => setInputTexto(e.target.value)}
+              onPaste={handlePasteImagen}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  enviarMensaje();
+                }
+              }}
+              placeholder={
+                sesion?.esAdmin
+                  ? "Escribe al Agente IA (o pega imágenes con Ctrl+V)..."
+                  : esCerrada
+                  ? "⛔ Carrera cerrada (no se admiten jugadas)..."
+                  : "Escribe al Agente IA (ej. Juego 1p 7 100, 50 2n al 1)..."
               }
-            }}
-            placeholder={
-              grabandoVoz
-                ? "🎙️ Escuchando jugada por dictado de voz..."
-                : esCerrada
-                ? "⛔ Carrera cerrada (no se admiten jugadas)..."
-                : "Escribe al Agente IA (ej. Juego 1p 7 100, 50 2n al 1)..."
-            }
-            className={`flex-1 rounded-2xl bg-[#2a3942] px-4 py-2.5 text-sm text-[#e9edef] placeholder-[#8696a0] border shadow-sm focus:border-[#00a884] focus:outline-none transition-all ${
-              grabandoVoz ? "border-red-500 bg-red-950/40 animate-pulse" : "border-transparent"
-            }`}
-          />
+              className="flex-1 rounded-2xl bg-[#2a3942] px-4 py-2.5 text-sm text-[#e9edef] placeholder-[#8696a0] border border-transparent shadow-sm focus:border-[#00a884] focus:outline-none transition-all"
+            />
 
-          <button
-            type="button"
-            onClick={alternarDictadoVoz}
-            title={grabandoVoz ? "Detener dictado" : "Dictar por voz"}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white shadow-md active:scale-95 transition-all ${
-              grabandoVoz ? "bg-red-500 animate-bounce" : "bg-[#128c7e] hover:bg-[#008069]"
-            }`}
-          >
-            🎙️
-          </button>
-
-          <button
-            type="button"
-            onClick={() => enviarMensaje()}
-            disabled={!inputTexto.trim() || enviando}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#00a884] text-white shadow-md hover:bg-[#02906f] active:scale-95 disabled:opacity-40 transition-all"
-          >
-            ➤
-          </button>
+            <button
+              type="button"
+              onClick={() => enviarMensaje()}
+              disabled={(!inputTexto.trim() && !imagenAdjunta) || enviando}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#00a884] text-white shadow-md hover:bg-[#02906f] active:scale-95 disabled:opacity-40 transition-all cursor-pointer"
+            >
+              ➤
+            </button>
+          </div>
         </div>
       </div>
 

@@ -5,6 +5,7 @@ export interface SalaChat {
   grupo_id: string;
   nombre: string;
   descripcion?: string;
+  hipodromo?: string | null;
   es_principal?: boolean;
   activo?: boolean;
   orden?: number;
@@ -44,20 +45,22 @@ export function generarSalasDefaultGrupo(grupoId: string, nombreGrupo?: string):
   const etiquetaGrupo = nombreGrupo ? ` · ${nombreGrupo}` : "";
   return [
     {
-      id: `${grupoId}_principal`,
+      id: `${grupoId}_rinconada`,
       grupo_id: String(grupoId),
-      nombre: `Sala Principal${etiquetaGrupo}`,
-      descripcion: "Sala oficial P2P de puestos y cruces",
+      nombre: `La Rinconada${etiquetaGrupo}`,
+      descripcion: "Chat exclusivo de carreras de La Rinconada",
+      hipodromo: "LA RINCONADA",
       es_principal: true,
       activo: true,
       orden: 1,
       created_at: new Date().toISOString(),
     },
     {
-      id: `${grupoId}_puestos`,
+      id: `${grupoId}_americanas`,
       grupo_id: String(grupoId),
-      nombre: `Sala Puestos VIP${etiquetaGrupo}`,
-      descripcion: "Exclusivo jugadas directas de puestos",
+      nombre: `Americanas${etiquetaGrupo}`,
+      descripcion: "Chat exclusivo de carreras Americanas (USA)",
+      hipodromo: "AMERICANAS",
       es_principal: false,
       activo: true,
       orden: 2,

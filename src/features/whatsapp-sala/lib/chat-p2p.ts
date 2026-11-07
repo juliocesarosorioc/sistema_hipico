@@ -51,6 +51,7 @@ export interface MensajeSala {
     estado?: "ACTIVA" | "ANULADA" | string;
   };
   solo_borrable_operador?: boolean;
+  imagen_url?: string | null;
   created_at: string;
   // Propiedades calculadas en cliente
   esMio?: boolean;

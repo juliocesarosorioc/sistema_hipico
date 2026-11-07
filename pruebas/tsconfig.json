@@ -194,6 +194,7 @@
     "./retiros-reactivacion.test.ts",
     "./cruce-rol-consigue.test.ts",
     "../src/features/whatsapp-sala/lib/salas.ts",
-    "./salas-por-grupo.test.ts"
+    "./salas-por-grupo.test.ts",
+    "./certificacion-exhaustiva-cruces.test.ts"
   ]
 }

@@ -52,11 +52,11 @@ export function SalaLeftPanelGrupos({
   const [busqueda, setBusqueda] = useState("");
 
   // Modales de Sala
-  const [modalNuevaSala, setModalNuevaSala] = useState(false);
-  const [nombreNuevaSala, setNombreNuevaSala] = useState("");
-  const [descNuevaSala, setDescNuevaSala] = useState("");
-  const [guardandoSala, setGuardandoSala] = useState(false);
-  const [errorSala, setErrorSala] = useState<string | null>(null);
+  const [modalNuevoChat, setModalNuevoChat] = useState(false);
+  const [nombreNuevoChat, setNombreNuevoChat] = useState("");
+  const [descNuevoChat, setDescNuevoChat] = useState("");
+  const [guardandoChat, setGuardandoChat] = useState(false);
+  const [errorChat, setErrorChat] = useState<string | null>(null);
 
   const [salaParaEditar, setSalaParaEditar] = useState<SalaChat | null>(null);
   const [nombreEditSala, setNombreEditSala] = useState("");
@@ -82,26 +82,26 @@ export function SalaLeftPanelGrupos({
   );
 
   // Guardar nueva sala
-  const handleGuardarNuevaSala = async (e: React.FormEvent) => {
+  const handleGuardarNuevoChat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nombreNuevaSala.trim()) return;
-    setGuardandoSala(true);
-    setErrorSala(null);
+    if (!nombreNuevoChat.trim()) return;
+    setGuardandoChat(true);
+    setErrorChat(null);
     try {
       if (onCrearSala) {
-        const res = await onCrearSala(nombreNuevaSala.trim(), descNuevaSala.trim() || undefined);
+        const res = await onCrearSala(nombreNuevoChat.trim(), descNuevoChat.trim() || undefined);
         if (res.ok) {
-          setNombreNuevaSala("");
-          setDescNuevaSala("");
-          setModalNuevaSala(false);
+          setNombreNuevoChat("");
+          setDescNuevoChat("");
+          setModalNuevoChat(false);
         } else {
-          setErrorSala(res.error || "No se pudo crear la sala");
+          setErrorChat(res.error || "No se pudo crear la sala");
         }
       }
     } catch (err: any) {
-      setErrorSala(err.message || "Error al crear la sala");
+      setErrorChat(err.message || "Error al crear la sala");
     } finally {
-      setGuardandoSala(false);
+      setGuardandoChat(false);
     }
   };
 
@@ -109,45 +109,45 @@ export function SalaLeftPanelGrupos({
   const handleGuardarEdicionSala = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!esAdmin) {
-      setErrorSala("Solo los administradores pueden editar salas.");
+      setErrorChat("Solo los administradores pueden editar chats.");
       return;
     }
     if (!salaParaEditar || !nombreEditSala.trim()) return;
-    setGuardandoSala(true);
-    setErrorSala(null);
+    setGuardandoChat(true);
+    setErrorChat(null);
     try {
       if (onEditarSala) {
         const res = await onEditarSala(salaParaEditar.id, nombreEditSala.trim(), descEditSala.trim() || undefined);
         if (res.ok) {
           setSalaParaEditar(null);
         } else {
-          setErrorSala(res.error || "No se pudo actualizar la sala");
+          setErrorChat(res.error || "No se pudo actualizar la sala");
         }
       }
     } catch (err: any) {
-      setErrorSala(err.message || "Error al actualizar la sala");
+      setErrorChat(err.message || "Error al actualizar la sala");
     } finally {
-      setGuardandoSala(false);
+      setGuardandoChat(false);
     }
   };
 
   // Confirmar eliminación de sala (solo administrador)
   const handleConfirmarEliminarSala = async () => {
     if (!esAdmin) {
-      setErrorSala("Solo los administradores pueden eliminar salas.");
+      setErrorChat("Solo los administradores pueden eliminar chats.");
       return;
     }
     if (!salaParaEliminar) return;
-    setGuardandoSala(true);
+    setGuardandoChat(true);
     try {
       if (onEliminarSala) {
         await onEliminarSala(salaParaEliminar.id);
       }
       setSalaParaEliminar(null);
     } catch (err: any) {
-      setErrorSala(err.message || "Error al eliminar");
+      setErrorChat(err.message || "Error al eliminar");
     } finally {
-      setGuardandoSala(false);
+      setGuardandoChat(false);
     }
   };
 
@@ -221,7 +221,7 @@ export function SalaLeftPanelGrupos({
           </button>
           {esOperadorOAdmin && (
             <button
-              onClick={() => setModalNuevaSala(true)}
+              onClick={() => setModalNuevoChat(true)}
               title={`Crear Nueva Sala para ${nombreGrupoActivo}`}
               className="flex items-center gap-1 text-[13px] bg-[#00a884] hover:bg-[#029071] text-white px-3 py-1.5 rounded-full font-medium transition active:scale-95 shadow-sm cursor-pointer"
             >
@@ -299,7 +299,7 @@ export function SalaLeftPanelGrupos({
             type="text"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            placeholder={`Buscar salas en ${nombreGrupoActivo}...`}
+            placeholder={`Buscar chats en ${nombreGrupoActivo}...`}
             className="w-full bg-transparent text-[13px] text-[#e9edef] placeholder-[#8696a0] focus:outline-none"
           />
         </div>
@@ -353,13 +353,13 @@ export function SalaLeftPanelGrupos({
 
         {/* Separador de Salas */}
         <div className="flex items-center justify-between px-3.5 py-1.5 bg-[#182229] text-[11px] font-semibold uppercase tracking-wider text-[#8696a0]">
-          <span className="truncate">Salas de {nombreGrupoActivo}</span>
+          <span className="truncate">Chats de {nombreGrupoActivo}</span>
           {esOperadorOAdmin && (
             <button
-              onClick={() => setModalNuevaSala(true)}
+              onClick={() => setModalNuevoChat(true)}
               className="text-[#00a884] hover:underline normal-case font-medium text-[11px] cursor-pointer"
             >
-              + Crear sala
+              + Crear chat
             </button>
           )}
         </div>
@@ -367,13 +367,13 @@ export function SalaLeftPanelGrupos({
         {/* Salas del Grupo Activo */}
         {salasFiltradas.length === 0 ? (
           <div className="p-6 text-center text-[12px] text-[#8696a0]">
-            <p className="mb-2">No hay salas creadas para este grupo.</p>
+            <p className="mb-2">No hay chats creados para este grupo.</p>
             {esOperadorOAdmin && (
               <button
-                onClick={() => setModalNuevaSala(true)}
+                onClick={() => setModalNuevoChat(true)}
                 className="text-[#00a884] font-semibold hover:underline cursor-pointer"
               >
-                + Crear la primera sala
+                + Crear el primer chat
               </button>
             )}
           </div>
@@ -418,9 +418,9 @@ export function SalaLeftPanelGrupos({
                         setSalaParaEditar(s);
                         setNombreEditSala(s.nombre);
                         setDescEditSala(s.descripcion || "");
-                        setErrorSala(null);
+                        setErrorChat(null);
                       }}
-                      title="Editar esta sala"
+                      title="Editar este chat"
                       className="p-1 hover:text-[#00a884] text-[#8696a0] rounded transition cursor-pointer text-xs"
                     >
                       ✏️
@@ -430,9 +430,9 @@ export function SalaLeftPanelGrupos({
                       onClick={(e) => {
                         e.stopPropagation();
                         setSalaParaEliminar(s);
-                        setErrorSala(null);
+                        setErrorChat(null);
                       }}
-                      title="Eliminar esta sala"
+                      title="Eliminar este chat"
                       className="p-1 hover:text-red-400 text-[#8696a0] rounded transition cursor-pointer text-xs"
                     >
                       🗑️
@@ -446,13 +446,13 @@ export function SalaLeftPanelGrupos({
       </div>
 
       {/* Modal: Crear Nueva Sala */}
-      {modalNuevaSala && (
+      {modalNuevoChat && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-2xl bg-[#202c33] border border-[#2a3942] p-5 text-[#e9edef] shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between mb-4 border-b border-[#2a3942] pb-3">
               <div>
                 <h3 className="text-[15px] font-bold text-[#e9edef] flex items-center gap-2">
-                  <span>🏛️</span> Nueva Sala de Chat
+                  <span>💬</span> Nuevo Chat de Juego
                 </h3>
                 <p className="text-[11px] text-[#00a884] font-medium mt-0.5">
                   Grupo: {nombreGrupoActivo}
@@ -460,25 +460,25 @@ export function SalaLeftPanelGrupos({
               </div>
               <button
                 type="button"
-                onClick={() => setModalNuevaSala(false)}
+                onClick={() => setModalNuevoChat(false)}
                 className="text-[#8696a0] hover:text-[#e9edef] text-lg font-bold cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleGuardarNuevaSala} className="space-y-4">
+            <form onSubmit={handleGuardarNuevoChat} className="space-y-4">
               <div>
                 <label className="block text-[11px] font-semibold text-[#8696a0] mb-1">
-                  Nombre de la Sala *
+                  Nombre del Chat (Hipódromo) *
                 </label>
                 <input
                   type="text"
                   required
                   autoFocus
-                  value={nombreNuevaSala}
-                  onChange={(e) => setNombreNuevaSala(e.target.value)}
-                  placeholder="Ej. Sala Puestos 2, Sala VIP..."
+                  value={nombreNuevoChat}
+                  onChange={(e) => setNombreNuevoChat(e.target.value)}
+                  placeholder="Ej. La Rinconada, Americanas, Gulfstream..."
                   className="w-full rounded-lg bg-[#111b21] border border-[#2a3942] px-3 py-2 text-[13px] text-[#e9edef] placeholder-[#8696a0] focus:border-[#00a884] focus:outline-none"
                 />
               </div>
@@ -489,33 +489,33 @@ export function SalaLeftPanelGrupos({
                 </label>
                 <input
                   type="text"
-                  value={descNuevaSala}
-                  onChange={(e) => setDescNuevaSala(e.target.value)}
+                  value={descNuevoChat}
+                  onChange={(e) => setDescNuevoChat(e.target.value)}
                   placeholder="Ej. Exclusivo jugadas directas y paradas"
                   className="w-full rounded-lg bg-[#111b21] border border-[#2a3942] px-3 py-2 text-[13px] text-[#e9edef] placeholder-[#8696a0] focus:border-[#00a884] focus:outline-none"
                 />
               </div>
 
-              {errorSala && (
+              {errorChat && (
                 <div className="rounded-lg bg-red-950/60 border border-red-800/80 p-2.5 text-xs text-red-300">
-                  ⚠️ {errorSala}
+                  ⚠️ {errorChat}
                 </div>
               )}
 
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setModalNuevaSala(false)}
+                  onClick={() => setModalNuevoChat(false)}
                   className="rounded-lg bg-[#111b21] px-3.5 py-2 text-[12px] font-medium text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942] cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={guardandoSala || !nombreNuevaSala.trim()}
+                  disabled={guardandoChat || !nombreNuevoChat.trim()}
                   className="flex items-center gap-1.5 rounded-lg bg-[#00a884] hover:bg-[#029071] px-4 py-2 text-[12px] font-bold text-white disabled:opacity-50 active:scale-95 transition cursor-pointer"
                 >
-                  {guardandoSala ? "Creando..." : "Crear en este Grupo"}
+                  {guardandoChat ? "Creando..." : "Crear en este Grupo"}
                 </button>
               </div>
             </form>
@@ -548,7 +548,7 @@ export function SalaLeftPanelGrupos({
             <form onSubmit={handleGuardarEdicionSala} className="space-y-4">
               <div>
                 <label className="block text-[11px] font-semibold text-[#8696a0] mb-1">
-                  Nombre de la Sala *
+                  Nombre del Chat (Hipódromo) *
                 </label>
                 <input
                   type="text"
@@ -572,9 +572,9 @@ export function SalaLeftPanelGrupos({
                 />
               </div>
 
-              {errorSala && (
+              {errorChat && (
                 <div className="rounded-lg bg-red-950/60 border border-red-800/80 p-2.5 text-xs text-red-300">
-                  ⚠️ {errorSala}
+                  ⚠️ {errorChat}
                 </div>
               )}
 
@@ -588,10 +588,10 @@ export function SalaLeftPanelGrupos({
                 </button>
                 <button
                   type="submit"
-                  disabled={guardandoSala || !nombreEditSala.trim()}
+                  disabled={guardandoChat || !nombreEditSala.trim()}
                   className="flex items-center gap-1.5 rounded-lg bg-[#00a884] hover:bg-[#029071] px-4 py-2 text-[12px] font-bold text-white disabled:opacity-50 active:scale-95 transition cursor-pointer"
                 >
-                  {guardandoSala ? "Guardando..." : "Guardar Cambios"}
+                  {guardandoChat ? "Guardando..." : "Guardar Cambios"}
                 </button>
               </div>
             </form>
@@ -623,11 +623,11 @@ export function SalaLeftPanelGrupos({
               </button>
               <button
                 type="button"
-                disabled={guardandoSala}
+                disabled={guardandoChat}
                 onClick={handleConfirmarEliminarSala}
                 className="flex items-center gap-1.5 rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-[12px] font-bold text-white disabled:opacity-50 active:scale-95 transition cursor-pointer"
               >
-                {guardandoSala ? "Eliminando..." : "Sí, Eliminar"}
+                {guardandoChat ? "Eliminando..." : "Sí, Eliminar"}
               </button>
             </div>
           </div>

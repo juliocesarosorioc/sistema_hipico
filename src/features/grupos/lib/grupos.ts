@@ -905,27 +905,36 @@ export async function eliminarGrupoRpc(id: string | number): Promise<{ ok: boole
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
     exigirCapacidad("grupos:btn_eliminar");
-    // La RPC (js/grupos.js → club_eliminar_grupo) hace TODO el re-movimiento a
-    // clientes/clientes_grupos en una transacción. Se usa como fallback cuando
-    // el borrado directo está bloqueado por RLS/permisos.
+
+    // 1. Reasignar clientes al grupo principal antes de borrar para evitar violaciones de clave foránea
+    const principal = (await listarGruposAdmin(true)).find((g) => g.es_principal && String(g.id) !== String(id));
+    if (principal) {
+      await supabase.from("clientes").update({ grupo_id: principal.id }).eq("grupo_id", id);
+    } else {
+      await supabase.from("clientes").update({ grupo_id: null }).eq("grupo_id", id);
+    }
+    await supabase.from("clientes_grupos").delete().eq("grupo_id", id);
+    await supabase.from("chat_salas").delete().eq("grupo_id", id);
+    await supabase.from("operadores_grupos").delete().eq("grupo_id", id);
+
+    // 2. Proceder al borrado del grupo en grupos_venta
     const { error: e3 } = await supabase.from("grupos_venta").delete().eq("id", id);
     if (e3) {
       const rpc = await supabase.rpc("club_eliminar_grupo", { p_id: id });
-      if (rpc.error) return { ok: false, error: rpc.error.message };
-      invalidarCacheGrupos();
-      void registrarAuditoria("GRUPO", "ELIMINAR", `Grupo ${id} eliminado.`);
-      return { ok: true };
+      if (rpc.error) {
+        const { error: eSoft } = await supabase
+          .from("grupos_venta")
+          .update({ activo: false, eliminado_en: new Date().toISOString() })
+          .eq("id", id);
+        if (eSoft) return { ok: false, error: e3.message };
+      }
     }
-    // Borrado directo OK: se replican los pasos de reasignación del legacy.
-    const principal = (await listarGruposAdmin(true)).find((g) => g.es_principal);
-    if (principal && String(principal.id) !== String(id)) {
-      const { error: e1 } = await supabase.from("clientes").update({ grupo_id: principal.id }).eq("grupo_id", id);
-      if (e1) return { ok: false, error: e1.message };
-    }
-    const { error: e2 } = await supabase.from("clientes_grupos").delete().eq("grupo_id", id);
-    if (e2) return { ok: false, error: e2.message };
+
     invalidarCacheGrupos();
     void registrarAuditoria("GRUPO", "ELIMINAR", `Grupo ${id} eliminado.`);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("hipico:grupos-actualizados"));
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

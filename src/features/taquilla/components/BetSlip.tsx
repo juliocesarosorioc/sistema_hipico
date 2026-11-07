@@ -127,8 +127,26 @@ export function BetSlip() {
     [clientes]
   );
 
-  const c1 = useMemo(() => clientes.find((c) => clave(c.nombre) === clave(cliente1)) ?? null, [clientes, cliente1]);
-  const c2 = useMemo(() => clientes.find((c) => clave(c.nombre) === clave(cliente2)) ?? null, [clientes, cliente2]);
+  const c1 = useMemo(
+    () =>
+      clientes.find(
+        (c) =>
+          clave(c.nombre) === clave(cliente1) ||
+          (c.seudonimo && clave(c.seudonimo) === clave(cliente1)) ||
+          clave(c.id) === clave(cliente1)
+      ) ?? null,
+    [clientes, cliente1]
+  );
+  const c2 = useMemo(
+    () =>
+      clientes.find(
+        (c) =>
+          clave(c.nombre) === clave(cliente2) ||
+          (c.seudonimo && clave(c.seudonimo) === clave(cliente2)) ||
+          clave(c.id) === clave(cliente2)
+      ) ?? null,
+    [clientes, cliente2]
+  );
 
   /** Grupo del Cliente 1: dueño de la comisión de las jugadas entre tercios. */
   const grupoDeC1 = useMemo(

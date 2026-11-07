@@ -173,6 +173,23 @@ export function SalaBurbujaMensaje({
           </div>
         )}
 
+        {/* Imagen adjunta si existe (solo administrador) */}
+        {mensaje.imagen_url && (
+          <div className="my-2 overflow-hidden rounded-xl border border-[#2a3942] bg-[#111b21] max-w-sm">
+            <img
+              src={mensaje.imagen_url}
+              alt="Adjunto"
+              className="max-h-72 w-auto object-contain cursor-pointer rounded-lg hover:opacity-95 transition"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  const w = window.open("");
+                  w?.document.write(`<img src="${mensaje.imagen_url}" style="max-width:100%;height:auto;margin:auto;display:block;" />`);
+                }
+              }}
+            />
+          </div>
+        )}
+
         {/* Cuerpo del Texto */}
         <div className="whitespace-pre-wrap leading-relaxed">
           {mensaje.texto}

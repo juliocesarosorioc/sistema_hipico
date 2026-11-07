@@ -34,6 +34,7 @@ interface MensajeChat {
   remitente: "usuario" | "ia" | "sistema";
   texto: string;
   fecha: string;
+  imagenUrl?: string;
   requiereEscalamiento?: boolean;
   categoriaSugerida?: CategoriaTicket;
   prioridadSugerida?: PrioridadTicket;
@@ -60,15 +61,15 @@ export function WidgetAsistenteIa() {
     {
       id: "bienvenida",
       remitente: "ia",
-      texto: `👋 ¡Hola! Soy tu **🤖 Super Club del Sistema Hípico**.\nTengo **todas las acciones de la plataforma activadas**: suministro información en vivo, ejecuto operaciones (liquidación, **🤖 Cambio de Pizarra**, cruces, saldos, clientes, bloqueos del portal y navegación a los 24 módulos) y puedes **dictarme por voz (🎙️)** o usar la pestaña **⚡ Acciones Super Club**.`,
+      texto: `👋 ¡Hola! Soy tu **🤖 Super Club del Sistema Hípico**.\nTengo **todas las acciones de la plataforma activadas**: suministro información en vivo, ejecuto operaciones (liquidación, **🤖 Cambio de Pizarra**, cruces, saldos, clientes, bloqueos del portal y navegación a los 24 módulos) o puedes usar la pestaña **⚡ Acciones Super Club**. Los administradores pueden además adjuntar imágenes y capturas.`,
       fecha: new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
 
   const [textoInput, setTextoInput] = useState("");
   const [escribiendoIa, setEscribiendoIa] = useState(false);
-  const [escuchandoVoz, setEscuchandoVoz] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const [imagenAdjunta, setImagenAdjunta] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Estado para el modal o tarjeta de escalamiento a Ticket
   const [mostrarFormEscalar, setMostrarFormEscalar] = useState(false);
@@ -249,22 +250,63 @@ export function WidgetAsistenteIa() {
       ? "operador"
       : "operador";
 
+  const esAdmin =
+    perfiles.some((p) => /admin|dueno/i.test(p)) ||
+    /ADMIN|JULIO|JOSORIO/i.test(usuario || "");
+
+  const handlePasteImagen = (e: React.ClipboardEvent) => {
+    if (!esAdmin) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf("image") !== -1) {
+        const blob = item.getAsFile();
+        if (blob) {
+          const reader = new FileReader();
+          reader.onload = (uploadEvent) => {
+            const base64 = uploadEvent.target?.result as string;
+            setImagenAdjunta(base64);
+          };
+          reader.readAsDataURL(blob);
+          e.preventDefault();
+          break;
+        }
+      }
+    }
+  };
+
+  const handleSelectImagenArchivo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!esAdmin) return;
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        const base64 = uploadEvent.target?.result as string;
+        setImagenAdjunta(base64);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Enviar mensaje al Super Club
-  const handleEnviarMensaje = (textoPersonalizado?: string, fueDictado = false) => {
+  const handleEnviarMensaje = (textoPersonalizado?: string) => {
     const mensajeAEnviar = (textoPersonalizado || textoInput).trim();
-    if (!mensajeAEnviar) return;
+    if (!mensajeAEnviar && !imagenAdjunta) return;
 
     const ahoraFmt = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" });
 
     const nuevoMsgUsuario: MensajeChat = {
       id: `usr-${Date.now()}`,
       remitente: "usuario",
-      texto: fueDictado ? `🎙️ ${mensajeAEnviar}` : mensajeAEnviar,
+      texto: mensajeAEnviar || "🖼️ [Imagen adjunta enviada]",
+      imagenUrl: imagenAdjunta || undefined,
       fecha: ahoraFmt,
     };
 
     setMensajes((prev) => [...prev, nuevoMsgUsuario]);
     setTextoInput("");
+    setImagenAdjunta(null);
     setEscribiendoIa(true);
 
     // Procesamiento inteligente del Super Club con acceso a toda la información del sistema y FSM contable
@@ -315,75 +357,7 @@ export function WidgetAsistenteIa() {
     }, 300);
   };
 
-  const alternarDictadoVoz = () => {
-    if (escuchandoVoz && recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        /* noop */
-      }
-      setEscuchandoVoz(false);
-      return;
-    }
 
-    const w = typeof window !== "undefined" ? (window as any) : null;
-    const SpeechRec = w?.SpeechRecognition || w?.webkitSpeechRecognition;
-    if (!SpeechRec) {
-      setMensajes((prev) => [
-        ...prev,
-        {
-          id: `sys-${Date.now()}`,
-          remitente: "sistema",
-          texto: "⚠️ Tu navegador no soporta dictado por voz directo (Web Speech API). Usa Chrome o Edge, o escribe tu comando en el cuadro inferior.",
-          fecha: new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
-      return;
-    }
-
-    const rec = new SpeechRec();
-    rec.lang = "es-VE";
-    rec.interimResults = true;
-    rec.maxAlternatives = 1;
-    let transcripcionFinal = "";
-
-    rec.onstart = () => {
-      setEscuchandoVoz(true);
-    };
-
-    rec.onresult = (event: any) => {
-      let parcial = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const pieza = event.results[i][0]?.transcript ?? "";
-        if (event.results[i].isFinal) {
-          transcripcionFinal += pieza + " ";
-        } else {
-          parcial += pieza;
-        }
-      }
-      const combinado = (transcripcionFinal + parcial).trim();
-      if (combinado) setTextoInput(combinado);
-    };
-
-    rec.onerror = () => {
-      setEscuchandoVoz(false);
-    };
-
-    rec.onend = () => {
-      setEscuchandoVoz(false);
-      const finalLimpio = (transcripcionFinal || textoInput).trim();
-      if (finalLimpio) {
-        handleEnviarMensaje(finalLimpio, true);
-      }
-    };
-
-    recognitionRef.current = rec;
-    try {
-      rec.start();
-    } catch {
-      setEscuchandoVoz(false);
-    }
-  };
 
   // Crear Ticket formal
   const handleCrearTicket = (e: React.FormEvent) => {
@@ -697,6 +671,21 @@ export function WidgetAsistenteIa() {
                               : "bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-xs"
                           }`}
                         >
+                          {m.imagenUrl && (
+                            <div className="mb-2 overflow-hidden rounded-lg border border-slate-700 bg-slate-950 max-w-xs">
+                              <img
+                                src={m.imagenUrl}
+                                alt="Adjunto"
+                                className="max-h-56 w-auto object-contain cursor-pointer rounded-lg hover:opacity-90 transition"
+                                onClick={() => {
+                                  if (typeof window !== "undefined") {
+                                    const w = window.open("");
+                                    w?.document.write(`<img src="${m.imagenUrl}" style="max-width:100%;height:auto;display:block;margin:auto;" />`);
+                                  }
+                                }}
+                              />
+                            </div>
+                          )}
                           <p className="whitespace-pre-line break-words">{m.texto}</p>
 
                           {/* Acciones directas si incluye reporte oficial para WhatsApp */}
@@ -852,51 +841,64 @@ export function WidgetAsistenteIa() {
                 </div>
               )}
 
-              {/* CAMPO DE TEXTO INPUT + DICTADO POR VOZ */}
+              {/* CAMPO DE TEXTO INPUT + ADJUNTO DE IMAGEN (SOLO ADMINISTRADOR) */}
               {!mostrarFormEscalar && (
                 <div className="border-t border-slate-800 bg-slate-900 p-2.5">
-                  {escuchandoVoz && (
-                    <div className="mb-1.5 flex items-center justify-between rounded-lg border border-rose-500/50 bg-rose-950/40 px-2.5 py-1 text-[10px] font-bold text-rose-200">
-                      <span className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
-                        🎙️ Escuchando dictado… habla ahora y el Agente interpretará
-                      </span>
+                  {imagenAdjunta && (
+                    <div className="mb-2 flex items-center justify-between rounded-lg border border-emerald-500/40 bg-emerald-950/40 p-1.5 text-xs text-emerald-200">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <img src={imagenAdjunta} alt="Vista previa" className="h-8 w-8 rounded object-cover border border-emerald-400/50" />
+                        <span className="text-[11px] font-bold truncate">🖼️ Imagen adjunta (Administrador)</span>
+                      </div>
                       <button
                         type="button"
-                        onClick={alternarDictadoVoz}
-                        className="text-rose-300 underline hover:text-white"
+                        onClick={() => setImagenAdjunta(null)}
+                        className="h-5 w-5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center text-xs ml-2 cursor-pointer"
+                        title="Quitar imagen"
                       >
-                        Detener
+                        ✕
                       </button>
                     </div>
                   )}
                   <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={alternarDictadoVoz}
-                      title={escuchandoVoz ? "Detener dictado por voz" : "Dictar por voz (el Super Club interpreta tu voz)"}
-                      className={`shrink-0 rounded-xl border px-2.5 py-2 text-xs font-black transition ${
-                        escuchandoVoz
-                          ? "border-rose-400 bg-rose-600 text-white animate-pulse"
-                          : "border-slate-700 bg-slate-800 text-amber-300 hover:border-amber-400 hover:bg-slate-700"
-                      }`}
-                    >
-                      {escuchandoVoz ? "⏹️" : "🎙️"}
-                    </button>
+                    {esAdmin && (
+                      <>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleSelectImagenArchivo}
+                          accept="image/*"
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          title="Adjuntar imagen (Pegando o seleccionando archivo · Solo Administrador)"
+                          className="shrink-0 rounded-xl border border-slate-700 bg-slate-800 p-2 text-xs font-black text-emerald-400 hover:border-emerald-400 hover:bg-slate-700 transition cursor-pointer"
+                        >
+                          📎
+                        </button>
+                      </>
+                    )}
                     <input
                       type="text"
                       value={textoInput}
                       onChange={(e) => setTextoInput(e.target.value)}
+                      onPaste={handlePasteImagen}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleEnviarMensaje();
                       }}
-                      placeholder="Escribe o dicta (🎙️) cualquier consulta o jugada…"
+                      placeholder={
+                        esAdmin
+                          ? "Escribe al Agente (puedes pegar imágenes con Ctrl+V)..."
+                          : "Escribe cualquier consulta o instrucción al Agente..."
+                      }
                       className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-hidden"
                     />
                     <button
                       type="button"
                       onClick={() => handleEnviarMensaje()}
-                      disabled={!textoInput.trim() || escribiendoIa}
+                      disabled={(!textoInput.trim() && !imagenAdjunta) || escribiendoIa}
                       className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-500 disabled:opacity-50 transition"
                     >
                       Enviar

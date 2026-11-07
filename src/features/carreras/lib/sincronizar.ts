@@ -74,23 +74,23 @@ function ejemplaresDe(c: CarreraEntrante): EjemplarEntrante[] {
   return [];
 }
 
-async function asegurarHipodromosCatalogo(carreras: CarreraPrograma[], creadoPor?: string): Promise<string | null> {
+async function asegurarHipodromosCatalogo(carreras: CarreraPrograma[], _creadoPor?: string): Promise<string | null> {
   const listado = await listarHipodromos();
   if (!listado.ok) return listado.error ?? "No se pudo consultar el catálogo de hipódromos.";
   const catalogo = listado.data;
   const presentes = new Set(catalogo.map((h) => claveHipodromo(h.nombre)));
-  
-  // Regla estricta: NUNCA permitir que el extractor de carreras agregue nuevos hipódromos al catálogo.
-  // Los hipódromos solo pueden ser creados explícitamente desde la gestión de hipódromos.
-  const esExtractor = creadoPor === "gaceta-ia" || creadoPor === "ia";
-  let seAgrego = false;
 
   for (const c of carreras) {
     const clave = claveHipodromo(c.hipodromo);
     if (!clave) continue;
-    if (presentes.has(clave)) continue;
+    if (presentes.has(clave)) {
+      // Normalizar al nombre canónico exacto de la base de datos
+      const exacto = catalogo.find((h) => claveHipodromo(h.nombre) === clave);
+      if (exacto) c.hipodromo = exacto.nombre;
+      continue;
+    }
 
-    // Buscar coincidencia parcial o por alias con hipódromos existentes en el catálogo
+    // Buscar coincidencia parcial o por alias con hipódromos existentes en la base de datos
     const coincidencia = catalogo.find((h) => {
       const k = claveHipodromo(h.nombre);
       return k.includes(clave) || clave.includes(k);
@@ -101,25 +101,8 @@ async function asegurarHipodromosCatalogo(carreras: CarreraPrograma[], creadoPor
       continue;
     }
 
-    if (esExtractor) {
-      // El extractor tiene prohibido crear nuevos hipódromos:
-      // Normaliza al hipódromo existente del catálogo más cercano o al primero activo
-      if (catalogo.length > 0) {
-        c.hipodromo = catalogo[0].nombre;
-      }
-      continue;
-    }
-
-    // Solo si NO es extractor se permite alta administrativa
-    const alta = await crearHipodromo({ nombre: c.hipodromo, pais: paisHipodromo(c.hipodromo) ?? "OTRO" });
-    if (!alta.ok) return `No se pudo registrar el hipódromo ${c.hipodromo}: ${alta.error ?? "error desconocido"}`;
-    presentes.add(clave);
-    seAgrego = true;
-  }
-  if (seAgrego) {
-    reintentarMaestro();
-    useHipodromosStore.getState().invalidar();
-    useRegistroCentral.getState().invalidarHipodromos();
+    // REGLA ESTRICTA: El importador NO debe crear hipódromos que no estén en la base de datos de hipódromos.
+    return `El hipódromo '${c.hipodromo}' no existe en la base de datos de hipódromos. Por favor regístrelo previamente en la sección de Hipódromos si desea importar sus carreras.`;
   }
   return null;
 }

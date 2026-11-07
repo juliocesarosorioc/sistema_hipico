@@ -1429,21 +1429,18 @@ export async function sincronizarCarrerasAmericanasDia(opciones?: {
 
   // 2. Asegurar que los hipódromos existan en el catálogo `public.hipodromos`
   try {
-    const tracksUnicos = [...new Set(carrerasObtenidas.map((c) => c.hipodromo))];
+    // REGLA ESTRICTA: El importador NO crea nuevos hipódromos en la base de datos.
+    // Solo normaliza los tracks obtenidos contra los hipódromos ya existentes.
     const { data: hiposExistentes } = await listarHipodromos();
-    const setClaves = new Set((hiposExistentes ?? []).map((h) => claveHipodromo(h.nombre)));
+    const mapaExistentes = new Map((hiposExistentes ?? []).map((h) => [claveHipodromo(h.nombre), h.nombre]));
 
-    for (const nom of tracksUnicos) {
-      const k = claveHipodromo(nom);
-      if (!setClaves.has(k)) {
-        await crearHipodromo({
-          nombre: NOMBRES_CANONICOS_HIPODROMOS[k] || nom,
-          pais: "USA",
-        });
-        setClaves.add(k);
+    for (const c of carrerasObtenidas) {
+      const k = claveHipodromo(c.hipodromo);
+      const nombreBd = mapaExistentes.get(k);
+      if (nombreBd) {
+        c.hipodromo = nombreBd;
       }
     }
-    useHipodromosStore.getState().invalidar();
   } catch {
     /* ignore */
   }

@@ -966,9 +966,19 @@ const hipodromosDelDia = useMemo(() => {
   const saldoCliente = (texto: string): ClienteVenta | null => {
     const t = texto.trim().toLowerCase();
     if (!t) return null;
-    const exacto = clientes.find((c) => c.nombre.toLowerCase() === t);
+    const exacto = clientes.find(
+      (c) =>
+        c.nombre.toLowerCase() === t ||
+        (c.seudonimo && c.seudonimo.toLowerCase() === t) ||
+        (c.nombre_real && c.nombre_real.toLowerCase() === t) ||
+        String(c.id).toLowerCase() === t
+    );
     if (exacto) return exacto;
-    const porPrefijo = clientes.filter((c) => c.nombre.toLowerCase().startsWith(t));
+    const porPrefijo = clientes.filter(
+      (c) =>
+        c.nombre.toLowerCase().startsWith(t) ||
+        (c.seudonimo && c.seudonimo.toLowerCase().startsWith(t))
+    );
     return porPrefijo.length === 1 ? porPrefijo[0] : null;
   };
 
@@ -2093,8 +2103,9 @@ const hipodromosDelDia = useMemo(() => {
         indicesError.push(filas.indexOf(f));
         continue;
       }
-      if (!esWpsFila && !c2) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: el CLIENTE 2 no está en el catálogo (se exigen dos clientes).`);
+      // Si cliente 2 no está en el catálogo, se permite como dador externo o banca textual sin bloquear
+      if (!esWpsFila && !f.cliente2.trim() && !c2) {
+        errores.push(`Fila ${filas.indexOf(f) + 1}: ingrese el CLIENTE 2 (dador o banca).`);
         indicesError.push(filas.indexOf(f));
         continue;
       }
@@ -3531,14 +3542,6 @@ const hipodromosDelDia = useMemo(() => {
         <div className="shrink-0">
           <span className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide opacity-0 select-none pointer-events-none" aria-hidden="true">&nbsp;</span>
           <div className="flex items-center gap-1.5 whitespace-nowrap">
-            <button
-              type="button"
-              onClick={() => void solicitarCrearNuevoCliente()}
-              className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-indigo-400/70 bg-indigo-600 px-2.5 text-[11px] font-black uppercase tracking-wide text-white shadow-2xs transition hover:bg-indigo-500"
-              title="Registrar nuevo cliente rápido con teléfono, código de usuario y saldo autorizado"
-            >
-              <span>👤+</span> Nuevo Cliente
-            </button>
             <label
               data-tour="tour-modo-manual"
               className={`inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black uppercase transition-all shadow-2xs ${
@@ -3919,8 +3922,8 @@ const hipodromosDelDia = useMemo(() => {
                         options={opcionesClientes}
                         value={f.cliente2}
                         onChange={(v) => setFila(i, { cliente2: v })}
-                        placeholder="Cliente 2 (obligatorio)…"
-                        allowCustom={false}
+                        placeholder="Cliente 2 (dador)…"
+                        allowCustom={true}
                         displayValue={f.cliente2}
                         className=""
                         inputClassName={`w-full rounded-md border bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
@@ -5147,6 +5150,15 @@ const hipodromosDelDia = useMemo(() => {
             className={`${BTN_BARRA} bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-40`}
           >
             🔄 Saldos
+          </button>
+          <button
+            type="button"
+            onClick={() => void solicitarCrearNuevoCliente()}
+            className={`${BTN_BARRA} bg-indigo-600 text-white hover:bg-indigo-500 shadow-sm px-2 text-xs`}
+            title="Registrar nuevo cliente rápido"
+            aria-label="Nuevo Cliente"
+          >
+            <span>👤+</span>
           </button>
           <button
             type="button"
