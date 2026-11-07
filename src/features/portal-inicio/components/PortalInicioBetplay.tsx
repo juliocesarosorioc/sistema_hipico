@@ -151,6 +151,7 @@ export function PortalInicioBetplay() {
   const [slideActivo, setSlideActivo] = useState(0);
   const [modalLoginAbierto, setModalLoginAbierto] = useState(false);
   const [modalRegistroAbierto, setModalRegistroAbierto] = useState(false);
+  const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
   const [faqAbierto, setFaqAbierto] = useState<number | null>(0);
   const [terminosAbiertos, setTerminosAbiertos] = useState(false);
 
@@ -198,64 +199,83 @@ export function PortalInicioBetplay() {
       }`}
     >
       {/* =========================================================================
-          1. HEADER / NAVBAR ESTILO BETPLAY
+          1. HEADER / NAVBAR ESTILO BETPLAY (100% EN UNA SOLA LÍNEA, SIN WRAP)
           ========================================================================= */}
       <header
         className={`sticky top-0 z-50 border-b backdrop-blur-xl transition-colors ${
           tema === "claro"
-            ? "border-slate-300/80 bg-white/90 text-slate-900"
+            ? "border-slate-300/80 bg-white/95 text-slate-900"
             : tema === "astigmatismo"
-            ? "border-[#4a3e31] bg-[#1d1914]/95 text-[#f5ede1]"
-            : "border-slate-800/80 bg-slate-950/90 text-white"
+            ? "border-[#4a3e31] bg-[#1d1914]/98 text-[#f5ede1]"
+            : "border-slate-800/80 bg-slate-950/95 text-white"
         }`}
       >
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-          {/* Logo y Marca */}
-          <div className="flex items-center gap-6">
-            <Link href="/" className="flex items-center gap-2.5 group">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 text-xl font-black text-slate-950 shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-transform">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-3 sm:px-6 py-2.5 flex-nowrap">
+          {/* Logo y Navegación Principal */}
+          <div className="flex items-center gap-3 xl:gap-6 min-w-0 flex-nowrap shrink-0">
+            {/* Logo */}
+            <Link href="/" className="flex items-center gap-2 group shrink-0 select-none">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 text-lg font-black text-slate-950 shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform shrink-0">
                 🏇
               </div>
-              <div className="flex flex-col">
+              <div className="flex flex-col leading-tight">
                 <div className="flex items-center gap-1.5 leading-none">
-                  <span className="font-black text-base tracking-wider uppercase">
+                  <span className="font-black text-sm sm:text-base tracking-wider uppercase whitespace-nowrap">
                     SISTEMA HÍPICO
                   </span>
-                  <span className="rounded bg-amber-500/20 px-1 py-0.2 text-[9px] font-black tracking-widest text-amber-400 border border-amber-500/30">
+                  <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[8px] font-black tracking-widest text-amber-400 border border-amber-500/30">
                     OFICIAL
                   </span>
                 </div>
-                <span className="text-[10px] text-slate-400 font-medium tracking-tight">
+                <span className="text-[9px] text-slate-400 font-medium tracking-tight whitespace-nowrap hidden sm:inline">
                   Sistema Hípico Oficial
                 </span>
               </div>
             </Link>
 
-            {/* Navegación Desktop */}
-            <nav className="hidden lg:flex items-center gap-5 text-xs font-bold text-slate-300">
-              <a href="#carreras" className="hover:text-amber-400 transition">
+            {/* Navegación Desktop (Estricto en 1 sola línea, tipografía y espaciado optimizado) */}
+            <nav className="hidden lg:flex items-center gap-1 xl:gap-2 text-xs font-bold text-slate-300 whitespace-nowrap shrink-0">
+              <a
+                href="#carreras"
+                className="px-2.5 py-1.5 rounded-lg hover:bg-slate-800/60 hover:text-amber-400 transition-colors whitespace-nowrap"
+              >
                 🏇 Carreras en Vivo
               </a>
-              <a href="#modalidades" className="hover:text-amber-400 transition">
-                📊 Modalidades (Tablas / Marcas)
+              <a
+                href="#modalidades"
+                className="px-2.5 py-1.5 rounded-lg hover:bg-slate-800/60 hover:text-amber-400 transition-colors whitespace-nowrap"
+              >
+                📊 Modalidades
               </a>
-              <a href="#promociones" className="hover:text-amber-400 transition">
+              <a
+                href="#promociones"
+                className="px-2.5 py-1.5 rounded-lg hover:bg-slate-800/60 hover:text-amber-400 transition-colors whitespace-nowrap"
+              >
                 🎁 Promociones
               </a>
-              <a href="#noticias" className="hover:text-amber-400 transition">
+              <a
+                href="#noticias"
+                className="px-2.5 py-1.5 rounded-lg hover:bg-slate-800/60 hover:text-amber-400 transition-colors whitespace-nowrap"
+              >
                 📰 Noticias
               </a>
-              <a href="#afiliados" className="hover:text-amber-400 transition">
+              <a
+                href="#afiliados"
+                className="px-2.5 py-1.5 rounded-lg hover:bg-slate-800/60 hover:text-amber-400 transition-colors whitespace-nowrap"
+              >
                 🤝 Afiliados & Bancas
               </a>
-              <a href="#faq" className="hover:text-amber-400 transition">
+              <a
+                href="#faq"
+                className="hidden xl:inline-block px-2.5 py-1.5 rounded-lg hover:bg-slate-800/60 hover:text-amber-400 transition-colors whitespace-nowrap"
+              >
                 ❓ FAQ
               </a>
             </nav>
           </div>
 
-          {/* Selector de Temas + Acciones de Autenticación */}
-          <div className="flex items-center gap-2.5">
+          {/* Selector de Temas + Acciones de Autenticación + Botón Móvil */}
+          <div className="flex items-center gap-2 shrink-0 flex-nowrap">
             {/* Selector de Tema */}
             <SelectorTemas />
 
@@ -263,7 +283,7 @@ export function PortalInicioBetplay() {
             {usuario ? (
               <Link
                 href="/inicio"
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-3.5 py-2 text-xs font-black uppercase text-slate-950 shadow-md hover:brightness-110 active:scale-95 transition"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-3 py-1.5 text-xs font-black uppercase text-slate-950 shadow-md hover:brightness-110 active:scale-95 transition whitespace-nowrap shrink-0"
               >
                 <span>👤 Mi Panel</span>
                 <span className="hidden sm:inline">({usuario})</span>
@@ -273,21 +293,87 @@ export function PortalInicioBetplay() {
                 <button
                   type="button"
                   onClick={() => setModalLoginAbierto(true)}
-                  className="rounded-xl border border-slate-700 bg-slate-900/80 px-3.5 py-2 text-xs font-bold text-slate-200 hover:border-slate-500 hover:bg-slate-800 transition shadow-xs"
+                  className="rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs font-bold text-slate-200 hover:border-slate-500 hover:bg-slate-800 transition shadow-xs whitespace-nowrap shrink-0"
                 >
                   Iniciar Sesión
                 </button>
                 <button
                   type="button"
                   onClick={() => setModalRegistroAbierto(true)}
-                  className="rounded-xl bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 px-3.5 py-2 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md shadow-amber-500/20 hover:brightness-110 active:scale-95 transition"
+                  className="rounded-xl bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 px-3 py-1.5 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md shadow-amber-500/20 hover:brightness-110 active:scale-95 transition whitespace-nowrap shrink-0"
                 >
-                  <span className="hidden sm:inline">🎁 Registro · </span>Prueba 2 Semanas
+                  <span className="hidden sm:inline">🎁 Registro · </span>Prueba Gratis
                 </button>
               </>
             )}
+
+            {/* Botón Menú Móvil */}
+            <button
+              type="button"
+              onClick={() => setMenuMovilAbierto(!menuMovilAbierto)}
+              className="lg:hidden flex h-8 w-8 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-300 hover:text-white hover:border-amber-500 transition shrink-0"
+              title="Menú"
+            >
+              {menuMovilAbierto ? "✕" : "☰"}
+            </button>
           </div>
         </div>
+
+        {/* Menú Desplegable en Móviles / Tablets */}
+        {menuMovilAbierto && (
+          <div className="lg:hidden border-t border-slate-800 bg-slate-950/98 px-4 py-3 backdrop-blur-xl animate-in slide-in-from-top-2 duration-200">
+            <div className="grid grid-cols-2 gap-2 text-xs font-bold text-slate-300">
+              <a
+                href="#carreras"
+                onClick={() => setMenuMovilAbierto(false)}
+                className="flex items-center gap-2 p-2 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-amber-500/50 hover:text-amber-400 transition"
+              >
+                <span>🏇</span>
+                <span>Carreras en Vivo</span>
+              </a>
+              <a
+                href="#modalidades"
+                onClick={() => setMenuMovilAbierto(false)}
+                className="flex items-center gap-2 p-2 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-amber-500/50 hover:text-amber-400 transition"
+              >
+                <span>📊</span>
+                <span>Modalidades</span>
+              </a>
+              <a
+                href="#promociones"
+                onClick={() => setMenuMovilAbierto(false)}
+                className="flex items-center gap-2 p-2 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-amber-500/50 hover:text-amber-400 transition"
+              >
+                <span>🎁</span>
+                <span>Promociones</span>
+              </a>
+              <a
+                href="#noticias"
+                onClick={() => setMenuMovilAbierto(false)}
+                className="flex items-center gap-2 p-2 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-amber-500/50 hover:text-amber-400 transition"
+              >
+                <span>📰</span>
+                <span>Noticias</span>
+              </a>
+              <a
+                href="#afiliados"
+                onClick={() => setMenuMovilAbierto(false)}
+                className="flex items-center gap-2 p-2 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-amber-500/50 hover:text-amber-400 transition"
+              >
+                <span>🤝</span>
+                <span>Afiliados & Bancas</span>
+              </a>
+              <a
+                href="#faq"
+                onClick={() => setMenuMovilAbierto(false)}
+                className="flex items-center gap-2 p-2 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-amber-500/50 hover:text-amber-400 transition"
+              >
+                <span>❓</span>
+                <span>FAQ</span>
+              </a>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* =========================================================================
