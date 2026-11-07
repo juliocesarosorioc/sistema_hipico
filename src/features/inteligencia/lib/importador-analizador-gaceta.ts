@@ -14,6 +14,8 @@ import {
   type CarreraExtraida,
   type EjemplarExtraido,
 } from "@/features/gaceta/lib/ia";
+import { PROMPT_RINCONADA } from "@/features/gaceta/lib/prompts/prompt-rinconada";
+import { PROMPT_AMERICANAS, limpiarMarcaAguaRetrospecto } from "@/features/gaceta/lib/prompts/prompt-americanas";
 import {
   parsearPaginaRetrospectosNativo,
   parsearGacetaRetrospectosNativo,
@@ -225,6 +227,8 @@ export type OpcionesExtraccionGaceta = {
   fechaJornada?: string;
   fechaOverride?: string;
   topePaginas?: number;
+  tipoExtractor?: "rinconada" | "americanas";
+  promptPersonalizado?: string;
   onProgreso?: (progreso: ProgresoExtraccion) => void;
 };
 
@@ -246,9 +250,26 @@ export type ResultadoArchivoGaceta = {
 export async function importarYExtraerGacetaPdf(
   opciones: OpcionesExtraccionGaceta
 ): Promise<ResultadoArchivoGaceta> {
-  const { file, claveGemini = "", hipodromoDestino, fechaJornada, fechaOverride, topePaginas, onProgreso } = opciones;
+  const {
+    file,
+    claveGemini = "",
+    hipodromoDestino,
+    fechaJornada,
+    fechaOverride,
+    topePaginas,
+    tipoExtractor,
+    promptPersonalizado,
+    onProgreso,
+  } = opciones;
   const fechaEfectiva = fechaOverride || fechaJornada;
   const esPdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
+  const promptEfectivo =
+    promptPersonalizado ||
+    (tipoExtractor === "americanas"
+      ? PROMPT_AMERICANAS
+      : tipoExtractor === "rinconada"
+      ? PROMPT_RINCONADA
+      : undefined);
 
   // -------------------------------------------------------------
   // CASO 1: Es un archivo de imagen directo (JPG, PNG, WEBP)
@@ -270,7 +291,9 @@ export async function importarYExtraerGacetaPdf(
       claveGemini,
       [dataUrl],
       undefined,
-      (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s })
+      (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s }),
+      undefined,
+      promptEfectivo
     );
     return {
       nombreArchivo: file.name,
@@ -310,6 +333,9 @@ export async function importarYExtraerGacetaPdf(
 
   // Si tiene texto digital:
   if (paginasTexto.length > 0 && paginasTexto.some((p) => p.trim().length > 100)) {
+    if (tipoExtractor === "americanas") {
+      paginasTexto = paginasTexto.map((p) => limpiarMarcaAguaRetrospecto(p));
+    }
     onProgreso?.({
       fase: "extrayendo",
       mensaje: "Ejecutando motor determinístico nativo ultra-rápido (Sistema Profesional)...",
@@ -388,7 +414,8 @@ export async function importarYExtraerGacetaPdf(
             totalPaginas: tot,
           }),
         (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s }),
-        file.name
+        file.name,
+        promptEfectivo
       );
 
       if (resIa.ok && resIa.carreras.length > 0) {
@@ -431,7 +458,9 @@ export async function importarYExtraerGacetaPdf(
             paginaActual: hecho,
             totalPaginas: tot,
           }),
-        (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s })
+        (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s }),
+        file.name,
+        promptEfectivo
       );
       return {
         nombreArchivo: file.name,
@@ -507,7 +536,9 @@ export async function importarYExtraerGacetaPdf(
         paginaActual: hecho,
         totalPaginas: tot,
       }),
-    (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s })
+    (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s }),
+    file.name,
+    promptEfectivo
   );
 
   return {
@@ -528,6 +559,8 @@ export async function importarLoteGacetasPdf(params: {
   files: File[];
   claveGemini?: string;
   fechaOverride?: string;
+  tipoExtractor?: "rinconada" | "americanas";
+  promptPersonalizado?: string;
   onProgresoLote?: (progreso: {
     archivoActual: number;
     totalArchivos: number;
@@ -539,7 +572,7 @@ export async function importarLoteGacetasPdf(params: {
   fallidas: Array<{ nombreArchivo: string; error: string }>;
   todasLasCarreras: CarreraExtraida[];
 }> {
-  const { files, claveGemini, fechaOverride, onProgresoLote } = params;
+  const { files, claveGemini, fechaOverride, tipoExtractor, promptPersonalizado, onProgresoLote } = params;
   const exitosas: ResultadoArchivoGaceta[] = [];
   const fallidas: Array<{ nombreArchivo: string; error: string }> = [];
 
@@ -560,6 +593,8 @@ export async function importarLoteGacetasPdf(params: {
       file,
       claveGemini,
       fechaOverride,
+      tipoExtractor,
+      promptPersonalizado,
       onProgreso: (p) => {
         onProgresoLote?.({
           archivoActual: idx,

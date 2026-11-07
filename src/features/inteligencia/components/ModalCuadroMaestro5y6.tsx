@@ -273,9 +273,6 @@ export function ModalCuadroMaestro5y6({
                               <div className="font-bold text-white truncate text-[11px]">
                                 <span className="truncate">{item.ejemplar.nombre}</span>
                               </div>
-                              <div className="text-[9.5px] text-slate-400 truncate">
-                                {item.ejemplar.jinete} · {item.ejemplar.kilos}k
-                              </div>
                             </div>
                           </div>
 

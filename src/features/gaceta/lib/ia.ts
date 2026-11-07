@@ -740,7 +740,11 @@ export type ContenidoLote = {
   texto?: string;
 };
 
-function armarBody(contenido: ContenidoLote, estricto: boolean): Record<string, unknown> {
+function armarBody(
+  contenido: ContenidoLote,
+  estricto: boolean,
+  promptPersonalizado?: string
+): Record<string, unknown> {
   const partes: Array<Record<string, unknown>> = [];
   const durls = contenido.durls || [];
   if (contenido.texto && contenido.texto.trim()) {
@@ -759,9 +763,10 @@ function armarBody(contenido: ContenidoLote, estricto: boolean): Record<string, 
       : "Gaceta adjunta. Extrae las carreras y sus ejemplares.";
     partes.push({ text: parteTexto }, ...imgs);
   }
+  const promptSistema = promptPersonalizado && promptPersonalizado.trim() ? promptPersonalizado.trim() : SYS;
   return {
     contents: [{ parts: partes }],
-    systemInstruction: { parts: [{ text: SYS }] },
+    systemInstruction: { parts: [{ text: promptSistema }] },
     generationConfig: {
       temperature: 0,
       maxOutputTokens: 8192,
@@ -798,13 +803,14 @@ async function llamarModelo(
   clave: string,
   model: string,
   contenido: ContenidoLote,
-  estricto: boolean
+  estricto: boolean,
+  promptPersonalizado?: string
 ): Promise<LlamadaIA> {
   let resp: Response;
   try {
     resp = await postIA(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      armarBody(contenido, estricto),
+      armarBody(contenido, estricto, promptPersonalizado),
       clave
     );
   } catch (errNet) {
@@ -885,7 +891,8 @@ async function extraerLote(
   paginas: Array<{ num: number; durl: string }>,
   etiqueta: string,
   diag: { respondio: string; ultimoError: string },
-  onEstado?: (s: string) => void
+  onEstado?: (s: string) => void,
+  promptPersonalizado?: string
 ): Promise<CarreraExtraida[]> {
   const mitad = Math.ceil(paginas.length / 2);
   const imagenes = (ps: Array<{ num: number; durl: string }>, suf: string): Parte => ({
@@ -905,7 +912,8 @@ async function extraerLote(
           : null,
     },
     diag,
-    onEstado
+    onEstado,
+    promptPersonalizado
   );
 }
 
@@ -922,7 +930,8 @@ async function extraerParte(
   modelos: string[],
   parte: Parte,
   diag: { respondio: string; ultimoError: string },
-  onEstado?: (s: string) => void
+  onEstado?: (s: string) => void,
+  promptPersonalizado?: string
 ): Promise<CarreraExtraida[]> {
   let huboTransitorio = false;
   for (let ronda = 0; ronda < 2; ronda++) {
@@ -934,12 +943,12 @@ async function extraerParte(
     for (let i = 0; i < modelos.length; i++) {
       const model = modelos[i];
       if (i > 0) await esperar(400);
-      let r = await llamarModelo(clave, model, parte.contenido, false);
+      let r = await llamarModelo(clave, model, parte.contenido, false, promptPersonalizado);
       if (r.ok) {
         let lotesCarreras = parsearJSON(r.texto);
         if (lotesCarreras.length === 0) {
           if (onEstado) onEstado(`${parte.etiqueta}: reintento en JSON estricto con ${model}…`);
-          const r2 = await llamarModelo(clave, model, parte.contenido, true);
+          const r2 = await llamarModelo(clave, model, parte.contenido, true, promptPersonalizado);
           if (r2.ok) {
             r = r2;
             lotesCarreras = parsearJSON(r2.texto);
@@ -977,8 +986,8 @@ async function extraerParte(
         const mitad = parte.partir();
         if (mitad) {
           if (onEstado) onEstado(`${parte.etiqueta}: lote muy pesado, dividiendo en 2…`);
-          const a = await extraerParte(clave, modelos, mitad[0], diag, onEstado);
-          const b = await extraerParte(clave, modelos, mitad[1], diag, onEstado);
+          const a = await extraerParte(clave, modelos, mitad[0], diag, onEstado, promptPersonalizado);
+          const b = await extraerParte(clave, modelos, mitad[1], diag, onEstado, promptPersonalizado);
           return a.concat(b);
         }
       }
@@ -1056,7 +1065,8 @@ export async function transformarGacetaTexto(
   texto: string,
   onLote?: (hecho: number, total: number) => void,
   onEstado?: (s: string) => void,
-  archivoOrigen?: string
+  archivoOrigen?: string,
+  promptPersonalizado?: string
 ): Promise<ResultadoGaceta> {
   const diag = { respondio: "", ultimoError: "" };
   let cuotaTotal = false;
@@ -1127,7 +1137,8 @@ export async function transformarGacetaTexto(
             },
           },
           diag,
-          onEstado
+          onEstado,
+          promptPersonalizado
         );
         // Se acumulan TODAS las carreras de todos los bloques; la
         // consolidación por número se hace AL FINAL (una sola vez), para que
@@ -1254,7 +1265,8 @@ export async function transformarGaceta(
   imagenes: string[],
   onLote?: (hecho: number, total: number) => void,
   onEstado?: (s: string) => void,
-  archivoOrigen?: string
+  archivoOrigen?: string,
+  promptPersonalizado?: string
 ): Promise<ResultadoGaceta> {
   const diag = { respondio: "", ultimoError: "" };
   let cuotaTotal = false;
@@ -1303,7 +1315,7 @@ export async function transformarGaceta(
           onEstado?.(`${etiqueta}: enviando a la IA…`);
         }
         try {
-          const nuevas = await extraerLote(clave, modelos, lote, etiqueta, diag, onEstado);
+          const nuevas = await extraerLote(clave, modelos, lote, etiqueta, diag, onEstado, promptPersonalizado);
           if (archivoOrigen) {
             nuevas.forEach((c) => {
               if (!c.archivoOrigen) c.archivoOrigen = archivoOrigen;

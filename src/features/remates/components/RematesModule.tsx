@@ -13,6 +13,7 @@ import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { listarClientes, type ClienteRow } from "@/features/clientes/lib/clientes";
 import { jugadoresDeGrupo, listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { listarCarrerasCentrales, type CarreraCentral } from "@/features/carreras/lib/central";
+import { filtrarParaTablasYRemates } from "@/features/gaceta/lib/modales-selectores";
 import { alternarRetiroCarrera } from "@/features/carreras/lib/retiros";
 import { SearchableSelect, type OpcionSelect } from "@/shared/components/ui/SearchableSelect";
 import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
@@ -844,7 +845,13 @@ function DetalleRemate({
     setCargandoProg(true);
     const res = await listarCarrerasCentrales(remate.fecha, hipodromoNombre);
     const c = (res.datos ?? []).find((x) => Number(x.carrera) === Number(remate.carrera));
-    setCandidatos(candidatosDelPrograma(c?.caballos));
+    const caballosFiltrados = filtrarParaTablasYRemates((c?.caballos ?? []) as any[]).map((cb) => ({
+      numero: cb.numero_ejemplar,
+      nombre: cb.nombre,
+      ml: cb.morning_line ?? undefined,
+      retirado: cb.retirado,
+    }));
+    setCandidatos(candidatosDelPrograma(caballosFiltrados as any));
     setInvalidados(c?.invalidados ?? []);
     setRetirados(c?.retirados ?? []);
     setDatosCarrera({ distancia: c?.distancia ?? null, superficie: c?.superficie ?? null });

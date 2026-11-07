@@ -4,6 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import { DateInput } from "@/shared/components/ui/DateInput";
 import { Button } from "@/shared/components/ui/Button";
 import { CLAVE_GEMINI_KEY, PROMPT_EXTRACTOR_AUDITOR_HIPICO } from "@/features/gaceta/lib/ia";
+import { PROMPT_RINCONADA } from "@/features/gaceta/lib/prompts/prompt-rinconada";
+import { PROMPT_AMERICANAS } from "@/features/gaceta/lib/prompts/prompt-americanas";
+import { ingestarGacetaProfunda, type PayloadGacetaProfunda } from "@/features/gaceta/lib/ingestar-profunda";
 import {
   importarLoteGacetasPdf,
   convertirCarrerasExtraidasACatalogo,
@@ -35,6 +38,11 @@ export function ModalImportarGacetaPdf({
   onAbrirCuadro5y6,
 }: Props) {
   // Configuración
+  const [subPestana, setSubPestana] = useState<"rinconada" | "americanas">(
+    hipodromoDefault?.toUpperCase().includes("RINCONADA") || hipodromoDefault?.toUpperCase().includes("VALENCIA")
+      ? "rinconada"
+      : "americanas"
+  );
   const [fecha, setFecha] = useState(fechaDefault);
   const [usarFechaOverride, setUsarFechaOverride] = useState(false);
   const [fechaOverride, setFechaOverride] = useState(fechaDefault);
@@ -159,6 +167,7 @@ export function ModalImportarGacetaPdf({
         files: archivos,
         claveGemini: claveGemini.trim(),
         fechaOverride: fechaEfectiva,
+        tipoExtractor: subPestana,
         onProgresoLote: (p) => {
           setProgreso({
             fase: "extrayendo",
@@ -316,6 +325,67 @@ export function ModalImportarGacetaPdf({
         })),
       }));
 
+      // Ingesta profunda a base de datos interna mediante RPC ingestar_gaceta_profunda
+      try {
+        const payloadProfundo: PayloadGacetaProfunda = {
+          carreras: carrerasCatalogo.map((c) => {
+            const orig = carrerasExtraidas.find((ce) => Number(ce.carrera) === Number(c.carrera));
+            return {
+              hipodromo: c.hipodromo || hipodromo,
+              codigo_hipodromo: orig?.superficie || null,
+              fecha: c.fecha || fecha,
+              hora: c.hora || null,
+              numero_carrera: Number(c.carrera),
+              codigo_anual: orig?.codigoAnual || null,
+              valida_5y6: orig?.valida5y6 || null,
+              distancia_m: parseInt(String(c.distancia || "1200"), 10) || 1200,
+              superficie: c.superficie || "ARENA",
+              raza: orig?.raza || (subPestana === "americanas" ? "THOROUGHBRED" : null),
+              bolsa_usd: Number(c.premio) || null,
+              condicion_lote: orig?.condicionLote || null,
+              condicion_lote_completa: null,
+              record_pista: null,
+              favoritos_gaceta: orig?.favoritosGaceta || [],
+              orden_rating_gaceta: [],
+              ejemplares: (c.caballos || []).map((cab) => {
+                const origEj = orig?.ejemplares?.find((oe) => String(oe.numero) === String(cab.numero));
+                return {
+                  numero_programa: String(cab.numero),
+                  puesto_partida: cab.pp ? Number(cab.pp) : null,
+                  nombre: String(cab.nombre || "").trim().toUpperCase(),
+                  pais_origen: cab.nacionalidad || (subPestana === "rinconada" ? "VEN" : "USA"),
+                  fecha_nacimiento: null,
+                  anio_nacimiento: null,
+                  stud: cab.stud || null,
+                  sexo: null,
+                  pelaje: null,
+                  padre: null,
+                  madre: null,
+                  abuelo_materno: null,
+                  haras_criador: null,
+                  dias_sin_correr: null,
+                  ganancias_usd: null,
+                  jinete: cab.jockey || null,
+                  entrenador: cab.entrenador || null,
+                  peso_kg: cab.peso ? Number(cab.peso) : null,
+                  implementos: cab.implementos || null,
+                  campana_resumen: null,
+                  comentario: null,
+                  morning_line: cab.ml || null,
+                  es_elegible: Boolean(origEj?.esElegible),
+                  retirado: Boolean(cab.retirado),
+                  carreras_previas: [],
+                  trabajos: [],
+                };
+              }),
+            };
+          }),
+        };
+        await ingestarGacetaProfunda(payloadProfundo);
+      } catch (errProf) {
+        console.warn("Aviso en ingestarGacetaProfunda:", errProf);
+      }
+
       const res = await sincronizarCarrerasAlCentral(loteParaSinc, "gaceta-lote-pdf", {
         forzarReemplazo: true,
       });
@@ -389,21 +459,71 @@ export function ModalImportarGacetaPdf({
           </div>
         </div>
 
+        {/* Sub-Pestañas Independientes: Extractor La Rinconada vs Extractor Americanas */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3 pt-3">
+          <button
+            type="button"
+            onClick={() => {
+              setSubPestana("rinconada");
+              if (hipodromo !== "LA RINCONADA" && hipodromo !== "VALENCIA") {
+                setHipodromo("LA RINCONADA");
+              }
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm ${
+              subPestana === "rinconada"
+                ? "bg-amber-500 text-slate-950 ring-2 ring-amber-400/50 shadow-amber-500/20"
+                : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+            }`}
+          >
+            <span>🇻🇪</span>
+            <span>Extractor La Rinconada</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSubPestana("americanas");
+              if (hipodromo === "LA RINCONADA" || hipodromo === "VALENCIA") {
+                setHipodromo("GULFSTREAM PARK");
+              }
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm ${
+              subPestana === "americanas"
+                ? "bg-indigo-600 text-white ring-2 ring-indigo-400/50 shadow-indigo-500/20"
+                : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+            }`}
+          >
+            <span>🇺🇸</span>
+            <span>Extractor Americanas</span>
+          </button>
+
+          <div className="ml-auto text-[11px] text-slate-400 font-medium">
+            {subPestana === "rinconada" ? (
+              <span className="text-amber-400">Modalidad: Gaceta Hípica (Venezuela · N° vs PP 1600m)</span>
+            ) : (
+              <span className="text-indigo-400">Modalidad: Retrospectos USA (Filtro marca de agua + Espacial Y,X)</span>
+            )}
+          </div>
+        </div>
+
         {/* Modal / Card Desplegable del Prompt Auditor */}
         {mostrarPromptAuditor && (
           <div className="my-3 p-4 rounded-xl bg-slate-950 border border-indigo-500/40 text-xs space-y-2.5 shadow-2xl">
             <div className="flex items-center justify-between border-b border-indigo-900/60 pb-2">
               <div className="flex items-center gap-2">
-                <span className="text-base">🧠</span>
+                <span className="text-base">{subPestana === "rinconada" ? "🇻🇪" : "🇺🇸"}</span>
                 <span className="font-black text-indigo-300 uppercase tracking-wide">
-                  Motor Auditor y Extractor Hípico de Precisión Quirúrgica (USA + Venezuela)
+                  {subPestana === "rinconada"
+                    ? "Prompt Profundo Oficial: La Rinconada (Venezuela)"
+                    : "Prompt Profundo Oficial: Retrospectos Americanas (EE. UU.)"}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => {
                   if (typeof navigator !== "undefined" && navigator.clipboard) {
-                    void navigator.clipboard.writeText(PROMPT_EXTRACTOR_AUDITOR_HIPICO);
+                    const promptACopiar = subPestana === "rinconada" ? PROMPT_RINCONADA : PROMPT_AMERICANAS;
+                    void navigator.clipboard.writeText(promptACopiar);
                     emitirToast("Prompt copiado al portapapeles.", "success");
                   }
                 }}
@@ -414,10 +534,12 @@ export function ModalImportarGacetaPdf({
               </button>
             </div>
             <p className="text-[11px] text-slate-400">
-              Prompt oficial activo en el motor de Gemini para transcribir gacetas, reconstruir columnas izquierdas desplazadas en retrospectos de EE.UU. y validar N° vs PP en Venezuela:
+              {subPestana === "rinconada"
+                ? "Prompt activo para Gaceta Hípica de Venezuela (N° programa oficial en 1600m, traqueos, pedigrí e historial profundo):"
+                : "Prompt activo para retrospectos de Estados Unidos (ordenamiento espacial Y,X, eliminación de marca de agua 'RETRO HIPICO', M/L y briseos):"}
             </p>
             <pre className="max-h-60 overflow-y-auto p-3 bg-slate-900/95 rounded-lg border border-slate-800 text-[11px] text-slate-300 whitespace-pre-wrap font-mono select-all">
-              {PROMPT_EXTRACTOR_AUDITOR_HIPICO}
+              {subPestana === "rinconada" ? PROMPT_RINCONADA : PROMPT_AMERICANAS}
             </pre>
           </div>
         )}

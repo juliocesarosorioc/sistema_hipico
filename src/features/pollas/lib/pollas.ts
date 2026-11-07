@@ -28,6 +28,7 @@
 import { supabase } from "@/core/supabase";
 import { exigirCapacidad, grupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import { leerCarrerasMaestro, aCarreraCentral } from "@/features/carreras/lib/maestro";
+import { filtrarParaDupletaYPolla } from "@/features/gaceta/lib/modales-selectores";
 import type { FilaCarreraMaestro } from "@/features/carreras/lib/maestro-nucleo";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import {
@@ -177,9 +178,9 @@ export function aCarreraDePolla(m: FilaCarreraMaestro): CarreraPolla {
     fecha: c.fecha,
     hipodromo: c.hipodromo,
     carrera: c.carrera,
-    ejemplares: (c.caballos ?? []).map((x) => ({
-      numero: String(x.numero).trim(),
-      nombre: x.nombre ?? null,
+    ejemplares: filtrarParaDupletaYPolla(c.caballos ?? []).map((x) => ({
+      numero: x.numero_ejemplar,
+      nombre: x.nombre || null,
     })),
     invalidados: [...new Set([...retirados, ...invPolla])],
     retirados,

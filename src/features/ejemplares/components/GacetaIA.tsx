@@ -21,6 +21,9 @@ import {
   type DiagnosticoCarrera,
 } from "@/features/gaceta/lib/validador";
 import { guardarHistorialGaceta, registrarEjemplares, registrarGacetaEHistorial } from "@/features/gaceta/lib/padron";
+import { PROMPT_RINCONADA } from "@/features/gaceta/lib/prompts/prompt-rinconada";
+import { PROMPT_AMERICANAS, limpiarMarcaAguaRetrospecto } from "@/features/gaceta/lib/prompts/prompt-americanas";
+import { ingestarGacetaProfunda, type PayloadGacetaProfunda } from "@/features/gaceta/lib/ingestar-profunda";
 import { sincronizarCarrerasAlCentral, type ResultadoCargaCarrera } from "@/features/carreras/lib/sincronizar";
 import { listarCarrerasCentrales, eliminarCarreraCentral } from "@/features/carreras/lib/central";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
@@ -339,6 +342,7 @@ function convertirCarreraATablaFija(c: CarreraRegistro, fechaIso: string): Tabla
 }
 
 export function GacetaIA() {
+  const [subPestana, setSubPestana] = useState<"rinconada" | "americanas">("rinconada");
   const [paginas, setPaginas] = useState<PaginaGaceta[]>([]);
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set());
   const [clave, setClave] = useState("");
@@ -486,6 +490,59 @@ export function GacetaIA() {
             "warning"
           );
         }
+        try {
+          const payloadProfundo: PayloadGacetaProfunda = {
+            carreras: lote.map((c) => ({
+              hipodromo: String(c.hipodromo || "LA RINCONADA").toUpperCase(),
+              codigo_hipodromo: null,
+              fecha: c.fecha || fecha,
+              hora: (c as any).hora || null,
+              numero_carrera: Number(c.carrera) || 1,
+              distancia_m: c.distancia ? Number(c.distancia) : 1200,
+              superficie: c.superficie || "ARENA",
+              bolsa_usd: Number(c.premio) || null,
+              condicion_lote: (c as CarreraExtraida).condicionLote || null,
+              condicion_lote_completa: null,
+              record_pista: null,
+              valida_5y6: (c as CarreraExtraida).valida5y6 || null,
+              codigo_anual: (c as CarreraExtraida).codigoAnual || null,
+              favoritos_gaceta: (c as CarreraExtraida).favoritosGaceta || [],
+              orden_rating_gaceta: [],
+              ejemplares: ((c.ejemplares?.length ? c.ejemplares : (c as any).caballos) || []).map((e: any) => ({
+                numero_programa: String(e.numero || "1"),
+                puesto_partida: e.pp ? Number(e.pp) : null,
+                nombre: String(e.nombre || "").trim().toUpperCase(),
+                pais_origen: e.nacionalidad || (subPestana === "rinconada" ? "VEN" : "USA"),
+                fecha_nacimiento: null,
+                anio_nacimiento: null,
+                stud: e.stud || null,
+                sexo: null,
+                pelaje: null,
+                padre: null,
+                madre: null,
+                abuelo_materno: null,
+                haras_criador: null,
+                dias_sin_correr: null,
+                ganancias_usd: null,
+                jinete: e.jockey || e.jinete || null,
+                entrenador: e.entrenador || null,
+                peso_kg: e.peso ? Number(e.peso) : null,
+                implementos: e.implementos || null,
+                campana_resumen: null,
+                comentario: e.comentario || null,
+                morning_line: e.ml || null,
+                es_elegible: Boolean(e.esElegible || e.condicionElegibilidad != null),
+                retirado: Boolean(e.retirado),
+                carreras_previas: [],
+                trabajos: [],
+              })),
+            })),
+          };
+          await ingestarGacetaProfunda(payloadProfundo);
+        } catch (eProf) {
+          console.warn("Aviso en ingestarGacetaProfunda:", eProf);
+        }
+
         const sincronizacion = await sincronizarCarrerasAlCentral(lote, "gaceta-ia", { forzarReemplazo });
         setReporteCarga(sincronizacion.resultados);
         if (!sincronizacion.ok || sincronizacion.resultados.some((r) => r.estado === "ERROR")) {
@@ -936,15 +993,19 @@ export function GacetaIA() {
             ? [{ nombre: "documento", texto: textoDocumento }]
             : [];
 
+      const promptActivo = subPestana === "rinconada" ? PROMPT_RINCONADA : PROMPT_AMERICANAS;
+
       for (let idxDoc = 0; idxDoc < listaTextos.length; idxDoc++) {
         const doc = listaTextos[idxDoc];
         const prefijo = listaTextos.length > 1 ? `[${idxDoc + 1}/${listaTextos.length} · ${doc.nombre}] ` : "";
+        const textoAEnviar = subPestana === "americanas" ? limpiarMarcaAguaRetrospecto(doc.texto) : doc.texto;
         const resDoc = await transformarGacetaTexto(
           clave.trim(),
-          doc.texto,
+          textoAEnviar,
           (hecho, total) => setProgreso({ hecho, total }),
           (s) => setEstado(`${prefijo}${s}`),
-          doc.nombre
+          doc.nombre,
+          promptActivo
         );
         if (resDoc.diag) diags.push(prefijo ? `${prefijo}\n${resDoc.diag}` : resDoc.diag);
         if (resDoc.cuotaTotal) huboCuotaTotal = true;
@@ -974,7 +1035,8 @@ export function GacetaIA() {
           imgsParaVision,
           (hecho, total) => setProgreso({ hecho, total }),
           (s) => setEstado(s),
-          archivoVision
+          archivoVision,
+          promptActivo
         );
         if (resImg.diag) diags.push(resImg.diag);
         if (resImg.cuotaTotal) huboCuotaTotal = true;
@@ -1623,6 +1685,41 @@ export function GacetaIA() {
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-line bg-surface p-5 lg:col-span-2">
+          {/* Sub-Pestañas Independientes: Extractor La Rinconada vs Extractor Americanas */}
+          <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-line pb-3">
+            <button
+              type="button"
+              onClick={() => setSubPestana("rinconada")}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm ${
+                subPestana === "rinconada"
+                  ? "bg-amber-500 text-slate-950 ring-2 ring-amber-400/50 shadow-amber-500/20"
+                  : "bg-surfaceAlt text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <span>🇻🇪</span>
+              <span>Extractor La Rinconada</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubPestana("americanas")}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm ${
+                subPestana === "americanas"
+                  ? "bg-indigo-600 text-white ring-2 ring-indigo-400/50 shadow-indigo-500/20"
+                  : "bg-surfaceAlt text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <span>🇺🇸</span>
+              <span>Extractor Americanas</span>
+            </button>
+            <div className="ml-auto text-[11px] font-medium text-slate-500">
+              {subPestana === "rinconada" ? (
+                <span className="text-amber-600 dark:text-amber-400">Modalidad: Gaceta Hípica (Venezuela)</span>
+              ) : (
+                <span className="text-indigo-600 dark:text-indigo-400">Modalidad: Retrospectos USA (Orden espacial Y,X)</span>
+              )}
+            </div>
+          </div>
+
           <h3 className="mb-4 border-b border-line pb-2 text-xs font-bold uppercase tracking-wider text-slate-600">
             📤 Subir la Gaceta (PDF o Imagen)
           </h3>

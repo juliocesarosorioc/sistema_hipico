@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
+import { filtrarParaDupletaYPolla } from "@/features/gaceta/lib/modales-selectores";
 import { emitirToast } from "@/shared/lib/mensajeria";
 import { useConfirmar } from "@/shared/store/useConfirmStore";
 import { listarTablasPublicadas } from "@/features/tablas/lib/rpc";
@@ -420,19 +421,14 @@ export function DupletaModule() {
   const ejemplaresDe = (carrera: string): CaballoDupleta[] => {
     const fila = carrerasDelDia.find((c) => String(c.carrera) === String(carrera));
     const central = centralCarreras.find((c) => String(c.carrera) === String(carrera));
-    const lista = (fila?.caballos ?? []) as Array<{
-      numero: number | string;
-      nombre?: string | null;
-      nacionalidad?: string | null;
-      retirado?: boolean;
-    }>;
+    const lista = filtrarParaDupletaYPolla(fila?.caballos ?? []);
     const retiradosCentral = new Set(central?.retirados ?? []);
     return lista
       .map((c) => ({
-        numero: String(c.numero ?? ""),
+        numero: String(c.numero_ejemplar ?? ""),
         nombre: String(c.nombre || "").trim().toUpperCase(),
-        nacionalidad: c.nacionalidad ?? null,
-        retirado: Boolean(c.retirado) || retiradosCentral.has(String(c.numero ?? "")),
+        nacionalidad: null,
+        retirado: Boolean(c.retirado) || retiradosCentral.has(String(c.numero_ejemplar ?? "")),
       }))
       .filter((c) => c.numero);
   };
