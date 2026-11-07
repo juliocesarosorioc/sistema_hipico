@@ -50,6 +50,14 @@ export interface ClienteSesionSala {
   modo_juego: string;
   grupo_id?: string | null;
   esOperadorOAdmin?: boolean;
+  esAdmin?: boolean;
+}
+
+function esUsuarioAdministrador(usuario?: string, perfiles: string[] = [], esPrincipal = false): boolean {
+  if (esPrincipal) return true;
+  if (perfiles && perfiles.some((p) => /admin/i.test(p))) return true;
+  if (/ADMIN|JULIO|JOSORIO/i.test(usuario || "")) return true;
+  return false;
 }
 
 const STORAGE_SESSION_KEY = "hipico_sala_session_v2";
@@ -189,7 +197,19 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           const parsed = JSON.parse(guardada) as ClienteSesionSala;
           if (parsed && parsed.id && parsed.nombre) {
             const alias = String(parsed.seudonimo || parsed.nombre).toUpperCase();
-            setSesion({ ...parsed, nombre: alias, seudonimo: alias });
+            const authSt = useAuthStore.getState();
+            const esAdminCalc = esUsuarioAdministrador(
+              parsed.id.startsWith("op-") ? authSt.usuario : alias,
+              authSt.perfiles,
+              authSt.esPrincipal
+            );
+            const sesionRestaurada: ClienteSesionSala = {
+              ...parsed,
+              nombre: alias,
+              seudonimo: alias,
+              esAdmin: esAdminCalc,
+            };
+            setSesion(sesionRestaurada);
             setCargandoAuth(false);
             return;
           }
@@ -205,10 +225,12 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           const p = JSON.parse(portalRaw);
           const c = p?.cliente;
           if (c && (c.nombre || c.id)) {
+            const authSt = useAuthStore.getState();
+            const aliasCli = String(c.seudonimo || c.nombre || "Jugador").toUpperCase();
             const sesionDetectada: ClienteSesionSala = {
               id: String(c.id),
-              nombre: String(c.seudonimo || c.nombre || "Jugador").toUpperCase(),
-              seudonimo: String(c.seudonimo || c.nombre || "Jugador").toUpperCase(),
+              nombre: aliasCli,
+              seudonimo: aliasCli,
               telefono: String(c.telefono || ""),
               saldo_actual: Number(c.saldo_actual || 0),
               aval: Number(c.aval || 0),
@@ -216,6 +238,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
               modo_juego: String(c.modo_juego || "aval"),
               grupo_id: c.grupo_id || GRUPO_DEFAULT_ID,
               esOperadorOAdmin: /ADMIN|OPERADOR|ARELY|JULIO/i.test(c.nombre || ""),
+              esAdmin: esUsuarioAdministrador(aliasCli, authSt.perfiles, authSt.esPrincipal),
             };
             localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionDetectada));
             setSesion(sesionDetectada);
@@ -229,8 +252,9 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
 
       // 3. ¿Tiene sesión activa de Operador / Administrador en useAuthStore?
       try {
-        const authUser = useAuthStore.getState().usuario;
-        const nombreOp = useAuthStore.getState().tipoUsuario?.nombre || authUser;
+        const authSt = useAuthStore.getState();
+        const authUser = authSt.usuario;
+        const nombreOp = authSt.tipoUsuario?.nombre || authUser;
         if (authUser) {
           const sesionOp: ClienteSesionSala = {
             id: `op-${authUser}`,
@@ -241,8 +265,9 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
             aval: 0,
             libre: true,
             modo_juego: "libre",
-            grupo_id: useAuthStore.getState().grupoActivo || GRUPO_DEFAULT_ID,
+            grupo_id: authSt.grupoActivo || GRUPO_DEFAULT_ID,
             esOperadorOAdmin: true,
+            esAdmin: esUsuarioAdministrador(authUser, authSt.perfiles, authSt.esPrincipal),
           };
           localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionOp));
           setSesion(sesionOp);
@@ -436,9 +461,11 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     }
   };
 
-  // 4d. Administrador: Editar sala existente
+  // 4d. Administrador: Editar sala existente (solo administrador)
   const handleEditarSala = async (salaId: string, nuevoNombre: string, descripcion?: string): Promise<{ ok: boolean; error?: string }> => {
-    if (!sesion?.esOperadorOAdmin) return { ok: false, error: "Sin permiso." };
+    if (!sesion?.esAdmin) {
+      return { ok: false, error: "Solo los administradores pueden editar salas de juegos." };
+    }
     try {
       const res = await editarSala(salaId, grupoSeleccionadoId, nuevoNombre, descripcion);
       if (!res.ok) return res;
@@ -452,9 +479,11 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     }
   };
 
-  // 4e. Administrador: Eliminar sala
+  // 4e. Administrador: Eliminar sala (solo administrador)
   const handleEliminarSala = async (salaId: string): Promise<{ ok: boolean; error?: string }> => {
-    if (!sesion?.esOperadorOAdmin) return { ok: false, error: "Sin permiso." };
+    if (!sesion?.esAdmin) {
+      return { ok: false, error: "Solo los administradores pueden eliminar salas de juegos." };
+    }
     try {
       const res = await eliminarSala(salaId, grupoSeleccionadoId);
       if (!res.ok) return res;
@@ -471,9 +500,9 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     }
   };
 
-  // 4f. Administrador: Editar nombre de grupo de venta
+  // 4f. Administrador: Editar nombre de grupo de venta (solo administrador)
   const handleEditarGrupo = async (grupoId: string, nuevoNombre: string): Promise<{ ok: boolean; error?: string }> => {
-    if (!sesion?.esOperadorOAdmin) return { ok: false, error: "Sin permiso." };
+    if (!sesion?.esAdmin) return { ok: false, error: "Solo los administradores pueden editar grupos." };
     try {
       const res = await editarGrupoVenta(grupoId, nuevoNombre);
       if (!res.ok) return res;
@@ -487,9 +516,9 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     }
   };
 
-  // 4g. Administrador: Eliminar / desactivar grupo de venta
+  // 4g. Administrador: Eliminar / desactivar grupo de venta (solo administrador)
   const handleEliminarGrupo = async (grupoId: string): Promise<{ ok: boolean; error?: string }> => {
-    if (!sesion?.esOperadorOAdmin) return { ok: false, error: "Sin permiso." };
+    if (!sesion?.esAdmin) return { ok: false, error: "Solo los administradores pueden eliminar grupos." };
     try {
       const res = await eliminarGrupoVenta(grupoId);
       if (!res.ok) return res;
@@ -777,10 +806,12 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     } catch {
       /* ignore */
     }
+    const aliasCli = String(cli.seudonimo || cli.nombre || "Jugador").toUpperCase();
+    const authSt = useAuthStore.getState();
     const sesionNueva: ClienteSesionSala = {
       id: String(cli.id),
-      nombre: String(cli.seudonimo || cli.nombre || "Jugador").toUpperCase(),
-      seudonimo: String(cli.seudonimo || cli.nombre || "Jugador").toUpperCase(),
+      nombre: aliasCli,
+      seudonimo: aliasCli,
       telefono: String(cli.telefono || ""),
       saldo_actual: Number(cli.saldo_actual || 0),
       aval: Number(cli.aval || 0),
@@ -788,6 +819,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
       modo_juego: String(cli.modo_juego || "aval"),
       grupo_id: cli.grupo_id || GRUPO_DEFAULT_ID,
       esOperadorOAdmin: /ADMIN|OPERADOR|ARELY|JULIO/i.test(cli.nombre || ""),
+      esAdmin: esUsuarioAdministrador(aliasCli, authSt.perfiles, authSt.esPrincipal),
     };
     localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionNueva));
     setSesion(sesionNueva);
@@ -800,8 +832,9 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     } catch {
       /* ignore */
     }
-    const authUser = useAuthStore.getState().usuario || "operador";
-    const nombreOp = useAuthStore.getState().tipoUsuario?.nombre || authUser;
+    const authSt = useAuthStore.getState();
+    const authUser = authSt.usuario || "operador";
+    const nombreOp = authSt.tipoUsuario?.nombre || authUser;
     const sesionOp: ClienteSesionSala = {
       id: `op-${authUser}`,
       nombre: String(nombreOp || authUser).toUpperCase(),
@@ -811,8 +844,9 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
       aval: 0,
       libre: true,
       modo_juego: "libre",
-      grupo_id: useAuthStore.getState().grupoActivo || GRUPO_DEFAULT_ID,
+      grupo_id: authSt.grupoActivo || GRUPO_DEFAULT_ID,
       esOperadorOAdmin: true,
+      esAdmin: esUsuarioAdministrador(authUser, authSt.perfiles, authSt.esPrincipal),
     };
     localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionOp));
     setSesion(sesionOp);
@@ -1923,6 +1957,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           onEliminarSala={handleEliminarSala}
           nombreUsuario={sesion.nombre}
           esOperadorOAdmin={sesion.esOperadorOAdmin}
+          esAdmin={Boolean(sesion.esAdmin)}
           onCrearSala={handleCrearNuevaSala}
         />
       </div>

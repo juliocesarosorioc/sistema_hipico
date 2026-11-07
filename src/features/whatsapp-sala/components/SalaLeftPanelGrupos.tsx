@@ -25,6 +25,7 @@ interface Props {
 
   nombreUsuario: string;
   esOperadorOAdmin?: boolean;
+  esAdmin?: boolean;
   onCrearSala?: (nombre: string, descripcion?: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
@@ -45,6 +46,7 @@ export function SalaLeftPanelGrupos({
   onEliminarSala,
   nombreUsuario,
   esOperadorOAdmin,
+  esAdmin,
   onCrearSala,
 }: Props) {
   const [busqueda, setBusqueda] = useState("");
@@ -103,9 +105,13 @@ export function SalaLeftPanelGrupos({
     }
   };
 
-  // Guardar edición de sala
+  // Guardar edición de sala (solo administrador)
   const handleGuardarEdicionSala = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!esAdmin) {
+      setErrorSala("Solo los administradores pueden editar salas.");
+      return;
+    }
     if (!salaParaEditar || !nombreEditSala.trim()) return;
     setGuardandoSala(true);
     setErrorSala(null);
@@ -125,8 +131,12 @@ export function SalaLeftPanelGrupos({
     }
   };
 
-  // Confirmar eliminación de sala
+  // Confirmar eliminación de sala (solo administrador)
   const handleConfirmarEliminarSala = async () => {
+    if (!esAdmin) {
+      setErrorSala("Solo los administradores pueden eliminar salas.");
+      return;
+    }
     if (!salaParaEliminar) return;
     setGuardandoSala(true);
     try {
@@ -252,7 +262,7 @@ export function SalaLeftPanelGrupos({
         </div>
 
         {/* Acciones de Edición / Eliminación de Grupo para Administrador */}
-        {esOperadorOAdmin && (
+        {esAdmin && (
           <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
@@ -376,8 +386,8 @@ export function SalaLeftPanelGrupos({
                   </div>
                 </div>
 
-                {/* Acciones Hover: Editar / Eliminar Sala */}
-                {esOperadorOAdmin && (
+                {/* Acciones Hover: Editar / Eliminar Sala - Solo Administrador */}
+                {esAdmin && (
                   <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 shrink-0 transition-opacity">
                     <button
                       type="button"
