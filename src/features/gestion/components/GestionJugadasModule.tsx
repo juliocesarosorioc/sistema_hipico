@@ -3635,34 +3635,48 @@ const hipodromosDelDia = useMemo(() => {
         }}
         accionDerecha={
           <div className="grid grid-cols-2 gap-1.5 w-full sm:flex sm:items-center sm:gap-2 sm:w-auto">
-            <button
-              data-tour="tour-liquidar-carrera"
-              type="button"
-              onClick={() => void solicitarLiquidarCarrera()}
-              disabled={!listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada}
-              title={
-                !listoParaCargar
-                  ? "Elija hipódromo y carrera para liquidar"
-                  : carreraLiquidada
-                    ? "Carrera ya liquidada. Para volver a liquidar primero debe reversar la liquidación (🔄 Reversar Liquidación)."
+            {carreraLiquidada ? (
+              <button
+                data-tour="tour-reversar-carrera"
+                type="button"
+                onClick={() => setModalReversar(true)}
+                disabled={!listoParaCargar || bloqueoLiquidacionActivo}
+                title="🔄 Reversa la liquidación de esta carrera: devuelve a los clientes el dinero acreditado y la deja ABIERTA para volver a cargar y liquidar"
+                className="group relative col-span-2 sm:col-auto inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all shadow-md shrink-0 whitespace-nowrap bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 hover:from-rose-500 hover:to-red-500 shadow-rose-600/35 ring-2 ring-rose-400/60 hover:scale-[1.02] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]"
+              >
+                <span className="text-base sm:text-lg transition-transform duration-200 group-hover:scale-110 drop-shadow">
+                  🔄
+                </span>
+                <span>Reversar Liquidación</span>
+              </button>
+            ) : (
+              <button
+                data-tour="tour-liquidar-carrera"
+                type="button"
+                onClick={() => void solicitarLiquidarCarrera()}
+                disabled={!listoParaCargar || bloqueoLiquidacionActivo}
+                title={
+                  !listoParaCargar
+                    ? "Elija hipódromo y carrera para liquidar"
                     : filasPreview.filter((f) => !f.anulada).length === 0
                       ? "Sin jugadas cargadas: cargue información de jugadas antes de liquidar"
                       : "Carga/edita los resultados y liquida (un solo flujo: Ctrl+Y o Ctrl+R)"
-              }
-              className={`group relative col-span-2 sm:col-auto inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all shadow-md shrink-0 whitespace-nowrap ${
-                !listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada
-                  ? "cursor-not-allowed bg-slate-300 text-slate-500 opacity-60 shadow-none ring-0"
-                  : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 shadow-emerald-600/35 ring-2 ring-emerald-400/60 hover:ring-emerald-300 hover:scale-[1.02] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]"
-              }`}
-            >
-              <span className="text-base sm:text-lg transition-transform duration-200 group-hover:scale-110 drop-shadow">
-                🏆
-              </span>
-              <span>Liquidar Carrera</span>
-              <span className="hidden md:inline-flex items-center rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-extrabold tracking-normal text-emerald-100 opacity-90 shadow-2xs">
-                Ctrl+Y
-              </span>
-            </button>
+                }
+                className={`group relative col-span-2 sm:col-auto inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 text-xs sm:text-sm font-black uppercase tracking-wider text-white transition-all shadow-md shrink-0 whitespace-nowrap ${
+                  !listoParaCargar || bloqueoLiquidacionActivo
+                    ? "cursor-not-allowed bg-slate-300 text-slate-500 opacity-60 shadow-none ring-0"
+                    : "bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 shadow-emerald-600/35 ring-2 ring-emerald-400/60 hover:ring-emerald-300 hover:scale-[1.02] active:scale-[0.98] shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]"
+                }`}
+              >
+                <span className="text-base sm:text-lg transition-transform duration-200 group-hover:scale-110 drop-shadow">
+                  🏆
+                </span>
+                <span>Liquidar Carrera</span>
+                <span className="hidden md:inline-flex items-center rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-extrabold tracking-normal text-emerald-100 opacity-90 shadow-2xs">
+                  Ctrl+Y
+                </span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setModalAgentePizarra(true)}
@@ -5260,17 +5274,26 @@ const hipodromosDelDia = useMemo(() => {
               ✏️ Editar jugadas
             </button>
           )}
-          {carreraLiquidada && puedeReabrir ? (
+          {carreraLiquidada ? (
             <button
               type="button"
               onClick={() => setModalReversar(true)}
               disabled={!listoParaCargar || bloqueoLiquidacionActivo}
-              title={listoParaCargar ? "🔄 Reversa la liquidación de esta carrera: devuelve a los clientes el dinero acreditado y la deja ABIERTA para volver a cargar y liquidar" : "Elija hipódromo y carrera para reversar su liquidación"}
-              className={`${BTN_BARRA} bg-gradient-to-r from-rose-600 to-red-500 text-white hover:brightness-110 disabled:opacity-40`}
+              title="🔄 Reversa la liquidación de esta carrera: devuelve a los clientes el dinero acreditado y la deja ABIERTA para volver a cargar y liquidar"
+              className={`${BTN_BARRA} bg-gradient-to-r from-rose-600 to-red-500 text-white hover:brightness-110 disabled:opacity-40 shadow-sm`}
             >
               🔄 Reversar Liquidación
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              disabled
+              title="Esta carrera aún no está liquidada (el botón se activa al liquidar)"
+              className={`${BTN_BARRA} bg-slate-700/40 text-slate-400 opacity-50 cursor-not-allowed hidden sm:inline-flex`}
+            >
+              🔄 Reversar Liquidación
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void recalcularCompleta()}
@@ -5480,6 +5503,10 @@ const hipodromosDelDia = useMemo(() => {
       <ReporteLiquidacionModal
         abierto={mostrarReporteLiquidacion}
         onCerrar={cerrarReporteYBlanquear}
+        onReversar={() => {
+          setMostrarReporteLiquidacion(false);
+          setModalReversar(true);
+        }}
         hipodromoInicial={hipodromo}
         carreraInicial={carrera}
         fechaInicial={fecha}

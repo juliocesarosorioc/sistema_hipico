@@ -51,6 +51,8 @@ type Props = {
   pizarraInicial?: string;
   /** Cuando viene directo de liquidar una carrera, muestra exclusivamente esa carrera liquidada. */
   modoExclusivoLiquidacion?: boolean;
+  /** Acción opcional para reversar la liquidación directamente desde el reporte. */
+  onReversar?: () => void;
 };
 
 /** Fecha de ayer (ISO local) para el atajo «Ayer». */
@@ -81,6 +83,7 @@ export default function ReporteLiquidacionModal({
   fechaInicial,
   pizarraInicial,
   modoExclusivoLiquidacion = false,
+  onReversar,
 }: Props) {
   const [fecha, setFecha] = useState(fechaInicial || hoyLocal());
   const [grupos, setGrupos] = useState<GrupoRow[]>([]);
@@ -643,6 +646,16 @@ export default function ReporteLiquidacionModal({
               >
                 🖨️ Imprimir
               </button>
+              {onReversar && (
+                <button
+                  type="button"
+                  onClick={onReversar}
+                  className="rounded-lg bg-gradient-to-r from-rose-600 to-red-500 px-2.5 py-1.5 font-bold text-white hover:brightness-110 shadow-sm"
+                  title="Reversar esta liquidación: devuelve premios y reabre la carrera"
+                >
+                  🔄 Reversar Liquidación
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onCerrar}
