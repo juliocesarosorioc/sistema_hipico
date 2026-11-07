@@ -80,7 +80,7 @@ export function TablasModule(props: Props) {
    *  el Monitor de Tablas Publicadas abra en la jornada en curso. El usuario
    *  puede cambiar de día, o pasar a "TODOS LOS DÍAS" con el botón de la
    *  cabecera (que limpia esta fecha). */
-  const [fechaPrograma, setFechaPrograma] = useState<string>(() => hoyLocal());
+  const [fechaPrograma, setFechaPrograma] = useState<string>("");
   /** Fecha concreta (ISO) para operaciones que EXIGEN un día: publicar, validar
    *  la carga y sembrar el registro central. El monitor puede estar en "Todos
    *  los días" (`fechaPrograma === ""`), pero una tabla SIEMPRE se publica en un
@@ -722,35 +722,6 @@ export function TablasModule(props: Props) {
         >
           🔄 <span className="hidden sm:inline">Refrescar</span>
         </button>
-        <div
-          className="flex items-center gap-1.5 rounded-full border border-line bg-white px-2.5 py-0.5 text-xs font-black uppercase text-slate-600"
-          title="Filtro Universal por fecha: las tarjetas manuales y carreras vacías se publican bajo ESTA fecha (YYYY-MM-DD). Vacío = todos los días."
-        >
-          <span className="text-sm">📅</span>
-          <DateInput
-            value={fechaPrograma}
-            onFechaChange={(val) => setFechaPrograma(val)}
-            placeholder="DD/MM/AAAA"
-            className="border-0 bg-transparent py-0.5 px-1 text-xs font-bold text-slate-700 shadow-none focus:ring-0 w-32"
-          />
-        </div>
-        {fechaPrograma ? (
-          <button
-            type="button"
-            onClick={() => setFechaPrograma("")}
-            className="flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-black uppercase text-emerald-700 transition-colors hover:bg-emerald-100"
-            title="Quitar el filtro de fecha y ver TODOS los días"
-          >
-            🗓️ <span className="hidden sm:inline">Todos los días</span>
-          </button>
-        ) : (
-          <span
-            className="flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-black uppercase text-emerald-700"
-            title="Mostrando todas las fechas publicadas"
-          >
-            🗓️ Todos los días
-          </span>
-        )}
       </div>
 
       {/* PESTAÑAS PRINCIPALES DEL MÓDULO (ORDEN: 1. MONITOR, 2. ENSAMBLAJE, 3. PARÁMETROS) */}
@@ -820,6 +791,7 @@ export function TablasModule(props: Props) {
             fecha={fechaPrograma}
             onFecha={setFechaPrograma}
             permitirTodos
+            ocultarFecha
             ejeFecha={ejeFecha}
             vacio={
               fechaPrograma

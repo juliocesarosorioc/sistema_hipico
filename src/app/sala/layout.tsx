@@ -3,8 +3,8 @@ import React from "react";
 
 
 export const metadata: Metadata = {
-  title: "Sala WhatsApp · Agente IA Oficial",
-  description: "Sala de jugadas oficial hípica P2P estilo WhatsApp con Agente IA Autónomo.",
+  title: "Sala de Juegos · Agente IA Oficial",
+  description: "Sala de juegos oficial hípica P2P estilo WhatsApp con Agente IA Autónomo.",
 };
 
 export const viewport: Viewport = {

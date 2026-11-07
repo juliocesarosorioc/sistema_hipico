@@ -25,7 +25,8 @@ import { guardarCarreraCentral } from "@/features/carreras/lib/central";
 import { esFechaIso } from "@/core/utils/fechas";
 import { DateInput } from "@/shared/components/ui/DateInput";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
-import { diaDeCarrera, type EjeFecha } from "@/features/carreras/lib/agruparHipodromos";
+import { diaDeCarrera, normalizarDia, type EjeFecha } from "@/features/carreras/lib/agruparHipodromos";
+import { claveHipodromo, numeroCarrera } from "@/features/carreras/lib/claves";
 import {
   esTablaActivaEnPortal,
   alternarTablaActivaPortal,
@@ -353,11 +354,12 @@ export function MonitorTablas({
   // Conteo de tablas por hipódromo para las píldoras de navegación rápida
   const conteoPorHipodromo = useMemo(() => {
     const counts: Record<string, number> = {};
+    const fNorm = normalizarDia(fechaFiltro);
     baseTablas.forEach((t) => {
-      if (fechaFiltro && diaDeLaTabla(t, ejeFecha) !== fechaFiltro) return;
-      const hipo = t.hipodromo ?? "";
-      if (hipo) {
-        counts[hipo] = (counts[hipo] || 0) + 1;
+      if (fNorm && normalizarDia(diaDeLaTabla(t, ejeFecha)) !== fNorm) return;
+      const hipoKey = t.hipodromo ? claveHipodromo(t.hipodromo) : "";
+      if (hipoKey) {
+        counts[hipoKey] = (counts[hipoKey] || 0) + 1;
       }
     });
     return counts;
@@ -373,53 +375,72 @@ export function MonitorTablas({
   // FILTROS EN CASCADA BIDIRECCIONALES
   const fechasDisponibles = useMemo(() => {
     const setFechas = new Set<string>();
+    const hipoKey = claveHipodromo(hipodromoFiltro);
     baseTablas.forEach((t) => {
-      if (!hipodromoFiltro || t.hipodromo === hipodromoFiltro) {
-        const d = diaDeLaTabla(t, ejeFecha);
+      if (!hipoKey || claveHipodromo(t.hipodromo) === hipoKey) {
+        const d = normalizarDia(diaDeLaTabla(t, ejeFecha));
         if (d) setFechas.add(d);
       }
     });
     if (centralEnFiltro) {
       centralCarreras.forEach((c) => {
-        if (!hipodromoFiltro || c.hipodromo === hipodromoFiltro) setFechas.add(c.fecha);
+        if (!hipoKey || claveHipodromo(c.hipodromo) === hipoKey) {
+          const d = normalizarDia(c.fecha);
+          if (d) setFechas.add(d);
+        }
       });
     }
-    // El día elegido (por defecto HOY) se ofrece siempre, aunque no haya
-    // carreras: el filtro nunca se resetea a "todas las fechas".
-    if (fechaFiltro) setFechas.add(fechaFiltro);
+    // El día elegido se ofrece siempre para que no se resetee
+    if (fechaFiltro) {
+      const fn = normalizarDia(fechaFiltro);
+      if (fn) setFechas.add(fn);
+    }
     return Array.from(setFechas).sort().reverse();
   }, [baseTablas, hipodromoFiltro, centralCarreras, fechaFiltro, ejeFecha, centralEnFiltro]);
 
   const hipodromosDisponibles = useMemo(() => {
-    const setHips = new Set<string>();
+    const mapHips = new Map<string, string>();
+    const fNorm = normalizarDia(fechaFiltro);
     baseTablas.forEach((t) => {
-      if (!fechaFiltro || diaDeLaTabla(t, ejeFecha) === fechaFiltro) {
-        if (t.hipodromo) setHips.add(t.hipodromo);
+      if (!fNorm || normalizarDia(diaDeLaTabla(t, ejeFecha)) === fNorm) {
+        if (t.hipodromo) {
+          const k = claveHipodromo(t.hipodromo);
+          if (!mapHips.has(k)) mapHips.set(k, t.hipodromo);
+        }
       }
     });
     if (centralEnFiltro) {
       centralCarreras.forEach((c) => {
-        if (!fechaFiltro || c.fecha === fechaFiltro) setHips.add(c.hipodromo);
+        if (!fNorm || normalizarDia(c.fecha) === fNorm) {
+          if (c.hipodromo) {
+            const k = claveHipodromo(c.hipodromo);
+            if (!mapHips.has(k)) mapHips.set(k, c.hipodromo);
+          }
+        }
       });
     }
-    return Array.from(setHips).sort();
+    return Array.from(mapHips.values()).sort((a, b) =>
+      nombreHipodromoParaMostrar(a).localeCompare(nombreHipodromoParaMostrar(b))
+    );
   }, [baseTablas, fechaFiltro, centralCarreras, ejeFecha, centralEnFiltro]);
 
   /** Números de carrera disponibles dentro del día + hipódromo filtrados. */
   const carrerasDisponibles = useMemo(() => {
     const nums = new Set<string>();
+    const fNorm = normalizarDia(fechaFiltro);
+    const hipoKey = claveHipodromo(hipodromoFiltro);
     baseTablas.forEach((t) => {
-      if (fechaFiltro && diaDeLaTabla(t, ejeFecha) !== fechaFiltro) return;
-      if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return;
-      const c = String(t.carrera ?? "").trim();
-      if (c) nums.add(c);
+      if (fNorm && normalizarDia(diaDeLaTabla(t, ejeFecha)) !== fNorm) return;
+      if (hipoKey && claveHipodromo(t.hipodromo) !== hipoKey) return;
+      const num = numeroCarrera(t.carrera);
+      if (num > 0) nums.add(String(num));
     });
     if (centralEnFiltro) {
       centralCarreras.forEach((c) => {
-        if (fechaFiltro && c.fecha !== fechaFiltro) return;
-        if (hipodromoFiltro && c.hipodromo !== hipodromoFiltro) return;
-        const n = String(c.carrera ?? "").trim();
-        if (n) nums.add(n);
+        if (fNorm && normalizarDia(c.fecha) !== fNorm) return;
+        if (hipoKey && claveHipodromo(c.hipodromo) !== hipoKey) return;
+        const num = numeroCarrera(c.carrera);
+        if (num > 0) nums.add(String(num));
       });
     }
     return Array.from(nums).sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
@@ -436,17 +457,24 @@ export function MonitorTablas({
 
   useEffect(() => {
     if (hipodromoControlado) return; // el padre gobierna el filtro de hipódromo
-    if (hipodromoFiltro && !hipodromosDisponibles.includes(hipodromoFiltro)) setHipodromoLocal("");
+    const hipoKey = claveHipodromo(hipodromoFiltro);
+    if (hipoKey && !hipodromosDisponibles.some((h) => claveHipodromo(h) === hipoKey)) {
+      setHipodromoLocal("");
+    }
   }, [hipodromosDisponibles, hipodromoFiltro, hipodromoControlado]);
 
   // Aplicación del filtro final con orden numérico y búsqueda instantánea
   const filtradas = useMemo(() => {
     const q = busquedaTexto.trim().toLowerCase();
+    const fNorm = normalizarDia(fechaFiltro);
+    const hipoKey = claveHipodromo(hipodromoFiltro);
+    const carNum = numeroCarrera(carreraFiltro);
+
     return baseTablas
       .filter((t) => {
-        if (fechaFiltro && diaDeLaTabla(t, ejeFecha) !== fechaFiltro) return false;
-        if (hipodromoFiltro && t.hipodromo !== hipodromoFiltro) return false;
-        if (carreraFiltro && String(t.carrera ?? "").trim() !== carreraFiltro) return false;
+        if (fNorm && normalizarDia(diaDeLaTabla(t, ejeFecha)) !== fNorm) return false;
+        if (hipoKey && claveHipodromo(t.hipodromo) !== hipoKey) return false;
+        if (carNum > 0 && numeroCarrera(t.carrera) !== carNum) return false;
         if (q) {
           const hipoNombre = (t.hipodromo ?? "").toLowerCase();
           const hipoMostrar = nombreHipodromoParaMostrar(t.hipodromo).toLowerCase();
@@ -1082,8 +1110,9 @@ export function MonitorTablas({
               TODOS ({baseTablas.length})
             </button>
             {hipodromosDisponibles.map((h) => {
-              const activo = hipodromoFiltro === h;
-              const count = conteoPorHipodromo[h] || 0;
+              const k = claveHipodromo(h);
+              const activo = claveHipodromo(hipodromoFiltro) === k;
+              const count = conteoPorHipodromo[k] || 0;
               const esAmericano = /PARK|DOWNS|AQUEDUCT|SARATOGA|TAMPA|MEADOWS|WOODBINE|GOLDEN|SANTA ANITA|DEL MAR|OAKLAWN|CHARLES|DELTA|REMINGTON|MOUNTAINEER|FINGER|MAHONING|PENN|HORSESHOE|KEENELAND|CHURCHILL/i.test(h);
               const bandera = esAmericano ? "US" : "VE";
               return (

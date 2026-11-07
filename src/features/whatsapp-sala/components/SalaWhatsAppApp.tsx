@@ -87,6 +87,23 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
   const [clientesDisponibles, setClientesDisponibles] = useState<any[]>([]);
   const [busquedaCliente, setBusquedaCliente] = useState("");
 
+  const cargarListaClientes = useCallback(async () => {
+    if (!supabase) return;
+    try {
+      const { data: clis } = await supabase
+        .from("clientes")
+        .select("id, nombre, seudonimo, telefono, saldo_actual, aval, libre, modo_juego, grupo_id")
+        .order("nombre", { ascending: true })
+        .limit(100);
+
+      if (clis && clis.length > 0) {
+        setClientesDisponibles(clis);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   // Grupos de Venta y Salas Propias por Grupo ("cada grupo tiene sus propias salas")
   const [gruposVenta, setGruposVenta] = useState<GrupoVentaItem[]>([]);
   const [grupoSeleccionadoId, setGrupoSeleccionadoId] = useState<string>(GRUPO_DEFAULT_ID);
@@ -155,7 +172,33 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     async function resolverIdentidadAutomatica() {
       if (typeof window === "undefined") return;
 
-      // 1. ¿Tiene sesión activa en el Portal de Jugadores ("portal.cliente")?
+      // Cargar clientes registrados para tener la lista disponible de inmediato
+      void cargarListaClientes();
+
+      // Si el usuario presionó 'Cerrar sesión' o cambiar cuenta en esta pestaña:
+      const manualExit = sessionStorage.getItem("hipico_sala_manual_exit") === "true";
+      if (manualExit) {
+        setCargandoAuth(false);
+        return;
+      }
+
+      // 1. ¿Tiene sesión previa en la sala guardada en el dispositivo?
+      try {
+        const guardada = localStorage.getItem(STORAGE_SESSION_KEY);
+        if (guardada) {
+          const parsed = JSON.parse(guardada) as ClienteSesionSala;
+          if (parsed && parsed.id && parsed.nombre) {
+            const alias = String(parsed.seudonimo || parsed.nombre).toUpperCase();
+            setSesion({ ...parsed, nombre: alias, seudonimo: alias });
+            setCargandoAuth(false);
+            return;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
+      // 2. ¿Tiene sesión activa en el Portal de Jugadores ("portal.cliente")?
       try {
         const portalRaw = localStorage.getItem("portal.cliente");
         if (portalRaw) {
@@ -164,7 +207,6 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           if (c && (c.nombre || c.id)) {
             const sesionDetectada: ClienteSesionSala = {
               id: String(c.id),
-              // En el chat SIEMPRE se muestra el seudónimo (nunca el nombre real)
               nombre: String(c.seudonimo || c.nombre || "Jugador").toUpperCase(),
               seudonimo: String(c.seudonimo || c.nombre || "Jugador").toUpperCase(),
               telefono: String(c.telefono || ""),
@@ -185,7 +227,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         /* ignore */
       }
 
-      // 2. ¿Tiene sesión activa de Operador / Administrador en useAuthStore?
+      // 3. ¿Tiene sesión activa de Operador / Administrador en useAuthStore?
       try {
         const authUser = useAuthStore.getState().usuario;
         const nombreOp = useAuthStore.getState().tipoUsuario?.nombre || authUser;
@@ -211,46 +253,11 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         /* ignore */
       }
 
-      // 3. ¿Tiene sesión previa en la sala guardada en el dispositivo?
-      try {
-        const guardada = localStorage.getItem(STORAGE_SESSION_KEY);
-        if (guardada) {
-          const parsed = JSON.parse(guardada) as ClienteSesionSala;
-          if (parsed && parsed.id && parsed.nombre) {
-            // Sesiones guardadas antes de este cambio traían el nombre real
-            const alias = String(parsed.seudonimo || parsed.nombre).toUpperCase();
-            setSesion({ ...parsed, nombre: alias, seudonimo: alias });
-            setCargandoAuth(false);
-            return;
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-
-      // 4. Si entra por primera vez sin ninguna sesión previa:
-      // Traer la lista de clientes registrados para acceso directo en 1 clic
-      if (supabase) {
-        try {
-          const { data: clis } = await supabase
-            .from("clientes")
-            .select("id, nombre, seudonimo, telefono, saldo_actual, aval, libre, modo_juego, grupo_id")
-            .order("nombre", { ascending: true })
-            .limit(60);
-
-          if (clis && clis.length > 0) {
-            setClientesDisponibles(clis);
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-
       setCargandoAuth(false);
     }
 
     resolverIdentidadAutomatica();
-  }, []);
+  }, [cargarListaClientes]);
 
   // 3. Refrescar Saldo Privado (RPC obtener_mi_saldo_privado)
   const refrescarSaldo = useCallback(async (clienteId?: string) => {
@@ -765,6 +772,11 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
   // ENTRADA DIRECTA (SIN OTP NI FORMULARIOS)
   // ──────────────────────────────────────────────────────────────────────────
   const ingresarComoClienteDirecto = (cli: any) => {
+    try {
+      sessionStorage.removeItem("hipico_sala_manual_exit");
+    } catch {
+      /* ignore */
+    }
     const sesionNueva: ClienteSesionSala = {
       id: String(cli.id),
       nombre: String(cli.seudonimo || cli.nombre || "Jugador").toUpperCase(),
@@ -782,9 +794,39 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     refrescarSaldo(sesionNueva.id);
   };
 
+  const ingresarComoOperador = () => {
+    try {
+      sessionStorage.removeItem("hipico_sala_manual_exit");
+    } catch {
+      /* ignore */
+    }
+    const authUser = useAuthStore.getState().usuario || "operador";
+    const nombreOp = useAuthStore.getState().tipoUsuario?.nombre || authUser;
+    const sesionOp: ClienteSesionSala = {
+      id: `op-${authUser}`,
+      nombre: String(nombreOp || authUser).toUpperCase(),
+      seudonimo: String(nombreOp || authUser).toUpperCase(),
+      telefono: "",
+      saldo_actual: 0,
+      aval: 0,
+      libre: true,
+      modo_juego: "libre",
+      grupo_id: useAuthStore.getState().grupoActivo || GRUPO_DEFAULT_ID,
+      esOperadorOAdmin: true,
+    };
+    localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionOp));
+    setSesion(sesionOp);
+  };
+
   const cerrarSesion = () => {
-    localStorage.removeItem(STORAGE_SESSION_KEY);
+    try {
+      sessionStorage.setItem("hipico_sala_manual_exit", "true");
+      localStorage.removeItem(STORAGE_SESSION_KEY);
+    } catch {
+      /* ignore */
+    }
     setSesion(null);
+    void cargarListaClientes();
   };
 
   const anularPropuestaEnChat = async (propAAnular: MensajeSala, motivo: "USUARIO" | "ADMIN") => {
@@ -1749,6 +1791,8 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
   // Si entra desde una ventana nueva sin ninguna sesión previa vinculada:
   // Mostramos selección directa en 1 clic (SIN OTP ni pedir celular)
   if (!sesion) {
+    const authUser = useAuthStore.getState().usuario;
+    const nombreOp = useAuthStore.getState().tipoUsuario?.nombre || authUser;
     const clientesFiltrados = clientesDisponibles.filter((c) =>
       c.nombre?.toLowerCase().includes(busquedaCliente.toLowerCase()) ||
       c.seudonimo?.toLowerCase().includes(busquedaCliente.toLowerCase())
@@ -1756,47 +1800,91 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
 
     return (
       <div className={`flex ${embebido ? "min-h-full" : "min-h-[100dvh]"} w-full items-center justify-center bg-[#111b21] p-4 text-white font-sans select-none`}>
-        <div className="w-full max-w-sm rounded-3xl bg-[#202c33] p-6 shadow-2xl border border-[#2a3942]">
-          <div className="flex flex-col items-center gap-2 pb-5 text-center border-b border-[#2a3942]">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#00a884] text-white shadow-lg text-3xl">
-              🤖
+        <div className="w-full max-w-sm rounded-3xl bg-[#202c33] p-5 shadow-2xl border border-[#2a3942]">
+          {/* Barra superior de navegación / salir al sistema */}
+          <div className="flex items-center justify-between pb-3 border-b border-[#2a3942]">
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== "undefined") window.location.href = "/inicio";
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#8696a0] hover:text-[#00a884] transition-colors"
+            >
+              <span>←</span>
+              <span>Salir al Sistema</span>
+            </button>
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#00a884] bg-[#00a884]/10 px-2 py-0.5 rounded-full border border-[#00a884]/30">
+              Sala de Juegos
+            </span>
+          </div>
+
+          <div className="flex flex-col items-center gap-2 py-4 text-center border-b border-[#2a3942]">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#00a884] text-white shadow-lg text-2xl">
+              🐎
             </div>
-            <h1 className="text-lg font-bold tracking-tight text-[#e9edef]">Agente IA · Sala Oficial</h1>
+            <h1 className="text-base font-bold tracking-tight text-[#e9edef]">Sala de Juegos · Identidad</h1>
             <p className="text-xs text-[#8696a0]">
-              Selecciona tu cuenta o seudónimo para ingresar directamente a la sala:
+              Selecciona tu seudónimo o cuenta para ingresar directamente a las apuestas:
             </p>
           </div>
 
           <div className="mt-4 space-y-3">
+            {authUser && (
+              <button
+                type="button"
+                onClick={ingresarComoOperador}
+                className="w-full flex items-center justify-between p-2.5 rounded-xl bg-gradient-to-r from-emerald-900/60 to-teal-900/60 hover:from-emerald-800 hover:to-teal-800 border border-emerald-500/40 transition-all text-left shadow-sm"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="h-8 w-8 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center text-sm shrink-0">
+                    👑
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-black text-white truncate">Operador / Administrador</span>
+                    <span className="text-[10px] text-emerald-200 truncate">{nombreOp || authUser}</span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold text-emerald-300">Entrar ➔</span>
+              </button>
+            )}
+
             <input
               type="text"
               value={busquedaCliente}
               onChange={(e) => setBusquedaCliente(e.target.value)}
-              placeholder="Buscar tu seudónimo..."
-              className="w-full rounded-xl bg-[#111b21] px-4 py-2.5 text-xs text-[#e9edef] placeholder-[#8696a0] border border-[#2a3942] focus:border-[#00a884] focus:outline-none"
+              placeholder="Buscar seudónimo o nombre..."
+              className="w-full rounded-xl bg-[#111b21] px-4 py-2 text-xs text-[#e9edef] placeholder-[#8696a0] border border-[#2a3942] focus:border-[#00a884] focus:outline-none"
             />
 
             <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
               {clientesFiltrados.length > 0 ? (
-                clientesFiltrados.map((cli) => (
-                  <button
-                    key={cli.id}
-                    type="button"
-                    onClick={() => ingresarComoClienteDirecto(cli)}
-                    className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[#111b21] hover:bg-[#1a252c] border border-[#2a3942] hover:border-[#00a884] transition-all text-left"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="h-7 w-7 rounded-full bg-[#00a884]/20 border border-[#00a884]/50 flex items-center justify-center text-xs font-bold text-[#00a884]">
-                        {cli.nombre ? cli.nombre.charAt(0).toUpperCase() : "👤"}
+                clientesFiltrados.map((cli) => {
+                  const displayAlias = cli.seudonimo ? `@${cli.seudonimo}` : cli.nombre;
+                  return (
+                    <button
+                      key={cli.id}
+                      type="button"
+                      onClick={() => ingresarComoClienteDirecto(cli)}
+                      className="w-full flex items-center justify-between p-2 rounded-xl bg-[#111b21] hover:bg-[#1a252c] border border-[#2a3942] hover:border-[#00a884] transition-all text-left"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="h-7 w-7 rounded-full bg-[#00a884]/20 border border-[#00a884]/50 flex items-center justify-center text-xs font-bold text-[#00a884] shrink-0">
+                          {cli.seudonimo ? cli.seudonimo.charAt(0).toUpperCase() : cli.nombre ? cli.nombre.charAt(0).toUpperCase() : "👤"}
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs font-bold text-[#e9edef] truncate">{displayAlias}</span>
+                          {cli.seudonimo && cli.nombre && cli.seudonimo.toLowerCase() !== cli.nombre.toLowerCase() && (
+                            <span className="text-[10px] text-[#8696a0] truncate">{cli.nombre}</span>
+                          )}
+                        </div>
                       </div>
-                      <span className="text-xs font-bold text-[#e9edef] truncate">{cli.nombre}</span>
-                    </div>
-                    <span className="text-[10px] text-[#00a884] font-semibold">Entrar ➔</span>
-                  </button>
-                ))
+                      <span className="text-[10px] text-[#00a884] font-semibold shrink-0">Entrar ➔</span>
+                    </button>
+                  );
+                })
               ) : (
                 <div className="p-3 text-center text-xs text-[#8696a0]">
-                  No se encontraron clientes registrados.
+                  {clientesDisponibles.length === 0 ? "Cargando clientes registrados..." : "No se encontraron coincidencias."}
                 </div>
               )}
             </div>

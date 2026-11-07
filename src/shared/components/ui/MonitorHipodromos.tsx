@@ -60,6 +60,8 @@ type Props = {
   /** Eje del día mostrado: rotula el campo de fecha ("🏇 Carrera" / "🧾 Venta"). */
   ejeFecha?: "carrera" | "venta";
   className?: string;
+  /** Si es true, oculta el selector de fecha y el botón 'Todos los días'. */
+  ocultarFecha?: boolean;
 };
 
 export function MonitorHipodromos({
@@ -73,6 +75,7 @@ export function MonitorHipodromos({
   acciones,
   ejeFecha,
   className,
+  ocultarFecha = false,
 }: Props) {
   const activos = useHipodromosActivos();
   const nombre = (h: string) => nombrePropioHipodromo(h, activos);
@@ -84,34 +87,38 @@ export function MonitorHipodromos({
           <span className="mon-contador font-mono font-black">{grupos.length}</span>
         </span>
         <div className="flex items-center gap-2">
-          <label className="mon-control">
-            {ejeFecha === "venta" ? "🧾 Venta" : ejeFecha === "carrera" ? "🏇 Carrera" : "📅 Día"}
-            <DateInput
-              value={fecha}
-              onFechaChange={(val) => onFecha(permitirTodos ? val : val || hoyLocal())}
-              title={
-                ejeFecha === "venta"
-                  ? "Selecciona el día de VENTA de los Hipódromos"
-                  : "Selecciona el día de CARRERA de los Hipódromos"
-              }
-              className="mon-input py-0.5 px-1.5 text-[12px]"
-            />
-          </label>
-          {permitirTodos && (
-            fecha ? (
-              <button
-                type="button"
-                onClick={() => onFecha("")}
-                className="mon-limpiar"
-                title="Ver todos los días"
-              >
-                🗓️ Todos los días
-              </button>
-            ) : (
-              <span className="mon-contador" title="Mostrando todas las fechas">
-                🗓️ Todos los días
-              </span>
-            )
+          {!ocultarFecha && (
+            <>
+              <label className="mon-control">
+                {ejeFecha === "venta" ? "🧾 Venta" : ejeFecha === "carrera" ? "🏇 Carrera" : "📅 Día"}
+                <DateInput
+                  value={fecha}
+                  onFechaChange={(val) => onFecha(permitirTodos ? val : val || hoyLocal())}
+                  title={
+                    ejeFecha === "venta"
+                      ? "Selecciona el día de VENTA de los Hipódromos"
+                      : "Selecciona el día de CARRERA de los Hipódromos"
+                  }
+                  className="mon-input py-0.5 px-1.5 text-[12px]"
+                />
+              </label>
+              {permitirTodos && (
+                fecha ? (
+                  <button
+                    type="button"
+                    onClick={() => onFecha("")}
+                    className="mon-limpiar"
+                    title="Ver todos los días"
+                  >
+                    🗓️ Todos los días
+                  </button>
+                ) : (
+                  <span className="mon-contador" title="Mostrando todas las fechas">
+                    🗓️ Todos los días
+                  </span>
+                )
+              )}
+            </>
           )}
           {filtro && (
             <button type="button" onClick={() => onFiltro("")} className="mon-limpiar">

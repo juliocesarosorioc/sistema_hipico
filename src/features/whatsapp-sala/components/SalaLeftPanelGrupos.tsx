@@ -197,7 +197,18 @@ export function SalaLeftPanelGrupos({
           </div>
         </div>
 
-        <div className="flex items-center gap-1 text-[#aebac1]">
+        <div className="flex items-center gap-1.5 text-[#aebac1]">
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== "undefined") window.location.href = "/inicio";
+            }}
+            title="Salir al Sistema Principal"
+            className="flex items-center gap-1 text-[12px] bg-[#111b21] hover:bg-black/40 text-[#8696a0] hover:text-white px-2.5 py-1 rounded-full font-medium transition border border-[#2a3942]"
+          >
+            <span>←</span>
+            <span>Salir</span>
+          </button>
           {esOperadorOAdmin && (
             <button
               onClick={() => setModalNuevaSala(true)}

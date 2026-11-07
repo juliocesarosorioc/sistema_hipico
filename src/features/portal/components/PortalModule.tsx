@@ -565,8 +565,8 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
             type="button"
             onClick={() => setChatAbierto(true)}
             className="relative flex items-center gap-1.5 rounded-xl border border-teal-300 bg-gradient-to-r from-teal-600 to-emerald-600 px-2.5 py-1.5 text-xs font-black text-white shadow-md transition hover:brightness-110 sm:px-3"
-            title="Abrir la mensajería tipo WhatsApp de la sala"
-            aria-label="Abrir mensajería tipo WhatsApp"
+            title="Abrir la Sala de Juegos oficial"
+            aria-label="Abrir Sala de Juegos"
           >
             <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-300 opacity-75" />
@@ -934,7 +934,7 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-sm text-slate-900">
                 💬
               </span>
-              <span className="truncate text-sm font-black">Mensajería · Sala WhatsApp</span>
+              <span className="truncate text-sm font-black">Mensajería · Sala de Juegos</span>
             </div>
             <button
               type="button"

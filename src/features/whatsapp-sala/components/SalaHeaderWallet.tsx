@@ -79,7 +79,7 @@ export function SalaHeaderWallet({
         <div className="flex flex-col min-w-0">
           <div className="flex items-center gap-1.5 truncate">
             <span className="font-bold text-xs sm:text-sm text-white truncate">
-              {nombreSala || "SALA OFICIAL HÍPICA"}
+              {nombreSala || "SALA DE JUEGOS"}
               {nombreGrupo ? ` · ${nombreGrupo}` : ""}
             </span>
           </div>
@@ -185,11 +185,24 @@ export function SalaHeaderWallet({
           📋
         </button>
 
+        {/* Salir al Sistema Principal */}
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== "undefined") window.location.href = "/inicio";
+          }}
+          title="Salir al Sistema Principal"
+          className="hidden xs:inline-flex items-center gap-1 rounded-full bg-black/25 hover:bg-black/40 px-2.5 py-1 text-[11px] font-bold text-white/90 hover:text-white transition-colors border border-white/10"
+        >
+          <span>←</span>
+          <span>Salir</span>
+        </button>
+
         {/* Salir / Cambiar Sesión */}
         <button
           type="button"
           onClick={onCerrarSesion}
-          title="Cerrar sesión"
+          title="Cambiar cuenta o seudónimo"
           className="flex h-8 w-8 items-center justify-center rounded-full bg-black/20 hover:bg-black/30 text-white text-xs transition-colors"
         >
           🚪
