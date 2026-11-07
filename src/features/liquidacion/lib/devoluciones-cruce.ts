@@ -172,8 +172,15 @@ export function calcularBaseDecididaCarrera(
   const totalPerdidoBruto = totales.perdido;
 
   const hayCruce = totalGanadoBruto > 0 && totalPerdidoBruto > 0;
+  // Regla unificada de cruces: lo que gana menos lo que pierde y a la diferencia positiva
+  // es lo que se le calcula la comisión en caso de que el saldo termine siendo positivo.
+  // En ese caso, solo en base a ese monto positivo se estiman las devoluciones e incentivos.
+  const diferenciaPositiva = hayCruce && totalGanadoBruto > totalPerdidoBruto
+    ? redondearCentavos(totalGanadoBruto - totalPerdidoBruto)
+    : 0;
+
   const baseDecidida = hayCruce
-    ? redondearCentavos(Math.abs(totalGanadoBruto - totalPerdidoBruto))
+    ? diferenciaPositiva
     : redondearCentavos(totalGanadoBruto + totalPerdidoBruto);
 
   const pct = Math.max(0, Number(devolucionPct) || 0);

@@ -260,6 +260,7 @@ export function decidirTickets(
     }
     for (const idxs of porJugador.values()) {
       const jugador = String(decisiones[idxs[0]].fila.cliente_juega_id ?? "").trim().toUpperCase();
+      const nombreJugador = String(decisiones[idxs[0]].fila.cliente_juega_nombre ?? "").trim().toUpperCase();
       const grupoId = grupoDeCuenta(
         decisiones[idxs[0]].fila.grupo_cuenta_id as string | number | null | undefined,
         decisiones[idxs[0]].fila.grupo_publicador_id as string | number | null | undefined,
@@ -279,7 +280,7 @@ export function decidirTickets(
               ? restarDinero(m, r.totalClienteNeto)
               : m;
           return {
-            cliente: jugador,
+            cliente: nombreJugador || jugador,
             clienteId: jugador,
             grupoId,
             caballo: String(decisiones[i].fila.caballo ?? "").trim(),
@@ -288,15 +289,15 @@ export function decidirTickets(
             monto: perdidaEfectiva,
           };
         });
-      // Cruce con rol Consigue: si este jugador también DIO (Consigue) en la carrera y
-      // perdió (ganó el lado Juega), esa pérdida compensa sus ganancias como Juega y la
-      // comisión queda solo sobre la diferencia.
-      const nombreJugador = String(decisiones[idxs[0]].fila.cliente_juega_nombre ?? "").trim().toUpperCase();
-      if (nombreJugador) {
+      // Cruce simétrico con rol Consigue (tanto cuando Consigue pierde como cuando Consigue gana)
+      if (nombreJugador || jugador) {
         for (let i = 0; i < decisiones.length; i++) {
           if (idxs.includes(i) || !esPuestos(i)) continue;
           const fila = decisiones[i].fila;
-          if (String(fila.cliente_consigue_nombre ?? "").trim().toUpperCase() !== nombreJugador) continue;
+          const conNom = String(fila.cliente_consigue_nombre ?? "").trim().toUpperCase();
+          const conId = String(fila.cliente_consigue_id ?? "").trim().toUpperCase();
+          const coincide = (conNom && (conNom === nombreJugador || conNom === jugador)) || (conId && conId === jugador);
+          if (!coincide) continue;
           const grupoFila = grupoDeCuenta(
             fila.grupo_cuenta_id as string | number | null | undefined,
             fila.grupo_publicador_id as string | number | null | undefined,
@@ -304,18 +305,36 @@ export function decidirTickets(
           ) || String(input.grupoId ?? "").trim();
           if (grupoFila !== grupoId) continue;
           const r = decisiones[i].res;
-          if (!r.ok) continue;
-          const perdidaConsigue = restarDinero(sumarDinero(r.totalClienteNeto, r.gananciaCasa), NUM(fila.monto_jugado));
-          if (perdidaConsigue <= 0) continue;
-          entradas.push({
-            cliente: jugador,
-            clienteId: jugador,
-            grupoId,
-            caballo: String(fila.caballo ?? "").trim(),
-            ok: false,
-            bruto: 0,
-            monto: perdidaConsigue,
-          });
+          const m = NUM(fila.monto_jugado);
+          if (r.ok) {
+            // Juega gana -> Consigue pierde la ganancia neta de Juega
+            const perdidaConsigue = restarDinero(sumarDinero(r.totalClienteNeto, r.gananciaCasa), m);
+            if (perdidaConsigue > 0) {
+              entradas.push({
+                cliente: nombreJugador || jugador,
+                clienteId: jugador,
+                grupoId,
+                caballo: String(fila.caballo ?? "").trim(),
+                ok: false,
+                bruto: 0,
+                monto: perdidaConsigue,
+              });
+            }
+          } else {
+            // Juega pierde -> Consigue gana el monto apostado por Juega
+            const gananciaConsigue = m;
+            if (gananciaConsigue > 0) {
+              entradas.push({
+                cliente: nombreJugador || jugador,
+                clienteId: jugador,
+                grupoId,
+                caballo: String(fila.caballo ?? "").trim(),
+                ok: true,
+                bruto: gananciaConsigue,
+                monto: 0,
+              });
+            }
+          }
         }
       }
       const tasa = tasaComisionDeFila(decisiones[idxs[0]].fila, input.tasaComision);
@@ -639,7 +658,8 @@ export async function aplicarLiquidacionSaldos(
   }
 
   const decidibles = decisiones.filter((d) => !d.res.indeterminado);
-  const updates: Promise<unknown>[] = decidibles.map(({ fila, res }) => {
+  // 1. Persistir el estado oficial de cada ticket decidido en tickets_apuestas
+  const updatesTickets: Promise<unknown>[] = decidibles.map(({ fila, res }) => {
     const montoFila = NUM(fila.monto_jugado);
     const esEmpateTotal =
       !res.ok && montoFila > 0 && Math.abs(res.totalClienteNeto - montoFila) < 0.01;
@@ -652,11 +672,6 @@ export async function aplicarLiquidacionSaldos(
       (esEmpateTotal || esPerdidaParcial) &&
       retiradosPizarra.length > 0 &&
       jugadaInvolucraRetirado(fila.caballo, fila.ejemplar_numero, fila.nombre_jugada, retiradosPizarra);
-    // NUNCA escribir estado = "Anulada" en jugadas activas decididas por pizarra:
-    //   · Si el ejemplar fue retirado -> "Retirado"
-    //   · Si acertó con ganancia -> "Ganador"
-    //   · Si perdió (total o parcialmente, ej. 2Y3N en 3° lugar donde pierde mitad y empata mitad)
-    //     o empató NINI (premio_pagar = monto) -> "Perdedor" con `premio_pagar = totalClienteNeto`.
     const estado = esPorRetirado ? "Retirado" : res.ok ? "Ganador" : "Perdedor";
     const premioPagar = res.ok
       ? sumarDinero(res.totalClienteNeto, res.gananciaCasa)
@@ -670,34 +685,8 @@ export async function aplicarLiquidacionSaldos(
       : esEmpateTotal
       ? 0
       : montoFila;
-    const credito = res.ok || esEmpateTotal || esPerdidaParcial ? res.totalClienteNeto : 0;
 
-    const clientePromise = credito > 0
-      ? (async () => {
-          const fid = fila.cliente_juega_id;
-          if (fid == null) return;
-          const { data: c, error: eSel } = await sdb
-            .from("clientes")
-            .select("saldo_actual")
-            .eq("id", fid)
-            .maybeSingle();
-          if (eSel) {
-            // Sin lectura no se puede acumular sobre el saldo real: abortar solo el
-            // abono. Antes el error se ignoraba, `actual` caía en 0 y el UPDATE
-            // sobrescribía el saldo del cliente con el premio del ticket.
-            errores.push(`Saldo cliente ${String(fid)}: no se pudo leer (${eSel.message})`);
-            return;
-          }
-          const actual = NUM(((c ?? {}) as Record<string, unknown>).saldo_actual);
-          const { error: eUpd } = await sdb
-            .from("clientes")
-            .update({ saldo_actual: sumarDinero(actual, credito) })
-            .eq("id", fid as never);
-          if (eUpd) errores.push(`Saldo cliente ${String(fid)}: no se pudo acreditar (${eUpd.message})`);
-        })()
-      : Promise.resolve();
-
-    return Promise.all([
+    return Promise.resolve(
       sdb
         .from("tickets_apuestas")
         .update({
@@ -707,160 +696,210 @@ export async function aplicarLiquidacionSaldos(
           comision_pagada: res.ok ? res.gananciaCasa : 0,
           ...(esPorRetirado ? { anulada: false } : {}),
         })
-        .eq("id", fila.id as never),
-      clientePromise,
-    ]).catch((e) => {
+        .eq("id", fila.id as never)
+    ).catch((e: unknown) => {
       errores.push(`Ticket ${String(fila.id)}: ${(e as Error).message}`);
     });
   });
 
-  await Promise.all(updates);
+  await Promise.all(updatesTickets);
 
-  // ── ACREDITACIÓN UNIFICADA DE INCENTIVOS Y COMISIONES DE SOCIOS CARRERA A CARRERA ──
-  emitirMensajePaso("⏳ Acreditando incentivos y comisiones de socios de la carrera...", "info");
-  const clientesParticipantes = [
-    ...new Set(
-      decidibles
-        .map((d) => d.fila.cliente_juega_id)
-        .filter((id): id is string | number => id != null)
-    ),
-  ];
+  // ── UNIFICACIÓN DE SALDOS, CRUCES Y DEVOLUCIONES CARRERA A CARRERA (SSOT) ──
+  emitirMensajePaso("⏳ Unificando saldos por carrera con cruces e incentivos...", "info");
 
-  if (clientesParticipantes.length > 0) {
-    try {
-      const { data: dbClientes } = await sdb
-        .from("clientes")
-        .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, incentivo_base, socio_id, socio_asignado, socio_comision_pct, comision_socio_pct, socio_base, grupo_id")
-        .in("id", clientesParticipantes as string[]);
+  // 1. Recolectar identidades de TODOS los clientes participantes (Juega y Consigue)
+  const idsParticipantes = new Set<string>();
+  const nombresParticipantes = new Set<string>();
 
-      if (dbClientes && dbClientes.length > 0) {
-        for (const cli of dbClientes as Array<Record<string, unknown>>) {
-          const incPct = Math.max(0, Number(cli.incentivo_pct ?? cli.devolucion) || 0);
-          const incBase = (cli.incentivo_base as BaseIncentivo) || "MONTO_DECIDIDO";
-          const socioIdRaw = (cli.socio_id ?? cli.socio_asignado) as string | null;
-          const socPct = Math.max(0, Number(cli.socio_comision_pct ?? cli.comision_socio_pct) || 0);
-          const socBase = (cli.socio_base as BaseSocio) || "MONTO_DECIDIDO";
+  for (const d of decidibles) {
+    const jId = String(d.fila.cliente_juega_id ?? "").trim();
+    const cId = String(d.fila.cliente_consigue_id ?? "").trim();
+    const jNom = String(d.fila.cliente_juega_nombre ?? d.fila.clienteJuega ?? "").trim().toUpperCase();
+    const cNom = String(d.fila.cliente_consigue_nombre ?? d.fila.clienteConsigue ?? d.fila.tercio ?? "").trim().toUpperCase();
 
-          const ticketsCli = decidibles.filter((d) => String(d.fila.cliente_juega_id) === String(cli.id));
-          const ticketsConsigueCli = decidibles.filter((d) => {
-            const cId = String(d.fila.cliente_consigue_id ?? "").trim();
-            const cNom = String(d.fila.cliente_consigue_nombre ?? "").trim().toUpperCase();
-            const mId = String(cli.id).trim();
-            const mNom = String(cli.nombre ?? "").trim().toUpperCase();
-            const mSeu = String(cli.seudonimo ?? "").trim().toUpperCase();
-            return (cId && cId === mId) || (cNom && (cNom === mNom || cNom === mSeu));
-          });
+    if (jId) idsParticipantes.add(jId);
+    if (cId) idsParticipantes.add(cId);
+    if (jNom) nombresParticipantes.add(jNom);
+    if (cNom) nombresParticipantes.add(cNom);
+  }
 
-          // Prepara entradas oficiales para cálculo exacto de base decidida y cruces (incluyendo rol Consigue)
-          const jugadasParaBase: JugadaEntradaBaseDecidida[] = [];
-          for (const d of ticketsCli) {
-            const m = NUM(d.fila.monto_jugado);
-            const r = d.res;
-            const esGanador = r.ok;
-            const gananciaBruta = esGanador ? Math.max(0, restarDinero(r.totalClienteNeto + r.gananciaCasa, m)) : 0;
-            const premioDevuelto = r.totalClienteNeto;
-            const perdidaParcial = !esGanador && premioDevuelto > 0 && premioDevuelto < m;
-            const perdidaNeta = perdidaParcial ? restarDinero(m, premioDevuelto) : (!esGanador ? m : 0);
-            jugadasParaBase.push({
-              nombreJugada: String(d.fila.nombre_jugada ?? ""),
-              montoJugado: m,
-              premioPagar: esGanador ? r.totalClienteNeto + r.gananciaCasa : premioDevuelto,
-              resultado: esGanador ? gananciaBruta : -perdidaNeta,
-              estado: esGanador ? "GANADOR" : "PERDEDOR",
-              rol: "Juega",
-            });
-          }
-          for (const d of ticketsConsigueCli) {
-            const m = NUM(d.fila.monto_jugado);
-            const r = d.res;
-            // Para el que Consigue (da): si el ticket gana, el dador pierde la ganancia del jugador
-            // si el ticket pierde, el dador gana lo perdido por el jugador
-            if (r.ok) {
-              const perdidaDador = Math.max(0, restarDinero(r.totalClienteNeto + r.gananciaCasa, m));
-              jugadasParaBase.push({
-                nombreJugada: String(d.fila.nombre_jugada ?? ""),
-                montoJugado: m,
-                resultado: -perdidaDador,
-                estado: "PERDEDOR",
-                rol: "Consigue",
-              });
-            } else {
-              const gananciaDador = m;
-              jugadasParaBase.push({
-                nombreJugada: String(d.fila.nombre_jugada ?? ""),
-                montoJugado: m,
-                resultado: gananciaDador,
-                estado: "GANADOR",
-                rol: "Consigue",
-              });
+  try {
+    // 2. Cargar clientes participantes desde la base de datos
+    let queryClientes = sdb
+      .from("clientes")
+      .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, incentivo_base, socio_id, socio_asignado, socio_comision_pct, comision_socio_pct, socio_base, grupo_id");
+
+    if (idsParticipantes.size > 0) {
+      queryClientes = queryClientes.in("id", Array.from(idsParticipantes));
+    }
+
+    const { data: dbClientesRaw, error: errCli } = await queryClientes;
+    let listaClientes: Array<Record<string, unknown>> = (dbClientesRaw ?? []) as Array<Record<string, unknown>>;
+
+    // Si faltan clientes por nombre que no vinieron por ID
+    if (nombresParticipantes.size > 0) {
+      const encontradosNombres = new Set(
+        listaClientes.map((c) => String(c.nombre ?? c.seudonimo ?? "").trim().toUpperCase())
+      );
+      const faltantes = Array.from(nombresParticipantes).filter((nom) => !encontradosNombres.has(nom));
+      if (faltantes.length > 0) {
+        const { data: dbFaltantes } = await sdb
+          .from("clientes")
+          .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, incentivo_base, socio_id, socio_asignado, socio_comision_pct, comision_socio_pct, socio_base, grupo_id")
+          .or(faltantes.map((f) => `nombre.ilike.${f},seudonimo.ilike.${f}`).join(","));
+        if (dbFaltantes) {
+          listaClientes = [...listaClientes, ...(dbFaltantes as Array<Record<string, unknown>>)];
+        }
+      }
+    }
+
+    // 3. Procesar y unificar carrera por cada cliente
+    for (const cli of listaClientes) {
+      const cliIdStr = String(cli.id ?? "").trim().toUpperCase();
+      const cliNom = String(cli.nombre ?? "").trim().toUpperCase();
+      const cliSeu = String(cli.seudonimo ?? "").trim().toUpperCase();
+
+      // Identificar si una jugada pertenece a este cliente
+      const esClienteJuega = (fila: any) => {
+        const fId = String(fila.cliente_juega_id ?? "").trim().toUpperCase();
+        const fNom = String(fila.cliente_juega_nombre ?? fila.clienteJuega ?? "").trim().toUpperCase();
+        return (cliIdStr && fId === cliIdStr) || (cliNom && fNom === cliNom) || (cliSeu && fNom === cliSeu);
+      };
+
+      const esClienteConsigue = (fila: any) => {
+        const fId = String(fila.cliente_consigue_id ?? "").trim().toUpperCase();
+        const fNom = String(fila.cliente_consigue_nombre ?? fila.clienteConsigue ?? fila.tercio ?? "").trim().toUpperCase();
+        return (cliIdStr && fId === cliIdStr) || (cliNom && fNom === cliNom) || (cliSeu && fNom === cliSeu);
+      };
+
+      let ganadoBrutoCarrera = 0;
+      let perdidoBrutoCarrera = 0;
+      let tasaComision = input.tasaComision ?? 5;
+
+      for (const d of decidibles) {
+        const fila = d.fila;
+        const res = d.res;
+        const m = NUM(fila.monto_jugado);
+
+        // Perspectiva como Juega
+        if (esClienteJuega(fila)) {
+          tasaComision = tasaComisionDeFila(fila, input.tasaComision);
+          if (res.ok) {
+            const gananciaTicket = Math.max(0, restarDinero(res.totalClienteNeto + res.gananciaCasa, m));
+            ganadoBrutoCarrera = sumarDinero(ganadoBrutoCarrera, gananciaTicket);
+          } else {
+            const empateTotal = m > 0 && Math.abs(res.totalClienteNeto - m) < 0.01;
+            const perdidaParcial = res.totalClienteNeto > 0 && !empateTotal;
+            if (!empateTotal) {
+              const perdidaTicket = perdidaParcial ? restarDinero(m, res.totalClienteNeto) : m;
+              perdidoBrutoCarrera = sumarDinero(perdidoBrutoCarrera, perdidaTicket);
             }
           }
+        }
 
-          const resBaseInc = calcularBaseDecididaCarrera(jugadasParaBase, incPct);
-          const montoIncTotal = incPct > 0 ? resBaseInc.devolucion : 0;
-          const notaAsiento = resBaseInc.notaAsiento;
-
-          let baseSocioTotal = 0;
-          if (socioIdRaw && socPct > 0) {
-            if (socBase === "GANANCIA") baseSocioTotal = resBaseInc.totalGanadoBruto;
-            else if (socBase === "PERDIDA") baseSocioTotal = resBaseInc.totalPerdidoBruto;
-            else if (socBase === "COMISION_COBRADA") {
-              baseSocioTotal = ticketsCli.reduce((sum, d) => sum + (d.res.ok ? d.res.gananciaCasa : 0), 0);
-            } else {
-              baseSocioTotal = resBaseInc.baseDecidida;
-            }
-          }
-
-          // Acreditar incentivo al cliente (+ a su saldo y visible en cuenta diaria)
-          if (montoIncTotal > 0) {
-            const actual = NUM(cli.saldo_actual);
-            const nuevoSaldo = sumarDinero(actual, montoIncTotal);
-            await sdb.from("clientes").update({ saldo_actual: nuevoSaldo }).eq("id", cli.id as never);
-
-            try {
-              await generarAsientoDevolucionIncentivo({
-                grupoId: cli.grupo_id ? String(cli.grupo_id) : null,
-                fecha: dia,
-                clienteId: String(cli.id),
-                clienteNombre: String(cli.nombre ?? cli.seudonimo ?? "Cliente"),
-                montoIncentivo: montoIncTotal,
-                referenciaId: `${dia}:${input.hipodromo}:C${input.carrera}`,
-                usuario: "SISTEMA_LIQUIDACION",
-                nota: notaAsiento,
-              });
-            } catch {
-              /* ignore non-blocking */
-            }
-          }
-
-          // Acreditar comisión confidencial al socio (+ a su saldo, visible SOLO para el socio)
-          if (socioIdRaw && socPct > 0 && baseSocioTotal > 0) {
-            const montoSocio = calcularComisionExacta(baseSocioTotal, socPct);
-            if (montoSocio > 0) {
-              // Buscar el socio por id o seudónimo
-              const { data: socioDb } = await sdb
-                .from("clientes")
-                .select("id, saldo_actual, nombre, seudonimo")
-                .or(`id.eq.${socioIdRaw},nombre.ilike.${socioIdRaw},seudonimo.ilike.${socioIdRaw}`)
-                .limit(1)
-                .maybeSingle();
-
-              if (socioDb) {
-                const actualSoc = NUM(socioDb.saldo_actual);
-                await sdb
-                  .from("clientes")
-                  .update({ saldo_actual: sumarDinero(actualSoc, montoSocio) })
-                  .eq("id", socioDb.id as never);
-              }
+        // Perspectiva como Consigue (Dador / Contraparte)
+        if (esClienteConsigue(fila)) {
+          tasaComision = tasaComisionDeFila(fila, input.tasaComision);
+          if (res.ok) {
+            // El lado Juega ganó -> Consigue pierde la ganancia neta otorgada
+            const perdidaConsigue = Math.max(0, restarDinero(res.totalClienteNeto + res.gananciaCasa, m));
+            perdidoBrutoCarrera = sumarDinero(perdidoBrutoCarrera, perdidaConsigue);
+          } else {
+            // El lado Juega perdió -> Consigue gana el monto apostado por Juega
+            const empateTotal = m > 0 && Math.abs(res.totalClienteNeto - m) < 0.01;
+            if (!empateTotal) {
+              const gananciaConsigue = m;
+              ganadoBrutoCarrera = sumarDinero(ganadoBrutoCarrera, gananciaConsigue);
             }
           }
         }
       }
-    } catch (e) {
-      console.error("Error acreditando incentivos y comisiones de socios:", e);
-    }
-  }
 
+      // Si el cliente no tuvo movimiento en esta carrera, saltar
+      if (ganadoBrutoCarrera === 0 && perdidoBrutoCarrera === 0) continue;
+
+      // ── REGLA CANÓNICA DE CRUCES ──
+      // Lo que gana menos lo que pierde y a la diferencia positiva se le calcula
+      // la comisión en caso de que el saldo termine siendo positivo.
+      // En ese caso, solo en base a ese monto positivo se estiman las devoluciones e incentivos.
+      const diferenciaBruta = restarDinero(ganadoBrutoCarrera, perdidoBrutoCarrera);
+      let saldoNetoJugadas = 0;
+      let comisionCasaCarrera = 0;
+      let montoIncentivo = 0;
+      const incPct = Math.max(0, Number(cli.incentivo_pct ?? cli.devolucion) || 0);
+
+      if (diferenciaBruta > 0) {
+        // Saldo positivo: la comisión se calcula ÚNICAMENTE sobre la diferencia neta positiva
+        comisionCasaCarrera = calcularComisionExacta(diferenciaBruta, tasaComision);
+        saldoNetoJugadas = restarDinero(diferenciaBruta, comisionCasaCarrera);
+        // Las devoluciones e incentivos se estiman sobre esa diferencia positiva
+        if (incPct > 0) {
+          montoIncentivo = calcularComisionExacta(diferenciaBruta, incPct);
+        }
+      } else if (diferenciaBruta < 0) {
+        // Saldo negativo: pérdida neta sin comisión de la casa
+        saldoNetoJugadas = diferenciaBruta; // Negativo
+        comisionCasaCarrera = 0;
+        montoIncentivo = 0;
+      } else {
+        saldoNetoJugadas = 0;
+        comisionCasaCarrera = 0;
+        montoIncentivo = 0;
+      }
+
+      // Impacto total en el saldo del cliente por la carrera
+      const impactoTotalSaldo = sumarDinero(saldoNetoJugadas, montoIncentivo);
+
+      if (impactoTotalSaldo !== 0 || montoIncentivo > 0) {
+        const actual = NUM(cli.saldo_actual);
+        const nuevoSaldo = sumarDinero(actual, impactoTotalSaldo);
+        await sdb.from("clientes").update({ saldo_actual: nuevoSaldo }).eq("id", cli.id as never);
+
+        // Asiento NIIF de incentivo si correspondió
+        if (montoIncentivo > 0) {
+          try {
+            await generarAsientoDevolucionIncentivo({
+              grupoId: cli.grupo_id ? String(cli.grupo_id) : null,
+              fecha: dia,
+              clienteId: String(cli.id),
+              clienteNombre: String(cli.nombre ?? cli.seudonimo ?? "Cliente"),
+              montoIncentivo,
+              referenciaId: `${dia}:${input.hipodromo}:C${input.carrera}`,
+              usuario: "SISTEMA_LIQUIDACION",
+              nota: `Incentivo sobre diferencia positiva por cruce C${input.carrera} ${input.hipodromo} (base: $${diferenciaBruta.toFixed(2)})`,
+            });
+          } catch {
+            /* ignore non-blocking */
+          }
+        }
+      }
+
+      // Comisión confidencial al socio asignado sobre saldo positivo neto
+      const socioIdRaw = (cli.socio_id ?? cli.socio_asignado) as string | null;
+      const socPct = Math.max(0, Number(cli.socio_comision_pct ?? cli.comision_socio_pct) || 0);
+      if (socioIdRaw && socPct > 0 && diferenciaBruta > 0) {
+        const montoSocio = calcularComisionExacta(diferenciaBruta, socPct);
+        if (montoSocio > 0) {
+          const { data: socioDb } = await sdb
+            .from("clientes")
+            .select("id, saldo_actual, nombre, seudonimo")
+            .or(`id.eq.${socioIdRaw},nombre.ilike.${socioIdRaw},seudonimo.ilike.${socioIdRaw}`)
+            .limit(1)
+            .maybeSingle();
+
+          if (socioDb) {
+            const actualSoc = NUM(socioDb.saldo_actual);
+            await sdb
+              .from("clientes")
+              .update({ saldo_actual: sumarDinero(actualSoc, montoSocio) })
+              .eq("id", socioDb.id as never);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Error unificando saldos y cruces de carrera:", e);
+  }
   const ganadores = decidibles.filter((d) => d.res.ok).length;
   const base =
     `Liquidación aplicada: ${decidibles.length} ticket(s) decidido(s) (${ganadores} ganadores` +

@@ -47,7 +47,7 @@ test("Caso PARTNER: Cruce de comisiones incluye pérdidas como Consigue", () => 
   assert.strictEqual(item?.reembolsoCruce, 4, "Debe reembolsar los 4.00 de comisión cobrada");
 });
 
-test("Caso PARTNER: Base decidida e incentivo sobre la diferencia con rol Consigue", () => {
+test("Caso PARTNER: Base decidida e incentivo sobre la diferencia con rol Consigue (saldo negativo = 0)", () => {
   const jugadas = [
     { nombreJugada: "2N", montoJugado: 300, resultado: -300, estado: "GANADOR", rol: "Consigue" },
     { nombreJugada: "2N Y 2Y2N", montoJugado: 80, premioPagar: 160, resultado: 80, estado: "GANADOR", rol: "Juega" },
@@ -57,7 +57,21 @@ test("Caso PARTNER: Base decidida e incentivo sobre la diferencia con rol Consig
   assert.strictEqual(res.consigueIncluidoPorCruce, true);
   assert.strictEqual(res.totalGanadoBruto, 80);
   assert.strictEqual(res.totalPerdidoBruto, 300);
-  assert.strictEqual(res.baseDecidida, 220, "Base decidida debe ser |80 - 300| = 220");
+  assert.strictEqual(res.baseDecidida, 0, "Si el saldo termina negativo (80 - 300 = -220), no hay base de incentivo");
+  assert.strictEqual(res.devolucion, 0, "Devolución con saldo neto negativo debe ser 0");
+});
+
+test("Caso PARTNER: Base decidida e incentivo cuando saldo termina POSITIVO (ganado 300, perdido 80 = +220)", () => {
+  const jugadas = [
+    { nombreJugada: "2N", montoJugado: 80, resultado: -80, estado: "GANADOR", rol: "Consigue" },
+    { nombreJugada: "2N Y 2Y2N", montoJugado: 150, premioPagar: 450, resultado: 300, estado: "GANADOR", rol: "Juega" },
+  ];
+  const res = calcularBaseDecididaCarrera(jugadas, 1.0); // 1% de incentivo
+  assert.strictEqual(res.hayCruce, true);
+  assert.strictEqual(res.consigueIncluidoPorCruce, true);
+  assert.strictEqual(res.totalGanadoBruto, 300);
+  assert.strictEqual(res.totalPerdidoBruto, 80);
+  assert.strictEqual(res.baseDecidida, 220, "Base decidida debe ser 300 - 80 = 220");
   assert.strictEqual(res.devolucion, 2.2, "Devolución al 1% sobre 220 debe ser 2.20");
   assert.ok(res.notaAsiento?.includes("Cruce con rol Consigue"), "Debe generar nota para el asiento");
 });
@@ -73,8 +87,8 @@ test("Rol Consigue aislado sin cruce NO devenga incentivo ni devolución", () =>
   assert.strictEqual(esJugadaElegibleParaDevolucion(soloConsigue[0]), false);
 });
 
-test("calcularIncentivoCarreraCliente considera cruce con Consigue si se especifica el cliente", () => {
-  const tickets = [
+test("calcularIncentivoCarreraCliente considera cruce con Consigue (solo si saldo positivo)", () => {
+  const ticketsNegativo = [
     {
       id: 1,
       nombre_jugada: "2N",
@@ -82,7 +96,7 @@ test("calcularIncentivoCarreraCliente considera cruce con Consigue si se especif
       cliente_juega_nombre: "ANGELO",
       cliente_consigue_nombre: "PARTNER",
       estado: "Ganador",
-      resultado_neto: 300, // Ganó Angelo -> perdió Partner
+      resultado_neto: 300, // Ganó Angelo -> perdió Partner ($300)
     },
     {
       id: 2,
@@ -92,11 +106,35 @@ test("calcularIncentivoCarreraCliente considera cruce con Consigue si se especif
       cliente_juega_nombre: "PARTNER",
       cliente_consigue_nombre: "SPEEDY",
       estado: "Ganador",
-      resultado_neto: 80,
+      resultado_neto: 80, // Ganó Partner ($80)
     },
   ];
-  const inc = calcularIncentivoCarreraCliente(tickets, 1.0, "PARTNER");
-  assert.strictEqual(inc, 2.2, "Incentivo debe ser 2.20 sobre la diferencia de 220");
+  const incNeg = calcularIncentivoCarreraCliente(ticketsNegativo, 1.0, "PARTNER");
+  assert.strictEqual(incNeg, 0, "Con saldo negativo (80 - 300 = -220), incentivo debe ser 0");
+
+  const ticketsPositivo = [
+    {
+      id: 1,
+      nombre_jugada: "2N",
+      monto_jugado: 80,
+      cliente_juega_nombre: "ANGELO",
+      cliente_consigue_nombre: "PARTNER",
+      estado: "Ganador",
+      resultado_neto: 80, // Ganó Angelo -> perdió Partner ($80)
+    },
+    {
+      id: 2,
+      nombre_jugada: "2N Y 2Y2N",
+      monto_jugado: 150,
+      premio_pagar: 450,
+      cliente_juega_nombre: "PARTNER",
+      cliente_consigue_nombre: "SPEEDY",
+      estado: "Ganador",
+      resultado_neto: 300, // Ganó Partner ($300)
+    },
+  ];
+  const incPos = calcularIncentivoCarreraCliente(ticketsPositivo, 1.0, "PARTNER");
+  assert.strictEqual(incPos, 2.2, "Incentivo debe ser 2.20 sobre la diferencia de 220 positiva");
 });
 
 test("Motor de puestos: cruce de comisiones neto compensando pérdida como Consigue", () => {
