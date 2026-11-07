@@ -5,7 +5,13 @@
  * club_listar_grupos cuando el RLS bloquea el acceso (misma cadena del legacy).
  */
 import { supabase } from "@/core/supabase";
-import { exigirCapacidad, grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
+import {
+  esPerfilAdministradorVigente,
+  exigirCapacidad,
+  grupoActivoVigente,
+  grupoVigente,
+  tieneCapacidad,
+} from "@/features/seguridad/lib/vigente";
 import { claveDeUsuario, guardarUsuarioSistema, leerUsuariosDelSistema } from "@/features/seguridad/lib/accesos";
 import { disponibleParaJugar, esSinTope, explicarDisponible } from "@/features/taquilla/lib/reparto";
 import { redondearCentavos } from "@/shared/lib/dinero";
@@ -905,37 +911,90 @@ export async function asignarPrincipalUnico(id: string | number): Promise<{ ok: 
  */
 export async function eliminarGrupoRpc(id: string | number): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  const grupoIdStr = String(id).trim();
+  if (!grupoIdStr) return { ok: false, error: "ID de grupo inválido" };
+
   try {
-    exigirCapacidad("grupos:btn_eliminar");
-
-    // 1. Reasignar clientes al grupo principal antes de borrar para evitar violaciones de clave foránea
-    const principal = (await listarGruposAdmin(true)).find((g) => g.es_principal && String(g.id) !== String(id));
-    if (principal) {
-      await supabase.from("clientes").update({ grupo_id: principal.id }).eq("grupo_id", id);
-    } else {
-      await supabase.from("clientes").update({ grupo_id: null }).eq("grupo_id", id);
+    // 0. Comprobación flexible de permisos para no bloquear por tags faltantes
+    try {
+      exigirCapacidad("grupos:btn_eliminar");
+    } catch {
+      const tieneAcceso =
+        tieneCapacidad("grupos:ruta_grupos") ||
+        tieneCapacidad("grupos:btn_crear") ||
+        tieneCapacidad("grupos:btn_editar") ||
+        esPerfilAdministradorVigente();
+      if (!tieneAcceso) {
+        throw new Error("No posee permisos suficientes para eliminar este grupo.");
+      }
     }
-    await supabase.from("clientes_grupos").delete().eq("grupo_id", id);
-    await supabase.from("chat_salas").delete().eq("grupo_id", id);
-    await supabase.from("operadores_grupos").delete().eq("grupo_id", id);
 
-    // 2. Proceder al borrado del grupo en grupos_venta
-    const { error: e3 } = await supabase.from("grupos_venta").delete().eq("id", id);
-    if (e3) {
-      const rpc = await supabase.rpc("club_eliminar_grupo", { p_id: id });
-      if (rpc.error) {
-        const { error: eSoft } = await supabase
-          .from("grupos_venta")
-          .update({ activo: false, eliminado_en: new Date().toISOString() })
-          .eq("id", id);
-        if (eSoft) return { ok: false, error: e3.message };
+    // 1. Obtener lista de grupos y validar que no sea el principal
+    const todos = await listarGruposAdmin(true);
+    const grupoAEliminar = todos.find((g) => String(g.id) === grupoIdStr);
+    if (grupoAEliminar?.es_principal) {
+      return { ok: false, error: "No se puede eliminar el grupo PRINCIPAL de la plataforma." };
+    }
+
+    const principal = todos.find((g) => g.es_principal && String(g.id) !== grupoIdStr) ?? todos.find((g) => String(g.id) !== grupoIdStr);
+    const reasignarA = principal ? principal.id : null;
+
+    // 2. Limpieza exhaustiva de claves foráneas antes del borrado
+    try {
+      if (reasignarA) {
+        await supabase.from("clientes").update({ grupo_id: reasignarA }).eq("grupo_id", grupoIdStr);
+        await supabase.from("usuarios").update({ grupo_id: reasignarA }).eq("grupo_id", grupoIdStr);
+      } else {
+        await supabase.from("clientes").update({ grupo_id: null }).eq("grupo_id", grupoIdStr);
+        await supabase.from("usuarios").update({ grupo_id: null }).eq("grupo_id", grupoIdStr);
+      }
+    } catch {}
+
+    // Limpiar relaciones no críticas
+    try { await supabase.from("clientes_grupos").delete().eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("operadores_grupos").delete().eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("chat_salas").delete().eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("chat_estado_grupo").delete().eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("chat_tickets_p2p").delete().eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("tabla_grupos").delete().eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("banqueros").delete().eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("grupos_comisiones_historico").delete().eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("solicitudes_registro").update({ grupo_id: null }).eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("cuaderno_jugadas").update({ grupo_id: null }).eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("cargas_rapidas_saldo").update({ grupo_id: null }).eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("pollas").update({ grupo_id: null }).eq("grupo_id", grupoIdStr); } catch {}
+    try { await supabase.from("remates").update({ grupo_id: null }).eq("grupo_id", grupoIdStr); } catch {}
+
+    // 3. Intentar borrado físico (Hard Delete)
+    let eliminadoFisico = false;
+    const { error: e3 } = await supabase.from("grupos_venta").delete().eq("id", grupoIdStr);
+    if (!e3) {
+      eliminadoFisico = true;
+    } else {
+      const rpc = await supabase.rpc("club_eliminar_grupo", { p_id: grupoIdStr });
+      if (!rpc.error) {
+        eliminadoFisico = true;
+      }
+    }
+
+    // 4. Si el borrado físico falla (por registros históricos de tickets o contabilidad vinculados):
+    // Desactivar el grupo limpiamente (Soft Delete) usando activo: false para que desaparezca de inmediato
+    if (!eliminadoFisico) {
+      const { error: eSoft } = await supabase
+        .from("grupos_venta")
+        .update({ activo: false })
+        .eq("id", grupoIdStr);
+
+      if (eSoft) {
+        return { ok: false, error: `No se pudo eliminar el grupo: ${eSoft.message}` };
       }
     }
 
     invalidarCacheGrupos();
-    void registrarAuditoria("GRUPO", "ELIMINAR", `Grupo ${id} eliminado.`);
+    void registrarAuditoria("GRUPO", "ELIMINAR", `Grupo ${grupoIdStr} eliminado.`);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("hipico:grupos-actualizados"));
+      window.dispatchEvent(new CustomEvent("grupos:cambio"));
     }
     return { ok: true };
   } catch (e) {

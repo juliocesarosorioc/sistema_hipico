@@ -715,31 +715,28 @@ export function GruposModule() {
 
 
   const eliminarGrupo = async (g: GrupoRow) => {
-
     const ok = await confirmar({
-
       titulo: "Eliminar grupo",
-
       mensaje: `¿Eliminar el grupo "${g.nombre}"?\nSus clientes pasarán al grupo PRINCIPAL.`,
-
       tipo: "error",
-
       textoConfirmar: "Eliminar",
-
       destructivo: true,
-
     });
-
     if (!ok) return;
 
-    const r = await eliminarGrupoRpc(g.id);
+    // Desaparecer de la vista inmediatamente (actualización optimista)
+    setGrupos((prev) => prev.filter((item) => String(item.id) !== String(g.id)));
+    if (editando && String(editando.id) === String(g.id)) setEditando(null);
+    if (grupoConvenio === String(g.id)) setGrupoConvenio("");
 
-    if (!r.ok) return toast(r.error ?? "Error al eliminar.", "error");
+    const r = await eliminarGrupoRpc(g.id);
+    if (!r.ok) {
+      void recargar();
+      return toast(r.error ?? "Error al eliminar.", "error");
+    }
 
     toast(`Grupo "${g.nombre}" eliminado.`, "success");
-
     void recargar();
-
   };
 
 
