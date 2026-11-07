@@ -192,6 +192,8 @@
     "./banqueros-tipos-jugadas.test.ts",
     "./carreras-semaforo-hipodromo.test.ts",
     "./retiros-reactivacion.test.ts",
-    "./cruce-rol-consigue.test.ts"
+    "./cruce-rol-consigue.test.ts",
+    "../src/features/whatsapp-sala/lib/salas.ts",
+    "./salas-por-grupo.test.ts"
   ]
 }

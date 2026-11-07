@@ -27,7 +27,9 @@ import { SalaLeftPanelGrupos } from "./SalaLeftPanelGrupos";
 import { SalaRightPanelCarrera } from "./SalaRightPanelCarrera";
 import { SalaBurbujaMensaje } from "./SalaBurbujaMensaje";
 import { emitirToast } from "@/shared/lib/mensajeria";
-import { crearGrupo, listarGruposVenta } from "@/features/grupos/lib/grupos";
+import { listarSalasPorGrupo, crearSalaEnGrupo, type SalaChat } from "../lib/salas";
+import { type GrupoVentaItem } from "./SalaLeftPanelGrupos";
+import { listarGruposVenta } from "@/features/grupos/lib/grupos";
 
 export interface ClienteSesionSala {
   id: string;
@@ -77,11 +79,10 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
   const [clientesDisponibles, setClientesDisponibles] = useState<any[]>([]);
   const [busquedaCliente, setBusquedaCliente] = useState("");
 
-  // Multi-Grupo y Estado del Chat
-  const [grupos, setGrupos] = useState<GrupoSala[]>([
-    { id: GRUPO_DEFAULT_ID, nombre: "Sala Oficial La Rinconada & USA", descripcion: "Paradas P2P en vivo", activo: true },
-    { id: "grupo-vip-1", nombre: "Sala Clásicos VIP", descripcion: "Apuestas mayores y pollas", activo: false },
-  ]);
+  // Grupos de Venta y Salas Propias por Grupo ("cada grupo tiene sus propias salas")
+  const [gruposVenta, setGruposVenta] = useState<GrupoVentaItem[]>([]);
+  const [grupoSeleccionadoId, setGrupoSeleccionadoId] = useState<string>(GRUPO_DEFAULT_ID);
+  const [salas, setSalas] = useState<SalaChat[]>([]);
   const [grupoActivoId, setGrupoActivoId] = useState<string>(GRUPO_DEFAULT_ID);
 
   // Estado de Carrera Activa por Grupo
@@ -330,75 +331,90 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     [seudonimosPorId]
   );
 
-  // 4. Sincronizar grupos de venta / salas oficiales desde Supabase
+  // 4. Sincronizar grupos de venta disponibles
   useEffect(() => {
-    async function cargarGrupos() {
+    async function cargarGruposVenta() {
       try {
         const lista = await listarGruposVenta();
         if (lista && lista.length > 0) {
-          const mapSalas: GrupoSala[] = lista.map((g) => ({
+          const mapG: GrupoVentaItem[] = lista.map((g) => ({
             id: String(g.id),
             nombre: g.nombre,
-            descripcion: g.es_principal ? "Sala Principal P2P" : "Sala de apuestas",
-            activo: g.activo ?? true,
           }));
-          setGrupos(mapSalas);
-          setGrupoActivoId((prev) => {
-            return mapSalas.some((s) => s.id === prev) ? prev : mapSalas[0].id;
-          });
+          setGruposVenta(mapG);
+          if (sesion?.grupo_id) {
+            setGrupoSeleccionadoId(String(sesion.grupo_id));
+          } else {
+            setGrupoSeleccionadoId((prev) => (mapG.some((g) => String(g.id) === prev) ? prev : String(mapG[0].id)));
+          }
           return;
         }
         if (supabase) {
-          const { data } = await supabase.from("grupos_venta").select("id, nombre, activo, es_principal").order("nombre");
+          const { data } = await supabase.from("grupos_venta").select("id, nombre").order("nombre");
           if (data && data.length > 0) {
-            setGrupos(data.map((g) => ({ id: String(g.id), nombre: g.nombre, descripcion: g.es_principal ? "Sala Principal P2P" : "Sala de apuestas", activo: g.activo ?? true })));
+            const mapG: GrupoVentaItem[] = data.map((g) => ({ id: String(g.id), nombre: g.nombre }));
+            setGruposVenta(mapG);
+            if (sesion?.grupo_id) {
+              setGrupoSeleccionadoId(String(sesion.grupo_id));
+            } else {
+              setGrupoSeleccionadoId(String(data[0].id));
+            }
           }
         }
       } catch {
         /* fallback */
       }
     }
-    cargarGrupos();
-  }, []);
+    cargarGruposVenta();
+  }, [sesion?.grupo_id]);
 
-  // 4b. Administrador: Crear nueva sala de chat
+  // 4b. Sincronizar las salas exclusivas del grupo seleccionado ("cada grupo tiene sus propias salas")
+  useEffect(() => {
+    if (!grupoSeleccionadoId) return;
+    const gObj = gruposVenta.find((g) => String(g.id) === String(grupoSeleccionadoId));
+    const nombreG = gObj?.nombre;
+
+    async function sincronizarSalas() {
+      try {
+        const sList = await listarSalasPorGrupo(grupoSeleccionadoId, nombreG);
+        setSalas(sList);
+        setGrupoActivoId((prev) => {
+          if (prev === "bot-privado") return prev;
+          if (sList.some((s) => s.id === prev)) return prev;
+          return sList[0]?.id || `${grupoSeleccionadoId}_principal`;
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+    void sincronizarSalas();
+
+    const handler = (e: any) => {
+      if (!e.detail?.grupoId || String(e.detail.grupoId) === String(grupoSeleccionadoId)) {
+        void sincronizarSalas();
+      }
+    };
+    window.addEventListener("hipico:salas-actualizadas", handler);
+    return () => window.removeEventListener("hipico:salas-actualizadas", handler);
+  }, [grupoSeleccionadoId, gruposVenta]);
+
+  // 4c. Administrador: Crear nueva sala para el grupo activo
   const handleCrearNuevaSala = async (nombre: string, descripcion?: string): Promise<{ ok: boolean; error?: string }> => {
     if (!sesion?.esOperadorOAdmin) {
       return { ok: false, error: "Solo los administradores u operadores pueden crear salas." };
     }
     try {
-      const res = await crearGrupo({
-        nombre: nombre.trim().toUpperCase(),
-        responsable: descripcion?.trim() || "Administrador",
-        activo: true,
-        moneda: "USD",
-        cupo_tabla: 100,
-        comision_default: 5,
-        permite_cruces: true,
-        cruce_mismo_ejemplar: true,
-        cruce_diferente_ejemplar: true,
-      });
+      const gObj = gruposVenta.find((g) => String(g.id) === String(grupoSeleccionadoId));
+      const res = await crearSalaEnGrupo(grupoSeleccionadoId, nombre, descripcion);
 
-      if (!res.ok) {
+      if (!res.ok || !res.sala) {
         return { ok: false, error: res.error || "No se pudo crear la sala" };
       }
 
-      // Recargar salas disponibles
-      const lista = await listarGruposVenta();
-      if (lista && lista.length > 0) {
-        const mapSalas: GrupoSala[] = lista.map((g) => ({
-          id: String(g.id),
-          nombre: g.nombre,
-          descripcion: g.es_principal ? "Sala Principal P2P" : (g.responsable ? `Resp: ${g.responsable}` : "Sala de apuestas"),
-          activo: g.activo ?? true,
-        }));
-        setGrupos(mapSalas);
-        const creada = mapSalas.find((g) => g.nombre.toUpperCase() === nombre.trim().toUpperCase());
-        if (creada) {
-          setGrupoActivoId(creada.id);
-        }
-      }
-      emitirToast(`Sala ${nombre.toUpperCase()} creada con éxito`, "success");
+      const sList = await listarSalasPorGrupo(grupoSeleccionadoId, gObj?.nombre);
+      setSalas(sList);
+      setGrupoActivoId(res.sala.id);
+      emitirToast(`Sala ${nombre.toUpperCase()} creada con éxito en ${gObj?.nombre || "este grupo"}`, "success");
       return { ok: true };
     } catch (e: any) {
       return { ok: false, error: e.message || "Error al crear la sala" };
@@ -1727,10 +1743,13 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         } h-full shrink-0`}
       >
         <SalaLeftPanelGrupos
-          grupos={grupos}
-          grupoActivoId={grupoActivoId}
-          onSeleccionarGrupo={(gid) => {
-            setGrupoActivoId(gid);
+          gruposVenta={gruposVenta}
+          grupoSeleccionadoId={grupoSeleccionadoId}
+          onCambiarGrupo={(gid) => setGrupoSeleccionadoId(gid)}
+          salas={salas}
+          salaActivaId={grupoActivoId}
+          onSeleccionarSala={(sid) => {
+            setGrupoActivoId(sid);
             setMostrarGruposMovil(false);
           }}
           nombreUsuario={sesion.nombre}
@@ -1745,6 +1764,12 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           carreraActiva={carreraActiva}
           saldo={saldoPrivado}
           nombreUsuario={sesion.nombre}
+          nombreSala={
+            grupoActivoId === "bot-privado"
+              ? "Agente IA Oficial (DM)"
+              : (salas.find((s) => s.id === grupoActivoId)?.nombre || "Sala Principal")
+          }
+          nombreGrupo={gruposVenta.find((g) => String(g.id) === String(grupoSeleccionadoId))?.nombre}
           esOperadorOAdmin={sesion.esOperadorOAdmin}
           tamanoLetra={tamanoLetra}
           onCambiarTamanoLetra={handleCambiarTamanoLetra}

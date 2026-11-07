@@ -7,6 +7,8 @@ interface Props {
   carreraActiva: EstadoCarreraGrupo;
   saldo: SaldoPrivado | null;
   nombreUsuario: string;
+  nombreSala?: string;
+  nombreGrupo?: string;
   esOperadorOAdmin?: boolean;
   tamanoLetra: number;
   onCambiarTamanoLetra: (tamano: number) => void;
@@ -20,6 +22,8 @@ export function SalaHeaderWallet({
   carreraActiva,
   saldo,
   nombreUsuario,
+  nombreSala,
+  nombreGrupo,
   esOperadorOAdmin,
   tamanoLetra,
   onCambiarTamanoLetra,
@@ -71,7 +75,10 @@ export function SalaHeaderWallet({
 
         <div className="flex flex-col min-w-0">
           <div className="flex items-center gap-1.5 truncate">
-            <span className="font-bold text-xs sm:text-sm text-white truncate">SALA OFICIAL HÍPICA</span>
+            <span className="font-bold text-xs sm:text-sm text-white truncate">
+              {nombreSala || "SALA OFICIAL HÍPICA"}
+              {nombreGrupo ? ` · ${nombreGrupo}` : ""}
+            </span>
           </div>
           <div className="flex items-center gap-1.5">
             <span
