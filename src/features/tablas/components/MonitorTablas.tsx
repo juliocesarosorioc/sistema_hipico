@@ -88,6 +88,7 @@ type Props = {
    */
   ejeFecha?: EjeFecha;
   onEjeFecha?: (e: EjeFecha) => void;
+  onImprimirTablas?: () => void;
 };
 
   /** Número es-VE SIN símbolo de moneda (la moneda se estipula por el grupo). */
@@ -144,6 +145,7 @@ export function MonitorTablas({
   onFechaDia,
   ejeFecha: ejeFechaProp,
   onEjeFecha,
+  onImprimirTablas,
 }: Props) {
   const [vendiendo, setVendiendo] = useState<StoredTablaFija | null>(null);
   const [ejemplarVenta, setEjemplarVenta] = useState("");
@@ -1055,6 +1057,19 @@ export function MonitorTablas({
           >
             🖨️ {vistaImpresion ? "Volver a Edición" : "Vista de impresión"}
           </button>
+
+          {onImprimirTablas && (
+            <Guard permiso="tablas:btn_imprimir">
+              <button
+                type="button"
+                onClick={onImprimirTablas}
+                className="inline-flex h-9 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-[10px] font-black uppercase tracking-wide text-white shadow-2xs transition-colors hover:bg-emerald-700"
+                title="Imprimir / exportar tablas publicadas (matriz 15 por hoja o reporte por jugador)"
+              >
+                🖨️ Imprimir Tablas
+              </button>
+            </Guard>
+          )}
 
           <button
             type="button"

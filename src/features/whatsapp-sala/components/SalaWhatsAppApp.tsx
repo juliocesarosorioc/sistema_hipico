@@ -600,7 +600,9 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         const formateados: MensajeSala[] = msgs
           .filter((m: any) => {
             if (!m.destinatario_privado_id) return true;
-            return m.destinatario_privado_id === cid || m.autor_id === cid;
+            if (m.destinatario_privado_id === cid || m.autor_id === cid) return true;
+            if (sesion?.esOperadorOAdmin && /admin|operador|soporte|taquilla/i.test(m.destinatario_privado_id)) return true;
+            return false;
           })
           .map((m: any) => ({
             id: m.id,
@@ -655,7 +657,9 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         if (!payload) return;
         if (payload.autor_id !== sesion.id) {
           if (payload.destinatario_privado_id && payload.destinatario_privado_id !== sesion.id) {
-            return;
+            if (!(sesion.esOperadorOAdmin && /admin|operador|soporte|taquilla/i.test(payload.destinatario_privado_id))) {
+              return;
+            }
           }
           reproducirBeepWhatsApp();
           setMensajes((prev) => {
@@ -665,7 +669,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
               {
                 ...payload,
                 esMio: false,
-                esPrivadoParaMi: payload.destinatario_privado_id === sesion.id,
+                esPrivadoParaMi: payload.destinatario_privado_id === sesion.id || (sesion.esOperadorOAdmin && /admin|operador|soporte|taquilla/i.test(payload.destinatario_privado_id)),
               },
             ];
           });
@@ -683,7 +687,9 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           const m = payload.new;
           if (!m) return;
           if (m.destinatario_privado_id && m.destinatario_privado_id !== sesion.id && m.autor_id !== sesion.id) {
-            return;
+            if (!(sesion.esOperadorOAdmin && /admin|operador|soporte|taquilla/i.test(m.destinatario_privado_id))) {
+              return;
+            }
           }
 
           setMensajes((prev) => {
@@ -778,7 +784,22 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
   useEffect(() => {
     if (!sesion) return;
     if (mensajes.length === 0) {
-      const horaStr = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", hour12: true });
+      if (grupoActivoId === "admin-privado") {
+        const msgAdminPrivado: MensajeSala = {
+          id: `welcome-admin-${sesion.id}`,
+          grupo_id: "admin-privado",
+          autor_id: null,
+          autor_nombre: "Atención al Cliente",
+          autor_rol: "BOT",
+          texto: `👨‍💼 ¡Hola @${sesion.nombre}! Este es tu canal directo y confidencial con el **Administrador** y los **Operadores de Taquilla**.\n\nEscribe aquí tus consultas, dudas, recargas o solicitudes de atención. Los demás usuarios **no tienen acceso** a este canal privado.`,
+          tipo: "TEXTO",
+          created_at: new Date().toISOString(),
+          esMio: false,
+        };
+        setMensajes([msgAdminPrivado]);
+        return;
+      }
+
       const esLibre = sesion.libre;
       const msgBienvenida: MensajeSala = {
         id: `welcome-${sesion.id}`,
@@ -788,7 +809,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         autor_rol: "BOT",
         texto: `👋 ¡Hola @${sesion.nombre}! Soy tu Agente IA Oficial y moderador de la Sala.\n\n🏇 Carrera Activa: **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})** · Estado: **${carreraActiva.estado}**\n${
           esLibre ? "⭐ Estatus: **Cuenta LIBRE**" : `💰 Tu Saldo Disponible: **$${(sesion.saldo_actual + sesion.aval).toFixed(2)}**`
-        }\n\nPuedes registrar tus jugadas de puestos directamente (ej. "Juego 1p 7 100", "50 2n al 1", "100 2p al 5 con @SAM"), consultar tu "Saldo" en privado o preguntarme sobre la carrera. ¿En qué te colaboro hoy?`,
+        }\n\nPuedes registrar tus jugadas de puestos directamente (ej. "Juego 1p 7 100", "50 2n al 1"), consultar tu "Saldo" en privado o contactar al Administrador u Operadores con /admin tu mensaje. ¿En qué te colaboro hoy?`,
         tipo: "TEXTO",
         created_at: new Date().toISOString(),
         esMio: false,
@@ -1023,24 +1044,138 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     }
 
     // ────────────────────────────────────────────────────────────────────────
+    // CANAL DIRECTO DE ATENCIÓN CON ADMINISTRADOR / OPERADORES
+    // ────────────────────────────────────────────────────────────────────────
+    if (grupoActivoId === "admin-privado") {
+      const msgAdminDirecto: MensajeSala = {
+        id: msgId,
+        grupo_id: "admin-privado",
+        autor_id: sesion.id,
+        autor_nombre: sesion.nombre,
+        autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
+        texto,
+        tipo: "DM_PRIVADO",
+        destinatario_privado_id: "admin",
+        reply_to_msg_id: replyId,
+        created_at: nowIso,
+        esMio: true,
+        esPrivadoParaMi: true,
+      };
+
+      setMensajes((prev) => [...prev, msgAdminDirecto]);
+      canalRealtimeRef.current?.send({
+        type: "broadcast",
+        event: "mensaje_sala",
+        payload: msgAdminDirecto,
+      });
+
+      if (supabase) {
+        try {
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              id: msgAdminDirecto.id,
+              grupo_id: "admin-privado",
+              autor_id: sesion.id,
+              autor_nombre: sesion.nombre,
+              autor_rol: msgAdminDirecto.autor_rol,
+              texto: msgAdminDirecto.texto,
+              tipo: "DM_PRIVADO",
+              destinatario_privado_id: "admin",
+              reply_to_msg_id: replyId,
+            },
+          ]);
+        } catch { /* noop */ }
+      }
+
+      setEnviando(false);
+      return;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // COMANDO DIRECTO PARA CONTACTAR AL ADMINISTRADOR U OPERADORES (/admin, /operador, /soporte)
+    // ────────────────────────────────────────────────────────────────────────
+    const mStaff = /^(?:\/admin|\/operador|\/soporte)\s+([\s\S]+)$/i.exec(texto);
+    if (mStaff) {
+      const staffTexto = mStaff[1].trim();
+      const msgStaff: MensajeSala = {
+        id: msgId,
+        grupo_id: grupoActivoId,
+        autor_id: sesion.id,
+        autor_nombre: sesion.nombre,
+        autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
+        texto: `🔒 [Mensaje para Administrador / Operadores]: ${staffTexto}`,
+        tipo: "DM_PRIVADO",
+        destinatario_privado_id: "admin",
+        reply_to_msg_id: replyId,
+        created_at: nowIso,
+        esMio: true,
+        esPrivadoParaMi: true,
+      };
+
+      setMensajes((prev) => [...prev, msgStaff]);
+      canalRealtimeRef.current?.send({
+        type: "broadcast",
+        event: "mensaje_sala",
+        payload: msgStaff,
+      });
+
+      if (supabase) {
+        try {
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              id: msgStaff.id,
+              grupo_id: grupoActivoId,
+              autor_id: sesion.id,
+              autor_nombre: sesion.nombre,
+              autor_rol: msgStaff.autor_rol,
+              texto: msgStaff.texto,
+              tipo: "DM_PRIVADO",
+              destinatario_privado_id: "admin",
+              reply_to_msg_id: replyId,
+            },
+          ]);
+        } catch { /* noop */ }
+      }
+
+      emitirToast("Tu mensaje ha sido enviado al Administrador y Operadores.", "success");
+      setEnviando(false);
+      return;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
     // MENSAJE DIRECTO (DM) EXCLUSIVO (/dm @usuario mensaje o /privado @usuario mensaje)
     // ────────────────────────────────────────────────────────────────────────
     const mDm = /^(?:\/dm|\/privado)\s+@?([a-zA-Z0-9_\-\.]+)\s+([\s\S]+)$/i.exec(texto);
     if (mDm) {
       const destNombre = mDm[1].trim().toUpperCase();
       const dmTexto = mDm[2].trim();
-      const targetCli = clientesDisponibles.find(
-        (c) =>
-          String(c.nombre).toUpperCase() === destNombre ||
-          String(c.seudonimo).toUpperCase() === destNombre ||
-          String(c.id) === destNombre
-      );
+      const esDestinoStaff = /ADMIN|OPERADOR|TAQUILLA|SOPORTE|SUPERVISOR|JULIO|JOSORIO/i.test(destNombre);
 
-      const targetId = targetCli ? String(targetCli.id) : null;
-      if (!targetId) {
-        emitirToast(`No se encontró al usuario @${destNombre} para mensaje directo`, "warning");
+      // Los usuarios no pueden contactarse entre ellos: solo con admin u operadores
+      if (!sesion.esOperadorOAdmin && !esDestinoStaff) {
+        emitirToast("⛔ Los usuarios no pueden contactarse entre ellos. Solo puedes contactar al Administrador o a los Operadores.", "warning");
         setEnviando(false);
         return;
+      }
+
+      let targetId: string = "admin";
+      let nombreDestino = "Administración / Operadores";
+
+      if (!esDestinoStaff) {
+        const targetCli = clientesDisponibles.find(
+          (c) =>
+            String(c.nombre).toUpperCase() === destNombre ||
+            String(c.seudonimo).toUpperCase() === destNombre ||
+            String(c.id) === destNombre
+        );
+
+        if (!targetCli) {
+          emitirToast(`No se encontró al usuario @${destNombre} para mensaje directo`, "warning");
+          setEnviando(false);
+          return;
+        }
+        targetId = String(targetCli.id);
+        nombreDestino = `@${targetCli.nombre || destNombre}`;
       }
 
       const msgDm: MensajeSala = {
@@ -1049,7 +1184,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         autor_id: sesion.id,
         autor_nombre: sesion.nombre,
         autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
-        texto: `🔒 (DM para @${targetCli.nombre || destNombre}): ${dmTexto}`,
+        texto: `🔒 (DM para ${nombreDestino}): ${dmTexto}`,
         tipo: "DM_PRIVADO",
         destinatario_privado_id: targetId,
         reply_to_msg_id: replyId,
@@ -1083,6 +1218,16 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         } catch { /* noop */ }
       }
 
+      setEnviando(false);
+      return;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // BLOQUEO DE INTERCAMBIO DE CONTACTO EXTERNO ENTRE CLIENTES EN SALAS PÚBLICAS
+    // ────────────────────────────────────────────────────────────────────────
+    const PATRON_CONTACTO_EXTERNO = /(?:\+?58\s*4\d{2}|\b0?4\d{2})[-.\s]?\d{3}[-.\s]?\d{4}|\b\d{7,11}\b|wa\.me\/|chat\.whatsapp\.com|api\.whatsapp\.com|t\.me\/|telegram\.me/i;
+    if (!sesion.esOperadorOAdmin && PATRON_CONTACTO_EXTERNO.test(texto)) {
+      emitirToast("⛔ Por seguridad, no está permitido compartir datos de contacto entre usuarios en la sala. Contacta al Administrador o a los Operadores.", "warning");
       setEnviando(false);
       return;
     }
@@ -1349,6 +1494,12 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
       }
 
       if (prop.contraparte) {
+        if (!sesion.esOperadorOAdmin && !/ADMIN|OPERADOR|TAQUILLA|CASA|BANCA/i.test(prop.contraparte)) {
+          emitirToast("⛔ No se permiten jugadas dirigidas directamente a otros usuarios. Publica tu parada abierta para la sala o dirígela a la Administración.", "warning");
+          setEnviando(false);
+          return;
+        }
+
         const ticketNum = Math.floor(100000 + Math.random() * 900000);
         const juegaNombre = prop.rol === "JUEGA" ? sesion.nombre : prop.contraparte;
         const daNombre = prop.rol === "DA" ? sesion.nombre : prop.contraparte;
@@ -1971,6 +2122,8 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           nombreSala={
             grupoActivoId === "bot-privado"
               ? "Agente IA Oficial (DM)"
+              : grupoActivoId === "admin-privado"
+              ? "Atención · Administrador / Operadores"
               : (salas.find((s) => s.id === grupoActivoId)?.nombre || "Sala Principal")
           }
           nombreGrupo={gruposVenta.find((g) => String(g.id) === String(grupoSeleccionadoId))?.nombre}

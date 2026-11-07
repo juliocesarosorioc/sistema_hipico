@@ -80,7 +80,7 @@ export function TablasModule(props: Props) {
    *  el Monitor de Tablas Publicadas abra en la jornada en curso. El usuario
    *  puede cambiar de día, o pasar a "TODOS LOS DÍAS" con el botón de la
    *  cabecera (que limpia esta fecha). */
-  const [fechaPrograma, setFechaPrograma] = useState<string>("");
+  const [fechaPrograma, setFechaPrograma] = useState<string>(() => hoyLocal());
   /** Fecha concreta (ISO) para operaciones que EXIGEN un día: publicar, validar
    *  la carga y sembrar el registro central. El monitor puede estar en "Todos
    *  los días" (`fechaPrograma === ""`), pero una tabla SIEMPRE se publica en un
@@ -799,18 +799,6 @@ export function TablasModule(props: Props) {
                 : "Sin hipódromos publicados."
             }
             className="mb-3"
-            acciones={
-              <Guard permiso="tablas:btn_imprimir">
-                <button
-                  type="button"
-                  onClick={() => setImpresion(true)}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-[11px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
-                  title="Imprimir / exportar tablas publicadas (matriz 15 por hoja o reporte por jugador)"
-                >
-                  🖨️ Imprimir Tablas
-                </button>
-              </Guard>
-            }
           />
           <MonitorTablas
             tablas={tablas}
@@ -825,6 +813,7 @@ export function TablasModule(props: Props) {
             onFechaDia={setFechaPrograma}
             ejeFecha={ejeFecha}
             onEjeFecha={setEjeFecha}
+            onImprimirTablas={() => setImpresion(true)}
           />
         </div>
       )}

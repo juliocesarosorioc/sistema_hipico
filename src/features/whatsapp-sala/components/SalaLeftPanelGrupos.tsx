@@ -329,6 +329,28 @@ export function SalaLeftPanelGrupos({
           </div>
         </div>
 
+        {/* Canal Directo: Contactar Administrador / Operadores */}
+        <div
+          onClick={() => onSeleccionarSala("admin-privado")}
+          className={`flex items-center gap-3 px-3.5 py-3 cursor-pointer transition-colors ${
+            salaActivaId === "admin-privado" ? "bg-[#2a3942]" : "hover:bg-[#202c33]"
+          }`}
+        >
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-amber-600 to-amber-500 text-white text-xl shadow">
+            👨‍💼
+            <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-400 border-2 border-[#111b21]" />
+          </div>
+          <div className="flex flex-col min-w-0 flex-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[14px] font-semibold text-[#e9edef] truncate">Atención / Operadores</span>
+              <span className="text-[10px] text-amber-400 font-bold">Soporte</span>
+            </div>
+            <p className="text-[12px] text-[#8696a0] truncate">
+              Contactar en privado al Administrador o a los Operadores
+            </p>
+          </div>
+        </div>
+
         {/* Separador de Salas */}
         <div className="flex items-center justify-between px-3.5 py-1.5 bg-[#182229] text-[11px] font-semibold uppercase tracking-wider text-[#8696a0]">
           <span className="truncate">Salas de {nombreGrupoActivo}</span>
