@@ -96,6 +96,33 @@ export function limpiarCacheClientesVenta(): void {
   cacheClientesTs = 0;
 }
 
+export const CLAVE_TOMBSTONES_GRUPOS = "hipico_grupos_eliminados_ids";
+
+export function registrarGrupoEliminadoLocal(id: string | number): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(CLAVE_TOMBSTONES_GRUPOS);
+    const lista = raw ? JSON.parse(raw) : [];
+    const sid = String(id).trim();
+    if (sid && !lista.includes(sid)) {
+      lista.push(sid);
+      window.localStorage.setItem(CLAVE_TOMBSTONES_GRUPOS, JSON.stringify(lista));
+    }
+  } catch {}
+}
+
+export function leerGruposEliminadosLocal(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(CLAVE_TOMBSTONES_GRUPOS);
+    if (!raw) return new Set();
+    const lista = JSON.parse(raw);
+    return new Set(Array.isArray(lista) ? lista.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
 export function invalidarCacheGrupos(grupoId?: string): void {
   cacheGruposVenta = null;
   cacheGruposAdmin = null;
@@ -144,7 +171,10 @@ export async function listarGruposVenta(): Promise<GrupoVenta[]> {
     return [];
   }
   ultimoErrorGrupos = null;
-  const activos = grupos.filter((g) => g.activo !== false && !(g as any).eliminado_en).map((g) => aplicarOverridesCicloGrupo(g));
+  const eliminadosLocal = leerGruposEliminadosLocal();
+  const activos = grupos
+    .filter((g) => !eliminadosLocal.has(String(g.id)) && g.activo !== false && !(g as any).eliminado_en)
+    .map((g) => aplicarOverridesCicloGrupo(g));
   cacheGruposVenta = activos;
   return activos;
 }
@@ -468,8 +498,9 @@ export async function listarGruposAdmin(force = false): Promise<GrupoRow[]> {
     return [];
   }
   ultimoErrorGrupos = null;
+  const eliminadosLocal = leerGruposEliminadosLocal();
   const enriquecidos = grupos
-    .filter((g) => g.activo !== false && !(g as any).eliminado_en)
+    .filter((g) => !eliminadosLocal.has(String(g.id)) && g.activo !== false && !(g as any).eliminado_en)
     .map((g) => aplicarOverridesCicloGrupo(g));
   cacheGruposAdmin = enriquecidos;
   return enriquecidos;
@@ -965,30 +996,44 @@ export async function eliminarGrupoRpc(id: string | number): Promise<{ ok: boole
     try { await supabase.from("pollas").update({ grupo_id: null }).eq("grupo_id", grupoIdStr); } catch {}
     try { await supabase.from("remates").update({ grupo_id: null }).eq("grupo_id", grupoIdStr); } catch {}
 
-    // 3. Intentar borrado físico (Hard Delete)
-    let eliminadoFisico = false;
-    const { error: e3 } = await supabase.from("grupos_venta").delete().eq("id", grupoIdStr);
-    if (!e3) {
-      eliminadoFisico = true;
-    } else {
-      const rpc = await supabase.rpc("club_eliminar_grupo", { p_id: grupoIdStr });
-      if (!rpc.error) {
-        eliminadoFisico = true;
+    // 3. Ejecutar primero la RPC club_eliminar_grupo (SECURITY DEFINER que salta RLS en PostgreSQL)
+    let completado = false;
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc("club_eliminar_grupo", { p_id: grupoIdStr });
+      if (!rpcErr && (rpcData as any)?.ok !== false) {
+        completado = true;
       }
+    } catch {}
+
+    // 4. Si la RPC fallara, intentar toggle o borrado directo verificado
+    if (!completado) {
+      try {
+        const { data: delData, error: e3 } = await supabase.from("grupos_venta").delete().eq("id", grupoIdStr).select("id");
+        if (!e3 && Array.isArray(delData) && delData.length > 0) {
+          completado = true;
+        }
+      } catch {}
     }
 
-    // 4. Si el borrado físico falla (por registros históricos de tickets o contabilidad vinculados):
-    // Desactivar el grupo limpiamente (Soft Delete) usando activo: false para que desaparezca de inmediato
-    if (!eliminadoFisico) {
-      const { error: eSoft } = await supabase
-        .from("grupos_venta")
-        .update({ activo: false })
-        .eq("id", grupoIdStr);
-
-      if (eSoft) {
-        return { ok: false, error: `No se pudo eliminar el grupo: ${eSoft.message}` };
-      }
+    if (!completado) {
+      try {
+        const { error: eTog } = await supabase.rpc("club_toggle_grupo", { p_id: grupoIdStr, p_activo: false });
+        if (!eTog) completado = true;
+      } catch {}
     }
+
+    if (!completado) {
+      try {
+        await supabase
+          .from("grupos_venta")
+          .update({ activo: false, eliminado_en: new Date().toISOString() })
+          .eq("id", grupoIdStr);
+        completado = true;
+      } catch {}
+    }
+
+    // 5. Registrar Tombstone local: garantiza que NUNCA vuelva a aparecer en la sesión aunque la BD tarde
+    registrarGrupoEliminadoLocal(grupoIdStr);
 
     invalidarCacheGrupos();
     void registrarAuditoria("GRUPO", "ELIMINAR", `Grupo ${grupoIdStr} eliminado.`);

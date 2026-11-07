@@ -106,43 +106,9 @@ export function SalaHeaderWallet({
                 className={`h-1.5 w-1.5 rounded-full ${esCerrada ? "bg-white" : "bg-emerald-300 animate-pulse"}`}
               />
               <span className="font-mono tabular-nums uppercase">
-                {carreraActiva.hipodromo} · {carreraActiva.estado}
+                {carreraActiva.hipodromo} C{carreraActiva.carrera} · {carreraActiva.estado}
               </span>
             </span>
-
-            {/* Selector interactivo de Número de Carrera */}
-            <div className="flex items-center rounded-lg bg-black/30 border border-white/20 px-1 py-0.5 shadow-inner">
-              <button
-                type="button"
-                disabled={carreraActiva.carrera <= 1}
-                onClick={() => onCambiarNumeroCarrera && onCambiarNumeroCarrera(Math.max(1, carreraActiva.carrera - 1))}
-                className="px-1 text-[11px] font-black hover:text-amber-300 disabled:opacity-30 cursor-pointer"
-                title="Carrera anterior"
-              >
-                ◀
-              </button>
-              <select
-                value={carreraActiva.carrera}
-                onChange={(e) => onCambiarNumeroCarrera && onCambiarNumeroCarrera(Number(e.target.value))}
-                className="bg-transparent text-[11px] font-black text-amber-300 font-mono focus:outline-none cursor-pointer"
-                title="Seleccionar número de carrera activa"
-              >
-                {Array.from({ length: 16 }, (_, idx) => idx + 1).map((n) => (
-                  <option key={n} value={n} className="bg-[#202c33] text-white">
-                    C{n}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                disabled={carreraActiva.carrera >= 16}
-                onClick={() => onCambiarNumeroCarrera && onCambiarNumeroCarrera(carreraActiva.carrera + 1)}
-                className="px-1 text-[11px] font-black hover:text-amber-300 disabled:opacity-30 cursor-pointer"
-                title="Siguiente carrera"
-              >
-                ▶
-              </button>
-            </div>
           </div>
         </div>
       </div>

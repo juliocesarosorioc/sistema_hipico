@@ -199,6 +199,7 @@
     "../src/features/clientes/lib/recalculo-semanal.ts",
     "./recalculo-semanal-devoluciones.test.ts",
     "./belmont-sam-partner-cruces.test.ts",
-    "./reversar-boton-reliquidar.test.ts"
+    "./reversar-boton-reliquidar.test.ts",
+    "./eliminar-grupo-chat.test.ts"
   ]
 }

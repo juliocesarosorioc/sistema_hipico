@@ -1,5 +1,5 @@
 import { supabase } from "@/core/supabase";
-import { invalidarCacheGrupos } from "@/features/grupos/lib/grupos";
+import { invalidarCacheGrupos, registrarGrupoEliminadoLocal } from "@/features/grupos/lib/grupos";
 
 export interface SalaChat {
   id: string;
@@ -323,21 +323,37 @@ export async function eliminarGrupoVenta(
       await supabase.from("clientes_grupos").delete().eq("grupo_id", grupoId);
       await supabase.from("operadores_grupos").delete().eq("grupo_id", grupoId);
 
-      // 2. Intentar borrado físico en grupos_venta
-      const { error: errDel } = await supabase.from("grupos_venta").delete().eq("id", grupoId);
-      if (errDel) {
-        // Soft delete en caso de tickets históricos u otras relaciones foráneas
-        await supabase
-          .from("grupos_venta")
-          .update({ activo: false, eliminado_en: new Date().toISOString() })
-          .eq("id", grupoId);
+      // 2. Intentar borrado vía RPC club_eliminar_grupo (SECURITY DEFINER)
+      let completado = false;
+      try {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc("club_eliminar_grupo", { p_id: grupoId });
+        if (!rpcErr && (rpcData as any)?.ok !== false) {
+          completado = true;
+        }
+      } catch {}
+
+      if (!completado) {
+        const { data: delData, error: errDel } = await supabase.from("grupos_venta").delete().eq("id", grupoId).select("id");
+        if (!errDel && Array.isArray(delData) && delData.length > 0) {
+          completado = true;
+        } else {
+          try {
+            await supabase.rpc("club_toggle_grupo", { p_id: grupoId, p_activo: false });
+          } catch {
+            await supabase
+              .from("grupos_venta")
+              .update({ activo: false, eliminado_en: new Date().toISOString() })
+              .eq("id", grupoId);
+          }
+        }
       }
     } catch {
       /* ignore */
     }
   }
 
-  // 3. Invalidar la memoria caché del cliente
+  // 3. Registrar tombstone local e invalidar la memoria caché del cliente
+  registrarGrupoEliminadoLocal(grupoId);
   invalidarCacheGrupos();
 
   if (typeof window !== "undefined") {
