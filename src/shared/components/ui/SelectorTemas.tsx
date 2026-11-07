@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTema } from "@/shared/hooks/useTema";
 import { type TipoTema } from "@/shared/lib/temas";
 
-export function SelectorTemas({ compacto = false }: { compacto?: boolean }) {
+export function SelectorTemas({ compacto = true }: { compacto?: boolean }) {
   const { tema, cambiarTema, infoActual, temasDisponibles } = useTema();
   const [abierto, setAbierto] = useState(false);
   const contenedorRef = useRef<HTMLDivElement>(null);
@@ -54,7 +54,7 @@ export function SelectorTemas({ compacto = false }: { compacto?: boolean }) {
           style={{ backgroundColor: infoActual.colorAcento }}
         />
         <span className="text-xs sm:text-sm">{infoActual.emoji}</span>
-        <span className={compacto ? "hidden xl:inline font-bold tracking-wide text-xs" : "hidden sm:inline font-bold tracking-wide"}>{infoActual.nombre}</span>
+        <span className="hidden sm:inline font-bold tracking-wide text-xs">{infoActual.nombre}</span>
         <svg
           className={`h-3 w-3 text-slate-400 transition-transform duration-200 ${abierto ? "rotate-180" : ""}`}
           fill="none"
