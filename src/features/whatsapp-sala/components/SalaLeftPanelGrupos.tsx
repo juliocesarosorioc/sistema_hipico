@@ -296,7 +296,7 @@ export function SalaLeftPanelGrupos({
       </div>
 
       {/* 4. Lista de Salas estilo WhatsApp */}
-      <div className="flex-1 overflow-y-auto divide-y divide-[#222e35]/40">
+      <div className="flex-1 overflow-y-auto no-scrollbar divide-y divide-[#222e35]/40" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
         {/* Canal Privado con el Agente IA Bot */}
         <div
           onClick={() => onSeleccionarSala("bot-privado")}

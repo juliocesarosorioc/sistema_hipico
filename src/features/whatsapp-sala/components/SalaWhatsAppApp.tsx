@@ -1948,8 +1948,11 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           onCerrarSesion={cerrarSesion}
         />
 
-        {/* Feed de mensajes */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 bg-[#0b141a]">
+        {/* Feed de mensajes sin barra de desplazamiento */}
+        <div
+          className="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-4 space-y-2 bg-[#0b141a]"
+          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+        >
           <div className="mx-auto my-1 max-w-sm rounded-xl bg-[#182229] px-3 py-1.5 text-center shadow-sm border border-[#222e35]">
             <p className="text-[10px] text-[#8696a0] leading-snug">
               🤖 <b>Agente IA Oficial:</b> Modera la sala, empareja paradas FIFO y custodia tu saldo privado.
@@ -1997,44 +2000,6 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
             </button>
           </div>
         )}
-
-        {/* Chips Rápidos de Jugadas */}
-        <div className="flex gap-2 overflow-x-auto bg-[#202c33] px-3 py-1.5 border-t border-[#222e35] scrollbar-none select-none">
-          <button
-            onClick={() => enviarMensaje("Saldo")}
-            className="whitespace-nowrap rounded-full bg-[#111b21] px-3 py-1 text-xs font-semibold text-[#00a884] shadow-sm border border-[#00a884]/40 hover:bg-[#182229] active:scale-95"
-          >
-            💰 Mi Saldo (Privado)
-          </button>
-          <button
-            onClick={() => enviarMensaje("¿Qué carrera viene?")}
-            className="whitespace-nowrap rounded-full bg-[#111b21] px-3 py-1 text-xs font-semibold text-slate-200 shadow-sm border border-[#2a3942] hover:bg-[#182229] active:scale-95"
-          >
-            📍 Carrera Actual
-          </button>
-          <button
-            onClick={() => enviarMensaje("100 al 5 con @SAM")}
-            disabled={esCerrada}
-            className="whitespace-nowrap rounded-full bg-[#111b21] px-3 py-1 text-xs font-semibold text-slate-200 shadow-sm border border-[#2a3942] hover:bg-[#182229] active:scale-95 disabled:opacity-40"
-          >
-            🏇 100 al 5 con @SAM
-          </button>
-          <button
-            onClick={() => enviarMensaje("50 2n al 1")}
-            disabled={esCerrada}
-            className="whitespace-nowrap rounded-full bg-[#111b21] px-3 py-1 text-xs font-semibold text-slate-200 shadow-sm border border-[#2a3942] hover:bg-[#182229] active:scale-95 disabled:opacity-40"
-          >
-            🛡️ 50 2n al 1
-          </button>
-          {sesion.esOperadorOAdmin && (
-            <button
-              onClick={() => enviarMensaje(`Abierta ${carreraActiva.hipodromo} ${carreraActiva.carrera}`)}
-              className="whitespace-nowrap rounded-full bg-emerald-950/50 px-3 py-1 text-xs font-semibold text-emerald-300 shadow-sm border border-emerald-500/40 hover:bg-emerald-900/50 active:scale-95"
-            >
-              🟢 Abrir Carrera
-            </button>
-          )}
-        </div>
 
         {/* Barra Inferior Fija de Input */}
         <div className="flex items-center gap-2 bg-[#202c33] px-3 py-2 border-t border-[#222e35]">

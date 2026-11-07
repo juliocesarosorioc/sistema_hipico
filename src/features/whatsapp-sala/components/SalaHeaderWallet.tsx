@@ -67,6 +67,17 @@ export function SalaHeaderWallet({
     >
       {/* 1. Logo / Info de Sala y Carrera Activa */}
       <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== "undefined") window.location.href = "/inicio";
+          }}
+          title="Salir al Sistema Principal"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/20 hover:bg-black/35 text-white text-sm font-bold transition-colors cursor-pointer"
+        >
+          ←
+        </button>
+
         <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#128c7e] text-xl font-bold shadow-sm border border-white/20">
           🐎
           <span
@@ -100,113 +111,22 @@ export function SalaHeaderWallet({
         </div>
       </div>
 
-      {/* 2. Control Deslizador de Letra (A- / A+) y Billetera Personal */}
-      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-        {/* Controles de Escala de Letra A- / A+ */}
-        <div className="hidden xs:flex items-center bg-black/20 rounded-full px-2 py-0.5 border border-white/10 gap-1 text-[11px]">
-          <button
-            type="button"
-            onClick={() => onCambiarTamanoLetra(Math.max(12, tamanoLetra - 1))}
-            className="px-1 font-black hover:text-emerald-200 transition-colors"
-            title="Reducir tamaño de letra"
-          >
-            A-
-          </button>
-          <span className="text-[10px] font-mono tabular-nums text-white/80">{tamanoLetra}px</span>
-          <button
-            type="button"
-            onClick={() => onCambiarTamanoLetra(Math.min(24, tamanoLetra + 1))}
-            className="px-1 font-black hover:text-emerald-200 transition-colors"
-            title="Aumentar tamaño de letra"
-          >
-            A+
-          </button>
-        </div>
-
-        {/* Toggle Operador Apertura / Cierre */}
+      {/* 2. Solo la opción de Cerrar / Abrir Carrera para Administrador y Operador */}
+      <div className="flex items-center gap-2 shrink-0">
         {esOperadorOAdmin && onToggleEstadoCarrera && (
           <button
+            type="button"
             onClick={onToggleEstadoCarrera}
             title={esCerrada ? "Abrir Carrera" : "Cerrar Carrera"}
-            className={`hidden sm:inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold shadow-sm transition-all ${
+            className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-black shadow-md transition-all cursor-pointer ${
               esCerrada
-                ? "bg-emerald-500 text-white hover:bg-emerald-600"
-                : "bg-red-600 text-white hover:bg-red-700 animate-pulse"
+                ? "bg-emerald-500 text-white hover:bg-emerald-600 active:scale-95"
+                : "bg-red-600 text-white hover:bg-red-700 active:scale-95 animate-pulse"
             }`}
           >
-            {esCerrada ? "🟢 Abrir" : "🔴 Cerrar"}
+            <span>{esCerrada ? "🟢 Abrir Carrera" : "🔴 Cerrar Carrera"}</span>
           </button>
         )}
-
-        {/* Billetera Personal Estricta (Privada) */}
-        <div className="flex items-center gap-1.5 rounded-full bg-black/25 px-2.5 sm:px-3 py-1 backdrop-blur-sm border border-white/10 text-right">
-          <div className="flex flex-col text-right">
-            <span className="text-[9px] uppercase font-bold text-emerald-200 truncate max-w-[80px] sm:max-w-[120px]">
-              {nombreUsuario}
-            </span>
-            <div className="text-xs font-mono font-black tabular-nums text-white flex items-center justify-end gap-1">
-              {ocultarSaldo ? (
-                <span className="text-slate-300 tracking-wider">$ ••••</span>
-              ) : esLibre ? (
-                <span className="text-amber-300">⭐ LIBRE</span>
-              ) : (
-                <span>
-                  ${disp.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  {enJuego > 0 && (
-                    <span className="text-[9px] text-amber-300 ml-1 font-normal" title="Saldo en juego">
-                      (-${enJuego.toFixed(0)})
-                    </span>
-                  )}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Botón de Ocultar Saldo 👁️ */}
-          <button
-            type="button"
-            onClick={toggleOcultar}
-            className="text-xs p-1 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition-colors"
-            title={ocultarSaldo ? "Mostrar saldo disponible" : "Ocultar saldo con asteriscos"}
-          >
-            {ocultarSaldo ? "🙈" : "👁️"}
-          </button>
-        </div>
-
-        {/* Botón Panel Derecho (Caballos y Tickets) */}
-        <button
-          type="button"
-          onClick={onTogglePanelDerecho}
-          className={`flex h-8 w-8 items-center justify-center rounded-full text-xs transition-colors ${
-            panelDerechoAbierto ? "bg-white text-[#008069] shadow-sm font-bold" : "bg-black/20 hover:bg-black/30 text-white"
-          }`}
-          title="Ver caballos y tickets de la carrera"
-        >
-          📋
-        </button>
-
-        {/* Salir al Sistema Principal */}
-        <button
-          type="button"
-          onClick={() => {
-            if (typeof window !== "undefined") window.location.href = "/inicio";
-          }}
-          title="Salir al Sistema Principal"
-          className="hidden xs:inline-flex items-center gap-1 rounded-full bg-black/25 hover:bg-black/40 px-2.5 py-1 text-[11px] font-bold text-white/90 hover:text-white transition-colors border border-white/10"
-        >
-          <span>←</span>
-          <span>Salir</span>
-        </button>
-
-        {/* Salir / Cambiar Sesión */}
-        <button
-          type="button"
-          onClick={onCerrarSesion}
-          title="Cambiar cuenta o seudónimo"
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-black/20 hover:bg-black/30 text-white text-xs transition-colors"
-        >
-          🚪
-        </button>
       </div>
     </header>
   );
