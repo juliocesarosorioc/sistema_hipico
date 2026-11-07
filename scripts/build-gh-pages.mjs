@@ -49,14 +49,16 @@ process.on("SIGINT", () => {
 const esWindows = process.platform === "win32";
 const npx = esWindows ? "npx.cmd" : "npx";
 
-// En producción para administracionhipica.ia.ve, el basePath por defecto es vacío ("")
+// En GitHub Pages bajo juliocesarosorioc.github.io/sistema_hipico/, el basePath por defecto es /sistema_hipico
+const targetBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "/sistema_hipico";
+
 const hijo = spawn(npx, ["next", "build"], {
   stdio: "inherit",
   shell: esWindows,
   env: {
     ...process.env,
     NEXT_OUTPUT: "export",
-    NEXT_PUBLIC_BASE_PATH: process.env.NEXT_PUBLIC_BASE_PATH ?? "",
+    NEXT_PUBLIC_BASE_PATH: targetBasePath,
   },
 });
 
@@ -78,10 +80,15 @@ function postProcesarExportGithubPages() {
   if (!fs.existsSync(outDir)) return;
   console.log("\n[post-build] Optimizando salida para GitHub Pages & Dominio Personalizado...");
 
-  // 1. CNAME para vincular el dominio personalizado administracionhipica.ia.ve
+  // 1. CNAME opcional solo si se configura explícitamente CUSTOM_DOMAIN
   const cnamePath = path.join(outDir, "CNAME");
-  fs.writeFileSync(cnamePath, "administracionhipica.ia.ve", "utf8");
-  console.log("  ✓ CNAME creado: administracionhipica.ia.ve");
+  if (process.env.CUSTOM_DOMAIN) {
+    fs.writeFileSync(cnamePath, process.env.CUSTOM_DOMAIN, "utf8");
+    console.log(`  ✓ CNAME creado: ${process.env.CUSTOM_DOMAIN}`);
+  } else if (fs.existsSync(cnamePath)) {
+    fs.unlinkSync(cnamePath);
+    console.log("  ✓ CNAME omitido (el dominio principal apunta al VPS Contabo)");
+  }
 
   // 2. Asegurar archivo .nojekyll en out/ para que GitHub Pages no ignore /_next
   const nojekyllPath = path.join(outDir, ".nojekyll");
