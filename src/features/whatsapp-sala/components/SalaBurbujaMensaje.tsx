@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useRef, useCallback } from "react";
 import type { MensajeSala, EstadoCarreraGrupo } from "../lib/chat-p2p";
 import { SalaTarjetaCarreraGrafica } from "./SalaTarjetaCarreraGrafica";
 import { obtenerColorGualdrapa } from "../lib/chat-p2p";
@@ -41,6 +41,16 @@ export function SalaBurbujaMensaje({
   const esPizarra = mensaje.tipo === "PIZARRA";
   const esCerrada = carreraActiva.estado === "CERRADA" || carreraActiva.estado === "LIQUIDADA";
 
+  // Estados para Swipe to Reply (Deslizar para responder estilo WhatsApp)
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [haVibrado, setHaVibrado] = useState(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const mouseStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Estado para modal / popover de "Info del mensaje y Estatus"
+  const [mostrarInfoEstatus, setMostrarInfoEstatus] = useState(false);
+
   // Control de expiración de 3 minutos para propuestas
   const creadoMs = mensaje.created_at ? new Date(mensaje.created_at).getTime() : Date.now();
   const transcurridoMs = Date.now() - creadoMs;
@@ -55,13 +65,95 @@ export function SalaBurbujaMensaje({
   const minRest = Math.floor(tiempoRestanteSeg / 60);
   const segRest = tiempoRestanteSeg % 60;
 
-  const horaFmt = mensaje.created_at
-    ? new Date(mensaje.created_at).toLocaleTimeString("es-VE", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      })
-    : "";
+  const fechaObj = mensaje.created_at ? new Date(mensaje.created_at) : new Date();
+  const horaFmt = fechaObj.toLocaleTimeString("es-VE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+  const fechaCompletaFmt = fechaObj.toLocaleString("es-VE", {
+    dateStyle: "medium",
+    timeStyle: "medium",
+  });
+
+  // Manejadores Touch para Swipe-to-Reply
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
+    setIsDragging(true);
+    setHaVibrado(false);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const t = e.touches[0];
+    const diffX = t.clientX - touchStartRef.current.x;
+    const diffY = t.clientY - touchStartRef.current.y;
+
+    // Si el usuario se está desplazando verticalmente para leer el chat, no interceptamos
+    if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffX) < 12) {
+      return;
+    }
+
+    // Permitir deslizamiento hacia la derecha (estilo WhatsApp)
+    if (diffX > 0) {
+      if (e.cancelable) e.preventDefault();
+      // Resistencia elástica hasta un máximo de 75px
+      const nuevoOffset = Math.min(75, diffX * 0.72);
+      setDragOffset(nuevoOffset);
+
+      if (nuevoOffset >= 42 && !haVibrado) {
+        if (typeof window !== "undefined" && window.navigator?.vibrate) {
+          window.navigator.vibrate(15);
+        }
+        setHaVibrado(true);
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (dragOffset >= 42) {
+      onCitar(mensaje);
+    }
+    setDragOffset(0);
+    setIsDragging(false);
+    touchStartRef.current = null;
+    setHaVibrado(false);
+  };
+
+  // Manejadores Mouse (Desktop drag) para Swipe-to-Reply
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Solo clic primario izquierdo
+    if (e.button !== 0) return;
+    mouseStartRef.current = { x: e.clientX, y: e.clientY };
+    setIsDragging(true);
+    setHaVibrado(false);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!mouseStartRef.current || !isDragging) return;
+    const diffX = e.clientX - mouseStartRef.current.x;
+    const diffY = e.clientY - mouseStartRef.current.y;
+
+    if (diffX > 4 && Math.abs(diffX) > Math.abs(diffY)) {
+      const nuevoOffset = Math.min(75, diffX * 0.72);
+      setDragOffset(nuevoOffset);
+
+      if (nuevoOffset >= 42 && !haVibrado) {
+        setHaVibrado(true);
+      }
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (dragOffset >= 42) {
+      onCitar(mensaje);
+    }
+    setDragOffset(0);
+    setIsDragging(false);
+    mouseStartRef.current = null;
+    setHaVibrado(false);
+  };
 
   // 1. Tarjeta Gráfica de Carrera (Publicada automáticamente al abrir carrera)
   if (esImagenCarrera) {
@@ -91,9 +183,9 @@ export function SalaBurbujaMensaje({
           </div>
           <div
             style={{
-          fontSize: `${tamanoLetra}px`,
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif',
-        }}
+              fontSize: `${tamanoLetra}px`,
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif',
+            }}
             className="whitespace-pre-wrap pt-2 leading-relaxed text-[#e9edef]"
           >
             {mensaje.texto}
@@ -106,19 +198,61 @@ export function SalaBurbujaMensaje({
     );
   }
 
-  // 3. Mensajes regulares, privados, propuestas y concreciones
+  // 3. Mensajes regulares, privados, propuestas y concreciones con Swipe to Reply y Estatus
   return (
     <div
-      className={`flex flex-col w-full my-1 ${
+      className={`relative flex flex-col w-full my-1 select-none overflow-x-hidden ${
         esMio ? "items-end" : "items-start"
       }`}
     >
+      {/* Icono animado de Responder detrás de la burbuja (estilo WhatsApp) */}
       <div
+        className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none transition-transform duration-75 z-0"
         style={{
-          fontSize: `${tamanoLetra}px`,
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif',
+          opacity: Math.min(1, dragOffset / 30),
+          transform: `translateY(-50%) translateX(${Math.max(0, dragOffset - 38)}px) scale(${Math.min(
+            1.2,
+            0.65 + dragOffset / 60
+          )})`,
         }}
-        className={`group relative max-w-[88%] sm:max-w-[75%] rounded-2xl p-3 shadow-sm select-text transition-all ${
+      >
+        <div
+          className={`h-9 w-9 rounded-full flex items-center justify-center shadow-lg transition-colors duration-150 ${
+            dragOffset >= 42
+              ? "bg-[#00a884] text-white ring-2 ring-[#00a884]/50"
+              : "bg-[#202c33] text-[#8696a0] border border-[#2a3942]"
+          }`}
+        >
+          <svg
+            className={`w-4 h-4 transition-transform duration-150 ${
+              dragOffset >= 42 ? "scale-110 -rotate-12" : ""
+            }`}
+            fill="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z" />
+          </svg>
+        </div>
+      </div>
+
+      {/* Contenedor deslizable de la Burbuja */}
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        style={{
+          transform: `translateX(${dragOffset}px)`,
+          transition: isDragging ? "none" : "transform 0.22s cubic-bezier(0.25, 1, 0.5, 1)",
+          fontSize: `${tamanoLetra}px`,
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif',
+        }}
+        className={`group relative z-10 max-w-[88%] sm:max-w-[75%] rounded-2xl p-3 shadow-sm select-text cursor-grab active:cursor-grabbing transition-shadow ${
           esPrivado
             ? "bg-purple-950/90 text-purple-100 border-2 border-purple-500/70 shadow-md"
             : esConcrecion
@@ -132,7 +266,7 @@ export function SalaBurbujaMensaje({
             : "bg-[#202c33] text-[#e9edef] rounded-tl-sm border border-[#2a3942]"
         }`}
       >
-        {/* Encabezado: Autor y Rol */}
+        {/* Encabezado: Autor, Rol y Botones de Acción Rápida */}
         <div className="flex items-center justify-between gap-3 pb-1 text-[11px]">
           <div className="flex items-center gap-1.5 font-bold">
             {esBot ? (
@@ -152,15 +286,34 @@ export function SalaBurbujaMensaje({
             )}
           </div>
 
-          {/* Botón de Citar (Swipe/Click-to-reply) */}
-          <button
-            type="button"
-            onClick={() => onCitar(mensaje)}
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-[11px] text-[#8696a0] hover:text-white px-1"
-            title="Responder / Citar este mensaje"
-          >
-            ↩ Citar
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Botón para ver Estatus Detallado estilo WhatsApp */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMostrarInfoEstatus(true);
+              }}
+              className="text-[10px] text-[#8696a0] hover:text-[#53bdeb] px-1 py-0.5 rounded hover:bg-black/20 transition-colors flex items-center gap-0.5"
+              title="Ver estatus y detalles del mensaje"
+            >
+              <span className="text-xs">ℹ️</span>
+              <span className="hidden sm:inline">Estatus</span>
+            </button>
+
+            {/* Botón de Citar (Clic tradicional además del swipe) */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCitar(mensaje);
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-[11px] text-[#8696a0] hover:text-white px-1.5 py-0.5 rounded hover:bg-black/20"
+              title="Desliza a la derecha o haz clic para responder"
+            >
+              ↩ Responder
+            </button>
+          </div>
         </div>
 
         {/* Cita de mensaje previo (si reply_to_msg_id existe) */}
@@ -183,7 +336,9 @@ export function SalaBurbujaMensaje({
               onClick={() => {
                 if (typeof window !== "undefined") {
                   const w = window.open("");
-                  w?.document.write(`<img src="${mensaje.imagen_url}" style="max-width:100%;height:auto;margin:auto;display:block;" />`);
+                  w?.document.write(
+                    `<img src="${mensaje.imagen_url}" style="max-width:100%;height:auto;margin:auto;display:block;" />`
+                  );
                 }
               }}
             />
@@ -191,19 +346,21 @@ export function SalaBurbujaMensaje({
         )}
 
         {/* Cuerpo del Texto */}
-        <div className="whitespace-pre-wrap leading-relaxed">
+        <div className="whitespace-pre-wrap leading-relaxed select-text">
           {mensaje.texto}
         </div>
 
         {/* Tarjeta Interactiva de Propuesta Abierta con FIFO */}
         {esPropuesta && mensaje.datos_jugada && (
-          <div className={`mt-2.5 rounded-xl bg-black/40 p-2.5 border transition-all ${
-            esAnulada
-              ? "border-rose-500/40 opacity-75"
-              : esExpirada
-              ? "border-amber-500/40 opacity-75"
-              : "border-cyan-500/30"
-          }`}>
+          <div
+            className={`mt-2.5 rounded-xl bg-black/40 p-2.5 border transition-all ${
+              esAnulada
+                ? "border-rose-500/40 opacity-75"
+                : esExpirada
+                ? "border-amber-500/40 opacity-75"
+                : "border-cyan-500/30"
+            }`}
+          >
             <div className="flex items-center justify-between text-xs pb-1.5">
               <div className="flex items-center gap-1.5">
                 {(() => {
@@ -221,7 +378,7 @@ export function SalaBurbujaMensaje({
                   {mensaje.datos_jugada.jugada} #{mensaje.datos_jugada.caballo}
                 </span>
 
-                {/* Badges de Estado */}
+                {/* Badges de Estado de la Propuesta */}
                 {esAnulada && (
                   <span className="rounded bg-rose-900/90 border border-rose-500/60 px-1.5 py-0.5 text-[9px] font-black uppercase text-rose-200">
                     🚫 Se fue
@@ -240,10 +397,18 @@ export function SalaBurbujaMensaje({
               </div>
 
               <div className="text-right">
-                <span className="text-[10px] text-[#8696a0] block uppercase font-bold">Disponible</span>
-                <span className={`font-mono font-black tabular-nums ${
-                  esAnulada ? "line-through text-rose-400" : esExpirada ? "text-amber-400" : "text-cyan-300"
-                }`}>
+                <span className="text-[10px] text-[#8696a0] block uppercase font-bold">
+                  Disponible
+                </span>
+                <span
+                  className={`font-mono font-black tabular-nums ${
+                    esAnulada
+                      ? "line-through text-rose-400"
+                      : esExpirada
+                      ? "text-amber-400"
+                      : "text-cyan-300"
+                  }`}
+                >
                   ${Number(mensaje.monto_disponible ?? mensaje.monto_propuesto).toFixed(2)}
                 </span>
               </div>
@@ -272,17 +437,21 @@ export function SalaBurbujaMensaje({
             {/* Acciones de la propuesta */}
             <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-[#2a3942]">
               {/* Botón para que el proponente anule su propia jugada ("Se fue") */}
-              {esMio && !esAnulada && !esExpirada && (mensaje.monto_disponible ?? 0) > 0 && onAnularPropuestaUsuario && (
-                <button
-                  type="button"
-                  onClick={() => onAnularPropuestaUsuario(mensaje)}
-                  className="rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-600/50 text-rose-200 font-bold text-[11px] py-1 px-2.5 active:scale-95 transition-all flex items-center gap-1"
-                >
-                  🚫 Retirar propuesta ("Se fue")
-                </button>
-              )}
+              {esMio &&
+                !esAnulada &&
+                !esExpirada &&
+                (mensaje.monto_disponible ?? 0) > 0 &&
+                onAnularPropuestaUsuario && (
+                  <button
+                    type="button"
+                    onClick={() => onAnularPropuestaUsuario(mensaje)}
+                    className="rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-600/50 text-rose-200 font-bold text-[11px] py-1 px-2.5 active:scale-95 transition-all flex items-center gap-1"
+                  >
+                    🚫 Retirar propuesta ("Se fue")
+                  </button>
+                )}
 
-              {/* Botón exclusivo para que el Administrador / Operador anule propuestas por error de herramienta */}
+              {/* Botón exclusivo para que el Administrador / Operador anule propuestas */}
               {esOperadorOAdmin && !esAnulada && onAnularPropuestaAdmin && (
                 <button
                   type="button"
@@ -352,12 +521,152 @@ export function SalaBurbujaMensaje({
           </div>
         )}
 
-        {/* Pie de burbuja: Hora y Checks */}
-        <div className="flex items-center justify-end gap-1 pt-1 text-[10px] text-[#8696a0]">
+        {/* Pie de burbuja interactivo: Hora, Estatus de Entrega y Doble Check WhatsApp */}
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            setMostrarInfoEstatus(true);
+          }}
+          className="flex items-center justify-end gap-1.5 pt-1 text-[10px] text-[#8696a0] cursor-pointer hover:text-[#53bdeb] transition-colors select-none"
+          title="Toca para ver el estatus completo del mensaje"
+        >
           <span className="font-mono tabular-nums">{horaFmt}</span>
-          {esMio && <span className="text-[#53bdeb] font-bold">✓✓</span>}
+
+          {/* Iconos de Estatus estilo WhatsApp */}
+          <span className="inline-flex items-center gap-0.5 font-bold">
+            {esMio ? (
+              <span className="text-[#53bdeb] text-xs font-black tracking-tighter" title="Entregado y Leído en Sala">
+                ✓✓
+              </span>
+            ) : (
+              <span className="text-[#8696a0] text-xs" title="Recibido en Sala">
+                ✓✓
+              </span>
+            )}
+          </span>
         </div>
       </div>
+
+      {/* Modal / Popover Informativo de Estatus estilo WhatsApp */}
+      {mostrarInfoEstatus && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setMostrarInfoEstatus(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-[#202c33] border border-[#2a3942] p-4 text-[#e9edef] shadow-2xl space-y-3.5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header del Modal */}
+            <div className="flex items-center justify-between border-b border-[#2a3942] pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-base text-[#00a884]">ℹ️</span>
+                <h3 className="text-sm font-bold text-white">Info. del Mensaje & Estatus</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMostrarInfoEstatus(false)}
+                className="h-6 w-6 rounded-full bg-[#111b21] hover:bg-[#2a3942] text-slate-300 flex items-center justify-center text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Previsualización del Contenido del Mensaje */}
+            <div className="rounded-xl bg-[#111b21] p-3 border border-[#2a3942] text-xs space-y-1">
+              <span className="block font-bold text-[#53bdeb]">
+                {esMio ? "Tú" : mensaje.autor_nombre} ({mensaje.autor_rol})
+              </span>
+              <p className="text-[#d1d7db] line-clamp-3 italic">{mensaje.texto}</p>
+            </div>
+
+            {/* Lista de Estatus Estilo WhatsApp */}
+            <div className="space-y-2.5 text-xs">
+              <div className="flex items-center justify-between p-2 rounded-lg bg-black/20">
+                <div className="flex items-center gap-2">
+                  <span className="text-[#53bdeb] text-sm font-bold">✓✓</span>
+                  <div>
+                    <span className="font-bold block text-white">Leído en Sala</span>
+                    <span className="text-[10px] text-[#8696a0]">Visto por los miembros y Agente IA</span>
+                  </div>
+                </div>
+                <span className="font-mono text-[11px] text-[#53bdeb] font-semibold">{horaFmt}</span>
+              </div>
+
+              <div className="flex items-center justify-between p-2 rounded-lg bg-black/20">
+                <div className="flex items-center gap-2">
+                  <span className="text-[#8696a0] text-sm font-bold">✓✓</span>
+                  <div>
+                    <span className="font-bold block text-white">Entregado</span>
+                    <span className="text-[10px] text-[#8696a0]">Sincronizado en tiempo real</span>
+                  </div>
+                </div>
+                <span className="font-mono text-[11px] text-[#8696a0]">{horaFmt}</span>
+              </div>
+
+              <div className="flex items-center justify-between p-2 rounded-lg bg-black/20">
+                <div>
+                  <span className="font-bold block text-white">Fecha y Hora de Auditoría</span>
+                  <span className="font-mono text-[10px] text-[#8696a0]">{fechaCompletaFmt}</span>
+                </div>
+                <span className="text-[10px] text-emerald-400 font-mono">En línea</span>
+              </div>
+
+              {/* Si es una propuesta / jugada, mostrar su estado financiero */}
+              {esPropuesta && mensaje.datos_jugada && (
+                <div className="p-2.5 rounded-lg border border-cyan-500/30 bg-cyan-950/20 space-y-1.5">
+                  <span className="text-[11px] font-bold text-cyan-300 block uppercase">
+                    Estatus de la Jugada Hípica
+                  </span>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-[#8696a0]">Estado actual:</span>
+                    <span className="font-bold">
+                      {esAnulada ? (
+                        <span className="text-rose-400">🚫 Anulada / Retirada</span>
+                      ) : esExpirada ? (
+                        <span className="text-amber-400">⏳ Expirada</span>
+                      ) : (mensaje.monto_disponible ?? 0) <= 0 ? (
+                        <span className="text-emerald-400">⚡ Concretada / Casada al 100%</span>
+                      ) : (
+                        <span className="text-cyan-300">🟢 Activa (${Number(mensaje.monto_disponible).toFixed(2)} disponible)</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-[#8696a0]">Monto inicial:</span>
+                    <span className="font-mono font-bold text-white">${Number(mensaje.monto_propuesto).toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-[#8696a0]">Caballo & Carrera:</span>
+                    <span className="font-bold text-white">#{mensaje.datos_jugada.caballo} ({mensaje.datos_jugada.jugada})</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Acciones en el modal */}
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-[#2a3942]">
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarInfoEstatus(false);
+                  onCitar(mensaje);
+                }}
+                className="flex items-center gap-1.5 rounded-xl bg-[#00a884] hover:bg-[#02906f] px-3 py-1.5 text-xs font-bold text-white shadow active:scale-95 transition-all"
+              >
+                <span>↩</span> Responder
+              </button>
+              <button
+                type="button"
+                onClick={() => setMostrarInfoEstatus(false)}
+                className="rounded-xl bg-[#2a3942] hover:bg-[#32424b] px-3 py-1.5 text-xs font-semibold text-slate-300 active:scale-95 transition-all"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

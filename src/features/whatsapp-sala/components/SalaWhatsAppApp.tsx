@@ -144,6 +144,14 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
   const [enviando, setEnviando] = useState(false);
   const [imagenAdjunta, setImagenAdjunta] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputMensajeRef = useRef<HTMLInputElement>(null);
+
+  const handleCitarMensaje = useCallback((msg: MensajeSala) => {
+    setMensajeCitado(msg);
+    setTimeout(() => {
+      inputMensajeRef.current?.focus();
+    }, 60);
+  }, []);
 
   // Paneles responsive
   const [panelDerechoAbierto, setPanelDerechoAbierto] = useState(false);
@@ -2287,7 +2295,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
                 nombreUsuarioActual={sesion.nombre}
                 tamanoLetra={tamanoLetra}
                 esOperadorOAdmin={sesion.esOperadorOAdmin}
-                onCitar={(msg) => setMensajeCitado(msg)}
+                onCitar={handleCitarMensaje}
                 onTomarPropuestaFifo={handleTomarPropuestaFifo}
                 onAnularPropuestaUsuario={handleAnularPropuestaUsuario}
                 onAnularPropuestaAdmin={handleAnularPropuestaAdmin}
@@ -2366,6 +2374,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
             )}
 
             <input
+              ref={inputMensajeRef}
               type="text"
               value={inputTexto}
               onChange={(e) => setInputTexto(e.target.value)}
