@@ -63,7 +63,7 @@ import { interpretarAudioCarrera, formatearDictadoJugadas } from "@/features/car
 import { BotonDictadoAudio } from "@/shared/components/ui/BotonDictadoAudio";
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados, jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros";
 import { claveHipodromo, numerosDeCarrera } from "@/features/carreras/lib/claves";
-import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
+import { useRegistroCentral, useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { revisarCaballo, maximoDeLaCarrera, type RevisionCaballo } from "@/features/taquilla/lib/caballos";
 import { mensajeResultadoDeCarrera, mensajePreliminarDeCarrera } from "@/features/taquilla/lib/mensajeResultado";
@@ -228,6 +228,8 @@ export function GestionJugadasModule() {
   /** Ítem 1 (bloque 1): reversión de la liquidación de la carrera en curso. */
   const [modalReversar, setModalReversar] = useState(false);
   const [reversando, setReversando] = useState(false);
+  /** Carreras reversadas en la sesión activa: fuerza el estado ABIERTO para permitir liquidar de inmediato */
+  const [carrerasReversadas, setCarrerasReversadas] = useState<Set<number>>(new Set());
   const [filas, setFilas] = useState<FilaCarga[]>([filaVacia()]);
   const [jugadasPorCarrera, setJugadasPorCarrera] = useState<number[]>([]);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
@@ -305,6 +307,7 @@ export function GestionJugadasModule() {
   useEffect(() => {
     setCarreraConfirmada(false);
     setJugadasPorCarrera([]);
+    setCarrerasReversadas(new Set());
   }, [hipodromo, fecha]);
 
   // Registro de clientes con saldos (validación inline CLIENTE 1 / CLIENTE 2)
@@ -513,7 +516,11 @@ export function GestionJugadasModule() {
    * fecha lo dice (`estado` "Liquidada" o el resultado ya aplicado a tablas).
    */
   const carreraLiquidada = useMemo(() => {
-    const c = carrerasDelDia.find((x) => Number(x.carrera) === Number(carrera));
+    const numCarrera = Number(carrera);
+    if (carrerasReversadas.has(numCarrera)) {
+      return false;
+    }
+    const c = carrerasDelDia.find((x) => Number(x.carrera) === numCarrera);
     const est = String(c?.estado ?? "").toLowerCase();
     const centralLiq = est === "liquidada" || c?.aplicado_a_tablas === true;
     if (centralLiq) return true;
@@ -527,7 +534,7 @@ export function GestionJugadasModule() {
       return true;
     }
     return false;
-  }, [carrerasDelDia, carrera, pizarraCentral, jugadasGuardadas]);
+  }, [carrerasDelDia, carrera, pizarraCentral, jugadasGuardadas, carrerasReversadas]);
 
   const tieneResultadoCargado = carreraLiquidada || Boolean(pizarraCentral);
 
@@ -536,10 +543,15 @@ export function GestionJugadasModule() {
   useEffect(() => {
     let activo = true;
     if (!hipodromo || !carrera || !fecha) return;
+    if (carrerasReversadas.has(Number(carrera))) {
+      setPizarraCentral(null);
+      return;
+    }
     void (async () => {
       try {
         const oficial = await leerResultadoOficial(hipodromo, carrera, fecha);
         if (!activo || !oficial) return;
+        if (carrerasReversadas.has(Number(carrera))) return;
         if (oficial.puestos && oficial.puestos.length > 0) {
           const piz = pizarraDesdeResultadoOficial(oficial);
           if (piz && activo) {
@@ -553,7 +565,7 @@ export function GestionJugadasModule() {
     return () => {
       activo = false;
     };
-  }, [hipodromo, fecha, carrera, carreraLiquidada]);
+  }, [hipodromo, fecha, carrera, carreraLiquidada, carrerasReversadas]);
   /** Ítem 1: sólo quien tenga la capacidad puede reabrir una liquidada. */
   const puedeReabrir = tieneCapacidad("gestion_jugadas:fn_reabrir_carrera");
   const [resumen, setResumen] = useState<ResLiquidarCarrera | null>(null);
@@ -1465,6 +1477,7 @@ const hipodromosDelDia = useMemo(() => {
 
   /** Pizarra Oficial y Orden de Llegada (Raya) vigentes para la carrera actual. */
   const pizarraPuestosActual = useMemo<string[]>(() => {
+    if (carrerasReversadas.has(Number(carrera))) return [];
     if (ultimaPizarra?.pizarra) {
       const pos = posicionesDePizarra(ultimaPizarra.pizarra);
       if (pos.length > 0) return pos;
@@ -1476,9 +1489,10 @@ const hipodromosDelDia = useMemo(() => {
       return posicionesDePizarra(pizarraCentral.pizarra);
     }
     return [];
-  }, [centralDeCarrera, ultimaPizarra, pizarraCentral]);
+  }, [centralDeCarrera, ultimaPizarra, pizarraCentral, carrerasReversadas, carrera]);
 
   const pizarraRayaActual = useMemo<string[]>(() => {
+    if (carrerasReversadas.has(Number(carrera))) return [];
     if (ultimaPizarra?.pizarra) {
       const pos = posicionesRayaDePizarra(ultimaPizarra.pizarra);
       if (pos.length > 0) return pos;
@@ -1490,7 +1504,7 @@ const hipodromosDelDia = useMemo(() => {
       return posicionesRayaDePizarra(pizarraCentral.pizarra);
     }
     return pizarraPuestosActual;
-  }, [centralDeCarrera, ultimaPizarra, pizarraCentral, pizarraPuestosActual]);
+  }, [centralDeCarrera, ultimaPizarra, pizarraCentral, pizarraPuestosActual, carrerasReversadas, carrera]);
 
   const retiradosPizarraActual = useMemo<string[]>(() => {
     const enLlegada = new Set(
@@ -1523,25 +1537,28 @@ const hipodromosDelDia = useMemo(() => {
 
   const carrerasLiquidadasDelDia = useMemo(() => {
     const setNums = new Set<number>();
-    if (carreraLiquidada && carrera) {
-      setNums.add(Number(carrera));
+    const numCarrera = Number(carrera);
+    if (carreraLiquidada && numCarrera && !carrerasReversadas.has(numCarrera)) {
+      setNums.add(numCarrera);
     }
     for (const c of carrerasDelDia) {
+      const n = Number(c.carrera);
+      if (carrerasReversadas.has(n)) continue;
       const est = String(c.estado ?? "").toLowerCase();
       if (est === "liquidada" || est === "cerrada" || c.aplicado_a_tablas === true || (c.ganadores?.length ?? 0) > 0) {
-        setNums.add(Number(c.carrera));
+        setNums.add(n);
       }
     }
-    if (pizarraCentral?.pizarra && carrera) {
-      setNums.add(Number(carrera));
+    if (pizarraCentral?.pizarra && numCarrera && !carrerasReversadas.has(numCarrera)) {
+      setNums.add(numCarrera);
     }
     for (const f of filasPreview) {
-      if (f.estadoLiquidacion === "Liquidada" && carrera) {
-        setNums.add(Number(carrera));
+      if (f.estadoLiquidacion === "Liquidada" && numCarrera && !carrerasReversadas.has(numCarrera)) {
+        setNums.add(numCarrera);
       }
     }
     return [...setNums];
-  }, [carreraLiquidada, carrera, carrerasDelDia, pizarraCentral, filasPreview]);
+  }, [carreraLiquidada, carrera, carrerasDelDia, pizarraCentral, filasPreview, carrerasReversadas]);
 
   const abrirResultados = useCallback(async () => {
     if (!listoParaCargar) return;
@@ -2359,6 +2376,11 @@ const hipodromosDelDia = useMemo(() => {
     }
 
     if (liquidadaAutomatico) {
+      setCarrerasReversadas((prev) => {
+        const next = new Set(prev);
+        next.delete(Number(carrera));
+        return next;
+      });
       const vigentes = useTaquillaStore
         .getState()
         .tickets.filter(
@@ -2613,6 +2635,9 @@ const hipodromosDelDia = useMemo(() => {
         tasaComision: comisionNum,
       });
       setAviso(r.ok ? `🔄 ${r.motivo}` : `❌ ${r.motivo}${r.errores.length ? ` · ${r.errores.join(" | ")}` : ""}`);
+      if (r.ok) {
+        setCarrerasReversadas((prev) => new Set([...prev, Number(carrera)]));
+      }
       // La carrera vuelve a "Programada" y los saldos cambian: refrescar el
       // registro central (semáforos) y el catálogo de clientes.
       setReapertura(false);
@@ -2630,6 +2655,28 @@ const hipodromosDelDia = useMemo(() => {
         setJugadasPorCarrera((prev) => (prev.includes(carrera) ? prev : [...prev, carrera]));
       } else {
         setJugadasPorCarrera((prev) => prev.filter((c) => c !== carrera));
+      }
+      try {
+        const dia = String(fecha).slice(0, 10);
+        const reg = useRegistroCentral.getState();
+        const lista = reg.porFecha[dia] ?? [];
+        const idx = lista.findIndex(
+          (c: any) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo) && Number(c.carrera) === Number(carrera)
+        );
+        if (idx >= 0) {
+          const nuevaLista = [...lista];
+          nuevaLista[idx] = {
+            ...nuevaLista[idx],
+            estado: "Programada",
+            ganadores: [],
+            aplicado_a_tablas: false,
+          };
+          useRegistroCentral.setState({
+            porFecha: { ...reg.porFecha, [dia]: nuevaLista },
+          });
+        }
+      } catch {
+        /* best-effort */
       }
       recargarRegistroCentral();
       void recargarClientes();
@@ -2805,6 +2852,11 @@ const hipodromosDelDia = useMemo(() => {
         return { ok: false, motivo: mensaje };
       }
       if (r.ok) {
+        setCarrerasReversadas((prev) => {
+          const next = new Set(prev);
+          next.delete(Number(carrera));
+          return next;
+        });
         for (const t of ticketsDeCarrera) eliminarTicket(t.id);
         setPizarraCentral(piz);
         setUltimaPizarra(null);

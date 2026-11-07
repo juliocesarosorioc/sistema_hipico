@@ -377,6 +377,30 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
         ganadores: [],
         aplicado_a_tablas: false,
       });
+    } else {
+      reg.registrarCarrera({
+        fecha: dia,
+        hipodromo,
+        carrera,
+        estado: "Programada",
+        ganadores: [],
+        aplicado_a_tablas: false,
+      });
+    }
+    const listaActual = reg.porFecha[dia] ?? [];
+    const idx = listaActual.findIndex(
+      (c) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo) && Number(c.carrera) === Number(carrera)
+    );
+    if (idx >= 0) {
+      listaActual[idx] = {
+        ...listaActual[idx],
+        estado: "Programada",
+        ganadores: [],
+        aplicado_a_tablas: false,
+      };
+      useRegistroCentral.setState({
+        porFecha: { ...reg.porFecha, [dia]: [...listaActual] },
+      });
     }
     reg.invalidarCarreras();
   } catch {

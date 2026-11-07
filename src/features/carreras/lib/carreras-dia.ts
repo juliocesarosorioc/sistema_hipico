@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Centralización de resultados de carreras del día.
  * La tabla public.resultados_carreras (paquete SQL, RLS off) es la fuente de
  * verdad compartida entre módulos: los resultados + pizarra se persistén aquí
@@ -611,7 +611,7 @@ export async function revertirResultadoCentral(input: {
       .from("carreras")
       .update({ estado: "Programada" })
       .eq("fecha", f)
-      .ilike("hipodromo", hip)
+      .ilike("hipodromo", `%${hip}%`)
       .eq("carrera", carrera);
   } catch {
     /* best-effort */
@@ -623,7 +623,7 @@ export async function revertirResultadoCentral(input: {
       .from("resultados_carreras")
       .delete()
       .eq("fecha", f)
-      .ilike("hipodromo", hip)
+      .ilike("hipodromo", `%${hip}%`)
       .eq("carrera", carrera);
   } catch {
     /* best-effort delete */
@@ -642,7 +642,7 @@ export async function revertirResultadoCentral(input: {
         premio_recalculado: null,
       })
       .eq("fecha", f)
-      .ilike("hipodromo", hip)
+      .ilike("hipodromo", `%${hip}%`)
       .eq("carrera", carrera);
   } catch {
     /* best-effort update */
@@ -658,21 +658,6 @@ export async function revertirResultadoCentral(input: {
     });
   } catch {
     /* RPC opcional */
-  }
-
-  // 4) Fallback: deja los campos del resultado en blanco si quedaron registros
-  try {
-    await guardarResultado(f, hip, carrera, {
-      ganadores: [],
-      retirados: "NO HUBO RETIROS",
-      aplicado_a_tablas: false,
-      orden_llegada: null,
-      dividendos: null,
-      premio_oficial: null,
-      premio_recalculado: null,
-    });
-  } catch {
-    /* noop */
   }
 
   return { ok: true };

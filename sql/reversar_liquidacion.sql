@@ -63,7 +63,8 @@ begin
   end if;
 
   update public.resultados_carreras
-     set ganadores          = null,
+     set estado             = 'Programada',
+         ganadores          = null,
          orden_llegada      = null,
          dividendos         = null,
          premio_oficial     = null,
@@ -72,9 +73,21 @@ begin
          cargado_por        = null,
          updated_at         = now()
    where fecha     = coalesce(p_fecha, current_date)
-     and upper(btrim(hipodromo)) = v_hip
+     and (upper(btrim(hipodromo)) = v_hip or upper(btrim(hipodromo)) like '%' || v_hip || '%')
      and carrera   = p_carrera;
   get diagnostics v_filas = rowcount;
+
+  -- Asegurar que la matriz central de carreras también vuelva a 'Programada'
+  begin
+    update public.carreras
+       set estado     = 'Programada',
+           updated_at = now()
+     where fecha     = coalesce(p_fecha, current_date)
+       and (upper(btrim(hipodromo)) = v_hip or upper(btrim(hipodromo)) like '%' || v_hip || '%')
+       and carrera   = p_carrera;
+  exception when others then
+    null;
+  end;
 
   -- Auditoría (best-effort: no bloquea la reversión si la tabla/RLS lo impide).
   begin

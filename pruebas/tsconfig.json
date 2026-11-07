@@ -198,6 +198,7 @@
     "./certificacion-exhaustiva-cruces.test.ts",
     "../src/features/clientes/lib/recalculo-semanal.ts",
     "./recalculo-semanal-devoluciones.test.ts",
-    "./belmont-sam-partner-cruces.test.ts"
+    "./belmont-sam-partner-cruces.test.ts",
+    "./reversar-boton-reliquidar.test.ts"
   ]
 }
