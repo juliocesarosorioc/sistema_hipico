@@ -329,7 +329,7 @@ export function WidgetAsistenteIa() {
         return;
       }
 
-      const res = await consultarAgenteIaEnVivo(mensajeAEnviar, rolActual, fueDictado);
+      const res = await consultarAgenteIaEnVivo(mensajeAEnviar, rolActual, false);
 
       if (res.rutaNavegacion || res.eventoAccion) {
         dispararAccionConRuta(res.rutaNavegacion, res.eventoAccion);
