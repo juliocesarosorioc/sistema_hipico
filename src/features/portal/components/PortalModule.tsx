@@ -356,7 +356,8 @@ function LoginScreen(props: {
           <Button
             variant="default"
             size="lg"
-            className="w-full bg-indigo-600 hover:bg-indigo-500 cursor-pointer"
+            disabled={!props.autoEntrar && !captchaOk}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={() => {
               let ok = captchaOk;
               if (!ok && typeof window !== "undefined" && window.grecaptcha) {

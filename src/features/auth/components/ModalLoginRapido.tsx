@@ -223,7 +223,7 @@ export function ModalLoginRapido({
 
           <button
             type="submit"
-            disabled={procesando || cargando}
+            disabled={procesando || cargando || !recaptchaToken}
             className={`w-full mt-2 rounded-xl py-3 text-xs font-black uppercase tracking-wider active:scale-95 transition disabled:opacity-50 ${botonPrincipal}`}
           >
             {procesando ? "Verificando credenciales..." : "🚀 Entrar al Sistema"}

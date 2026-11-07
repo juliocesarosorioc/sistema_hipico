@@ -185,7 +185,7 @@ export default function PantallaLogin() {
       }
     }
 
-    if (!tokenValido && !esAdminPrincipal && !esRicardo) {
+    if (!tokenValido) {
       useAuthStore.setState({
         cargando: false,
         errorLogin: "⚠️ Por favor complete la verificación de seguridad reCAPTCHA antes de iniciar sesión.",
@@ -443,7 +443,7 @@ export default function PantallaLogin() {
           </div>
           <button
             type="submit"
-            disabled={cargando || ingresando || bloqueadoSegundos > 0}
+            disabled={cargando || ingresando || bloqueadoSegundos > 0 || !recaptchaToken}
             className="w-full rounded-lg bg-slate-800 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
           >
             {cargando || ingresando ? (

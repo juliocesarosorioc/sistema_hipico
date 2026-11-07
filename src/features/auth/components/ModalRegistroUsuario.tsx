@@ -448,7 +448,7 @@ export function ModalRegistroUsuario({ abierto, onCerrar, adminTelefono = "", on
               <div className="pt-2">
                 <Button
                   type="submit"
-                  disabled={guardando}
+                  disabled={guardando || !recaptchaToken}
                   className="w-full bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black py-2.5 text-xs uppercase tracking-wider shadow-lg transition-transform active:scale-95 disabled:opacity-50"
                 >
                   {guardando ? "Enviando solicitud..." : "🚀 Enviar Solicitud y Notificar"}

@@ -248,7 +248,7 @@ export default function PaginaResetPassword() {
 
 <button
               type="submit"
-              disabled={guardando}
+              disabled={guardando || !recaptchaToken}
               className="w-full rounded-lg bg-emerald-600 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {guardando ? "Guardando..." : "Guardar"}
