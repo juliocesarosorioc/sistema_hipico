@@ -41,7 +41,7 @@ export function SelectorTemas({ compacto = true }: { compacto?: boolean }) {
         type="button"
         onClick={() => setAbierto((v) => !v)}
         title={`Tema actual: ${infoActual.nombre} (${infoActual.subtitulo}). Clic para cambiar tema.`}
-        className={`group inline-flex items-center gap-1 sm:gap-1.5 rounded-full border p-1 sm:px-2.5 sm:py-1 text-xs font-bold transition-all shadow-xs backdrop-blur-md shrink-0 cursor-pointer ${
+        className={`group inline-flex h-9 items-center gap-1 rounded-full border px-2.5 text-xs font-bold transition-all shadow-xs backdrop-blur-md shrink-0 cursor-pointer ${
           infoActual.esProteccionVisual
             ? "border-amber-600/50 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60"
             : tema === "claro"
@@ -54,7 +54,7 @@ export function SelectorTemas({ compacto = true }: { compacto?: boolean }) {
           style={{ backgroundColor: infoActual.colorAcento }}
         />
         <span className="text-xs sm:text-sm">{infoActual.emoji}</span>
-        <span className="hidden sm:inline font-bold tracking-wide text-xs">{infoActual.nombre}</span>
+
         <svg
           className={`h-3 w-3 text-slate-400 transition-transform duration-200 ${abierto ? "rotate-180" : ""}`}
           fill="none"
