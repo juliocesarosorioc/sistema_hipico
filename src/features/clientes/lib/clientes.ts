@@ -1531,8 +1531,8 @@ export function construirEstadoCuenta(
     if (c.jugadas.length === 1) {
       c.jugadas[0].devolucion = c.jugadas[0].rol === "Consigue" ? 0 : c.dec;
     } else if (c.jugadas.length > 1 && c.dec > 0) {
-      const jugadasJuega = c.jugadas.filter((j) => j.rol !== "Consigue");
-      for (const j of c.jugadas) { if (j.rol === "Consigue") j.devolucion = 0; }
+      const jugadasJuega = c.jugadas.filter((j) => resC.consigueIncluidoPorCruce || j.rol !== "Consigue"); // con cruce, Consigue también recibe devolución sobre la diferencia
+      for (const j of c.jugadas) { if (!resC.consigueIncluidoPorCruce && j.rol === "Consigue") j.devolucion = 0; }
       const sumaBases = jugadasJuega.reduce((acc, j) => {
         const val = typeof j.resultadoNeto === "number" ? Math.abs(j.resultadoNeto) : j.montoJugado;
         return acc + val;

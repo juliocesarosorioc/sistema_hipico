@@ -44,6 +44,7 @@ export type GrupoVenta = {
   /** Ciclo de facturación semanal (1=Lunes … 7=Domingo). Default L→D. */
   dia_inicio_semana?: number | null;
   dia_fin_semana?: number | null;
+  responsable?: string | null;
 };
 
 export type ClienteVenta = {

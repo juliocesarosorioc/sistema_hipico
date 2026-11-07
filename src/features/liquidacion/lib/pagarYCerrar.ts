@@ -307,6 +307,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   const metadatos: Array<{
     cliente1?: string;
     cliente1Id?: string;
+    cliente2?: string;
     grupoId?: string;
     caballo: string;
     monto: number;
@@ -354,6 +355,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     metadatos.push({
       cliente1: t.cliente1,
       cliente1Id: t.cliente1Id,
+      cliente2: t.cliente2,
       grupoId: t.grupoId ?? (grupoPuestoRespaldo || undefined),
       caballo: String(t.caballo ?? "").trim(),
       monto,
@@ -466,6 +468,30 @@ export async function liquidarCarreraYCerrarTabla(opts: {
             monto: perdidaEfectiva,
           };
         });
+      // Cruce con rol Consigue: si este jugador también DIO (Consigue) en la carrera y
+      // perdió (ganó el lado Juega), esa pérdida compensa sus ganancias como Juega y la
+      // comisión queda solo sobre la diferencia.
+      const nombreJugador = String(metadatos[idxs[0]].cliente1 ?? "").trim().toUpperCase();
+      if (nombreJugador) {
+        for (let i = 0; i < procesados.length; i++) {
+          if (idxs.includes(i) || !esJugadaDePuestos(metadatos[i].tipo)) continue;
+          if (String(metadatos[i].cliente2 ?? "").trim().toUpperCase() !== nombreJugador) continue;
+          if (String(metadatos[i].grupoId ?? "").trim() !== grupoId) continue;
+          const r = procesados[i].resultado;
+          if (!r.ok) continue;
+          const perdidaConsigue = round2(r.totalClienteNeto + r.gananciaCasa - metadatos[i].monto);
+          if (perdidaConsigue <= 0) continue;
+          entradas.push({
+            cliente: String(metadatos[idxs[0]].cliente1 ?? "").trim() || jugador,
+            ...(clienteId ? { clienteId } : {}),
+            grupoId,
+            caballo: metadatos[i].caballo,
+            ok: false,
+            bruto: 0,
+            monto: perdidaConsigue,
+          });
+        }
+      }
       const liquidaciones = calcularLiquidacionPuestosCarrera(entradas, {
         ...crucesPuestos,
         pctComision: Number(tasaComision ?? 5),

@@ -273,6 +273,34 @@ export function calcularComisionesSocioPorClientes(params: {
     }
   }
 
+  /**
+   * Convierte un ticket a la entrada de base decidida desde la perspectiva de `nombreNorm`.
+   * Si el cliente es el dador (Consigue), invierte el resultado: cuando Juega gana, Consigue
+   * pierde la ganancia de Juega; cuando Juega pierde, Consigue gana lo perdido por Juega.
+   * El rol Consigue solo cuenta cuando hay cruce (lo resuelve calcularBaseDecididaCarrera).
+   */
+  const entradaBaseDesdePerspectiva = (t: any, nombreNorm: string) => {
+    const esJuega = normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre) === nombreNorm;
+    const nombreJugada = t.nombre_jugada || t.modalidad || t.jugada || "PUESTOS";
+    const montoJugado = Number(t.monto_jugado ?? t.monto ?? 0);
+    const premioPagar = Number(t.premio_pagar ?? 0);
+    const resultado = t.resultado != null ? Number(t.resultado) : null;
+    const estado = t.estado || (resultado != null ? (resultado >= 0 ? "GANADOR" : "PERDEDOR") : "GANADOR");
+    if (esJuega) {
+      return { nombreJugada, montoJugado, premioPagar, resultado, estado, rol: "Juega" };
+    }
+    const est = String(estado).trim().toUpperCase();
+    let resultadoConsigue: number | null = null;
+    if (resultado != null && !isNaN(resultado)) {
+      resultadoConsigue = -resultado;
+    } else if (est === "GANADOR" || est === "GANO" || est === "SOLUCIONADO") {
+      resultadoConsigue = -Math.max(0, premioPagar > montoJugado ? premioPagar - montoJugado : montoJugado);
+    } else if (est === "PERDEDOR" || est === "PERDIO") {
+      resultadoConsigue = premioPagar > 0 && premioPagar < montoJugado ? montoJugado - premioPagar : montoJugado;
+    }
+    return { nombreJugada, montoJugado, premioPagar, resultado: resultadoConsigue, estado, rol: "Consigue" };
+  };
+
   // Devolución propia del socio
   const socioRegla = buscarReglaDevolucionCliente(params.socioNombre);
   const socioClienteObj =
@@ -294,8 +322,9 @@ export function calcularComisionesSocioPorClientes(params: {
   for (const t of tickets) {
     if (t.anulada) continue;
     const tCli = normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre);
+    const tCon = normalizar(t.cliente_consigue_nombre || t.clienteConsigue || t.tercio);
     const fechaT = String(t.fecha_carrera || t.fecha || "").slice(0, 10);
-    if (tCli === socioNorm) {
+    if (tCli === socioNorm || tCon === socioNorm) {
       if (params.fechaDesde && fechaT < params.fechaDesde) continue;
       if (params.fechaHasta && fechaT > params.fechaHasta) continue;
       const k = `${fechaT}::${t.hipodromo || "USA"}::${t.carrera || 1}`;
@@ -307,14 +336,7 @@ export function calcularComisionesSocioPorClientes(params: {
 
   for (const [, listT] of ticketsPropiosPorCarrera) {
     const resC = calcularBaseDecididaCarrera(
-      listT.map((t) => ({
-        nombreJugada: t.nombre_jugada || t.modalidad || t.jugada || "PUESTOS",
-        montoJugado: Number(t.monto_jugado ?? t.monto ?? 0),
-        premioPagar: Number(t.premio_pagar ?? 0),
-        resultado: t.resultado != null ? Number(t.resultado) : null,
-        estado: t.estado || (t.resultado != null ? (Number(t.resultado) >= 0 ? "GANADOR" : "PERDEDOR") : "GANADOR"),
-        rol: normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre) === socioNorm ? "Juega" : "Consigue",
-      })),
+      listT.map((t) => entradaBaseDesdePerspectiva(t, socioNorm)),
       devPropiaPct
     );
     montoJugadoPropio += resC.baseDecididaTotal;
@@ -337,10 +359,12 @@ export function calcularComisionesSocioPorClientes(params: {
     for (const t of tickets) {
       if (t.anulada) continue;
       const tCli = normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre);
+      const tCon = normalizar(t.cliente_consigue_nombre || t.clienteConsigue || t.tercio);
       const fechaT = String(t.fecha_carrera || t.fecha || "").slice(0, 10);
 
-      // Comisión de socio aplica estrictamente a jugadas del apostador (Juega), nunca como dador/contraparte
-      if (tCli === afNorm) {
+      // Comisión de socio: jugadas como Juega; como dador (Consigue) solo cuentan si hay cruce
+      // en la carrera, y entonces la comisión se calcula sobre la diferencia.
+      if (tCli === afNorm || tCon === afNorm) {
         if (fechaT < af.fechaInicio) continue;
         if (params.fechaDesde && fechaT < params.fechaDesde) continue;
         if (params.fechaHasta && fechaT > params.fechaHasta) continue;
@@ -353,25 +377,22 @@ export function calcularComisionesSocioPorClientes(params: {
 
     for (const [, listT] of ticketsAfPorCarrera) {
       const resC = calcularBaseDecididaCarrera(
-        listT.map((t) => ({
-          nombreJugada: t.nombre_jugada || t.modalidad || t.jugada || "PUESTOS",
-          montoJugado: Number(t.monto_jugado ?? t.monto ?? 0),
-          premioPagar: Number(t.premio_pagar ?? 0),
-          resultado: t.resultado != null ? Number(t.resultado) : null,
-          estado: t.estado || (t.resultado != null ? (Number(t.resultado) >= 0 ? "GANADOR" : "PERDEDOR") : "GANADOR"),
-          rol: normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre) === afNorm ? "Juega" : "Consigue",
-        })),
+        listT.map((t) => entradaBaseDesdePerspectiva(t, afNorm)),
         af.comisionPct
       );
 
       totalJugadoAf += resC.baseDecididaTotal;
       totalComisionAf += resC.devolucion;
 
-      for (let i = 0; i < listT.length; i++) {
-        const t = listT[i];
+      // Sin cruce, las jugadas como dador (Consigue) no participan del detalle de comisión.
+      const listDetalle = resC.consigueIncluidoPorCruce
+        ? listT
+        : listT.filter((t) => normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre) === afNorm);
+      for (let i = 0; i < listDetalle.length; i++) {
+        const t = listDetalle[i];
         const fechaT = String(t.fecha_carrera || t.fecha || t.fecha_registro || "").slice(0, 10);
-        const cuotaComision = listT.length === 1 ? resC.devolucion : Math.round((resC.devolucion / listT.length) * 100) / 100;
-        const cuotaBase = listT.length === 1 ? resC.baseDecididaTotal : Math.round((resC.baseDecididaTotal / listT.length) * 100) / 100;
+        const cuotaComision = listDetalle.length === 1 ? resC.devolucion : Math.round((resC.devolucion / listDetalle.length) * 100) / 100;
+        const cuotaBase = listDetalle.length === 1 ? resC.baseDecididaTotal : Math.round((resC.baseDecididaTotal / listDetalle.length) * 100) / 100;
         jugadas.push({
           id: t.id || `t-${Math.random()}`,
           fecha: fechaT,

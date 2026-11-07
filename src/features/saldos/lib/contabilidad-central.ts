@@ -588,22 +588,40 @@ export function calcularResumenContableCliente(params: {
  */
 export function calcularIncentivoCarreraCliente(
   ticketsDeCarrera: TicketContableRaw[],
-  devolucionPct: number | string | null = 0
+  devolucionPct: number | string | null = 0,
+  clienteNombre?: string
 ): number {
   const pct = Math.max(0, Number(devolucionPct) || 0);
   if (pct <= 0 || !ticketsDeCarrera?.length) return 0;
 
   const validos = ticketsDeCarrera.filter((t) => !esJugadaAnuladaOExcluida(t));
   if (!validos.length) return 0;
+  const nomNorm = clienteNombre ? normalizarNombreCliente(clienteNombre) : "";
 
   const res = calcularBaseDecididaCarrera(
-    validos.map((t) => ({
-      nombreJugada: String(t.nombre_jugada ?? t.jugada ?? ""),
-      montoJugado: redondearCentavos(t.monto_jugado ?? t.monto ?? 0),
-      premioPagar: redondearCentavos(t.premio_pagar ?? 0),
-      resultado: t.resultado_neto != null ? Number(t.resultado_neto) : null,
-      estado: String(t.estado ?? "").trim().toUpperCase(),
-    })),
+    validos.map((t) => {
+      const jNom = normalizarNombreCliente(t.cliente_juega_nombre ?? t.jugador);
+      const cNom = normalizarNombreCliente(t.cliente_consigue_nombre ?? t.tercio ?? t.contraparte);
+      const esConsigue = nomNorm ? Boolean(cNom && cNom === nomNorm && jNom !== nomNorm) : false;
+      const m = redondearCentavos(t.monto_jugado ?? t.monto ?? 0);
+      const prem = redondearCentavos(t.premio_pagar ?? 0);
+      const est = String(t.estado ?? "").trim().toUpperCase();
+      const esGanador = est === "GANADOR" || est === "GANO" || est === "SOLUCIONADO";
+      let resultado = t.resultado_neto != null ? Number(t.resultado_neto) : null;
+      if (esConsigue) {
+        if (resultado != null) resultado = -resultado;
+        else if (esGanador) resultado = -Math.max(0, prem > m ? prem - m : m);
+        else resultado = m;
+      }
+      return {
+        nombreJugada: String(t.nombre_jugada ?? t.jugada ?? ""),
+        montoJugado: m,
+        premioPagar: prem,
+        resultado,
+        estado: esConsigue ? (esGanador ? "PERDEDOR" : "GANADOR") : est,
+        rol: esConsigue ? "Consigue" : "Juega",
+      };
+    }),
     pct
   );
 

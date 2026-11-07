@@ -27,6 +27,7 @@ import { SalaLeftPanelGrupos } from "./SalaLeftPanelGrupos";
 import { SalaRightPanelCarrera } from "./SalaRightPanelCarrera";
 import { SalaBurbujaMensaje } from "./SalaBurbujaMensaje";
 import { emitirToast } from "@/shared/lib/mensajeria";
+import { crearGrupo, listarGruposVenta } from "@/features/grupos/lib/grupos";
 
 export interface ClienteSesionSala {
   id: string;
@@ -329,14 +330,29 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     [seudonimosPorId]
   );
 
-  // 4. Sincronizar grupos desde Supabase
+  // 4. Sincronizar grupos de venta / salas oficiales desde Supabase
   useEffect(() => {
     async function cargarGrupos() {
-      if (!supabase) return;
       try {
-        const { data } = await supabase.from("grupos").select("id, nombre, descripcion").order("nombre");
-        if (data && data.length > 0) {
-          setGrupos(data.map((g) => ({ id: String(g.id), nombre: g.nombre, descripcion: g.descripcion || undefined })));
+        const lista = await listarGruposVenta();
+        if (lista && lista.length > 0) {
+          const mapSalas: GrupoSala[] = lista.map((g) => ({
+            id: String(g.id),
+            nombre: g.nombre,
+            descripcion: g.es_principal ? "Sala Principal P2P" : "Sala de apuestas",
+            activo: g.activo ?? true,
+          }));
+          setGrupos(mapSalas);
+          setGrupoActivoId((prev) => {
+            return mapSalas.some((s) => s.id === prev) ? prev : mapSalas[0].id;
+          });
+          return;
+        }
+        if (supabase) {
+          const { data } = await supabase.from("grupos_venta").select("id, nombre, activo, es_principal").order("nombre");
+          if (data && data.length > 0) {
+            setGrupos(data.map((g) => ({ id: String(g.id), nombre: g.nombre, descripcion: g.es_principal ? "Sala Principal P2P" : "Sala de apuestas", activo: g.activo ?? true })));
+          }
         }
       } catch {
         /* fallback */
@@ -344,6 +360,50 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     }
     cargarGrupos();
   }, []);
+
+  // 4b. Administrador: Crear nueva sala de chat
+  const handleCrearNuevaSala = async (nombre: string, descripcion?: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!sesion?.esOperadorOAdmin) {
+      return { ok: false, error: "Solo los administradores u operadores pueden crear salas." };
+    }
+    try {
+      const res = await crearGrupo({
+        nombre: nombre.trim().toUpperCase(),
+        responsable: descripcion?.trim() || "Administrador",
+        activo: true,
+        moneda: "USD",
+        cupo_tabla: 100,
+        comision_default: 5,
+        permite_cruces: true,
+        cruce_mismo_ejemplar: true,
+        cruce_diferente_ejemplar: true,
+      });
+
+      if (!res.ok) {
+        return { ok: false, error: res.error || "No se pudo crear la sala" };
+      }
+
+      // Recargar salas disponibles
+      const lista = await listarGruposVenta();
+      if (lista && lista.length > 0) {
+        const mapSalas: GrupoSala[] = lista.map((g) => ({
+          id: String(g.id),
+          nombre: g.nombre,
+          descripcion: g.es_principal ? "Sala Principal P2P" : (g.responsable ? `Resp: ${g.responsable}` : "Sala de apuestas"),
+          activo: g.activo ?? true,
+        }));
+        setGrupos(mapSalas);
+        const creada = mapSalas.find((g) => g.nombre.toUpperCase() === nombre.trim().toUpperCase());
+        if (creada) {
+          setGrupoActivoId(creada.id);
+        }
+      }
+      emitirToast(`Sala ${nombre.toUpperCase()} creada con éxito`, "success");
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e.message || "Error al crear la sala" };
+    }
+  };
 
   // 5. Cargar estado de carrera del grupo activo
   const cargarEstadoCarreraGrupo = useCallback(async (grupoId: string) => {
@@ -599,7 +659,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         autor_rol: "BOT",
         texto: `👋 ¡Hola @${sesion.nombre}! Soy tu Agente IA Oficial y moderador de la Sala.\n\n🏇 Carrera Activa: **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})** · Estado: **${carreraActiva.estado}**\n${
           esLibre ? "⭐ Estatus: **Cuenta LIBRE**" : `💰 Tu Saldo Disponible: **$${(sesion.saldo_actual + sesion.aval).toFixed(2)}**`
-        }\n\nPuedes registrar tus jugadas directamente (ej. "Juego 1p 7 100", "Doy 50 al 2", "100 al 5 con @SAM"), consultar tu "Saldo" en privado o preguntarme sobre la carrera. ¿En qué te colaboro hoy?`,
+        }\n\nPuedes registrar tus jugadas de puestos directamente (ej. "Juego 1p 7 100", "50 2n al 1", "100 2p al 5 con @SAM"), consultar tu "Saldo" en privado o preguntarme sobre la carrera. ¿En qué te colaboro hoy?`,
         tipo: "TEXTO",
         created_at: new Date().toISOString(),
         esMio: false,
@@ -1674,6 +1734,8 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
             setMostrarGruposMovil(false);
           }}
           nombreUsuario={sesion.nombre}
+          esOperadorOAdmin={sesion.esOperadorOAdmin}
+          onCrearSala={handleCrearNuevaSala}
         />
       </div>
 
@@ -1764,11 +1826,11 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
             🏇 100 al 5 con @SAM
           </button>
           <button
-            onClick={() => enviarMensaje("Doy 50 al 2")}
+            onClick={() => enviarMensaje("50 2n al 1")}
             disabled={esCerrada}
             className="whitespace-nowrap rounded-full bg-[#111b21] px-3 py-1 text-xs font-semibold text-slate-200 shadow-sm border border-[#2a3942] hover:bg-[#182229] active:scale-95 disabled:opacity-40"
           >
-            🛡️ Doy 50 al 2
+            🛡️ 50 2n al 1
           </button>
           {sesion.esOperadorOAdmin && (
             <button
@@ -1806,7 +1868,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
                 ? "🎙️ Escuchando jugada por dictado de voz..."
                 : esCerrada
                 ? "⛔ Carrera cerrada (no se admiten jugadas)..."
-                : "Escribe al Agente IA (ej. Juego 1p 7 100, Doy 50 al 2)..."
+                : "Escribe al Agente IA (ej. Juego 1p 7 100, 50 2n al 1)..."
             }
             className={`flex-1 rounded-2xl bg-[#2a3942] px-4 py-2.5 text-sm text-[#e9edef] placeholder-[#8696a0] border shadow-sm focus:border-[#00a884] focus:outline-none transition-all ${
               grabandoVoz ? "border-red-500 bg-red-950/40 animate-pulse" : "border-transparent"

@@ -386,62 +386,66 @@ export interface PropuestaParseada {
   contraparte?: string;
 }
 
+export const PATRON_PUESTOS_CHAT =
+  /^(1p|2p|3p|4p|5p|6p|2n|3n|4n|5n|1y2n|2y3n|3y4n|4y5n|2ny2y2n|pp|10\/\d+(?:\.\d+)?|10a\d+(?:\.\d+)?|ganador|place)$/i;
+
 export function parsearPropuestaChat(texto: string): PropuestaParseada | null {
   const t = texto.trim();
 
-  // Patrones admitidos:
-  // "Juego 1p 7 100" | "Juego 100 al 7" | "100 al 7 con @JUAN" | "Doy 50 al 2" | "Doy 2 50" | "50 al 7"
+  // Las jugadas del chat son exclusivamente jugadas de puestos:
+  // "Juego 1p 7 100" | "Juego 2n 1 50" | "50 2p al 7" | "100 al 5" | "100 al 5 con @SAM" | "250 10/6 1.3"
   const mCon = /con\s+@?([a-zA-Z0-9_\-\.]+)/i.exec(t);
   const contraparte = mCon ? mCon[1].trim().toUpperCase() : undefined;
+  const tLimpio = t.replace(/\s+con\s+@?[a-zA-Z0-9_\-\.]+/i, "").trim();
 
-  // 1. "Juego 1p 7 100" o "Juego 1P 7 por 100"
-  const m1 = /^(?:juego|jugar)\s+(1p|ganador|tabla|segundo)?\s*([0-9]{1,2})\s*(?:por|\$)?\s*(\d+(?:\.\d+)?)/i.exec(t);
-  if (m1) {
+  // 1. "Juego <jugada_puestos> <caballo> <monto>"
+  const m1 = /^(?:juego|jugar)\s+([0-9a-z\/\.\-]+)\s+(?:al?\s+)?([0-9\.\,x\-]+)\s+(?:por|\$)?\s*(\d+(?:\.\d+)?)$/i.exec(tLimpio);
+  if (m1 && PATRON_PUESTOS_CHAT.test(m1[1])) {
     return {
       esPropuesta: true,
       rol: "JUEGA",
-      jugada: (m1[1] || "1P").toUpperCase(),
+      jugada: m1[1].toUpperCase(),
       caballo: m1[2],
       monto: parseFloat(m1[3]),
       contraparte,
     };
   }
 
-  // 2. "Doy 50 al 2" o "Doy 2 50"
-  const m2 = /^(?:doy|dar)\s+(?:por|\$)?\s*(\d+(?:\.\d+)?)\s*(?:al|a)?\s*([0-9]{1,2})/i.exec(t);
-  if (m2) {
+  // 2. "Juego 7 100" o "Juego al 7 100" (puestos 1P por defecto)
+  const m1b = /^(?:juego|jugar)\s+(?:al?\s+)?([0-9]{1,2})\s+(?:por|\$)?\s*(\d+(?:\.\d+)?)$/i.exec(tLimpio);
+  if (m1b) {
     return {
       esPropuesta: true,
-      rol: "DA",
+      rol: "JUEGA",
       jugada: "1P",
-      caballo: m2[2],
+      caballo: m1b[1],
+      monto: parseFloat(m1b[2]),
+      contraparte,
+    };
+  }
+
+  // 3. "<monto> <jugada_puestos> [al?] <caballo>" (ej. "50 2p 7", "50 2n al 1", "250 10/6 1.3")
+  const m2 = /^(\d+(?:\.\d+)?)\s+([0-9a-z\/\.\-]+)\s+(?:al?\s+)?([0-9\.\,x\-]+)$/i.exec(tLimpio);
+  if (m2 && PATRON_PUESTOS_CHAT.test(m2[2])) {
+    return {
+      esPropuesta: true,
+      rol: "JUEGA",
+      jugada: m2[2].toUpperCase(),
+      caballo: m2[3],
       monto: parseFloat(m2[1]),
       contraparte,
     };
   }
 
-  // 3. "Doy 2 50"
-  const m3 = /^(?:doy|dar)\s+([0-9]{1,2})\s*(?:por|\$)?\s*(\d+(?:\.\d+)?)/i.exec(t);
+  // 4. "<monto> al <caballo>" (1P)
+  const m3 = /^(\d+(?:\.\d+)?)\s*(?:al|a)\s*([0-9]{1,2})$/i.exec(tLimpio);
   if (m3) {
-    return {
-      esPropuesta: true,
-      rol: "DA",
-      jugada: "1P",
-      caballo: m3[1],
-      monto: parseFloat(m3[2]),
-      contraparte,
-    };
-  }
-
-  // 4. "100 al 5" o "100 al 5 con @SAM"
-  const m4 = /^(\d+(?:\.\d+)?)\s*(?:al|a)?\s*([0-9]{1,2})/i.exec(t);
-  if (m4) {
     return {
       esPropuesta: true,
       rol: "JUEGA",
       jugada: "1P",
-      caballo: m4[2],
-      monto: parseFloat(m4[1]),
+      caballo: m3[2],
+      monto: parseFloat(m3[1]),
       contraparte,
     };
   }

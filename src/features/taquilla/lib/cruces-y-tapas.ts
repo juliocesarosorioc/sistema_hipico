@@ -530,9 +530,9 @@ export function calcularReembolsosCruce(
   };
 
   for (const l of lineas) {
-    if (l.rol && String(l.rol).trim().toUpperCase() === "CONSIGUE") {
-      continue;
-    }
+    // Regla de cruce: las líneas en rol Consigue (dador) también participan.
+    // Si el cliente gana y pierde en la carrera (como Juega o como Consigue),
+    // se reembolsa la comisión de la parte cruzada y queda solo la diferencia.
     const clienteId = String(l.clienteId ?? "").trim();
     const clave = obtenerClaveCanonica(l.cliente, clienteId);
     if (!clave) continue;
@@ -623,7 +623,6 @@ export function _reembolsosCruce(
   comisionPct = 5
 ) {
   const normalizadas: LineaResultadoParaCruce[] = lineas
-    .filter((l) => !l.rol || String(l.rol).trim().toUpperCase() !== "CONSIGUE")
     .map((l) => {
     let brutoGanado = Number(l.brutoGanado ?? 0);
     let brutoPerdido = Number(l.brutoPerdido ?? 0);
@@ -650,6 +649,7 @@ export function _reembolsosCruce(
       brutoPerdido,
       comisionCobrada: l.comisionCobrada,
       comisionPct: l.comisionPct,
+      rol: l.rol,
     };
   });
   return calcularReembolsosCruce(normalizadas, modalidad, comisionPct);

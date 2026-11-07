@@ -788,6 +788,7 @@ export async function generarAsientoDevolucionIncentivo(p: {
   referenciaId?: string | null;
   esAvalador?: boolean;
   usuario?: string | null;
+  nota?: string | null;
 }) {
   const monto = redondearCentavos(Math.abs(p.montoIncentivo));
   if (monto <= 0) return { ok: true };
@@ -799,14 +800,18 @@ export async function generarAsientoDevolucionIncentivo(p: {
     tipo_evento: "DEVOLUCION_INCENTIVO",
     referencia_id: p.referenciaId,
     clave_idempotencia: p.referenciaId ? `INC:${p.referenciaId}:${p.clienteId}` : undefined,
-    descripcion: `Devolución de incentivo a favor de ${p.clienteNombre}`,
+    descripcion: p.nota
+      ? `Devolución de incentivo a favor de ${p.clienteNombre} - ${p.nota}`
+      : `Devolución de incentivo a favor de ${p.clienteNombre}`,
     creado_por: p.usuario,
     lineas: [
       {
         cuenta_codigo: ctaCosto,
         debe: monto,
         haber: 0,
-        concepto: `Devolución de incentivo bonificado a ${p.clienteNombre}`,
+        concepto: p.nota
+          ? `Devolución de incentivo a ${p.clienteNombre} (${p.nota})`
+          : `Devolución de incentivo bonificado a ${p.clienteNombre}`,
       },
       {
         cuenta_codigo: "2.1.01.001", // Saldo a favor del cliente
