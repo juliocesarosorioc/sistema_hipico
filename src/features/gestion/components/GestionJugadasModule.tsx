@@ -2,7 +2,7 @@
 import { ModalEventoLibre } from "@/features/eventos-libres/components/ModalEventoLibre";
 import { DateInput } from "@/shared/components/ui/DateInput";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { calcularRiesgoCliente2, proyectarFila } from "@/features/taquilla/lib/validar";
 import { clienteConSaldoDescontado, proyectarFilasEnOrden } from "@/features/taquilla/lib/saldosEnCurso";
 import { normalizarLineaRapida, type ConfianzaCampo } from "@/features/taquilla/lib/normalizar";
@@ -198,6 +198,7 @@ function hipoKey(h: unknown): string {
 export function GestionJugadasModule() {
   const confirmar = useConfirmar();
   const [hipodromo, setHipodromo] = useState("");
+  const hipodromoInputRef = useRef<HTMLInputElement>(null);
   const hipodromos = useHipodromosActivos();
   const nombreHipodromo = nombrePropioHipodromo(hipodromo, hipodromos);
   /**
@@ -460,6 +461,51 @@ export function GestionJugadasModule() {
    * llegada que el operador quería cargar de nuevo.
    */
   const [pizarraCentral, setPizarraCentral] = useState<PizarraResultados | null>(null);
+
+  /**
+   * Posiciona el foco del cursor en la casilla de Hipódromo y selecciona el texto
+   * para permitir continuar escribiendo o cambiar de hipódromo de inmediato.
+   */
+  const enfocarCasillaHipodromo = useCallback(() => {
+    const aplicarFoco = () => {
+      if (hipodromoInputRef.current) {
+        hipodromoInputRef.current.focus();
+        hipodromoInputRef.current.select();
+      }
+    };
+    aplicarFoco();
+    setTimeout(aplicarFoco, 50);
+    setTimeout(aplicarFoco, 150);
+    setTimeout(aplicarFoco, 300);
+  }, []);
+
+  /**
+   * Al cerrar el informe de la carrera o reporte de liquidación:
+   * 1. Cierra el modal del reporte y regresa a la pantalla de trabajo.
+   * 2. Blanquea completamente la carga de apuestas (filas, carga rápida, observaciones, retirados).
+   * 3. Avanza la carrera de forma limpia y se posiciona en la casilla de Hipódromo.
+   */
+  const cerrarReporteYBlanquear = useCallback(() => {
+    setMostrarReporteLiquidacion(false);
+    setModoExclusivoReporte(false);
+    setModalDecisionPostCierre(false);
+    setModalFinalizar(false);
+
+    // Blanquear completamente la carga de apuestas
+    setFilas([filaVacia()]);
+    setTextoCargaRapida("");
+    setRetirados("");
+    setObservaciones("");
+    setJugadasPorCarrera([]);
+    setAviso("");
+
+    // Avanzar la carrera de forma limpia
+    setCarrera((prev) => prev + 1);
+    setCarreraConfirmada(true);
+
+    // Posicionarse en la casilla de hipódromos
+    enfocarCasillaHipodromo();
+  }, [enfocarCasillaHipodromo]);
 
   /**
    * Item 1: la carrera activa ya esta liquidada? El registro central de la
@@ -2569,10 +2615,6 @@ const hipodromosDelDia = useMemo(() => {
     const piz = pizarraConfirmada ?? ultimaPizarra;
     if (!piz) {
       setModalFinalizar(false);
-        // Limpiar hipódromo y mesa de trabajo para dejar en blanco y limpio tras liquidar
-        setHipodromo("");
-        setCarreraConfirmada(false);
-        setFilas([filaVacia()]);
       setReporteAlCerrarFinalizar(false);
       void abrirResultados();
       const motivo = "Primero cargá los resultados (Ctrl+Y o Ctrl+R) para liquidar.";
@@ -3486,6 +3528,7 @@ const hipodromosDelDia = useMemo(() => {
             value={hipodromo}
             onChange={setHipodromo}
             placeholder="Buscar hipódromo…"
+            inputRef={hipodromoInputRef}
             inputClassName="w-full h-9 rounded-lg border border-line bg-surface px-3 text-xs font-bold normal-case text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
@@ -5436,11 +5479,7 @@ const hipodromosDelDia = useMemo(() => {
       {/* Reporte de Liquidación (Ctrl+G) — motor de reporte filtrable + imagen */}
       <ReporteLiquidacionModal
         abierto={mostrarReporteLiquidacion}
-        onCerrar={() => {
-          setMostrarReporteLiquidacion(false);
-          setModoExclusivoReporte(false);
-          setModalDecisionPostCierre(true);
-        }}
+        onCerrar={cerrarReporteYBlanquear}
         hipodromoInicial={hipodromo}
         carreraInicial={carrera}
         fechaInicial={fecha}
@@ -5598,6 +5637,7 @@ const hipodromosDelDia = useMemo(() => {
                 onClick={() => {
                   setModalDecisionPostCierre(false);
                   setAviso("🔧 Regresando con las opciones vigentes de la carrera para corrección.");
+                  enfocarCasillaHipodromo();
                 }}
                 className="flex items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs font-black text-amber-300 hover:bg-amber-500/20 transition"
               >
@@ -5607,16 +5647,7 @@ const hipodromosDelDia = useMemo(() => {
 
               <button
                 type="button"
-                onClick={() => {
-                  setModalDecisionPostCierre(false);
-                  // Limpiar parámetros para registrar carrera nueva
-                  setCarrera((prev) => prev + 1);
-                  setCarreraConfirmada(true);
-                  setJugadasPorCarrera([]);
-                  setRetirados("");
-                  setObservaciones("");
-                  setAviso(`✨ Parámetros limpios. Listo para registrar nueva carrera (C${carrera + 1}).`);
-                }}
+                onClick={cerrarReporteYBlanquear}
                 className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-xs font-black text-white hover:bg-indigo-500 transition shadow-lg shadow-indigo-600/30"
               >
                 <span>➕</span>

@@ -106,6 +106,19 @@ export default function ReporteLiquidacionModal({
   // Versión global de logos: cambia cuando alguien carga/actualiza un logo.
   const versionLogos = useVersionLogos();
 
+  // Atajo de teclado: Escape para cerrar el reporte
+  useEffect(() => {
+    if (!abierto) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCerrar();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [abierto, onCerrar]);
+
   // Logos de los hipódromos: la cabecera azul los pinta desde acá. Se relee
   // CADA VEZ que se abre el modal Y cada vez que se actualiza un logo, para que
   // un logo incorporado mientras el reporte está abierto aparezca sin recargar.

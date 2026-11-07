@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
 import { liquidarCarreraYCerrarTabla } from "@/features/liquidacion/lib/pagarYCerrar";
@@ -49,6 +49,7 @@ export function PagarCarreraModal() {
   const tablas = useTablasFijasStore((s) => s.tablas);
 
   const [hipodromo, setHipodromo] = useState("");
+  const hipodromoInputRef = useRef<HTMLInputElement>(null);
   const [carrera, setCarrera] = useState("");
   const [cargandoResultados, setCargandoResultados] = useState(false);
 
@@ -344,6 +345,7 @@ export function PagarCarreraModal() {
         <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
           Hipódromo
           <input
+            ref={hipodromoInputRef}
             value={hipodromo}
             onChange={(e) => setHipodromo(e.target.value)}
             placeholder="La Rinconada"
@@ -540,7 +542,19 @@ export function PagarCarreraModal() {
               <Button size="sm" onClick={() => window.print()}>
                 🖨️ Imprimir a PDF
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setReporteCarrera(null)}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setReporteCarrera(null);
+                  setTimeout(() => {
+                    if (hipodromoInputRef.current) {
+                      hipodromoInputRef.current.focus();
+                      hipodromoInputRef.current.select();
+                    }
+                  }, 100);
+                }}
+              >
                 Cerrar reporte
               </Button>
             </div>
