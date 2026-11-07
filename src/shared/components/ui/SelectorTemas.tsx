@@ -50,7 +50,7 @@ export function SelectorTemas({ compacto = false }: { compacto?: boolean }) {
         }`}
       >
         <span
-          className="h-2.5 w-2.5 rounded-full ring-2 ring-white/20 transition-transform group-hover:scale-110 shrink-0"
+          className={`h-2.5 w-2.5 rounded-full ring-2 ring-white/20 transition-transform group-hover:scale-110 shrink-0 ${compacto ? "hidden" : ""}`}
           style={{ backgroundColor: infoActual.colorAcento }}
         />
         <span className="text-xs sm:text-sm">{infoActual.emoji}</span>
