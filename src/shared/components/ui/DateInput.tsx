@@ -361,19 +361,21 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
   }
 
   return (
-    <div ref={contenedorRef} className="relative inline-flex flex-col gap-0.5 w-auto max-w-full">
+    <div
+      ref={contenedorRef}
+      className={`relative inline-flex flex-col gap-0.5 ${className.includes("w-full") ? "w-full" : "w-auto max-w-full"}`}
+    >
       {label ? (
-        <label htmlFor={inputId} className="text-[11px] font-semibold text-slate-600 block">
+        <label htmlFor={inputId} className="text-[11px] font-semibold text-[var(--app-text-muted)] block mb-0.5">
           {label}
         </label>
       ) : null}
 
-      {/* Contenedor unificado: DÍA / MES / AÑO con bordes limpios, fondo blanco y letras negras */}
+      {/* Contenedor unificado: DÍA / MES / AÑO adaptado dinámicamente al tema visual */}
       <div
-        className={`relative inline-flex items-center justify-between rounded-md border border-slate-300 !bg-white px-1.5 py-0.5 text-xs !text-black font-medium
+        className={`relative inline-flex items-center justify-between rounded-lg border border-[var(--app-border)] bg-[var(--app-surface)] px-2 text-xs text-[var(--app-text)] font-medium
           focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500
-          disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-slate-400 ${className}`}
-        style={{ backgroundColor: "#ffffff", color: "#000000" }}
+          disabled:cursor-not-allowed disabled:opacity-50 ${className.includes("h-") ? "" : "h-9"} ${className}`}
       >
         <div className="flex items-center">
           {/* Campo DÍA */}
@@ -392,12 +394,12 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             onKeyDown={handleDiaKeyDown}
             onPaste={handlePaste}
             onFocus={(e) => e.target.select()}
-            className="w-[1.25rem] text-center bg-transparent outline-none font-bold !text-black placeholder:!text-slate-500 p-0 text-xs"
-            style={{ color: "#000000" }}
+            data-sin-tema
+            className="w-[1.35rem] text-center bg-transparent border-none outline-none font-bold text-[var(--app-text)] placeholder:text-[var(--app-text-dim)] p-0 text-xs shadow-none ring-0 focus:ring-0 focus:outline-none"
             {...rest}
           />
 
-          <span className="!text-black font-bold select-none px-0.5 text-[11px]" style={{ color: "#000000" }}>/</span>
+          <span className="text-[var(--app-text-muted)] font-bold select-none px-0.5 text-xs">/</span>
 
           {/* Campo MES */}
           <input
@@ -414,11 +416,11 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             onKeyDown={handleMesKeyDown}
             onPaste={handlePaste}
             onFocus={(e) => e.target.select()}
-            className="w-[1.25rem] text-center bg-transparent outline-none font-bold !text-black placeholder:!text-slate-500 p-0 text-xs"
-            style={{ color: "#000000" }}
+            data-sin-tema
+            className="w-[1.35rem] text-center bg-transparent border-none outline-none font-bold text-[var(--app-text)] placeholder:text-[var(--app-text-dim)] p-0 text-xs shadow-none ring-0 focus:ring-0 focus:outline-none"
           />
 
-          <span className="!text-black font-bold select-none px-0.5 text-[11px]" style={{ color: "#000000" }}>/</span>
+          <span className="text-[var(--app-text-muted)] font-bold select-none px-0.5 text-xs">/</span>
 
           {/* Campo AÑO */}
           <input
@@ -435,8 +437,8 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             onKeyDown={handleAnioKeyDown}
             onPaste={handlePaste}
             onFocus={(e) => e.target.select()}
-            className="w-[2.25rem] text-center bg-transparent outline-none font-bold !text-black placeholder:!text-slate-500 p-0 text-xs"
-            style={{ color: "#000000" }}
+            data-sin-tema
+            className="w-[2.4rem] text-center bg-transparent border-none outline-none font-bold text-[var(--app-text)] placeholder:text-[var(--app-text-dim)] p-0 text-xs shadow-none ring-0 focus:ring-0 focus:outline-none"
           />
         </div>
 
@@ -456,10 +458,11 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
           }}
           aria-label="Abrir consulta de fecha (Año, Mes, Día)"
           title="Abrir selector de fecha (Año, Mes, Día)"
-          className={`ml-1 shrink-0 p-0.5 rounded transition-colors disabled:opacity-40 flex items-center justify-center ${
-            abierto ? "!text-black bg-slate-100" : "!text-black hover:!text-black hover:bg-slate-100"
+          className={`ml-1 shrink-0 p-1 rounded-md transition-colors disabled:opacity-40 flex items-center justify-center ${
+            abierto
+              ? "text-[var(--app-text)] bg-[var(--app-surface-alt)]"
+              : "text-[var(--app-text-muted)] hover:text-[var(--app-text)] hover:bg-[var(--app-surface-alt)]"
           }`}
-          style={{ color: "#000000" }}
         >
           <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path
@@ -471,21 +474,20 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
         </button>
       </div>
 
-      {hint ? <span className="text-[10px] font-normal text-slate-500">{hint}</span> : null}
+      {hint ? <span className="text-[10px] font-normal text-[var(--app-text-dim)]">{hint}</span> : null}
 
-      {/* POPUP CENTRALIZADO: SELECTOR DE AÑO, MES Y DÍA (FONDO BLANCO Y LETRAS NEGRAS) */}
+      {/* POPUP CENTRALIZADO: SELECTOR DE AÑO, MES Y DÍA */}
       {abierto && (
         <div
-          className="absolute z-50 left-0 top-full mt-1 w-72 rounded-2xl border border-slate-300 !bg-white !text-black p-3 shadow-2xl animate-in fade-in zoom-in-95 duration-100"
-          style={{ minWidth: "280px", backgroundColor: "#ffffff", color: "#000000" }}
+          className="absolute z-50 left-0 top-full mt-1 w-72 rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface)] text-[var(--app-text)] p-3 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
+          style={{ minWidth: "280px" }}
         >
           {/* Cabecera: Selectores de AÑO y MES */}
-          <div className="flex items-center justify-between gap-1 mb-2.5 pb-2 border-b border-slate-200">
+          <div className="flex items-center justify-between gap-1 mb-2.5 pb-2 border-b border-[var(--app-border)]">
             <button
               type="button"
               onClick={mesAnterior}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 !bg-white !text-black hover:bg-slate-100 transition active:scale-95"
-              style={{ backgroundColor: "#ffffff", color: "#000000" }}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-alt)] text-[var(--app-text)] hover:opacity-85 transition active:scale-95"
               title="Mes anterior"
             >
               ◀
@@ -495,11 +497,11 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             <select
               value={mesVer}
               onChange={(e) => setMesVer(Number(e.target.value))}
-              className="rounded-lg border border-slate-300 !bg-white px-2 py-1 text-xs font-black !text-black outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ backgroundColor: "#ffffff", color: "#000000" }}
+              data-sin-tema
+              className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-alt)] px-2 py-1 text-xs font-black text-[var(--app-text)] outline-none focus:ring-2 focus:ring-primary-500"
             >
               {NOMBRES_MESES.map((nombre, idx) => (
-                <option key={nombre} value={idx} className="!bg-white !text-black" style={{ backgroundColor: "#ffffff", color: "#000000" }}>
+                <option key={nombre} value={idx} className="bg-[var(--app-surface)] text-[var(--app-text)]">
                   {nombre}
                 </option>
               ))}
@@ -509,11 +511,11 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             <select
               value={anioVer}
               onChange={(e) => setAnioVer(Number(e.target.value))}
-              className="rounded-lg border border-slate-300 !bg-white px-2 py-1 text-xs font-black !text-black outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ backgroundColor: "#ffffff", color: "#000000" }}
+              data-sin-tema
+              className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-alt)] px-2 py-1 text-xs font-black text-[var(--app-text)] outline-none focus:ring-2 focus:ring-primary-500"
             >
               {opcionesAnios.map((a) => (
-                <option key={a} value={a} className="!bg-white !text-black" style={{ backgroundColor: "#ffffff", color: "#000000" }}>
+                <option key={a} value={a} className="bg-[var(--app-surface)] text-[var(--app-text)]">
                   {a}
                 </option>
               ))}
@@ -522,8 +524,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             <button
               type="button"
               onClick={mesSiguiente}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 !bg-white !text-black hover:bg-slate-100 transition active:scale-95"
-              style={{ backgroundColor: "#ffffff", color: "#000000" }}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--app-border)] bg-[var(--app-surface-alt)] text-[var(--app-text)] hover:opacity-85 transition active:scale-95"
               title="Mes siguiente"
             >
               ▶
@@ -533,7 +534,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
           {/* Días de la semana */}
           <div className="grid grid-cols-7 gap-1 text-center mb-1">
             {DIAS_SEMANA_CORTOS.map((d) => (
-              <span key={d} className="text-[10px] font-black !text-black" style={{ color: "#000000" }}>
+              <span key={d} className="text-[10px] font-black text-[var(--app-text-muted)]">
                 {d}
               </span>
             ))}
@@ -558,12 +559,11 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
                   onClick={() => seleccionarDesdePopup(isoDia)}
                   className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold transition ${
                     seleccionado
-                      ? "bg-amber-200 !text-black border-2 border-black font-black shadow-md scale-105"
+                      ? "bg-amber-500 text-slate-950 font-black shadow-md scale-105 ring-2 ring-amber-400"
                       : esHoy
-                      ? "bg-slate-100 !text-black border border-slate-400 font-black hover:bg-slate-200"
-                      : "!bg-white !text-black hover:bg-slate-100"
+                      ? "border border-amber-500/70 bg-[var(--app-surface-alt)] text-[var(--app-text)] font-black hover:bg-amber-500/20"
+                      : "bg-transparent text-[var(--app-text)] hover:bg-[var(--app-surface-alt)]"
                   }`}
-                  style={{ color: "#000000" }}
                 >
                   {diaNum}
                 </button>
@@ -572,21 +572,19 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
           </div>
 
           {/* Barra inferior: Hoy, Ayer, Limpiar */}
-          <div className="mt-3 pt-2 border-t border-slate-200 flex items-center justify-between text-[11px]">
+          <div className="mt-3 pt-2 border-t border-[var(--app-border)] flex items-center justify-between text-[11px]">
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => seleccionarDesdePopup(hoyIsoLocal())}
-                className="rounded px-2 py-0.5 font-black !text-black hover:bg-slate-100 transition"
-                style={{ color: "#000000" }}
+                className="rounded px-2 py-1 font-black text-[var(--app-text)] hover:bg-[var(--app-surface-alt)] transition"
               >
                 Hoy
               </button>
               <button
                 type="button"
                 onClick={() => seleccionarDesdePopup(ayerIsoLocal())}
-                className="rounded px-2 py-0.5 font-bold !text-black hover:bg-slate-100 transition"
-                style={{ color: "#000000" }}
+                className="rounded px-2 py-1 font-bold text-[var(--app-text-muted)] hover:text-[var(--app-text)] hover:bg-[var(--app-surface-alt)] transition"
               >
                 Ayer
               </button>
@@ -599,8 +597,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
                   emitirCambio("");
                   setAbierto(false);
                 }}
-                className="rounded px-1.5 py-0.5 font-bold !text-black hover:bg-slate-100 transition"
-                style={{ color: "#000000" }}
+                className="rounded px-2 py-1 font-bold text-rose-500 hover:bg-rose-500/10 transition"
               >
                 Limpiar
               </button>
@@ -608,8 +605,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             <button
               type="button"
               onClick={() => setAbierto(false)}
-              className="rounded px-2 py-0.5 font-black !text-black hover:bg-slate-100"
-              style={{ color: "#000000" }}
+              className="rounded px-2 py-1 font-black text-[var(--app-text-muted)] hover:text-[var(--app-text)] hover:bg-[var(--app-surface-alt)]"
             >
               Cerrar ✕
             </button>

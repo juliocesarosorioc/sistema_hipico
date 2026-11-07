@@ -3481,29 +3481,30 @@ const hipodromosDelDia = useMemo(() => {
       )}
 
       {/* Inputs superiores */}
-      <div className="grid gap-1.5 rounded-xl border border-line bg-surface p-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto_minmax(0,1.1fr)_auto_auto]">
+      <div className="grid gap-2 rounded-xl border border-line bg-surface p-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto_minmax(0,1.1fr)_auto_auto] items-start">
         <div data-tour="tour-fecha">
-          <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">1 · Fecha 📅</label>
+          <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">1 · Fecha 📅</label>
           <DateInput
             value={fecha}
             onFechaChange={(val) => setFecha(val || hoyLocal())}
-            className="w-full text-xs font-bold"
+            className="w-full h-9 text-xs font-bold"
           />
         </div>
         <div data-tour="tour-hipodromo">
-          <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">2 · Hipódromo</label>
+          <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">2 · Hipódromo</label>
           <SearchableSelect
             options={hipodromosDelDia}
             value={hipodromo}
             onChange={setHipodromo}
             placeholder="Buscar hipódromo…"
+            inputClassName="w-full h-9 rounded-lg border border-line bg-surface px-3 text-xs font-bold normal-case text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
         <div data-tour="tour-retirados">
-          <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
+          <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">
             Retirados · C{carrera}
           </label>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <input
               value={retirados}
               onChange={(e) => setRetirados(e.target.value)}
@@ -3512,11 +3513,11 @@ const hipodromosDelDia = useMemo(() => {
               }}
               disabled={!listoParaCargar}
               placeholder='ej. "2,5"'
-              className="w-24 rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-slate-400"
+              className="h-9 w-24 rounded-lg border border-line bg-surface px-2.5 text-xs font-bold leading-none text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-slate-400"
             />
             <Button
               size="sm"
-              className="shrink-0 !bg-gradient-to-r !from-red-500 !to-rose-600 !text-white"
+              className="h-9 shrink-0 !bg-gradient-to-r !from-red-500 !to-rose-600 !text-white px-2.5 text-xs font-bold"
               onClick={() => void aplicarRetiros()}
               disabled={!listoParaCargar}
               title={
@@ -3530,51 +3531,54 @@ const hipodromosDelDia = useMemo(() => {
           </div>
         </div>
         <div>
-          <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">
+          <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">
             📝 Observaciones (al pie)
           </label>
           <input
             value={observaciones}
             onChange={(e) => setObservaciones(e.target.value)}
             placeholder="Nota que se anexa al pie del Resultado Preliminar"
-            className="w-full rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            className="w-full h-9 rounded-lg border border-line bg-surface px-3 text-xs leading-none text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
         <div data-tour="tour-comision">
-          <label className="mb-0.5 block text-[9px] font-bold uppercase leading-none tracking-wide text-slate-500">COM %</label>
+          <label className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">COM %</label>
           <input
             value={comision}
             onChange={(e) => setComision(e.target.value.replace(/[^0-9.,]/g, ""))}
             inputMode="decimal"
-            className="w-16 rounded-md border border-line bg-surface px-2 py-1 text-[13px] leading-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            className="w-16 h-9 rounded-lg border border-line bg-surface px-2 text-center text-xs font-bold leading-none text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
         </div>
-        <div className="flex items-end gap-1.5 pb-1 whitespace-nowrap">
-          <button
-            type="button"
-            onClick={() => void solicitarCrearNuevoCliente()}
-            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-indigo-400/70 bg-indigo-600 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-white shadow-2xs transition hover:bg-indigo-500"
-            title="Registrar nuevo cliente rápido con teléfono, código de usuario y saldo autorizado"
-          >
-            <span>👤+</span> Nuevo Cliente
-          </button>
-          <label
-            data-tour="tour-modo-manual"
-            className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase transition-all shadow-2xs ${
-              modoManual
-                ? "border-cyan-500 bg-cyan-600 text-white shadow-cyan-600/20"
-                : "border-cyan-200 bg-cyan-50/70 text-cyan-800 hover:bg-cyan-100"
-            }`}
-            title="Permite cargar jugadas y registrar carreras aunque la Gaceta IA no haya extraído nada (sin bloquear)."
-          >
-            <input
-              type="checkbox"
-              checked={modoManual}
-              onChange={(e) => setModoManual(e.target.checked)}
-              className="h-3.5 w-3.5 accent-cyan-600 cursor-pointer"
-            />
-            <span>✍️ Modo Manual</span>
-          </label>
+        <div>
+          <span className="mb-1 block h-3.5 text-[10px] font-bold uppercase leading-none tracking-wide opacity-0 select-none pointer-events-none" aria-hidden="true">&nbsp;</span>
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
+            <button
+              type="button"
+              onClick={() => void solicitarCrearNuevoCliente()}
+              className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-indigo-400/70 bg-indigo-600 px-2.5 text-[11px] font-black uppercase tracking-wide text-white shadow-2xs transition hover:bg-indigo-500"
+              title="Registrar nuevo cliente rápido con teléfono, código de usuario y saldo autorizado"
+            >
+              <span>👤+</span> Nuevo Cliente
+            </button>
+            <label
+              data-tour="tour-modo-manual"
+              className={`inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-black uppercase transition-all shadow-2xs ${
+                modoManual
+                  ? "border-cyan-500 bg-cyan-600 text-white shadow-cyan-600/20"
+                  : "border-cyan-200 bg-cyan-50/70 text-cyan-800 hover:bg-cyan-100"
+              }`}
+              title="Permite cargar jugadas y registrar carreras aunque la Gaceta IA no haya extraído nada (sin bloquear)."
+            >
+              <input
+                type="checkbox"
+                checked={modoManual}
+                onChange={(e) => setModoManual(e.target.checked)}
+                className="h-3.5 w-3.5 accent-cyan-600 cursor-pointer"
+              />
+              <span>✍️ Modo Manual</span>
+            </label>
+          </div>
         </div>
       </div>
 
