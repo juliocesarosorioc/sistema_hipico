@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import PantallaLogin from "@/features/auth/components/PantallaLogin";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { listarTablasPublicadas } from "@/features/tablas/lib/rpc";
@@ -253,7 +254,7 @@ export function PortalModule() {
   }
 
   if (!sesion) {
-    return <LoginScreen usuario={usuario} setUsuario={setUsuario} token={token} setToken={setToken} clave={clave} setClave={setClave} error={errorLogin} onEntrar={() => void loguear()} autoEntrar={Boolean(autoId && autoToken)} />;
+    return <PantallaLogin />;
   }
 
   return <SesionView sesion={sesion} onActualizar={(s) => setSesion(s)} onSalir={salir} />;

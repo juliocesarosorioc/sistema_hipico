@@ -135,6 +135,24 @@ export default function PantallaLogin() {
           perfiles.every((p) => p.toLowerCase().includes("operador")) &&
           !esPrincipal);
       router.replace(esOp ? "/apuestas" : "/inicio");
+      return;
+    }
+
+    // Si ya existe sesión activa de cliente en este navegador, dirigir al portal
+    if (typeof window !== "undefined" && !usuarioActual) {
+      try {
+        const raw = window.localStorage.getItem("portal.cliente");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.cliente?.id) {
+            if (yaNavegandoRef.current) return;
+            yaNavegandoRef.current = true;
+            router.replace("/portal");
+          }
+        }
+      } catch {
+        /* ignore */
+      }
     }
   }, [inicializada, usuarioActual, perfiles, esPrincipal, modoOperador, router]);
 
@@ -195,40 +213,64 @@ export default function PantallaLogin() {
 
     setIngresando(true);
     try {
+      // 1. Intentar inicio de sesión como Administrador u Operador del Sistema
       const ok = await iniciarSesion(usuarioSanitizado, clave);
-      if (!ok) {
-        setIngresando(false);
-        setClave("");
-        // [Módulo 1] Registrar intento fallido (3 intentos → bloqueo 30 min).
+      if (ok) {
         if (!esAdminPrincipal) {
-          registrarIntentoFallido(usuarioSanitizado, ipRef.current);
-          // Verificar si se acaba de alcanzar el límite
-          const estadoBloqueo = verificarBloqueoIntentos(usuarioSanitizado, ipRef.current);
-          if (estadoBloqueo.bloqueado) {
-            const minutos = Math.ceil((estadoBloqueo.segundosRestantes ?? 1800) / 60);
-            setBloqueadoSegundos(estadoBloqueo.segundosRestantes ?? 1800);
-            useAuthStore.setState({
-              cargando: false,
-              errorLogin: `🔒 Cuenta bloqueada por ${minutos} minuto${minutos !== 1 ? "s" : ""} por intentos fallidos repetidos. El administrador ha sido notificado.`,
-            });
-          }
+          limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
+        }
+        if (!yaNavegandoRef.current) {
+          yaNavegandoRef.current = true;
+          const st = useAuthStore.getState();
+          const esOp =
+            st.modoOperador ||
+            (st.perfiles.length > 0 &&
+              st.perfiles.every((p) => p.toLowerCase().includes("operador")) &&
+              !st.esPrincipal);
+          window.location.href = esOp ? "/apuestas" : "/inicio";
         }
         return;
       }
-      // [Módulo 1] Login exitoso: limpiar intentos fallidos.
+
+      // 2. Si no es staff, comprobar si es un CLIENTE / JUGADOR del portal
+      try {
+        const { entrarPortal } = await import("@/features/portal/lib/portal");
+        const resPortal = await entrarPortal({ usuario: usuarioSanitizado, clave });
+        if (resPortal.ok && resPortal.sesion) {
+          useAuthStore.setState({ errorLogin: null, cargando: false });
+          if (!esAdminPrincipal) {
+            limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
+          }
+          if (!yaNavegandoRef.current) {
+            yaNavegandoRef.current = true;
+            window.location.href = "/portal";
+          }
+          return;
+        }
+      } catch (errPortal) {
+        console.warn("Fallo en verificación de cliente portal:", errPortal);
+      }
+
+      // 3. Ni staff ni cliente: registrar intento fallido y mostrar error
+      setIngresando(false);
+      setClave("");
       if (!esAdminPrincipal) {
-        limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
+        registrarIntentoFallido(usuarioSanitizado, ipRef.current);
+        const estadoBloqueo = verificarBloqueoIntentos(usuarioSanitizado, ipRef.current);
+        if (estadoBloqueo.bloqueado) {
+          const minutos = Math.ceil((estadoBloqueo.segundosRestantes ?? 1800) / 60);
+          setBloqueadoSegundos(estadoBloqueo.segundosRestantes ?? 1800);
+          useAuthStore.setState({
+            cargando: false,
+            errorLogin: `🔒 Cuenta bloqueada por ${minutos} minuto${minutos !== 1 ? "s" : ""} por intentos fallidos repetidos. El administrador ha sido notificado.`,
+          });
+          return;
+        }
       }
-      if (!yaNavegandoRef.current) {
-        yaNavegandoRef.current = true;
-        const st = useAuthStore.getState();
-        const esOp =
-          st.modoOperador ||
-          (st.perfiles.length > 0 &&
-            st.perfiles.every((p) => p.toLowerCase().includes("operador")) &&
-            !st.esPrincipal);
-        router.replace(esOp ? "/apuestas" : "/inicio");
-      }
+      useAuthStore.setState({
+        cargando: false,
+        errorLogin: "Usuario o contraseña incorrectos. Verifica tus credenciales de acceso.",
+      });
     } catch (err) {
       setIngresando(false);
       if (!esAdminPrincipal) {
@@ -236,7 +278,7 @@ export default function PantallaLogin() {
       }
       useAuthStore.setState({
         cargando: false,
-        errorLogin: `Falló el inicio de sesión por dentro: ${err instanceof Error ? err.message : String(err)}`,
+        errorLogin: `Error al iniciar sesión: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   };
@@ -270,25 +312,14 @@ export default function PantallaLogin() {
       <div className="w-full max-w-md min-w-0 rounded-2xl border border-slate-800 bg-white p-4 shadow-2xl sm:p-8">
         <div className="mb-6 text-center">
           <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-600 text-2xl text-white shadow-lg">
-            {/* Moneda: replica el icono de monedas del login legacy (html/index.html). */}
-            <svg
-              viewBox="0 0 24 24"
-              className="h-7 w-7"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <circle cx="8" cy="8" r="6" />
-              <path d="M18.09 10.37A6 6 0 1 1 10.34 18" />
-              <path d="M7 6h1v4" />
-              <path d="M16.71 13.88l.7.71-2.82 2.82" />
-            </svg>
+            🐎
           </div>
-          <h1 className="text-2xl font-black uppercase tracking-wide text-slate-800">Administración Hípica</h1>
-          <p className="mt-1 text-xs font-bold text-slate-500">Panel Administrativo y Contable</p>
+          <h1 className="text-2xl font-black uppercase tracking-wide text-slate-800">Acceso al Sistema</h1>
+          <p className="mt-1 text-xs font-bold text-slate-500">Portal Unificado · Clientes y Administración</p>
+          <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-[11px] font-semibold text-emerald-800">
+            <span>✨</span>
+            <span>Accede con tu usuario, seudónimo o teléfono</span>
+          </div>
         </div>
 
         <form onSubmit={enviar} className="space-y-5" noValidate>
@@ -304,7 +335,7 @@ export default function PantallaLogin() {
           />
           <div>
             <label htmlFor="usuario" className="mb-1 block text-xs font-bold text-slate-700">
-              Nombre de Usuario
+              Usuario, Seudónimo o Teléfono
             </label>
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -325,7 +356,7 @@ export default function PantallaLogin() {
                 required
                 value={usuario}
                 onChange={(e) => setUsuario(e.target.value)}
-                placeholder="Ingresa tu nombre de usuario"
+                placeholder="Ingresa tu usuario, seudónimo o teléfono"
                 className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-3 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-emerald-500"
               />
             </div>

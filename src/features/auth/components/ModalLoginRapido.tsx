@@ -48,6 +48,7 @@ export function ModalLoginRapido({
 
     setProcesando(true);
     try {
+      // 1. Probar como Administrador u Operador
       const exito = await iniciarSesion(usuario.trim(), clave);
       if (exito) {
         emitirToast("¡Bienvenido! Sesión iniciada con éxito.", "success");
@@ -57,10 +58,27 @@ export function ModalLoginRapido({
         const esOp =
           modoOperador ||
           (perfiles.length > 0 && perfiles.every((p) => p.toLowerCase().includes("operador")));
-        router.push(esOp ? "/apuestas" : "/inicio");
-      } else {
-        emitirToast("Usuario o contraseña incorrectos.", "error");
+        window.location.href = esOp ? "/apuestas" : "/inicio";
+        return;
       }
+
+      // 2. Probar como Cliente del Portal
+      try {
+        const { entrarPortal } = await import("@/features/portal/lib/portal");
+        const resPortal = await entrarPortal({ usuario: usuario.trim(), clave });
+        if (resPortal.ok && resPortal.sesion) {
+          useAuthStore.setState({ errorLogin: null, cargando: false });
+          const nom = resPortal.sesion.cliente.nombre || resPortal.sesion.cliente.seudonimo || "Jugador";
+        emitirToast(`¡Bienvenido ${nom}! Accediendo a tu portal...`, "success");
+          onCerrar();
+          window.location.href = "/portal";
+          return;
+        }
+      } catch (errPortal) {
+        console.warn("Fallo en verificación de cliente portal:", errPortal);
+      }
+
+      emitirToast("Usuario o contraseña incorrectos. Verifica tus credenciales de acceso.", "error");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error al iniciar sesión.";
       emitirToast(msg, "error");
@@ -151,7 +169,7 @@ export function ModalLoginRapido({
             Iniciar Sesión
           </h2>
           <p className={`text-xs mt-1 ${esClaro ? "text-slate-500" : "text-slate-400"}`}>
-            Ingresa a tu cuenta para jugar tablas, marcas y remates en vivo.
+            Portal unificado: ingresa a tu cuenta de cliente o administración.
           </p>
         </div>
 
@@ -165,7 +183,7 @@ export function ModalLoginRapido({
 
           <div>
             <label className={`block text-[11px] font-black uppercase mb-1 ${esClaro ? "text-slate-700" : "text-slate-400"}`}>
-              Usuario o Correo
+              Usuario, Seudónimo o Teléfono
             </label>
             <input
               type="text"
@@ -173,7 +191,7 @@ export function ModalLoginRapido({
               autoFocus
               value={usuario}
               onChange={(e) => setUsuario(e.target.value)}
-              placeholder="Ej: operador1 / carlos@correo.com"
+              placeholder="Ej: admin, operador, o tu seudónimo"
               className={`w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition ${inputClase}`}
             />
           </div>
@@ -181,7 +199,7 @@ export function ModalLoginRapido({
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className={`block text-[11px] font-black uppercase ${esClaro ? "text-slate-700" : "text-slate-400"}`}>
-                Contraseña
+                Contraseña / PIN
               </label>
               <Link
                 href="/reset-password"
