@@ -22,7 +22,6 @@ import { asegurarHipodromo } from "@/features/tablas/lib/rpc";
 import { resumenProblemasCarga, validarFechasDeCarga } from "@/features/tablas/lib/validar-carga";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
-import { SeccionPliegue } from "@/features/tablas/components/SeccionPliegue";
 import { ParametrosCarrera } from "@/features/tablas/components/ParametrosCarrera";
 import { TarjetaEnsamblaje } from "@/features/tablas/components/TarjetaEnsamblaje";
 import { MonitorTablas, type VentaTablaItem } from "@/features/tablas/components/MonitorTablas";
@@ -71,7 +70,8 @@ export function TablasModule(props: Props) {
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
 
-  const [secciones, setSecciones] = useState({ parametros: false, ensamblaje: false, monitor: true });
+  type TabTablas = "monitor" | "ensamblaje" | "parametros";
+  const [tabActiva, setTabActiva] = useState<TabTablas>("monitor");
   const [impresion, setImpresion] = useState(false);
   const [modoManual, setModoManual] = useState(false);
   const [menuEnsamblaje, setMenuEnsamblaje] = useState(false);
@@ -753,25 +753,113 @@ export function TablasModule(props: Props) {
         )}
       </div>
 
-      {/* Bloque 1: Parámetros */}
-      <SeccionPliegue
-        titulo="Parámetros de la próxima carrera"
-        icono="🔧"
-        abierto={secciones.parametros}
-        onToggle={() => setSecciones((s) => ({ ...s, parametros: !s.parametros }))}
-      >
-        <ParametrosCarrera onAgregar={(d) => setDrafts((ds) => [...ds, d])} />
-      </SeccionPliegue>
+      {/* PESTAÑAS PRINCIPALES DEL MÓDULO (ORDEN: 1. MONITOR, 2. ENSAMBLAJE, 3. PARÁMETROS) */}
+      <div className="no-print flex flex-wrap items-center gap-1.5 rounded-xl border border-line bg-surface p-1 shadow-2xs">
+        <button
+          type="button"
+          onClick={() => setTabActiva("monitor")}
+          className={`inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-black uppercase tracking-wide transition-all ${
+            tabActiva === "monitor"
+              ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm"
+              : "text-slate-600 hover:bg-surfaceAlt hover:text-slate-900"
+          }`}
+        >
+          <span>🖥️ Monitor de Tablas Publicadas</span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
+              tabActiva === "monitor"
+                ? "bg-white/20 text-white"
+                : "bg-indigo-100 text-indigo-800"
+            }`}
+          >
+            {openCount}
+          </span>
+        </button>
 
-      {/* Bloque 2: Carreras en el Ensamblaje */}
-      <SeccionPliegue
-        titulo="Carreras en el Ensamblaje"
-        icono="🗂️"
-        contador={drafts.length}
-        abierto={secciones.ensamblaje}
-        onToggle={() => setSecciones((s) => ({ ...s, ensamblaje: !s.ensamblaje }))}
-      >
-        <div className="p-4">
+        <button
+          type="button"
+          onClick={() => setTabActiva("ensamblaje")}
+          className={`inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-black uppercase tracking-wide transition-all ${
+            tabActiva === "ensamblaje"
+              ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm"
+              : "text-slate-600 hover:bg-surfaceAlt hover:text-slate-900"
+          }`}
+        >
+          <span>🗂️ Carreras en el Ensamblaje</span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
+              tabActiva === "ensamblaje"
+                ? "bg-white/20 text-white"
+                : "bg-slate-200 text-slate-700"
+            }`}
+          >
+            {drafts.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTabActiva("parametros")}
+          className={`inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-black uppercase tracking-wide transition-all ${
+            tabActiva === "parametros"
+              ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm"
+              : "text-slate-600 hover:bg-surfaceAlt hover:text-slate-900"
+          }`}
+        >
+          <span>🔧 Parámetros Próxima Carrera</span>
+        </button>
+      </div>
+
+      {/* PESTAÑA 1: MONITOR DE TABLAS PUBLICADAS */}
+      {tabActiva === "monitor" && (
+        <div className="space-y-3">
+          <MonitorHipodromos
+            grupos={hipodromosDia}
+            filtro={filtroHipodromo}
+            onFiltro={setFiltroHipodromo}
+            fecha={fechaPrograma}
+            onFecha={setFechaPrograma}
+            permitirTodos
+            ejeFecha={ejeFecha}
+            vacio={
+              fechaPrograma
+                ? `Sin hipódromos publicados para la fecha de ${ejeFecha === "venta" ? "venta" : "carrera"} ${fechaPrograma}.`
+                : "Sin hipódromos publicados."
+            }
+            className="mb-3"
+            acciones={
+              <Guard permiso="tablas:btn_imprimir">
+                <button
+                  type="button"
+                  onClick={() => setImpresion(true)}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-[11px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
+                  title="Imprimir / exportar tablas publicadas (matriz 15 por hoja o reporte por jugador)"
+                >
+                  🖨️ Imprimir Tablas
+                </button>
+              </Guard>
+            }
+          />
+          <MonitorTablas
+            tablas={tablas}
+            onVender={venderDirecto}
+            onLiquidar={liquidar}
+            onEditar={editar}
+            onRetirar={retirar}
+            onEliminar={eliminar}
+            hipodromoFiltro={filtroHipodromo}
+            onHipodromoFiltro={setFiltroHipodromo}
+            fechaDia={fechaPrograma}
+            onFechaDia={setFechaPrograma}
+            ejeFecha={ejeFecha}
+            onEjeFecha={setEjeFecha}
+          />
+        </div>
+      )}
+
+      {/* PESTAÑA 2: CARRERAS EN EL ENSAMBLAJE */}
+      {tabActiva === "ensamblaje" && (
+        <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
           <div className="mb-3 no-print">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
@@ -852,7 +940,17 @@ export function TablasModule(props: Props) {
             {drafts.length === 0 ? (
               <div className="col-span-full rounded-2xl border border-dashed border-line bg-surface p-8 text-center">
                 <p className="text-sm font-semibold text-slate-500">El ensamblaje está vacío.</p>
-                <p className="mt-1 text-xs text-slate-400">Añade una carrera desde “Parámetros de la próxima carrera”.</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Añade una carrera desde{" "}
+                  <button
+                    type="button"
+                    onClick={() => setTabActiva("parametros")}
+                    className="font-bold text-indigo-600 underline hover:text-indigo-700"
+                  >
+                    “Parámetros de la próxima carrera”
+                  </button>
+                  .
+                </p>
               </div>
             ) : (
               drafts.map((d) => (
@@ -871,60 +969,20 @@ export function TablasModule(props: Props) {
             )}
           </div>
         </div>
-      </SeccionPliegue>
+      )}
 
-      {/* Bloque 3: Monitor de Tablas Publicadas + botón verde IMPRIMIR TABLAS */}
-      <SeccionPliegue
-        titulo="Monitor de Tablas Publicadas"
-        icono="🖥️"
-        contador={openCount}
-        abierto={secciones.monitor}
-        onToggle={() => setSecciones((s) => ({ ...s, monitor: !s.monitor }))}
-      >
-        <div className="p-4">
-            <MonitorHipodromos
-              grupos={hipodromosDia}
-              filtro={filtroHipodromo}
-              onFiltro={setFiltroHipodromo}
-              fecha={fechaPrograma}
-              onFecha={setFechaPrograma}
-              permitirTodos
-              ejeFecha={ejeFecha}
-              vacio={
-                fechaPrograma
-                  ? `Sin hipódromos publicados para la fecha de ${ejeFecha === "venta" ? "venta" : "carrera"} ${fechaPrograma}.`
-                  : "Sin hipódromos publicados."
-              }
-              className="mb-3"
-              acciones={
-                <Guard permiso="tablas:btn_imprimir">
-                  <button
-                    type="button"
-                    onClick={() => setImpresion(true)}
-                    className="rounded-lg bg-emerald-600 px-4 py-2 text-[11px] font-black uppercase tracking-wide text-white shadow-md transition-colors hover:bg-emerald-700"
-                    title="Imprimir / exportar tablas publicadas (matriz 15 por hoja o reporte por jugador)"
-                  >
-                    🖨️ Imprimir Tablas
-                  </button>
-                </Guard>
-              }
-            />
-          <MonitorTablas
-            tablas={tablas}
-            onVender={venderDirecto}
-            onLiquidar={liquidar}
-            onEditar={editar}
-            onRetirar={retirar}
-            onEliminar={eliminar}
-            hipodromoFiltro={filtroHipodromo}
-            onHipodromoFiltro={setFiltroHipodromo}
-            fechaDia={fechaPrograma}
-            onFechaDia={setFechaPrograma}
-            ejeFecha={ejeFecha}
-            onEjeFecha={setEjeFecha}
+      {/* PESTAÑA 3: PARÁMETROS PRÓXIMA CARRERA */}
+      {tabActiva === "parametros" && (
+        <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
+          <ParametrosCarrera
+            onAgregar={(d) => {
+              setDrafts((ds) => [...ds, d]);
+              setTabActiva("ensamblaje");
+              toast("Carrera agregada al ensamblaje", "success");
+            }}
           />
         </div>
-      </SeccionPliegue>
+      )}
 
       <ConfigImpresionModal abierto={impresion} onCerrar={() => setImpresion(false)} tablasRespaldo={tablas} />
 

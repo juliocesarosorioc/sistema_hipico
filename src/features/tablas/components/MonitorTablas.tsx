@@ -848,216 +848,221 @@ export function MonitorTablas({
       {aviso && <p className="rounded-lg bg-success-500/10 px-3 py-2 text-xs font-semibold text-success-700 no-print">{aviso}</p>}
 
       {/* BARRA DE FILTROS, BUSCADOR Y HERRAMIENTAS */}
-      <div className="no-print space-y-2.5 rounded-xl border border-slate-200 bg-slate-50/90 p-3 shadow-xs">
-        {/* FILA SUPERIOR: CONTEO, ESTADO, DENSIDAD Y BUSCADOR */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-100/80 px-2.5 py-1 text-xs font-black text-indigo-900 border border-indigo-200/60 shadow-xs">
-              📊 {filtradas.length} {filtradas.length === 1 ? "tabla" : "tablas"}
-            </span>
+      <div className="no-print space-y-2 rounded-xl border border-slate-200 bg-slate-50/90 p-2.5 shadow-xs">
+        {/* FILTROS Y ACCIONES EN UNA SOLA LÍNEA UNIFICADA */}
+        <div className="flex flex-wrap items-center gap-2">
+        {/* Conteo de Tablas */}
+        <span className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-indigo-200/60 bg-indigo-100/80 px-2.5 text-xs font-black text-indigo-900 shadow-2xs">
+          📊 {filtradas.length} {filtradas.length === 1 ? "tabla" : "tablas"}
+        </span>
 
-            {/* Selector de Estado: Abiertas vs Todas */}
-            <div className="inline-flex items-center rounded-lg border border-slate-300 bg-white p-0.5 shadow-xs">
-              <button
-                type="button"
-                onClick={() => setFiltroEstado("abiertas")}
-                className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-black uppercase tracking-wide transition ${
-                  filtroEstado === "abiertas"
-                    ? "bg-emerald-600 text-white shadow-xs"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-                title="Mostrar únicamente tablas abiertas para venta"
-              >
-                🟢 Abiertas
-              </button>
-              <button
-                type="button"
-                onClick={() => setFiltroEstado("todas")}
-                className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-black uppercase tracking-wide transition ${
-                  filtroEstado === "todas"
-                    ? "bg-slate-800 text-white shadow-xs"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-                title="Mostrar todas las tablas, incluidas cerradas y liquidadas"
-              >
-                🏁 Todas
-              </button>
-            </div>
-
-            {/* Selector de Densidad: Cómoda vs Compacta */}
-            <div className="inline-flex items-center rounded-lg border border-slate-300 bg-white p-0.5 shadow-xs">
-              <button
-                type="button"
-                onClick={() => alternarDensidad("comoda")}
-                className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-black uppercase tracking-wide transition ${
-                  densidadVista === "comoda"
-                    ? "bg-indigo-600 text-white shadow-xs"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-                title="Modo Cómodo: tarjetas amplias, texto legible para pantallas móviles y táctiles"
-              >
-                📱 Cómoda
-              </button>
-              <button
-                type="button"
-                onClick={() => alternarDensidad("compacta")}
-                className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-black uppercase tracking-wide transition ${
-                  densidadVista === "compacta"
-                    ? "bg-indigo-600 text-white shadow-xs"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-                title="Modo Compacto: cuadrícula densa para ver muchas tablas a la vez en taquillas y pantallas grandes"
-              >
-                🖥️ Compacta
-              </button>
-            </div>
-          </div>
-
-          {/* BUSCADOR RÁPIDO */}
-          <div className="relative flex-1 min-w-[220px] max-w-sm">
-            <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 text-xs">
-              🔍
-            </span>
-            <input
-              type="text"
-              value={busquedaTexto}
-              onChange={(e) => setBusquedaTexto(e.target.value)}
-              placeholder="Buscar caballo, Nº o carrera..."
-              className="w-full rounded-lg border border-slate-300 bg-white py-1 pl-8 pr-7 text-xs font-bold text-slate-800 placeholder-slate-400 shadow-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            {busquedaTexto ? (
-              <button
-                type="button"
-                onClick={() => setBusquedaTexto("")}
-                className="absolute inset-y-0 right-0 flex items-center pr-2 text-xs font-bold text-slate-400 hover:text-slate-700"
-                title="Limpiar búsqueda"
-              >
-                ✕
-              </button>
-            ) : null}
-          </div>
+        {/* Selector de Estado: Abiertas vs Todas */}
+        <div className="inline-flex h-9 shrink-0 items-center rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setFiltroEstado("abiertas")}
+            className={`inline-flex h-8 items-center rounded-md px-2.5 text-[11px] font-black uppercase tracking-wide transition ${
+              filtroEstado === "abiertas"
+                ? "bg-emerald-600 text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+            title="Mostrar únicamente tablas abiertas para venta"
+          >
+            🟢 Abiertas
+          </button>
+          <button
+            type="button"
+            onClick={() => setFiltroEstado("todas")}
+            className={`inline-flex h-8 items-center rounded-md px-2.5 text-[11px] font-black uppercase tracking-wide transition ${
+              filtroEstado === "todas"
+                ? "bg-slate-800 text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+            title="Mostrar todas las tablas, incluidas cerradas y liquidadas"
+          >
+            🏁 Todas
+          </button>
         </div>
 
-        {/* FILA INTERMEDIA: FILTROS CLÁSICOS Y BOTONES DE ACCIÓN */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-slate-200/80 pt-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Eje del día */}
-            <div className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-1.5 py-1 shadow-xs">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🧭 Eje</span>
-              <button
-                type="button"
-                onClick={() => setEjeFecha("carrera")}
-                title="Agrupar y filtrar por la fecha en que CORRE la carrera"
-                className={`cursor-pointer rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide transition ${
-                  ejeFecha === "carrera" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                🏇 Carrera
-              </button>
-              <button
-                type="button"
-                onClick={() => setEjeFecha("venta")}
-                title="Agrupar y filtrar por la fecha en que se VENDIÓ/publicó la tabla"
-                className={`cursor-pointer rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide transition ${
-                  ejeFecha === "venta" ? "bg-emerald-600 text-white" : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                🧾 Venta
-              </button>
-            </div>
-
-            {/* Filtro Fecha */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-xs">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                {ejeFecha === "venta" ? "🧾 Venta" : "📅 Carrera"}
-              </span>
-              <DateInput
-                value={fechaFiltro}
-                onFechaChange={(val) => setFechaFiltro(val)}
-                placeholder="TODAS"
-                className="border-0 bg-transparent py-0 px-1 text-xs font-bold text-slate-900 shadow-none focus:ring-0 w-28"
-              />
-              {fechaFiltro ? (
-                <button
-                  type="button"
-                  onClick={() => setFechaFiltro("")}
-                  title="Ver todas las fechas"
-                  className="text-[10px] font-bold text-slate-400 hover:text-slate-700 px-1"
-                >
-                  ✕
-                </button>
-              ) : null}
-            </div>
-
-            {/* Filtro Carrera */}
-            <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-xs">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🏇 Carrera</span>
-              <select
-                value={carreraFiltro}
-                onChange={(e) => setCarreraFiltro(e.target.value)}
-                disabled={carrerasDisponibles.length === 0}
-                className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none"
-              >
-                <option value="">TODAS</option>
-                {carrerasDisponibles.map(c => <option key={c} value={c}>C{c}</option>)}
-              </select>
-            </label>
-
-            {(fechaFiltro !== "" || hipodromoFiltro !== "" || carreraFiltro !== "" || busquedaTexto !== "") && (
-              <button
-                type="button"
-                onClick={() => { setFechaFiltro(""); setHipodromoFiltro(""); setCarreraFiltro(""); setBusquedaTexto(""); }}
-                className="cursor-pointer text-[10px] font-black uppercase text-red-600 hover:text-red-700 border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-lg transition"
-              >
-                ✕ Limpiar filtros
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setVistaImpresion((v) => !v)}
-              className="cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-indigo-700 shadow-xs transition-colors hover:bg-indigo-50"
-            >
-              🖨️ {vistaImpresion ? "Volver a Edición" : "Vista de impresión"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void exportarExcel()}
-              disabled={exportandoExcel || filtradas.length === 0}
-              title="Descargar como Excel (.xls) lo que muestran los filtros actuales"
-              className="cursor-pointer rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-emerald-700 shadow-xs transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {exportandoExcel ? "⏳ Generando…" : "📊 Excel"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setReporteAbierto(true)}
-              title="Reporte de tablas fijas vendidas (riesgo, ganadores, comisiones, pagos y retiros)"
-              aria-label="Reporte de tablas fijas vendidas"
-              className="cursor-pointer inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-xs transition hover:brightness-110"
-            >
-              📈 Reporte
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                const primera = filtradas[0] ?? tablas[0] ?? null;
-                if (primera) setTablaControlRiesgo(primera);
-              }}
-              disabled={filtradas.length === 0 && tablas.length === 0}
-              title="Herramienta de Control de Riesgo, Cupos y Pérdida Máxima por Carrera y Ejemplar"
-              aria-label="Control de Riesgo y Cupos"
-              className="cursor-pointer inline-flex items-center gap-1 rounded-lg border border-purple-300 bg-gradient-to-r from-purple-700 to-indigo-700 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white shadow-xs transition hover:brightness-110 disabled:opacity-50"
-            >
-              🛡️ Control de Riesgo y Cupos
-            </button>
-          </div>
+        {/* Selector de Densidad: Cómoda vs Compacta */}
+        <div className="inline-flex h-9 shrink-0 items-center rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => alternarDensidad("comoda")}
+            className={`inline-flex h-8 items-center rounded-md px-2.5 text-[11px] font-black uppercase tracking-wide transition ${
+              densidadVista === "comoda"
+                ? "bg-indigo-600 text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+            title="Modo Cómodo: tarjetas amplias, texto legible para pantallas móviles y táctiles"
+          >
+            📱 Cómoda
+          </button>
+          <button
+            type="button"
+            onClick={() => alternarDensidad("compacta")}
+            className={`inline-flex h-8 items-center rounded-md px-2.5 text-[11px] font-black uppercase tracking-wide transition ${
+              densidadVista === "compacta"
+                ? "bg-indigo-600 text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+            title="Modo Compacto: cuadrícula densa para ver muchas tablas a la vez en taquillas y pantallas grandes"
+          >
+            🖥️ Compacta
+          </button>
         </div>
+
+        {/* Buscador Rápido */}
+        <div className="relative h-9 min-w-[180px] max-w-xs flex-1">
+          <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-xs text-slate-400">
+            🔍
+          </span>
+          <input
+            type="text"
+            value={busquedaTexto}
+            onChange={(e) => setBusquedaTexto(e.target.value)}
+            placeholder="Buscar caballo, Nº o carrera..."
+            className="h-9 w-full rounded-lg border border-slate-300 bg-white py-1 pl-8 pr-7 text-xs font-bold text-slate-800 placeholder-slate-400 shadow-2xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+          {busquedaTexto ? (
+            <button
+              type="button"
+              onClick={() => setBusquedaTexto("")}
+              className="absolute inset-y-0 right-0 flex items-center pr-2 text-xs font-bold text-slate-400 hover:text-slate-700"
+              title="Limpiar búsqueda"
+            >
+              ✕
+            </button>
+          ) : null}
+        </div>
+
+        {/* Eje del día */}
+        <div className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs">
+          <span className="px-1 text-[10px] font-black uppercase tracking-wider text-slate-500">🧭 Eje</span>
+          <button
+            type="button"
+            onClick={() => setEjeFecha("carrera")}
+            title="Agrupar y filtrar por la fecha en que CORRE la carrera"
+            className={`inline-flex h-8 items-center rounded px-2 text-[10px] font-black uppercase tracking-wide transition ${
+              ejeFecha === "carrera" ? "bg-indigo-600 text-white shadow-2xs" : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            🏇 Carrera
+          </button>
+          <button
+            type="button"
+            onClick={() => setEjeFecha("venta")}
+            title="Agrupar y filtrar por la fecha en que se VENDIÓ/publicó la tabla"
+            className={`inline-flex h-8 items-center rounded px-2 text-[10px] font-black uppercase tracking-wide transition ${
+              ejeFecha === "venta" ? "bg-emerald-600 text-white shadow-2xs" : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            🧾 Venta
+          </button>
+        </div>
+
+        {/* Filtro Fecha */}
+        <div className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 shadow-2xs">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+            {ejeFecha === "venta" ? "🧾 Venta" : "📅 Carrera"}
+          </span>
+          <DateInput
+            value={fechaFiltro}
+            onFechaChange={(val) => setFechaFiltro(val)}
+            placeholder="TODAS"
+            className="h-8 border-0 bg-transparent py-0 px-1 text-xs font-bold text-slate-900 shadow-none focus:ring-0 w-28"
+          />
+          {fechaFiltro ? (
+            <button
+              type="button"
+              onClick={() => setFechaFiltro("")}
+              title="Ver todas las fechas"
+              className="px-1 text-[10px] font-bold text-slate-400 hover:text-slate-700"
+            >
+              ✕
+            </button>
+          ) : null}
+        </div>
+
+        {/* Filtro Carrera */}
+        <label className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 shadow-2xs">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">🏇 Carrera</span>
+          <select
+            value={carreraFiltro}
+            onChange={(e) => setCarreraFiltro(e.target.value)}
+            disabled={carrerasDisponibles.length === 0}
+            className="h-8 bg-transparent text-xs font-bold text-slate-900 focus:outline-none"
+          >
+            <option value="">TODAS</option>
+            {carrerasDisponibles.map((c) => (
+              <option key={c} value={c}>
+                C{c}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* Limpiar filtros */}
+        {(fechaFiltro !== "" || hipodromoFiltro !== "" || carreraFiltro !== "" || busquedaTexto !== "") && (
+          <button
+            type="button"
+            onClick={() => {
+              setFechaFiltro("");
+              setHipodromoFiltro("");
+              setCarreraFiltro("");
+              setBusquedaTexto("");
+            }}
+            className="inline-flex h-9 shrink-0 items-center rounded-lg border border-red-200 bg-red-50 px-2.5 text-[10px] font-black uppercase text-red-600 transition hover:bg-red-100 hover:text-red-700 shadow-2xs"
+          >
+            ✕ Limpiar filtros
+          </button>
+        )}
+
+        {/* Botones de acción al final */}
+        <div className="flex flex-wrap items-center gap-1.5 ml-auto">
+          <button
+            type="button"
+            onClick={() => setVistaImpresion((v) => !v)}
+            className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-[10px] font-black uppercase tracking-wide text-indigo-700 shadow-2xs transition-colors hover:bg-indigo-50"
+          >
+            🖨️ {vistaImpresion ? "Volver a Edición" : "Vista de impresión"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void exportarExcel()}
+            disabled={exportandoExcel || filtradas.length === 0}
+            title="Descargar como Excel (.xls) lo que muestran los filtros actuales"
+            className="inline-flex h-9 items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 text-[10px] font-black uppercase tracking-wide text-emerald-700 shadow-2xs transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {exportandoExcel ? "⏳ Generando…" : "📊 Excel"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setReporteAbierto(true)}
+            title="Reporte de tablas fijas vendidas (riesgo, ganadores, comisiones, pagos y retiros)"
+            aria-label="Reporte de tablas fijas vendidas"
+            className="inline-flex h-9 items-center gap-1 rounded-lg border border-indigo-300 bg-gradient-to-r from-indigo-600 to-violet-600 px-2.5 text-[10px] font-black uppercase tracking-wide text-white shadow-2xs transition hover:brightness-110"
+          >
+            📈 Reporte
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const primera = filtradas[0] ?? tablas[0] ?? null;
+              if (primera) setTablaControlRiesgo(primera);
+            }}
+            disabled={filtradas.length === 0 && tablas.length === 0}
+            title="Herramienta de Control de Riesgo, Cupos y Pérdida Máxima por Carrera y Ejemplar"
+            aria-label="Control de Riesgo y Cupos"
+            className="inline-flex h-9 items-center gap-1 rounded-lg border border-purple-300 bg-gradient-to-r from-purple-700 to-indigo-700 px-2.5 text-[10px] font-black uppercase tracking-wide text-white shadow-2xs transition hover:brightness-110 disabled:opacity-50"
+          >
+            🛡️ Control de Riesgo y Cupos
+          </button>
+        </div>
+      </div>
 
         {/* PÍLDORAS INTERACTIVAS DE HIPÓDROMOS */}
         {hipodromosDisponibles.length > 0 && (
