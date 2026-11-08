@@ -712,7 +712,7 @@ export function relacionResultados(
       // Acertó el que JUEGA → cobra la ganancia neta; el "da" entrega SU riesgo,
       // que es el BRUTO de la jugada: el monto a la par, y 8/10·monto en "10a8".
       destino.push(`Juega ${j.clienteJuega} $ +${fmtMonto(b.gananciaNeta)}`);
-      acumular(j.clienteJuega, round2(b.gananciaNeta));
+      acumular(j.clienteJuega, round2(b.gananciaBruta));
       if (beneficiario) {
         const perdidaDa = round2(b.gananciaBruta);
         destino.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
@@ -728,7 +728,7 @@ export function relacionResultados(
         const premioNini = perdida * mult;
         const tasa = tasaDeJugada(j.comisionPct);
         const com2 = round2((premioNini - perdida) * (tasa / 100));
-        const netoC2 = round2(premioNini - com2 - perdida);
+        const netoC2 = round2(premioNini - perdida);
         destino.push(`Da ${beneficiario} $ +${fmtMonto(netoC2)}`);
         acumular(beneficiario, netoC2);
       }
@@ -740,7 +740,7 @@ export function relacionResultados(
       acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
         const tasa = tasaDeJugada(j.comisionPct);
-        const netoDa = round2(perdida - perdida * (tasa / 100));
+        const netoDa = round2(perdida);
         destino.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
         acumular(beneficiario, netoDa);
       }
@@ -761,10 +761,21 @@ export function relacionResultados(
     const nombreVis = nombreVisiblePorClave.get(clave) ?? clave;
     const norm = normalizarNombreCliente(nombreVis);
     const prev = balancesConsolidados.get(norm);
+    // Netting bruto: la comisión del 5% se aplica UNA sola vez sobre el balance
+    // neto final del jugador (ganancias brutas - pérdidas brutas), nunca por jugada.
     if (!prev) {
       balancesConsolidados.set(norm, { nombre: nombreVis, neto: v });
     } else {
       prev.neto = round2(prev.neto + v);
+    }
+  }
+
+  // Aplicar el 5% de comisión sobre el balance neto positivo de cada jugador.
+  for (const b of balancesConsolidados.values()) {
+    if (b.neto > 0.0001) {
+      b.neto = round2(b.neto * (1 - 5 / 100));
+    } else {
+      b.neto = round2(b.neto);
     }
   }
 
