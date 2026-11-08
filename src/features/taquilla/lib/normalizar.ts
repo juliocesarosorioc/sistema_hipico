@@ -242,6 +242,8 @@ export function expandirLineaHablada(linea: string): LineaExpandida {
     }
   }
   let texto = nuevos.join(" ");
+  // Normalizar "&" como conector "y" para jugadas combinadas (ej. "3 & 3" → "3 y 3").
+  texto = texto.replace(/\s*&\s*/g, " y ");
   let huboNomenclatura = false;
   const marca = () => {
     huboNomenclatura = true;

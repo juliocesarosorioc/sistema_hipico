@@ -388,7 +388,7 @@ export interface PropuestaParseada {
 }
 
 export const PATRON_PUESTOS_CHAT =
-  /^(1p|2p|3p|4p|5p|6p|2n|3n|4n|5n|1y2n|2y3n|3y4n|4y5n|2ny2y2n|pp|10\/\d+(?:\.\d+)?|10a\d+(?:\.\d+)?|ganador|place)$/i;
+  /^(1p|2p|3p|4p|5p|6p|2n|3n|4n|5n|1y2n|2y3n|3y4n|4y5n|2ny2y2n|2y2|3y3|4y4|5y5|2\/2|3\/3|4\/4|5\/5|pp|10\/\d+(?:\.\d+)?|10a\d+(?:\.\d+)?|ganador|place)$/i;
 
 export function parsearPropuestaChat(texto: string): PropuestaParseada | null {
   const t = texto.trim();

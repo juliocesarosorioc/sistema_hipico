@@ -231,12 +231,17 @@ function interno(texto: string): Nomenclatura | null {
   /* --- COMBINADA: "1y2n", "1 y 2n", "1/2n", "1p y 2n", "2/2n", "2n/2p", "2n y 2p", "1/2", "1p y 2p" (50/50 por tramo) ---
      Se evalúa ANTES que COMPUESTA para que sinónimos con espacio como "1P Y 2N", "2N Y 2P", "1P Y 2P"
      se normalicen exactamente como COMBINADA de dos condiciones simples. */
-  const comb = /^([1-8])\s*([pn]?)\s*[y/]\s*([1-8])\s*([pn]?)$/.exec(t);
+  const comb = /^([1-8])\s*([pn]?)\s*[y/&]\s*([1-8])\s*([pn]?)$/.exec(t);
   if (comb) {
     const p1 = parseInt(comb[1], 10);
     const p2 = parseInt(comb[3], 10);
     const raw1 = (comb[2] || "").toLowerCase();
     const raw2 = (comb[4] || "").toLowerCase();
+    // Canonicalización: una combinada "pelada" (sin letras, ej. "2y2", "2/2",
+    // "3&3") se lee como su variante NINI ("2/2n", "3/3n"): el segundo
+    // tramo siempre es NINI cuando se omite la letra. Esto evita que la falta
+    // de la "n" al final en la carga rápida genere empates/errores.
+    let fuenteCanon = t;
 
     let s1: boolean;
     let s2: boolean;
@@ -254,6 +259,7 @@ function interno(texto: string): Nomenclatura | null {
       } else if (raw1 === "" && raw2 === "") {
         s1 = false;
         s2 = true;
+        fuenteCanon = `${p1}y${p2}n`;
       } else {
         // Rechaza redundantes como 2p/2p o 2n/2n
         return null;
@@ -300,7 +306,7 @@ function interno(texto: string): Nomenclatura | null {
         },
       ],
       tramos: [p1, p2],
-      fuente: t,
+      fuente: fuenteCanon,
     };
   }
 
