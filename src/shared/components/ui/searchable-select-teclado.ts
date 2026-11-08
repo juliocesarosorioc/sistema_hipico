@@ -73,12 +73,27 @@ export function aplicarTeclaCombo(estado: EstadoCombo): EstadoCombo {
 
   if (estado.key === "Enter") {
     prevent();
+    const textoTrim = estado.texto.trim();
+
+    // 1. Coincidencia exacta con alguna opción (sin importar mayúsculas)
+    const exacto = estado.filtradas.find(
+      (o) => o.label.trim().toUpperCase() === textoTrim.toUpperCase()
+    );
+    if (exacto) {
+      return { ...estado, elegido: exacto.value, escapado: false };
+    }
+
+    // 2. Si allowCustom y el usuario escribió un nombre libre (sin haber bajado con flechas a otra opción)
+    if (estado.allowCustom && textoTrim && estado.activo === 0) {
+      return { ...estado, elegido: textoTrim.toUpperCase(), escapado: false };
+    }
+
     const op = estado.filtradas[estado.activo];
     if (op) return { ...estado, elegido: op.value, escapado: false };
     // Sin coincidencia: si el campo admite texto libre, lo que se escribió ES el
     // valor. Sin `allowCustom` no se elige nada y Enter no inventa un cliente.
-    if (estado.allowCustom && estado.texto.trim()) {
-      return { ...estado, elegido: estado.texto.trim().toUpperCase(), escapado: false };
+    if (estado.allowCustom && textoTrim) {
+      return { ...estado, elegido: textoTrim.toUpperCase(), escapado: false };
     }
     return { ...estado, elegido: null, escapado: false };
   }

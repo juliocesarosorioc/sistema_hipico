@@ -763,12 +763,6 @@ export function clasificarLineaRapida(linea: string): ClasificacionLinea | null 
   if (!caballo && RE_PAREO_A.test(jugada.split(/\s+/)[0] ?? "")) {
     caballo = jugada.split(/\s+/)[0];
   }
-  if (!caballo || !/\d/.test(caballo)) {
-    return {
-      ok: false,
-      motivo: `Falta el ejemplar (caballo) en "${t}": no puede cargarse jugada sin ejemplar (condición sine qua non).`,
-    };
-  }
 
   // 6) SOBRANTES — lo que no entró en JUGADA/CABALLO/MONTO. NO se asignan
   //    clientes acá: eso lo decide el caller (legacy o normalizador difuso).
@@ -810,6 +804,12 @@ export function parsearLineaRapida(linea: string): LineaRapida | null {
   const c = clasificarLineaRapida(linea);
   if (!c) return null;
   if (!c.ok) return c;
+  if (!c.caballo || !/\d/.test(c.caballo)) {
+    return {
+      ok: false,
+      motivo: `Falta el ejemplar (caballo) en "${linea}": no puede cargarse jugada sin ejemplar (condición sine qua non).`,
+    };
+  }
   const cliente1 = c.restantes[0] ?? "";
   const cliente2 = c.restantes.slice(1).join(" ");
   return { ok: true, jugada: c.jugada, caballo: c.caballo, monto: c.monto, cliente1, cliente2 };

@@ -465,7 +465,7 @@ export function resolverClientes(restantes: string[], clientes: ClienteRef[]): R
 
   const tokens = restantes.filter((t) => {
     const n = normalizarNombre(t);
-    return n && !CONECTORES.has(n) && n !== "contra" && n !== "da";
+    return n && !CONECTORES.has(n) && n !== "contra" && n !== "da" && n !== "vs";
   });
   if (tokens.length === 0) return vacio;
 
@@ -483,80 +483,112 @@ export function resolverClientes(restantes: string[], clientes: ClienteRef[]): R
   }
 
   const n = tokens.length;
-  type Particion = {
-    score: number;
-    seg1: string[];
-    seg2: string[];
-    m1: MatchCliente;
-    m2: MatchCliente | null;
-    sobras: number;
-  };
-  let mejor: Particion | null = null;
-
-  // Cortes contiguos: cliente1 = [0..c1), cliente2 = [c1..c2), sobras = [c2..n).
-  for (let corte1 = 1; corte1 <= n && corte1 <= 4; corte1++) {
-    const seg1 = tokens.slice(0, corte1);
-    const m1 = mejorMatchCliente(seg1.join(" "), catalogo);
-    if (!m1) continue;
-    for (let corte2 = corte1; corte2 <= n; corte2++) {
-      const seg2 = tokens.slice(corte1, corte2);
-      const m2 = seg2.length ? mejorMatchCliente(seg2.join(" "), catalogo) : null;
-      if (seg2.length && !m2) continue;
-      const sobras = n - corte2;
-      const score = m1.score + (m2 ? m2.score * 1.02 : 0) - sobras * 0.45;
-      if (!mejor || score > mejor.score) {
-        mejor = { score, seg1, seg2, m1, m2, sobras };
-      }
-    }
-  }
-
-  if (!mejor) {
-    // Ninguna partición alcanzó el umbral: se deja el material entero en CL1
-    // para que la fila quede marcada "revisar", nunca se parte al azar.
+  if (n === 1) {
+    const m = mejorMatchCliente(tokens[0], catalogo);
     return {
-      cliente1: tokens.join(" "),
-      cliente1Score: 0,
-      cliente1Norm: null,
+      cliente1: m?.nombre ?? tokens[0],
+      cliente1Score: m?.score ?? 0,
+      cliente1Norm: m?.norm ?? null,
       cliente2: "",
       cliente2Score: 0,
       cliente2Norm: null,
-      correcciones: [],
+      correcciones: m && normalizarNombre(tokens[0]) !== m.norm ? [`«${tokens[0]}» → ${m.nombre}`] : [],
     };
   }
 
-  const texto1 = mejor.seg1.join(" ");
-  const correcciones: string[] = [];
-  if (normalizarNombre(texto1) !== mejor.m1.norm) {
-    correcciones.push(`«${texto1}» → ${mejor.m1.nombre}`);
-  }
+  type Candidato = {
+    score: number;
+    nombre1: string;
+    nombre2: string;
+    m1: MatchCliente | null;
+    m2: MatchCliente | null;
+    correcciones: string[];
+  };
 
-  // Si mejor.m2 existió, usarlo; si no existió pero quedaron tokens después de seg1:
-  // los tokens restantes son el cliente 2 (dador/banca/invitado)
-  const tokensSobrantes = tokens.slice(mejor.seg1.length);
-  let nombreC2 = "";
-  let scoreC2 = 0;
-  let normC2: string | null = null;
+  let mejor: Candidato | null = null;
 
-  if (mejor.m2) {
-    nombreC2 = mejor.m2.nombre;
-    scoreC2 = mejor.m2.score;
-    normC2 = mejor.m2.norm;
-    const texto2 = mejor.seg2.join(" ");
-    if (normalizarNombre(texto2) !== mejor.m2.norm) {
-      correcciones.push(`«${texto2}» → ${mejor.m2.nombre}`);
+  // 1. ¿El conjunto completo de tokens coincide con un único cliente del catálogo (ej. "Perrito Molinas")?
+  const textoCompleto = tokens.join(" ");
+  const matchCompleto = mejorMatchCliente(textoCompleto, catalogo);
+  if (matchCompleto && matchCompleto.score >= 0.85) {
+    const correcciones: string[] = [];
+    if (normalizarNombre(textoCompleto) !== matchCompleto.norm) {
+      correcciones.push(`«${textoCompleto}» → ${matchCompleto.nombre}`);
     }
-  } else if (tokensSobrantes.length > 0) {
-    nombreC2 = tokensSobrantes.join(" ");
+    mejor = {
+      score: 90 + matchCompleto.score,
+      nombre1: matchCompleto.nombre,
+      nombre2: "",
+      m1: matchCompleto,
+      m2: null,
+      correcciones,
+    };
   }
 
+  // 2. Evaluar posibles particiones en cliente1 y cliente2 (cortes 1..n-1)
+  for (let corte = 1; corte < n && corte <= 4; corte++) {
+    const seg1 = tokens.slice(0, corte);
+    const seg2 = tokens.slice(corte);
+    if (seg1.length === 0 || seg2.length === 0) continue;
+
+    const texto1 = seg1.join(" ");
+    const texto2 = seg2.join(" ");
+
+    const m1 = mejorMatchCliente(texto1, catalogo);
+    const m2 = mejorMatchCliente(texto2, catalogo);
+
+    // Solo consideramos partición válida si al menos uno de los dos coincide con el catálogo
+    if (!m1 && !m2) continue;
+
+    let score = 0;
+    if (m1 && m2) {
+      // Ambos clientes están en el catálogo: prioridad máxima (supera a matchCompleto)
+      score = 100 + m1.score + m2.score;
+    } else if (m1) {
+      // Cliente 1 en catálogo, Cliente 2 es libre/banca/dador
+      score = 50 + m1.score;
+    } else if (m2) {
+      // Cliente 2 en catálogo, Cliente 1 es libre
+      score = 40 + m2.score;
+    }
+
+    if (!mejor || score > mejor.score) {
+      const correcciones: string[] = [];
+      if (m1 && normalizarNombre(texto1) !== m1.norm) correcciones.push(`«${texto1}» → ${m1.nombre}`);
+      if (m2 && normalizarNombre(texto2) !== m2.norm) correcciones.push(`«${texto2}» → ${m2.nombre}`);
+      mejor = {
+        score,
+        nombre1: m1?.nombre ?? texto1,
+        nombre2: m2?.nombre ?? texto2,
+        m1,
+        m2,
+        correcciones,
+      };
+    }
+  }
+
+  if (mejor) {
+    return {
+      cliente1: mejor.nombre1,
+      cliente1Score: mejor.m1?.score ?? 0,
+      cliente1Norm: mejor.m1?.norm ?? null,
+      cliente2: mejor.nombre2,
+      cliente2Score: mejor.m2?.score ?? 0,
+      cliente2Norm: mejor.m2?.norm ?? null,
+      correcciones: mejor.correcciones,
+    };
+  }
+
+  // Si nada en el catálogo coincidió (ej. "xyzzy noexiste"):
+  // Se deja íntegro en cliente1 sin inventar partición al azar, para revisión del operador.
   return {
-    cliente1: mejor.m1.nombre,
-    cliente1Score: mejor.m1.score,
-    cliente1Norm: mejor.m1.norm,
-    cliente2: nombreC2,
-    cliente2Score: scoreC2,
-    cliente2Norm: normC2,
-    correcciones,
+    cliente1: tokens.join(" "),
+    cliente1Score: 0,
+    cliente1Norm: null,
+    cliente2: "",
+    cliente2Score: 0,
+    cliente2Norm: null,
+    correcciones: [],
   };
 }
 
@@ -677,6 +709,12 @@ export function normalizarLineaRapida(
   // Primero el caballo por nombre (consume los tokens del ejemplar del
   // sobrante), después los clientes contra el catálogo.
   const caballoResuelto = resolverCaballoPorNombre(clas.caballo, clas.restantes, contexto.caballos ?? []);
+  if (!caballoResuelto.caballo) {
+    return {
+      ok: false,
+      motivo: `Falta el ejemplar (caballo) en "${t}": no puede cargarse jugada sin ejemplar (condición sine qua non).`,
+    };
+  }
   const clientes = resolverClientes(caballoResuelto.restantes, contexto.clientes);
 
   const correcciones: string[] = [

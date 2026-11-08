@@ -107,9 +107,10 @@ export function SearchableSelect({
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
-        // Al hacer clic afuera se vuelve a la etiqueta elegida: si el operador
-        // estaba escribiendo y se le fue el click, no debe quedar a medias un
-        // texto a medio filtrar como si fuera la selección.
+        if (allowCustom && texto.trim()) {
+          const exacto = options.find((o) => o.label.trim().toUpperCase() === texto.trim().toUpperCase());
+          onChange(exacto ? exacto.value : texto.trim().toUpperCase());
+        }
         setAbierto(false);
         setTexto(etiquetaSeleccionada);
       }
@@ -176,6 +177,15 @@ export function SearchableSelect({
           setTexto(etiquetaSeleccionada);
           setAbierto(true);
         }}
+        onBlur={() => {
+          if (allowCustom && texto.trim()) {
+            const exacto = options.find((o) => o.label.trim().toUpperCase() === texto.trim().toUpperCase());
+            onChange(exacto ? exacto.value : texto.trim().toUpperCase());
+          }
+          setTimeout(() => {
+            setAbierto(false);
+          }, 150);
+        }}
         onKeyDown={onKeyDownInput}
         placeholder={placeholder}
         role="combobox"
@@ -224,6 +234,25 @@ export function SearchableSelect({
               </button>
             </li>
           ))}
+          {allowCustom && texto.trim() && !options.some((o) => o.label.trim().toUpperCase() === texto.trim().toUpperCase()) && (
+            <li key="__custom_choice__">
+              <button
+                type="button"
+                role="option"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  elegir(texto.trim().toUpperCase());
+                }}
+                className={`flex w-full items-center gap-2 border-t px-3 py-2 text-left text-xs font-bold transition-colors ${
+                  temaOscuro
+                    ? "border-slate-800 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
+                    : "border-slate-100 bg-primary-50/70 text-primary-700 hover:bg-primary-100"
+                }`}
+              >
+                <span>➕ Usar «{texto.trim().toUpperCase()}» (dador/banca)</span>
+              </button>
+            </li>
+          )}
           {textoSinMatch && !allowCustom && (
             <li className={`px-3 py-2 text-[10px] italic ${temaOscuro ? "text-slate-500" : "text-slate-400"}`}>
               Sin coincidencias

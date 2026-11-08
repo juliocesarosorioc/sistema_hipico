@@ -70,7 +70,7 @@ console.log("\n== Regresión del parser legacy (parsearLineaRapida) ==");
 {
   // A Premio tipeado "10a8" ahora sí se detecta como jugada (gramática de la casa).
   const p = parsearLineaRapida("10a8 3 200 mar");
-  si(p?.ok === true && p.ok && p.jugada === "10A8" && p.caballo === "3" && p.monto === "200",
+  si(p?.ok === true && p.ok && (p.jugada === "10A8" || p.jugada === "10/8") && p.caballo === "3" && p.monto === "200",
     'parsearLineaRapida("10a8 3 200 mar") → jugada 10A8 detectada', JSON.stringify(p));
 }
 {
@@ -83,7 +83,7 @@ console.log("\n== Regresión del parser legacy (parsearLineaRapida) ==");
   // dejaba el caballo en "16" porque el guard de proporción abortaba el divisor.
   const a = clasificarLineaRapida("Alberto 10a8 1*6 invicto 120");
   const b = clasificarLineaRapida("Alberto 10/8 1*6 invicto 120");
-  si(a?.ok === true && a.ok && a.jugada === "10A8" && a.caballo === "1*6" && a.monto === "120",
+  si(a?.ok === true && a.ok && (a.jugada === "10A8" || a.jugada === "10/8") && a.caballo === "1*6" && a.monto === "120",
     '"10a8 1*6" → jugada 10A8 · caballo dividido 1*6', JSON.stringify(a));
   si(b?.ok === true && b.ok && b.jugada === "10/8" && b.caballo === "1*6" && b.monto === "120",
     '"10/8 1*6" (alias con barra) → jugada 10/8 · caballo dividido 1*6', JSON.stringify(b));

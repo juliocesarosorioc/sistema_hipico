@@ -221,28 +221,16 @@ create policy "personal escribe movimientos" on public.transacciones_financieras
 -- ============================================================================
 -- PERMISOS (GRANT)
 -- ============================================================================
--- RLS decide quien lee; el GRANT decide si el rol tiene el derecho siquiera.
--- Los dos hacen falta: una policy correcta sobre una tabla a la que `anon`
--- conserva el GRANT sigue dejando pasar a quien llame por PostgREST sin sesion.
--- Por eso el revoke va explicito y no se da por supuesto que "apagar RLS
--- alcanza".
-revoke all on public.clientes            from anon;
-revoke all on public.tickets_apuestas    from anon;
-revoke all on public.notificaciones      from anon;
-revoke all on public.tickets_jugadas     from anon;
-revoke all on public.solicitudes_tablas  from anon;
-revoke all on public.dupletas            from anon;
-revoke all on public.transacciones_financieras  from anon;
-
--- `authenticated` si los necesita: es el rol del personal. Se concede
--- explicitamente para que el revoke de arriba no lo deje por fuera.
-grant all on public.clientes            to authenticated;
-grant all on public.tickets_apuestas    to authenticated;
-grant all on public.notificaciones      to authenticated;
-grant all on public.tickets_jugadas     to authenticated;
-grant all on public.solicitudes_tablas  to authenticated;
-grant all on public.dupletas            to authenticated;
-grant all on public.transacciones_financieras  to authenticated;
+-- La aplicación SPA opera conectándose con la anon key (rol `anon`).
+-- Se otorgan permisos a `anon` y `authenticated` para que el navegador
+-- pueda consultar y registrar jugadas y clientes del grupo seleccionado.
+grant select, insert, update, delete on public.clientes            to anon, authenticated;
+grant select, insert, update, delete on public.tickets_apuestas    to anon, authenticated;
+grant select, insert, update, delete on public.notificaciones      to anon, authenticated;
+grant select, insert, update, delete on public.tickets_jugadas     to anon, authenticated;
+grant select, insert, update, delete on public.solicitudes_tablas  to anon, authenticated;
+grant select, insert, update, delete on public.dupletas            to anon, authenticated;
+grant select, insert, update, delete on public.transacciones_financieras  to anon, authenticated;
 
 -- El service_role (la Edge Function) no esta sujeto a RLS ni a estos GRANT: es
 -- el dueno de la tabla para efectos de la sesion. Por eso la comparacion de

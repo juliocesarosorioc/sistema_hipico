@@ -456,6 +456,11 @@ export function calcularReparto(o: OpcionesReparto): Reparto {
     let riesgo1 = montoPedido;
     let riesgo2 = montoPedido * (q / p);
 
+    // Cliente 2 actúa como dador puro cuando no juega ejemplares (cab2 vacío).
+    // Como dador (banca/contraparte) que cubre la jugada, su saldo de apuesta no debe
+    // bloquear ni recortar a 0 la jugada del Cliente 1.
+    const c2EsDadorPuro = cab2.length === 0 || sinCliente2;
+
     if (!l1 && d1 < riesgo1 - 0.005) {
       // Cliente 1 no cubre: se escala su parte y la del 2 en la misma razón.
       riesgo1 = Math.max(0, d1);
@@ -463,7 +468,7 @@ export function calcularReparto(o: OpcionesReparto): Reparto {
       avisos.push(
         `${o.cliente1?.nombre ?? "Cliente 1"} tiene ${explicarDisponible(o.cliente1)}: se autoriza ${round2(riesgo1)} en razón ${p}:${q}.`
       );
-    } else if (!l2 && d2 < riesgo2 - 0.005) {
+    } else if (!l2 && !c2EsDadorPuro && d2 < riesgo2 - 0.005) {
       // Cliente 2 no cubre: se baja hasta que su parte quepa en su disponible.
       riesgo2 = Math.max(0, d2);
       riesgo1 = riesgo2 * (p / q);
@@ -483,17 +488,23 @@ export function calcularReparto(o: OpcionesReparto): Reparto {
     };
   }
 
-  /* ── DADOR o PP: ambos arriesgan lo mismo, tope = mínimo disponible ── */  const d1 = disponibleParaJugar(o.cliente1);
+  /* ── DADOR o PP: ambos arriesgan lo mismo, tope = mínimo disponible ── */
+  const d1 = disponibleParaJugar(o.cliente1);
   const d2 = disponibleParaJugar(o.cliente2);
   const l1 = esSinTope(o.cliente1);
   const l2 = esSinTope(o.cliente2);
 
+  // Cliente 2 actúa como dador puro cuando no juega ejemplares (cab2 vacío).
+  // Como dador (banca/contraparte) que cubre la jugada, su saldo de apuesta no debe
+  // bloquear ni recortar a 0 la jugada del Cliente 1.
+  const c2EsDadorPuro = cab2.length === 0 || sinCliente2;
+
   let autorizado = montoPedido;
-  if (!l1 && !l2) {
+  if (!l1 && !l2 && !c2EsDadorPuro) {
     autorizado = Math.max(0, Math.min(montoPedido, d1, d2));
   } else if (!l1) {
     autorizado = Math.max(0, Math.min(montoPedido, d1));
-  } else if (!l2) {
+  } else if (!l2 && !c2EsDadorPuro) {
     autorizado = Math.max(0, Math.min(montoPedido, d2));
   }
 
