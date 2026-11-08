@@ -267,17 +267,36 @@ export async function listarClientesVenta(force = false): Promise<ClienteVenta[]
   }
   if (!supabase) return [];
   try {
-    let q = supabase
-      .from("clientes")
-      .select("id, nombre, seudonimo, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar");
-    // Filtro del super administrador (los demás los filtra el RLS de la base).
-    if (activo) q = q.eq("grupo_id", activo);
-    const { data: cli, error: e1 } = await q;
-    if (e1) throw e1;
-    const { data: cg, error: e2 } = await supabase
-      .from("clientes_grupos")
-      .select("grupo_id, cliente_id");
-    if (e2) throw e2;
+    let cli: any[] = [];
+    if (activo) {
+      const { data: d1, error: err1 } = await supabase
+        .from("clientes")
+        .select("id, nombre, seudonimo, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar")
+        .eq("grupo_id", activo);
+      if (!err1 && d1 && d1.length > 0) {
+        cli = d1;
+      } else {
+        const { data: dAll } = await supabase
+          .from("clientes")
+          .select("id, nombre, seudonimo, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar");
+        if (dAll) cli = dAll;
+      }
+    } else {
+      const { data: dAll } = await supabase
+        .from("clientes")
+        .select("id, nombre, seudonimo, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar");
+      if (dAll) cli = dAll;
+    }
+
+    let cg: { grupo_id: any; cliente_id: any }[] = [];
+    try {
+      const { data: dCg } = await supabase
+        .from("clientes_grupos")
+        .select("grupo_id, cliente_id");
+      if (dCg) cg = dCg;
+    } catch {
+      /* sin clientes_grupos */
+    }
     const clientes = (cli ?? []).map((c) => ({
       id: String(c.id),
       nombre: String(c.seudonimo || c.nombre || ""),

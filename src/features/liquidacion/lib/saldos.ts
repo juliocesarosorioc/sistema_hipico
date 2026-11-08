@@ -818,33 +818,30 @@ export async function aplicarLiquidacionSaldos(
       // Si el cliente no tuvo movimiento en esta carrera, saltar
       if (ganadoBrutoCarrera === 0 && perdidoBrutoCarrera === 0) continue;
 
-      // ── REGLA CANÓNICA DE CRUCES ──
-      // Lo que gana menos lo que pierde y a la diferencia positiva se le calcula
-      // la comisión en caso de que el saldo termine siendo positivo.
-      // En ese caso, solo en base a ese monto positivo se estiman las devoluciones e incentivos.
+      // ── REGLA CANÓNICA DE CRUCES Y DEVOLUCIONES SOBRE MONTO DECIDIDO ──
+      // - Las devoluciones son en base al monto decidido de la carrera SIN la comisión (gane o pierda).
+      // - Si solo perdió (ej. perdió 50) -> base = 50.
+      // - Si solo ganó (ej. ganó 50) -> base = 50.
+      // - Si en la carrera hubo cruce (ej. ganó 50 y perdió 20) -> base = |50 - 20| = 30.
       const diferenciaBruta = restarDinero(ganadoBrutoCarrera, perdidoBrutoCarrera);
+      const montoDecididoCarrera = redondearCentavos(Math.abs(diferenciaBruta));
       let saldoNetoJugadas = 0;
       let comisionCasaCarrera = 0;
       let montoIncentivo = 0;
       const incPct = Math.max(0, Number(cli.incentivo_pct ?? cli.devolucion) || 0);
 
       if (diferenciaBruta > 0) {
-        // Saldo positivo: la comisión se calcula ÚNICAMENTE sobre la diferencia neta positiva
+        // Saldo positivo: la comisión se calcula sobre la diferencia neta positiva
         comisionCasaCarrera = calcularComisionExacta(diferenciaBruta, tasaComision);
         saldoNetoJugadas = restarDinero(diferenciaBruta, comisionCasaCarrera);
-        // Las devoluciones e incentivos se estiman sobre esa diferencia positiva
-        if (incPct > 0) {
-          montoIncentivo = calcularComisionExacta(diferenciaBruta, incPct);
-        }
-      } else if (diferenciaBruta < 0) {
-        // Saldo negativo: pérdida neta sin comisión de la casa
-        saldoNetoJugadas = diferenciaBruta; // Negativo
-        comisionCasaCarrera = 0;
-        montoIncentivo = 0;
       } else {
-        saldoNetoJugadas = 0;
+        saldoNetoJugadas = diferenciaBruta; // Negativo o cero
         comisionCasaCarrera = 0;
-        montoIncentivo = 0;
+      }
+
+      // Devolución / incentivo sobre monto neto decidido de la carrera SIN comisión (gane o pierda)
+      if (incPct > 0 && montoDecididoCarrera > 0) {
+        montoIncentivo = calcularComisionExacta(montoDecididoCarrera, incPct);
       }
 
       // Impacto total en el saldo del cliente por la carrera
@@ -866,7 +863,7 @@ export async function aplicarLiquidacionSaldos(
               montoIncentivo,
               referenciaId: `${dia}:${input.hipodromo}:C${input.carrera}`,
               usuario: "SISTEMA_LIQUIDACION",
-              nota: `Incentivo sobre diferencia positiva por cruce C${input.carrera} ${input.hipodromo} (base: $${diferenciaBruta.toFixed(2)})`,
+              nota: `Devolución sobre monto neto decidido C${input.carrera} ${input.hipodromo} (base: $${montoDecididoCarrera.toFixed(2)})`,
             });
           } catch {
             /* ignore non-blocking */
@@ -874,11 +871,11 @@ export async function aplicarLiquidacionSaldos(
         }
       }
 
-      // Comisión confidencial al socio asignado sobre saldo positivo neto
+      // Comisión confidencial al socio asignado sobre monto neto decidido de la carrera
       const socioIdRaw = (cli.socio_id ?? cli.socio_asignado) as string | null;
       const socPct = Math.max(0, Number(cli.socio_comision_pct ?? cli.comision_socio_pct) || 0);
-      if (socioIdRaw && socPct > 0 && diferenciaBruta > 0) {
-        const montoSocio = calcularComisionExacta(diferenciaBruta, socPct);
+      if (socioIdRaw && socPct > 0 && montoDecididoCarrera > 0) {
+        const montoSocio = calcularComisionExacta(montoDecididoCarrera, socPct);
         if (montoSocio > 0) {
           const { data: socioDb } = await sdb
             .from("clientes")

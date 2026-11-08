@@ -47,7 +47,7 @@ test("Caso PARTNER: Cruce de comisiones incluye pérdidas como Consigue", () => 
   assert.strictEqual(item?.reembolsoCruce, 4, "Debe reembolsar los 4.00 de comisión cobrada");
 });
 
-test("Caso PARTNER: Base decidida e incentivo sobre la diferencia con rol Consigue (saldo negativo = 0)", () => {
+test("Caso PARTNER: Base decidida e incentivo sobre la diferencia con rol Consigue |80 - 300| = 220", () => {
   const jugadas = [
     { nombreJugada: "2N", montoJugado: 300, resultado: -300, estado: "GANADOR", rol: "Consigue" },
     { nombreJugada: "2N Y 2Y2N", montoJugado: 80, premioPagar: 160, resultado: 80, estado: "GANADOR", rol: "Juega" },
@@ -57,8 +57,8 @@ test("Caso PARTNER: Base decidida e incentivo sobre la diferencia con rol Consig
   assert.strictEqual(res.consigueIncluidoPorCruce, true);
   assert.strictEqual(res.totalGanadoBruto, 80);
   assert.strictEqual(res.totalPerdidoBruto, 300);
-  assert.strictEqual(res.baseDecidida, 0, "Si el saldo termina negativo (80 - 300 = -220), no hay base de incentivo");
-  assert.strictEqual(res.devolucion, 0, "Devolución con saldo neto negativo debe ser 0");
+  assert.strictEqual(res.baseDecidida, 220, "Base decidida debe ser |80 - 300| = 220");
+  assert.strictEqual(res.devolucion, 2.2, "Devolución al 1% sobre 220 debe ser 2.20");
 });
 
 test("Caso PARTNER: Base decidida e incentivo cuando saldo termina POSITIVO (ganado 300, perdido 80 = +220)", () => {
@@ -87,7 +87,7 @@ test("Rol Consigue aislado sin cruce NO devenga incentivo ni devolución", () =>
   assert.strictEqual(esJugadaElegibleParaDevolucion(soloConsigue[0]), false);
 });
 
-test("calcularIncentivoCarreraCliente considera cruce con Consigue (solo si saldo positivo)", () => {
+test("calcularIncentivoCarreraCliente considera cruce con Consigue sobre monto neto decidido", () => {
   const ticketsNegativo = [
     {
       id: 1,
@@ -110,7 +110,7 @@ test("calcularIncentivoCarreraCliente considera cruce con Consigue (solo si sald
     },
   ];
   const incNeg = calcularIncentivoCarreraCliente(ticketsNegativo, 1.0, "PARTNER");
-  assert.strictEqual(incNeg, 0, "Con saldo negativo (80 - 300 = -220), incentivo debe ser 0");
+  assert.strictEqual(incNeg, 2.2, "Con cruce de 80 y 300 (|80 - 300| = 220), el incentivo al 1% es 2.20 sobre el monto neto decidido");
 
   const ticketsPositivo = [
     {

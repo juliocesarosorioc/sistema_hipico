@@ -39,8 +39,8 @@ test("Belmont Park 1: Sam y Partner cruzan jugadas y comisiones unificadas por c
   assert.equal(devSam.devolucion, 2.25, "Incentivo 1.5% de 150 = 2.25");
 });
 
-test("Belmont Park 1: Partner con saldo negativo en la carrera no paga comisión ni devenga incentivo", () => {
-  // Partner: gana 80 y pierde 300
+test("Belmont Park 1: Partner con cruce calcula devolución sobre monto neto decidido |80 - 300| = 220", () => {
+  // Partner: gana 80 y pierde 300 -> monto decidido = |80 - 300| = 220
   const jugadasPartner = [
     { nombreJugada: "2N Y 2Y2N", montoJugado: 80, premioPagar: 160, resultado: 80, estado: "GANADOR", rol: "Juega" },
     { nombreJugada: "2N", montoJugado: 300, resultado: -300, estado: "GANADOR", rol: "Consigue" },
@@ -49,9 +49,8 @@ test("Belmont Park 1: Partner con saldo negativo en la carrera no paga comisión
   assert.equal(devPartner.hayCruce, true);
   assert.equal(devPartner.totalGanadoBruto, 80);
   assert.equal(devPartner.totalPerdidoBruto, 300);
-  // Al terminar en saldo negativo (80 - 300 = -220), la base para incentivo es 0.00
-  assert.equal(devPartner.baseDecidida, 0, "Base decidida debe ser 0 al terminar en saldo negativo");
-  assert.equal(devPartner.devolucion, 0, "Incentivo debe ser 0.00");
+  assert.equal(devPartner.baseDecidida, 220, "Base decidida debe ser |80 - 300| = 220 sobre monto decidido");
+  assert.equal(devPartner.devolucion, 2.2, "Incentivo 1.0% de 220 = 2.20");
 });
 
 test("decidirTickets netea comisiones simétricamente entre Juega y Consigue", () => {

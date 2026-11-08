@@ -251,6 +251,7 @@ export function calcularResumenContableCliente(params: {
   // Para cálculo de reembolso de cruces por carrera y riesgo en carreras abiertas
   const lineasPorCarrera = new Map<string, LineaResultadoParaCruce[]>();
   const abiertasPorCarrera = new Map<string, JugadaActivaSimulacion[]>();
+  const ticketsPuestosPorCarreraParaIncentivo = new Map<string, TicketContableRaw[]>();
 
   let montoDecididoParaIncentivoCentavos = 0;
   let jugadasEnVivoCount = 0;
@@ -303,6 +304,15 @@ export function calcularResumenContableCliente(params: {
         ? monto
         : redondearCentavos(t.monto_decidido ?? 0);
     const nombreJugRaw = String(t.nombre_jugada ?? t.jugada ?? "").trim().toUpperCase();
+    const comPct =
+      t.comision_porcentaje != null && String(t.comision_porcentaje).trim() !== ""
+        ? Number(t.comision_porcentaje)
+        : comDefault;
+    const raceKey = [
+      String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10),
+      String(t.hipodromo ?? "").trim().toUpperCase(),
+      String(t.carrera ?? "1").trim(),
+    ].join("::");
 
     // Regla de Negocio: La devolución/incentivo se calcula en base al monto decidido gane o pierda.
     // SOLO aplica a jugadas de puestos. NO aplica a tablas, marcas, dupletas, remates, tablas fijas ni WPS.
@@ -314,7 +324,7 @@ export function calcularResumenContableCliente(params: {
         est === "PERDEDOR" ||
         est === "PERDIO");
     if (
-      esJugador &&
+      (esJugador || esDador) &&
       esDecidida &&
       esJugadaPuestosParaIncentivo(
         nombreJugRaw,
@@ -322,17 +332,10 @@ export function calcularResumenContableCliente(params: {
         (t as Record<string, unknown>).origen as string
       )
     ) {
-      montoDecididoParaIncentivoCentavos += aCentavos(baseDecidida);
+      const listP = ticketsPuestosPorCarreraParaIncentivo.get(raceKey) ?? [];
+      listP.push(t);
+      ticketsPuestosPorCarreraParaIncentivo.set(raceKey, listP);
     }
-    const comPct =
-      t.comision_porcentaje != null && String(t.comision_porcentaje).trim() !== ""
-        ? Number(t.comision_porcentaje)
-        : comDefault;
-    const raceKey = [
-      String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10),
-      String(t.hipodromo ?? "").trim().toUpperCase(),
-      String(t.carrera ?? "1").trim(),
-    ].join("::");
     const esTablaFija = /^TABLA\s+FIJA\b|^TF\b|^TABLA$/i.test(nombreJugRaw);
     const esMarca = /^MARCAS?\b/i.test(nombreJugRaw);
 
@@ -504,13 +507,44 @@ export function calcularResumenContableCliente(params: {
   const riesgoDadorEnCurso = deCentavos(riesgoSoloDadorCentavos);
 
   // Devolución de Incentivos a favor del cliente (+):
-  // Si se pasa monto explícito `devolucionIncentivo`, se usa; si se pasa `devolucionPct`, se calcula sobre el monto decidido/jugado.
+  // Si se pasa monto explícito `devolucionIncentivo`, se usa; si se pasa `devolucionPct`, se calcula carrera a carrera sobre monto decidido neto.
   const devPct = params.devolucionPct != null ? Math.max(0, Number(params.devolucionPct) || 0) : 0;
+  let baseDecididaIncentivoCentavos = 0;
+  for (const [, listT] of ticketsPuestosPorCarreraParaIncentivo) {
+    const resDevCarrera = calcularBaseDecididaCarrera(
+      listT.map((tc) => {
+        const jN = normalizarNombreCliente(tc.cliente_juega_nombre ?? tc.jugador);
+        const cN = normalizarNombreCliente(tc.cliente_consigue_nombre ?? tc.tercio ?? tc.contraparte);
+        const esConsigue = Boolean(cN && cN === nombreNorm && jN !== nombreNorm);
+        const m = redondearCentavos(tc.monto_jugado ?? tc.monto ?? 0);
+        const prem = redondearCentavos(tc.premio_pagar ?? 0);
+        const st = String(tc.estado ?? "").trim().toUpperCase();
+        const esG = st === "GANADOR" || st === "GANO" || st === "SOLUCIONADO";
+        let resNeto = tc.resultado_neto != null ? Number(tc.resultado_neto) : null;
+        if (esConsigue) {
+          if (resNeto != null) resNeto = -resNeto;
+          else if (esG) resNeto = -Math.max(0, prem > m ? prem - m : m);
+          else resNeto = m;
+        }
+        return {
+          nombreJugada: String(tc.nombre_jugada ?? tc.jugada ?? ""),
+          montoJugado: m,
+          premioPagar: prem,
+          resultado: resNeto,
+          estado: esConsigue ? (esG ? "PERDEDOR" : "GANADOR") : st,
+          rol: esConsigue ? "Consigue" : "Juega",
+        };
+      }),
+      devPct
+    );
+    baseDecididaIncentivoCentavos += aCentavos(resDevCarrera.baseDecidida);
+  }
+
   const devolucionIncentivo =
     devPct > 0
       ? (params.devolucionIncentivo != null
           ? Math.max(0, redondearCentavos(params.devolucionIncentivo))
-          : calcularComisionExacta(deCentavos(montoDecididoParaIncentivoCentavos), devPct))
+          : deCentavos(Math.round(baseDecididaIncentivoCentavos * (devPct / 100))))
       : 0;
 
   // Comisión de socio: crédito a favor por jugadas de clientes afiliados.

@@ -376,8 +376,8 @@ async function aplicarAccesos(identificador: string): Promise<ResolucionAccesos>
   // Un operador solo se vincula estrictamente a su grupo asignado: nunca ve todos los grupos.
   const esOperador = esRolOperadorExclusivo(perfiles);
   const veTodosLosGrupos = !esOperador && (resolucion.total || (miGrupo?.veTodos ?? true));
-  const grupoId = miGrupo?.grupoId ?? "";
-  const grupoNombre = miGrupo?.grupoNombre ?? "";
+  const grupoId = resolucion.total ? "" : (miGrupo?.grupoId ?? "");
+  const grupoNombre = resolucion.total ? "Todos los grupos" : (miGrupo?.grupoNombre ?? "");
   // El filtro "ver un grupo / todos" es SOLO para quien ve todos. Un operador con
   // grupo solo se vincula a su grupo:
   const grupoActivo = veTodosLosGrupos ? leerGrupoActivoGuardado() : (grupoId || null);
@@ -476,7 +476,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
         veTodosLosGrupos: true,
         grupoId: "",
         grupoNombre: "Todos los grupos",
-        grupoActivo: null,
+        grupoActivo: leerGrupoActivoGuardado(),
       });
       return;
     }
@@ -615,7 +615,7 @@ export const useAuthStore = create<EstadoAuth>()(
       grupoId: inicioDefault.grupoId,
       grupoNombre: inicioDefault.grupoNombre,
       veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
-      grupoActivo: null,
+      grupoActivo: typeof window !== "undefined" ? leerGrupoActivoGuardado() : null,
       modoOperador: false,
       cargando: false,
       errorLogin: null,

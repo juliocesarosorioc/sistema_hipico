@@ -20,10 +20,11 @@ import { limpiarCacheClientes } from "@/features/clientes/lib/clientes";
 
 export function SelectorGrupo() {
   const veTodos = useAuthStore((s) => s.veTodosLosGrupos);
+  const esPrincipal = useAuthStore((s) => s.esPrincipal);
   const modoOperador = useAuthStore((s) => s.modoOperador);
   const perfiles = useAuthStore((s) => s.perfiles);
   const miGrupoId = useAuthStore((s) => s.grupoId);
-  const tieneGrupoAsignado = Boolean(miGrupoId && miGrupoId.trim() !== "");
+  const tieneGrupoAsignado = !esPrincipal && Boolean(miGrupoId && miGrupoId.trim() !== "");
   const esOperador = modoOperador || perfiles.includes("OPERADOR");
   const grupoActivo = useAuthStore((s) => s.grupoActivo);
   const setGrupoActivo = useAuthStore((s) => s.setGrupoActivo);
@@ -38,12 +39,11 @@ export function SelectorGrupo() {
           if (!vivo) return;
           const gruposValidos = g.filter((x) => x.activo !== false);
           setGrupos(gruposValidos);
-          // Si no hay grupo activo seleccionado o el actual no es válido, seleccionar el grupo principal
-          if (gruposValidos.length > 0) {
+          // Solo si el grupo activo seleccionado ya no existe en la base, volver a neutral/todos
+          if (gruposValidos.length > 0 && grupoActivo) {
             const actualExiste = gruposValidos.some((x) => String(x.id) === String(grupoActivo));
-            if (!grupoActivo || !actualExiste) {
-              const principal = gruposValidos.find((x) => x.es_principal) || gruposValidos[0];
-              if (principal) setGrupoActivo(String(principal.id));
+            if (!actualExiste) {
+              setGrupoActivo(null);
             }
           }
         })
@@ -58,13 +58,12 @@ export function SelectorGrupo() {
       vivo = false;
       window.removeEventListener("grupos:actualizados", cargar);
     };
-  }, [veTodos, esOperador, grupoActivo, setGrupoActivo]);
+  }, [veTodos, esOperador, tieneGrupoAsignado, grupoActivo, setGrupoActivo]);
 
   if (!veTodos || esOperador || tieneGrupoAsignado) return null;
 
   const cambiar = (valor: string) => {
     const v = valor && valor.trim() !== "" ? valor.trim() : null;
-    if (!v) return;
     setGrupoActivo(v);
     limpiarCacheClientes();
     window.location.reload();
@@ -78,11 +77,14 @@ export function SelectorGrupo() {
       <span aria-hidden="true">📁</span>
       <span className="hidden 2xl:inline">Grupo:</span>
       <select
-        value={grupoActivo ?? (grupos[0] ? String(grupos[0].id) : "")}
+        value={grupoActivo ?? ""}
         onChange={(e) => cambiar(e.target.value)}
         className="max-w-[7.5rem] sm:max-w-[9.5rem] 2xl:max-w-[13rem] truncate bg-transparent text-xs font-black text-slate-900 outline-none cursor-pointer"
         aria-label="Grupo activo seleccionado"
       >
+        <option value="" className="bg-white text-slate-900 font-bold">
+          🌐 Principal (Neutral / Todos)
+        </option>
         {grupos.map((g) => (
           <option key={String(g.id)} value={String(g.id)} className="bg-white text-slate-900 font-bold">
             {g.nombre} {g.es_principal ? "★" : ""}
