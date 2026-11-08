@@ -558,6 +558,7 @@ export function GestionJugadasModule() {
    * fecha lo dice (`estado` "Liquidada" o el resultado ya aplicado a tablas).
    */
   const carreraLiquidada = useMemo(() => {
+    if (!hipodromo || !carrera) return false;
     const numCarrera = Number(carrera);
     if (carrerasReversadas.has(numCarrera)) {
       return false;
@@ -3866,6 +3867,7 @@ const hipodromosDelDia = useMemo(() => {
           void seleccionarCarreraConConfirmacion(n, info);
         }}
         accionDerecha={
+          listoParaCargar ? (
           <div className="grid grid-cols-2 gap-1.5 w-full sm:flex sm:items-center sm:gap-2 sm:w-auto">
             {carreraLiquidada ? (
               <button
@@ -3930,6 +3932,7 @@ const hipodromosDelDia = useMemo(() => {
               <span>Evento Libre / P2P</span>
             </button>
           </div>
+          ) : null
         }
       />
       </div>
@@ -5496,6 +5499,7 @@ const hipodromosDelDia = useMemo(() => {
           >
             📊 Historial
           </button>
+          {listoParaCargar && (
           <button
             data-tour="tour-reporte-final-whatsapp"
             type="button"
@@ -5509,6 +5513,7 @@ const hipodromosDelDia = useMemo(() => {
           >
             🧾 Reporte Final
           </button>
+          )}
           <button
             type="button"
             onClick={() => setGuiaOperadorAbierta(true)}
@@ -5517,7 +5522,7 @@ const hipodromosDelDia = useMemo(() => {
           >
             🎓 Guía Operador
           </button>
-          {(carreraLiquidada || pizarraCentral) && !reapertura && (
+          {listoParaCargar && (carreraLiquidada || pizarraCentral) && !reapertura && (
             <button
               type="button"
               disabled={bloqueoLiquidacionActivo}
