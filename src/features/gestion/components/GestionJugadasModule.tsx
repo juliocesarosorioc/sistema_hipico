@@ -822,7 +822,7 @@ const hipodromosDelDia = useMemo(() => {
         emitirToast("Seleccione un jugador válido para guardar la excepción de esta carrera.", "error");
         return;
       }
-      await guardarOverrideActual({
+      const okCarrera = await guardarOverrideActual({
         ...crucesOverrideCarrera,
         porJugador: {
           ...crucesOverrideCarrera.porJugador,
@@ -830,6 +830,11 @@ const hipodromosDelDia = useMemo(() => {
           [String(cliente.id).trim().toUpperCase()]: { ...borradorCruceJugador },
         },
       });
+      if (okCarrera) {
+        emitirToast(`Cruces guardados para ${clave} en la Carrera ${carrera}.`, "success");
+        setJugadorCruce("");
+        setBorradorCruceJugador({ mismoEjemplar: false, diferenteEjemplar: false });
+      }
       return;
     }
     const cliente = clientes.find((c) =>
@@ -857,6 +862,11 @@ const hipodromosDelDia = useMemo(() => {
         }
       : c));
     emitirToast(`Reglas permanentes actualizadas para ${clave}.`, "success");
+    // Limpiar el formulario para que quede claro que se guardó y el modal/panel
+    // no quede "abierto" sin feedback.
+    setJugadorCruce("");
+    setBorradorCruceJugador({ mismoEjemplar: false, diferenteEjemplar: false });
+    setAlcanceCruce("carrera");
   }, [alcanceCruce, borradorCruceJugador, clientes, crucesOverrideCarrera, guardarOverrideActual, jugadorCruce]);
 
   /**
