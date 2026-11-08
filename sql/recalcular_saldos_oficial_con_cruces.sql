@@ -100,7 +100,14 @@ BEGIN
                   OR UPPER(TRIM(COALESCE(t.cliente_juega, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
                  )
                  AND UPPER(TRIM(COALESCE(t.estado, ''))) IN ('GANADOR', 'GANO', 'SOLUCIONADO') THEN
-              GREATEST(0.00, COALESCE(t.premio_pagar, 0.00) - COALESCE(t.monto_jugado, 0.00))
+              CASE
+                WHEN COALESCE(t.monto_decidido, 0.00) > 0 THEN t.monto_decidido
+                WHEN COALESCE(t.premio_pagar, 0.00) > COALESCE(t.monto_jugado, 0.00) THEN
+                  (t.premio_pagar - t.monto_jugado) + COALESCE(t.comision_pagada, 0.00)
+                WHEN COALESCE(t.premio_pagar, 0.00) > 0 AND COALESCE(t.comision_pagada, 0.00) > 0 THEN
+                  GREATEST(0.00, t.premio_pagar - t.monto_jugado + t.comision_pagada)
+                ELSE COALESCE(t.monto_jugado, 0.00)
+              END
             -- Cliente da (consigue) y el apostador pierde -> cliente gana el monto apostado
             WHEN (
                   t.cliente_consigue_id::TEXT = r.cid::TEXT 
@@ -109,7 +116,11 @@ BEGIN
                   OR UPPER(TRIM(COALESCE(t.banquero_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
                  )
                  AND UPPER(TRIM(COALESCE(t.estado, ''))) IN ('PERDEDOR', 'PERDIO') THEN
-              COALESCE(t.monto_jugado, 0.00)
+              CASE 
+                WHEN COALESCE(t.premio_pagar, 0.00) > 0 AND COALESCE(t.premio_pagar, 0.00) < COALESCE(t.monto_jugado, 0.00) THEN
+                  (t.monto_jugado - t.premio_pagar)
+                ELSE COALESCE(t.monto_decidido, t.monto_jugado, 0.00)
+              END
             ELSE 0.00
           END
         ) AS ganado_bruto,
@@ -123,7 +134,11 @@ BEGIN
                   OR UPPER(TRIM(COALESCE(t.cliente_juega, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
                  )
                  AND UPPER(TRIM(COALESCE(t.estado, ''))) IN ('PERDEDOR', 'PERDIO') THEN
-              COALESCE(t.monto_jugado, 0.00)
+              CASE 
+                WHEN COALESCE(t.premio_pagar, 0.00) > 0 AND COALESCE(t.premio_pagar, 0.00) < COALESCE(t.monto_jugado, 0.00) THEN
+                  (t.monto_jugado - t.premio_pagar)
+                ELSE COALESCE(t.monto_decidido, t.monto_jugado, 0.00)
+              END
             -- Cliente da (consigue) y el apostador gana -> cliente pierde la ganancia otorgada
             WHEN (
                   t.cliente_consigue_id::TEXT = r.cid::TEXT 
@@ -132,7 +147,14 @@ BEGIN
                   OR UPPER(TRIM(COALESCE(t.banquero_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
                  )
                  AND UPPER(TRIM(COALESCE(t.estado, ''))) IN ('GANADOR', 'GANO', 'SOLUCIONADO') THEN
-              GREATEST(0.00, COALESCE(t.premio_pagar, 0.00) - COALESCE(t.monto_jugado, 0.00))
+              CASE
+                WHEN COALESCE(t.monto_decidido, 0.00) > 0 THEN t.monto_decidido
+                WHEN COALESCE(t.premio_pagar, 0.00) > COALESCE(t.monto_jugado, 0.00) THEN
+                  (t.premio_pagar - t.monto_jugado) + COALESCE(t.comision_pagada, 0.00)
+                WHEN COALESCE(t.premio_pagar, 0.00) > 0 AND COALESCE(t.comision_pagada, 0.00) > 0 THEN
+                  GREATEST(0.00, t.premio_pagar - t.monto_jugado + t.comision_pagada)
+                ELSE COALESCE(t.monto_jugado, 0.00)
+              END
             ELSE 0.00
           END
         ) AS perdido_bruto,

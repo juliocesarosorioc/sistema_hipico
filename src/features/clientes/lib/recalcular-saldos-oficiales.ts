@@ -97,7 +97,7 @@ export async function recalcularYActualizarSaldosOficiales(
     // 4. Cargar tickets de apuestas decididos
     const { data: dbTickets, error: eT } = await supabase
       .from("tickets_apuestas")
-      .select("id, cliente_juega_id, cliente_juega_nombre, cliente_juega, cliente_consigue_id, cliente_consigue_nombre, cliente_consigue, banquero_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, monto_jugado, premio_pagar, estado, anulada")
+      .select("id, cliente_juega_id, cliente_juega_nombre, cliente_juega, cliente_consigue_id, cliente_consigue_nombre, cliente_consigue, banquero_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, monto_jugado, premio_pagar, monto_decidido, comision_pagada, estado, anulada")
       .or("anulada.is.null,anulada.eq.false")
       .limit(10000);
 
@@ -160,6 +160,8 @@ export async function recalcularYActualizarSaldosOficiales(
         for (const t of listT) {
           const m = Number(t.monto_jugado) || 0;
           const prem = Number(t.premio_pagar) || 0;
+          const mDec = Number((t as any).monto_decidido) || 0;
+          const comPag = Number((t as any).comision_pagada) || 0;
           const st = String(t.estado ?? "").trim().toUpperCase();
           const esG = ["GANADOR", "GANO", "SOLUCIONADO"].includes(st);
 
@@ -172,18 +174,29 @@ export async function recalcularYActualizarSaldosOficiales(
             esPuestos = true;
           }
 
+          // Ganancia bruta SIN comisión:
+          // Si mDec > 0 -> mDec
+          // Si prem > m -> (prem - m) + comPag (por si prem se guardó neteado de comisión en carreras viejas)
+          // Else -> m
+          const gananciaBruta = mDec > 0
+            ? mDec
+            : prem > m
+              ? (prem - m) + comPag
+              : m;
+          const perdidaBruta = prem > 0 && prem < m ? m - prem : mDec > 0 ? mDec : m;
+
           if (esJuega) {
             if (esG) {
-              ganadoBruto = sumarDinero(ganadoBruto, Math.max(0, prem - m));
+              ganadoBruto = sumarDinero(ganadoBruto, gananciaBruta);
             } else {
-              perdidoBruto = sumarDinero(perdidoBruto, m);
+              perdidoBruto = sumarDinero(perdidoBruto, perdidaBruta);
             }
           } else {
             // Consigue
             if (esG) {
-              perdidoBruto = sumarDinero(perdidoBruto, Math.max(0, prem - m));
+              perdidoBruto = sumarDinero(perdidoBruto, gananciaBruta);
             } else {
-              ganadoBruto = sumarDinero(ganadoBruto, m);
+              ganadoBruto = sumarDinero(ganadoBruto, perdidaBruta);
             }
           }
         }

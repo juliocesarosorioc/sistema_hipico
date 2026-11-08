@@ -520,17 +520,28 @@ export function calcularResumenContableCliente(params: {
         const prem = redondearCentavos(tc.premio_pagar ?? 0);
         const st = String(tc.estado ?? "").trim().toUpperCase();
         const esG = st === "GANADOR" || st === "GANO" || st === "SOLUCIONADO";
-        let resNeto = tc.resultado_neto != null ? Number(tc.resultado_neto) : null;
+        const mDec = redondearCentavos(tc.monto_decidido ?? 0);
+        const comPagada = redondearCentavos(tc.comision_pagada ?? 0);
+
+        // Ganancia y pérdida bruta sin comisión
+        const gananciaBruta = prem > m ? prem - m : mDec > 0 ? mDec : m;
+        const perdidaBruta = prem > 0 && prem < m ? m - prem : mDec > 0 ? mDec : m;
+
+        let resBruto = 0;
         if (esConsigue) {
-          if (resNeto != null) resNeto = -resNeto;
-          else if (esG) resNeto = -Math.max(0, prem > m ? prem - m : m);
-          else resNeto = m;
+          resBruto = esG ? -gananciaBruta : perdidaBruta;
+        } else {
+          resBruto = esG ? gananciaBruta : -perdidaBruta;
         }
+
         return {
           nombreJugada: String(tc.nombre_jugada ?? tc.jugada ?? ""),
           montoJugado: m,
+          montoDecidido: Math.abs(resBruto),
           premioPagar: prem,
-          resultado: resNeto,
+          resultado: resBruto,
+          resultadoBruto: resBruto,
+          comisionCobrada: comPagada,
           estado: esConsigue ? (esG ? "PERDEDOR" : "GANADOR") : st,
           rol: esConsigue ? "Consigue" : "Juega",
         };

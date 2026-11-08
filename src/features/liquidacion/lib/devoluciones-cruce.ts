@@ -45,6 +45,9 @@ export interface JugadaEntradaBaseDecidida {
   premioPagar?: number | string | null;
   premio?: number | string | null;
   resultado?: number | null;
+  resultadoBruto?: number | null;
+  comision?: number | null;
+  comisionCobrada?: number | null;
   estado?: string | null;
   anulada?: boolean | null;
   esAdelantada?: boolean | null;
@@ -99,22 +102,64 @@ export function esJugadaElegibleParaDevolucion(j: JugadaEntradaBaseDecidida): bo
   return esJugadaElegibleIgnorandoRol(j);
 }
 
-/** Ganado/perdido bruto de una jugada desde la perspectiva del cliente que la reporta. */
+/** Ganado/perdido bruto de una jugada desde la perspectiva del cliente que la reporta.
+ * Regla de Oro Canónica:
+ * - La base decidida es estrictamente sobre el monto decidido BRUTO SIN comisión.
+ * - Si ganó 50 bruto (y se pagó 47.50 netos por comisión 5%), la base decidida es 50, NO 47.50.
+ * - Si perdió 50, la base decidida es 50.
+ * - Si en la carrera ganó 50 y perdió 20, la base decidida es |50 - 20| = 30.
+ */
 function ganadoPerdidoJugada(j: JugadaEntradaBaseDecidida): { ganado: number; perdido: number } {
-  // 1. Si viene con resultado neto oficial pre-calculado
-  if (typeof j.resultado === "number" && !isNaN(j.resultado)) {
-    if (j.resultado > 0) return { ganado: j.resultado, perdido: 0 };
-    if (j.resultado < 0) return { ganado: 0, perdido: Math.abs(j.resultado) };
-    // j.resultado === 0 es empate total (ej. NINI devolviendo capital) -> no hay base decidida
+  const est = String(j.estado ?? "").trim().toUpperCase();
+  const monto = Math.max(0, Number(j.montoJugado ?? j.monto ?? 0));
+  const premio = Math.max(0, Number(j.premioPagar ?? j.premio ?? 0));
+  const montoDec = Math.max(0, Number(j.montoDecidido ?? 0));
+  const comision = Math.max(0, Number(j.comisionCobrada ?? j.comision ?? 0));
+
+  // 1. Si viene con resultado bruto explícito precalculado
+  if (typeof j.resultadoBruto === "number" && !isNaN(j.resultadoBruto)) {
+    if (j.resultadoBruto > 0) return { ganado: j.resultadoBruto, perdido: 0 };
+    if (j.resultadoBruto < 0) return { ganado: 0, perdido: Math.abs(j.resultadoBruto) };
     return { ganado: 0, perdido: 0 };
   }
 
-  // 2. Si no tiene resultado numérico explícito, deducir según estado y montos
-  const est = String(j.estado ?? "").trim().toUpperCase();
-  const monto = Number(j.montoJugado ?? j.monto ?? 0);
-  const premio = Number(j.premioPagar ?? j.premio ?? 0);
-  const montoDec = Number(j.montoDecidido ?? 0);
+  // 2. Si tiene montoDecidido explícito
+  if (montoDec > 0) {
+    if (est === "GANADOR" || est === "GANO" || est === "SOLUCIONADO" || (typeof j.resultado === "number" && j.resultado > 0)) {
+      return { ganado: montoDec, perdido: 0 };
+    }
+    if (est === "PERDEDOR" || est === "PERDIO" || (typeof j.resultado === "number" && j.resultado < 0)) {
+      return { ganado: 0, perdido: montoDec };
+    }
+  }
 
+  // 3. Si premio > monto (premio bruto de taquilla menos monto apostado = ganancia bruta sin comisión)
+  if (premio > monto) {
+    const gananciaBruta = redondearCentavos(premio - monto);
+    if (est === "GANADOR" || est === "GANO" || est === "SOLUCIONADO" || (typeof j.resultado === "number" && j.resultado > 0)) {
+      return { ganado: gananciaBruta, perdido: 0 };
+    }
+  }
+
+  // 4. Si viene con resultado neto oficial y comisión registrada (neto + comision = ganancia bruta)
+  if (typeof j.resultado === "number" && !isNaN(j.resultado)) {
+    if (j.resultado > 0) {
+      if (comision > 0) {
+        return { ganado: redondearCentavos(j.resultado + comision), perdido: 0 };
+      }
+      // Si el resultado neto corresponde a un ticket donde se cobró 5% de comisión (ej. 47.50 sobre 50 apostados)
+      if (monto > 0 && j.resultado < monto && Math.abs(j.resultado - monto * 0.95) < 0.05) {
+        return { ganado: monto, perdido: 0 };
+      }
+      return { ganado: j.resultado, perdido: 0 };
+    }
+    if (j.resultado < 0) {
+      return { ganado: 0, perdido: Math.abs(j.resultado) };
+    }
+    return { ganado: 0, perdido: 0 };
+  }
+
+  // 5. Deducir por estado y montos
   if (est === "GANADOR" || est === "GANO" || est === "SOLUCIONADO") {
     let ganancia = 0;
     if (premio > monto) {
@@ -129,7 +174,6 @@ function ganadoPerdidoJugada(j: JugadaEntradaBaseDecidida): { ganado: number; pe
   if (est === "PERDEDOR" || est === "PERDIO") {
     let perdida = monto;
     if (premio > 0 && premio < monto) {
-      // Bloque o dividida con devolución parcial de empate
       perdida = monto - premio;
     } else if (montoDec > 0) {
       perdida = montoDec;

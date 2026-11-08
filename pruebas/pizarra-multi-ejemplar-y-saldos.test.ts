@@ -106,3 +106,68 @@ test("3. Regla canónica de Saldos y Cruces: base de devolución sobre monto net
   assert.equal(casoEmpate.baseDecididaTotal, 0, "Si empató ganancias y pérdidas, la base es 0");
   assert.equal(casoEmpate.devolucion, 0, "Devolución es 0");
 });
+
+test("4. Ganancia con comisión: la base de devolución se calcula sobre el monto decidido bruto (50), NO sobre el neto descontando comisión (47.50)", () => {
+  // Un cliente apostó $50 a ganador/puesto. El monto decidido es $50.
+  // La casa cobró 5% de comisión ($2.50). El resultado neto pagado en cuenta fue $47.50.
+  // La base de devolución DEBE ser exactamente $50.00 (SIN descontar la comisión), produciendo $0.50 al 1%.
+  const res = calcularBaseDecididaCarrera(
+    [
+      {
+        nombreJugada: "1P",
+        montoJugado: 50,
+        premioPagar: 100, // bruto antes de comisión
+        resultado: 47.5, // resultado neto que venía en carreras viejas
+        comisionCobrada: 2.5,
+        estado: "GANADOR",
+        rol: "Juega",
+      },
+    ],
+    1.0
+  );
+  assert.equal(res.baseDecididaTotal, 50, "La base decidida debe ser 50.00 bruto, no 47.50");
+  assert.equal(res.devolucion, 0.5, "1% sobre base bruta de 50 es exactamente 0.50");
+
+  // Incluso si viene sin comisionCobrada explícita pero con premioPagar 100 y montoJugado 50
+  const resSinCom = calcularBaseDecididaCarrera(
+    [
+      {
+        nombreJugada: "1P",
+        montoJugado: 50,
+        premioPagar: 100,
+        resultado: 47.5, // viejo resultado neto
+        estado: "GANADOR",
+        rol: "Juega",
+      },
+    ],
+    1.0
+  );
+  assert.equal(resSinCom.baseDecididaTotal, 50, "Debe deducir 50 de premioPagar - montoJugado");
+  assert.equal(resSinCom.devolucion, 0.5, "1% sobre 50 es 0.50");
+
+  // Cruce con una jugada vieja que tenía resultado neto de 47.50 y una pérdida de 20:
+  // Base decidida real = |50 - 20| = 30 (NO |47.50 - 20| = 27.50)
+  const resCruce = calcularBaseDecididaCarrera(
+    [
+      {
+        nombreJugada: "1P",
+        montoJugado: 50,
+        premioPagar: 100,
+        resultado: 47.5,
+        estado: "GANADOR",
+        rol: "Juega",
+      },
+      {
+        nombreJugada: "2P",
+        montoJugado: 20,
+        premioPagar: 0,
+        resultado: -20,
+        estado: "PERDEDOR",
+        rol: "Juega",
+      },
+    ],
+    1.0
+  );
+  assert.equal(resCruce.baseDecididaTotal, 30, "El cruce de 50 ganado bruto y 20 perdido da base 30 (NO 27.50)");
+  assert.equal(resCruce.devolucion, 0.3, "1% sobre base 30 es 0.30");
+});

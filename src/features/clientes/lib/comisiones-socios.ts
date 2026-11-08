@@ -284,21 +284,51 @@ export function calcularComisionesSocioPorClientes(params: {
     const nombreJugada = t.nombre_jugada || t.modalidad || t.jugada || "PUESTOS";
     const montoJugado = Number(t.monto_jugado ?? t.monto ?? 0);
     const premioPagar = Number(t.premio_pagar ?? 0);
+    const montoDecidido = Number(t.monto_decidido ?? 0);
+    const comisionPagada = Number(t.comision_pagada ?? 0);
     const resultado = t.resultado != null ? Number(t.resultado) : null;
     const estado = t.estado || (resultado != null ? (resultado >= 0 ? "GANADOR" : "PERDEDOR") : "GANADOR");
-    if (esJuega) {
-      return { nombreJugada, montoJugado, premioPagar, resultado, estado, rol: "Juega" };
-    }
     const est = String(estado).trim().toUpperCase();
-    let resultadoConsigue: number | null = null;
-    if (resultado != null && !isNaN(resultado)) {
-      resultadoConsigue = -resultado;
-    } else if (est === "GANADOR" || est === "GANO" || est === "SOLUCIONADO") {
-      resultadoConsigue = -Math.max(0, premioPagar > montoJugado ? premioPagar - montoJugado : montoJugado);
-    } else if (est === "PERDEDOR" || est === "PERDIO") {
-      resultadoConsigue = premioPagar > 0 && premioPagar < montoJugado ? montoJugado - premioPagar : montoJugado;
+    const esG = est === "GANADOR" || est === "GANO" || est === "SOLUCIONADO" || (resultado != null && resultado > 0);
+
+    const gananciaBruta = montoDecidido > 0
+      ? montoDecidido
+      : premioPagar > montoJugado
+        ? (premioPagar - montoJugado) + comisionPagada
+        : resultado != null && resultado > 0 && comisionPagada > 0
+          ? resultado + comisionPagada
+          : montoJugado;
+
+    const perdidaBruta = premioPagar > 0 && premioPagar < montoJugado
+      ? montoJugado - premioPagar
+      : montoDecidido > 0
+        ? montoDecidido
+        : montoJugado;
+
+    if (esJuega) {
+      return {
+        nombreJugada,
+        montoJugado,
+        premioPagar,
+        montoDecidido: esG ? gananciaBruta : perdidaBruta,
+        resultadoBruto: esG ? gananciaBruta : -perdidaBruta,
+        resultado: esG ? gananciaBruta : -perdidaBruta,
+        comisionCobrada: comisionPagada,
+        estado: esG ? "GANADOR" : "PERDEDOR",
+        rol: "Juega",
+      };
     }
-    return { nombreJugada, montoJugado, premioPagar, resultado: resultadoConsigue, estado, rol: "Consigue" };
+    return {
+      nombreJugada,
+      montoJugado,
+      premioPagar,
+      montoDecidido: esG ? gananciaBruta : perdidaBruta,
+      resultadoBruto: esG ? -gananciaBruta : perdidaBruta,
+      resultado: esG ? -gananciaBruta : perdidaBruta,
+      comisionCobrada: comisionPagada,
+      estado: esG ? "PERDEDOR" : "GANADOR",
+      rol: "Consigue",
+    };
   };
 
   // Devolución propia del socio

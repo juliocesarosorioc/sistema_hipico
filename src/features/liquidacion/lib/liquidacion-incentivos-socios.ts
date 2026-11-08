@@ -144,8 +144,13 @@ export function calcularLiquidacionConIncentivosYSocios(
   let baseMontoInc1 = 0;
 
   if (incPct1 > 0) {
-    // Regla oficial: devolución gane o pierda sobre monto decidido (si pierde 100 y tiene 1% se le devuelve 1)
-    baseMontoInc1 = (esGanador1 || esPerdedor1) ? (montoDecidido > 0 ? montoDecidido : (esGanador1 ? gananciaBruta1 : perdida1)) : 0;
+    if (incBase1 === "GANANCIA") {
+      baseMontoInc1 = esGanador1 ? gananciaBruta1 : 0;
+    } else if (incBase1 === "PERDIDA") {
+      baseMontoInc1 = esPerdedor1 ? perdida1 : 0;
+    } else {
+      baseMontoInc1 = (esGanador1 || esPerdedor1) ? (montoDecidido > 0 ? montoDecidido : (esGanador1 ? gananciaBruta1 : perdida1)) : 0;
+    }
   }
 
   const incentivoMonto1 =
