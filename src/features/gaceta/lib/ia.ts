@@ -786,7 +786,7 @@ function armarBody(
     systemInstruction: { parts: [{ text: promptSistema }] },
     generationConfig: {
       temperature: 0,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 32768,
       responseMimeType: "application/json",
     },
   };
@@ -971,6 +971,19 @@ async function extraerParte(
             lotesCarreras = parsearJSON(r2.texto);
           } else {
             r = r2;
+          }
+          // Respaldo: si el prompt específico (p. ej. La Rinconada) no produjo
+          // ninguna carrera, reintentar con el extractor general, que es más
+          // permisivo y suele devolver resultados.
+          if (r.ok && lotesCarreras.length === 0 && promptPersonalizado) {
+            const rBase = await llamarModelo(clave, model, parte.contenido, true);
+            if (rBase.ok) {
+              const baseCarreras = parsearJSON(rBase.texto);
+              if (baseCarreras.length > 0) {
+                r = rBase;
+                lotesCarreras = baseCarreras;
+              }
+            }
           }
         }
         if (r.ok && lotesCarreras.length > 0) {

@@ -9,6 +9,7 @@
 
 export const PROMPT_RINCONADA = `Eres el Extractor Hípico Profundo exclusivo para "Gaceta Hípica" de Venezuela (La Rinconada / Valencia).
 Ignora portadas, publicidad e índices ("CORREN ESTA SEMANA"). Extrae el 100% de los parámetros internos de cada carrera y de cada ejemplar en JSON válido:
+Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional ni bloques markdown.
 
 1. CABECERA DE CARRERA Y LOTE:
    - "hipodromo": "LA RINCONADA", "codigo_hipodromo": "LR", "fecha": "YYYY-MM-DD" (de DD/MM/YY), "hora": "HH:MM" (24h).
