@@ -9,7 +9,7 @@ import { supabase } from "@/core/supabase";
 import { exigirCapacidad, tieneCapacidad } from "@/features/seguridad/lib/vigente";
 import { puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
 import { useCarrerasDiaStore, type CarreraDelDia } from "@/shared/store/useCarrerasDiaStore";
-import { claveCarrera } from "@/features/carreras/lib/claves";
+import { claveCarrera, claveHipodromo } from "@/features/carreras/lib/claves";
 import { registrarCarreraMaestro, ordenarPorNumero, actualizarCarreraMaestro, type DatosEdicionCarrera } from "@/features/carreras/lib/maestro";
 import { hoyLocal, type CaballoPrograma } from "@/features/gaceta/lib/programa";
 
@@ -618,47 +618,77 @@ export async function revertirResultadoCentral(input: {
 
   if (!supabase) return { ok: true };
   const sdb = supabase;
-  // 1) Asegurar que la tabla matriz `carreras` vuelva a "Programada"
+  const clave = claveHipodromo(hip);
+
+  // 1) Asegurar que la tabla matriz `carreras` vuelva a "Programada".
+  // Se buscan las filas por fecha+carrera y se filtran por clave de hipódromo
+  // (robusto ante diferencias de espacios/mayúsculas), actualizando por id.
   try {
-    await sdb
+    const { data: rows } = await sdb
       .from("carreras")
-      .update({ estado: "Programada" })
+      .select("id, hipodromo")
       .eq("fecha", f)
-      .ilike("hipodromo", `%${hip}%`)
       .eq("carrera", carrera);
+    const ids = (rows ?? [])
+      .filter((r: Record<string, unknown>) => claveHipodromo(String(r.hipodromo ?? "")) === clave)
+      .map((r: Record<string, unknown>) => r.id);
+    if (ids.length > 0) {
+      await sdb.from("carreras").update({ estado: "Programada" }).in("id", ids as never[]);
+    } else {
+      // Fallback por ilike si no se pudo filtrar por id.
+      await sdb
+        .from("carreras")
+        .update({ estado: "Programada" })
+        .eq("fecha", f)
+        .ilike("hipodromo", `%${hip.replace(/\s+/g, "%")}%`)
+        .eq("carrera", carrera);
+    }
   } catch {
     /* best-effort */
   }
 
-  // 2) Eliminar o resetear la fila en `resultados_carreras` para que la carrera quede limpia
+  // 2) Resetear la fila en `resultados_carreras` (o eliminarla) para que la
+  // carrera quede limpia. Mismo criterio robusto por id.
   try {
-    await sdb
+    const { data: rows } = await sdb
       .from("resultados_carreras")
-      .delete()
+      .select("id, hipodromo")
       .eq("fecha", f)
-      .ilike("hipodromo", `%${hip}%`)
       .eq("carrera", carrera);
+    const ids = (rows ?? [])
+      .filter((r: Record<string, unknown>) => claveHipodromo(String(r.hipodromo ?? "")) === clave)
+      .map((r: Record<string, unknown>) => r.id);
+    if (ids.length > 0) {
+      await sdb
+        .from("resultados_carreras")
+        .update({
+          estado: "Programada",
+          ganadores: null,
+          aplicado_a_tablas: false,
+          orden_llegada: null,
+          dividendos: null,
+          premio_oficial: null,
+          premio_recalculado: null,
+        })
+        .in("id", ids as never[]);
+    } else {
+      await sdb
+        .from("resultados_carreras")
+        .update({
+          estado: "Programada",
+          ganadores: null,
+          aplicado_a_tablas: false,
+          orden_llegada: null,
+          dividendos: null,
+          premio_oficial: null,
+          premio_recalculado: null,
+        })
+        .eq("fecha", f)
+        .ilike("hipodromo", `%${hip.replace(/\s+/g, "%")}%`)
+        .eq("carrera", carrera);
+    }
   } catch {
-    /* best-effort delete */
-  }
-
-  try {
-    await sdb
-      .from("resultados_carreras")
-      .update({
-        estado: "Programada",
-        ganadores: null,
-        aplicado_a_tablas: false,
-        orden_llegada: null,
-        dividendos: null,
-        premio_oficial: null,
-        premio_recalculado: null,
-      })
-      .eq("fecha", f)
-      .ilike("hipodromo", `%${hip}%`)
-      .eq("carrera", carrera);
-  } catch {
-    /* best-effort update */
+    /* best-effort */
   }
 
   // 3) RPC dedicada en servidor (si existe y tiene permisos)

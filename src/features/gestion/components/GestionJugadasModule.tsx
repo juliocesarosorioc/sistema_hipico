@@ -230,6 +230,30 @@ export function GestionJugadasModule() {
   const [reversando, setReversando] = useState(false);
   /** Carreras reversadas en la sesión activa: fuerza el estado ABIERTO para permitir liquidar de inmediato */
   const [carrerasReversadas, setCarrerasReversadas] = useState<Set<number>>(new Set());
+  // Persistencia: las reversiones deben sobrevivir a salir/volver a la carrera.
+  useEffect(() => {
+    try {
+      const key = `carrerasReversadas:${String(fecha).slice(0, 10)}:${claveHipodromo(hipodromo)}`;
+      const raw = typeof window !== "undefined" ? window.localStorage.getItem(key) : null;
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) setCarrerasReversadas(new Set(arr.map(Number).filter((n) => Number.isFinite(n) && n > 0)));
+      } else {
+        setCarrerasReversadas(new Set());
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [fecha, hipodromo]);
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      const key = `carrerasReversadas:${String(fecha).slice(0, 10)}:${claveHipodromo(hipodromo)}`;
+      window.localStorage.setItem(key, JSON.stringify([...carrerasReversadas]));
+    } catch {
+      /* ignore */
+    }
+  }, [carrerasReversadas, fecha, hipodromo]);
   const [filas, setFilas] = useState<FilaCarga[]>([filaVacia()]);
   const [jugadasPorCarrera, setJugadasPorCarrera] = useState<number[]>([]);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
