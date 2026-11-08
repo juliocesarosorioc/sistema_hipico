@@ -485,16 +485,17 @@ export async function listarClientes(force = false, grupoIdOverride?: string | n
   ultimoErrorClientes = null;
   if (supabase) {
     try {
-      // Resolver todos los identificadores del grupo objetivo (id, código, nombre)
+      // Resolver todos los identificadores del grupo objetivo (id, slug, nombre)
       const idsObjetivo = new Set<string>([String(activo)]);
       try {
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(activo).trim());
         const { data: gRows } = await supabase
           .from("grupos_venta")
-          .select("id, nombre, codigo")
-          .or(`id.eq.${activo},nombre.ilike.%${activo}%,codigo.ilike.%${activo}%`);
+          .select("id, nombre, slug")
+          .or(isUUID ? `id.eq.${activo},nombre.ilike.%${activo}%,slug.ilike.%${activo}%` : `nombre.ilike.%${activo}%,slug.ilike.%${activo}%`);
         for (const g of gRows ?? []) {
           if (g.id != null) idsObjetivo.add(String(g.id));
-          if (g.codigo) idsObjetivo.add(String(g.codigo).toUpperCase());
+          if (g.slug) idsObjetivo.add(String(g.slug).toUpperCase());
           if (g.nombre) idsObjetivo.add(String(g.nombre).toUpperCase());
         }
       } catch {
@@ -1422,7 +1423,32 @@ export function construirEstadoCuenta(
 
   for (const t of tickets) {
     const rec = t as unknown as Record<string, unknown>;
-    const base = t.monto_decidido != null ? num(t.monto_decidido) : num(t.monto_jugado);
+    const m = num(t.monto_jugado);
+    const prem = num(t.premio_pagar);
+    const mDecRaw = num(t.monto_decidido);
+    const comPag = num(t.comision_pagada);
+    const stUpper = String(t.estado ?? "").trim().toUpperCase();
+    const esG = stUpper === "GANADOR" || stUpper === "GANO" || stUpper === "SOLUCIONADO";
+    const esP = stUpper === "PERDEDOR" || stUpper === "PERDIO";
+
+    let base = m;
+    if (esG) {
+      if (prem > m) {
+        base = (prem - m < m && comPag > 0) ? (prem - m + comPag) : (prem - m);
+      } else if (mDecRaw > m) {
+        base = mDecRaw - m;
+      } else if (mDecRaw > 0) {
+        base = mDecRaw;
+      }
+    } else if (esP) {
+      if (prem >= m && m > 0) {
+        base = 0; // Empate NINI devuelve capital
+      } else if (prem > 0 && prem < m) {
+        base = m - prem;
+      } else if (mDecRaw > 0 && mDecRaw <= m) {
+        base = mDecRaw;
+      }
+    }
     const anulada = t.anulada === true;
     const baseVigente = anulada ? 0 : base;
     const estUpper = String(t.estado ?? "").trim().toUpperCase();
@@ -1572,6 +1598,7 @@ export function construirEstadoCuenta(
         nombreJugada: j.jugada,
         montoJugado: j.montoJugado,
         premioPagar: j.premio,
+        montoDecidido: j.montoDecidido,
         resultado: j.resultadoNeto,
         estado: j.estado,
         rol: j.rol,
@@ -1585,7 +1612,11 @@ export function construirEstadoCuenta(
       const jugadasJuega = c.jugadas.filter((j) => resC.consigueIncluidoPorCruce || j.rol !== "Consigue"); // con cruce, Consigue también recibe devolución sobre la diferencia
       for (const j of c.jugadas) { if (!resC.consigueIncluidoPorCruce && j.rol === "Consigue") j.devolucion = 0; }
       const sumaBases = jugadasJuega.reduce((acc, j) => {
-        const val = typeof j.resultadoNeto === "number" ? Math.abs(j.resultadoNeto) : j.montoJugado;
+        const val = typeof j.montoDecidido === "number" && j.montoDecidido > 0
+          ? j.montoDecidido
+          : typeof j.resultadoNeto === "number"
+            ? Math.abs(j.resultadoNeto)
+            : j.montoJugado;
         return acc + val;
       }, 0);
       let rem = c.dec;
@@ -1593,7 +1624,11 @@ export function construirEstadoCuenta(
         if (i === jugadasJuega.length - 1) {
           jugadasJuega[i].devolucion = Math.round(rem * 100) / 100;
         } else {
-          const val = typeof jugadasJuega[i].resultadoNeto === "number" ? Math.abs(jugadasJuega[i].resultadoNeto!) : jugadasJuega[i].montoJugado;
+          const val = typeof jugadasJuega[i].montoDecidido === "number" && jugadasJuega[i].montoDecidido > 0
+            ? jugadasJuega[i].montoDecidido!
+            : typeof jugadasJuega[i].resultadoNeto === "number"
+              ? Math.abs(jugadasJuega[i].resultadoNeto!)
+              : jugadasJuega[i].montoJugado;
           const cuota = sumaBases > 0 ? Math.round((val / sumaBases) * c.dec * 100) / 100 : 0;
           jugadasJuega[i].devolucion = cuota;
           rem -= cuota;

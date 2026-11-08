@@ -548,7 +548,7 @@ export async function registrarLatidoPresencia(params: {
 
   if (supabase && tablaSesionDisponible) {
     try {
-      await supabase.from("usuario_sesion").upsert(
+      const { error } = await supabase.from("usuario_sesion").upsert(
         [
           {
             id: sesionId,
@@ -561,13 +561,16 @@ export async function registrarLatidoPresencia(params: {
             dispositivo,
             navegador,
             pagina_actual: params.paginaActual || window.location.pathname,
-            ip: params.ip || null,
+            ip: params.ip || "127.0.0.1",
           },
         ],
         { onConflict: "id" }
       );
+      if (error) {
+        tablaSesionDisponible = false;
+      }
     } catch {
-      /* best-effort */
+      tablaSesionDisponible = false;
     }
   }
 }
@@ -698,6 +701,10 @@ export async function consultarUsuariosConectados(): Promise<UsuarioSesionInfo[]
         .select("*")
         .gte("ultimo_latido", new Date(limite10Dias).toISOString())
         .order("ultimo_latido", { ascending: false });
+
+      if (error) {
+        tablaSesionDisponible = false;
+      }
 
       if (!error && Array.isArray(data) && data.length > 0) {
         sesiones = (data as Record<string, unknown>[]).map((d) => {

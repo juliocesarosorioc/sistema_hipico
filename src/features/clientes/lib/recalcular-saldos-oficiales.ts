@@ -43,7 +43,7 @@ export async function recalcularYActualizarSaldosOficiales(
     // 1. Cargar clientes
     let qCli = supabase
       .from("clientes")
-      .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, devolucion_porcentaje, grupo_id");
+      .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, grupo_id");
     if (grupoId) {
       qCli = qCli.eq("grupo_id", grupoId);
     }
@@ -97,7 +97,7 @@ export async function recalcularYActualizarSaldosOficiales(
     // 4. Cargar tickets de apuestas decididos
     const { data: dbTickets, error: eT } = await supabase
       .from("tickets_apuestas")
-      .select("id, cliente_juega_id, cliente_juega_nombre, cliente_juega, cliente_consigue_id, cliente_consigue_nombre, cliente_consigue, banquero_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, monto_jugado, premio_pagar, monto_decidido, comision_pagada, estado, anulada")
+      .select("id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, banquero_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, monto_jugado, premio_pagar, monto_decidido, comision_pagada, estado, anulada")
       .or("anulada.is.null,anulada.eq.false")
       .limit(10000);
 
@@ -121,7 +121,7 @@ export async function recalcularYActualizarSaldosOficiales(
 
       const devPct = Math.max(
         0,
-        Number(cli.devolucion ?? cli.incentivo_pct ?? cli.devolucion_porcentaje ?? 0) || 0
+        Number(cli.devolucion ?? cli.incentivo_pct ?? 0) || 0
       );
       const comPct = comisionesGrupo.get(String(cli.grupo_id ?? "")) ?? 5;
 
@@ -129,8 +129,8 @@ export async function recalcularYActualizarSaldosOficiales(
       const ticketsCliente = ticketsValidos.filter((t) => {
         const jId = String(t.cliente_juega_id ?? "").trim();
         const cId = String(t.cliente_consigue_id ?? "").trim();
-        const jNom = normalizarNombreCliente(t.cliente_juega_nombre ?? t.cliente_juega ?? "");
-        const cNom = normalizarNombreCliente(t.cliente_consigue_nombre ?? t.cliente_consigue ?? t.banquero_nombre ?? "");
+        const jNom = normalizarNombreCliente(t.cliente_juega_nombre ?? "");
+        const cNom = normalizarNombreCliente(t.cliente_consigue_nombre ?? t.banquero_nombre ?? "");
 
         const coincideJuega = (cid && jId === cid) || (cnomNorm && jNom === cnomNorm) || (cseuNorm && jNom === cseuNorm);
         const coincideConsigue = (cid && cId === cid) || (cnomNorm && cNom === cnomNorm) || (cseuNorm && cNom === cseuNorm);
@@ -166,7 +166,7 @@ export async function recalcularYActualizarSaldosOficiales(
           const esG = ["GANADOR", "GANO", "SOLUCIONADO"].includes(st);
 
           const jId = String(t.cliente_juega_id ?? "").trim();
-          const jNom = normalizarNombreCliente(t.cliente_juega_nombre ?? t.cliente_juega ?? "");
+          const jNom = normalizarNombreCliente(t.cliente_juega_nombre ?? "");
           const esJuega = (cid && jId === cid) || (cnomNorm && jNom === cnomNorm) || (cseuNorm && jNom === cseuNorm);
 
           const nj = String(t.nombre_jugada ?? "").toUpperCase();
@@ -178,12 +178,14 @@ export async function recalcularYActualizarSaldosOficiales(
           // Si mDec > 0 -> mDec
           // Si prem > m -> (prem - m) + comPag (por si prem se guardó neteado de comisión en carreras viejas)
           // Else -> m
-          const gananciaBruta = mDec > 0
-            ? mDec
-            : prem > m
-              ? (prem - m) + comPag
-              : m;
-          const perdidaBruta = prem > 0 && prem < m ? m - prem : mDec > 0 ? mDec : m;
+          const gananciaBruta = prem > m
+            ? (prem - m) + comPag
+            : mDec > m
+              ? (mDec - m)
+              : mDec > 0
+                ? mDec
+                : m;
+          const perdidaBruta = prem > 0 && prem < m ? m - prem : mDec > 0 && mDec <= m ? mDec : m;
 
           if (esJuega) {
             if (esG) {
