@@ -1,13 +1,15 @@
 -- ============================================================================
 -- SCRIPT OFICIAL: RECALCULAR Y ACTUALIZAR SALDOS EN SUPABASE
--- Regla de Negocio:
+-- Regla de Negocio Canónica:
 -- 1. Devoluciones e incentivos sobre el MONTO DECIDIDO neto de la carrera SIN comisión.
---    - Si perdió 50 -> base = 50.
---    - Si ganó 50 -> base = 50.
+--    - Si solo perdió 50 -> base = 50. Devolución = 50 * (% dev).
+--    - Si solo ganó 50 -> base = 50. Comisión = 50 * (% com). Neto = 50 - com. Devolución = 50 * (% dev).
 --    - Si hubo cruce (ej. ganó 50 y perdió 20) -> base = |50 - 20| = 30.
+--      Diferencia positiva = 30. Comisión = 30 * (% com). Neto = 30 - com. Devolución = 30 * (% dev).
 --    - Si ganó y perdió lo mismo (ej. 50 y 50) -> base = 0.
 -- 2. Comisión de la casa: SOLO sobre la diferencia neta positiva si termina a favor.
 -- 3. La devolución SIEMPRE suma (+) a favor del cliente.
+-- 4. Ejecución inmediata e idempotente: actualiza clientes.saldo_actual directamente.
 -- ============================================================================
 
 BEGIN;
@@ -57,11 +59,11 @@ BEGIN
       c.grupo_id AS cgid,
       g.nombre AS gnom,
       COALESCE(c.saldo_actual, 0.00) AS saldo_act,
-      COALESCE(c.devolucion, c.incentivo_pct, 0.00) AS dev_pct,
+      COALESCE(c.devolucion, c.incentivo_pct, c.devolucion_porcentaje, 0.00) AS dev_pct,
       COALESCE(g.comision_default, 5.00) AS com_pct
     FROM public.clientes c
     LEFT JOIN public.grupos_venta g ON g.id = c.grupo_id
-    WHERE COALESCE(c.nombre, '') NOT IN ('MARCAS', 'TF', 'REMATES', 'DUPLETA', 'POLLAS')
+    WHERE UPPER(TRIM(COALESCE(c.nombre, ''))) NOT IN ('MARCAS', 'TF', 'REMATES', 'DUPLETA', 'POLLAS')
   ) LOOP
 
     v_saldo_anterior := r.saldo_act;
@@ -78,7 +80,8 @@ BEGIN
       INTO v_depositos_netos
       FROM public.depositos d
       WHERE d.cliente_id::TEXT = r.cid::TEXT 
-         OR UPPER(TRIM(d.cliente_nombre)) = UPPER(TRIM(r.cnom));
+         OR UPPER(TRIM(d.cliente_nombre)) = UPPER(TRIM(r.cnom))
+         OR (r.cseu IS NOT NULL AND UPPER(TRIM(d.cliente_nombre)) = UPPER(TRIM(r.cseu)));
     END IF;
 
     -- 2. Cálculo carrera a carrera con Cruces y Devolución sobre Monto Decidido
@@ -87,15 +90,24 @@ BEGIN
         COALESCE(t.fecha_carrera, t.fecha_registro::DATE, NOW()::DATE) AS fecha,
         UPPER(TRIM(t.hipodromo)) AS hipodromo,
         t.carrera,
-        -- Ganado bruto desde perspectiva del cliente
+        -- Ganado bruto desde perspectiva del cliente (premio menos lo apostado)
         SUM(
           CASE
             -- Cliente juega y gana
-            WHEN (t.cliente_juega_id::TEXT = r.cid::TEXT OR UPPER(TRIM(COALESCE(t.cliente_juega_nombre, ''))) = UPPER(TRIM(r.cnom)))
+            WHEN (
+                  t.cliente_juega_id::TEXT = r.cid::TEXT 
+                  OR UPPER(TRIM(COALESCE(t.cliente_juega_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                  OR UPPER(TRIM(COALESCE(t.cliente_juega, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                 )
                  AND UPPER(TRIM(COALESCE(t.estado, ''))) IN ('GANADOR', 'GANO', 'SOLUCIONADO') THEN
               GREATEST(0.00, COALESCE(t.premio_pagar, 0.00) - COALESCE(t.monto_jugado, 0.00))
             -- Cliente da (consigue) y el apostador pierde -> cliente gana el monto apostado
-            WHEN (t.cliente_consigue_id::TEXT = r.cid::TEXT OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) = UPPER(TRIM(r.cnom)))
+            WHEN (
+                  t.cliente_consigue_id::TEXT = r.cid::TEXT 
+                  OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                  OR UPPER(TRIM(COALESCE(t.cliente_consigue, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                  OR UPPER(TRIM(COALESCE(t.banquero_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                 )
                  AND UPPER(TRIM(COALESCE(t.estado, ''))) IN ('PERDEDOR', 'PERDIO') THEN
               COALESCE(t.monto_jugado, 0.00)
             ELSE 0.00
@@ -105,11 +117,20 @@ BEGIN
         SUM(
           CASE
             -- Cliente juega y pierde
-            WHEN (t.cliente_juega_id::TEXT = r.cid::TEXT OR UPPER(TRIM(COALESCE(t.cliente_juega_nombre, ''))) = UPPER(TRIM(r.cnom)))
+            WHEN (
+                  t.cliente_juega_id::TEXT = r.cid::TEXT 
+                  OR UPPER(TRIM(COALESCE(t.cliente_juega_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                  OR UPPER(TRIM(COALESCE(t.cliente_juega, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                 )
                  AND UPPER(TRIM(COALESCE(t.estado, ''))) IN ('PERDEDOR', 'PERDIO') THEN
               COALESCE(t.monto_jugado, 0.00)
             -- Cliente da (consigue) y el apostador gana -> cliente pierde la ganancia otorgada
-            WHEN (t.cliente_consigue_id::TEXT = r.cid::TEXT OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) = UPPER(TRIM(r.cnom)))
+            WHEN (
+                  t.cliente_consigue_id::TEXT = r.cid::TEXT 
+                  OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                  OR UPPER(TRIM(COALESCE(t.cliente_consigue, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                  OR UPPER(TRIM(COALESCE(t.banquero_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                 )
                  AND UPPER(TRIM(COALESCE(t.estado, ''))) IN ('GANADOR', 'GANO', 'SOLUCIONADO') THEN
               GREATEST(0.00, COALESCE(t.premio_pagar, 0.00) - COALESCE(t.monto_jugado, 0.00))
             ELSE 0.00
@@ -129,9 +150,12 @@ BEGIN
         AND UPPER(TRIM(COALESCE(t.estado, ''))) IN ('GANADOR', 'GANO', 'PERDEDOR', 'PERDIO', 'SOLUCIONADO')
         AND (
           t.cliente_juega_id::TEXT = r.cid::TEXT 
-          OR UPPER(TRIM(COALESCE(t.cliente_juega_nombre, ''))) = UPPER(TRIM(r.cnom))
+          OR UPPER(TRIM(COALESCE(t.cliente_juega_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+          OR UPPER(TRIM(COALESCE(t.cliente_juega, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
           OR t.cliente_consigue_id::TEXT = r.cid::TEXT
-          OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) = UPPER(TRIM(r.cnom))
+          OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+          OR UPPER(TRIM(COALESCE(t.cliente_consigue, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+          OR UPPER(TRIM(COALESCE(t.banquero_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
         )
       GROUP BY 1, 2, 3
     ),

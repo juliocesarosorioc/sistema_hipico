@@ -202,6 +202,7 @@
     "./reversar-boton-reliquidar.test.ts",
     "./eliminar-grupo-chat.test.ts",
     "../src/features/gestion/lib/semaforo-core.ts",
-    "./semaforo-estados-estrictos.test.ts"
+    "./semaforo-estados-estrictos.test.ts",
+    "./pizarra-multi-ejemplar-y-saldos.test.ts"
   ]
 }

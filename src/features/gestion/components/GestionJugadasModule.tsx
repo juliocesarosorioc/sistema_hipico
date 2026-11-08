@@ -444,6 +444,7 @@ export function GestionJugadasModule() {
   const [mostrarPreliminarResultado, setMostrarPreliminarResultado] = useState(false);
   const [mostrarHistorial, setMostrarHistorial] = useState(false);
   const [mostrarReporteLiquidacion, setMostrarReporteLiquidacion] = useState(false);
+  const [pizarraReporteActiva, setPizarraReporteActiva] = useState<string | null>(null);
   const [modalDecisionPostCierre, setModalDecisionPostCierre] = useState(false);
   const [guiaOperadorAbierta, setGuiaOperadorAbierta] = useState(false);
   const [modalResultados, setModalResultados] = useState(false);
@@ -491,6 +492,7 @@ export function GestionJugadasModule() {
    */
   const cerrarReporteYBlanquear = useCallback(() => {
     setMostrarReporteLiquidacion(false);
+    setPizarraReporteActiva(null);
     setModoExclusivoReporte(false);
     setModalDecisionPostCierre(false);
     setModalFinalizar(false);
@@ -2872,6 +2874,19 @@ const hipodromosDelDia = useMemo(() => {
           return next;
         });
         for (const t of ticketsDeCarrera) eliminarTicket(t.id);
+        const puestosReporte = [
+          piz.pizarra.primero,
+          piz.pizarra.segundo,
+          piz.pizarra.tercero,
+          piz.pizarra.cuarto,
+          piz.pizarra.quinto,
+          piz.pizarra.sexto,
+          piz.pizarra.septimo,
+          piz.pizarra.octavo,
+        ].filter(Boolean).map(String);
+        if (puestosReporte.length > 0) {
+          setPizarraReporteActiva(puestosReporte.join(" · "));
+        }
         setPizarraCentral(piz);
         setUltimaPizarra(null);
         setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
@@ -5633,18 +5648,22 @@ const hipodromosDelDia = useMemo(() => {
         carreraInicial={carrera}
         fechaInicial={fecha}
         pizarraInicial={
-          pizarraCentral?.pizarra?.primero
+          pizarraReporteActiva ||
+          (pizarraCentral?.pizarra?.primero
             ? [
                 pizarraCentral.pizarra.primero,
                 pizarraCentral.pizarra.segundo,
                 pizarraCentral.pizarra.tercero,
                 pizarraCentral.pizarra.cuarto,
                 pizarraCentral.pizarra.quinto,
+                pizarraCentral.pizarra.sexto,
+                pizarraCentral.pizarra.septimo,
+                pizarraCentral.pizarra.octavo,
               ]
                 .filter(Boolean)
                 .map(String)
                 .join(" · ")
-            : undefined
+            : undefined)
         }
         modoExclusivoLiquidacion={modoExclusivoReporte}
       />

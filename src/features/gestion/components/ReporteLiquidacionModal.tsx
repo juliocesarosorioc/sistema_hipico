@@ -402,22 +402,28 @@ export default function ReporteLiquidacionModal({
       .then(async ([c, frescos]) => {
         if (!vivo) return;
         if (!c) return setDetalle(null);
-        if ((!c.pizarra || c.pizarra.trim() === "") && pizarraInicial) {
+        const cantPos = (s?: string | null) =>
+          (s ?? "").replace(/["'{}]/g, "").split(/[\s·,\/\-]+/).filter((x) => /^\d+$/.test(x)).length;
+
+        if (pizarraInicial && cantPos(pizarraInicial) > cantPos(c.pizarra)) {
           c.pizarra = pizarraInicial;
         }
-        if (!c.pizarra || c.pizarra.trim() === "") {
+        if (cantPos(c.pizarra) <= 1) {
           try {
             const { leerResultadoOficial } = await import("@/features/carreras/lib/carreras-dia");
             const ofi =
               (await leerResultadoOficial(hipoActivo, carrActiva, fechaActiva)) ||
               (await leerResultadoOficial(hipoActivo, carrActiva));
-            if (ofi?.puestos?.length) {
+            if (ofi?.puestos && ofi.puestos.length > cantPos(c.pizarra)) {
               c.pizarra = ofi.puestos.join(" · ");
               if (ofi.puestosRaya?.length) c.pizarraRaya = ofi.puestosRaya.join(" · ");
             }
           } catch {
             /* ignore */
           }
+        }
+        if (pizarraInicial && cantPos(pizarraInicial) > cantPos(c.pizarra)) {
+          c.pizarra = pizarraInicial;
         }
         setDetalle({ reporte: c, frescos });
       })

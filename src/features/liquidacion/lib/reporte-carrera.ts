@@ -279,13 +279,15 @@ export function armarReporteCarrera(
   opciones?: OpcionesReporteCarrera
 ): ReporteCarreraDatos {
   let puestos = (c.pizarra ?? "")
-    .split(/\s*·\s*|\s*,\s*|\s*-\s*/)
+    .replace(/["'{}]/g, "")
+    .split(/[\s·,\/\-]+/)
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter((s) => /^\d+$/.test(s));
   let puestosRaya = (c.pizarraRaya ?? "")
-    .split(/\s*·\s*|\s*,\s*|\s*-\s*/)
+    .replace(/["'{}]/g, "")
+    .split(/[\s·,\/\-]+/)
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter((s) => /^\d+$/.test(s));
 
   // Fallback de contingencia: si la pizarra no viene explícita pero hay jugadas ganadoras con resultado neto > 0
   if (puestos.length === 0 && Array.isArray(c.filas)) {

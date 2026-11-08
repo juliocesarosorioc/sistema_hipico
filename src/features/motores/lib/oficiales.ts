@@ -100,7 +100,7 @@ export function puestosDesdeOrdenLlegada(v: unknown): string[] {
     const sinLlaves = s.replace(/^\{+|\}+$/g, "").trim();
     const tokens = sinLlaves
       .split(/[\s,·\/\-]+/)
-      .map((t) => t.trim())
+      .map((t) => t.replace(/["'\\]/g, "").trim())
       .filter((t) => /^\d+$/.test(t));
     if (tokens.length > 0) return tokens;
     return [];

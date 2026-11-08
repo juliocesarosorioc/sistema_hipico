@@ -9,6 +9,7 @@ import { ModalCreacionRapidaCliente } from "@/features/clientes/components/Modal
 import { ModalPortalCliente } from "@/features/clientes/components/ModalPortalCliente";
 import { ModalCruceJugadores } from "@/features/clientes/components/ModalCruceJugadores";
 import { ModalRecalculoSemana } from "@/features/clientes/components/ModalRecalculoSemana";
+import { recalcularYActualizarSaldosOficiales } from "@/features/clientes/lib/recalcular-saldos-oficiales";
 import { EstadoCuentaAcordeon } from "@/features/clientes/components/EstadoCuentaAcordeon";
 import { ReporteDestinatariosDevolucion } from "@/features/clientes/components/ReporteDestinatariosDevolucion";
 import { CuadernoCliente } from "@/features/clientes/components/CuadernoCliente";
@@ -159,6 +160,7 @@ export function ClientesModule() {
 
   const [modalCruceAbierto, setModalCruceAbierto] = useState(false);
   const [abrirRecalculoSemana, setAbrirRecalculoSemana] = useState(false);
+  const [recalculandoSaldos, setRecalculandoSaldos] = useState(false);
   const [clienteEmisorCruceId, setClienteEmisorCruceId] = useState<string | null>(null);
   const [modalPagoGanadorAbierto, setModalPagoGanadorAbierto] = useState(false);
   const [clientePagoGanadorId, setClientePagoGanadorId] = useState<string | null>(null);
@@ -403,7 +405,33 @@ export function ClientesModule() {
           >
             <span>🔀</span> Cruce entre Jugadores
           </Button>
-          <Button
+                    <Button
+            variant="default"
+            size="sm"
+            disabled={recalculandoSaldos}
+            onClick={async () => {
+              setRecalculandoSaldos(true);
+              try {
+                const res = await recalcularYActualizarSaldosOficiales(grupoConsultado);
+                if (res.ok) {
+                  toast(`✅ Saldos Oficiales actualizados: ${res.totalAjustados} cliente(s) ajustados en Supabase.`, "success");
+                  limpiarCacheClientes();
+                  void recargar(grupoConsultado);
+                } else {
+                  toast(`❌ Error: ${res.error}`, "error");
+                }
+              } catch (e: any) {
+                toast(`❌ Error: ${e?.message || String(e)}`, "error");
+              } finally {
+                setRecalculandoSaldos(false);
+              }
+            }}
+            className="!border-blue-500 !bg-blue-600 !font-black !text-white hover:!bg-blue-700 shadow-sm"
+            title="Recalcula carrera a carrera con Cruces y Devolución sobre Monto Decidido sin comisión, y actualiza Supabase ahora mismo"
+          >
+            <span>{recalculandoSaldos ? "⏳" : "⚡"}</span> {recalculandoSaldos ? "Actualizando Saldos..." : "Actualizar Saldos Oficiales"}
+          </Button>
+<Button
             variant="outline"
             size="sm"
             onClick={() => setAbrirRecalculoSemana(true)}

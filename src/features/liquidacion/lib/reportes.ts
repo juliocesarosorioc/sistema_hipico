@@ -1946,8 +1946,8 @@ async function carreraReporte(
   let puestos = pizarra?.puestos ?? [];
   let puestosRaya = pizarra?.puestosRaya ?? [];
 
-  // Robustez: si puestos está vacío pero la carrera ya se pagó o tiene ganadores registrados
-  if (!puestos.length) {
+  // Robustez: si puestos esta vacio o tiene <= 1 ejemplar, enriquecer con resultado central oficial o store en memoria
+  if (puestos.length <= 1) {
     try {
       const { useCarrerasDiaStore } = await import("@/shared/store/useCarrerasDiaStore");
       const cMem = useCarrerasDiaStore.getState().carreras.find((cd) => {
@@ -1957,7 +1957,7 @@ async function carreraReporte(
             cd.hipodromo.toLowerCase().includes(hipodromo.toLowerCase()) ||
             hipodromo.toLowerCase().includes(cd.hipodromo.toLowerCase())) &&
           Array.isArray(cd.ganadores) &&
-          cd.ganadores.length > 0
+          cd.ganadores.length > puestos.length
         );
       });
       if (cMem?.ganadores?.length) {
@@ -1966,6 +1966,22 @@ async function carreraReporte(
       }
     } catch {
       /* ignore */
+    }
+    if (puestos.length <= 1) {
+      try {
+        const { leerResultadoOficial } = await import("@/features/carreras/lib/carreras-dia");
+        const ofi =
+          (await leerResultadoOficial(hipodromo, numero, fecha)) ||
+          (await leerResultadoOficial(hipodromo, numero));
+        if (ofi?.puestos && ofi.puestos.length > puestos.length) {
+          puestos = ofi.puestos.map(String).map((x) => x.trim()).filter(Boolean);
+          puestosRaya = ofi.puestosRaya?.length
+            ? ofi.puestosRaya.map(String).map((x) => x.trim()).filter(Boolean)
+            : puestos;
+        }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
