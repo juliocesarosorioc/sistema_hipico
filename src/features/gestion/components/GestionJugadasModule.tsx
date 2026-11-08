@@ -1553,28 +1553,20 @@ const hipodromosDelDia = useMemo(() => {
 
   const carrerasLiquidadasDelDia = useMemo(() => {
     const setNums = new Set<number>();
-    const numCarrera = Number(carrera);
-    if (carreraLiquidada && numCarrera && !carrerasReversadas.has(numCarrera)) {
-      setNums.add(numCarrera);
-    }
+    // El estado se deriva SOLO de la data del día (registro central), nunca de
+    // la carrera seleccionada: seleccionar/deseleccionar no puede cambiar el
+    // color de una carrera. ROJO = liquidada (`aplicado_a_tablas` o estado
+    // "Liquidada"); tener ganadores es "Resultados", todavía no rojo.
     for (const c of carrerasDelDia) {
       const n = Number(c.carrera);
       if (carrerasReversadas.has(n)) continue;
       const est = String(c.estado ?? "").toLowerCase();
-      if (est === "liquidada" || est === "cerrada" || c.aplicado_a_tablas === true || (c.ganadores?.length ?? 0) > 0) {
+      if (est === "liquidada" || c.aplicado_a_tablas === true) {
         setNums.add(n);
       }
     }
-    if (pizarraCentral?.pizarra && numCarrera && !carrerasReversadas.has(numCarrera)) {
-      setNums.add(numCarrera);
-    }
-    for (const f of filasPreview) {
-      if (f.estadoLiquidacion === "Liquidada" && numCarrera && !carrerasReversadas.has(numCarrera)) {
-        setNums.add(numCarrera);
-      }
-    }
     return [...setNums];
-  }, [carreraLiquidada, carrera, carrerasDelDia, pizarraCentral, filasPreview, carrerasReversadas]);
+  }, [carrerasDelDia, carrerasReversadas]);
 
   const abrirResultados = useCallback(async () => {
     if (!listoParaCargar) return;
@@ -3120,9 +3112,10 @@ const hipodromosDelDia = useMemo(() => {
 
     setCarrera(n);
     setCarreraConfirmada(true);
-    if (!carrerasPorDia.includes(n)) {
-      setCarrerasPorDia((prev) => [...new Set([...prev, n])].sort((a, b) => a - b));
-    }
+    // NO se agrega la carrera a `carrerasPorDia`: esa lista es el CATÁLOGO real
+    // y si se modifica al seleccionar, una carrera sin registrar (GRIS) pasaría
+    // a VERDE solo por el clic. El semáforo ya resalta `activa` e incluye su
+    // número en el ancho (`total`), así que se ve sin falsear el estado.
   };
 
   /** Confirmación antes de liquidar la carrera activa: "¿LIQUIDAR CARRERA X ?" */
@@ -3751,14 +3744,9 @@ const hipodromosDelDia = useMemo(() => {
         carreras={carrerasPorDia}
         activa={carreraConfirmada ? carrera : null}
         manual={modoManual}
-        carrerasConJugadas={
-          hipodromoElegido
-            ? filasPreview.some((f) => !f.anulada) && !jugadasPorCarrera.includes(carrera)
-              ? [...jugadasPorCarrera, carrera]
-              : jugadasPorCarrera
-            : []
-        }
+        carrerasConJugadas={hipodromoElegido ? jugadasPorCarrera : []}
         carrerasLiquidadas={carrerasLiquidadasDelDia}
+        carrerasReversadas={[...carrerasReversadas]}
         carrerasConCaballos={carrerasConCaballosDelDia}
         onSeleccionar={(n, info) => {
           void seleccionarCarreraConConfirmacion(n, info);

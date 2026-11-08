@@ -12,10 +12,10 @@ import { diaDeLaTabla } from "@/features/tablas/components/MonitorTablas";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
 import {
-  resolverEstadoSemaforo,
   COLORES_SEMAFORO as COLORES,
   type EstadoCarrera,
 } from "@/features/gestion/lib/semaforo-core";
+import { estadoSemaforoCarrera } from "@/features/gestion/lib/semaforo-estado";
 
 export type { EstadoCarrera };
 export { COLORES };
@@ -34,6 +34,8 @@ type Props = {
   carrerasConJugadas?: number[];
   /** Números de carrera que ya están liquidadas (módulo padre / estado en vivo). */
   carrerasLiquidadas?: number[];
+  /** Números de carrera reversadas en esta sesión: NO deben verse ROJO. */
+  carrerasReversadas?: number[];
   /** Números de carrera que tienen caballos precargados/registrados. */
   carrerasConCaballos?: number[];
   /** Acción adicional alineada a la derecha en la fila de carreras (p. ej. Liquidar Carrera). */
@@ -73,6 +75,7 @@ export function SemaforoCarreras({
   manual,
   carrerasConJugadas,
   carrerasLiquidadas,
+  carrerasReversadas,
   carrerasConCaballos,
   accionDerecha,
   className = "",
@@ -139,10 +142,10 @@ export function SemaforoCarreras({
         if (resultadosRes.data && Array.isArray(resultadosRes.data)) {
           for (const r of resultadosRes.data as Array<Record<string, unknown>>) {
             if (claveHipodromo(String(r.hipodromo ?? "")) !== claveHipo) continue;
-            const tieneGan = Array.isArray(r.ganadores) && r.ganadores.length > 0;
-            const tieneLleg = Array.isArray(r.orden_llegada) && r.orden_llegada.length > 0;
+            // ROJO = LIQUIDADA. Tener ganadores/orden de llegada es "Resultados"
+            // (aún sin aplicar a tablas) y NO debe pintar la carrera de rojo.
             const tieneTab = r.aplicado_a_tablas === true;
-            if (tieneGan || tieneLleg || tieneTab) {
+            if (tieneTab) {
               const num = Number(r.carrera);
               if (Number.isFinite(num) && num > 0) setLiq.add(num);
             }
@@ -221,50 +224,32 @@ export function SemaforoCarreras({
       (Number((tabla as { cantidad_vendida?: number } | undefined)?.cantidad_vendida ?? 0) > 0) ||
       (registro?.ventas?.length ?? 0) > 0;
 
+    // Jugadas activas: la lista del módulo padre (sesión) y la leída de BD.
+    // NO se consulta la carrera seleccionada: su color no puede depender de la
+    // selección, solo de que existan jugadas reales.
     const tieneJugadas =
       jugadasEnMemoria ||
-      (carrerasConJugadas != null
-        ? n === activa
-          ? carrerasConJugadas.includes(n)
-          : carrerasConJugadas.includes(n) || carrerasBdConJugadas.includes(n)
-        : carrerasBdConJugadas.includes(n));
-
-    // Detección de liquidación y reversión:
-    // Si la carrera fue reabierta / reversada (programada sin ganadores ni aplicado_a_tablas),
-    // o no está en la lista de liquidadas provista por el padre, NO está liquidada.
-    const estCentral = String(central?.estado ?? "").toLowerCase();
-    const centralReabierta =
-      (central != null &&
-        estCentral === "programada" &&
-        !central.aplicado_a_tablas &&
-        (central.ganadores?.length ?? 0) === 0) ||
-      (registro != null &&
-        String(registro.estado ?? "").toLowerCase() === "programada" &&
-        !registro.aplicado_a_tablas &&
-        (registro.ganadores?.length ?? 0) === 0);
-
-    const liquidada = centralReabierta
-      ? false
-      : carrerasLiquidadas != null
-        ? carrerasLiquidadas.includes(n)
-        : Boolean(tabla?.cerrada) ||
-          String(tabla?.estado ?? "").toLowerCase() === "cerrada" ||
-          String(registro?.estado ?? "").toLowerCase() === "liquidada" ||
-          estCentral === "liquidada" ||
-          estCentral === "cerrada" ||
-          central?.aplicado_a_tablas === true ||
-          (central?.ganadores?.length ?? 0) > 0 ||
-          carrerasBdLiquidadas.includes(n);
+      Boolean(carrerasConJugadas?.includes(n)) ||
+      carrerasBdConJugadas.includes(n);
 
     // MÁQUINA DE ESTADOS DETERMINÍSTICA ESTRICTA (4 ESTADOS):
-    // 1. ROJO: Si se liquidaron las jugadas es ROJO.
-    // 2. AMARILLO: Si hay jugadas y no está liquidada es AMARILLO (al reversar vuelve aquí).
-    // 3. VERDE: Si tiene caballos registrados (precargado) y NO hay jugadas es VERDE (al borrar jugadas vuelve aquí).
-    // 4. GRIS: Si no tiene ni registros de jugadas ni caballos es GRIS (al borrar caballos vuelve aquí).
-    const estado = resolverEstadoSemaforo({
-      liquidada,
+    // 1. ROJO: si está liquidada (aplicado a tablas).
+    // 2. AMARILLO: si hay jugadas y no está liquidada (al reversar vuelve aquí).
+    // 3. VERDE: si tiene caballos registrados y NO hay jugadas (al borrar jugadas vuelve aquí).
+    // 4. GRIS: si no tiene ni jugadas ni caballos (al borrar caballos vuelve aquí).
+    //
+    // El cálculo de `liquidada` (incluida la reversión) vive en la función pura
+    // `semaforo-estado.ts`; aquí solo se recolecta la data.
+    const estado = estadoSemaforoCarrera({
+      carrera: n,
+      central,
+      tabla,
+      registro,
       tieneJugadas,
       tieneCaballos,
+      carrerasLiquidadas,
+      carrerasBdLiquidadas,
+      carrerasReversadas,
     });
 
     return { estado, tieneVentas: tieneJugadas, tieneCaballos };

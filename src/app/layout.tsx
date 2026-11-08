@@ -34,7 +34,7 @@ export default function RootLayout({
             __html: `(function(){try{
               var p = window.location.pathname || "";
               var esPortal = p === "/portal" || p.indexOf("/portal") !== -1;
-              var def = esPortal ? "claro" : "oscuro";
+              var def = "claro";
               var t = esPortal ? "claro" : (localStorage.getItem("club_tema_visual") || def);
               document.documentElement.setAttribute("data-theme", t);
               if (t === "claro") {

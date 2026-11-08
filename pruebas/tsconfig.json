@@ -203,6 +203,8 @@
     "./eliminar-grupo-chat.test.ts",
     "../src/features/gestion/lib/semaforo-core.ts",
     "./semaforo-estados-estrictos.test.ts",
+    "../src/features/gestion/lib/semaforo-estado.ts",
+    "./semaforo-estado.test.ts",
     "./pizarra-multi-ejemplar-y-saldos.test.ts"
   ]
 }

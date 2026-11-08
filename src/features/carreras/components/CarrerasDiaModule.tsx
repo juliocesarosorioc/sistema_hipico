@@ -721,7 +721,7 @@ export function CarrerasDiaModule() {
             return (
               <div
                 key={claveEstaCarrera}
-                className={`p-3 space-y-2 transition-colors ${estaSeleccionada ? "bg-red-50/70 border-l-4 border-red-500" : ""}`}
+                className={`p-3 space-y-2 transition-colors ${estaSeleccionada ? "bg-indigo-50/70 border-l-4 border-indigo-500" : ""}`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -865,7 +865,7 @@ export function CarrerasDiaModule() {
                 return (
                   <tr
                     key={claveEstaCarrera}
-                    className={`transition-colors ${estaSeleccionada ? "bg-red-50/80 font-semibold" : i % 2 ? "bg-cyan-50/50" : "bg-white"}`}
+                    className={`transition-colors ${estaSeleccionada ? "bg-indigo-50/80 font-semibold" : i % 2 ? "bg-cyan-50/50" : "bg-white"}`}
                   >
                     <td className="w-10 border border-cyan-100 px-1 py-1 text-center">
                       <input

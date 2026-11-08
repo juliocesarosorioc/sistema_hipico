@@ -25,7 +25,10 @@ console.log("\n[2] Verificación estática de SemaforoCarreras");
   ok(/if \(!tieneHipodromo\)/.test(semaforo), "bloquea el renderizado de carreras si no hay hipódromo");
   ok(/Seleccione un <b>hipódromo<\/b>/.test(semaforo), "muestra mensaje para seleccionar hipódromo en vez de carreras vacías");
   ok(!/carrerasDe\(hipodromo\)/.test(semaforo) || /tieneHipodromo \? carrerasDe\(hipoLimpio\) : \[\]/.test(semaforo), "no consulta carreras centrales si no hay hipódromo");
-  ok(/if \(!tieneHipodromo\) return \{ estado: "inactiva", tieneVentas: false \}/.test(semaforo), "ninguna carrera cambia de color sin hipódromo");
+  ok(
+    /if \(!tieneHipodromo\) return \{ estado: "inactiva", tieneVentas: false, tieneCaballos: false \}/.test(semaforo),
+    "ninguna carrera cambia de color sin hipódromo"
+  );
 }
 
 console.log("\n[3] Verificación de ModalMarcasEditor y GestionJugadasModule");
