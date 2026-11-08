@@ -603,6 +603,7 @@ export async function revertirResultadoCentral(input: {
   const carrera = Number(input.carrera) || 0;
   const estado = useCarrerasDiaStore.getState().estadoDe(hip, carrera, f);
   const ventas = estado?.ventas ?? [];
+  let dbOk = false;
 
   // Store en vivo: la carrera vuelve a "Programada" (sin ganadores ni pago).
   useCarrerasDiaStore.getState().upsert({
@@ -633,15 +634,16 @@ export async function revertirResultadoCentral(input: {
       .filter((r: Record<string, unknown>) => claveHipodromo(String(r.hipodromo ?? "")) === clave)
       .map((r: Record<string, unknown>) => r.id);
     if (ids.length > 0) {
-      await sdb.from("carreras").update({ estado: "Programada" }).in("id", ids as never[]);
+      const { error } = await sdb.from("carreras").update({ estado: "Programada" }).in("id", ids as never[]);
+      if (!error) dbOk = true;
     } else {
-      // Fallback por ilike si no se pudo filtrar por id.
-      await sdb
+      const { error } = await sdb
         .from("carreras")
         .update({ estado: "Programada" })
         .eq("fecha", f)
         .ilike("hipodromo", `%${hip.replace(/\s+/g, "%")}%`)
         .eq("carrera", carrera);
+      if (!error) dbOk = true;
     }
   } catch {
     /* best-effort */
@@ -659,7 +661,7 @@ export async function revertirResultadoCentral(input: {
       .filter((r: Record<string, unknown>) => claveHipodromo(String(r.hipodromo ?? "")) === clave)
       .map((r: Record<string, unknown>) => r.id);
     if (ids.length > 0) {
-      await sdb
+      const { error } = await sdb
         .from("resultados_carreras")
         .update({
           estado: "Programada",
@@ -671,8 +673,9 @@ export async function revertirResultadoCentral(input: {
           premio_recalculado: null,
         })
         .in("id", ids as never[]);
+      if (!error) dbOk = true;
     } else {
-      await sdb
+      const { error } = await sdb
         .from("resultados_carreras")
         .update({
           estado: "Programada",
@@ -686,24 +689,27 @@ export async function revertirResultadoCentral(input: {
         .eq("fecha", f)
         .ilike("hipodromo", `%${hip.replace(/\s+/g, "%")}%`)
         .eq("carrera", carrera);
+      if (!error) dbOk = true;
     }
   } catch {
     /* best-effort */
   }
 
-  // 3) RPC dedicada en servidor (si existe y tiene permisos)
+  // 3) RPC dedicada en servidor (si existe y tiene permisos). Es la fuente
+  //    autoritativa: si existe, su resultado manda sobre los updates directos.
   try {
-    await sdb.rpc("club_revertir_resultado_carrera", {
+    const { error } = await sdb.rpc("club_revertir_resultado_carrera", {
       p_fecha: f,
       p_hipodromo: hip,
       p_carrera: carrera,
       p_usuario: null,
     });
+    if (!error) dbOk = true;
   } catch {
     /* RPC opcional */
   }
 
-  return { ok: true };
+  return { ok: dbOk, error: dbOk ? undefined : "No se pudo actualizar la base de datos al revertir. Verifique permisos/RLS." };
 }
 
 

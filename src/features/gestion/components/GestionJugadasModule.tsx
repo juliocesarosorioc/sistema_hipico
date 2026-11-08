@@ -233,11 +233,18 @@ export function GestionJugadasModule() {
   // Persistencia: las reversiones deben sobrevivir a salir/volver a la carrera.
   useEffect(() => {
     try {
-      const key = `carrerasReversadas:${String(fecha).slice(0, 10)}:${claveHipodromo(hipodromo)}`;
-      const raw = typeof window !== "undefined" ? window.localStorage.getItem(key) : null;
+      if (typeof window === "undefined") return;
+      const raw = window.localStorage.getItem(`reversadas:${String(fecha).slice(0, 10)}`);
       if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) setCarrerasReversadas(new Set(arr.map(Number).filter((n) => Number.isFinite(n) && n > 0)));
+        const arr = JSON.parse(raw) as string[];
+        if (Array.isArray(arr)) {
+          const cur = claveHipodromo(hipodromo);
+          const nums = arr
+            .filter((s) => String(s).startsWith(`${cur}|`))
+            .map((s) => Number(String(s).split("|")[1]))
+            .filter((n) => Number.isFinite(n) && n > 0);
+          setCarrerasReversadas(new Set(nums));
+        }
       } else {
         setCarrerasReversadas(new Set());
       }
@@ -248,8 +255,17 @@ export function GestionJugadasModule() {
   useEffect(() => {
     try {
       if (typeof window === "undefined") return;
-      const key = `carrerasReversadas:${String(fecha).slice(0, 10)}:${claveHipodromo(hipodromo)}`;
-      window.localStorage.setItem(key, JSON.stringify([...carrerasReversadas]));
+      const cur = claveHipodromo(hipodromo);
+      const key = `reversadas:${String(fecha).slice(0, 10)}`;
+      const raw = window.localStorage.getItem(key);
+      const prev = raw ? (JSON.parse(raw) as string[]) : [];
+      const set = new Set(Array.isArray(prev) ? prev : []);
+      // Remove old entries for this hipodromo, then add current.
+      for (const s of [...set]) {
+        if (String(s).startsWith(`${cur}|`)) set.delete(s);
+      }
+      for (const n of carrerasReversadas) set.add(`${cur}|${n}`);
+      window.localStorage.setItem(key, JSON.stringify([...set]));
     } catch {
       /* ignore */
     }
