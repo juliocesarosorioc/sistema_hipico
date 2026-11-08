@@ -388,14 +388,21 @@ function recuperarJsonTruncado(t: string): unknown | null {
   if (iniArr < 0) return null;
   const cuerpo = base.slice(iniArr + 1);
 
-  // Buscar cierres posibles de objetos de carrera `}]}` o `]}` de derecha a izquierda
+  // Buscar cierres posibles de objetos de carrera o ejemplares de derecha a izquierda
   for (let pos = cuerpo.length - 1; pos > 10; pos--) {
     if (cuerpo[pos] === "}") {
-      const candidato = `{"carreras":[${cuerpo.slice(0, pos + 1)}]}`;
-      try {
-        return JSON.parse(candidato);
-      } catch {
-        // Seguir buscando el cierre anterior
+      const sub = cuerpo.slice(0, pos + 1);
+      const candidatos = [
+        `{"carreras":[${sub}]}`,
+        `{"carreras":[${sub}]}]}`,
+        `{"carreras":[${sub}}]}`,
+      ];
+      for (const cand of candidatos) {
+        try {
+          return JSON.parse(cand);
+        } catch {
+          // Seguir buscando el cierre anterior
+        }
       }
     }
   }
@@ -1101,8 +1108,12 @@ export async function transformarGacetaTexto(
   const diag = { respondio: "", ultimoError: "" };
   let cuotaTotal = false;
 
+  const esRinconada =
+    /rinconada|valencia|gaceta\s*h[íi]pica|5\s*y\s*6|v[aá]lida/i.test(texto) ||
+    Boolean(promptPersonalizado && /rinconada/i.test(promptPersonalizado));
+  const carrerasPorBloque = esRinconada ? 1 : 2;
   const segmentos = segmentarPorCarreras(texto);
-  const bloques = armarBloques(segmentos, 3);
+  const bloques = armarBloques(segmentos, carrerasPorBloque);
   if (!bloques.length) {
     return { ok: false, carreras: [], error: "El documento no tiene texto legible para transcribir." };
   }

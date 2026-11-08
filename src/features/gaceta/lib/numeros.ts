@@ -87,7 +87,7 @@ export function numeroDeValida(valor: unknown): number | null {
   if (!s) return null;
   const matchValida =
     s.match(/(?:v[aá]lida)\s*(?:n[º°.]?\s*)?#?\s*(\d+)/i) ||
-    s.match(/(\d+)\s*(?:[ª°aA]|ra|da|ta|ma)?\.?\s*(?:v[aá]lida)/i);
+    s.match(/(\d+)\s*(?:[ª°aA]|ra|da|ta|ma|era)?\.?\s*(?:v[aá]lida)/i);
   if (matchValida) {
     const n = parseInt(matchValida[1], 10);
     if (n >= 1 && n <= 6) return n;
@@ -116,12 +116,12 @@ export function numeroDeCarrera(valor: unknown): number | null {
   const s = String(valor ?? "").trim();
   if (!s) return null;
 
-  // 1) Si menciona explícitamente "carrera" o "race" con un número arábigo u ordinal:
+  // 1) Si menciona explícitamente "carrera", "race" o "car." con un número arábigo u ordinal:
   //    Ej: "1ª VÁLIDA (7ª CARRERA)", "7ma CARRERA", "CARRERA 7", "RACE 7", "7ª CARRERA - 1ª VÁLIDA"
   //    Prioriza el número de carrera general sobre el número de válida (7 sobre 1).
   const matchCarreraNum =
-    s.match(/(?:carrera|race|car\.?)\s*(?:n[º°.]?\s*)?#?\s*(\d+)/i) ||
-    s.match(/(\d+)\s*(?:[ª°aA]|ra|da|ta|ma)?\.?\s*(?:carrera|race)/i);
+    s.match(/(?:carrera|race|carr?\.?)\s*(?:n[º°.]?\s*)?#?\s*(\d+)/i) ||
+    s.match(/(\d+)\s*(?:[ª°aA]|ra|da|ta|ma|era)?\.?\s*(?:carrera|race|carr?\.?)/i);
   if (matchCarreraNum) {
     const n = parseInt(matchCarreraNum[1], 10);
     if (n > 0) return n;
@@ -129,8 +129,8 @@ export function numeroDeCarrera(valor: unknown): number | null {
 
   // 2) Ordinal escrito con la palabra carrera: ej "séptima carrera", "carrera séptima"
   const matchCarreraOrd =
-    s.match(/([A-Za-zÁÉÍÓÚÑáéíóúñ]+)\s+(?:carrera|race)/i) ||
-    s.match(/(?:carrera|race)\s+([A-Za-zÁÉÍÓÚÑáéíóúñ]+)/i);
+    s.match(/([A-Za-zÁÉÍÓÚÑáéíóúñ]+)\s+(?:carrera|race|carr?\.?)/i) ||
+    s.match(/(?:carrera|race|carr?\.?)\s+([A-Za-zÁÉÍÓÚÑáéíóúñ]+)/i);
   if (matchCarreraOrd) {
     const k = normalizarTexto(matchCarreraOrd[1]);
     const n = ORDINALES[k];

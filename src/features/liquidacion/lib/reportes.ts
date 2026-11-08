@@ -929,7 +929,12 @@ export async function leerPizarra(fecha: string, hipodromo: string, carrera: num
   }
 }
 
-async function leerTickets(fecha: string, hipodromo: string, carrera: string | number): Promise<Record<string, unknown>[]> {
+async function leerTickets(
+  fecha: string,
+  hipodromo: string,
+  carrera: string | number,
+  grupoId?: string | null
+): Promise<Record<string, unknown>[]> {
   if (!supabase) return [];
   const dia = String(fecha ?? "").slice(0, 10);
   try {
@@ -942,12 +947,9 @@ async function leerTickets(fecha: string, hipodromo: string, carrera: string | n
       .eq("carrera", carrera)
       .ilike("hipodromo", `%${hipodromo}%`)
       .order("fecha_registro");
-    const activo = grupoActivoVigente();
-    if (esPrincipalVigente() && activo) {
+    const activo = grupoId || grupoActivoVigente();
+    if (activo) {
       q = q.eq("grupo_cobro_id", activo);
-    } else if (!esPrincipalVigente()) {
-      if (activo) q = q.eq("grupo_cobro_id", activo);
-      // if no active group, RLS applies
     }
     const { data, error } = await q;
     const base = error
@@ -1289,7 +1291,11 @@ type DatosCarrera = {
  * decenas de carreras eso sumaba cientos de viajes. Ahora se lee TODO el
  * hipódromo en 3 consultas y se reparte en memoria por n° de carrera.
  */
-async function leerTicketsHipodromo(fecha: string, hipodromo: string): Promise<Map<string, Record<string, unknown>[]>> {
+async function leerTicketsHipodromo(
+  fecha: string,
+  hipodromo: string,
+  grupoId?: string | null
+): Promise<Map<string, Record<string, unknown>[]>> {
   const porCarrera = new Map<string, Record<string, unknown>[]>();
   if (!supabase) return porCarrera;
   const dia = String(fecha ?? "").slice(0, 10);
@@ -1302,11 +1308,9 @@ async function leerTicketsHipodromo(fecha: string, hipodromo: string): Promise<M
       .or(filtroDiaJornada(dia))
       .ilike("hipodromo", `%${hipodromo}%`)
       .order("fecha_registro");
-    const activo = grupoActivoVigente();
-    if (esPrincipalVigente() && activo) {
+    const activo = grupoId || grupoActivoVigente();
+    if (activo) {
       q = q.eq("grupo_cobro_id", activo);
-    } else if (!esPrincipalVigente()) {
-      if (activo) q = q.eq("grupo_cobro_id", activo);
     }
     const { data, error } = await q;
     const filasValidas = error
@@ -1746,10 +1750,11 @@ async function carreraReporte(
   hipodromo: string,
   numero: number,
   tasaComision?: number | null,
-  datos?: DatosCarrera
+  datos?: DatosCarrera,
+  grupoId?: string | null
 ): Promise<CarreraReporte | null> {
   const pizarra = datos ? datos.pizarra : await leerPizarra(fecha, hipodromo, numero);
-  const tickets = datos ? datos.tickets : await leerTickets(fecha, hipodromo, numero);
+  const tickets = datos ? datos.tickets : await leerTickets(fecha, hipodromo, numero, grupoId);
   // REGLA ESTRICTA DE REPORTES: Las carreras que NO tengan jugadas no deben aparecer en los reportes.
   if (!tickets.length) return null;
   const mapaSeudonimos = await cargarMapaSeudonimosReporte();
@@ -2024,9 +2029,10 @@ export async function carreraReporteDetalle(
   fecha: string,
   hipodromo: string,
   numero: number | string,
-  tasaComision?: number | null
+  tasaComision?: number | null,
+  grupoId?: string | null
 ): Promise<CarreraReporte | null> {
-  return carreraReporte(fecha, hipodromo, Number(numero), tasaComision);
+  return carreraReporte(fecha, hipodromo, Number(numero), tasaComision, undefined, grupoId);
 }
 
 /**
@@ -2039,7 +2045,8 @@ export async function carreraReporteDetalle(
  */
 export async function reportesCarrerasLote(
   items: Array<{ fecha: string; hipodromo: string; carrera: number | string }>,
-  tasaComision?: number | null
+  tasaComision?: number | null,
+  grupoId?: string | null
 ): Promise<Array<CarreraReporte | null>> {
   const salida = new Array<CarreraReporte | null>(items.length).fill(null);
   const grupos = new Map<string, number[]>();
@@ -2054,7 +2061,7 @@ export async function reportesCarrerasLote(
     [...grupos.values()].map(async (indices) => {
       const primera = items[indices[0]];
       const [ticketsPorCarrera, pizarrasPorCarrera, tablasPorCarrera] = await Promise.all([
-        leerTicketsHipodromo(primera.fecha, primera.hipodromo),
+        leerTicketsHipodromo(primera.fecha, primera.hipodromo, grupoId),
         leerPizarrasHipodromo(primera.fecha, primera.hipodromo),
         leerTablasHipodromo(primera.fecha, primera.hipodromo),
       ]);
@@ -2065,7 +2072,7 @@ export async function reportesCarrerasLote(
           pizarra: pizarrasPorCarrera.get(k) ?? null,
           tickets: ticketsPorCarrera.get(k) ?? [],
           enTablas: tablasPorCarrera.has(k),
-        });
+        }, grupoId);
       }
     })
   );

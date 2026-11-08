@@ -641,7 +641,7 @@ export type BloqueCarrera = {
  * carrera, no un encabezado.
  */
 const RE_ENCABEZADO =
-  /^[ \t]*(?:(?:[-•*|\d\w.,/(): \t]{0,45}?(?:[-·|:][ \t]*))?(?:(?:(?:RACE|CARRERA|CAR\.?)[ \t]*(?:N[º°.]?[ \t]*)?#?[ \t]*([A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]{1,14})\b)|(?:([A-Za-z0-9ÁÉÍÓÚÑáéíóúñºª.]{1,20})[ \t]+(?:CARRERA|RACE)\b)|(?:([0-9]{1,2}(?:[ª°aA]|ra|da|ta|ma)?\.?|PRIMERA|SEGUNDA|TERCERA|CUARTA|QUINTA|SEXTA)[ \t]+(?:V[AÁ]LIDA|VALIDA)\b)))/gim;
+  /^[ \t]*(?:(?:[^\n\r]{0,95}?(?:[-·|:–—/][ \t]*|\b))?(?:(?:(?:\bRACE\b|\bCARRERA\b|\bCARR?\b\.|\bCAR\b)[ \t]*(?:N[º°.]?[ \t]*)?#?[ \t]*([A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]{1,16})\b)|(?:([A-Za-z0-9ÁÉÍÓÚÑáéíóúñºª.]{1,24})[ \t]+(?:\bCARRERA\b|\bCARR?\b\.|\bCAR\b|\bRACE\b)\b)|(?:([0-9]{1,2}(?:[ª°aA]|ra|da|ta|ma|era)?\.?|PRIMERA|SEGUNDA|TERCERA|CUARTA|QUINTA|SEXTA|[1-6]ª?|[1-6]a?|[1-6]ra?)[ \t]+(?:V[AÁ]LIDA|VALIDA)\b)))/gim;
 
 /** Tope de caracteres de un encabezado: suficiente para líneas con hipódromo/hora/distancia. */
 const MAX_ENCABEZADO = 240;
@@ -676,25 +676,61 @@ export function segmentarPorCarreras(texto: string): SegmentoCarrera[] {
     if (largoLinea > MAX_ENCABEZADO) continue;
 
     const linea = t.slice(m.index, finLinea === -1 ? t.length : finLinea).trim();
-    // Prioriza el número de carrera general que aparezca en la línea completa
+    // En La Rinconada, la línea 1 puede decir "1ª VÁLIDA PARA EL 5 Y 6" y la siguiente "5ª CARRERA - DISTANCIA 1.200 M".
+    // Inspeccionamos las primeras 3 líneas del bloque de encabezado (hasta 280 caracteres).
+    const bloqueCabecera = t
+      .slice(m.index, Math.min(t.length, m.index + 280))
+      .split("\n")
+      .slice(0, 3)
+      .join(" ");
+
+    // Prioriza el número de carrera general que aparezca en la línea completa o bloque de cabecera
     let numero = numeroDeCarrera(linea);
+    if (numero == null) {
+      numero = numeroDeCarrera(bloqueCabecera);
+    }
     if (numero == null) {
       const token = m[1] ?? m[2] ?? "";
       numero = numeroDeCarrera(token);
     }
     // Si la línea es una Válida del 5 y 6 (ej. 1ª Válida) y no trajo número general explícito:
     if (numero == null) {
-      const numVal = numeroDeValida(linea) ?? numeroDeValida(m[3] ? `${m[3]} valida` : "");
+      const numVal =
+        numeroDeValida(linea) ??
+        numeroDeValida(bloqueCabecera) ??
+        numeroDeValida(m[3] ? `${m[3]} valida` : "");
       if (numVal != null) {
         // En Venezuela (La Rinconada / Valencia), continúa la secuencia correlativa:
-        const ultNum = cortes.filter((c) => c.numero != null).map((c) => c.numero!).pop();
-        if (ultNum != null && ultNum >= 4) {
-          numero = ultNum + 1;
-        } else if (numVal === 1) {
-          numero = 7;
+        const ultCorteConNum = cortes.slice().reverse().find((c) => c.numero != null);
+        if (ultCorteConNum?.numero != null) {
+          numero = ultCorteConNum.numero + 1;
+        } else {
+          // Si no hay carreras previas identificadas, la 1ª Válida se correlaciona con la base típica (4 no válidas):
+          numero = 4 + numVal;
         }
       }
     }
+
+    // Si ya había un corte previo muy cercano (< 180 caracteres) sin datos de caballos,
+    // significa que es una cabecera que se extiende en dos líneas consecutivas
+    // (ej: "1ª VÁLIDA PARA EL 5 Y 6\n5ª CARRERA - DISTANCIA 1.200 METROS").
+    // En ese caso, NO se crea una carrera nueva; se actualiza el número de la cabecera actual si aplica.
+    if (cortes.length > 0) {
+      const ultCorte = cortes[cortes.length - 1];
+      const distanciaPrevio = m.index - ultCorte.inicio;
+      const textoIntermedio = t.slice(ultCorte.inicio, m.index).trim();
+      if (
+        distanciaPrevio < 180 &&
+        !/\b(?:kg|kgs|jinete|jockey|divisa|stud|pp|\d{3,4}\s*m)\b/i.test(textoIntermedio) &&
+        !/^[ \t]*\d{1,2}\s+[A-ZÁÉÍÓÚÑ]/m.test(textoIntermedio)
+      ) {
+        if (numero != null) {
+          ultCorte.numero = numero;
+        }
+        continue;
+      }
+    }
+
     cortes.push({ numero, inicio: m.index, fin: -1 });
   }
 
@@ -721,7 +757,7 @@ export function segmentarPorCarreras(texto: string): SegmentoCarrera[] {
 }
 
 /**
- * Agrupa los segmentos en bloques de `carrerasPorBloque` (2 o 3).
+ * Agrupa los segmentos en bloques de `carrerasPorBloque` (1, 2 o 3).
  *
  * Un segmento demasiado largo (una carrera con muchísimos ejemplares, o un
  * bloque de texto sin encabezado) se queda SOLO en su bloque: partirlo por la
@@ -756,7 +792,7 @@ export function armarBloques(
   segmentos: SegmentoCarrera[],
   carrerasPorBloque = 3
 ): BloqueCarrera[] {
-  const porBloque = Math.min(3, Math.max(2, Number(carrerasPorBloque) || 3));
+  const porBloque = Math.min(3, Math.max(1, Number(carrerasPorBloque) || 2));
   // Los segmentos SIN número (el encabezado del documento) no son una carrera:
   // se anexan al PRIMER bloque como contexto, no cuentan para el tamaño.
   const conNumero = segmentos.filter((s) => s.numero != null);

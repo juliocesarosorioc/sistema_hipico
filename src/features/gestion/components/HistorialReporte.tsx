@@ -17,6 +17,7 @@ import {
   type DepositoRow,
   type TransaccionRow,
 } from "@/features/contabilidad/lib/contabilidad";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 import ReporteLiquidacionModal from "@/features/gestion/components/ReporteLiquidacionModal";
 import { listarMonitorJugadas, type FilaMonitorJugada } from "@/features/jugadas/lib/jugadas";
 import { etiquetaJugada, caballoPareoLegible } from "@/features/taquilla/lib/nomenclatura";
@@ -133,6 +134,7 @@ const COLOR_CLASE: Record<Movimiento["clase"], string> = {
 };
 
 export default function HistorialReporte() {
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
   const [fecha, setFecha] = useState<string>(() => hoyLocal());
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [carreras, setCarreras] = useState<CarreraHistorial[]>([]);
@@ -548,6 +550,7 @@ export default function HistorialReporte() {
         hipodromoInicial={reporte?.hipodromo}
         carreraInicial={reporte?.carrera}
         fechaInicial={fecha}
+        grupoInicial={grupoActivo ?? undefined}
       />
     </div>
   );

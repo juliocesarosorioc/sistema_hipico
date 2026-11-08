@@ -53,6 +53,8 @@ type Props = {
   modoExclusivoLiquidacion?: boolean;
   /** Acción opcional para reversar la liquidación directamente desde el reporte. */
   onReversar?: () => void;
+  /** Grupo hípico activo para el membrete y las jugadas de liquidación. */
+  grupoInicial?: string;
 };
 
 /** Fecha de ayer (ISO local) para el atajo «Ayer». */
@@ -84,10 +86,11 @@ export default function ReporteLiquidacionModal({
   pizarraInicial,
   modoExclusivoLiquidacion = false,
   onReversar,
+  grupoInicial,
 }: Props) {
   const [fecha, setFecha] = useState(fechaInicial || hoyLocal());
   const [grupos, setGrupos] = useState<GrupoRow[]>([]);
-  const [grupoId, setGrupoId] = useState(() => String(grupoActivoVigente() || ""));
+  const [grupoId, setGrupoId] = useState(() => String(grupoInicial || grupoActivoVigente() || ""));
   const [carrerasDia, setCarrerasDia] = useState<CarreraDelDia[]>([]);
   const [hipodromo, setHipodromo] = useState(hipodromoInicial ? hipodromoInicial.trim().toUpperCase() : "");
   const [carrera, setCarrera] = useState<number>(carreraInicial ?? 0);
@@ -169,6 +172,13 @@ export default function ReporteLiquidacionModal({
     setDatos(null);
   }, [abierto, fechaInicial, hipodromoInicial, carreraInicial]);
 
+  useEffect(() => {
+    if (!abierto) return;
+    if (grupoInicial) {
+      setGrupoId(String(grupoInicial));
+    }
+  }, [abierto, grupoInicial]);
+
   // Grupos hípicos (para el encabezado del reporte). Se releen al ABRIR y se
   // fuerza el salto del caché (`true`), porque el caché de grupos quedaba viejo
   // tras incorporar/editar el logo del grupo.
@@ -179,16 +189,26 @@ export default function ReporteLiquidacionModal({
       .then((gs) => {
         if (!vivo) return;
         setGrupos(gs);
-        const activo = grupoActivoVigente();
-        const elegido = (activo && gs.find((g) => String(g.id) === String(activo))) || null;
-        const principal = elegido ?? gs.find((g) => g.es_principal) ?? gs[0];
-        if (principal?.id != null) setGrupoId(String(principal.id));
+        const objetivo = grupoInicial || grupoActivoVigente() || grupoId;
+        const gEncontrado = objetivo
+          ? gs.find(
+              (g) =>
+                String(g.id) === String(objetivo) ||
+                String(g.nombre).trim().toUpperCase() === String(objetivo).trim().toUpperCase()
+            )
+          : null;
+        if (gEncontrado) {
+          setGrupoId(String(gEncontrado.id));
+        } else if (!grupoId) {
+          const principal = gs.find((g) => g.es_principal) ?? gs[0];
+          if (principal?.id != null) setGrupoId(String(principal.id));
+        }
       })
       .catch(() => vivo && setGrupos([]));
     return () => {
       vivo = false;
     };
-  }, [abierto, versionLogos]);
+  }, [abierto, versionLogos, grupoInicial]);
 
   // Carreras de la fecha (liquidadas o en curso con pre-jugadas).
   useEffect(() => {
@@ -237,7 +257,9 @@ export default function ReporteLiquidacionModal({
         // Filtrar estrictamente: las carreras que NO tengan jugadas no deben aparecer en los reportes.
         if (delDia.length > 0) {
           const reps = await reportesCarrerasLote(
-            delDia.map((c) => ({ fecha: c.fecha, hipodromo: c.hipodromo, carrera: c.carrera }))
+            delDia.map((c) => ({ fecha: c.fecha, hipodromo: c.hipodromo, carrera: c.carrera })),
+            undefined,
+            grupoId || grupoInicial || undefined
           ).catch(() => null);
           if (!vivo) return;
           if (reps) {
@@ -394,9 +416,9 @@ export default function ReporteLiquidacionModal({
     // Logos FRESCOS en el momento de armar el reporte: no dependemos de que el
     // catálogo cargado al abrir ya tenga el logo recién incorporado. Se
     // resuelven contra la base en paralelo con el detalle de la carrera.
-    const logoGrupoId = grupoId || grupoActivoVigente() || undefined;
+    const logoGrupoId = grupoId || grupoInicial || grupoActivoVigente() || undefined;
     Promise.all([
-      carreraReporteDetalle(fechaActiva, hipoActivo, carrActiva),
+      carreraReporteDetalle(fechaActiva, hipoActivo, carrActiva, undefined, logoGrupoId),
       logosFrescosDeCarrera({ hipodromo: hipoActivo, grupoId: logoGrupoId }),
     ])
       .then(async ([c, frescos]) => {
@@ -433,7 +455,7 @@ export default function ReporteLiquidacionModal({
       vivo = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [abierto, fecha, hipodromo, carrera, modoExclusivoLiquidacion, fechaInicial, hipodromoInicial, carreraInicial, pizarraInicial]);
+  }, [abierto, fecha, hipodromo, carrera, modoExclusivoLiquidacion, fechaInicial, hipodromoInicial, carreraInicial, pizarraInicial, grupoId]);
 
   // Armado de la plantilla: corre por cada detalle nuevo Y por cada cambio del
   // filtro segmentado de modalidad de tiempo (recalcula filas y subtotales).

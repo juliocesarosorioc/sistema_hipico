@@ -1480,32 +1480,24 @@ const hipodromosDelDia = useMemo(() => {
   /** Pizarra Oficial y Orden de Llegada (Raya) vigentes para la carrera actual. */
   const pizarraPuestosActual = useMemo<string[]>(() => {
     if (carrerasReversadas.has(Number(carrera))) return [];
-    if (ultimaPizarra?.pizarra) {
-      const pos = posicionesDePizarra(ultimaPizarra.pizarra);
-      if (pos.length > 0) return pos;
-    }
-    if (centralDeCarrera?.ganadores && centralDeCarrera.ganadores.length > 0) {
-      return centralDeCarrera.ganadores.map(String).filter(Boolean);
-    }
-    if (pizarraCentral?.pizarra) {
-      return posicionesDePizarra(pizarraCentral.pizarra);
-    }
-    return [];
+    const deUltima = ultimaPizarra?.pizarra ? posicionesDePizarra(ultimaPizarra.pizarra) : [];
+    const deCentralPiz = pizarraCentral?.pizarra ? posicionesDePizarra(pizarraCentral.pizarra) : [];
+    const deCentralGanadores = (centralDeCarrera?.ganadores ?? []).map(String).filter(Boolean);
+
+    // Priorizar siempre la fuente con mayor cantidad de ejemplares registrados
+    const candidatos = [deUltima, deCentralPiz, deCentralGanadores];
+    return candidatos.reduce((max, arr) => (arr.length > max.length ? arr : max), [] as string[]);
   }, [centralDeCarrera, ultimaPizarra, pizarraCentral, carrerasReversadas, carrera]);
 
   const pizarraRayaActual = useMemo<string[]>(() => {
     if (carrerasReversadas.has(Number(carrera))) return [];
-    if (ultimaPizarra?.pizarra) {
-      const pos = posicionesRayaDePizarra(ultimaPizarra.pizarra);
-      if (pos.length > 0) return pos;
-    }
-    if (centralDeCarrera?.orden_llegada_raya && centralDeCarrera.orden_llegada_raya.length > 0) {
-      return centralDeCarrera.orden_llegada_raya.map(String).filter(Boolean);
-    }
-    if (pizarraCentral?.pizarra) {
-      return posicionesRayaDePizarra(pizarraCentral.pizarra);
-    }
-    return pizarraPuestosActual;
+    const deUltimaRaya = ultimaPizarra?.pizarra ? posicionesRayaDePizarra(ultimaPizarra.pizarra) : [];
+    const deCentralPizRaya = pizarraCentral?.pizarra ? posicionesRayaDePizarra(pizarraCentral.pizarra) : [];
+    const deCentralRaya = (centralDeCarrera?.orden_llegada_raya ?? []).map(String).filter(Boolean);
+
+    const candidatos = [deUltimaRaya, deCentralPizRaya, deCentralRaya];
+    const mejor = candidatos.reduce((max, arr) => (arr.length > max.length ? arr : max), [] as string[]);
+    return mejor.length > 0 ? mejor : pizarraPuestosActual;
   }, [centralDeCarrera, ultimaPizarra, pizarraCentral, pizarraPuestosActual, carrerasReversadas, carrera]);
 
   const retiradosPizarraActual = useMemo<string[]>(() => {
@@ -2121,6 +2113,12 @@ const hipodromosDelDia = useMemo(() => {
    * saldo+aval), no el tipeado.
    */
   const cargarAtaquilla = async (filasAProcesar?: FilaCarga[], omitirConfirmacion?: boolean) => {
+    if (carreraLiquidada) {
+      const msg = "⛔ No se puede cargar una jugada si la carrera está liquidada. Debe reversar la liquidación para habilitar la carga de jugadas.";
+      setAviso(msg);
+      emitirToast(msg, "error");
+      return;
+    }
     if (principalSinGrupoSeleccionado) {
       setAviso(
         "⛔ El usuario/grupo Principal («Todos los grupos») es solo de gestión y no puede registrar jugadas. Seleccione primero un grupo activo en el selector superior."
@@ -4144,18 +4142,24 @@ const hipodromosDelDia = useMemo(() => {
             );
           })()}
           <Button
-            variant={principalSinGrupoSeleccionado ? "outline" : "success"}
+            variant={carreraLiquidada || principalSinGrupoSeleccionado ? "outline" : "success"}
             size="md"
             className="ml-auto"
-            disabled={principalSinGrupoSeleccionado}
+            disabled={carreraLiquidada || principalSinGrupoSeleccionado}
             title={
-              principalSinGrupoSeleccionado
+              carreraLiquidada
+                ? "La carrera está liquidada. Debe reversar la liquidación para habilitar la carga de jugadas."
+                : principalSinGrupoSeleccionado
                 ? "El usuario Principal debe seleccionar un grupo de trabajo antes de registrar jugadas"
                 : "Cargar jugada(s) en la taquilla"
             }
             onClick={() => void cargarAtaquilla()}
           >
-            {principalSinGrupoSeleccionado ? "🔒 Registro Bloqueado (Seleccione Grupo)" : "📥 Cargar jugada(s) en la taquilla"}
+            {carreraLiquidada
+              ? "🔒 Carrera Liquidada (Reversar para Cargar)"
+              : principalSinGrupoSeleccionado
+              ? "🔒 Registro Bloqueado (Seleccione Grupo)"
+              : "📥 Cargar jugada(s) en la taquilla"}
           </Button>
         </div>
 
@@ -5635,6 +5639,7 @@ const hipodromosDelDia = useMemo(() => {
         hipodromoInicial={hipodromo}
         carreraInicial={carrera}
         fechaInicial={fecha}
+        grupoInicial={grupoSesion ?? undefined}
         pizarraInicial={
           pizarraReporteActiva ||
           (pizarraCentral?.pizarra?.primero

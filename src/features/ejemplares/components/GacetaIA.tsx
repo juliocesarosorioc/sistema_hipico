@@ -235,7 +235,7 @@ async function extraerPdfComoTexto(
         let lineas = "";
         if (conCoords.length > items.length * 0.5) {
           const filas: Array<{ y: number; partes: Array<{ x: number; str: string }> }> = [];
-          const TOLERANCIA_Y = 3.5;
+          const TOLERANCIA_Y = 4.2;
           for (const it of items) {
             const txt = String(it.str ?? "");
             if (!txt.trim()) continue;

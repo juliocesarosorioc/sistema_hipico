@@ -766,44 +766,51 @@ export function ReporteModule() {
       tipo: TipoJugadorSaldo;
       icono: string;
       etiqueta: string;
-    }> = errorClientesGrupo || errorMovimientosCaja || cargandoMovimientosCaja || !rptOriginal || !rangoSaldoDentroDeUnaSemana
-      ? []
-      : usarCartera
-      ? clientesGrupo.map((c) => {
-          const tipo = obtenerTipoJugador(c);
-          const meta = infoTipoJugador(tipo);
-          const saldo = redondearCentavos(Number(c.saldo_actual) || 0);
-          return {
-            id: String(c.id),
-            nombre: String(c.seudonimo || c.nombre || c.id).trim().toUpperCase(),
-            saldo,
-            saldoPersistido: saldo,
-            netoCarreras: saldo,
-            totalDevolucion: 0,
-            movimientosCaja: 0,
-            tipo,
-            icono: meta.icono,
-            etiqueta: meta.etiqueta,
-          };
-        })
-      : clientesGrupo
-          .map((cliente) => {
-          const id = String(cliente.id);
-          const detalle = saldoSemanalPorCliente.get(id);
-          const tipo = obtenerTipoJugador(cliente);
-          const meta = infoTipoJugador(tipo);
-          return {
-            id,
-            nombre: String(cliente.seudonimo || cliente.nombre || cliente.id).trim().toUpperCase(),
-            saldo: detalle?.saldo ?? 0,
-            saldoPersistido: redondearCentavos(Number(cliente.saldo_actual) || 0),
-            netoCarreras: detalle?.netoCarreras ?? 0,
-            totalDevolucion: detalle?.totalDevolucion ?? 0,
-            movimientosCaja: detalle?.movimientosCaja ?? 0,
-            tipo,
-            icono: meta.icono,
-            etiqueta: meta.etiqueta,
-          };
+    }> = usarCartera
+      ? clientesGrupo
+          .filter((c) => {
+            if (!filtroCliente.trim()) return true;
+            const q = filtroCliente.trim().toUpperCase();
+            const nom = String(c.seudonimo || c.nombre || c.id).toUpperCase();
+            return nom.includes(q);
+          })
+          .map((c) => {
+            const tipo = obtenerTipoJugador(c);
+            const meta = infoTipoJugador(tipo);
+            const saldo = redondearCentavos(Number(c.saldo_actual) || 0);
+            return {
+              id: String(c.id),
+              nombre: String(c.seudonimo || c.nombre || c.id).trim().toUpperCase(),
+              saldo,
+              saldoPersistido: saldo,
+              netoCarreras: saldo,
+              totalDevolucion: 0,
+              movimientosCaja: 0,
+              tipo,
+              icono: meta.icono,
+              etiqueta: meta.etiqueta,
+            };
+          })
+      : datosTablaDinamica.filasClientes
+          .map((fc) => {
+            const cliKey = fc.cliente.trim().toUpperCase();
+            const info = mapaInfoClientes.get(cliKey);
+            const tipo = info?.modo ?? "aval";
+            const meta = infoTipoJugador(tipo);
+            const saldoPersistido = info?.saldoActual ?? 0;
+            const caja = info?.id ? (movimientosCaja.get(info.id) ?? 0) : 0;
+            return {
+              id: info?.id,
+              nombre: fc.cliente,
+              saldo: fc.netoTotal,
+              saldoPersistido,
+              netoCarreras: fc.netoCarreras,
+              totalDevolucion: fc.totalDevolucion,
+              movimientosCaja: caja,
+              tipo,
+              icono: meta.icono,
+              etiqueta: meta.etiqueta,
+            };
           })
           .filter((cliente) => Math.abs(cliente.saldo) > 0.004);
 
@@ -848,12 +855,9 @@ export function ReporteModule() {
     datosTablaDinamica,
     clientesGrupo,
     filtroTipoJugador,
-    errorClientesGrupo,
-    saldoSemanalPorCliente,
-    errorMovimientosCaja,
-    cargandoMovimientosCaja,
-    rptOriginal,
-    rangoSaldoDentroDeUnaSemana,
+    filtroCliente,
+    mapaInfoClientes,
+    movimientosCaja,
   ]);
 
   // Desglose por cliente: saldo del libro + (si está configurado) devolución
