@@ -1618,37 +1618,12 @@ export function calcularLiquidacionPuestosCarrera(
       const reglaIdentidad = clienteId || identidad;
       const reglaMismo = resolverReglaCrucePuestos(opcionesGrupo, reglaIdentidad, "mismoEjemplar");
       const reglaDiferente = resolverReglaCrucePuestos(opcionesGrupo, reglaIdentidad, "diferenteEjemplar");
-      if (reglaMismo.activo && reglaDiferente.activo) {
-        perdidaCruzada = Math.min(ganadoBruto, perdidoBruto);
-        if (perdidaCruzada > 0) {
-          modalidadesAplicadas.push(
-            { modalidad: "mismoEjemplar", origen: reglaMismo.origen },
-            { modalidad: "diferenteEjemplar", origen: reglaDiferente.origen }
-          );
-        }
-      } else {
-        for (const perdida of perdidas) {
-          let disponible = Number(perdida.monto) || 0;
-          for (const ganancia of ganancias) {
-            if (disponible <= 0 || ganancia.disponible <= 0) continue;
-            const caballoPerdida = String(perdida.caballo ?? "").trim().toUpperCase();
-            const caballoGanancia = String(ganancia.entrada.caballo ?? "").trim().toUpperCase();
-            if (!caballoPerdida || !caballoGanancia) continue;
-            const modalidad: keyof ModalidadesCruce =
-              caballoPerdida === caballoGanancia ? "mismoEjemplar" : "diferenteEjemplar";
-            const regla = modalidad === "mismoEjemplar" ? reglaMismo : reglaDiferente;
-            if (!regla.activo) continue;
-            const neteado = Math.min(disponible, ganancia.disponible);
-            disponible -= neteado;
-            ganancia.disponible -= neteado;
-            perdidaCruzada += neteado;
-            if (!modalidadesAplicadas.some((m) => m.modalidad === modalidad && m.origen === regla.origen)) {
-              modalidadesAplicadas.push({ modalidad, origen: regla.origen });
-            }
-          }
-        }
-      }
-      baseComision = Math.max(0, ganadoBruto - perdidaCruzada);
+      // REGLA DE CRUCE OFICIAL (netting bruto): la comisión se calcula SOLO
+      // sobre el balance neto del jugador en la carrera (ganancias - pérdidas),
+      // NUNCA sobre el bruto ganado. No se "cruza" para reducir la base: el
+      // neteo ya absorbe las pérdidas. Así Fortuna: 610-300=310 -> -5% = 294,50.
+      perdidaCruzada = 0;
+      baseComision = Math.max(0, neto);
     }
     const comision = baseComision > 0 ? calcularComisionExacta(baseComision, pct) : 0;
     const netoCliente = restarDinero(neto, comision);
@@ -1665,8 +1640,8 @@ export function calcularLiquidacionPuestosCarrera(
       permiteCruces: baseComision < ganadoBruto,
       participantes: arr.length,
       modalidadesAplicadas,
-      explicacionCruce: perdidaCruzada > 0
-        ? `Ganancia ${round2(ganadoBruto)} vs ${round2(perdidaCruzada)} → comisión sobre ${round2(baseComision)}`
+      explicacionCruce: neto > 0
+        ? `Balance bruto ${round2(neto)} → comisión sobre ${round2(baseComision)}`
         : undefined,
     });
   }
