@@ -723,8 +723,8 @@ const hipodromosDelDia = useMemo(() => {
     const reglasPermanentes: NonNullable<OpcionesCrucesPuestos["porJugadorPermanente"]> = {};
     for (const cliente of clientesDelGrupo) {
       const reglas: Partial<ModalidadesCruce> = {};
-      const mismo = cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces;
-      const diferente = cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces;
+      const mismo = cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces ?? true;
+      const diferente = cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces ?? true;
       if (typeof mismo === "boolean") reglas.mismoEjemplar = mismo;
       if (typeof diferente === "boolean") reglas.diferenteEjemplar = diferente;
       if (Object.keys(reglas).length > 0) {
