@@ -566,7 +566,7 @@ as $$
         1, p_monto, 0, 0,
         v_cliente.id, v_cliente.nombre,
         v_grupo.nombre, v_grupo.id, v_grupo.nombre, v_grupo.id, v_grupo.nombre,
-        0, 0,
+        coalesce(v_grupo.comision_marcas, v_grupo.comision_default, 0), 0,
         'Pendiente', 'USD', 1,
         jsonb_build_object(
             'origen',            'MARCAS',

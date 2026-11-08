@@ -21,6 +21,8 @@ import {
   type ConfigMarcas,
 } from "@/features/marcas/lib/marcas";
 import { ReporteMarcasJugadasModal } from "@/features/marcas/components/ReporteMarcasJugadasModal";
+import { ModalAutorizacionAdmin } from "@/features/seguridad/components/ModalAutorizacionAdmin";
+import { verificarCupoMarcaDisponible } from "@/features/marcas/lib/control-riesgo-marcas";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
 import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
@@ -93,6 +95,14 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
   const [rival, setRival] = useState("");
   const [monto, setMonto] = useState("");
   const [vendiendo, setVendiendo] = useState(false);
+  const [modalAdminReq, setModalAdminReq] = useState<{
+    motivo: string;
+    limiteEstablecido?: string | number;
+    grupoNombre: string;
+    jugadorNombre: string;
+    monto: number;
+    onAutorizar: (adminUser: string) => Promise<void> | void;
+  } | null>(null);
   /**
    * Clave de idempotencia de la jugada en curso. Se genera una sola vez y
    * sobrevive a los reintentos: si la venta falla por red y el operador vuelve
@@ -303,8 +313,38 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
     });
   };
 
-  const confirmarVenta = async () => {
+  const confirmarVenta = async (autorizadoPorAdmin?: boolean) => {
     if (!analisis.valido || !analisis.rival) return;
+    const g = grupos.find((x) => String(x.id) === String(grupoId));
+
+    if (!autorizadoPorAdmin) {
+      const cupoCheck = await verificarCupoMarcaDisponible({
+        hipodromo: carrera.hipodromo,
+        carrera: carrera.carrera,
+        fecha,
+        caballoNumero: caballo.trim(),
+        grupoId,
+        grupoNombre: g?.nombre,
+        jugadorNombre: cliente?.nombre,
+        montoAComprar: Number(monto),
+      });
+
+      if (!cupoCheck.permitido) {
+        setModalAdminReq({
+          motivo: cupoCheck.motivo ?? "La jugada supera el límite establecido para este grupo o la plataforma.",
+          limiteEstablecido: cupoCheck.limiteGrupo ? `${cupoCheck.limiteGrupo}` : undefined,
+          grupoNombre: g?.nombre ?? `Grupo ${grupoId}`,
+          jugadorNombre: cliente?.nombre ?? "Jugador",
+          monto: Number(monto),
+          onAutorizar: async () => {
+            setModalAdminReq(null);
+            await confirmarVenta(true);
+          },
+        });
+        return;
+      }
+    }
+
     setVendiendo(true);
     setErrorPreview(null);
     const r = await venderMarca({
@@ -316,6 +356,7 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
       monto: Number(monto),
       clienteId,
       grupoId,
+      comisionPorcentaje: g?.comision_marcas ?? g?.comision_default ?? 2.5,
       idempotencia: idem,
     });
     setVendiendo(false);
@@ -664,6 +705,19 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
       hipodromoInicial={carrera.hipodromo.trim().toUpperCase()}
       carreraInicial={`${carrera.hipodromo.trim().toUpperCase()}|${carrera.carrera}`}
     />
+    {modalAdminReq && (
+      <ModalAutorizacionAdmin
+        abierto={true}
+        onCerrar={() => setModalAdminReq(null)}
+        onAutorizado={modalAdminReq.onAutorizar}
+        motivo={modalAdminReq.motivo}
+        modalidad="MARCAS"
+        grupoNombre={modalAdminReq.grupoNombre}
+        jugadorNombre={modalAdminReq.jugadorNombre}
+        monto={modalAdminReq.monto}
+        limiteEstablecido={modalAdminReq.limiteEstablecido}
+      />
+    )}
     </>
   );
 }

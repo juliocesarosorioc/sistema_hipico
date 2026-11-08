@@ -114,7 +114,26 @@ export async function guardarBanquero(input: {
   const { error } = await supabase
     .from("banquero_convenio")
     .upsert(fila, { onConflict: "grupo_id,modalidad" });
-  return error ? { ok: false, error: error.message } : { ok: true };
+  if (!error) return { ok: true };
+
+  // Fallback con RPC SECURITY DEFINER si RLS bloquea el upsert directo
+  const { data: rpcData, error: rpcError } = await supabase.rpc("club_guardar_banquero_convenio", {
+    p_grupo_id: input.grupo_id,
+    p_modalidad: input.modalidad,
+    p_banquero_cliente_id: input.banquero_cliente_id,
+    p_banquero_nombre: input.banquero_nombre ?? null,
+    p_cobra_comision: input.cobra_comision,
+    p_comision_porcentaje: input.comision_porcentaje,
+    p_comision_base: input.comision_base,
+    p_activo: input.activo ?? true,
+  });
+  if (rpcError) {
+    return { ok: false, error: rpcError.message || error.message };
+  }
+  const resObj = (rpcData ?? {}) as Record<string, unknown>;
+  return resObj.ok === false
+    ? { ok: false, error: String(resObj.error ?? "No se pudo guardar convenio de banquero.") }
+    : { ok: true };
 }
 
 /** Quita el banquero de un (grupo, modalidad). */
@@ -133,5 +152,18 @@ export async function eliminarBanquero(
     .delete()
     .eq("grupo_id", grupoId)
     .eq("modalidad", modalidad);
-  return error ? { ok: false, error: error.message } : { ok: true };
+  if (!error) return { ok: true };
+
+  // Fallback con RPC SECURITY DEFINER si RLS bloquea el delete directo
+  const { data: rpcData, error: rpcError } = await supabase.rpc("club_eliminar_banquero_convenio", {
+    p_grupo_id: grupoId,
+    p_modalidad: modalidad,
+  });
+  if (rpcError) {
+    return { ok: false, error: rpcError.message || error.message };
+  }
+  const resObj = (rpcData ?? {}) as Record<string, unknown>;
+  return resObj.ok === false
+    ? { ok: false, error: String(resObj.error ?? "No se pudo eliminar convenio de banquero.") }
+    : { ok: true };
 }

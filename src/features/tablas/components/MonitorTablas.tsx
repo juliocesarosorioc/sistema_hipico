@@ -17,6 +17,7 @@ import { EditorCaballos } from "@/features/tablas/components/EditorCaballos";
 import { CuadroModal } from "@/features/tablas/components/CuadroModal";
 import { ReporteTablasFijasModal } from "@/features/tablas/components/ReporteTablasFijasModal";
 import { ControlRiesgoTablasModal } from "@/features/tablas/components/ControlRiesgoTablasModal";
+import { ModalAutorizacionAdmin } from "@/features/seguridad/components/ModalAutorizacionAdmin";
 import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, listarClientesVenta, esClienteLibre, grupoDeVentaVigente, type CupoTablaGrupo, type GrupoVenta, type ClienteVenta } from "@/features/grupos/lib/grupos";
 import { listarBanquerosGrupo } from "@/features/liquidacion/lib/banqueros";
 import { useCarrerasCentrales } from "@/features/carreras/lib/useCarrerasCentrales";
@@ -50,6 +51,8 @@ export type VentaTablaItem = {
   nombre: string;
   monto: number;
   cantidad?: number;
+  comision_porcentaje?: number | null;
+  adminAutorizado?: string | null;
   grupo?: { id: string | number; nombre: string } | null;
   jugador?: {
     id: string | number;
@@ -156,6 +159,15 @@ export function MonitorTablas({
   const [previewVenta, setPreviewVenta] = useState<{ item: VentaTablaItem; ticket: TicketVentaModel } | null>(null);
   const [previewConfirmando, setPreviewConfirmando] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [modalAdminReq, setModalAdminReq] = useState<{
+    motivo: string;
+    limiteEstablecido?: string | number;
+    grupoNombre: string;
+    jugadorNombre: string;
+    monto: number;
+    cantidad?: number;
+    onAutorizar: (adminUser: string) => Promise<void> | void;
+  } | null>(null);
   const [liquidando, setLiquidando] = useState<StoredTablaFija | null>(null);
   const [editando, setEditando] = useState<StoredTablaFija | null>(null);
   const [patchEdicion, setPatchEdicion] = useState<Record<string, unknown>>({});
@@ -584,55 +596,104 @@ export function MonitorTablas({
         : valorUnitario > 0
           ? Math.max(1, Math.round(monto / valorUnitario))
           : 1;
-    const item: VentaTablaItem = {
-      tablaId: vendiendo.id,
-      numero: ejemplarVenta,
-      nombre: nombreCab,
-      monto,
-      cantidad: cantidadCalculada,
-      grupo: grupo
-        ? { id: grupo.id, nombre: grupo.nombre }
-        : grupoEfectivo
-          ? { id: grupoEfectivo, nombre: nombreGrupoSesion || `Grupo ${grupoEfectivo}` }
-          : null,
-      jugador: cliente
-        ? {
-            id: cliente.id,
-            nombre: cliente.nombre,
-            saldo_actual: Number(cliente.saldo_actual ?? 0),
-            aval: Number(cliente.aval ?? 0) || 0,
-            libre: esClienteLibre(cliente),
-          }
-        : null,
-    };
-    const saldo = Number(cliente?.saldo_actual ?? 0);
-    const bq = (await listarBanquerosGrupo(grupoEfectivo)).find(
-      (b) => b.modalidad === "TABLAS" && b.activo !== false && b.banquero_cliente_id
-    );
-    setAviso("");
-    setPreviewError(null);
-    setPreviewVenta({
-      item,
-      ticket: {
-        modalidad: "TABLA FIJA",
-        hipodromo: vendiendo.hipodromo ?? "",
-        fecha: diaDeLaTabla(vendiendo),
-        carrera: vendiendo.carrera ?? "",
-        titulo: `TABLA ${nombreHipodromoParaMostrar(vendiendo.hipodromo)} C${vendiendo.carrera} · ${ejemplarVenta === "TABLA" ? "COMPLETA" : `Nº ${ejemplarVenta}`}`,
-        detalle: `${nombreCab}${cantidadCalculada > 1 ? ` × ${cantidadCalculada} tablas` : ""}`,
-        jugador: cliente?.nombre ?? "",
-        grupo: grupo?.nombre ?? (grupoEfectivo ? nombreGrupoSesion || null : null),
+    const comisionPorcentaje = grupo?.comision_tablas ?? grupo?.comision_default ?? 2.5;
+
+    const armarPreview = async (adminAut?: string) => {
+      const item: VentaTablaItem = {
+        tablaId: vendiendo.id,
+        numero: ejemplarVenta,
+        nombre: nombreCab,
         monto,
-        moneda: grupo?.moneda ?? vendiendo.moneda,
-        pago: pagoPotencialNumerico(vendiendo, ejemplarVenta, monto, cantidadCalculada),
-        saldoAntes: saldo,
-        saldoDespues: saldo - monto,
-        banquero: "TF",
-        banqueroCobra: bq?.cobra_comision ?? false,
-        banqueroComision: bq?.comision_porcentaje ?? null,
-        banqueroBase: bq?.comision_base ?? null,
-      },
-    });
+        cantidad: cantidadCalculada,
+        comision_porcentaje: comisionPorcentaje,
+        adminAutorizado: adminAut ?? null,
+        grupo: grupo
+          ? { id: grupo.id, nombre: grupo.nombre }
+          : grupoEfectivo
+            ? { id: grupoEfectivo, nombre: nombreGrupoSesion || `Grupo ${grupoEfectivo}` }
+            : null,
+        jugador: cliente
+          ? {
+              id: cliente.id,
+              nombre: cliente.nombre,
+              saldo_actual: Number(cliente.saldo_actual ?? 0),
+              aval: Number(cliente.aval ?? 0) || 0,
+              libre: esClienteLibre(cliente),
+            }
+          : null,
+      };
+      const saldo = Number(cliente?.saldo_actual ?? 0);
+      const bq = (await listarBanquerosGrupo(grupoEfectivo)).find(
+        (b) => b.modalidad === "TABLAS" && b.activo !== false && b.banquero_cliente_id
+      );
+      setAviso("");
+      setPreviewError(null);
+      setPreviewVenta({
+        item,
+        ticket: {
+          modalidad: "TABLA FIJA",
+          hipodromo: vendiendo.hipodromo ?? "",
+          fecha: diaDeLaTabla(vendiendo),
+          carrera: vendiendo.carrera ?? "",
+          titulo: `TABLA ${nombreHipodromoParaMostrar(vendiendo.hipodromo)} C${vendiendo.carrera} · ${ejemplarVenta === "TABLA" ? "COMPLETA" : `Nº ${ejemplarVenta}`}`,
+          detalle: `${nombreCab}${cantidadCalculada > 1 ? ` × ${cantidadCalculada} tablas` : ""}`,
+          jugador: cliente?.nombre ?? "",
+          grupo: grupo?.nombre ?? (grupoEfectivo ? nombreGrupoSesion || null : null),
+          monto,
+          moneda: grupo?.moneda ?? vendiendo.moneda,
+          pago: pagoPotencialNumerico(vendiendo, ejemplarVenta, monto, cantidadCalculada),
+          saldoAntes: saldo,
+          saldoDespues: saldo - monto,
+          banquero: "TF",
+          banqueroCobra: bq?.cobra_comision ?? false,
+          banqueroComision: bq?.comision_porcentaje ?? null,
+          banqueroBase: bq?.comision_base ?? null,
+        },
+      });
+    };
+
+    // Validar límites del grupo para esta tabla
+    let limiteSuperado = false;
+    let motivoSuperado = "";
+    let limiteTexto = "";
+
+    try {
+      const cuposGrupos = await listarCuposTabla(vendiendo.id);
+      const cupoG = cuposGrupos.find((cg) => String(cg.grupo_id) === String(grupoEfectivo));
+      const cupoMaxGrupo = cupoG?.cupos ?? grupo?.cupo_tabla ?? 100;
+      const vendidosGrupo = Number(cupoG?.cantidad_vendida ?? 0);
+      const maxPorJugada = cupoG?.max != null && cupoG.max > 0 ? Number(cupoG.max) : null;
+
+      if (cupoMaxGrupo > 0 && vendidosGrupo + cantidadCalculada > cupoMaxGrupo) {
+        limiteSuperado = true;
+        motivoSuperado = `El grupo "${grupo?.nombre || grupoEfectivo}" ha superado el cupo asignado para esta tabla (${vendidosGrupo} vendidas de ${cupoMaxGrupo} cupos). Se intentan vender ${cantidadCalculada} tabla(s).`;
+        limiteTexto = `${cupoMaxGrupo} tablas de cupo total`;
+      } else if (maxPorJugada != null && cantidadCalculada > maxPorJugada) {
+        limiteSuperado = true;
+        motivoSuperado = `La cantidad de ${cantidadCalculada} tabla(s) supera el límite máximo por jugada (${maxPorJugada}) establecido para el grupo "${grupo?.nombre || grupoEfectivo}".`;
+        limiteTexto = `${maxPorJugada} tablas máx por jugada`;
+      }
+    } catch {
+      /* best-effort */
+    }
+
+    if (limiteSuperado) {
+      setModalAdminReq({
+        motivo: motivoSuperado,
+        limiteEstablecido: limiteTexto,
+        grupoNombre: grupo?.nombre || `Grupo ${grupoEfectivo}`,
+        jugadorNombre: cliente?.nombre || "Jugador",
+        monto,
+        cantidad: cantidadCalculada,
+        onAutorizar: async (adminUser) => {
+          setModalAdminReq(null);
+          await armarPreview(adminUser);
+        },
+      });
+      return;
+    }
+
+    await armarPreview();
   };
 
   const confirmarVentaPreview = async () => {
@@ -1655,6 +1716,21 @@ export function MonitorTablas({
             </div>
           </div>
         </div>
+      )}
+
+      {modalAdminReq && (
+        <ModalAutorizacionAdmin
+          abierto={true}
+          onCerrar={() => setModalAdminReq(null)}
+          onAutorizado={modalAdminReq.onAutorizar}
+          motivo={modalAdminReq.motivo}
+          modalidad="TABLAS_FIJAS"
+          grupoNombre={modalAdminReq.grupoNombre}
+          jugadorNombre={modalAdminReq.jugadorNombre}
+          monto={modalAdminReq.monto}
+          cantidad={modalAdminReq.cantidad}
+          limiteEstablecido={modalAdminReq.limiteEstablecido}
+        />
       )}
 
       <TicketVentaPreview

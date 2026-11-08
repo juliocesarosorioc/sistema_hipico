@@ -223,6 +223,7 @@ export type VentaMarcas = {
   clienteId: string;
   grupoId: string;
   usuario?: string;
+  comisionPorcentaje?: number | null;
   /**
    * Clave de idempotencia. Si se repite la llamada con la misma clave, la RPC
    * devuelve el ticket ya creado SIN descontar de nuevo.
@@ -268,7 +269,21 @@ export async function venderMarca(v: VentaMarcas): Promise<ResultadoVentaMarcas>
   if (r.ticket_id != null) {
     try {
       const fechaCarrera = String(v.fecha ?? "").trim().slice(0, 10);
-      const patchMarca: Record<string, unknown> = { cliente_consigue_nombre: "MARCAS" };
+      let comisionPct = v.comisionPorcentaje;
+      if (comisionPct == null && v.grupoId) {
+        try {
+          const { data: gData } = await supabase
+            .from("grupos_venta")
+            .select("comision_marcas, comision_default")
+            .eq("id", v.grupoId)
+            .maybeSingle();
+          if (gData) comisionPct = gData.comision_marcas ?? gData.comision_default ?? 2.5;
+        } catch {}
+      }
+      const patchMarca: Record<string, unknown> = {
+        cliente_consigue_nombre: "MARCAS",
+        ...(comisionPct != null ? { comision_porcentaje: Number(comisionPct) } : {})
+      };
       if (/^\d{4}-\d{2}-\d{2}$/.test(fechaCarrera)) patchMarca.fecha_carrera = fechaCarrera;
       await supabase
         .from("tickets_apuestas")
@@ -512,13 +527,27 @@ export async function liquidarMarcas(
     deltaPorJugador.set(k, Math.round(((deltaPorJugador.get(k) ?? 0) + delta) * 100) / 100);
   };
 
+  const comisionGruposMap = new Map<string, number>();
+  try {
+    const { data: grps } = await sdb
+      .from("grupos_venta")
+      .select("id, comision_marcas, comision_default");
+    for (const g of grps ?? []) {
+      const com = g.comision_marcas ?? g.comision_default ?? 2.5;
+      comisionGruposMap.set(String(g.id), Number(com));
+    }
+  } catch {}
+
   for (const t of ticketsPendientes) {
     const idTicket = t.id;
     const monto = Math.round((Number(t.monto_jugado ?? 0) || 0) * 100) / 100;
-    const tasaCom =
+    const tPct =
       t.comision_porcentaje != null && String(t.comision_porcentaje).trim() !== ""
         ? Number(t.comision_porcentaje)
-        : 5;
+        : 0;
+    const grpId = String(t.grupo_cobro_id ?? t.grupo_comision_id ?? "");
+    const comGrupoConf = comisionGruposMap.get(grpId);
+    const tasaCom = tPct > 0 ? tPct : (comGrupoConf ?? 2.5);
     const cab = numeroCaballoMarca(t.caballo, t.ejemplar_numero) ?? "";
     const rivales = extraerRivalesTicketMarca(t, cab);
 

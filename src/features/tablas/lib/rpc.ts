@@ -627,6 +627,23 @@ export async function venderTablaFija(params: {
   usuario?: string | null;
 }): Promise<VentaTablaFijaResultado> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+
+  let comisionPct = params.comisionPorcentaje;
+  if (comisionPct == null) {
+    try {
+      const { data: gData } = await supabase
+        .from("grupos_venta")
+        .select("comision_tablas, comision_default")
+        .eq("id", params.grupoId)
+        .maybeSingle();
+      if (gData) {
+        comisionPct = gData.comision_tablas ?? gData.comision_default ?? 2.5;
+      }
+    } catch {
+      /* fallback */
+    }
+  }
+
   const { data, error } = await supabase.rpc("club_vender_tabla_fija", {
     p_tabla_id: params.tablaId,
     p_cliente_id: params.clienteId,
@@ -634,7 +651,7 @@ export async function venderTablaFija(params: {
     p_monto: params.monto,
     p_cantidad: params.cantidad ?? 1,
     p_ejemplar_numero: params.ejemplarNumero ?? null,
-    p_comision_porcentaje: params.comisionPorcentaje ?? null,
+    p_comision_porcentaje: comisionPct ?? null,
     p_tasa: params.tasa ?? null,
     p_usuario: params.usuario ?? null,
   });
@@ -643,13 +660,29 @@ export async function venderTablaFija(params: {
   }
   const d = (data ?? {}) as Record<string, unknown>;
   limpiarCacheClientesVenta();
+
+  // Asegurar que los tickets creados para esta venta tengan la comision del grupo
+  if (comisionPct != null && Number(comisionPct) > 0) {
+    try {
+      await supabase
+        .from("tickets_apuestas")
+        .update({ comision_porcentaje: Number(comisionPct) })
+        .eq("cliente_juega_id", params.clienteId)
+        .eq("grupo_cobro_id", params.grupoId)
+        .ilike("nombre_jugada", "TABLA FIJA%")
+        .or("comision_porcentaje.is.null,comision_porcentaje.eq.0");
+    } catch {
+      /* best-effort */
+    }
+  }
+
   return {
     ok: true,
     tickets: Number(d.tickets ?? 0),
     cantidad: Number(d.cantidad ?? 0),
     saldoNuevo: d.saldo_nuevo != null ? Number(d.saldo_nuevo) : undefined,
     premioPorTabla: d.premio_por_tabla != null ? Number(d.premio_por_tabla) : undefined,
-    comisionGrupoPorcentaje: d.comision_grupo_porcentaje != null ? Number(d.comision_grupo_porcentaje) : undefined,
+    comisionGrupoPorcentaje: d.comision_grupo_porcentaje != null ? Number(d.comision_grupo_porcentaje) : comisionPct ?? undefined,
     moneda: d.moneda != null ? String(d.moneda) : undefined,
   };
 }

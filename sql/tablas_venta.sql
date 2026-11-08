@@ -159,7 +159,7 @@ begin
   -- Tasa del grupo (convenio). En tabla fija NO se descuenta del jugador:
   -- queda congelada en el ticket para que la comision se calcule despues
   -- sobre el monto decidido, a nombre del grupo.
-  v_comision := coalesce(p_comision_porcentaje, v_grupo.comision_default, 0);
+  v_comision := coalesce(p_comision_porcentaje, v_grupo.comision_tablas, v_grupo.comision_default, 0);
 
   v_fecha := coalesce(v_tabla.fecha, (v_tabla.fecha_creacion)::date, current_date);
 
