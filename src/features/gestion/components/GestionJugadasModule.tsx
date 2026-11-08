@@ -665,7 +665,7 @@ const hipodromosDelDia = useMemo(() => {
    */
   const [liquidandoCarrera, setLiquidandoCarrera] = useState(false);
   const [modoExclusivoReporte, setModoExclusivoReporte] = useState(false);
-  const [adelantadasAbierto, setAdelantadasAbierto] = useState(false);
+  const [adelantadasAbierto, setAdelantadasAbierto] = useState(true);
   const [modalAgentePizarra, setModalAgentePizarra] = useState(false);
   const [modalEventoEspecial, setModalEventoEspecial] = useState(false);
   const bloqueoLiquidacionActivo = liquidandoCarrera || (mostrarReporteLiquidacion && modoExclusivoReporte);

@@ -460,7 +460,7 @@ function NotaExcedidos({
 }
 
 export default function ReporteCarrera({ datos }: { datos?: ReporteCarreraDatos | null }) {
-  const [adelantadasAbierto, setAdelantadasAbierto] = useState(false);
+  const [adelantadasAbierto, setAdelantadasAbierto] = useState(true);
 
   if (!tieneDatos(datos)) {
     return (
