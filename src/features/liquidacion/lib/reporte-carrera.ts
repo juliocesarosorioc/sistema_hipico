@@ -451,7 +451,9 @@ export function armarReporteCarrera(
       jugadasVivo.push(filaVivo);
 
       const seccion = seccionAdelantadaDe(f.jugada, f.tipoJugada);
-      if (seccion && resultado !== null && resultado > 0) {
+      // Las jugadas adelantadas (tablas incluidas) deben aparecer en su sección
+      // siempre que se liquide, aunque el resultado sea 0 o pendiente.
+      if (seccion) {
         adelantadas[seccion].push({
           ...filaVivo,
           descripcion: (f.ejemplar ?? f.caballo) || f.jugada,
