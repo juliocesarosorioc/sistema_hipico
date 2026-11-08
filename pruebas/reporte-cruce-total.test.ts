@@ -93,11 +93,10 @@ const partnerConIdsDuplicados = armarReporteCarrera(
 );
 assert.equal(
   partnerConIdsDuplicados.resumen.ganan.length + partnerConIdsDuplicados.resumen.pierden.length,
-  2,
-  "PARTNER con IDs contables distintos conserva dos cuentas financieras"
+  1,
+  "Regla estricta: un mismo usuario solo puede aparecer una vez con su totalización neta (190 - 50 = 140)"
 );
-assert.equal(partnerConIdsDuplicados.resumen.ganan[0].monto, 190);
-assert.equal(partnerConIdsDuplicados.resumen.pierden[0].monto, -50);
+assert.equal(partnerConIdsDuplicados.resumen.ganan[0].monto, 140);
 
 const reporteModule = fs.readFileSync(
   path.join(process.cwd(), "src/features/saldos/components/ReporteModule.tsx"),

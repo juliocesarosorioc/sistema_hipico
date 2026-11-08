@@ -42,6 +42,7 @@ type Props = {
   /** Comisión de la carrera (la misma con la que se liquidó). Se usa al
    *  recalcular para que la comisión neta por cruces cuadre con la original. */
   tasaComision?: number | null;
+  carreraLiquidada?: boolean;
   onCerrar: () => void;
 };
 
@@ -105,7 +106,15 @@ function ejemplarDeCaballo(caballo: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, carrera, fecha, tasaComision, onCerrar }: Props) {
+export default function ModalEditarJugadasCarrera({
+  hipodromo,
+  nombreHipodromo,
+  carrera,
+  fecha,
+  tasaComision,
+  carreraLiquidada,
+  onCerrar,
+}: Props) {
   const [jugadas, setJugadas] = useState<JugadaAdmin[]>([]);
   const [clientesCatalogo, setClientesCatalogo] = useState<Cliente[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -144,7 +153,18 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
   const visibles = soloVigentes ? jugadas.filter((j) => !j.anulada) : jugadas;
   const totalVigente = visibles.reduce((a, j) => a + Number(j.monto_jugado ?? 0), 0);
 
+  const estaLiquidada =
+    Boolean(carreraLiquidada) ||
+    jugadas.some((j) => {
+      const e = String(j.estado ?? "").toLowerCase();
+      return e === "ganador" || e === "perdedor" || e === "liquidada";
+    });
+
   const empezarEdicion = (j: JugadaAdmin) => {
+    if (estaLiquidada) {
+      setAviso("⛔ Esta carrera ya está liquidada. Debe reversar la liquidación en Gestión de Jugadas para poder editar jugadas.");
+      return;
+    }
     const cabStr = j.caballo?.trim() || (j.ejemplar_numero != null ? String(j.ejemplar_numero) : "");
     setEdicion({
       id: String(j.id),
@@ -231,6 +251,25 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
       setAviso("⚠️ El monto jugado debe ser mayor a 0.");
       return;
     }
+    if (estaLiquidada) {
+      setAviso("⛔ Esta carrera ya está liquidada. Debe reversar la liquidación en Gestión de Jugadas para poder editar jugadas.");
+      return;
+    }
+    const cli = clientesCatalogo.find(
+      (c) =>
+        (c.seudonimo && c.seudonimo.toUpperCase() === edicion.jugador1.trim().toUpperCase()) ||
+        (c.nombre && c.nombre.toUpperCase() === edicion.jugador1.trim().toUpperCase()) ||
+        String(c.id) === edicion.jugador1.trim()
+    );
+    if (cli) {
+      const jOrig = jugadas.find((x) => String(x.id) === edicion.id);
+      const montoOrig = Number(jOrig?.monto_jugado ?? 0);
+      const disp = Number(cli.saldo_actual ?? 0) + Number(cli.aval ?? 0) + montoOrig;
+      if (monto > disp) {
+        setAviso(`⛔ Saldo insuficiente: El monto modificado (${monto}) excede el saldo disponible (${disp.toFixed(2)}) de ${cli.seudonimo || cli.nombre}. No se permite modificar el monto por encima de su saldo disponible.`);
+        return;
+      }
+    }
     setOcupado(true);
     const r = await corregirJugadaYRecalcular({
       id: edicion.id,
@@ -270,6 +309,10 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
 
   const confirmarAnulacion = async () => {
     if (!anulando) return;
+    if (estaLiquidada) {
+      setAviso("⛔ Esta carrera ya está liquidada. Debe reversar la liquidación en Gestión de Jugadas para poder anular jugadas.");
+      return;
+    }
     // Indicá el motivo de la anulación (o usa predeterminado por el operador)
     const texto = motivoAnular.trim() || "Anulación de jugada por el operador";
     setOcupado(true);
@@ -303,6 +346,10 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
   };
 
   const restaurar = async (j: JugadaAdmin) => {
+    if (estaLiquidada) {
+      setAviso("⛔ Esta carrera ya está liquidada. Debe reversar la liquidación en Gestión de Jugadas para poder restaurar jugadas.");
+      return;
+    }
     setOcupado(true);
     const r = await restaurarJugada(j.id, "Restauración desde edición de jugadas", usuario);
     if (!r.ok) {
@@ -326,7 +373,9 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
       <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-2xl border border-line bg-white shadow-2xl">
         <datalist id="clientes-editar-carrera-datalist">
           {clientesCatalogo.map((c) => (
-            <option key={c.id} value={c.nombre ?? ""} />
+            <option key={c.id} value={c.seudonimo || c.nombre || ""}>
+              {c.seudonimo ? `${c.seudonimo} (${c.nombre})` : c.nombre}
+            </option>
           ))}
         </datalist>
 
@@ -343,6 +392,13 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
             ✕
           </button>
         </div>
+
+        {estaLiquidada && (
+          <div className="flex items-center justify-between border-b border-red-300 bg-red-600 px-4 py-2.5 text-xs font-bold text-white shadow-xs">
+            <span>⛔ CARRERA YA LIQUIDADA</span>
+            <span>Para editar montos, modificar datos o anular jugadas, debe reversar la liquidación en Gestión de Jugadas.</span>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2 border-b border-line bg-gray-50 px-4 py-2 text-xs">
           <label className="inline-flex items-center gap-1.5 font-semibold text-slate-600">
@@ -510,10 +566,32 @@ export default function ModalEditarJugadasCarrera({ hipodromo, nombreHipodromo, 
                           </Button>
                         ) : (
                           <>
-                            <Button size="sm" variant="ghost" onClick={() => empezarEdicion(j)} disabled={ocupado}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => empezarEdicion(j)}
+                              disabled={ocupado || estaLiquidada}
+                              title={estaLiquidada ? "Carrera liquidada: reverse para poder corregir" : undefined}
+                              className={estaLiquidada ? "opacity-30 cursor-not-allowed" : ""}
+                            >
                               ✏️ Corregir
                             </Button>
-                            <Button size="sm" variant="ghost" onClick={() => { setAnulando(j); setMotivoAnular(""); setAviso(""); }} disabled={ocupado}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                if (estaLiquidada) {
+                                  setAviso("⛔ Esta carrera ya está liquidada. Debe reversar la liquidación en Gestión de Jugadas para poder anular.");
+                                  return;
+                                }
+                                setAnulando(j);
+                                setMotivoAnular("");
+                                setAviso("");
+                              }}
+                              disabled={ocupado || estaLiquidada}
+                              title={estaLiquidada ? "Carrera liquidada: reverse para poder anular" : undefined}
+                              className={estaLiquidada ? "opacity-30 cursor-not-allowed" : ""}
+                            >
                               🚫 Anular
                             </Button>
                           </>

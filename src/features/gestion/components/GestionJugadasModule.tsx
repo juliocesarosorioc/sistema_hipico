@@ -1218,6 +1218,12 @@ const hipodromosDelDia = useMemo(() => {
 
   /** Abre el modal propio de ✏️/🗑️ para una fila del panel (sin window.confirm). */
   const abrirAccionPreview = (fila: FilaPreviewCarrera, modo: "editar" | "eliminar") => {
+    if (carreraLiquidada) {
+      const msg = "⛔ La carrera está liquidada. Debe reversar la liquidación para poder editar o eliminar jugadas.";
+      setAviso(msg);
+      emitirToast(msg, "error");
+      return;
+    }
     setAccionPreview({ fila, modo });
     setMotivoPreview("");
     setErrorAccionPreview("");
@@ -1255,6 +1261,12 @@ const hipodromosDelDia = useMemo(() => {
   const confirmarAccionPreview = async () => {
     const accion = accionPreview;
     if (!accion || ocupadoPreview) return;
+    if (carreraLiquidada) {
+      const msg = "⛔ La carrera está liquidada. Debe reversar la liquidación para poder editar o eliminar jugadas.";
+      setAviso(msg);
+      emitirToast(msg, "error");
+      return;
+    }
     const fila = accion.fila;
     const motivo =
       accion.modo === "editar"
@@ -1305,6 +1317,21 @@ const hipodromosDelDia = useMemo(() => {
       if (!Number.isFinite(monto) || monto <= 0) {
         setAviso("⚠️ El monto debe ser mayor a 0.");
         return;
+      }
+      const cli = clientes.find((x) =>
+        (x.nombre && x.nombre.toUpperCase() === jugador1) ||
+        (x.seudonimo && x.seudonimo.toUpperCase() === jugador1) ||
+        String(x.id) === jugador1
+      );
+      if (cli) {
+        const montoAnterior = Number(fila.monto ?? 0);
+        const disp = Number(cli.saldo_actual ?? 0) + Number(cli.aval ?? 0) + montoAnterior;
+        if (monto > disp) {
+          const msg = `⛔ Saldo insuficiente: El monto (${monto}) excede el saldo disponible (${disp.toFixed(2)}) de ${cli.seudonimo || cli.nombre}. No se permite modificar el monto por encima de su saldo disponible.`;
+          setAviso(msg);
+          emitirToast(msg, "error");
+          return;
+        }
       }
       const mCabNum = caballo.match(/\b(\d{1,2})\b/);
       campos = {
@@ -4421,19 +4448,35 @@ const hipodromosDelDia = useMemo(() => {
                           </span>
                           <button
                             type="button"
-                            onClick={() => abrirAccionPreview(f, "editar")}
+                            onClick={() => {
+                              if (carreraLiquidada) {
+                                const msg = "⛔ La carrera está liquidada. Debe reversar la liquidación para poder editar o eliminar jugadas.";
+                                setAviso(msg);
+                                emitirToast(msg, "error");
+                                return;
+                              }
+                              abrirAccionPreview(f, "editar");
+                            }}
                             aria-label="Editar jugada"
-                            title="Editar la jugada y recalcular la carrera"
-                            className="text-[11px] text-slate-400 hover:text-primary-600"
+                            title={carreraLiquidada ? "Carrera liquidada: reverse la liquidación para poder editar" : "Editar la jugada y recalcular la carrera"}
+                            className={`text-[11px] ${carreraLiquidada ? "opacity-30 cursor-not-allowed text-slate-400" : "text-slate-400 hover:text-primary-600"}`}
                           >
                             ✏️
                           </button>
                           <button
                             type="button"
-                            onClick={() => abrirAccionPreview(f, "eliminar")}
+                            onClick={() => {
+                              if (carreraLiquidada) {
+                                const msg = "⛔ La carrera está liquidada. Debe reversar la liquidación para poder editar o eliminar jugadas.";
+                                setAviso(msg);
+                                emitirToast(msg, "error");
+                                return;
+                              }
+                              abrirAccionPreview(f, "eliminar");
+                            }}
                             aria-label="Eliminar jugada"
-                            title="Anular la jugada y recalcular la carrera"
-                            className="ml-0.5 text-[11px] text-slate-400 hover:text-red-500"
+                            title={carreraLiquidada ? "Carrera liquidada: reverse la liquidación para poder anular" : "Anular la jugada y recalcular la carrera"}
+                            className={`ml-0.5 text-[11px] ${carreraLiquidada ? "opacity-30 cursor-not-allowed text-slate-400" : "text-slate-400 hover:text-red-500"}`}
                           >
                             🗑️
                           </button>
@@ -5093,7 +5136,9 @@ const hipodromosDelDia = useMemo(() => {
             <div className="w-full max-w-xl rounded-2xl border border-line bg-white p-4 shadow-2xl">
               <datalist id="clientes-preview-editar-datalist">
                 {clientes.map((c) => (
-                  <option key={c.id} value={c.nombre} />
+                  <option key={c.id} value={c.seudonimo || c.nombre}>
+                    {c.seudonimo ? `${c.seudonimo} (${c.nombre})` : c.nombre}
+                  </option>
                 ))}
               </datalist>
               <p className="text-sm font-black text-slate-800">
@@ -5421,14 +5466,24 @@ const hipodromosDelDia = useMemo(() => {
             <button
               data-tour="tour-editar-reliquidar"
               type="button"
-              onClick={() => setModalEditarJugadas(true)}
-              disabled={!listoParaCargar || bloqueoLiquidacionActivo}
+              onClick={() => {
+                if (carreraLiquidada) {
+                  const msg = "⛔ La carrera está liquidada. Debe reversar la liquidación para poder editar o eliminar jugadas.";
+                  setAviso(msg);
+                  emitirToast(msg, "error");
+                  return;
+                }
+                setModalEditarJugadas(true);
+              }}
+              disabled={!listoParaCargar || bloqueoLiquidacionActivo || carreraLiquidada}
               title={
-                listoParaCargar
-                  ? "Corregir o anular las jugadas ya guardadas de esta carrera (aunque esté cerrada)"
+                carreraLiquidada
+                  ? "Carrera liquidada: reverse la liquidación para habilitar la edición de jugadas."
+                  : listoParaCargar
+                  ? "Corregir o anular las jugadas ya guardadas de esta carrera"
                   : "Elija hipódromo y carrera para editar sus jugadas"
               }
-              className={`${BTN_BARRA} bg-slate-700 text-white hover:bg-slate-600 disabled:opacity-40`}
+              className={`${BTN_BARRA} ${carreraLiquidada ? "bg-slate-400 opacity-50 cursor-not-allowed" : "bg-slate-700 hover:bg-slate-600"} text-white disabled:opacity-40`}
             >
               ✏️ Editar jugadas
             </button>
@@ -6004,6 +6059,7 @@ const hipodromosDelDia = useMemo(() => {
           carrera={carrera}
           fecha={fecha}
           tasaComision={comisionNum}
+          carreraLiquidada={carreraLiquidada}
           onCerrar={() => {
             setModalEditarJugadas(false);
             void recargarJugadasGuardadas();

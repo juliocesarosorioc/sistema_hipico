@@ -88,13 +88,29 @@ export async function guardarPizarraCentral(opts: {
     cargado_por: opts.cargado_por,
   };
 
-  const res = await supabase.rpc("club_guardar_resultado_carrera", {
-    p_fecha: fecha,
-    p_hipodromo: hip,
-    p_carrera: n,
-    p_fila: fila,
-  });
-  if (!res.error) {
+  // Intentar guardar primero vía API route administrativa para persistencia íntegra
+  let apiGuardado = false;
+  try {
+    const resApi = await fetch("/api/carreras/guardar-resultado", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fecha, hipodromo: hip, carrera: n, fila }),
+    });
+    const json = await resApi.json();
+    if (json.ok) apiGuardado = true;
+  } catch {
+    /* fallback a RPC */
+  }
+
+  const res = apiGuardado
+    ? { error: null }
+    : await supabase.rpc("club_guardar_resultado_carrera", {
+        p_fecha: fecha,
+        p_hipodromo: hip,
+        p_carrera: n,
+        p_fila: fila,
+      });
+  if (!res.error || apiGuardado) {
     const errorLiquidacion = await liquidarTrasPizarra({
       hipodromo: hip,
       carrera: n,

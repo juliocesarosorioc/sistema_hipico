@@ -272,6 +272,11 @@ export function JugadasModule() {
 
   const guardarEdicion = async (campos: Parameters<typeof editarJugada>[1], motivo: string): Promise<void> => {
     if (!editando) return;
+    const est = String(editando.estado ?? "").toLowerCase();
+    if (est === "ganador" || est === "perdedor" || est === "liquidada") {
+      toast("⛔ Esta carrera ya está liquidada. Debe reversar la liquidación en Gestión de Jugadas antes de poder editar jugadas.", "error");
+      return;
+    }
     const hipOrig = String(editando.hipodromo ?? seleccion?.hipodromo ?? "");
     const carOrig = Number(editando.carrera ?? seleccion?.carrera ?? 1);
     const fecOrig = String(editando.fecha_carrera ?? seleccion?.fecha_carrera ?? fecha);
@@ -296,6 +301,11 @@ export function JugadasModule() {
 
   const confirmarAnulacion = async (motivo: string, imagen: string | null): Promise<void> => {
     if (!anulando) return;
+    const est = String(anulando.estado ?? "").toLowerCase();
+    if (est === "ganador" || est === "perdedor" || est === "liquidada") {
+      toast("⛔ Esta carrera ya está liquidada. Debe reversar la liquidación en Gestión de Jugadas antes de poder anular jugadas.", "error");
+      return;
+    }
     const hipOrig = String(anulando.hipodromo ?? seleccion?.hipodromo ?? "");
     const carOrig = Number(anulando.carrera ?? seleccion?.carrera ?? 1);
     const fecOrig = String(anulando.fecha_carrera ?? seleccion?.fecha_carrera ?? fecha);
@@ -807,6 +817,20 @@ function ModalEditar({
     if (!Number.isFinite(carreraNum) || carreraNum < 1) {
       return toast("La carrera debe ser mayor o igual a 1.", "warning");
     }
+    const cli = clientesCatalogo.find(
+      (c) =>
+        (c.seudonimo && c.seudonimo.toUpperCase() === jugador1.trim().toUpperCase()) ||
+        (c.nombre && c.nombre.toUpperCase() === jugador1.trim().toUpperCase()) ||
+        String(c.id) === jugador1.trim()
+    );
+    if (cli && monto.trim() !== "") {
+      const montoNum = Number(monto);
+      const montoOrig = Number(jugada.monto_jugado ?? 0);
+      const disp = Number(cli.saldo_actual ?? 0) + Number(cli.aval ?? 0) + montoOrig;
+      if (montoNum > disp) {
+        return toast(`⛔ Saldo insuficiente: El monto (${montoNum}) excede el disponible (${disp.toFixed(2)}) de ${cli.seudonimo || cli.nombre}. No se permite modificar por encima del saldo disponible.`, "error");
+      }
+    }
     setGuardando(true);
     await onGuardar(
       {
@@ -833,7 +857,9 @@ function ModalEditar({
     <Overlay onCerrar={onCancelar} titulo={`Corregir jugada · ${jugada.cliente_juega_nombre ?? ""}`}>
       <datalist id="clientes-monitor-datalist">
         {clientesCatalogo.map((c) => (
-          <option key={c.id} value={c.nombre ?? ""} />
+          <option key={c.id} value={c.seudonimo || c.nombre || ""}>
+            {c.seudonimo ? `${c.seudonimo} (${c.nombre})` : c.nombre}
+          </option>
         ))}
       </datalist>
       <div className="grid grid-cols-2 gap-3">

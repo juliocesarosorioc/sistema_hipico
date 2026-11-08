@@ -1478,8 +1478,19 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           }
         }
 
-        const positivos = [...balancePorJugador.entries()].filter(([_, b]) => b > 0);
-        const negativos = [...balancePorJugador.entries()].filter(([_, b]) => b < 0);
+        // Consolidación estricta por usuario (un usuario nunca en positivos y negativos a la vez)
+        const balanceConsolidado = new Map<string, { nombre: string; balance: number }>();
+        for (const [nom, bal] of balancePorJugador.entries()) {
+          const norm = String(nom).trim().toUpperCase();
+          const prev = balanceConsolidado.get(norm);
+          if (!prev) {
+            balanceConsolidado.set(norm, { nombre: String(nom).trim(), balance: bal });
+          } else {
+            prev.balance += bal;
+          }
+        }
+        const positivos = [...balanceConsolidado.values()].filter((x) => x.balance > 0.001).map((x) => [x.nombre, x.balance] as [string, number]);
+        const negativos = [...balanceConsolidado.values()].filter((x) => x.balance < -0.001).map((x) => [x.nombre, x.balance] as [string, number]);
 
         let textoInformeWhatsapp = `🏁 *INFORME OFICIAL DE RESULTADOS Y LIQUIDACIÓN*\n🏇 *${carreraActiva.hipodromo}* · Carrera ${carreraActiva.carrera}\n📅 ${carreraActiva.fecha || fechaHoy}\n🥇 Pizarra Oficial: *${cmdOp.pizarra}* (Ganador: #${cabGanador})\n`;
 

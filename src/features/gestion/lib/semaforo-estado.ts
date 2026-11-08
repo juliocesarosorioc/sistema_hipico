@@ -124,11 +124,10 @@ export function estadoSemaforoCarrera(entrada: EntradaEstadoSemaforo): EstadoSem
   // Respaldo local SOLO cuando el central no conoce la carrera (o no cargó).
   // Si el central existe manda él, para no revivir copias viejas del navegador.
   const liquidadaLocal =
-    central == null &&
-    (Boolean(entrada.tabla?.cerrada) ||
-      estadoTexto(entrada.tabla?.estado) === "cerrada" ||
-      estadoTexto(entrada.registro?.estado) === "liquidada" ||
-      entrada.registro?.aplicado_a_tablas === true);
+    Boolean(entrada.tabla?.cerrada) ||
+    estadoTexto(entrada.tabla?.estado) === "cerrada" ||
+    estadoTexto(entrada.registro?.estado) === "liquidada" ||
+    entrada.registro?.aplicado_a_tablas === true;
 
   // Una reversión explícita de la sesión manda sobre cualquier copia vieja:
   // mientras el operador no vuelva a liquidar, la carrera NO es ROJO.

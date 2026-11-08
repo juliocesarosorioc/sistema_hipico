@@ -25,7 +25,7 @@ import { PROMPT_RINCONADA } from "@/features/gaceta/lib/prompts/prompt-rinconada
 import { PROMPT_AMERICANAS, limpiarMarcaAguaRetrospecto } from "@/features/gaceta/lib/prompts/prompt-americanas";
 import { ingestarGacetaProfunda, type PayloadGacetaProfunda } from "@/features/gaceta/lib/ingestar-profunda";
 import { sincronizarCarrerasAlCentral, type ResultadoCargaCarrera } from "@/features/carreras/lib/sincronizar";
-import { listarCarrerasCentrales, eliminarCarreraCentral } from "@/features/carreras/lib/central";
+import { listarCarrerasCentrales } from "@/features/carreras/lib/central";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";

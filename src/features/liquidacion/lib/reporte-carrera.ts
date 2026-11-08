@@ -561,15 +561,70 @@ export function armarReporteCarrera(
     return { id, nombre, monto: redondearCentavos(monto), riesgo, excede };
   };
 
+  // ── REGLA ESTRICTA DE TOTALIZACIÓN DE USUARIOS:
+  // No puede haber dos usuarios en positivo o dos en negativo o el mismo usuario en negativos y positivos.
+  // Solo puede aparecer un usuario con la totalización de sus resultados.
+  const consolidadoPorUsuario = new Map<
+    string,
+    {
+      claveOriginal: string;
+      nombre: string;
+      netoTotal: number;
+      riesgoTotal: number;
+    }
+  >();
+
+  for (const [clave, neto] of netoPorCliente) {
+    const nombreVisible = nombreVisiblePorClave.get(clave) ?? clave;
+    const nombreNorm = normalizarNombreCliente(nombreVisible);
+    const riesgo = riesgoPorCliente.get(clave) ?? 0;
+
+    const existente = consolidadoPorUsuario.get(nombreNorm);
+    if (!existente) {
+      consolidadoPorUsuario.set(nombreNorm, {
+        claveOriginal: clave,
+        nombre: nombreVisible,
+        netoTotal: neto,
+        riesgoTotal: riesgo,
+      });
+    } else {
+      existente.netoTotal = sumarDinero(existente.netoTotal, neto);
+      existente.riesgoTotal = sumarDinero(existente.riesgoTotal, riesgo);
+      if (nombreVisible && (!existente.nombre || existente.nombre.length < nombreVisible.length)) {
+        existente.nombre = nombreVisible;
+      }
+    }
+  }
+
   const gananRaw = [] as Array<{ nombre: string; neto: number; fila: ReporteCarreraDatos["resumen"]["ganan"][number] }>;
   const pierdenRaw = [] as Array<{ nombre: string; neto: number; fila: ReporteCarreraDatos["resumen"]["pierden"][number] }>;
 
-  for (const [clave, neto] of netoPorCliente) {
-    const nombre = nombreVisiblePorClave.get(clave) ?? clave;
-    if (neto > 0) {
-      gananRaw.push({ nombre, neto, fila: filaResumen(clave, neto, 0) });
-    } else if (neto < 0) {
-      pierdenRaw.push({ nombre, neto, fila: filaResumen(clave, neto, 0) });
+  for (const [, item] of consolidadoPorUsuario) {
+    const netoRedondeado = redondearCentavos(item.netoTotal);
+    if (Math.abs(netoRedondeado) < 0.01) {
+      // Balance 0: no va ni a ganan ni a pierden
+      continue;
+    }
+
+    const disp = disponibleDe?.(item.nombre) ?? disponibleDe?.(item.claveOriginal);
+    const hayTope = typeof disp === "number" && Number.isFinite(disp);
+    const excede = hayTope && item.riesgoTotal > (disp as number) + 0.001;
+    if (excede) {
+      notaExcedidos.push({ nombre: item.nombre, riesgo: item.riesgoTotal, disponible: disp as number });
+    }
+
+    const fila = {
+      id: 0,
+      nombre: item.nombre,
+      monto: netoRedondeado,
+      riesgo: redondearCentavos(item.riesgoTotal),
+      excede,
+    };
+
+    if (netoRedondeado > 0) {
+      gananRaw.push({ nombre: item.nombre, neto: netoRedondeado, fila });
+    } else {
+      pierdenRaw.push({ nombre: item.nombre, neto: netoRedondeado, fila });
     }
   }
 

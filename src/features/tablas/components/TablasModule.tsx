@@ -14,7 +14,7 @@ import {
   useRegistroCentral,
   useRegistroCentralOpts,
 } from "@/shared/store/useRegistroCentral";
-import { eliminarCarreraCentral } from "@/features/carreras/lib/central";
+// NOTA: La eliminación de carreras está restringida exclusivamente a CarrerasDiaModule (/carreras)
 import { MonitorHipodromos } from "@/shared/components/ui/MonitorHipodromos";
 import { DateInput } from "@/shared/components/ui/DateInput";
 import { agruparPorHipodromo, diaDeCarrera, type EjeFecha } from "@/features/carreras/lib/agruparHipodromos";

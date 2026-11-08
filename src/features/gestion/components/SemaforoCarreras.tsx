@@ -123,7 +123,7 @@ export function SemaforoCarreras({
     }
     void (async () => {
       try {
-        const [ticketsRes, resultadosRes] = await Promise.all([
+        const [ticketsRes, resultadosRes, tablasRes] = await Promise.all([
           sb
             .from("tickets_apuestas")
             .select("carrera, hipodromo, estado, anulada, nota_auditoria, fecha_carrera, fecha_registro")
@@ -134,6 +134,11 @@ export function SemaforoCarreras({
             .from("resultados_carreras")
             .select("carrera, hipodromo, ganadores, orden_llegada, aplicado_a_tablas")
             .eq("fecha", dia),
+          sb
+            .from("tablas_fijas")
+            .select("carrera, hipodromo, estado")
+            .eq("fecha", dia)
+            .ilike("hipodromo", `%${hipoLimpio}%`),
         ]);
 
         if (!vivo) return;
@@ -142,17 +147,26 @@ export function SemaforoCarreras({
         if (resultadosRes.data && Array.isArray(resultadosRes.data)) {
           for (const r of resultadosRes.data as Array<Record<string, unknown>>) {
             if (claveHipodromo(String(r.hipodromo ?? "")) !== claveHipo) continue;
-            // ROJO = LIQUIDADA. Tener ganadores/orden de llegada es "Resultados"
-            // (aún sin aplicar a tablas) y NO debe pintar la carrera de rojo.
             const tieneTab = r.aplicado_a_tablas === true;
-            if (tieneTab) {
+            const conGan = Array.isArray(r.ganadores) && r.ganadores.length > 0;
+            if (tieneTab || conGan) {
               const num = Number(r.carrera);
               if (Number.isFinite(num) && num > 0) setLiq.add(num);
             }
           }
         }
-        setCarrerasBdLiquidadas([...setLiq]);
+        if (tablasRes.data && Array.isArray(tablasRes.data)) {
+          for (const t of tablasRes.data as Array<Record<string, unknown>>) {
+            if (claveHipodromo(String(t.hipodromo ?? "")) !== claveHipo) continue;
+            const est = String(t.estado ?? "").trim().toLowerCase();
+            if (est === "cerrada") {
+              const num = Number(t.carrera);
+              if (Number.isFinite(num) && num > 0) setLiq.add(num);
+            }
+          }
+        }
 
+        const statsTickets = new Map<number, { total: number; liquidados: number; pendientes: number }>();
         const setNums = new Set<number>();
         for (const r of (ticketsRes.data ?? []) as Array<Record<string, unknown>>) {
           if (Boolean(r.anulada)) continue;
@@ -170,8 +184,24 @@ export function SemaforoCarreras({
           }
           if (fechaTicket && fechaTicket !== dia) continue;
           const num = Number(r.carrera);
-          if (Number.isFinite(num) && num > 0) setNums.add(num);
+          if (Number.isFinite(num) && num > 0) {
+            setNums.add(num);
+            const prev = statsTickets.get(num) ?? { total: 0, liquidados: 0, pendientes: 0 };
+            prev.total++;
+            if (est.includes("ganad") || est.includes("perd") || est.includes("gano")) {
+              prev.liquidados++;
+            } else {
+              prev.pendientes++;
+            }
+            statsTickets.set(num, prev);
+          }
         }
+        for (const [carrNum, st] of statsTickets.entries()) {
+          if (st.liquidados > 0 && st.pendientes === 0) {
+            setLiq.add(carrNum);
+          }
+        }
+        setCarrerasBdLiquidadas([...setLiq]);
         setCarrerasBdConJugadas([...setNums]);
       } catch {
         // best-effort

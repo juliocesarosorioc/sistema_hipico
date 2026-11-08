@@ -753,13 +753,29 @@ export function relacionResultados(
   // El bono por cruce es informativo: NO se suma a los balances del consolidado.
   // (se mantiene el cálculo de reembolsosCruce por si se quiere mostrar aparte)
 
-  const positivos = [...balances.entries()]
-    .map(([clave, v]) => [nombreVisiblePorClave.get(clave) ?? clave, v] as [string, number])
-    .filter(([, v]) => v > 0.0001)
+  // ── REGLA ESTRICTA DE TOTALIZACIÓN DE USUARIOS:
+  // No puede haber dos usuarios en positivo o dos en negativo o el mismo usuario en negativos y positivos.
+  // Solo puede aparecer un usuario con la totalización de sus resultados.
+  const balancesConsolidados = new Map<string, { nombre: string; neto: number }>();
+  for (const [clave, v] of balances.entries()) {
+    const nombreVis = nombreVisiblePorClave.get(clave) ?? clave;
+    const norm = normalizarNombreCliente(nombreVis);
+    const prev = balancesConsolidados.get(norm);
+    if (!prev) {
+      balancesConsolidados.set(norm, { nombre: nombreVis, neto: v });
+    } else {
+      prev.neto = round2(prev.neto + v);
+    }
+  }
+
+  const positivos = [...balancesConsolidados.values()]
+    .filter((x) => x.neto > 0.0001)
+    .map((x) => [x.nombre, x.neto] as [string, number])
     .sort((a, b) => b[1] - a[1]);
-  const negativos = [...balances.entries()]
-    .map(([clave, v]) => [nombreVisiblePorClave.get(clave) ?? clave, v] as [string, number])
-    .filter(([, v]) => v < -0.0001)
+
+  const negativos = [...balancesConsolidados.values()]
+    .filter((x) => x.neto < -0.0001)
+    .map((x) => [x.nombre, x.neto] as [string, number])
     .sort((a, b) => a[1] - b[1]);
 
   const cierre: string[] = ["🟢 POSITIVOS (+)"];

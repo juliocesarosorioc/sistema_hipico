@@ -215,6 +215,7 @@ export function esJugadaPuestosParaIncentivo(
 export function calcularResumenContableCliente(params: {
   clienteId: string | number;
   nombre: string;
+  seudonimo?: string | null;
   grupoId?: string | number | null;
   aval?: number | string | null;
   saldoEnBase?: number | string | null;
@@ -235,6 +236,7 @@ export function calcularResumenContableCliente(params: {
 }): ResumenContableCliente {
   const idStr = String(params.clienteId ?? "");
   const nombreNorm = normalizarNombreCliente(params.nombre);
+  const seudonimoNorm = normalizarNombreCliente(params.seudonimo);
   const avalVigente = Math.max(0, redondearCentavos(params.aval ?? 0));
   const comDefault = params.comisionPctDefault ?? 5;
   const modCruces = params.modalidadCruces ?? false;
@@ -268,10 +270,20 @@ export function calcularResumenContableCliente(params: {
     const cNom = normalizarNombreCliente(contraparteResuelta);
     const esModalidadSistema = (USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(cNom);
 
-    const esJugador = (idStr && jId === idStr) || (nombreNorm && jNom === nombreNorm);
+    const esJugador =
+      Boolean((idStr && jId === idStr) ||
+      (nombreNorm && jNom === nombreNorm) ||
+      (seudonimoNorm && jNom === seudonimoNorm));
     const esDador = esModalidadSistema
-      ? Boolean(nombreNorm && cNom === nombreNorm)
-      : Boolean((idStr && cId === idStr) || (nombreNorm && cNom === nombreNorm));
+      ? Boolean(
+          (nombreNorm && cNom === nombreNorm) ||
+          (seudonimoNorm && cNom === seudonimoNorm)
+        )
+      : Boolean(
+          (idStr && cId === idStr) ||
+          (nombreNorm && cNom === nombreNorm) ||
+          (seudonimoNorm && cNom === seudonimoNorm)
+        );
 
     if (!esJugador && !esDador) continue;
 

@@ -99,7 +99,7 @@ export function ListaTickets() {
                       )}
                     </p>
                     <p className="text-[10px] text-slate-500">
-                      Gana {COP.format(t.gananciaProyectada)} · casa {COP.format(t.comision)}
+                      {t.cliente1 ? `${t.cliente1}${t.cliente2 ? ` vs ${t.cliente2}` : ""} · ` : ""}Gana {COP.format(t.gananciaProyectada)} · casa {COP.format(t.comision)}
                     </p>
                     {t.observacion ? (
                       <p className="text-[10px] font-semibold text-amber-700">{t.observacion}</p>

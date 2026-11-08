@@ -263,6 +263,19 @@ async function guardarResultado(
   carrera: number,
   fila: Record<string, unknown>
 ): Promise<string | null> {
+  // Intentar primero vía API route administrativa para garantizar guardado sin bloqueos por RLS
+  try {
+    const resApi = await fetch("/api/carreras/guardar-resultado", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fecha, hipodromo, carrera, fila }),
+    });
+    const json = await resApi.json();
+    if (json.ok) return null;
+  } catch {
+    /* fallback a RPC */
+  }
+
   const r = await supabase!.rpc("club_guardar_resultado_carrera", {
     p_fecha: fecha,
     p_hipodromo: hipodromo,

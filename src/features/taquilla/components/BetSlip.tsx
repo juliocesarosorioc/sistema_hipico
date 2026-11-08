@@ -150,7 +150,16 @@ export function BetSlip() {
   const opcionesClientes = useMemo(
     () =>
       [...new Map(clientesDelGrupo.map((c) => [clave(c.nombre), c])).values()]
-        .map((c) => ({ value: String(c.nombre), label: String(c.nombre) }))
+        .map((c) => {
+          const seud = c.seudonimo?.trim();
+          const nom = String(c.nombre).trim();
+          const principal = seud || nom;
+          const secundario = seud && seud.toUpperCase() !== nom.toUpperCase() ? ` (${nom})` : "";
+          return {
+            value: principal,
+            label: `${principal}${secundario}`,
+          };
+        })
         .sort((a, b) => a.label.localeCompare(b.label)),
     [clientesDelGrupo]
   );
@@ -162,6 +171,15 @@ export function BetSlip() {
     ],
     [opcionesClientes]
   );
+
+  const nCarrera = useMemo(() => Number(String(carrera).replace(/[^0-9]/g, "")) || 1, [carrera]);
+
+  const carreraLiquidada = useMemo(() => {
+    const lista = carrerasDe(hipodromo);
+    const c = lista.find((x) => Number(x.carrera) === nCarrera);
+    const est = String(c?.estado ?? "").toLowerCase();
+    return est === "liquidada" || c?.aplicado_a_tablas === true;
+  }, [carrerasDe, hipodromo, nCarrera]);
 
   const c1 = useMemo(
     () =>
@@ -283,15 +301,12 @@ export function BetSlip() {
     [validacion, caballoOk, c1, c2]
   );
   const montoAutorizado = validacion.ok
-    ? reparto?.montoAutorizado ?? validacion.monto
+    ? (reparto?.montoAutorizado !== undefined ? reparto.montoAutorizado : validacion.monto)
     : 0;
-  const montoRecortado = validacion.ok && montoAutorizado < validacion.monto;
+  const montoRecortado = validacion.ok && Boolean(c1) && montoAutorizado < validacion.monto;
   const validacionAutorizada = useMemo(
-    () =>
-      validacion.ok && montoRecortado
-        ? validarComando(`${montoAutorizado} ${validacion.tipo}`, comisionNum, caballoOk ?? undefined)
-        : validacion,
-    [validacion, montoAutorizado, montoRecortado, comisionNum, caballoOk]
+    () => validacion,
+    [validacion]
   );
   const hipodromoValido = useMemo(
     () =>
@@ -314,7 +329,8 @@ export function BetSlip() {
 
   const puedeRegistrar =
     validacion.ok &&
-    validacionAutorizada.ok &&
+    !montoRecortado &&
+    !carreraLiquidada &&
     !!caballoOk &&
     !!c1 &&
     montoAutorizado > 0 &&
@@ -325,6 +341,14 @@ export function BetSlip() {
   const registrar = async () => {
     setError("");
     if (!validacion.ok) return;
+    if (carreraLiquidada) {
+      setError(`⛔ La carrera ${hipodromo} C${nCarrera} (${fecha}) ya está liquidada. Debe reversar la liquidación para registrar nuevas jugadas.`);
+      return;
+    }
+    if (montoRecortado || (validacion.ok && validacion.monto > montoAutorizado)) {
+      setError(`⛔ El monto solicitado (${validacion.monto}) excede el saldo disponible (${montoAutorizado.toFixed(2)}) de ${c1?.seudonimo || c1?.nombre || "este jugador"}. No se permite registrar por encima del saldo disponible.`);
+      return;
+    }
     if (!hipodromo.trim() || !hipodromoValido) {
       setError("Debe seleccionar un hipódromo registrado en la plataforma.");
       return;
@@ -369,7 +393,6 @@ export function BetSlip() {
       setError(validacionAutorizada.motivo);
       return;
     }
-    const nCarrera = Number(String(carrera).replace(/[^0-9]/g, "")) || 1;
     setRegistrando(true);
     try {
       const grupoId = grupoSesion || grupoDeC1;
@@ -380,10 +403,10 @@ export function BetSlip() {
         carrera: nCarrera,
         jugada: validacion.tipo,
         caballo: caballoOk,
-        monto: montoAutorizado,
+        monto: validacion.monto,
         clienteId: String(c1.id),
         grupoId,
-        clienteDador: cliente2.trim() || c2?.nombre || null,
+        clienteDador: c2 ? (c2.seudonimo || c2.nombre) : (cliente2.trim() || null),
         clienteDadorId: c2?.id ? String(c2.id) : null,
         comision: comisionNum,
         // El banquero se negocia por modalidad: las americanas W/P/S van como 'WPS'.
@@ -396,16 +419,13 @@ export function BetSlip() {
         return;
       }
       agregarTicket({
-        comando: montoRecortado ? `${montoAutorizado} ${validacion.tipo}` : comando,
-        monto: montoAutorizado,
-        observacion: montoRecortado
-          ? `Solicitó $${validacion.monto}; se autorizaron $${montoAutorizado} por saldo disponible.`
-          : undefined,
+        comando,
+        monto: validacion.monto,
         caballo: caballoOk,
         gananciaProyectada: validacionAutorizada.proyeccion.gananciaProyectada,
         comision: validacionAutorizada.proyeccion.comision,
-        cliente1: c1.nombre,
-        cliente2: cliente2.trim() || c2?.nombre || undefined,
+        cliente1: c1.seudonimo || c1.nombre,
+        cliente2: c2 ? (c2.seudonimo || c2.nombre) : (cliente2.trim() || undefined),
         fecha,
         hipodromo,
         carrera: nCarrera,
@@ -441,17 +461,13 @@ export function BetSlip() {
         }
       }
       setComando("");
-      const observacionRecorte = montoRecortado
-        ? ` · Observación: pidió $${validacion.monto}; se cargaron $${montoAutorizado} por saldo disponible`
-        : "";
       setMensaje(
-        `✅ Jugada #${venta.ticketId ?? "?"} registrada: $${montoAutorizado} ${validacion.tipo} · ${c1.nombre}` +
+        `✅ Jugada #${venta.ticketId ?? "?"} registrada: {validacion.monto}${validacion.monto} ${validacion.tipo} · ${c1.seudonimo || c1.nombre}` +
           (venta.yaExistia ? " (ya existía)" : "") +
-          observacionRecorte +
           marca +
           enrutado
       );
-      if (!montoRecortado) setTimeout(() => setMensaje(""), 3500);
+      setTimeout(() => setMensaje(""), 3500);
     } finally {
       setRegistrando(false);
     }
@@ -615,13 +631,23 @@ export function BetSlip() {
         </p>
       </div>
 
-      <DesgloseProyectado validacion={comando.trim() ? validacionAutorizada : null} />
-      {montoRecortado && reparto ? (
-        <p className="rounded-xl bg-amber-500/10 p-3 text-center text-[11px] font-bold text-amber-700">
-          ⚠️ {reparto.avisos[0] ?? `Solo se autoriza $${montoAutorizado} de $${validacion.ok ? validacion.monto : 0}.`}
-          {" "}La observación quedará en el mensaje de registro.
-        </p>
-      ) : null}
+      <DesgloseProyectado validacion={comando.trim() ? validacion : null} />
+      {carreraLiquidada && (
+        <div className="rounded-xl border border-amber-400 bg-amber-50 p-3 text-center text-xs font-black uppercase text-amber-800">
+          ⛔ LA CARRERA ${hipodromo} C${carrera} YA ESTÁ LIQUIDADA.
+          <span className="block mt-1 font-semibold text-amber-700 normal-case">
+            Debe reversar la liquidación en Gestión de Jugadas antes de poder vender o registrar nuevas jugadas en esta carrera.
+          </span>
+        </div>
+      )}
+      {montoRecortado && (
+        <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-center text-xs font-bold text-rose-700">
+          ⛔ SALDO INSUFICIENTE: El monto ingresado (${validacion.ok ? validacion.monto : 0}) supera el saldo disponible (${montoAutorizado.toFixed(2)}) de ${c1?.seudonimo || c1?.nombre || "este jugador"}.
+          <span className="block mt-1 font-normal text-rose-600">
+            Regla estricta: No se permite modificar ni registrar jugadas por encima del saldo disponible. Ajuste el monto o recargue saldo.
+          </span>
+        </div>
+      )}
       {validacion.ok && c1 && montoAutorizado <= 0 ? (
         <p className="rounded-xl bg-danger-500/10 p-3 text-center text-[11px] font-bold text-danger-600">
           🟥 Sin saldo disponible: no se puede registrar esta jugada.

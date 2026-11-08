@@ -107,13 +107,15 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
   const dadorResuelto = resolverContraparteModalidad(v.jugada, v.clienteDador, v.modalidad);
 
   // Aislamiento estricto de grupo: el jugador no puede registrar en otro grupo
+  let cRowData: { id: string; nombre: string; seudonimo?: string | null } | null = null;
   if (grupoEfectivo && v.clienteId) {
     const { data: cRow } = await supabase
       .from("clientes")
-      .select("id, nombre, grupo_id")
+      .select("id, nombre, seudonimo, grupo_id")
       .eq("id", v.clienteId)
       .maybeSingle();
     if (cRow) {
+      cRowData = cRow;
       let pertenece = String(cRow.grupo_id) === String(grupoEfectivo);
       if (!pertenece) {
         const { data: cgRow } = await supabase
@@ -126,7 +128,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
       if (!pertenece) {
         return {
           ok: false,
-          error: `⛔ El cliente «${cRow.nombre}» no pertenece al grupo seleccionado. No se permite registrar jugadas fuera de su grupo.`,
+          error: `⛔ El cliente «${cRow.seudonimo || cRow.nombre}» no pertenece al grupo seleccionado. No se permite registrar jugadas fuera de su grupo.`,
         };
       }
     }
@@ -134,14 +136,16 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
 
   // Aislamiento estricto de grupo: prohibido que jugadores de distintos grupos interactúen
   const dadorTexto = String(dadorResuelto || v.clienteDador || "").trim();
+  let dadorCliData: { id: string; nombre: string; seudonimo?: string | null } | null = null;
   if (grupoEfectivo && dadorTexto && !["CASA", "BANCA", "SISTEMA"].includes(dadorTexto.toUpperCase())) {
     const { data: dadorRows } = await supabase
       .from("clientes")
-      .select("id, nombre, grupo_id")
+      .select("id, nombre, seudonimo, grupo_id")
       .or(`nombre.ilike.${dadorTexto},seudonimo.ilike.${dadorTexto}`)
       .limit(1);
     if (dadorRows && dadorRows.length > 0) {
       const dadorCli = dadorRows[0];
+      dadorCliData = dadorCli;
       let perteneceDador = String(dadorCli.grupo_id) === String(grupoEfectivo);
       if (!perteneceDador) {
         const { data: cgDador } = await supabase
@@ -154,7 +158,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
       if (!perteneceDador) {
         return {
           ok: false,
-          error: `⛔ El jugador dador «${dadorTexto}» pertenece a otro grupo. No se permite interacción entre jugadores de distintos grupos.`,
+          error: `⛔ El jugador dador «${dadorCli.seudonimo || dadorTexto}» pertenece a otro grupo. No se permite interacción entre jugadores de distintos grupos.`,
         };
       }
     }
@@ -187,8 +191,15 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     if (/^\d{4}-\d{2}-\d{2}$/.test(fechaCarrera)) {
       patchTicket.fecha_carrera = fechaCarrera;
     }
-    if (v.clienteDadorId) {
-      patchTicket.cliente_consigue_id = v.clienteDadorId;
+    const idDador = v.clienteDadorId || dadorCliData?.id;
+    if (idDador) {
+      patchTicket.cliente_consigue_id = idDador;
+    }
+    if (dadorCliData) {
+      patchTicket.cliente_consigue_nombre = dadorCliData.seudonimo || dadorCliData.nombre;
+    }
+    if (cRowData) {
+      patchTicket.cliente_juega_nombre = cRowData.seudonimo || cRowData.nombre;
     }
     if (Object.keys(patchTicket).length > 0) {
       try {
