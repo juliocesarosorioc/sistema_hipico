@@ -234,27 +234,29 @@ export default function ReporteLiquidacionModal({
       .then(async (cs) => {
         if (!vivo) return;
         const delDia = cs.filter((c) => c.fecha === fecha);
-        if (
-          hipodromoInicial &&
-          carreraInicial &&
-          (!fechaInicial || fecha === fechaInicial) &&
-          !delDia.some(
+        const hipoNorm = hipodromoInicial ? hipodromoInicial.trim().toUpperCase() : "";
+        const carrNorm = carreraInicial ? Number(carreraInicial) : 0;
+
+        if (hipoNorm && carrNorm) {
+          const yaEsta = delDia.some(
             (c) =>
-              claveHipodromo(c.hipodromo) === claveHipodromo(hipodromoInicial) &&
-              Number(c.carrera) === Number(carreraInicial)
-          )
-        ) {
-          delDia.push({
-            fecha,
-            hipodromo: hipodromoInicial.trim().toUpperCase(),
-            carrera: Number(carreraInicial),
-            estado: "Liquidada",
-            aplicado_a_tablas: true,
-            ventas: [],
-            ganadores: [],
-          });
+              claveHipodromo(c.hipodromo) === claveHipodromo(hipoNorm) &&
+              Number(c.carrera) === carrNorm
+          );
+          if (!yaEsta) {
+            delDia.unshift({
+              fecha: fechaInicial || fecha,
+              hipodromo: hipoNorm,
+              carrera: carrNorm,
+              estado: "Liquidada",
+              aplicado_a_tablas: true,
+              ventas: [],
+              ganadores: [],
+            });
+          }
         }
-        // Filtrar estrictamente: las carreras que NO tengan jugadas no deben aparecer en los reportes.
+        // Filtrar estrictamente: las carreras que NO tengan jugadas no deben aparecer en los reportes,
+        // pero la carrera inicial que el operador está consultando/liquidando se preserva SIEMPRE.
         if (delDia.length > 0) {
           const reps = await reportesCarrerasLote(
             delDia.map((c) => ({ fecha: c.fecha, hipodromo: c.hipodromo, carrera: c.carrera })),
@@ -263,7 +265,15 @@ export default function ReporteLiquidacionModal({
           ).catch(() => null);
           if (!vivo) return;
           if (reps) {
-            const conJugadas = delDia.filter((_, idx) => {
+            const conJugadas = delDia.filter((c, idx) => {
+              if (
+                hipoNorm &&
+                carrNorm &&
+                claveHipodromo(c.hipodromo) === claveHipodromo(hipoNorm) &&
+                Number(c.carrera) === carrNorm
+              ) {
+                return true;
+              }
               const r = reps[idx];
               return Boolean(r && r.filas.some((f) => f.rol !== "CRUCE"));
             });
@@ -286,17 +296,27 @@ export default function ReporteLiquidacionModal({
       const h = String(c.hipodromo || "").trim().toUpperCase();
       if (h) set.add(h);
     }
+    if (hipodromoInicial && hipodromoInicial.trim()) {
+      set.add(hipodromoInicial.trim().toUpperCase());
+    }
     return [...set].sort((a, b) => a.localeCompare(b, "es"));
-  }, [carrerasDia]);
+  }, [carrerasDia, hipodromoInicial]);
 
   // Cascada fecha → hipódromo.
   useEffect(() => {
-    if (modoExclusivoLiquidacion && hipodromoInicial) {
-      setHipodromo(hipodromoInicial.trim().toUpperCase());
+    if (hipodromoInicial && hipodromoInicial.trim()) {
+      const hipoUpper = hipodromoInicial.trim().toUpperCase();
+      setHipodromo((prev) => {
+        if (prev && claveHipodromo(prev) !== claveHipodromo(hipoUpper) && hipodromosDisp.includes(prev)) {
+          return prev;
+        }
+        const exacto = hipodromosDisp.find((h) => claveHipodromo(h) === claveHipodromo(hipoUpper));
+        return exacto ?? hipoUpper;
+      });
       return;
     }
     if (!hipodromosDisp.length) {
-      if (!cargandoDia && !hipodromoInicial) {
+      if (!cargandoDia) {
         setHipodromo("");
         setCarrera(0);
         setDetalle(null);
@@ -305,34 +325,51 @@ export default function ReporteLiquidacionModal({
       return;
     }
     setHipodromo((prev) => {
-      const objetivo = prev || (hipodromoInicial ? hipodromoInicial.trim().toUpperCase() : "");
-      if (objetivo) {
-        if (hipodromosDisp.includes(objetivo)) return objetivo;
-        const porClave = hipodromosDisp.find((h) => claveHipodromo(h) === claveHipodromo(objetivo));
+      if (prev) {
+        if (hipodromosDisp.includes(prev)) return prev;
+        const porClave = hipodromosDisp.find((h) => claveHipodromo(h) === claveHipodromo(prev));
         if (porClave) return porClave;
       }
       return hipodromosDisp[0];
     });
-  }, [hipodromosDisp, cargandoDia, hipodromoInicial, modoExclusivoLiquidacion]);
+  }, [hipodromosDisp, cargandoDia, hipodromoInicial]);
 
-  const carrerasDisp = useMemo(
-    () =>
-      carrerasDia
-        .filter((c) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo))
-        .map((c) => Number(c.carrera))
-        .filter((n) => n > 0)
-        .sort((a, b) => a - b),
-    [carrerasDia, hipodromo]
-  );
+  const carrerasDisp = useMemo(() => {
+    const set = new Set<number>();
+    for (const c of carrerasDia) {
+      if (claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo)) {
+        const n = Number(c.carrera);
+        if (n > 0) set.add(n);
+      }
+    }
+    if (
+      hipodromoInicial &&
+      carreraInicial &&
+      claveHipodromo(hipodromo) === claveHipodromo(hipodromoInicial)
+    ) {
+      set.add(Number(carreraInicial));
+    }
+    return [...set].sort((a, b) => a - b);
+  }, [carrerasDia, hipodromo, hipodromoInicial, carreraInicial]);
 
   // Cascada hipódromo → carrera.
   useEffect(() => {
-    if (modoExclusivoLiquidacion && carreraInicial) {
-      setCarrera(Number(carreraInicial));
+    if (
+      carreraInicial &&
+      hipodromoInicial &&
+      claveHipodromo(hipodromo) === claveHipodromo(hipodromoInicial)
+    ) {
+      const carrNum = Number(carreraInicial);
+      setCarrera((prev) => {
+        if (prev && prev !== carrNum && carrerasDisp.includes(prev)) {
+          return prev;
+        }
+        return carrNum;
+      });
       return;
     }
     if (!carrerasDisp.length) {
-      if (!cargandoDia && !carreraInicial) {
+      if (!cargandoDia) {
         setCarrera(0);
         setDetalle(null);
         setDatos(null);
@@ -340,17 +377,10 @@ export default function ReporteLiquidacionModal({
       return;
     }
     setCarrera((prev) => {
-      const inicialMismoHipo =
-        carreraInicial &&
-        hipodromoInicial &&
-        claveHipodromo(hipodromo) === claveHipodromo(hipodromoInicial)
-          ? Number(carreraInicial)
-          : 0;
-      if (inicialMismoHipo && carrerasDisp.includes(inicialMismoHipo)) return inicialMismoHipo;
       if (prev && carrerasDisp.includes(prev)) return prev;
       return carrerasDisp[0];
     });
-  }, [carrerasDisp, cargandoDia, carreraInicial, hipodromoInicial, hipodromo, modoExclusivoLiquidacion]);
+  }, [carrerasDisp, cargandoDia, carreraInicial, hipodromoInicial, hipodromo]);
 
   const nombreGrupo = useMemo(
     () => grupos.find((g) => String(g.id) === grupoId)?.nombre ?? "Grupo Hípico",

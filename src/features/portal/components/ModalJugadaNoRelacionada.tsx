@@ -219,7 +219,7 @@ export function ModalJugadaNoRelacionada({
                 value={hipodromo}
                 onChange={(v) => setHipodromo(v)}
                 placeholder="Buscar y seleccionar hipódromo…"
-                allowCustom
+                allowCustom={false}
                 temaOscuro
               />
             </div>

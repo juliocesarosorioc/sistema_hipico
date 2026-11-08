@@ -33,7 +33,7 @@ export function claveHipodromo(v: unknown): string {
   if (s === "GULFSTREAM" || s === "GULFSTREAMPARK" || s.startsWith("GULFSTREAM")) {
     return "GULFSTREAMPARK";
   }
-  if (s === "BELMONT" || s === "BELMONTPARK") {
+  if (s === "BELMONT" || s === "BELMONTPARK" || s.startsWith("BELMONT")) {
     return "BELMONTPARK";
   }
   if (s === "SANTAANITA" || s === "SANTAANITAPARK") {

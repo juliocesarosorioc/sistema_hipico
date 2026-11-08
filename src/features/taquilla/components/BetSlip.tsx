@@ -230,12 +230,31 @@ export function BetSlip() {
         : validacion,
     [validacion, montoAutorizado, montoRecortado, comisionNum, caballoOk]
   );
+  const hipodromoValido = useMemo(
+    () =>
+      opcionesHipodromos.some(
+        (h) =>
+          h.value.trim().toUpperCase() === hipodromo.trim().toUpperCase() ||
+          h.label.trim().toUpperCase() === hipodromo.trim().toUpperCase()
+      ),
+    [opcionesHipodromos, hipodromo]
+  );
   const puedeRegistrar =
-    validacion.ok && validacionAutorizada.ok && !!caballoOk && !!c1 && montoAutorizado > 0 && !registrando;
+    validacion.ok &&
+    validacionAutorizada.ok &&
+    !!caballoOk &&
+    !!c1 &&
+    montoAutorizado > 0 &&
+    !registrando &&
+    hipodromoValido;
 
   const registrar = async () => {
     setError("");
     if (!validacion.ok) return;
+    if (!hipodromo.trim() || !hipodromoValido) {
+      setError("Debe seleccionar un hipódromo registrado en la plataforma.");
+      return;
+    }
     if (!caballoOk) {
       setError("El ejemplar debe ser un número del 1 al 8.");
       return;
@@ -390,7 +409,7 @@ export function BetSlip() {
               value={hipodromo}
               onChange={setHipodromo}
               placeholder="Hipódromo…"
-              allowCustom
+              allowCustom={false}
             />
           </div>
           <div className="col-span-2">

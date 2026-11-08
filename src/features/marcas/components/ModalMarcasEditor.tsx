@@ -445,6 +445,7 @@ export function ModalMarcasEditor({
                   onChange={setHipodromo}
                   options={catalogoHipodromos}
                   placeholder="Seleccionar hipódromo…"
+                  allowCustom={false}
                   inputClassName="w-full h-9 rounded-lg border border-line bg-surface px-3 text-xs font-bold normal-case text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                 />
               </div>

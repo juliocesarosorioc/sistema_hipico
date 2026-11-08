@@ -2427,6 +2427,10 @@ const hipodromosDelDia = useMemo(() => {
   };
 
   const poblarCargaRapida = () => {
+    if (carreraLiquidada) {
+      emitirToast("⛔ No se puede poblar la tabla si la carrera está liquidada. Reverse la liquidación para habilitar la carga.", "error");
+      return;
+    }
     const filasNuevas: FilaCarga[] = [];
     let ok = 0;
     let corregidas = 0;
@@ -3340,6 +3344,10 @@ const hipodromosDelDia = useMemo(() => {
           setModalSaldos(true);
           break;
         case "abrir_carga_rapida":
+          if (carreraLiquidada) {
+            emitirToast("⛔ No se puede cargar jugadas si la carrera está liquidada. Reverse la liquidación para habilitar la carga.", "error");
+            break;
+          }
           if (d.texto) setTextoCargaRapida(String(d.texto));
           setModalCargaRapida(true);
           break;
@@ -3647,6 +3655,7 @@ const hipodromosDelDia = useMemo(() => {
             value={hipodromo}
             onChange={setHipodromo}
             placeholder="Buscar hipódromo…"
+            allowCustom={false}
             inputRef={hipodromoInputRef}
             inputClassName="w-full h-9 rounded-lg border border-line bg-surface px-3 text-xs font-bold normal-case text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           />
@@ -4118,10 +4127,24 @@ const hipodromosDelDia = useMemo(() => {
           <Guard permiso="gestion_jugadas:btn_carga_rapida">
             <Button
               size="md"
-              onClick={() => setModalCargaRapida(true)}
-              className="z-10 !border-2 !border-amber-400 !bg-gradient-to-r !from-amber-400 !via-amber-500 !to-orange-500 !px-4 !py-2 !text-sm !font-black !uppercase !tracking-wide !text-slate-950 shadow-lg shadow-amber-500/30 transition-all hover:scale-[1.02] hover:!brightness-105"
+              onClick={() => {
+                if (carreraLiquidada) {
+                  emitirToast("⛔ No se puede cargar jugadas si la carrera está liquidada. Reverse la liquidación para habilitar la carga.", "error");
+                  return;
+                }
+                setModalCargaRapida(true);
+              }}
+              disabled={carreraLiquidada}
+              title={carreraLiquidada ? "Carrera liquidada: reverse la liquidación para habilitar la carga rápida." : "Carga rápida por texto o audio"}
+              className={`z-10 !border-2 !px-4 !py-2 !text-sm !font-black !uppercase !tracking-wide transition-all ${
+                carreraLiquidada
+                  ? "!border-slate-300 !bg-slate-200 !text-slate-400 cursor-not-allowed opacity-50 shadow-none hover:scale-100 hover:!brightness-100"
+                  : "!border-amber-400 !bg-gradient-to-r !from-amber-400 !via-amber-500 !to-orange-500 !text-slate-950 shadow-lg shadow-amber-500/30 hover:scale-[1.02] hover:!brightness-105"
+              }`}
             >
-              ⚡ Carga Rápida <span className="ml-1.5 rounded-md bg-slate-950 px-2 py-0.5 text-[10px] font-black text-amber-300">TEXTO</span>
+              ⚡ Carga Rápida <span className={`ml-1.5 rounded-md px-2 py-0.5 text-[10px] font-black ${
+                carreraLiquidada ? "bg-slate-300 text-slate-500" : "bg-slate-950 text-amber-300"
+              }`}>TEXTO</span>
             </Button>
           </Guard>
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
@@ -5636,7 +5659,7 @@ const hipodromosDelDia = useMemo(() => {
           setMostrarReporteLiquidacion(false);
           setModalReversar(true);
         }}
-        hipodromoInicial={hipodromo}
+        hipodromoInicial={nombreHipodromo || hipodromo}
         carreraInicial={carrera}
         fechaInicial={fecha}
         grupoInicial={grupoSesion ?? undefined}
@@ -6184,7 +6207,15 @@ const hipodromosDelDia = useMemo(() => {
                   {iaCargando ? "Corrigiendo…" : "✨ Corregir con IA"}
                 </Button>
               </Guard>
-              <Button variant="success" size="md" onClick={poblarCargaRapida}>📥 Poblar tabla</Button>
+              <Button
+                variant="success"
+                size="md"
+                onClick={poblarCargaRapida}
+                disabled={carreraLiquidada}
+                title={carreraLiquidada ? "Carrera liquidada: reverse la liquidación para habilitar la carga." : undefined}
+              >
+                📥 Poblar tabla
+              </Button>
             </div>
           </div>
         </div>
