@@ -407,25 +407,37 @@ export function WidgetAsistenteIa() {
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
-      {/* BOTÓN FLOTANTE TRIGGER */}
+      {/* BOTÓN FLOTANTE TRIGGER (Ícono compacto flotante que oculta el texto cuando no se usa) */}
       {!abierto && (
         <button
+          type="button"
           onClick={() => setAbierto(true)}
-          className="group relative flex items-center gap-2.5 rounded-full border-2 border-emerald-400 bg-slate-900 px-4 py-2.5 text-white shadow-2xl shadow-emerald-500/30 transition-all hover:scale-105 hover:bg-slate-800"
-          title="Abrir Super Club · Información del Sistema y Dictado por Voz"
+          className="group relative flex items-center rounded-full border-2 border-emerald-400/80 bg-slate-900/95 p-2 text-white shadow-xl shadow-emerald-950/40 backdrop-blur-md transition-all duration-300 ease-out hover:scale-105 hover:border-emerald-300 hover:shadow-emerald-500/30"
+          title="Super Club · Información del Sistema y Dictado por Voz"
+          aria-label="Abrir Super Club"
         >
-          <span className="relative flex h-3 w-3">
+          {/* Indicador de estado online pulsante */}
+          <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 pointer-events-none">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            <span className="relative inline-flex rounded-full h-3.5 w-3.5 border-2 border-slate-900 bg-emerald-500"></span>
           </span>
-          <span className="text-xl">🤖</span>
-          <div className="flex flex-col text-left">
-            <span className="text-xs font-black tracking-tight text-emerald-400">
-              🤖 Super Club
-            </span>
-            <span className="text-[10px] font-bold text-slate-300">
-              Info del Sistema · 🎙️ Dictado por Voz
-            </span>
+
+          {/* Ícono circular flotante principal */}
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-2xl transition-transform duration-300 group-hover:scale-110">
+            🤖
+          </div>
+
+          {/* Texto que se expande hacia la izquierda solo en hover cuando se interactúa */}
+          <div className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 ease-out group-hover:max-w-xs group-hover:opacity-100 group-hover:pl-2 group-hover:pr-2.5">
+            <div className="flex flex-col text-left">
+              <span className="text-xs font-black tracking-tight text-emerald-400 flex items-center gap-1">
+                <span>Super Club</span>
+                <span className="rounded bg-emerald-500/20 px-1 py-0.2 text-[9px] font-black text-emerald-300 border border-emerald-400/30">IA</span>
+              </span>
+              <span className="text-[10px] font-semibold text-slate-300">
+                Info del Sistema · 🎙️ Dictado
+              </span>
+            </div>
           </div>
         </button>
       )}
