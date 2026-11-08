@@ -237,7 +237,7 @@ function comisionCobradaTicket(f: Record<string, unknown>, calculada: number): n
   const registrada = f.comision_pagada;
   if (registrada == null || String(registrada).trim() === "") return calculada;
   const monto = Number(registrada);
-  return Number.isFinite(monto) && monto >= 0
+  return Number.isFinite(monto) && monto > 0
     ? Math.round(monto * 100) / 100
     : calculada;
 }

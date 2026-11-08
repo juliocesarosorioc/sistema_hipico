@@ -1531,7 +1531,7 @@ export function resolverReglaCrucePuestos(
     const valor = nivel.valores?.[modalidad];
     if (typeof valor === "boolean") return { activo: valor, origen: nivel.origen };
   }
-  return { activo: false, origen: "Grupo" };
+  return { activo: true, origen: "Grupo" };
 }
 
 export type LiquidacionCrucePuestosCliente = {

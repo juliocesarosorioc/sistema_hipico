@@ -81,12 +81,16 @@ export async function cargarOpcionesCrucesPuestos(opts: {
     leido.override.porJugador,
     jugadores
   );
+  const carreraTodosOverride: Partial<ModalidadesCruce> = {
+    mismoEjemplar: leido.override.todos?.mismoEjemplar ?? (reglasGrupo.mismoEjemplar !== false),
+    diferenteEjemplar: leido.override.todos?.diferenteEjemplar ?? (reglasGrupo.diferenteEjemplar !== false),
+  };
   return {
     ok: true,
     opciones: {
       grupo: reglasGrupo,
       porJugadorPermanente,
-      carreraTodosOverride: leido.override.todos,
+      carreraTodosOverride,
       carreraPorJugadorOverride,
     },
   };

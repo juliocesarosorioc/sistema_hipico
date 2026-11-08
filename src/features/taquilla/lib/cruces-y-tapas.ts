@@ -550,7 +550,7 @@ export function calcularReembolsosCruce(
     prev.ganadoCentavos += brutoGanadoCentavos;
     prev.perdidoCentavos += Math.max(0, aCentavos(l.brutoPerdido));
     if (brutoGanadoCentavos > 0) {
-      const comision = l.comisionCobrada != null
+      const comision = (l.comisionCobrada != null && Number(l.comisionCobrada) > 0)
         ? Math.max(0, aCentavos(l.comisionCobrada))
         : aCentavos(
             calcularComisionExacta(
@@ -628,7 +628,7 @@ export function _reembolsosCruce(
     let brutoPerdido = Number(l.brutoPerdido ?? 0);
     if (brutoGanado === 0 && brutoPerdido === 0 && typeof l.resultado === "number") {
       if (l.resultado > 0) {
-        if (l.comisionCobrada != null) {
+        if (l.comisionCobrada != null && Number(l.comisionCobrada) > 0) {
           brutoGanado = redondearCentavos(l.resultado + Math.max(0, Number(l.comisionCobrada)));
         } else {
           const pct = l.comisionPct ?? comisionPct;

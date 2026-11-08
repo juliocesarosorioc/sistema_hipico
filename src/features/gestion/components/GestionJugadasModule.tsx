@@ -220,7 +220,7 @@ export function GestionJugadasModule() {
   /** Observaciones libres que se anexan al pie del preliminar de resultados. */
   const [observaciones, setObservaciones] = useState("");
   const [comision, setComision] = useState("5");
-  const [conCruces, setConCruces] = useState(false);
+  const [conCruces, setConCruces] = useState(true);
   /** Ítem 1: re-apertura explícita de una carrera YA liquidada (para agregar jugadas). */
   const [reapertura, setReapertura] = useState(false);
   /** Modal para corregir/anular las jugadas YA GUARDADAS de la carrera (aunque esté cerrada). */
@@ -715,8 +715,8 @@ const hipodromosDelDia = useMemo(() => {
   const grupoReglasCruce = useMemo(() => {
     const grupo = gruposVenta.find((g) => String(g.id) === String(grupoSesion));
     return {
-      mismoEjemplar: grupo?.cruce_mismo_ejemplar ?? grupo?.permite_cruces ?? false,
-      diferenteEjemplar: grupo?.cruce_diferente_ejemplar ?? grupo?.permite_cruces ?? false,
+      mismoEjemplar: grupo?.cruce_mismo_ejemplar ?? grupo?.permite_cruces ?? true,
+      diferenteEjemplar: grupo?.cruce_diferente_ejemplar ?? grupo?.permite_cruces ?? true,
     };
   }, [grupoSesion, gruposVenta]);
   const opcionesCrucesPuestos = useMemo<OpcionesCrucesPuestos>(() => {
@@ -738,10 +738,14 @@ const hipodromosDelDia = useMemo(() => {
       nombre: cliente.nombre,
       aliases: [cliente.nombre_real, cliente.seudonimo],
     }));
+    const todosCarrera: Partial<ModalidadesCruce> = {
+      mismoEjemplar: crucesOverrideCarrera.todos?.mismoEjemplar ?? grupoReglasCruce.mismoEjemplar ?? true,
+      diferenteEjemplar: crucesOverrideCarrera.todos?.diferenteEjemplar ?? grupoReglasCruce.diferenteEjemplar ?? true,
+    };
     return {
       grupo: grupoReglasCruce,
       porJugadorPermanente: asociarReglasCrucesPuestosPorJugador(reglasPermanentes, jugadores),
-      carreraTodosOverride: crucesOverrideCarrera.todos,
+      carreraTodosOverride: todosCarrera,
       carreraPorJugadorOverride: asociarReglasCrucesPuestosPorJugador(
         crucesOverrideCarrera.porJugador,
         jugadores
@@ -1904,7 +1908,11 @@ const hipodromosDelDia = useMemo(() => {
     (nombre: string): boolean | undefined => {
       const clave = String(nombre ?? "").trim().toUpperCase();
       if (!clave) return undefined;
-      const c = clientes.find((x) => String(x.nombre).trim().toUpperCase() === clave);
+      const c = clientes.find((x) =>
+        String(x.nombre).trim().toUpperCase() === clave ||
+        String(x.seudonimo ?? "").trim().toUpperCase() === clave ||
+        String(x.nombre_real ?? "").trim().toUpperCase() === clave
+      );
       if (c && c.permite_cruces === false) return false;
       if (c) {
         for (const gi of c.grupos) if (gruposMapa[String(gi)] === false) return false;
@@ -2419,6 +2427,7 @@ const hipodromosDelDia = useMemo(() => {
         tasaComision: comisionNum,
         grupoId: grupoSesion || undefined,
         crucesPuestos: opcionesCrucesPuestos,
+        permiteCruces: conCruces,
         fecha,
       });
       liquidadaAutomatico = s.ok;
@@ -2833,9 +2842,13 @@ const hipodromosDelDia = useMemo(() => {
           emitirToast(motivo, "error");
           return { ok: false, motivo };
         }
+        const todosEfectivo: Partial<ModalidadesCruce> = {
+          mismoEjemplar: configuracionCruces.override.todos?.mismoEjemplar ?? grupoReglasCruce.mismoEjemplar ?? true,
+          diferenteEjemplar: configuracionCruces.override.todos?.diferenteEjemplar ?? grupoReglasCruce.diferenteEjemplar ?? true,
+        };
         crucesPuestosLiquidacion = {
           ...opcionesCrucesPuestos,
-          carreraTodosOverride: configuracionCruces.override.todos,
+          carreraTodosOverride: todosEfectivo,
           carreraPorJugadorOverride: asociarReglasCrucesPuestosPorJugador(
             configuracionCruces.override.porJugador,
             clientes.map((cliente) => ({
@@ -2887,6 +2900,7 @@ const hipodromosDelDia = useMemo(() => {
         tasaComision: comisionNum,
         grupoId: grupoSesion || undefined,
         crucesPuestos: crucesPuestosLiquidacion,
+        permiteCruces: conCruces,
         fecha,
       });
       setResumen(r);

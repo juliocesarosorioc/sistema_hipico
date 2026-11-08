@@ -575,7 +575,9 @@ export function armarReporteCarrera(
   >();
 
   for (const [clave, neto] of netoPorCliente) {
-    const nombreVisible = nombreVisiblePorClave.get(clave) ?? clave;
+    const rawNombre = nombreVisiblePorClave.get(clave) ?? clave;
+    const nombreAlias = resolverAlias(rawNombre);
+    const nombreVisible = nombreAlias || rawNombre;
     const nombreNorm = normalizarNombreCliente(nombreVisible);
     const riesgo = riesgoPorCliente.get(clave) ?? 0;
 
