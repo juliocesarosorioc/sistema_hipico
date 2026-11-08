@@ -203,7 +203,7 @@ export function decidirTickets(
       };
     });
   const gruposNeteo = netearComisionCruce(items, input.carrera, input.tasaComision, {
-    agruparPorCliente: true,
+    agruparPorCliente: false,
     permiteCruces: input.permiteCruces !== false,
   });
   if (gruposNeteo.size > 0) {
