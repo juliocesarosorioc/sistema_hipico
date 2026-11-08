@@ -5777,6 +5777,7 @@ const hipodromosDelDia = useMemo(() => {
             : undefined)
         }
         modoExclusivoLiquidacion={modoExclusivoReporte}
+        observacionesExceso={observacionesExcesoCarrera}
       />
 
       {/* Carga de Resultados (Ctrl+Y) — posiciones dinámicas (5 + añadir hasta 8) + Dead Heat */}
