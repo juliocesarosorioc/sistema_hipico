@@ -1535,6 +1535,20 @@ const hipodromosDelDia = useMemo(() => {
   const filasPreviewEnVivo = useMemo(() => filasPreview.filter((f) => !f.anulada && !f.esAdelantada), [filasPreview]);
   const filasPreviewAdelantadas = useMemo(() => filasPreview.filter((f) => !f.anulada && f.esAdelantada), [filasPreview]);
 
+  const carrerasConCaballosDelDia = useMemo(() => {
+    const setNums = new Set<number>();
+    for (const c of carrerasDelDia) {
+      if (Array.isArray(c.caballos) && c.caballos.length > 0) {
+        const n = Number(c.carrera);
+        if (n > 0) setNums.add(n);
+      }
+    }
+    if (caballosDeCarrera.length > 0 && carrera) {
+      setNums.add(Number(carrera));
+    }
+    return [...setNums];
+  }, [carrerasDelDia, caballosDeCarrera, carrera]);
+
   const carrerasLiquidadasDelDia = useMemo(() => {
     const setNums = new Set<number>();
     const numCarrera = Number(carrera);
@@ -3730,6 +3744,7 @@ const hipodromosDelDia = useMemo(() => {
             : []
         }
         carrerasLiquidadas={carrerasLiquidadasDelDia}
+        carrerasConCaballos={carrerasConCaballosDelDia}
         onSeleccionar={(n, info) => {
           void seleccionarCarreraConConfirmacion(n, info);
         }}

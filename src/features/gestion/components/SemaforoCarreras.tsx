@@ -11,6 +11,14 @@ import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { diaDeLaTabla } from "@/features/tablas/components/MonitorTablas";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
+import {
+  resolverEstadoSemaforo,
+  COLORES_SEMAFORO as COLORES,
+  type EstadoCarrera,
+} from "@/features/gestion/lib/semaforo-core";
+
+export type { EstadoCarrera };
+export { COLORES };
 
 type Props = {
   hipodromo: string;
@@ -26,44 +34,11 @@ type Props = {
   carrerasConJugadas?: number[];
   /** Números de carrera que ya están liquidadas (módulo padre / estado en vivo). */
   carrerasLiquidadas?: number[];
+  /** Números de carrera que tienen caballos precargados/registrados. */
+  carrerasConCaballos?: number[];
   /** Acción adicional alineada a la derecha en la fila de carreras (p. ej. Liquidar Carrera). */
   accionDerecha?: ReactNode;
   className?: string;
-};
-
-export type EstadoCarrera = "inactiva" | "abierta" | "con_jugadas" | "cerrada" | "borrada";
-
-const COLORES: Record<EstadoCarrera, { chip: string; label: string; txt: string }> = {
-  // Azul casi gris con letra más oscura cuando no hay carrera registrada.
-  inactiva: {
-    chip: "border-slate-400 bg-slate-300 text-slate-900 shadow-xs",
-    label: "No hay carrera registrada (Azul-gris)",
-    txt: "text-slate-800",
-  },
-  // Verde cuando la carrera ha sido registrada (sin jugadas aún).
-  abierta: {
-    chip: "border-emerald-700 bg-emerald-600 text-white shadow-xs",
-    label: "Carrera registrada (Verde)",
-    txt: "text-emerald-600",
-  },
-  // Amarillo cuando hay jugadas registradas en la carrera pero no ha sido liquidada.
-  con_jugadas: {
-    chip: "border-amber-500 bg-amber-400 text-slate-950 shadow-xs",
-    label: "Con jugadas registradas · Sin liquidar (Amarillo)",
-    txt: "text-amber-600",
-  },
-  // Rojo cuando ya fue liquidada la carrera.
-  cerrada: {
-    chip: "border-red-700 bg-red-600 text-white shadow-xs",
-    label: "Carrera liquidada (Rojo)",
-    txt: "text-red-600",
-  },
-  // Carrera borrada de la matriz pero con jugadas registradas pendientes
-  borrada: {
-    chip: "border-slate-800 bg-slate-800 text-amber-400 shadow-xs ring-1 ring-amber-500",
-    label: "Carrera borrada del día · Posee jugadas registradas (Gris oscuro)",
-    txt: "text-amber-500",
-  },
 };
 
 function hipoKey(h: unknown): string {
@@ -98,6 +73,7 @@ export function SemaforoCarreras({
   manual,
   carrerasConJugadas,
   carrerasLiquidadas,
+  carrerasConCaballos,
   accionDerecha,
   className = "",
 }: Props) {
@@ -201,66 +177,97 @@ export function SemaforoCarreras({
     return () => { vivo = false; };
   }, [fecha, hipodromo, centrales, carrerasConJugadas?.length, carrerasLiquidadas?.length, recargaVersion, tieneHipodromo, hipoLimpio, claveHipo]);
 
-  const porCarrera = (n: number): { estado: EstadoCarrera; tieneVentas: boolean } => {
-    if (!tieneHipodromo) return { estado: "inactiva", tieneVentas: false };
-    // TODO el cruce va acotado a `fecha`: una tabla o un registro del día
-    // anterior con el mismo (hipódromo, carrera) jamás puede pintar el chip de HOY.
+  const porCarrera = (n: number): { estado: EstadoCarrera; tieneVentas: boolean; tieneCaballos: boolean } => {
+    if (!tieneHipodromo) return { estado: "inactiva", tieneVentas: false, tieneCaballos: false };
+
     const tabla = tablas.find(
       (t) => hipoKey(t.hipodromo) === hipo && t.carrera === n && diaDeLaTabla(t) === fecha
     );
     const registro = carrerasDia.find(
       (c: CarreraDelDia) => hipoKey(c.hipodromo) === hipo && c.carrera === n && c.fecha === fecha
     );
-    // El estado CENTRAL manda: `aplicado_a_tablas`/`ganadores` los escribe la
-    // liquidación en `resultados_carreras`, compartida por todos. Si el central
-    // explícitamente indica que la carrera está "programada" (p. ej. tras reversar
-    // la liquidación), una copia vieja en localStorage (`tabla.cerrada` o `registro.estado`)
-    // NO debe forzarla a roja.
     const central = centrales.find((c) => Number(c.carrera) === n);
-    const esPlaceholderManualSinCaballos =
-      central != null &&
-      String(central.origen ?? "").toLowerCase() === "manual" &&
-      (central.caballos?.length ?? 0) === 0 &&
-      !central.hora &&
-      !central.distancia;
-    const registrada = (carreras.includes(n) && !esPlaceholderManualSinCaballos) || Boolean(tabla);
 
-    const estCentral = String(central?.estado ?? "").toLowerCase();
-    const centralReabierta =
-      central != null &&
-      estCentral === "programada" &&
-      !central.aplicado_a_tablas &&
-      (central.ganadores?.length ?? 0) === 0;
+    // Detección estricta de ejemplares/caballos precargados (> 0)
+    const contarCaballos = (arr: unknown): number => {
+      if (!Array.isArray(arr)) return 0;
+      return arr.filter((c) => {
+        if (!c) return false;
+        if (typeof c === "string" || typeof c === "number") return String(c).trim().length > 0;
+        if (typeof c === "object") {
+          const num = String((c as Record<string, unknown>).numero ?? (c as Record<string, unknown>).pp ?? "").trim();
+          const nom = String((c as Record<string, unknown>).nombre ?? "").trim();
+          return Boolean(num || nom);
+        }
+        return false;
+      }).length;
+    };
 
-    const liquidada = centralReabierta
-      ? false
-      : Boolean(tabla?.cerrada) ||
-        String(tabla?.estado ?? "").toLowerCase() === "cerrada" ||
-        String(registro?.estado ?? "").toLowerCase() === "liquidada" ||
-        estCentral === "liquidada" ||
-        estCentral === "cerrada" ||
-        central?.aplicado_a_tablas === true ||
-        (central?.ganadores?.length ?? 0) > 0 ||
-        Boolean(carrerasLiquidadas?.includes(n)) ||
-        carrerasBdLiquidadas.includes(n);
+    const cantCaballos = Math.max(
+      contarCaballos(central?.caballos),
+      contarCaballos(tabla?.caballos),
+      contarCaballos((registro as unknown as { caballos?: unknown })?.caballos)
+    );
+    const tieneCaballos = cantCaballos > 0 || Boolean(carrerasConCaballos?.includes(n));
 
-    const conVentas =
+    // Detección estricta de jugadas activas (tickets no anulados)
+    const jugadasEnMemoria =
       tickets.some(
         (tk) =>
           tk.carrera === n &&
           Boolean(tk.hipodromo && hipoKey(tk.hipodromo) === hipo) &&
           Boolean(tk.fecha && tk.fecha === fecha)
       ) ||
-      Boolean(carrerasConJugadas?.includes(n)) ||
-      carrerasBdConJugadas.includes(n) ||
       (Number((tabla as { cantidad_vendida?: number } | undefined)?.cantidad_vendida ?? 0) > 0) ||
       (registro?.ventas?.length ?? 0) > 0;
 
-    if (liquidada) return { estado: "cerrada", tieneVentas: conVentas };
-    if (!registrada && conVentas) return { estado: "borrada", tieneVentas: true };
-    if (conVentas) return { estado: "con_jugadas", tieneVentas: true };
-    if (registrada) return { estado: "abierta", tieneVentas: false };
-    return { estado: "inactiva", tieneVentas: false };
+    const tieneJugadas =
+      jugadasEnMemoria ||
+      (carrerasConJugadas != null
+        ? n === activa
+          ? carrerasConJugadas.includes(n)
+          : carrerasConJugadas.includes(n) || carrerasBdConJugadas.includes(n)
+        : carrerasBdConJugadas.includes(n));
+
+    // Detección de liquidación y reversión:
+    // Si la carrera fue reabierta / reversada (programada sin ganadores ni aplicado_a_tablas),
+    // o no está en la lista de liquidadas provista por el padre, NO está liquidada.
+    const estCentral = String(central?.estado ?? "").toLowerCase();
+    const centralReabierta =
+      (central != null &&
+        estCentral === "programada" &&
+        !central.aplicado_a_tablas &&
+        (central.ganadores?.length ?? 0) === 0) ||
+      (registro != null &&
+        String(registro.estado ?? "").toLowerCase() === "programada" &&
+        !registro.aplicado_a_tablas &&
+        (registro.ganadores?.length ?? 0) === 0);
+
+    const liquidada = centralReabierta
+      ? false
+      : carrerasLiquidadas != null
+        ? carrerasLiquidadas.includes(n)
+        : Boolean(tabla?.cerrada) ||
+          String(tabla?.estado ?? "").toLowerCase() === "cerrada" ||
+          String(registro?.estado ?? "").toLowerCase() === "liquidada" ||
+          estCentral === "liquidada" ||
+          estCentral === "cerrada" ||
+          central?.aplicado_a_tablas === true ||
+          (central?.ganadores?.length ?? 0) > 0 ||
+          carrerasBdLiquidadas.includes(n);
+
+    // MÁQUINA DE ESTADOS DETERMINÍSTICA ESTRICTA (4 ESTADOS):
+    // 1. ROJO: Si se liquidaron las jugadas es ROJO.
+    // 2. AMARILLO: Si hay jugadas y no está liquidada es AMARILLO (al reversar vuelve aquí).
+    // 3. VERDE: Si tiene caballos registrados (precargado) y NO hay jugadas es VERDE (al borrar jugadas vuelve aquí).
+    // 4. GRIS: Si no tiene ni registros de jugadas ni caballos es GRIS (al borrar caballos vuelve aquí).
+    const estado = resolverEstadoSemaforo({
+      liquidada,
+      tieneJugadas,
+      tieneCaballos,
+    });
+
+    return { estado, tieneVentas: tieneJugadas, tieneCaballos };
   };
 
   // Si no hay hipódromo seleccionado, no deben aparecer carreras ni cambiar ningún color
@@ -280,6 +287,7 @@ export function SemaforoCarreras({
 
   const todosNumeros = [
     ...carreras,
+    ...(carrerasConCaballos ?? []),
     ...carrerasBdConJugadas,
     ...(carrerasConJugadas ?? []),
     ...(carrerasLiquidadas ?? []),
@@ -318,10 +326,10 @@ export function SemaforoCarreras({
         </div>
         
         <div className="hidden sm:flex flex-wrap items-center gap-2.5 text-[10px]">
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs border border-slate-400 bg-slate-300" /> Sin registro</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-emerald-600" /> Registrada</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-amber-400 ring-1 ring-amber-500" /> Con jugadas</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-red-600" /> Liquidada</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs border border-slate-400 bg-slate-300" /> Sin registro ni caballos (Gris)</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-emerald-600" /> Precargado con caballos (Verde)</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-amber-400 ring-1 ring-amber-500" /> Con jugadas · Sin liquidar (Amarillo)</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-red-600" /> Liquidada (Rojo)</span>
         </div>
       </div>
 
@@ -329,8 +337,8 @@ export function SemaforoCarreras({
       <div className="flex items-center justify-between gap-2 overflow-x-auto overflow-y-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-2 min-h-[48px] w-full">
         <div className="flex items-center gap-1.5 shrink-0 flex-nowrap px-2">
           {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
-            const { estado, tieneVentas } = porCarrera(n);
-            const existe = manual || carreras.includes(n) || tieneVentas;
+            const { estado, tieneVentas, tieneCaballos } = porCarrera(n);
+            const existe = manual || carreras.includes(n) || tieneVentas || tieneCaballos || estado === "abierta";
             const c = COLORES[estado];
             const activaEsta = activa !== null && n === activa;
             const manualSinRegistro = manual && !carreras.includes(n) && estado === "inactiva";

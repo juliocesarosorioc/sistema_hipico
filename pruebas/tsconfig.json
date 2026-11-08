@@ -200,6 +200,8 @@
     "./recalculo-semanal-devoluciones.test.ts",
     "./belmont-sam-partner-cruces.test.ts",
     "./reversar-boton-reliquidar.test.ts",
-    "./eliminar-grupo-chat.test.ts"
+    "./eliminar-grupo-chat.test.ts",
+    "../src/features/gestion/lib/semaforo-core.ts",
+    "./semaforo-estados-estrictos.test.ts"
   ]
 }
