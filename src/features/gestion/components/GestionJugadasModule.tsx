@@ -723,8 +723,9 @@ const hipodromosDelDia = useMemo(() => {
     const reglasPermanentes: NonNullable<OpcionesCrucesPuestos["porJugadorPermanente"]> = {};
     for (const cliente of clientesDelGrupo) {
       const reglas: Partial<ModalidadesCruce> = {};
-      const mismo = cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces ?? true;
-      const diferente = cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces ?? true;
+      const grupoPermite = grupoReglasCruce.mismoEjemplar !== false || grupoReglasCruce.diferenteEjemplar !== false;
+      const mismo = grupoPermite ? (cliente.cruce_mismo_ejemplar ?? true) : false;
+      const diferente = grupoPermite ? (cliente.cruce_diferente_ejemplar ?? true) : false;
       if (typeof mismo === "boolean") reglas.mismoEjemplar = mismo;
       if (typeof diferente === "boolean") reglas.diferenteEjemplar = diferente;
       if (Object.keys(reglas).length > 0) {
@@ -781,10 +782,10 @@ const hipodromosDelDia = useMemo(() => {
     const porJugador = crucesOverrideCarrera.porJugador?.[clave];
     const todos = crucesOverrideCarrera.todos;
     const permanenteMismo = cliente
-      ? cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces
+      ? (cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces ?? true)
       : undefined;
     const permanenteDiferente = cliente
-      ? cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces
+      ? (cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces ?? true)
       : undefined;
     setBorradorCruceJugador({
       mismoEjemplar: alcanceCruce === "permanente"
@@ -1923,7 +1924,8 @@ const hipodromosDelDia = useMemo(() => {
         String(x.seudonimo ?? "").trim().toUpperCase() === clave ||
         String(x.nombre_real ?? "").trim().toUpperCase() === clave
       );
-      if (c && c.permite_cruces === false) return false;
+      // Solo la configuración del GRUPO puede desactivar los cruces: un jugador
+      // con permite_cruces=false a nivel individual ya no bloquea por sí solo.
       if (c) {
         for (const gi of c.grupos) if (gruposMapa[String(gi)] === false) return false;
       }
