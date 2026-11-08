@@ -105,6 +105,61 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
   }
   const grupoEfectivo = grupoSeleccionado || v.grupoId || null;
   const dadorResuelto = resolverContraparteModalidad(v.jugada, v.clienteDador, v.modalidad);
+
+  // Aislamiento estricto de grupo: el jugador no puede registrar en otro grupo
+  if (grupoEfectivo && v.clienteId) {
+    const { data: cRow } = await supabase
+      .from("clientes")
+      .select("id, nombre, grupo_id")
+      .eq("id", v.clienteId)
+      .maybeSingle();
+    if (cRow) {
+      let pertenece = String(cRow.grupo_id) === String(grupoEfectivo);
+      if (!pertenece) {
+        const { data: cgRow } = await supabase
+          .from("clientes_grupos")
+          .select("grupo_id")
+          .eq("cliente_id", v.clienteId)
+          .eq("grupo_id", grupoEfectivo);
+        pertenece = Boolean(cgRow && cgRow.length > 0);
+      }
+      if (!pertenece) {
+        return {
+          ok: false,
+          error: `⛔ El cliente «${cRow.nombre}» no pertenece al grupo seleccionado. No se permite registrar jugadas fuera de su grupo.`,
+        };
+      }
+    }
+  }
+
+  // Aislamiento estricto de grupo: prohibido que jugadores de distintos grupos interactúen
+  const dadorTexto = String(dadorResuelto || v.clienteDador || "").trim();
+  if (grupoEfectivo && dadorTexto && !["CASA", "BANCA", "SISTEMA"].includes(dadorTexto.toUpperCase())) {
+    const { data: dadorRows } = await supabase
+      .from("clientes")
+      .select("id, nombre, grupo_id")
+      .or(`nombre.ilike.${dadorTexto},seudonimo.ilike.${dadorTexto}`)
+      .limit(1);
+    if (dadorRows && dadorRows.length > 0) {
+      const dadorCli = dadorRows[0];
+      let perteneceDador = String(dadorCli.grupo_id) === String(grupoEfectivo);
+      if (!perteneceDador) {
+        const { data: cgDador } = await supabase
+          .from("clientes_grupos")
+          .select("grupo_id")
+          .eq("cliente_id", dadorCli.id)
+          .eq("grupo_id", grupoEfectivo);
+        perteneceDador = Boolean(cgDador && cgDador.length > 0);
+      }
+      if (!perteneceDador) {
+        return {
+          ok: false,
+          error: `⛔ El jugador dador «${dadorTexto}» pertenece a otro grupo. No se permite interacción entre jugadores de distintos grupos.`,
+        };
+      }
+    }
+  }
+
   const { data, error } = await supabase.rpc("club_vender_jugada", {
     p_hipodromo: String(v.hipodromo ?? "").trim().toUpperCase(),
     p_fecha: v.fecha,

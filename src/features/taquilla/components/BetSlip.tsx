@@ -21,12 +21,16 @@ import { atribuirTrasVenta } from "@/features/grupos/lib/marcar-atribucion";
 import { atribuirDesdePrincipal } from "@/features/grupos/lib/atribucion-grupo";
 import { principalDe } from "@/features/grupos/lib/visibilidad-principal";
 import { WPS_PLANIFICACION } from "@/features/motores/lib/wps-planificacion";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 import {
   listarClientesVenta,
   listarGruposVenta,
   comisionJugadasDeGrupo,
   saldoDeCliente,
   textoDisponible,
+  clientePerteneceAGrupo,
+  filtrarClientesPorGrupo,
+  clientesPertenecenAlMismoGrupo,
   type ClienteVenta,
   type GrupoVenta,
 } from "@/features/grupos/lib/grupos";
@@ -119,33 +123,92 @@ export function BetSlip() {
     return lista.map((n) => ({ value: String(n), label: `Carrera ${n}` }));
   }, [carrerasDe, hipodromo]);
 
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const miGrupoId = useAuthStore((s) => s.grupoId);
+
+  const grupoSesion = useMemo(() => {
+    if (grupoActivo && grupoActivo !== "null" && String(grupoActivo).trim() !== "") {
+      return String(grupoActivo).trim();
+    }
+    if (miGrupoId && miGrupoId !== "null" && String(miGrupoId).trim() !== "") {
+      return String(miGrupoId).trim();
+    }
+    return null;
+  }, [grupoActivo, miGrupoId]);
+
+  const nombreGrupoSesion = useMemo(() => {
+    if (!grupoSesion) return "";
+    const g = grupos.find((x) => String(x.id) === grupoSesion || String(x.nombre).toUpperCase() === grupoSesion.toUpperCase());
+    return g?.nombre ?? grupoSesion;
+  }, [grupos, grupoSesion]);
+
+  const clientesDelGrupo = useMemo(() => {
+    if (!grupoSesion) return [];
+    return filtrarClientesPorGrupo(clientes, grupoSesion, grupos);
+  }, [clientes, grupoSesion, grupos]);
+
   const opcionesClientes = useMemo(
     () =>
-      [...new Map(clientes.map((c) => [clave(c.nombre), c])).values()]
+      [...new Map(clientesDelGrupo.map((c) => [clave(c.nombre), c])).values()]
         .map((c) => ({ value: String(c.nombre), label: String(c.nombre) }))
         .sort((a, b) => a.label.localeCompare(b.label)),
-    [clientes]
+    [clientesDelGrupo]
+  );
+
+  const opcionesCliente2 = useMemo(
+    () => [
+      { value: "BANCA", label: "🏛️ BANCA / CASA" },
+      ...opcionesClientes,
+    ],
+    [opcionesClientes]
   );
 
   const c1 = useMemo(
     () =>
-      clientes.find(
+      clientesDelGrupo.find(
         (c) =>
           clave(c.nombre) === clave(cliente1) ||
           (c.seudonimo && clave(c.seudonimo) === clave(cliente1)) ||
           clave(c.id) === clave(cliente1)
       ) ?? null,
-    [clientes, cliente1]
+    [clientesDelGrupo, cliente1]
   );
+
+  const c1EnOtroGrupo = useMemo(
+    () =>
+      !c1 && cliente1.trim()
+        ? clientes.find(
+            (c) =>
+              clave(c.nombre) === clave(cliente1) ||
+              (c.seudonimo && clave(c.seudonimo) === clave(cliente1)) ||
+              clave(c.id) === clave(cliente1)
+          ) ?? null
+        : null,
+    [c1, cliente1, clientes]
+  );
+
   const c2 = useMemo(
     () =>
-      clientes.find(
+      clientesDelGrupo.find(
         (c) =>
           clave(c.nombre) === clave(cliente2) ||
           (c.seudonimo && clave(c.seudonimo) === clave(cliente2)) ||
           clave(c.id) === clave(cliente2)
       ) ?? null,
-    [clientes, cliente2]
+    [clientesDelGrupo, cliente2]
+  );
+
+  const c2EnOtroGrupo = useMemo(
+    () =>
+      !c2 && cliente2.trim() && !["BANCA", "CASA"].includes(cliente2.trim().toUpperCase())
+        ? clientes.find(
+            (c) =>
+              clave(c.nombre) === clave(cliente2) ||
+              (c.seudonimo && clave(c.seudonimo) === clave(cliente2)) ||
+              clave(c.id) === clave(cliente2)
+          ) ?? null
+        : null,
+    [c2, cliente2, clientes]
   );
 
   /** Grupo del Cliente 1: dueño de la comisión de las jugadas entre tercios. */
@@ -239,6 +302,16 @@ export function BetSlip() {
       ),
     [opcionesHipodromos, hipodromo]
   );
+
+  const interaccionGrupoValida = useMemo(() => {
+    if (!grupoSesion) return false;
+    if (!c1 || !clientePerteneceAGrupo(c1, grupoSesion, grupos)) return false;
+    if (c1EnOtroGrupo || c2EnOtroGrupo) return false;
+    if (c2 && !clientePerteneceAGrupo(c2, grupoSesion, grupos)) return false;
+    if (c1 && c2 && !clientesPertenecenAlMismoGrupo(c1, c2, grupos)) return false;
+    return true;
+  }, [grupoSesion, c1, c2, c1EnOtroGrupo, c2EnOtroGrupo, grupos]);
+
   const puedeRegistrar =
     validacion.ok &&
     validacionAutorizada.ok &&
@@ -246,13 +319,38 @@ export function BetSlip() {
     !!c1 &&
     montoAutorizado > 0 &&
     !registrando &&
-    hipodromoValido;
+    hipodromoValido &&
+    interaccionGrupoValida;
 
   const registrar = async () => {
     setError("");
     if (!validacion.ok) return;
     if (!hipodromo.trim() || !hipodromoValido) {
       setError("Debe seleccionar un hipódromo registrado en la plataforma.");
+      return;
+    }
+    if (!grupoSesion) {
+      setError("Debe seleccionar un grupo activo antes de registrar jugadas.");
+      return;
+    }
+    if (c1EnOtroGrupo) {
+      setError(`⛔ El cliente 1 «${c1EnOtroGrupo.nombre}» está registrado en otro grupo. No se permite registrar jugadas de un jugador en ningún otro grupo.`);
+      return;
+    }
+    if (!c1 || !clientePerteneceAGrupo(c1, grupoSesion, grupos)) {
+      setError(`⛔ El cliente 1 «${cliente1}» no pertenece al grupo ${nombreGrupoSesion || "activo"}. Solo se permiten jugadores de este grupo.`);
+      return;
+    }
+    if (c2EnOtroGrupo) {
+      setError(`⛔ El cliente 2 «${c2EnOtroGrupo.nombre}» está registrado en otro grupo. No se permite interacción entre jugadores de distintos grupos.`);
+      return;
+    }
+    if (c2 && !clientePerteneceAGrupo(c2, grupoSesion, grupos)) {
+      setError(`⛔ El cliente 2 «${c2.nombre}» no pertenece al grupo ${nombreGrupoSesion || "activo"}. No se permite interacción entre jugadores de distintos grupos.`);
+      return;
+    }
+    if (c1 && c2 && !clientesPertenecenAlMismoGrupo(c1, c2, grupos)) {
+      setError("⛔ Los jugadores pertenecen a grupos distintos. No se permite que los jugadores de un grupo interactúen en otro para nada.");
       return;
     }
     if (!caballoOk) {
@@ -274,7 +372,7 @@ export function BetSlip() {
     const nCarrera = Number(String(carrera).replace(/[^0-9]/g, "")) || 1;
     setRegistrando(true);
     try {
-      const grupoId = grupoDeC1;
+      const grupoId = grupoSesion || grupoDeC1;
       const auto = detectarModalidad(comando);
       const venta = await venderJugada({
         hipodromo,
@@ -442,11 +540,11 @@ export function BetSlip() {
               ) : null}
             </div>
             <SearchableSelect
-              options={opcionesClientes}
+              options={opcionesCliente2}
               value={cliente2}
               onChange={setCliente2}
-              placeholder="Cliente 2 (dador)…"
-              allowCustom={true}
+              placeholder="Cliente 2 (dador o BANCA)…"
+              allowCustom={false}
               displayValue={cliente2}
             />
           </div>

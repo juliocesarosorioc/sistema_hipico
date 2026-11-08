@@ -342,7 +342,96 @@ export async function listarClientesVenta(force = false): Promise<ClienteVenta[]
 /** Jugadores de un grupo (misma regla que poblarJugadoresDelGrupo del legacy). */
 export async function jugadoresDeGrupo(grupoId: string | number): Promise<ClienteVenta[]> {
   const clientes = await listarClientesVenta();
-  return clientes.filter((c) => (c.grupos || []).map(String).includes(String(grupoId)));
+  return filtrarClientesPorGrupo(clientes, grupoId);
+}
+
+/**
+ * Aislamiento estricto de grupo: verifica si un cliente pertenece a un grupo
+ * (por id o nombre, verificando grupo_id y grupos).
+ */
+export function clientePerteneceAGrupo(
+  c: { grupo_id?: string | number | null; grupos?: (string | number)[] } | null | undefined,
+  grupoId: string | number | null | undefined,
+  gruposVenta?: GrupoVenta[]
+): boolean {
+  if (!c || grupoId == null) return false;
+  const gidStr = String(grupoId).trim().toUpperCase();
+  if (!gidStr || gidStr === "NULL" || gidStr === "UNDEFINED") return false;
+
+  let matchId = gidStr;
+  let matchNombre: string | null = null;
+  if (gruposVenta && gruposVenta.length > 0) {
+    const g = gruposVenta.find(
+      (x) =>
+        String(x.id).trim().toUpperCase() === gidStr ||
+        String(x.nombre).trim().toUpperCase() === gidStr
+    );
+    if (g) {
+      matchId = String(g.id).trim().toUpperCase();
+      matchNombre = String(g.nombre).trim().toUpperCase();
+    }
+  }
+
+  const cGrupoId = c.grupo_id != null ? String(c.grupo_id).trim().toUpperCase() : null;
+  const cGrupos = (c.grupos ?? []).map((x) => String(x).trim().toUpperCase());
+
+  if (cGrupoId === matchId || cGrupos.includes(matchId)) return true;
+  if (matchNombre && (cGrupoId === matchNombre || cGrupos.includes(matchNombre))) return true;
+  return false;
+}
+
+/**
+ * Filtra los clientes que pertenecen de forma estricta al grupo dado.
+ * Si no hay grupo activo, retorna lista vacía para evitar fuga entre grupos.
+ */
+export function filtrarClientesPorGrupo(
+  clientes: ClienteVenta[],
+  grupoId: string | number | null | undefined,
+  gruposVenta?: GrupoVenta[]
+): ClienteVenta[] {
+  if (!grupoId || String(grupoId).trim() === "" || String(grupoId).trim().toUpperCase() === "NULL") {
+    return [];
+  }
+  return clientes.filter((c) => clientePerteneceAGrupo(c, grupoId, gruposVenta));
+}
+
+/**
+ * Regla de negocio: PROHIBIDO que jugadores de distintos grupos interactúen entre sí.
+ * Si ambos son clientes registrados en el sistema, DEBEN pertenecer al mismo grupo.
+ */
+export function clientesPertenecenAlMismoGrupo(
+  c1: { grupo_id?: string | number | null; grupos?: (string | number)[] } | null | undefined,
+  c2: { grupo_id?: string | number | null; grupos?: (string | number)[] } | null | undefined,
+  gruposVenta?: GrupoVenta[]
+): boolean {
+  if (!c1 || !c2) return true;
+  const g1Ids = new Set<string>();
+  if (c1.grupo_id != null) g1Ids.add(String(c1.grupo_id).trim().toUpperCase());
+  (c1.grupos ?? []).forEach((g) => g1Ids.add(String(g).trim().toUpperCase()));
+
+  const g2Ids = new Set<string>();
+  if (c2.grupo_id != null) g2Ids.add(String(c2.grupo_id).trim().toUpperCase());
+  (c2.grupos ?? []).forEach((g) => g2Ids.add(String(g).trim().toUpperCase()));
+
+  if (gruposVenta && gruposVenta.length > 0) {
+    for (const g of gruposVenta) {
+      const gIdUpper = String(g.id).trim().toUpperCase();
+      const gNomUpper = String(g.nombre).trim().toUpperCase();
+      if (g1Ids.has(gIdUpper) || g1Ids.has(gNomUpper)) {
+        g1Ids.add(gIdUpper);
+        g1Ids.add(gNomUpper);
+      }
+      if (g2Ids.has(gIdUpper) || g2Ids.has(gNomUpper)) {
+        g2Ids.add(gIdUpper);
+        g2Ids.add(gNomUpper);
+      }
+    }
+  }
+
+  for (const gid of g1Ids) {
+    if (g2Ids.has(gid)) return true;
+  }
+  return false;
 }
 
 /** Saldo en mano del jugador (`clientes.saldo_actual`), 0 si no se encontró. */

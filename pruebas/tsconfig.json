@@ -206,6 +206,7 @@
     "../src/features/gestion/lib/semaforo-estado.ts",
     "./semaforo-estado.test.ts",
     "./pizarra-multi-ejemplar-y-saldos.test.ts",
-    "./segmentar-rinconada.test.ts"
+    "./segmentar-rinconada.test.ts",
+    "./aislamiento-grupos-jugadores.test.ts"
   ]
 }

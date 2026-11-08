@@ -44,7 +44,7 @@ import { SemaforoCarreras } from "@/features/gestion/components/SemaforoCarreras
 import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
 import { fmtMoney, type EjemplarTabla } from "@/features/tablas/lib/tipos";
-import { listarClientesVenta, listarGruposVenta, limpiarCacheClientesVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, telefonoMencionCliente, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
+import { listarClientesVenta, listarGruposVenta, limpiarCacheClientesVenta, comisionJugadasDeGrupo, saldoDeCliente, avalDeCliente, esClienteLibre, limiteDeJugar, registrarAuditoria, telefonoMencionCliente, clientePerteneceAGrupo, filtrarClientesPorGrupo, clientesPertenecenAlMismoGrupo, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { actualizarCliente } from "@/features/clientes/lib/clientes";
 import { BotonCargaRapidaSaldo } from "@/features/contabilidad/components/BotonCargaRapidaSaldo";
 import { ModalSaldos } from "@/features/contabilidad/components/ModalCargaRapidaSaldoYAval";
@@ -688,26 +688,10 @@ const hipodromosDelDia = useMemo(() => {
     return g.grupo_id != null ? String(g.grupo_id) : String(g.grupos[0]);
   }, [grupoActivo, miGrupoId, clientes]);
 
-  /** Clientes que pertenecen al grupo en que se encuentra la sesión/caja. */
+  /** Clientes que pertenecen estrictamente al grupo en que se encuentra la sesión/caja. */
   const clientesDelGrupo = useMemo(() => {
-    if (!grupoSesion) return clientes;
-    const gMatch = gruposVenta.find(
-      (g) =>
-        String(g.id) === String(grupoSesion) ||
-        String(g.nombre).trim().toUpperCase() === String(grupoSesion).trim().toUpperCase()
-    );
-    const idObj = gMatch ? String(gMatch.id).toUpperCase() : String(grupoSesion).toUpperCase();
-    const nomObj = gMatch?.nombre ? String(gMatch.nombre).trim().toUpperCase() : String(grupoSesion).trim().toUpperCase();
-
-    const filtrados = clientes.filter((c) => {
-      const cGrupos = (c.grupos ?? []).map((x) => String(x).trim().toUpperCase());
-      const cGrupoId = c.grupo_id != null ? String(c.grupo_id).trim().toUpperCase() : null;
-      if (cGrupoId === idObj || cGrupos.includes(idObj)) return true;
-      if (nomObj && (cGrupoId === nomObj || cGrupos.includes(nomObj))) return true;
-      return false;
-    });
-
-    return filtrados;
+    if (!grupoSesion) return [];
+    return filtrarClientesPorGrupo(clientes, grupoSesion, gruposVenta);
   }, [clientes, grupoSesion, gruposVenta]);
 
   /** Opciones del Autocomplete CLIENTE 1/CLIENTE 2 aisladas estrictamente al grupo activo. */
@@ -717,6 +701,14 @@ const hipodromosDelDia = useMemo(() => {
         .map((c) => ({ value: String(c.nombre), label: String(c.nombre) }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     [clientesDelGrupo]
+  );
+
+  const opcionesCliente2 = useMemo(
+    () => [
+      { value: "BANCA", label: "🏛️ BANCA / CASA" },
+      ...opcionesClientes,
+    ],
+    [opcionesClientes]
   );
 
   const comisionGrupoSesion = comisionJugadasDeGrupo(gruposVenta, grupoSesion);
@@ -729,7 +721,7 @@ const hipodromosDelDia = useMemo(() => {
   }, [grupoSesion, gruposVenta]);
   const opcionesCrucesPuestos = useMemo<OpcionesCrucesPuestos>(() => {
     const reglasPermanentes: NonNullable<OpcionesCrucesPuestos["porJugadorPermanente"]> = {};
-    for (const cliente of clientes) {
+    for (const cliente of clientesDelGrupo) {
       const reglas: Partial<ModalidadesCruce> = {};
       const mismo = cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces;
       const diferente = cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces;
@@ -741,7 +733,7 @@ const hipodromosDelDia = useMemo(() => {
         }
       }
     }
-    const jugadores = clientes.map((cliente) => ({
+    const jugadores = clientesDelGrupo.map((cliente) => ({
       id: cliente.id,
       nombre: cliente.nombre,
       aliases: [cliente.nombre_real, cliente.seudonimo],
@@ -755,7 +747,7 @@ const hipodromosDelDia = useMemo(() => {
         jugadores
       ),
     };
-  }, [clientes, crucesOverrideCarrera, grupoReglasCruce]);
+  }, [clientesDelGrupo, crucesOverrideCarrera, grupoReglasCruce]);
 
   useEffect(() => {
     let vivo = true;
@@ -976,10 +968,10 @@ const hipodromosDelDia = useMemo(() => {
      pega en la Carga Individual. */
   const contextoNormalizacion = useMemo(
     () => ({
-      clientes,
+      clientes: clientesDelGrupo,
       caballos: caballosDeCarrera.map((c) => ({ numero: c.numero, nombre: c.nombre })),
     }),
-    [clientes, caballosDeCarrera]
+    [clientesDelGrupo, caballosDeCarrera]
   );
 
   const previewCargaRapida = useMemo(() => {
@@ -1033,11 +1025,11 @@ const hipodromosDelDia = useMemo(() => {
     [caballosDeCarrera]
   );
 
-  /** Cliente del registro que coincide con el texto tipeado (exacto o único por prefijo). */
+  /** Cliente del registro que coincide con el texto tipeado (estrictamente dentro del grupo activo). */
   const saldoCliente = (texto: string): ClienteVenta | null => {
     const t = texto.trim().toLowerCase();
     if (!t) return null;
-    const exacto = clientes.find(
+    const exacto = clientesDelGrupo.find(
       (c) =>
         c.nombre.toLowerCase() === t ||
         (c.seudonimo && c.seudonimo.toLowerCase() === t) ||
@@ -1045,12 +1037,29 @@ const hipodromosDelDia = useMemo(() => {
         String(c.id).toLowerCase() === t
     );
     if (exacto) return exacto;
-    const porPrefijo = clientes.filter(
+    const porPrefijo = clientesDelGrupo.filter(
       (c) =>
         c.nombre.toLowerCase().startsWith(t) ||
         (c.seudonimo && c.seudonimo.toLowerCase().startsWith(t))
     );
     return porPrefijo.length === 1 ? porPrefijo[0] : null;
+  };
+
+  /** Detecta si un nombre tipeado coincide con un cliente registrado en OTRO grupo. */
+  const clienteEnOtroGrupo = (texto: string): ClienteVenta | null => {
+    const t = texto.trim().toLowerCase();
+    if (!t || t === "banca" || t === "casa") return null;
+    const match = clientes.find(
+      (c) =>
+        c.nombre.toLowerCase() === t ||
+        (c.seudonimo && c.seudonimo.toLowerCase() === t) ||
+        (c.nombre_real && c.nombre_real.toLowerCase() === t) ||
+        String(c.id).toLowerCase() === t
+    );
+    if (match && !clientePerteneceAGrupo(match, grupoSesion, gruposVenta)) {
+      return match;
+    }
+    return null;
   };
 
   /** Proyección de TODA la carga EN ORDEN: la fila 2 ya ve el saldo que dejó la
@@ -1059,8 +1068,7 @@ const hipodromosDelDia = useMemo(() => {
       (que también descuenta en orden, ver saldosEnCurso.ts). */
   const proyeccionesCarga = useMemo(
     () => proyectarFilasEnOrden(filas, saldoCliente, comisionNum),
-    // `saldoCliente` solo depende de `clientes`, que sí está en las deps.
-    [filas, clientes, comisionNum]
+    [filas, clientesDelGrupo, comisionNum]
   );
 
   /**
@@ -2194,31 +2202,40 @@ const hipodromosDelDia = useMemo(() => {
         indicesError.push(filas.indexOf(f));
         continue;
       }
-      if (!c1) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: el CLIENTE 1 no está en el catálogo (no se puede cobrar).`);
-        indicesError.push(filas.indexOf(f));
+      const c1Otro = clienteEnOtroGrupo(f.cliente1);
+      if (c1Otro) {
+        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: el CLIENTE 1 «${f.cliente1}» está registrado en otro grupo. No se permite registrar jugadas fuera de su grupo.`);
+        indicesError.push(filasTrabajo.indexOf(f));
+        continue;
+      }
+      if (!c1 || !clientePerteneceAGrupo(c1, grupoSesion, gruposVenta)) {
+        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: el CLIENTE 1 «${f.cliente1}» no pertenece al grupo ${grupoCabecera}. Solo se permiten jugadores de este grupo.`);
+        indicesError.push(filasTrabajo.indexOf(f));
         continue;
       }
       const esWpsFila = v.modalidad === "AMERICANAS" || Boolean(tipoWps(v.tipo || f.jugada));
       if (!esWpsFila && !f.cliente2.trim()) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: falta el CLIENTE 2 (dador). Las jugadas se cargan con DOS clientes.`);
-        indicesError.push(filas.indexOf(f));
+        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: falta el CLIENTE 2 (dador o BANCA). Las jugadas se cargan con DOS clientes.`);
+        indicesError.push(filasTrabajo.indexOf(f));
         continue;
       }
-      // Si cliente 2 no está en el catálogo, se permite como dador externo o banca textual sin bloquear
-      if (!esWpsFila && !f.cliente2.trim() && !c2) {
-        errores.push(`Fila ${filas.indexOf(f) + 1}: ingrese el CLIENTE 2 (dador o banca).`);
-        indicesError.push(filas.indexOf(f));
+      const c2Otro = clienteEnOtroGrupo(f.cliente2);
+      if (c2Otro) {
+        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: el CLIENTE 2 «${f.cliente2}» está registrado en otro grupo. No se permite interacción entre jugadores de distintos grupos.`);
+        indicesError.push(filasTrabajo.indexOf(f));
         continue;
       }
-      const grupoId =
-        grupoActivo != null && String(grupoActivo).trim() !== ""
-          ? String(grupoActivo)
-          : c1.grupo_id != null
-            ? String(c1.grupo_id)
-            : c1.grupos[0] != null
-              ? String(c1.grupos[0])
-              : null;
+      if (c2 && !clientePerteneceAGrupo(c2, grupoSesion, gruposVenta)) {
+        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: el CLIENTE 2 «${c2.nombre}» no pertenece al grupo ${grupoCabecera}. No se permite interacción entre jugadores de distintos grupos.`);
+        indicesError.push(filasTrabajo.indexOf(f));
+        continue;
+      }
+      if (c1 && c2 && !clientesPertenecenAlMismoGrupo(c1, c2, gruposVenta)) {
+        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: los jugadores pertenecen a grupos distintos. No se permite que los jugadores de un grupo interactúen en otro para nada.`);
+        indicesError.push(filasTrabajo.indexOf(f));
+        continue;
+      }
+      const grupoId = grupoSesion;
       if (v.reparto?.recortado) {
         const tel1 = telefonoMencionCliente(c1);
         const tel2 = c2 ? telefonoMencionCliente(c2) : null;
@@ -3570,10 +3587,7 @@ const hipodromosDelDia = useMemo(() => {
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
                     <SearchableSelect
-                      options={clientes.map((cliente) => ({
-                        value: cliente.nombre,
-                        label: cliente.nombre,
-                      }))}
+                      options={opcionesClientes}
                       value={jugadorCruce}
                       onChange={setJugadorCruce}
                       placeholder="Buscar jugador…"
@@ -4101,11 +4115,11 @@ const hipodromosDelDia = useMemo(() => {
                         {infoCliente(enCurso?.cliente2 ?? null, f.monto, v.ok && v.cliente2 ? v.cliente2.cobroNeto : 0)}
                       </span>
                       <SearchableSelect
-                        options={opcionesClientes}
+                        options={opcionesCliente2}
                         value={f.cliente2}
                         onChange={(v) => setFila(i, { cliente2: v })}
-                        placeholder="Cliente 2 (dador)…"
-                        allowCustom={true}
+                        placeholder="Cliente 2 (dador o BANCA)…"
+                        allowCustom={false}
                         displayValue={f.cliente2}
                         className=""
                         inputClassName={`w-full rounded-md border bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
@@ -5479,7 +5493,7 @@ const hipodromosDelDia = useMemo(() => {
       {/* Modal 🎯 Evento Libre P2P entre clientes */}
       {modalEventoLibre && (
         <ModalEventoLibre
-          clientes={clientes}
+          clientes={clientesDelGrupo}
           onClose={() => {
             setModalEventoLibre(false);
             void recargarClientes();
@@ -5493,7 +5507,7 @@ const hipodromosDelDia = useMemo(() => {
         <ModalApuestaEventoEspecial
           abierto={modalEventoEspecial}
           onCerrar={() => setModalEventoEspecial(false)}
-          clientes={clientes}
+          clientes={clientesDelGrupo}
         />
       )}
 

@@ -10,7 +10,7 @@ import {
   type CategoriaDeporte,
   type EventoLibreRow,
 } from "@/features/eventos-libres/lib/eventos-libres";
-import type { ClienteVenta } from "@/features/grupos/lib/grupos";
+import { clientesPertenecenAlMismoGrupo, type ClienteVenta } from "@/features/grupos/lib/grupos";
 import { formatoMoneda } from "@/shared/lib/vzla";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { hoyLocal } from "@/core/utils/fechas";
@@ -81,6 +81,9 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
     if (!cli1) return setMensaje("Seleccione quién juega (Jugador 1).");
     if (!cli2) return setMensaje("Seleccione quién da (Jugador 2).");
     if (cli1.id === cli2.id) return setMensaje("Jugador 1 y Jugador 2 deben ser distintos.");
+    if (!clientesPertenecenAlMismoGrupo(cli1, cli2)) {
+      return setMensaje("⛔ Los jugadores pertenecen a grupos distintos. No se permite interacción entre jugadores de distintos grupos.");
+    }
     const riesgoJ1 = Number(riesgoJuega);
     const riesgoJ2 = Number(riesgoDa);
     if (!comisionGrupo.trim()) return setMensaje("Escriba manualmente la comisión del grupo para esta apuesta.");
