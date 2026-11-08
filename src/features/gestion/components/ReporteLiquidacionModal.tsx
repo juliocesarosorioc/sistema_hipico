@@ -734,8 +734,8 @@ export default function ReporteLiquidacionModal({
         {!modoExclusivoLiquidacion && (
           <BarraCarrerasLiquidadas
             fecha={fecha}
-            hipodromo={hipodromo}
-            nombreHipodromo={hipodromo ? nombreHipodromoParaMostrar(hipodromo) : undefined}
+            hipodromo=""
+            nombreHipodromo={undefined}
             carreraActiva={carrera}
             itemsExtra={itemsLiquidadasExtra}
             onSeleccionarCarrera={(n) => setCarrera(n)}
