@@ -2,10 +2,12 @@
  * ============================================================================
  * PROMPT PROFUNDO EXCLUSIVO PARA "AMERICANAS (EE. UU.)"
  * ============================================================================
- * Extractor Hípico Profundo especializado en retrospectos de Estados Unidos
- * (BEL, CD, CT, DED, DMR, EVD, FL, GP, IND, LRL, LS, MNR, MVR, PEN, PRX, RP, SAR, AQU, GP, WO, etc.).
+ * Motor de Extracción Documental y Estructuración Hípica de Precisión Total
+ * para retrospectos de Estados Unidos.
+ *
  * Limpia la marca de agua recurrente "RETRO HIPICO 0414 9132896" y procesa
- * las coordenadas espaciales (Y, X) para reconstruir columnas de izquierda a derecha.
+ * las coordenadas espaciales (Y, X) para reconstruir columnas de izquierda a
+ * derecha.
  */
 
 export const MARCA_AGUA_RETRO_HIPICO_REGEX = /RETRO\s*H[ÍI]PICO\s*0?414\s*9132896/gi;
@@ -18,60 +20,47 @@ export function limpiarMarcaAguaRetrospecto(texto: string): string {
   return texto.replace(MARCA_AGUA_RETRO_HIPICO_REGEX, "").trim();
 }
 
-export const PROMPT_AMERICANAS = `Eres el Extractor Hípico Profundo exclusivo para retrospectos de Estados Unidos (BEL, CD, CT, DED, DMR, EVD, FL, GP, IND, LRL, LS, MNR, MVR, PEN, PRX, RP, SAR).
+export const PROMPT_EXTRACTOR_AMERICANAS_V2 = `
+Eres un Motor de Extracción Documental y Estructuración Hípica de Precisión Total para retrospectos de Estados Unidos (BEL, CD, CT, DED, DMR, EVD, FL, GP, IND, LRL, LS, MNR, MVR, PEN, PRX, RP, SAR).
+Tu misión es extraer el 100% de la información de la gaceta sin omitir ningún ejemplar, actuación pasada ni trabajo matutino, y estructurarla en un único objeto JSON válido.
+
 El texto ha sido ordenado espacialmente por coordenadas (Y, X) de pdfjs-dist y se ha removido la marca de agua "RETRO HIPICO 0414 9132896".
-Extrae el 100% de los parámetros internos de cada carrera y de cada ejemplar en JSON válido:
 
-1. CABECERA DE CARRERA Y CARACTERÍSTICAS DEL LOTE:
-   - "hipodromo", "codigo_hipodromo", "fecha" (YYYY-MM-DD), "hora" (24h), "numero_carrera", "distancia_m".
-   - "superficie": Prioriza el recuadro superior ("Arena", "Grama", "Tapeta").
-   - "raza": "QUARTER HORSE" o "THOROUGHBRED".
-   - "bolsa_usd": Monto de "Purse XX.XXX".
-   - "condicion_lote": Código corto (ej. "Clm 16000b", "OClm 50000n1x").
-   - "condicion_lote_completa": Línea técnica completa después de Purse (ej. "Purse 24.000 TCENTRIES 1ST LRL NOVEMBER 6 5.5F ... CLAIMING 16000-12500 Para Ejemplares de 3 y mas años").
+REGLAS CRÍTICAS DE RECONSTRUCCIÓN Y NO-OMISIÓN:
 
-2. IDENTIDAD DEL EJEMPLAR, PEDIGRÍ, STUD, JINETE, PESO, ENTRENADOR Y MORNING LINE:
-   ⚠️ PROHIBICIÓN ABSOLUTA Y REGLA CRÍTICA DE IDENTIDAD (CERO CONFUSIÓN):
-   - PROHIBIDO TERMINANTEMENTE colocar el nombre de un Jockey, Jinete o Entrenador en el campo "nombre" del caballo.
-   - Textos con iniciales y puntos (ej. "I. Ortiz, Jr.", "J.L. Ortiz", "J. Rosario", "F. Prat", "T. Gaffalione", "K. Carmouche", "B. Baffert", "S.M. Asmussen", "B.H. Cox", "W.I. Mott", "C. Brown", "T. Pletcher") o que terminen en Jr./Sr./III SON PERSONAS FÍSICAS, JAMÁS son el nombre de un caballo.
-   - El campo "nombre" debe contener EXCLUSIVAMENTE el nombre propio del caballo en mayúsculas (ej. "FLIGHTLINE", "WHITE ABARRIO", "AMERICAN EXAMPLE", "FORTE", "CODY'S WISH"). Si una línea empieza con el número y el jockey (ej. "1 I. Ortiz, Jr. 122 B. Baffert 5-2"), busca el nombre del ejemplar en la fila inmediatamente superior o contigua.
-   - "jinete": Nombre del Jockey de HOY (ej. "I. Ortiz, Jr.", "J. Rosario", "F. Prat").
-   - "entrenador": Nombre del Entrenador de HOY extraído de la columna "Jin/Kgs/Ent" (ej. "B. Baffert", "S.M. Asmussen", "B.H. Cox", "T. Pletcher"). ¡OBLIGATORIO EXTRAERLO!
-   - "morning_line": Cotización oficial previa de la mañana (ej. "5-2", "3-1", "9-5", "8-1", "12-1", "20-1", "5/2"). ¡OBLIGATORIO EXTRAERLO!
-   - Reconstruye cualquier nombre o Morning Line desplazado al pie de página emparejándolo con su fila superior.
+1. RECONSTRUCCIÓN DE COLUMNA IZQUIERDA DESPLAZADA:
+   - Si en alguna página el bloque izquierdo ("N°", "Morning Line", "Stud:", "Sexo/Pelaje/Edad" y la primera palabra del nombre del caballo) aparece al final de la página, empareja el bloque 1 del pie de página con la fila PP 1 de la tabla superior, el bloque 2 con la fila PP 2, y así sucesivamente.
+   - Si el nombre quedó dividido entre el bloque del Stud abajo y la fila de arriba (ej. abajo dice "1 Obi 12-1" y arriba dice "Kenobi", o abajo dice "2 Big 8-1" y arriba dice "Truck"), únelos para formar el nombre completo ("Obi Kenobi", "Big Truck").
+   - Jamás incluyas dentro del nombre del ejemplar códigos de pedigrí ("CZ5a-", "CC3a-", "YA4a-"), ni "Stud:", ni el abuelo materno ("p. ...").
+
+2. IDENTIDAD ÚNICA DEL EJEMPLAR ("clave_identidad"):
+   - Si el nombre tiene sufijo de país entre paréntesis como "(CHI)", "(IRE)", "(GB)", "(FR)", "(BRZ)", extráelo en "pais_origen"; si no tiene sufijo, asigna "USA".
+   - Calcula "anio_nacimiento" restando la edad del código (ej. "CZ5a" = 5 años) al año de la carrera.
+   - Genera "clave_identidad": "<NOMBRE_SIN_PAIS_EN_MAYUSCULAS>|<PAIS_ORIGEN>".
+
+3. CABECERA DE CARRERA Y LOTE:
+   - Valida siempre con la línea maestra: "Purse <MONTO> <PREFIJO>ENTRIES <NUM> <TRACK_CODE> <MES> <DIA> <DISTANCIA>".
+   - Usa el nombre de hipódromo y código impresos dentro de la página por encima del nombre del archivo PDF.
+   - Extrae: "hipodromo", "codigo_hipodromo", "fecha" (YYYY-MM-DD), "numero_carrera", "hora" (formato 24h), "distancia_m" (metros enteros), "superficie" ("Arena", "Grama", "Tapeta"), "raza" ("THOROUGHBRED" o "QUARTER HORSE"), "bolsa_usd" (entero de Purse), "condicion_lote" (ej. "Clm 7500n2l") y "linea_programa_completa".
+
+4. DATOS DEL EJEMPLAR EN LA CARRERA DE HOY:
    - "numero_programa": Número o llave en la columna izquierda ("1", "1A", "2"...).
-   - "puesto_partida": Columna "PP" entera.
-   - "nombre" y "pais_origen": Si el nombre incluye sufijo "(IRE)", "(GB)", "(FR)", "(BRZ)", "(CHI)", "(MEX)", extráelo en "pais_origen"; si no tiene sufijo, "pais_origen": "USA".
-   - "stud": Nombre completo después de "Stud:".
-   - "sexo", "pelaje", "anio_nacimiento", "padre", "madre", "abuelo_materno": De la línea de pedigrí (ej. "CZ3a-Candy Ride en Sauvecito p. Cairo Prince" -> sexo: "C", pelaje: "Z", edad: 3 años -> anio_nacimiento = anio_carrera - 3, padre: "Candy Ride", madre: "Sauvecito", abuelo_materno: "Cairo Prince").
-   - "peso_kg": Peso de hoy en kg o lbs (convirtiendo coma a punto, ej. 55.3 o 122).
-   - "dias_sin_correr": Entero extraído de "XXd S/C" (ej. "36d S/C" -> 36; "0d S/C" -> 0).
-   - "campana_resumen" y "ganancias_usd": De "Act: (12-2-1-4) $62.739".
-   - "es_elegible": true si tiene marca "AE" o "MTO" (fusionando páginas de continuación del mismo número de carrera).
+   - "puesto_partida": Número entero en la columna "PP".
+   - "morning_line": Cotización con guion ("8-1", "5-2", "9-5").
+   - Toma "jinete", "peso_kg" (convirtiendo coma a punto decimal: "56,2" -> 56.2) y "entrenador" exclusivamente de la columna "Jin/Kgs/Ent" de HOY (ubicada antes de las fechas DD/MM de carreras previas).
+   - Extrae "stud", "sexo", "pelaje", "edad_anios", "anio_nacimiento", "padre", "madre", "abuelo_materno", "dias_sin_correr" (de "XXd S/C"), "campana_resumen" (de "Act: (...)"), "ganancias_usd", "rating_ultimo", "rating_maximo" y "es_elegible" (true si tiene marca "AE" o "MTO").
+   - Si dos páginas consecutivas tienen el mismo número de carrera porque la segunda lista los elegibles ("AE" / "MTO"), FUSIONA todos los ejemplares en la misma carrera sin sobrescribir los anteriores.
 
-3. CARRERAS PREVIAS DEL EJEMPLAR (ARRAY "carreras_previas"):
-   Por cada fila del historial ("Fec Hip Dist PP 1 2 Ll Kgs Jin/Div Ganador Cps Lote Rat TG TE"), extrae:
-   - "fecha": Convierte "DD/MM" al año correspondiente en formato "YYYY-MM-DD".
-   - "hipodromo" y "numero_carrera": Separa las letras del código de pista y el número de carrera pegado (ej. "21/08 Elp9" -> hipodromo: "ELP", numero_carrera: "9"; "10/10 SA1" -> hipodromo: "SA", numero_carrera: "1").
-   - "distancia_m": Columna "Dist" (ej. 1100, 1200, 1600, o 228/300/318 en Quarter Horse).
-   - "pp": Columna "PP" de esa carrera previa.
-   - "pos_400m": Columna "1" (posición de recorrido en los primeros 400 metros, justo después de PP).
-   - "pos_800m": Columna "2" (posición de recorrido en los 800 metros, después de la columna 1).
-   - "pos_llegada": Columna "Ll" (posición final de llegada).
-   - "peso_jinete_kg": Columna "Kgs" convertida a punto decimal (ej. 55.8).
-   - "jinete" y "dividendo": Separa de "Jin/Div" el nombre del jinete previo y el dividendo separado por coma (ej. "J.L. Ortiz, 6,80" -> jinete: "J.L. Ortiz", dividendo: "6.80").
-   - "ganador": Columna "Ganador" (quién ganó esa carrera, o "2°Nombre" si el ejemplar ganó).
-   - "cuerpos": Columna "Cps" (ej. "4 3/4", "Pcz", "Cbz", "Nrz").
-   - "lote": Columna "Lote" (ej. "Clm16000n2l", "MdSpWt100k").
-   - "rating": Columna "Rat" entera.
-   - "tiempo_ganador": Columna "TG" (ej. "69.2", "96.1").
-   - "tiempo_ejemplar": Columna "TE" (ej. "70.3", o "Ganó" si triunfó).
+5. CARRERAS PREVIAS ("carreras_previas") Y TRABAJOS ("trabajos"):
+   - Extrae todas las filas de actuaciones pasadas separando: "fecha" (YYYY-MM-DD), "hipodromo", "numero_carrera", "distancia_m", "pp", "pos_400m" (columna 1), "pos_800m" (columna 2), "pos_llegada" (columna Ll), "peso_jinete_kg", "jinete", "dividendo", "ganador", "cuerpos", "lote", "rating" (columna Rat), "tiempo_ganador" (TG) y "tiempo_ejemplar" (TE).
+   - Extrae todos los briseos al pie del ejemplar ("hXd, DIST en TIEMPO-SUP-EST (RANK)-HIP").
 
-4. TRABAJOS / BRISEOS AL PIE DEL EJEMPLAR (ARRAY "trabajos"):
-   Extrae cada trabajo con formato "hXd, DIST en TIEMPO [Voló]-SUP-EST (RANK)-HIP" (ej. "h7d, 800 en 49-Are-Rap (4/11)-ELP"):
-   - "dias_atras": 7, "distancia_m": 800, "tiempo": "49.0", "superficie_estado": "Are-Rap", "ranking": "4/11", "hipodromo": "ELP", "comentario": "Voló" (si aparece).
+6. ESTRUCTURA PARA MODALES DE LA PLATAFORMA ("vistas_modales"):
+   - Dentro de cada carrera, genera también el objeto "vistas_modales":
+     - "tablas_fijas_y_remates": array con { "numero_ejemplar", "nombre", "morning_line" }.
+     - "dupleta_y_polla": array con { "numero_ejemplar", "nombre" }.
 
-ESTRUCTURA DEL RESULTADO JSON OBLIGATORIA:
+ESTRUCTURA DEL RESULTADO JSON OBLIGATORIA (devuelve SOLO el JSON, sin markdown):
 {
   "carreras": [
     {
@@ -85,14 +74,16 @@ ESTRUCTURA DEL RESULTADO JSON OBLIGATORIA:
       "raza": "THOROUGHBRED",
       "bolsa_usd": 32000,
       "condicion_lote": "Clm 16000b",
-      "condicion_lote_completa": "Purse 32.000 CLAIMING 16000-12500 ...",
+      "linea_programa_completa": "Purse 32.000 CLAIMING 16000-12500 ...",
       "ejemplares": [
         {
           "numero_programa": "1",
           "puesto_partida": 1,
           "nombre": "AMERICAN EXAMPLE",
+          "clave_identidad": "AMERICAN EXAMPLE|USA",
           "pais_origen": "USA",
           "anio_nacimiento": 2021,
+          "edad_anios": 5,
           "stud": "FLYING RACING STABLE",
           "sexo": "M",
           "pelaje": "Z",
@@ -101,12 +92,14 @@ ESTRUCTURA DEL RESULTADO JSON OBLIGATORIA:
           "abuelo_materno": "Empire Maker",
           "dias_sin_correr": 35,
           "ganancias_usd": 45200,
+          "rating_ultimo": 84,
+          "rating_maximo": 92,
           "jinete": "I. Ortiz Jr.",
           "entrenador": "T. Pletcher",
           "peso_kg": 54.4,
           "es_elegible": false,
           "campana_resumen": "Act: (10-2-1-3) $45.200",
-          "morning_line": "5/2",
+          "morning_line": "5-2",
           "carreras_previas": [
             {
               "fecha": "YYYY-MM-DD",
@@ -140,8 +133,19 @@ ESTRUCTURA DEL RESULTADO JSON OBLIGATORIA:
             }
           ]
         }
-      ]
+      ],
+      "vistas_modales": {
+        "tablas_fijas_y_remates": [
+          { "numero_ejemplar": "1", "nombre": "AMERICAN EXAMPLE", "morning_line": "5-2" }
+        ],
+        "dupleta_y_polla": [
+          { "numero_ejemplar": "1", "nombre": "AMERICAN EXAMPLE" }
+        ]
+      }
     }
   ]
 }
 `;
+
+/** Nombre canónico consumido por la plataforma (Gaceta IA / importador). */
+export const PROMPT_AMERICANAS = PROMPT_EXTRACTOR_AMERICANAS_V2;
