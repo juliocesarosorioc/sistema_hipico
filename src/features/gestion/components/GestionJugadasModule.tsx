@@ -59,8 +59,6 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 import { listarCarrerasPorDia, asegurarHipodromo } from "@/features/tablas/lib/rpc";
 import { registrarCarreraProgramada, leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import { guardarCarreraCentral, numerosEjemplares } from "@/features/carreras/lib/central";
-import { interpretarAudioCarrera, formatearDictadoJugadas } from "@/features/carreras/lib/audio-carrera";
-import { BotonDictadoAudio } from "@/shared/components/ui/BotonDictadoAudio";
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados, jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros";
 import { claveHipodromo, numerosDeCarrera } from "@/features/carreras/lib/claves";
 import { useRegistroCentral, useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
@@ -230,6 +228,46 @@ export function GestionJugadasModule() {
   const [reversando, setReversando] = useState(false);
   /** Carreras reversadas en la sesión activa: fuerza el estado ABIERTO para permitir liquidar de inmediato */
   const [carrerasReversadas, setCarrerasReversadas] = useState<Set<number>>(new Set());
+  // Persistencia: las reversiones deben sobrevivir a salir/volver a la carrera.
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      const raw = window.localStorage.getItem(`reversadas:${String(fecha).slice(0, 10)}`);
+      if (raw) {
+        const arr = JSON.parse(raw) as string[];
+        if (Array.isArray(arr)) {
+          const cur = claveHipodromo(hipodromo);
+          const nums = arr
+            .filter((s) => String(s).startsWith(`${cur}|`))
+            .map((s) => Number(String(s).split("|")[1]))
+            .filter((n) => Number.isFinite(n) && n > 0);
+          setCarrerasReversadas(new Set(nums));
+        }
+      } else {
+        setCarrerasReversadas(new Set());
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [fecha, hipodromo]);
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      const cur = claveHipodromo(hipodromo);
+      const key = `reversadas:${String(fecha).slice(0, 10)}`;
+      const raw = window.localStorage.getItem(key);
+      const prev = raw ? (JSON.parse(raw) as string[]) : [];
+      const set = new Set(Array.isArray(prev) ? prev : []);
+      // Remove old entries for this hipodromo, then add current.
+      for (const s of [...set]) {
+        if (String(s).startsWith(`${cur}|`)) set.delete(s);
+      }
+      for (const n of carrerasReversadas) set.add(`${cur}|${n}`);
+      window.localStorage.setItem(key, JSON.stringify([...set]));
+    } catch {
+      /* ignore */
+    }
+  }, [carrerasReversadas, fecha, hipodromo]);
   const [filas, setFilas] = useState<FilaCarga[]>([filaVacia()]);
   const [jugadasPorCarrera, setJugadasPorCarrera] = useState<number[]>([]);
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
@@ -518,6 +556,7 @@ export function GestionJugadasModule() {
    * fecha lo dice (`estado` "Liquidada" o el resultado ya aplicado a tablas).
    */
   const carreraLiquidada = useMemo(() => {
+    if (!hipodromo || !carrera) return false;
     const numCarrera = Number(carrera);
     if (carrerasReversadas.has(numCarrera)) {
       return false;
@@ -723,8 +762,9 @@ const hipodromosDelDia = useMemo(() => {
     const reglasPermanentes: NonNullable<OpcionesCrucesPuestos["porJugadorPermanente"]> = {};
     for (const cliente of clientesDelGrupo) {
       const reglas: Partial<ModalidadesCruce> = {};
-      const mismo = cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces ?? true;
-      const diferente = cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces ?? true;
+      const grupoPermite = grupoReglasCruce.mismoEjemplar !== false || grupoReglasCruce.diferenteEjemplar !== false;
+      const mismo = grupoPermite ? (cliente.cruce_mismo_ejemplar ?? true) : false;
+      const diferente = grupoPermite ? (cliente.cruce_diferente_ejemplar ?? true) : false;
       if (typeof mismo === "boolean") reglas.mismoEjemplar = mismo;
       if (typeof diferente === "boolean") reglas.diferenteEjemplar = diferente;
       if (Object.keys(reglas).length > 0) {
@@ -781,10 +821,10 @@ const hipodromosDelDia = useMemo(() => {
     const porJugador = crucesOverrideCarrera.porJugador?.[clave];
     const todos = crucesOverrideCarrera.todos;
     const permanenteMismo = cliente
-      ? cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces
+      ? (cliente.cruce_mismo_ejemplar ?? cliente.permite_cruces ?? true)
       : undefined;
     const permanenteDiferente = cliente
-      ? cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces
+      ? (cliente.cruce_diferente_ejemplar ?? cliente.permite_cruces ?? true)
       : undefined;
     setBorradorCruceJugador({
       mismoEjemplar: alcanceCruce === "permanente"
@@ -822,7 +862,7 @@ const hipodromosDelDia = useMemo(() => {
         emitirToast("Seleccione un jugador válido para guardar la excepción de esta carrera.", "error");
         return;
       }
-      await guardarOverrideActual({
+      const okCarrera = await guardarOverrideActual({
         ...crucesOverrideCarrera,
         porJugador: {
           ...crucesOverrideCarrera.porJugador,
@@ -830,6 +870,11 @@ const hipodromosDelDia = useMemo(() => {
           [String(cliente.id).trim().toUpperCase()]: { ...borradorCruceJugador },
         },
       });
+      if (okCarrera) {
+        emitirToast(`Cruces guardados para ${clave} en la Carrera ${carrera}.`, "success");
+        setJugadorCruce("");
+        setBorradorCruceJugador({ mismoEjemplar: false, diferenteEjemplar: false });
+      }
       return;
     }
     const cliente = clientes.find((c) =>
@@ -857,6 +902,11 @@ const hipodromosDelDia = useMemo(() => {
         }
       : c));
     emitirToast(`Reglas permanentes actualizadas para ${clave}.`, "success");
+    // Limpiar el formulario para que quede claro que se guardó y el modal/panel
+    // no quede "abierto" sin feedback.
+    setJugadorCruce("");
+    setBorradorCruceJugador({ mismoEjemplar: false, diferenteEjemplar: false });
+    setAlcanceCruce("carrera");
   }, [alcanceCruce, borradorCruceJugador, clientes, crucesOverrideCarrera, guardarOverrideActual, jugadorCruce]);
 
   /**
@@ -1913,7 +1963,8 @@ const hipodromosDelDia = useMemo(() => {
         String(x.seudonimo ?? "").trim().toUpperCase() === clave ||
         String(x.nombre_real ?? "").trim().toUpperCase() === clave
       );
-      if (c && c.permite_cruces === false) return false;
+      // Solo la configuración del GRUPO puede desactivar los cruces: un jugador
+      // con permite_cruces=false a nivel individual ya no bloquea por sí solo.
       if (c) {
         for (const gi of c.grupos) if (gruposMapa[String(gi)] === false) return false;
       }
@@ -1958,101 +2009,6 @@ const hipodromosDelDia = useMemo(() => {
       emitirToast(`🏇 C${numC} configurada con ${cant} ejemplares.`, "success");
     } else {
       emitirToast(r.error ?? "No se pudo registrar los ejemplares.", "error");
-    }
-  };
-
-  /**
-   * Interpreta dictado por voz / audio en Apuestas:
-   * - Si dicta configuración de carrera/ejemplares/retirados ("carrera 3 con 12 ejemplares", "retirados 2 y 5"), lo aplica.
-   * - Si dicta jugadas ("dos p del cinco cien pedro juan"), las normaliza y las agrega a Carga Individual.
-   */
-  const procesarDictadoAudioEnGestion = async (texto: string) => {
-    const info = interpretarAudioCarrera(texto);
-    const numDestino = info.carrera ? Number(info.carrera) : carrera;
-    let hizoAccionCarrera = false;
-
-    if (info.carrera && Number(info.carrera) !== carrera) {
-      setCarrera(Number(info.carrera));
-      setCarreraConfirmada(true);
-      hizoAccionCarrera = true;
-    }
-
-    if (info.cantidadEjemplares || info.ejemplaresLista.length > 0) {
-      const caballos =
-        info.ejemplaresLista.length > 0
-          ? info.ejemplaresLista.map((e) => ({ numero: e.numero, nombre: e.nombre }))
-          : numerosEjemplares(info.cantidadEjemplares ?? 12);
-      const r = await guardarCarreraCentral({
-        fecha,
-        hipodromo,
-        carrera: numDestino,
-        caballos,
-        distancia: info.distancia ?? centralDeCarrera?.distancia ?? null,
-        superficie: info.superficie ?? centralDeCarrera?.superficie ?? "ARENA",
-        premio: info.premio ? Number(info.premio) : (centralDeCarrera?.premio ?? null),
-        hora: info.hora ?? centralDeCarrera?.hora ?? null,
-      });
-      if (r.ok) {
-        if (!carrerasPorDia.includes(numDestino)) {
-          setCarrerasPorDia((prev) => [...new Set([...prev, numDestino])].sort((a, b) => a - b));
-        }
-        recargarRegistroCentral();
-        emitirToast(`🎙️ C${numDestino} registrada por audio (${caballos.length} ejemplares).`, "success");
-      }
-      hizoAccionCarrera = true;
-    }
-
-    if (info.retirados) {
-      setRetirados(info.retirados);
-      const r = await aplicarRetirosCarrera({
-        fecha,
-        hipodromo,
-        carrera: numDestino,
-        numeros: parsearRetirados(info.retirados),
-      });
-      if (r.ok) {
-        recargarRegistroCentral();
-        void recargarJugadasGuardadas();
-        emitirToast(`🎙️ Retirados aplicados en C${numDestino}: ${info.retirados}`, "info");
-      }
-      hizoAccionCarrera = true;
-    }
-
-    if (hizoAccionCarrera && !/\b(juega|da|pelo|pp|\d+\s*[pn]|\d+y\d+|\d+\/\d+|win|place|show)\b/i.test(info.textoNormalizado)) {
-      return;
-    }
-
-    // Interpretar como línea(s) de jugada dictada por voz
-    const bloque = formatearDictadoJugadas(texto);
-    const nuevasFilas: FilaCarga[] = [];
-    for (const lin of bloque.split(/\r?\n/)) {
-      if (!lin.trim()) continue;
-      const p = normalizarLineaRapida(lin, contextoNormalizacion);
-      if (!p) continue;
-      if (p.ok) {
-        nuevasFilas.push({
-          jugada: p.jugada,
-          caballo: p.caballo,
-          monto: p.monto,
-          cliente1: p.cliente1,
-          cliente2: p.cliente2,
-        });
-      } else {
-        nuevasFilas.push({ ...filaVacia(), jugada: lin.trim(), error: p.motivo });
-      }
-    }
-
-    if (nuevasFilas.length > 0) {
-      setFilas((prev) => {
-        const esSoloVacia =
-          prev.length === 1 &&
-          !prev[0].jugada &&
-          !prev[0].caballo &&
-          !prev[0].monto &&
-          !prev[0].cliente1;
-        return esSoloVacia ? nuevasFilas : [...prev, ...nuevasFilas];
-      });
-      emitirToast(`🎙️ ${nuevasFilas.length} jugada(s) interpretada(s) por voz.`, "success");
     }
   };
 
@@ -3814,6 +3770,7 @@ const hipodromosDelDia = useMemo(() => {
           void seleccionarCarreraConConfirmacion(n, info);
         }}
         accionDerecha={
+          listoParaCargar ? (
           <div className="grid grid-cols-2 gap-1.5 w-full sm:flex sm:items-center sm:gap-2 sm:w-auto">
             {carreraLiquidada ? (
               <button
@@ -3878,6 +3835,7 @@ const hipodromosDelDia = useMemo(() => {
               <span>Evento Libre / P2P</span>
             </button>
           </div>
+          ) : null
         }
       />
       </div>
@@ -3900,12 +3858,6 @@ const hipodromosDelDia = useMemo(() => {
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-xs font-black uppercase tracking-wide text-slate-700">Carga Individual</h3>
             <ToggleModalidadTiempo valor={modalidadTiempo} onChange={setModalidadTiempo} />
-            <BotonDictadoAudio
-              compacto
-              etiqueta="🎙️ Dictar Jugada / Carrera"
-              modo="jugadas"
-              onTextoReconocido={(txt) => void procesarDictadoAudioEnGestion(txt)}
-            />
           </div>
           <span className="flex items-center gap-2">
             <span className="ml-1 inline-flex min-w-[3.25rem] items-center justify-center rounded-full border-2 border-indigo-200 bg-white px-3 py-1 text-xl font-black uppercase leading-none tracking-widest text-indigo-900 shadow-md md:text-2xl">
@@ -4520,15 +4472,17 @@ const hipodromosDelDia = useMemo(() => {
               : [];
 
             const carreraLiquidadaVista =
+              carreraLiquidada ||
               centralDeCarrera?.estado === "liquidada" ||
               (centralDeCarrera?.ganadores?.length ?? 0) > 0 ||
               filasPreview.some((f) => f.estadoLiquidacion === "Liquidada");
             const mostrarPizarraEnVivo =
               !esTablaAdelantada && carreraLiquidadaVista && pizarraPuestosActual.length > 0;
-            const hayDistanciamientoEnVivo =
-              mostrarPizarraEnVivo &&
+            const hayDistanciamiento =
+              carreraLiquidadaVista &&
               pizarraRayaActual.length > 0 &&
               pizarraRayaActual.join(",") !== pizarraPuestosActual.join(",");
+            const hayDistanciamientoEnVivo = mostrarPizarraEnVivo && hayDistanciamiento;
 
             return (
               <div className={`mt-3 rounded-xl border ${borderTheme} p-2.5 shadow-xs`}>
@@ -4646,6 +4600,68 @@ const hipodromosDelDia = useMemo(() => {
                       <span className="rounded-md border border-amber-300 bg-amber-100 px-2 py-0.5 text-[9.5px] font-black text-amber-900">
                         ⚖️ Distanciamiento Oficial
                       </span>
+                    )}
+                  </div>
+                )}
+                {esTablaAdelantada && (
+                  <div
+                    className={`mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 shadow-2xs ${
+                      carreraLiquidadaVista
+                        ? "border-emerald-300 bg-emerald-50/70"
+                        : "border-slate-200 bg-white/80"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                          carreraLiquidadaVista
+                            ? "bg-emerald-600 text-white"
+                            : "bg-amber-200 text-amber-900"
+                        }`}
+                      >
+                        {carreraLiquidadaVista ? "✅ Liquidada" : "⏳ Pendiente"}
+                      </span>
+                      <span className="text-[10px] font-semibold text-slate-600">
+                        {carreraLiquidadaVista
+                          ? "Resultado oficial de la carrera"
+                          : "La carrera aún no está liquidada"}
+                      </span>
+                    </div>
+
+                    {carreraLiquidadaVista && pizarraPuestosActual.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-blue-900">
+                          <span>🏁</span> Pizarra Oficial
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {pizarraPuestosActual.map((num, idx) => (
+                            <div
+                              key={`adel-of-${idx}-${num}`}
+                              className="flex flex-col items-center"
+                              title={`Puesto Oficial ${idx + 1}º: Ejemplar #${num}`}
+                            >
+                              <div
+                                className={`flex h-6.5 w-6.5 items-center justify-center rounded-md border text-[11px] font-black shadow-2xs ${colorDiscoNumero(num)}`}
+                              >
+                                {num}
+                              </div>
+                              <span className="mt-0.5 text-[8px] font-black uppercase text-slate-600">
+                                {idx + 1}º
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        {hayDistanciamiento && (
+                          <span className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-100 px-2 py-0.5 text-[9.5px] font-black text-amber-900">
+                            ⚖️ Raya: {pizarraRayaActual.join(" · ")}
+                          </span>
+                        )}
+                        {retiradosPizarraActual.length > 0 && (
+                          <span className="rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[9.5px] font-black text-rose-700">
+                            RET: {retiradosPizarraActual.join(", ")}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -5444,6 +5460,7 @@ const hipodromosDelDia = useMemo(() => {
           >
             📊 Historial
           </button>
+          {listoParaCargar && (
           <button
             data-tour="tour-reporte-final-whatsapp"
             type="button"
@@ -5457,6 +5474,7 @@ const hipodromosDelDia = useMemo(() => {
           >
             🧾 Reporte Final
           </button>
+          )}
           <button
             type="button"
             onClick={() => setGuiaOperadorAbierta(true)}
@@ -5465,7 +5483,7 @@ const hipodromosDelDia = useMemo(() => {
           >
             🎓 Guía Operador
           </button>
-          {(carreraLiquidada || pizarraCentral) && !reapertura && (
+          {listoParaCargar && (carreraLiquidada || pizarraCentral) && !reapertura && (
             <button
               type="button"
               disabled={bloqueoLiquidacionActivo}
@@ -5765,6 +5783,7 @@ const hipodromosDelDia = useMemo(() => {
             : undefined)
         }
         modoExclusivoLiquidacion={modoExclusivoReporte}
+        observacionesExceso={observacionesExcesoCarrera}
       />
 
       {/* Carga de Resultados (Ctrl+Y) — posiciones dinámicas (5 + añadir hasta 8) + Dead Heat */}
@@ -6171,15 +6190,6 @@ const hipodromosDelDia = useMemo(() => {
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-slate-800 px-4 py-3 text-white">
               <h3 className="text-xs font-black uppercase">⚡ Carga Rápida — <span className="normal-case">{nombreHipodromo}</span> C{carrera}</h3>
               <div className="flex items-center gap-2">
-                <BotonDictadoAudio
-                  compacto
-                  etiqueta="🎙️ Dictar Jugadas"
-                  modo="jugadas"
-                  onTextoReconocido={(txt) => {
-                    const bloque = formatearDictadoJugadas(txt);
-                    setTextoCargaRapida((prev) => (prev.trim() ? `${prev.trim()}\n${bloque}` : bloque));
-                  }}
-                />
                 <button type="button" onClick={() => setModalCargaRapida(false)} className="text-slate-300 hover:text-white">✕</button>
               </div>
             </div>

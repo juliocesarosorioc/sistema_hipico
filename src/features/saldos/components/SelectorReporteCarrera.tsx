@@ -180,7 +180,7 @@ export function SelectorReporteCarrera() {
       {/* Menú lateral derecho donde se visualizan las carreras que ya han sido liquidadas */}
       <BarraCarrerasLiquidadas
         fecha={seleccion?.fecha ?? planilla?.hasta ?? ""}
-        hipodromo={seleccion?.hipodromo ?? ""}
+        hipodromo={""}
         carreraActiva={seleccion?.numero ?? null}
         itemsExtra={itemsLiquidadas}
         onSeleccionarCarrera={(num) => {

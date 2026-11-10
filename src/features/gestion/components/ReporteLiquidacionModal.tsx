@@ -23,7 +23,7 @@ import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
 import { EmptyState } from "@/shared/components/ui/EmptyState";
 import { DateInput } from "@/shared/components/ui/DateInput";
-import ReporteCarrera, { type ReporteCarreraDatos } from "@/features/saldos/components/ReporteCarrera";
+import ReporteCarrera, { type ReporteCarreraDatos, type ObservacionOrdenExceso } from "@/features/saldos/components/ReporteCarrera";
 import ManualLiquidacion from "@/features/gestion/components/ManualLiquidacion";
 import WhatsappReporteCarrera from "@/features/liquidacion/components/WhatsappReporteCarrera";
 import {
@@ -55,6 +55,8 @@ type Props = {
   onReversar?: () => void;
   /** Grupo hípico activo para el membrete y las jugadas de liquidación. */
   grupoInicial?: string;
+  /** Observaciones de exceso de saldo generadas durante la carga, para que salgan en el reporte al liquidar. */
+  observacionesExceso?: ObservacionOrdenExceso[];
 };
 
 /** Fecha de ayer (ISO local) para el atajo «Ayer». */
@@ -87,6 +89,7 @@ export default function ReporteLiquidacionModal({
   modoExclusivoLiquidacion = false,
   onReversar,
   grupoInicial,
+  observacionesExceso,
 }: Props) {
   const [fecha, setFecha] = useState(fechaInicial || hoyLocal());
   const [grupos, setGrupos] = useState<GrupoRow[]>([]);
@@ -502,9 +505,10 @@ export default function ReporteLiquidacionModal({
         logoGrupo: detalle.frescos.logoGrupo ?? logoGrupo,
         filtroModalidad,
         clientes,
+        observacionesExcesoExtra: observacionesExceso,
       })
     );
-  }, [detalle, nombreGrupo, disponibleDe, liquidada, logoHipodromo, logoGrupo, filtroModalidad, clientes]);
+  }, [detalle, nombreGrupo, disponibleDe, liquidada, logoHipodromo, logoGrupo, filtroModalidad, clientes, observacionesExceso]);
 
   const itemsLiquidadasExtra = useMemo<ItemCarreraLiquidada[]>(() => {
     return carrerasDia
@@ -730,8 +734,8 @@ export default function ReporteLiquidacionModal({
         {!modoExclusivoLiquidacion && (
           <BarraCarrerasLiquidadas
             fecha={fecha}
-            hipodromo={hipodromo}
-            nombreHipodromo={hipodromo ? nombreHipodromoParaMostrar(hipodromo) : undefined}
+            hipodromo=""
+            nombreHipodromo={undefined}
             carreraActiva={carrera}
             itemsExtra={itemsLiquidadasExtra}
             onSeleccionarCarrera={(n) => setCarrera(n)}

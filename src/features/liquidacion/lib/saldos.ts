@@ -203,7 +203,7 @@ export function decidirTickets(
       };
     });
   const gruposNeteo = netearComisionCruce(items, input.carrera, input.tasaComision, {
-    agruparPorCliente: input.agruparPorClientePuestos === true || input.permiteCruces !== false,
+    agruparPorCliente: false,
     permiteCruces: input.permiteCruces !== false,
   });
   if (gruposNeteo.size > 0) {
@@ -321,8 +321,11 @@ export function decidirTickets(
               });
             }
           } else {
-            // Juega pierde -> Consigue gana el monto apostado por Juega
-            const gananciaConsigue = m;
+            // Juega pierde -> Consigue gana SOLO lo que Juega perdió. En una
+            // pérdida PARCIAL (ej. 1Y2N cuando acierta el 1P y devuelve capital
+            // del 2N) Juega recupera `totalClienteNeto`; el dador NO puede cobrar
+            // el monto entero, solo la fracción efectivamente perdida.
+            const gananciaConsigue = Math.max(0, restarDinero(m, r.totalClienteNeto));
             if (gananciaConsigue > 0) {
               entradas.push({
                 cliente: nombreJugador || jugador,
@@ -805,10 +808,14 @@ export async function aplicarLiquidacionSaldos(
             const perdidaConsigue = Math.max(0, restarDinero(res.totalClienteNeto + res.gananciaCasa, m));
             perdidoBrutoCarrera = sumarDinero(perdidoBrutoCarrera, perdidaConsigue);
           } else {
-            // El lado Juega perdió -> Consigue gana el monto apostado por Juega
+            // El lado Juega perdió -> Consigue gana lo EFECTIVAMENTE perdido por
+            // Juega. Si la pérdida es PARCIAL (NINI/compuesta que devuelve parte
+            // del capital), el dador solo cobra `monto - capital devuelto`; si es
+            // total, cobra el monto completo. (Antes cobraba `m` siempre, lo que
+            // inflaba al Consigue: SAM 6ta daba 209,00 en vez de 66,50.)
             const empateTotal = m > 0 && Math.abs(res.totalClienteNeto - m) < 0.01;
             if (!empateTotal) {
-              const gananciaConsigue = m;
+              const gananciaConsigue = Math.max(0, restarDinero(m, res.totalClienteNeto));
               ganadoBrutoCarrera = sumarDinero(ganadoBrutoCarrera, gananciaConsigue);
             }
           }

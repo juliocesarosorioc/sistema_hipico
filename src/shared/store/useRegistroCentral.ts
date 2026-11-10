@@ -241,7 +241,27 @@ export async function cargarRegistroCarreras(fecha: string, version = 0): Promis
       if (useRegistroCentral.getState().versionCarreras === version) {
         set((s) => ({ errores: { ...s.errores, [f]: null } }));
       }
-      return completarResultadosDelDia(f, r.datos ?? []);
+      const base = await completarResultadosDelDia(f, r.datos ?? []);
+      // Aplicar reversiones persistidas: una carrera reversada NO debe mostrarse
+      // como liquidada aunque la BD aún no se haya actualizado.
+      try {
+        if (typeof window !== "undefined") {
+          const raw = window.localStorage.getItem(`reversadas:${f}`);
+          if (raw) {
+            const set = new Set(JSON.parse(raw) as string[]);
+            return base.map((c) => {
+              const key = `${claveHipodromo(c.hipodromo)}|${Number(c.carrera)}`;
+              if (set.has(key)) {
+                return { ...c, estado: "Programada", ganadores: [], aplicado_a_tablas: false };
+              }
+              return c;
+            });
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      return base;
     })
     .catch((e) => {
       if (useRegistroCentral.getState().versionCarreras === version) {

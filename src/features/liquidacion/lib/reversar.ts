@@ -102,12 +102,14 @@ async function revertirEspecialesDeCarrera(opts: {
       .from("tickets_apuestas")
       .select("*")
       .or(filtroDiaJornada(opts.dia))
-      .eq("hipodromo", opts.hipodromo.trim().toUpperCase())
       .eq("carrera", opts.carrera)
       .in("estado", ["Ganador", "Perdedor", "Retirado"])
       .limit(2000);
     if (error) throw error;
-    filas = (data ?? []) as Array<Record<string, unknown>>;
+    const claveHip = claveHipodromo(opts.hipodromo);
+    filas = ((data ?? []) as Array<Record<string, unknown>>).filter(
+      (r) => claveHipodromo(String(r.hipodromo ?? "")) === claveHip
+    );
   } catch (e) {
     out.errores.push(`No se pudieron leer los tickets de las especiales: ${(e as Error).message}`);
     return out;

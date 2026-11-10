@@ -127,7 +127,6 @@ export async function revertirLiquidacionCarrera(opts: {
       .select("*")
       // Día de la CARRERA, no de la venta (ver `filtroDiaJornada`).
       .or(filtroDiaJornada(fecha))
-      .eq("hipodromo", opts.hipodromo.trim().toUpperCase())
       .eq("carrera", Number(opts.carrera))
       .in("estado", ["Ganador", "Perdedor", "Retirado", "Anulada"])
       .not("nombre_jugada", "like", "MARCA %")
@@ -138,8 +137,10 @@ export async function revertirLiquidacionCarrera(opts: {
       .not("nombre_jugada", "like", "TABLA FIJA%")
       .limit(2000);
     if (error) throw error;
+    const claveHip = claveHipodromo(opts.hipodromo);
     filas = (data ?? []).filter((f) => {
       const r = f as Record<string, unknown>;
+      if (claveHipodromo(String(r.hipodromo ?? "")) !== claveHip) return false;
       if (r.anulada || r.anulada_at || r.anulada_motivo) return false;
       if (String(r.estado ?? "").toLowerCase().startsWith("anul") && NUM(r.premio_pagar) <= 0) return false;
       return true;
