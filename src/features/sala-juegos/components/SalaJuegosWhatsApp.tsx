@@ -1,4 +1,3 @@
-cat << 'EOF' > src/features/sala-juegos/components/SalaJuegosWhatsApp.tsx
 'use client';
 // LÍNEA 1: Interfaz Completa de Sala de Juegos Estilo WhatsApp / WhatsApp Web
 
@@ -518,6 +517,3 @@ export default function SalaJuegosWhatsApp({
     </div>
   );
 }
-// LÍNEA 340: Fin del archivo SalaJuegosWhatsApp.tsx
-EOF
-echo "✅ Archivo 3 (SalaJuegosWhatsApp.tsx) creado correctamente."

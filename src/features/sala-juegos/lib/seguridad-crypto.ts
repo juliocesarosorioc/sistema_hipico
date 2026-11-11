@@ -1,4 +1,3 @@
-cat << 'EOF' > src/features/sala-juegos/lib/seguridad-crypto.ts
 // LÍNEA 1: Motor de Cifrado Punto a Punto (AES-256-GCM) y Huella SHA-256 Nativa
 
 export async function generarHashTextoSHA256(texto: string): Promise<string> {
@@ -75,6 +74,3 @@ export async function descifrarMensajeSala(payloadBase64: string, grupoId: strin
     return '[Mensaje protegido]';
   }
 }
-// LÍNEA 92: Fin del archivo seguridad-crypto.ts
-EOF
-echo "✅ Archivo 1 (seguridad-crypto.ts) creado correctamente."

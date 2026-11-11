@@ -66,7 +66,7 @@ import {
 import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 import { ModalActualizacionObligatoriaContacto } from "@/features/portal/components/ModalActualizacionObligatoriaContacto";
 import { ModalReportarPagoCliente } from "@/features/portal/components/ModalReportarPagoCliente";
-import { SalaWhatsAppApp } from "@/features/whatsapp-sala/components/SalaWhatsAppApp";
+import { SalaJuegosApp } from "@/features/sala-juegos/components/SalaJuegosApp";
 import { GuiaInteractivaJugador } from "@/features/portal/components/GuiaInteractivaJugador";
 import { MisPagosYComprobantesView } from "@/features/portal/components/MisPagosYComprobantesView";
 import {
@@ -947,7 +947,18 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">
-            <SalaWhatsAppApp embebido />
+            <SalaJuegosApp
+              esEmbebido
+              grupoIdInicial={
+                sesion?.cliente?.grupo_id
+                  ? String(sesion.cliente.grupo_id)
+                  : sesion?.grupo?.id
+                  ? String(sesion.grupo.id)
+                  : undefined
+              }
+              clienteIdInicial={sesion?.cliente?.id ? String(sesion.cliente.id) : undefined}
+              portalTokenInicial={tokenSesionGuardada()}
+            />
           </div>
         </div>
       ) : null}

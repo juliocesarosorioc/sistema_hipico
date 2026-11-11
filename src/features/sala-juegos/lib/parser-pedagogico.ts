@@ -1,4 +1,3 @@
-cat << 'EOF' > src/features/sala-juegos/lib/parser-pedagogico.ts
 // LÍNEA 1: Motor Determinístico de Estandarización Hípica y Corrección Pedagógica
 
 export interface ResultadoAnalisisJugada {
@@ -19,7 +18,7 @@ export interface ResultadoAnalisisJugada {
 }
 
 // Normaliza bloques de caballos como "45", "1.5", "1,5", "4 .5", "la 15" -> ["1", "5"] -> "1-5"
-function normalizarBandoCaballos(raw: string, maxEjemplarCarrera = 16): string[] {
+function normalizarBandoCaballos(raw: string, maxEjemplarCarrera = 16, esDupla = false): string[] {
   const limpio = raw
     .replace(/\b(de\s+la|del|de|la|el|#)\b/gi, ' ')
     .trim();
@@ -32,14 +31,16 @@ function normalizarBandoCaballos(raw: string, maxEjemplarCarrera = 16): string[]
       .filter((s) => /^\d+[A-Z]?$/i.test(s));
   }
 
-  // Si escribió un número de 2 dígitos pegado como "45", "15", "46" que supera el máximo de caballos de la carrera
+  // Si escribió un número de 2 dígitos pegado como "45", "15", "46"
   const soloDigitos = limpio.replace(/\s+/g, '');
   if (/^\d{2}$/.test(soloDigitos)) {
     const numEntero = parseInt(soloDigitos, 10);
-    if (numEntero > maxEjemplarCarrera || /la\s+\d{2}/i.test(raw)) {
-      const d1 = soloDigitos[0];
-      const d2 = soloDigitos[1];
-      if (d1 !== '0' && d2 !== '0') return [d1, d2];
+    const d1 = soloDigitos[0];
+    const d2 = soloDigitos[1];
+    if (d1 !== '0' && d2 !== '0') {
+      if (esDupla || numEntero > maxEjemplarCarrera || /\b(la|de\s+la)\b/i.test(raw)) {
+        return [d1, d2];
+      }
     }
   }
 
@@ -84,8 +85,13 @@ export function analizarYEstandarizarJugada(
   const matchVs = texto.match(regexMatch);
 
   if (matchVs) {
-    const bandoA = normalizarBandoCaballos(matchVs[2], maxEjemplarCarrera);
-    const bandoB = normalizarBandoCaballos(matchVs[3], maxEjemplarCarrera);
+    const tienePrefijoLaA = /\b(la|de\s+la)\s+[0-9A-Za-z\.\-,\s]+?\s*(?:x|vs|contra)/i.test(texto);
+    const ambos2Digitos = /^\d{2}$/.test(matchVs[2].trim()) && /^\d{2}$/.test(matchVs[3].trim());
+    const esDuplaA = tienePrefijoLaA || ambos2Digitos;
+    const esDuplaB = /^\d{2}$/.test(matchVs[3].trim()) && (ambos2Digitos || tienePrefijoLaA);
+
+    const bandoA = normalizarBandoCaballos(matchVs[2], maxEjemplarCarrera, esDuplaA);
+    const bandoB = normalizarBandoCaballos(matchVs[3], maxEjemplarCarrera, esDuplaB);
     const monto = parseFloat(matchVs[4].replace(',', '.'));
 
     if (bandoA.length > 0 && bandoB.length > 0 && monto > 0) {
@@ -257,6 +263,3 @@ export function analizarYEstandarizarJugada(
     ],
   };
 }
-// LÍNEA 248: Fin del archivo parser-pedagogico.ts
-EOF
-echo "✅ Archivo 2 (parser-pedagogico.ts) creado correctamente."
