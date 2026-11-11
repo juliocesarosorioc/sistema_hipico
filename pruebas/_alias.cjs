@@ -8,6 +8,10 @@ const path = require("path");
 const fs = require("fs");
 const Module = require("module");
 
+if (require.extensions) {
+  require.extensions[".jsx"] = require.extensions[".js"];
+}
+
 const RAIZ = path.join(__dirname, "..");
 const EMITIDO = path.join(RAIZ, ".tsbuild-pruebas", "src");
 const orig = Module._resolveFilename;

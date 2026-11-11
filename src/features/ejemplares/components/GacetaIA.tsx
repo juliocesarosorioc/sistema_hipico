@@ -38,6 +38,7 @@ import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { numeroDeCarrera, carrerasFaltantes, ordenarCarrerasYEjemplares } from "@/features/gaceta/lib/numeros";
 import { CarreraGacetaCard } from "@/features/ejemplares/components/CarreraGacetaCard";
 import { ModalAlmacenarGacetas } from "@/features/ejemplares/components/ModalAlmacenarGacetas";
+import { ModalGenerarTablasYMarcas } from "@/features/ejemplares/components/ModalGenerarTablasYMarcas";
 import { ejecutarEdicionCarreraAdmin } from "@/features/carreras/lib/editar-carrera-admin";
 import { listarHipodromos, publicarTablasLote, type OpcionHipodromo } from "@/features/tablas/lib/rpc";
 import type { TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
@@ -408,6 +409,23 @@ export function GacetaIA() {
    * buzón del Ensamblaje y cuántas del día se mandaron desde la Gaceta.
    */
   const [informeResultado, setInformeResultado] = useState<ResultadoInformeCarga | null>(null);
+  const [modalGenerarBDAbierto, setModalGenerarBDAbierto] = useState(false);
+  const [resumenUltimaCarga, setResumenUltimaCarga] = useState<{
+    estado: "exito" | "parcial" | "error";
+    titulo: string;
+    mensaje: string;
+    hipodromo: string;
+    fecha: string;
+    totalCarreras: number;
+    creadas: number;
+    actualizadas: number;
+    previamenteCargadas: number;
+    ejemplaresNuevos: number;
+    ejemplaresVinculados: number;
+    tablasPublicadas: number;
+    hora: string;
+    error?: string;
+  } | null>(null);
   const [archivosSubidos, setArchivosSubidos] = useState<string[]>([]);
   const [carreraReverificandoIndex, setCarreraReverificandoIndex] = useState<number | null>(null);
   const [carreraRegistrandoIndex, setCarreraRegistrandoIndex] = useState<number | null>(null);
@@ -651,6 +669,21 @@ export function GacetaIA() {
           eraGacetaPrevia: conteo("PREVIAMENTE_CARGADA") > 0 || conteo("ACTUALIZADA_COMPLETADA") > 0,
         };
         setInformeResultado(info);
+        setResumenUltimaCarga({
+          estado: conteo("ERROR") > 0 ? "parcial" : "exito",
+          titulo: "Gaceta Procesada y Registrada Exitosamente",
+          mensaje: `Se procesaron y registraron ${lote.length} carreras para ${info.hipodromo} (Fecha: ${fecha}). Tablas Fijas publicadas y Marcas habilitadas.`,
+          hipodromo: info.hipodromo,
+          fecha,
+          totalCarreras: lote.length,
+          creadas: info.creadas,
+          actualizadas: info.actualizadas,
+          previamenteCargadas: info.previamenteCargadas,
+          ejemplaresNuevos: info.ejemplaresNuevos,
+          ejemplaresVinculados: info.ejemplaresVinculados,
+          tablasPublicadas: info.tablasPublicadas,
+          hora: new Date().toLocaleTimeString(),
+        });
 
         toast(
           registroAutomatico
@@ -663,6 +696,22 @@ export function GacetaIA() {
         const mensaje = e instanceof Error ? e.message : String(e);
         setFaseRegistro("error");
         setEstado(`No se pudieron registrar las carreras en el catálogo central: ${mensaje}`);
+        setResumenUltimaCarga({
+          estado: "error",
+          titulo: "Error al Registrar Carreras en Catálogo",
+          mensaje: `Ocurrió un error al registrar las carreras: ${mensaje}`,
+          hipodromo: lote[0]?.hipodromo || "HIPÓDROMO",
+          fecha,
+          totalCarreras: lote.length,
+          creadas: 0,
+          actualizadas: 0,
+          previamenteCargadas: 0,
+          ejemplaresNuevos: 0,
+          ejemplaresVinculados: 0,
+          tablasPublicadas: 0,
+          hora: new Date().toLocaleTimeString(),
+          error: mensaje,
+        });
         toast(`❌ No se completó el registro: ${mensaje}`, "error");
         return false;
       } finally {
@@ -686,9 +735,9 @@ export function GacetaIA() {
     }
   }, []);
 
-  // Recupera las carreras pendientes del registro (sin re-transformar) o desde la matriz central de la jornada.
-  useEffect(() => {
-    const diaActual = fechaJornadaRef.current || hoyLocal();
+  // Recupera las carreras del día desde el registro local o desde la matriz central de la jornada.
+  const recargarCarrerasFecha = useCallback((diaDestino: string) => {
+    const diaActual = diaDestino || fechaJornadaRef.current || hoyLocal();
     const guardadas = leerRegistro();
     const guardadasHoy = (guardadas || []).filter((c) => {
       const f = c.fecha ? (normalizarFechaIso(c.fecha) || "").slice(0, 10) : "";
@@ -697,29 +746,44 @@ export function GacetaIA() {
 
     if (!guardadasHoy.length) {
       limpiarTodoRegistro(false);
-      // Fallback: cargar las carreras centrales del día para que el operador pueda ordenarlas, buscarlas o corregirlas con IA
+      // Fallback: cargar las carreras centrales del día para que el operador pueda ordenarlas, buscarlas o corregirlas
       void listarCarrerasCentrales(diaActual, "").then((r) => {
         if (r.ok && r.datos && r.datos.length > 0) {
           const convertidas: CarreraRegistro[] = r.datos.map((c) => ({
             carrera: c.carrera,
             hipodromo: c.hipodromo,
             fecha: c.fecha || diaActual,
-            distancia: c.distancia || 0,
+            distancia: c.distancia ? Number(c.distancia) || c.distancia : 0,
             superficie: c.superficie || "ARENA",
             premio: c.premio || 100,
             ejemplares: (c.caballos || []).map((cb) => ({
               numero: cb.numero,
               nombre: cb.nombre || `EJEMPLAR ${cb.numero}`,
+              nacionalidad: cb.nacionalidad ?? "VE",
+              jockey: cb.jockey ?? undefined,
+              entrenador: cb.entrenador ?? undefined,
+              peso: cb.peso ? Number(cb.peso) : undefined,
+              medicamento: cb.medicamento ?? undefined,
+              implementos: cb.implementos ?? undefined,
+              ml: cb.ml ?? undefined,
+              stud: cb.stud ?? undefined,
+              pedigri: cb.pedigri ?? undefined,
+              retirado: Boolean(cb.retirado),
               valor: 0,
               pts: 0,
             })),
             seleccionada: true,
+            enviada: false,
+            aplicada: false,
           }));
-          setCarreras(ordenarCarrerasYEjemplares(convertidas));
-          setEstado(`${convertidas.length} carrera(s) cargada(s) desde la jornada activa (${diaActual}).`);
+          const ordenadas = ordenarCarrerasYEjemplares(convertidas);
+          setCarreras(ordenadas);
+          setEstado(`📥 ${convertidas.length} carrera(s) cargada(s) desde la matriz central (${diaActual}).`);
+          refrescarContadores();
         } else {
           setCarreras([]);
           setEstado("");
+          refrescarContadores();
         }
       });
       return;
@@ -728,8 +792,6 @@ export function GacetaIA() {
     if (guardadas && guardadasHoy.length !== guardadas.length) {
       persistirRegistro(guardadasHoy);
     }
-    // Un registro guardado con versiones viejas puede traer repetidas: se
-    // normaliza una sola vez al abrir y se vuelve a persistir sin duplicados.
     const arr = deduplicarCarreras(guardadasHoy).lista;
     if (arr.length !== guardadasHoy.length) persistirRegistro(arr);
     if (!arr.length) return;
@@ -740,8 +802,7 @@ export function GacetaIA() {
       const copia: CarreraRegistro = Object.assign({}, c);
       delete copia.enviada;
       delete copia.aplicada;
-      // Si el registro guardado no traía fecha, se sella con la jornada elegida.
-      if (!copia.fecha) copia.fecha = fechaJornadaRef.current;
+      if (!copia.fecha) copia.fecha = diaActual;
       return copia;
     });
     setCarreras(ordenarCarrerasYEjemplares(lista.map((c) => ({ ...c, seleccionada: true }))));
@@ -753,18 +814,49 @@ export function GacetaIA() {
         setEstado(
           pendientes.length > 0
             ? `${lista.length} carrera(s) guardada(s) pendientes de ensamblar${enviadas ? ` · ${enviadas} ya enviada(s)` : ""}. Puede enviarlas al Ensamblaje sin volver a transformar.`
-            : `${lista.length} carrera(s) de la jornada activa cargada(s) y ordenada(s) (1..N). Puede verificar, agregar carreras faltantes o enviar órdenes particulares al Agente IA.`
+            : `${lista.length} carrera(s) de la jornada activa cargada(s) y ordenada(s) (1..N).`
         );
+        refrescarContadores();
       })
       .catch(() => {
         setCarreras((prev) => prev.map((c) => ({ ...c, ejemplares: (c.ejemplares || []).map((e) => ({ ...e })) })));
         setEstado(`${lista.length} carrera(s) de la jornada activa cargada(s) y ordenada(s).`);
+        refrescarContadores();
       });
-    // Registro CENTRAL: las carreras recuperadas del registro local pueden venir
-    // de una sesión previa a la centralización; se publican igual en la matriz.
-    // No auto-publicar borradores locales al central al montar
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refrescarContadores]);
+
+  // Carga al montar o cambiar fecha
+  useEffect(() => {
+    recargarCarrerasFecha(fechaJornada);
+  }, [fechaJornada, recargarCarrerasFecha]);
+
+  const handleCargarAlEditorDesdeBD = useCallback(
+    (carrerasImportadas: CarreraRegistro[]) => {
+      const ordenadas = ordenarCarrerasYEjemplares(carrerasImportadas);
+      setCarreras(ordenadas);
+      persistirRegistro(ordenadas);
+      refrescarContadores();
+      setEstado(`📥 ${carrerasImportadas.length} carrera(s) importada(s) desde la Base de Datos.`);
+      const f = carrerasImportadas[0]?.fecha || fechaJornada;
+      const h = carrerasImportadas[0]?.hipodromo || "HIPÓDROMO";
+      setResumenUltimaCarga({
+        estado: "exito",
+        titulo: "Carreras Importadas desde Base de Datos",
+        mensaje: `Se cargaron ${carrerasImportadas.length} carreras al editor desde la Base de Datos para ${h} (${f}).`,
+        hipodromo: h,
+        fecha: f,
+        totalCarreras: carrerasImportadas.length,
+        creadas: 0,
+        actualizadas: carrerasImportadas.length,
+        previamenteCargadas: carrerasImportadas.length,
+        ejemplaresNuevos: 0,
+        ejemplaresVinculados: carrerasImportadas.reduce((acc, c) => acc + (c.ejemplares?.length || 0), 0),
+        tablasPublicadas: carrerasImportadas.length,
+        hora: new Date().toLocaleTimeString(),
+      });
+    },
+    [fechaJornada, refrescarContadores]
+  );
 
   // Teclado de la vista previa en grande (Esc / flechas).
   useEffect(() => {
@@ -1058,14 +1150,33 @@ export function GacetaIA() {
       };
       setDiag(res.diag ?? "");
       if (!res.ok) {
-        setEstado(res.cuotaTotal ? "Cuota DIARIA gratuita de Gemini agotada. Prueba otra vez mañana o consigue otra clave gratis (aistudio.google.com/apikey)." : res.error ?? "Error transformando.");
+        const msjError = res.cuotaTotal
+          ? "Cuota DIARIA gratuita de Gemini agotada. Prueba otra vez mañana o consigue otra clave gratis en aistudio.google.com/apikey."
+          : (res.error ?? "Error transformando gaceta con IA.");
+        setEstado(msjError);
         setCarreras([]);
         setResumen({ nuevos: 0, vinculados: 0 });
         setFaseRegistro("error");
+        setResumenUltimaCarga({
+          estado: "error",
+          titulo: res.cuotaTotal ? "Cuota Gratuita de IA Agotada" : "Error en Extracción de Gaceta",
+          mensaje: msjError,
+          hipodromo: "VENEZUELA",
+          fecha: fechaJornadaRef.current || hoyLocal(),
+          totalCarreras: 0,
+          creadas: 0,
+          actualizadas: 0,
+          previamenteCargadas: 0,
+          ejemplaresNuevos: 0,
+          ejemplaresVinculados: 0,
+          tablasPublicadas: 0,
+          hora: new Date().toLocaleTimeString(),
+          error: msjError,
+        });
         toast(
           res.cuotaTotal
             ? "Cuota diaria gratuita agotada: cambia de clave o reintenta mañana."
-            : "❌ " + (res.error ?? "Error transformando."),
+            : "❌ " + msjError,
           res.cuotaTotal ? "warning" : "error"
         );
         return;
@@ -1159,6 +1270,23 @@ export function GacetaIA() {
     } catch (e) {
       const msj = e instanceof Error ? e.message : String(e);
       setEstado("Error: " + msj);
+      setFaseRegistro("error");
+      setResumenUltimaCarga({
+        estado: "error",
+        titulo: "Error al Procesar la Gaceta",
+        mensaje: msj,
+        hipodromo: "VENEZUELA",
+        fecha: fechaJornadaRef.current || hoyLocal(),
+        totalCarreras: 0,
+        creadas: 0,
+        actualizadas: 0,
+        previamenteCargadas: 0,
+        ejemplaresNuevos: 0,
+        ejemplaresVinculados: 0,
+        tablasPublicadas: 0,
+        hora: new Date().toLocaleTimeString(),
+        error: msj,
+      });
       toast("❌ " + msj, "error");
     } finally {
       setTrabajando(false);
@@ -2079,6 +2207,118 @@ export function GacetaIA() {
         )}
       </div>
 
+      {/* TARJETA PERSISTENTE: RESUMEN DE LA ÚLTIMA CARGA / PROCESO */}
+      {resumenUltimaCarga && (
+        <section
+          className={`rounded-2xl border p-4 shadow-sm transition-all animate-in fade-in duration-200 ${
+            resumenUltimaCarga.estado === "exito"
+              ? "border-emerald-300 bg-gradient-to-r from-emerald-50 via-teal-50/70 to-emerald-50/40 text-emerald-950"
+              : resumenUltimaCarga.estado === "parcial"
+              ? "border-amber-300 bg-amber-50 text-amber-950"
+              : "border-red-300 bg-red-50 text-red-950"
+          }`}
+          aria-label="Resumen de última carga"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white shadow-xs text-2xl border border-black/5">
+                {resumenUltimaCarga.estado === "exito" ? "✅" : resumenUltimaCarga.estado === "parcial" ? "⚠️" : "❌"}
+              </span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-sm font-black uppercase tracking-wide">
+                    {resumenUltimaCarga.titulo}
+                  </h4>
+                  <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-mono font-bold text-slate-600 border border-slate-200">
+                    🕒 {resumenUltimaCarga.hora}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-slate-700 leading-snug">
+                  {resumenUltimaCarga.mensaje}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setModalGenerarBDAbierto(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-xs"
+              >
+                🎯 Carreras en BD: Crear Tablas y Marcas
+              </Button>
+              {informeResultado && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setInformeResultado(informeResultado)}
+                  className="bg-white/90 border-slate-300 text-slate-700 font-bold"
+                >
+                  📊 Ver Informe Modal
+                </Button>
+              )}
+              <button
+                type="button"
+                onClick={() => setResumenUltimaCarga(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-black/5 hover:text-slate-700 transition-colors"
+                title="Cerrar aviso de resumen"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {/* CHIPS DE DETALLE */}
+          {resumenUltimaCarga.estado !== "error" && (
+            <div className="mt-3.5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6 border-t border-black/5 pt-3">
+              <div className="rounded-xl border border-black/5 bg-white/70 p-2 text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">🏇 Hipódromo</span>
+                <span className="text-xs font-black text-slate-800">{resumenUltimaCarga.hipodromo}</span>
+              </div>
+              <div className="rounded-xl border border-black/5 bg-white/70 p-2 text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">📅 Fecha Jornada</span>
+                <span className="text-xs font-black font-mono text-slate-800">{resumenUltimaCarga.fecha}</span>
+              </div>
+              <div className="rounded-xl border border-black/5 bg-white/70 p-2 text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">🏁 Carreras</span>
+                <span className="text-xs font-black text-emerald-700 font-mono">
+                  {resumenUltimaCarga.totalCarreras} {resumenUltimaCarga.creadas > 0 ? `(+${resumenUltimaCarga.creadas})` : ""}
+                </span>
+              </div>
+              <div className="rounded-xl border border-black/5 bg-white/70 p-2 text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">🐴 Ejemplares Padrón</span>
+                <span className="text-xs font-black text-indigo-700 font-mono">
+                  +{resumenUltimaCarga.ejemplaresVinculados || 0}
+                </span>
+              </div>
+              <div className="rounded-xl border border-black/5 bg-white/70 p-2 text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">📊 Tablas Fijas</span>
+                <span className="text-xs font-black text-emerald-700 font-mono">
+                  {resumenUltimaCarga.tablasPublicadas} Publicadas
+                </span>
+              </div>
+              <div className="rounded-xl border border-black/5 bg-white/70 p-2 text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">🎯 Marcas</span>
+                <span className="text-xs font-black text-indigo-700">Listas para Venta</span>
+              </div>
+            </div>
+          )}
+
+          {/* MENSAJE DE RESOLUCIÓN EN CASO DE ERROR */}
+          {resumenUltimaCarga.estado === "error" && (
+            <div className="mt-3 rounded-xl border border-red-200 bg-white/80 p-3 text-xs text-red-900 space-y-1">
+              <p className="font-bold">¿Cómo solucionar este error?</p>
+              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-red-800">
+                <li>Si la cuota de Gemini se agotó: ingrese una clave nueva gratuita en la sección "🔑 Clave de la IA" a la derecha.</li>
+                <li>Si el documento no pudo ser leído: verifique haber seleccionado las páginas en la vista previa antes de transformar.</li>
+                <li>Si las carreras ya fueron cargadas con anterioridad: use el botón <b>"🎯 Carreras en BD: Crear Tablas y Marcas"</b> para recuperarlas directamente de la Base de Datos sin re-procesar el PDF.</li>
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+
       {reporteCarga.length > 0 && (
         <section className="rounded-2xl border border-line bg-surface p-4" aria-label="Auditoría de carga por carrera">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -2403,6 +2643,15 @@ export function GacetaIA() {
               📚 Repositorio de Gacetas (Portal)
             </Button>
             <Button
+              variant="default"
+              size="sm"
+              onClick={() => setModalGenerarBDAbierto(true)}
+              className="border-indigo-400 bg-indigo-600 text-white hover:bg-indigo-700 font-black shadow-xs"
+              title="Consulta carreras ya guardadas en la Base de Datos para seleccionar y generar Tablas Fijas y Marcas de inmediato."
+            >
+              🎯 Carreras en BD: Crear Tablas y Marcas
+            </Button>
+            <Button
               variant="outline"
               size="sm"
               disabled={sincronizando || enviando}
@@ -2471,9 +2720,43 @@ export function GacetaIA() {
             </p>
           </>
         ) : (
-          <p className="text-xs text-slate-500">
-            No hay carreras en edición para esta fecha. Sube una gaceta arriba o presiona <b>➕ Nueva Carrera Manual</b> para crear y registrar una carrera directamente.
-          </p>
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-6 text-center space-y-3">
+            <span className="text-3xl block">🏁</span>
+            <div>
+              <p className="text-sm font-black text-slate-800">
+                No hay carreras en pantalla para esta fecha ({fechaJornada}).
+              </p>
+              <p className="mt-1 text-xs text-slate-500 max-w-lg mx-auto leading-relaxed">
+                Puedes subir una gaceta arriba o utilizar la herramienta de Base de Datos para consultar carreras ya registradas con sus ejemplares y generar sus Tablas Fijas y Marcas sin volver a procesar el PDF.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setModalGenerarBDAbierto(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-xs"
+              >
+                🎯 Carreras en BD: Crear Tablas Fijas y Marcas
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => recargarCarrerasFecha(fechaJornada)}
+                className="bg-white border-slate-300 text-slate-700 font-bold"
+              >
+                🔄 Recargar Carreras de esta Fecha
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={agregarCarreraManual}
+                className="border-indigo-300 bg-white text-indigo-800 font-bold"
+              >
+                ➕ Nueva Carrera Manual
+              </Button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -2611,6 +2894,17 @@ export function GacetaIA() {
                 onClick={() => setInformeResultado(null)}
               >
                 Cerrar
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setInformeResultado(null);
+                  setModalGenerarBDAbierto(true);
+                }}
+                className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold"
+              >
+                🎯 Crear / Ajustar Marcas
               </Button>
               <Button
                 variant="default"
@@ -2811,6 +3105,15 @@ export function GacetaIA() {
         hipodromos={hipodromos}
         hipodromoSugerido={carreras[0]?.hipodromo}
         fechaSugerida={fechaJornadaRef.current}
+      />
+
+      {/* Modal Generador de Tablas Fijas y Marcas desde BD */}
+      <ModalGenerarTablasYMarcas
+        abierto={modalGenerarBDAbierto}
+        onCerrar={() => setModalGenerarBDAbierto(false)}
+        fechaInicial={fechaJornada}
+        hipodromoInicial={carreras[0]?.hipodromo}
+        onCargarAlEditor={handleCargarAlEditorDesdeBD}
       />
 
       <ToastHost />

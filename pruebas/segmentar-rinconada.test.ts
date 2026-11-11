@@ -5,6 +5,7 @@ import assert from "node:assert";
 import {
   segmentarPorCarreras,
   armarBloques,
+  resolverHipodromoTexto,
 } from "@/features/gaceta/lib/segmentar";
 import { numeroDeCarrera, numeroDeValida } from "@/features/gaceta/lib/numeros";
 
@@ -131,4 +132,44 @@ CLÁSICO NUESTRA SEÑORA DE CHIQUINQUIRÁ - 4ª VÁLIDA - 8ª CARRERA
   console.log("✔ Variantes venezolanas de cabeceras y válidas verificadas con éxito");
 }
 
-console.log("\n🎉 TODAS LAS PRUEBAS DE SEGMENTACIÓN LA RINCONADA PASARON CON ÉXITO.");
+// 4. Prueba de segmentación y detección de gacetas de Valencia (HINAVA)
+{
+  assert.strictEqual(resolverHipodromoTexto("HIPÓDROMO NACIONAL DE VALENCIA"), "VALENCIA");
+  assert.strictEqual(resolverHipodromoTexto("HINAVA - REUNIÓN 18"), "VALENCIA");
+  assert.strictEqual(resolverHipodromoTexto("HIPÓDROMO DE VALENCIA - VIERNES"), "VALENCIA");
+  assert.strictEqual(resolverHipodromoTexto("HIPODROMO LA RINCONADA - DOMINGO"), "LA RINCONADA");
+
+  const textoValencia = `
+HIPÓDROMO NACIONAL DE VALENCIA (HINAVA) - REUNIÓN N° 22
+VIERNES 13/11/2026 - PROGRAMA OFICIAL
+
+1ª CARRERA - HORA: 2:00 PM - DISTANCIA 1.200 METROS
+1 GRAN POET - 54 kg - J. Lugo
+2 KING JESUS - 55 kg - K. Aray
+
+2ª CARRERA - DISTANCIA 1.300 METROS
+1 MR. OLIVER - 54 kg
+2 EL DE MATHIAS - 53 kg
+
+1ª VÁLIDA PARA EL 5 Y 6 (3ª CARRERA)
+1 PRINCE RED - 54 kg
+2 TIO LUIS - 55 kg
+
+2ª VÁLIDA PARA EL 5 Y 6 (4ª CARRERA)
+1 VALENCIA STAR - 53 kg
+2 LUNA CARABOBO - 54 kg
+`;
+
+  const segsVal = segmentarPorCarreras(textoValencia);
+  const segsValConNum = segsVal.filter((s) => s.numero != null);
+  const numsVal = segsValConNum.map((s) => s.numero);
+  console.log(`Carreras detectadas en Valencia: ${numsVal.join(", ")}`);
+  assert.strictEqual(segsValConNum.length, 4, "Debe detectar las 4 carreras de Valencia");
+  assert.deepStrictEqual(numsVal, [1, 2, 3, 4], "Secuencia debe ser 1..4");
+
+  const bloquesVal = armarBloques(segsVal, 1);
+  assert.strictEqual(bloquesVal.length, 4, "Debe armar 4 bloques para Valencia");
+  console.log("✔ Detección y segmentación de gacetas de Valencia (HINAVA) verificada con éxito");
+}
+
+console.log("\n🎉 TODAS LAS PRUEBAS DE SEGMENTACIÓN LA RINCONADA Y VALENCIA PASARON CON ÉXITO.");

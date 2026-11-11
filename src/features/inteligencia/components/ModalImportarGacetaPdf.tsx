@@ -476,7 +476,7 @@ export function ModalImportarGacetaPdf({
             }`}
           >
             <span>🇻🇪</span>
-            <span>Extractor La Rinconada</span>
+            <span>Extractor Venezuela (La Rinconada / Valencia)</span>
           </button>
 
           <button
@@ -499,7 +499,7 @@ export function ModalImportarGacetaPdf({
 
           <div className="ml-auto text-[11px] text-slate-400 font-medium">
             {subPestana === "rinconada" ? (
-              <span className="text-amber-400">Modalidad: Gaceta Hípica (Venezuela · N° vs PP 1600m)</span>
+              <span className="text-amber-400">Modalidad: Gaceta Hípica (Venezuela: La Rinconada / Valencia)</span>
             ) : (
               <span className="text-indigo-400">Modalidad: Retrospectos USA (Filtro marca de agua + Espacial Y,X)</span>
             )}
@@ -514,7 +514,7 @@ export function ModalImportarGacetaPdf({
                 <span className="text-base">{subPestana === "rinconada" ? "🇻🇪" : "🇺🇸"}</span>
                 <span className="font-black text-indigo-300 uppercase tracking-wide">
                   {subPestana === "rinconada"
-                    ? "Prompt Profundo Oficial: La Rinconada (Venezuela)"
+                    ? "Prompt Profundo Oficial: Venezuela (La Rinconada / Valencia)"
                     : "Prompt Profundo Oficial: Retrospectos Americanas (EE. UU.)"}
                 </span>
               </div>

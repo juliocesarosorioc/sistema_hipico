@@ -84,7 +84,6 @@ export const CLAVE_GEMINI_KEY = "club_gemini_key";
 
 // Modelos Flash de respaldo estables (con cuota oficial y alta disponibilidad).
 export const MODELOS_GEMINI = [
-  "gemini-2.5-flash",
   "gemini-2.0-flash",
   "gemini-2.0-flash-lite",
   "gemini-1.5-flash",

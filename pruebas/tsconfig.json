@@ -207,6 +207,8 @@
     "./semaforo-estado.test.ts",
     "./pizarra-multi-ejemplar-y-saldos.test.ts",
     "./segmentar-rinconada.test.ts",
-    "./aislamiento-grupos-jugadores.test.ts"
+    "./aislamiento-grupos-jugadores.test.ts",
+    "../src/features/ejemplares/lib/tablas-marcas-desde-bd.ts",
+    "./generar-tablas-marcas-desde-bd.test.ts"
   ]
 }

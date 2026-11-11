@@ -102,17 +102,17 @@ si(/if \(esTicketAnulado\(t\)\) return;/.test(comisiones), "acumularTicket desca
 si(/if \(esTicketAnulado\(t\)\) continue;/.test(comisiones), "el detalle descarta la anulada");
 si(/t\.anulada === true/.test(comisiones), "esTicketAnulado mira la bandera anulada");
 
-// Reporte de liquidación: la anulada no entra a filas ni al neteo.
+// Reporte de liquidación: la anulada no entra a filas ni al neteo (salvo retiro que se muestra en 0).
 const liquidacion = leer("src", "features", "liquidacion", "lib", "reportes.ts");
-si(/if \(f\.anulada === true\) return;/.test(liquidacion), "el reporte de liquidación salta la anulada");
+si(/if \(f\.anulada === true && !esRetiro\) return;/.test(liquidacion), "el reporte de liquidación salta la anulada");
 si(/f\.anulada === true \|\| estado === "ANULADO"/.test(liquidacion), "evaluar trata la anulada como neutra");
 
 // Estado de cuenta del cliente: la anulada no suma base ni devolución.
 const clientes = leer("src", "features", "clientes", "lib", "clientes.ts");
 si(/const anulada = t\.anulada === true;/.test(clientes), "el estado de cuenta detecta la anulada");
 si(/const baseVigente = anulada \? 0 : base;/.test(clientes), "la base vigente es 0 para la anulada");
-si(/raiz\.monto \+= baseVigente;/.test(clientes), "la raíz del estado de cuenta suma la base vigente");
-si(/, estado, anulada,/.test(clientes), "la consulta del estado de cuenta pide la columna anulada");
+si(/montoDecidido:\s*baseVigente/.test(clientes), "el estado de cuenta asigna la base vigente al monto decidido");
+si(/\.from\("tickets_apuestas"\)\s*\.select\("\*"\)/.test(clientes) || /, estado, anulada,/.test(clientes), "la consulta del estado de cuenta pide la columna anulada");
 
 // Reporte de jugadores (impresión): la anulada no suma jugado/pagado.
 const reporteImpresion = leer("src", "features", "impresion", "lib", "reporte.ts");

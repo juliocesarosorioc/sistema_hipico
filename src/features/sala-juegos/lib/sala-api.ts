@@ -1,3 +1,5 @@
+import { supabase } from "@/core/supabase";
+
 /**
  * Cliente API para la Sala de Juegos (/api/sala)
  * Gestiona automáticamente las cabeceras de autenticación (Portal Token o Staff Token).
@@ -26,6 +28,29 @@ export function configurarCredencialesSala(creds: Partial<CredencialesSala>) {
 
 export function obtenerCredencialesGuardadas(): CredencialesSala {
   if (typeof window !== "undefined") {
+    // Si la URL trae parámetros de cliente o token, tomarlos prioritariamente
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const urlPortalToken = sp.get("token") || sp.get("portalToken") || sp.get("portal_token");
+      const urlClienteId = sp.get("clienteId") || sp.get("cliente_id");
+      const urlStaffToken = sp.get("staffToken") || sp.get("staff_token");
+
+      if (urlPortalToken) {
+        _credenciales.portalToken = urlPortalToken;
+        sessionStorage.setItem("sala_portal_token", urlPortalToken);
+      }
+      if (urlClienteId) {
+        _credenciales.clienteId = urlClienteId;
+        sessionStorage.setItem("sala_cliente_id", urlClienteId);
+      }
+      if (urlStaffToken) {
+        _credenciales.staffToken = urlStaffToken;
+        sessionStorage.setItem("sala_staff_token", urlStaffToken);
+      }
+    } catch {
+      // Ignorar fallos de URL
+    }
+
     return {
       portalToken: _credenciales.portalToken || sessionStorage.getItem("sala_portal_token") || localStorage.getItem("portal_token"),
       clienteId: _credenciales.clienteId || sessionStorage.getItem("sala_cliente_id") || localStorage.getItem("portal_cliente_id"),
@@ -35,7 +60,7 @@ export function obtenerCredencialesGuardadas(): CredencialesSala {
   return _credenciales;
 }
 
-function headersAuth(): HeadersInit {
+async function headersAuth(): Promise<HeadersInit> {
   const creds = obtenerCredencialesGuardadas();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -46,8 +71,20 @@ function headersAuth(): HeadersInit {
     headers["X-Sala-Cliente-Id"] = creds.clienteId;
   }
 
-  if (creds.staffToken) {
-    headers["Authorization"] = `Bearer ${creds.staffToken}`;
+  let tokenStaff = creds.staffToken;
+  if (!tokenStaff && typeof window !== "undefined" && supabase) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) {
+        tokenStaff = data.session.access_token;
+      }
+    } catch {
+      // noop
+    }
+  }
+
+  if (tokenStaff) {
+    headers["Authorization"] = `Bearer ${tokenStaff}`;
   }
 
   return headers;
@@ -56,14 +93,15 @@ function headersAuth(): HeadersInit {
 async function requestApi<T = any>(
   endpoint: string,
   options: RequestInit = {}
-): Promise<{ ok: boolean; data?: T; error?: string }> {
+): Promise<{ ok: boolean; data?: T; error?: string; status?: number }> {
   try {
     const url = `/api/sala${endpoint}`;
-    const mergedHeaders = { ...headersAuth(), ...(options.headers as Record<string, string> || {}) };
+    const authH = await headersAuth();
+    const mergedHeaders = { ...authH, ...(options.headers as Record<string, string> || {}) };
     const res = await fetch(url, { ...options, headers: mergedHeaders });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return { ok: false, error: json.error || `Error ${res.status}: ${res.statusText}` };
+      return { ok: false, status: res.status, error: json.error || `Error ${res.status}: ${res.statusText}` };
     }
     return { ok: true, data: json };
   } catch (err: any) {

@@ -83,8 +83,11 @@ export const CATALOGO_TRACKS_GACETA: Record<string, string> = {
   CNL: "COLONIAL DOWNS",
   PID: "PRESQUE ISLE DOWNS",
   RDM: "RED MILE",
+  LR: "LA RINCONADA",
   LRIN: "LA RINCONADA",
   VAL: "VALENCIA",
+  VL: "VALENCIA",
+  HIN: "VALENCIA",
 };
 
 export const NOMBRES_HIPODROMOS_GACETA: Record<string, string> = {
@@ -138,8 +141,11 @@ export const NOMBRES_HIPODROMOS_GACETA: Record<string, string> = {
   "PRESQUE ISLE DOWNS": "PRESQUE ISLE DOWNS",
   "LA RINCONADA": "LA RINCONADA",
   "HIPODROMO LA RINCONADA": "LA RINCONADA",
+  "HIPODROMO DE LA RINCONADA": "LA RINCONADA",
   "VALENCIA": "VALENCIA",
   "HIPODROMO DE VALENCIA": "VALENCIA",
+  "HIPODROMO NACIONAL DE VALENCIA": "VALENCIA",
+  "HINAVA": "VALENCIA",
 };
 
 /** Meses en inglés a 2 dígitos */
@@ -853,20 +859,20 @@ export function armarBloques(
   }
 
   if (sinNumero.length && bloques.length) {
-    const textoEncabezadoCompleto = sinNumero.map((s) => s.texto).join("\n\n");
-    if (textoEncabezadoCompleto.length <= MAX_CHARS_POR_BLOQUE) {
-      bloques[0].texto = `${textoEncabezadoCompleto}\n\n${bloques[0].texto}`;
-    } else {
-      const trozosEnc = partirTextoLargo(textoEncabezadoCompleto);
-      const bloquesEnc: BloqueCarrera[] = trozosEnc.map((t, i) => ({
-        indice: i + 1,
-        numeros: [],
-        texto: t,
-      }));
-      return [...bloquesEnc, ...bloques].map((b, idx) => ({
-        ...b,
-        indice: idx + 1,
-      }));
+    const textoEncabezadoCompleto = sinNumero.map((s) => s.texto).join("\n\n").trim();
+    // Extraer solo las líneas de contexto relevantes (hipódromo, reunión, fecha)
+    // para no inflar el primer bloque con publicidad o páginas de portada.
+    const lineasRelevantes = textoEncabezadoCompleto
+      .split("\n")
+      .filter((l) =>
+        /hip[oó]dromo|rinconada|valencia|hinava|reuni[oó]n|fecha|\b20\d\d\b|\b\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}\b|carrera|race/i.test(l)
+      )
+      .slice(0, 15)
+      .join("\n");
+
+    const contextoCabecera = lineasRelevantes || textoEncabezadoCompleto.slice(-800);
+    if (contextoCabecera) {
+      bloques[0].texto = `${contextoCabecera}\n\n${bloques[0].texto}`;
     }
   }
 
