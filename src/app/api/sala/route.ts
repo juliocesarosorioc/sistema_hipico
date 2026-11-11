@@ -702,7 +702,7 @@ export async function POST(req: Request) {
             respuesta_ia_enviada: analisis.mensajePedagogicoPrivado || "Corrección pedagógica",
             nivel_confianza: analisis.confianza,
             requiere_intervencion_humana: analisis.requiereOperador,
-            estado_ticket_soporte: analisis.requiereOperador ? "PENDIENTE" : "AUTO_RESUELTO",
+            estado_ticket_soporte: analisis.requiereOperador ? "pendiente_operador" : "resuelto_ia",
           });
 
           return NextResponse.json({
@@ -811,7 +811,7 @@ export async function POST(req: Request) {
         respuesta_ia_enviada: respuestaIa,
         nivel_confianza: confianza,
         requiere_intervencion_humana: Boolean(requiereIntervencionHumana),
-        estado_ticket_soporte: requiereIntervencionHumana ? "PENDIENTE" : "AUTO_RESUELTO",
+        estado_ticket_soporte: requiereIntervencionHumana ? "pendiente_operador" : "resuelto_ia",
       }).select().single();
 
       if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
