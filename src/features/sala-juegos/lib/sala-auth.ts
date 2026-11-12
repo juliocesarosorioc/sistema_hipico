@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { supabaseAdmin } from "@/core/supabase-admin";
+import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 
 export interface IdentidadSala {
   tipo: "STAFF" | "JUGADOR";
@@ -79,9 +80,29 @@ export function verificarTokenStaff(token: string): {
 }
 
 /**
+ * Extrae y decodifica pares clave-valor de cookies
+ */
+function parseCookies(header: string | null): Record<string, string> {
+  if (!header) return {};
+  const res: Record<string, string> = {};
+  for (const part of header.split(";")) {
+    const [k, v] = part.trim().split("=");
+    if (k && v) {
+      try {
+        res[decodeURIComponent(k)] = decodeURIComponent(v);
+      } catch {
+        res[k] = v;
+      }
+    }
+  }
+  return res;
+}
+
+/**
  * Autentica la petición a la Sala de Juegos sin confiar en datos enviados en el body
- * Jugador: Headers X-Sala-Cliente-Id y X-Sala-Portal-Token validados contra clientes
- * Staff: Header Authorization: Bearer <JWT_Supabase | Token_HMAC_Staff>
+ * 1. Jugador: Headers X-Sala-Cliente-Id y X-Sala-Portal-Token validados contra clientes
+ * 2. Staff: Header Authorization: Bearer <JWT_Supabase | Token_HMAC_Staff>
+ * 3. Staff / Admin de Aplicación: Cookies de sesión o cabeceras X-Sala-Usuario / X-Sala-Perfil
  */
 export async function autenticarPeticionSala(
   req: Request
@@ -157,7 +178,8 @@ export async function autenticarPeticionSala(
         const esAdmin =
           /admin/i.test(perfil) ||
           /josorioc/i.test(username) ||
-          user.email === "josorioc@sistemahipico.local";
+          user.email === "josorioc@sistemahipico.local" ||
+          esUsuarioPrincipal(username);
 
         let grupoId: string | null = null;
         if (!esAdmin) {
@@ -184,7 +206,53 @@ export async function autenticarPeticionSala(
         };
       }
     } catch {
-      // Intento con supabase auth falló
+      // Intento con supabase auth falló, continuar a verificación por sesión de app
+    }
+  }
+
+  // 3. Chequeo de Staff vía Cookies de sesión o cabeceras de aplicación (X-Sala-Usuario, etc.)
+  const cookies = parseCookies(req.headers.get("cookie"));
+  const headerUsuario = req.headers.get("x-sala-usuario") || req.headers.get("x-usuario");
+  const headerPerfil = req.headers.get("x-sala-perfil") || req.headers.get("x-perfil");
+  const headerPermisos = req.headers.get("x-sala-permisos");
+  const headerGrupo = req.headers.get("x-sala-grupo");
+
+  const usuario = (headerUsuario || cookies["hipico_usuario"] || "").trim();
+  const perfil = (headerPerfil || cookies["hipico_perfil"] || "").trim().toLowerCase();
+  const permisosRaw = headerPermisos || cookies["hipico_permisos"] || "";
+  const grupoCookie = headerGrupo || cookies["hipico_grupo_activo"] || null;
+
+  if (usuario) {
+    const esAdmin = esUsuarioPrincipal(usuario) || perfil === "admin";
+    const esOperador = esAdmin || perfil === "operador" || permisosRaw.includes("operar_sala") || permisosRaw.includes("jugar");
+
+    if (esAdmin || esOperador) {
+      let grupoId: string | null = (grupoCookie && grupoCookie !== "null" && grupoCookie !== "undefined") ? grupoCookie : null;
+      if (!esAdmin && !grupoId) {
+        try {
+          const { data: grupo } = await supabaseAdmin
+            .from("grupos_venta")
+            .select("id")
+            .ilike("slug", usuario)
+            .maybeSingle();
+          if (grupo) grupoId = grupo.id;
+        } catch {
+          // Fallback silencioso
+        }
+      }
+
+      return {
+        ok: true,
+        identidad: {
+          tipo: "STAFF",
+          usuarioId: usuario,
+          nombre: esUsuarioPrincipal(usuario) ? "Julio Osorio" : usuario,
+          grupoId,
+          esAdmin,
+          esOperador: true,
+          permisos: esAdmin ? ["*"] : ["operar_sala", "liquidar_sala", "retirar_ejemplar"],
+        },
+      };
     }
   }
 

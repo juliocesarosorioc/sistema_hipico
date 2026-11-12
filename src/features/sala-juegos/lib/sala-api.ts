@@ -76,7 +76,11 @@ async function headersAuth(): Promise<HeadersInit> {
     try {
       const { data } = await supabase.auth.getSession();
       if (data.session?.access_token) {
-        tokenStaff = data.session.access_token;
+        const exp = data.session.expires_at;
+        // Solo enviar token si no está vencido
+        if (!exp || Date.now() / 1000 < exp - 10) {
+          tokenStaff = data.session.access_token;
+        }
       }
     } catch {
       // noop
@@ -85,6 +89,22 @@ async function headersAuth(): Promise<HeadersInit> {
 
   if (tokenStaff) {
     headers["Authorization"] = `Bearer ${tokenStaff}`;
+  }
+
+  // Enviar respaldo de identidad de sesión de la aplicación (Staff / Operador)
+  if (typeof window !== "undefined") {
+    try {
+      const u = localStorage.getItem("hipico_usuario");
+      const p = localStorage.getItem("hipico_perfil");
+      const perm = localStorage.getItem("hipico_permisos");
+      const g = localStorage.getItem("hipico_grupo_activo");
+      if (u) headers["X-Sala-Usuario"] = u;
+      if (p) headers["X-Sala-Perfil"] = p;
+      if (perm) headers["X-Sala-Permisos"] = perm;
+      if (g) headers["X-Sala-Grupo"] = g;
+    } catch {
+      // noop
+    }
   }
 
   return headers;
@@ -98,7 +118,11 @@ async function requestApi<T = any>(
     const url = `/api/sala${endpoint}`;
     const authH = await headersAuth();
     const mergedHeaders = { ...authH, ...(options.headers as Record<string, string> || {}) };
-    const res = await fetch(url, { ...options, headers: mergedHeaders });
+    const res = await fetch(url, {
+      ...options,
+      headers: mergedHeaders,
+      credentials: "include", // Enviar cookies de sesión de forma garantizada
+    });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       return { ok: false, status: res.status, error: json.error || `Error ${res.status}: ${res.statusText}` };
