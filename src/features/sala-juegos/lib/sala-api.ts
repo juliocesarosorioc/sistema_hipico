@@ -51,10 +51,34 @@ export function obtenerCredencialesGuardadas(): CredencialesSala {
       // Ignorar fallos de URL
     }
 
+    let pToken = _credenciales.portalToken || sessionStorage.getItem("sala_portal_token") || localStorage.getItem("portal_token");
+    let cId = _credenciales.clienteId || sessionStorage.getItem("sala_cliente_id") || localStorage.getItem("portal_cliente_id");
+
+    // Respaldo desde portal.cliente (usado por el Portal del Cliente)
+    if (!pToken || !cId) {
+      try {
+        const rawPortal = localStorage.getItem("portal.cliente");
+        if (rawPortal) {
+          const parsed = JSON.parse(rawPortal);
+          if (!pToken && parsed?.token) pToken = String(parsed.token);
+          if (!cId && (parsed?.id || parsed?.cliente?.id)) {
+            cId = String(parsed?.id || parsed?.cliente?.id);
+          }
+        }
+      } catch {
+        // noop
+      }
+    }
+
+    const sToken =
+      _credenciales.staffToken ||
+      sessionStorage.getItem("sala_staff_token") ||
+      localStorage.getItem("supabase_auth_token");
+
     return {
-      portalToken: _credenciales.portalToken || sessionStorage.getItem("sala_portal_token") || localStorage.getItem("portal_token"),
-      clienteId: _credenciales.clienteId || sessionStorage.getItem("sala_cliente_id") || localStorage.getItem("portal_cliente_id"),
-      staffToken: _credenciales.staffToken || sessionStorage.getItem("sala_staff_token") || localStorage.getItem("supabase_auth_token"),
+      portalToken: pToken || null,
+      clienteId: cId || null,
+      staffToken: sToken || null,
     };
   }
   return _credenciales;
@@ -94,7 +118,10 @@ async function headersAuth(): Promise<HeadersInit> {
   // Enviar respaldo de identidad de sesión de la aplicación (Staff / Operador)
   if (typeof window !== "undefined") {
     try {
-      const u = localStorage.getItem("hipico_usuario");
+      const u =
+        localStorage.getItem("hipico_usuario") ||
+        localStorage.getItem("hipico_sesion_admin_local") ||
+        localStorage.getItem("hipico_operador_actual");
       const p = localStorage.getItem("hipico_perfil");
       const perm = localStorage.getItem("hipico_permisos");
       const g = localStorage.getItem("hipico_grupo_activo");

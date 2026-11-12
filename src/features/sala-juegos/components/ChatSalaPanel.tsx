@@ -1038,7 +1038,7 @@ export function ChatSalaPanel({
 
       {/* Barra Inferior Compacta estilo WhatsApp con Citación + Compositor Rápido 1-Toque */}
       <div
-        className={`px-2 py-1.5 border-t space-y-1 ${
+        className={`px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] border-t space-y-1 ${
           esClaro ? "bg-[#f0f2f5] border-[#d1d7db]" : "bg-[#202c33] border-[#2a3942]"
         }`}
       >

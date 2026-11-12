@@ -199,7 +199,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (ES_SALA(pathname)) {
     return (
-      <div className="h-[100dvh] w-screen overflow-hidden bg-[#111b21]">
+      <div className="min-h-[100dvh] h-[100dvh] w-full max-w-full overflow-hidden bg-[#efeae2] dark:bg-[#0b141a]">
         {children}
       </div>
     );
