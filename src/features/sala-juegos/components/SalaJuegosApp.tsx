@@ -6,7 +6,11 @@ import { ChatSalaPanel, FAMILIAS_FUENTE_SALA, type ClaveFuenteSala, type TemaSal
 import { ModalOperadorSala } from "./ModalOperadorSala";
 import { ModalRecargaBlindada } from "./ModalRecargaBlindada";
 import { ModalPrejugadas } from "./ModalPrejugadas";
-import { formatearMontoRegional } from "@/shared/lib/dinero";
+import {
+  formatearMontoRegional,
+  esGrupoBolivares,
+  prefijoMonedaGrupo,
+} from "@/shared/lib/dinero";
 
 export interface PropsSalaJuegosApp {
   grupoIdInicial?: string;
@@ -350,7 +354,11 @@ export function SalaJuegosApp({
           >
             <span className="opacity-80 mr-1 hidden md:inline">Disp:</span>
             <span className="font-black">
-              {ocultarSaldo ? "•••" : esLibre ? "LIBRE" : formatearMontoRegional(saldoDisp)}
+              {ocultarSaldo
+                ? "•••"
+                : esLibre
+                  ? "LIBRE"
+                  : `${prefijoMonedaGrupo(grupoActivo?.moneda)}${formatearMontoRegional(saldoDisp)}`}
             </span>
             <button
               onClick={() => setOcultarSaldo(!ocultarSaldo)}
@@ -517,6 +525,7 @@ export function SalaJuegosApp({
               tamanoLetra={tamanoLetra}
               fuenteId={fuenteId}
               tema={tema}
+              moneda={grupoActivo?.moneda || "USD"}
               onActualizarSaldo={refrescarSaldo}
               onSalirPlataforma={salirALaPlataforma}
               onAbrirOperador={() => {
@@ -532,6 +541,7 @@ export function SalaJuegosApp({
               tamanoLetra={tamanoLetra}
               fuenteId={fuenteId}
               tema={tema}
+              moneda={grupoActivo?.moneda || "USD"}
               onActualizarSaldo={refrescarSaldo}
               onSalirPlataforma={salirALaPlataforma}
               onAbrirOperador={() => {
@@ -550,6 +560,7 @@ export function SalaJuegosApp({
               tamanoLetra={tamanoLetra}
               fuenteId={fuenteId}
               tema={tema}
+              moneda={grupoActivo?.moneda || "USD"}
               onActualizarSaldo={refrescarSaldo}
               onSalirPlataforma={salirALaPlataforma}
               onAbrirOperador={() => setModalOperadorAbierto(true)}

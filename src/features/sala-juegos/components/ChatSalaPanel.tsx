@@ -3,7 +3,11 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { salaApi } from "../lib/sala-api";
 import { supabase } from "@/core/supabase";
-import { formatearMontoRegional } from "@/shared/lib/dinero";
+import {
+  formatearMontoRegional,
+  esGrupoBolivares,
+  prefijoMonedaGrupo,
+} from "@/shared/lib/dinero";
 
 export type ClaveFuenteSala = "whatsapp" | "inter" | "roboto" | "sf" | "tabular";
 export type TemaSala = "claro" | "oscuro";
@@ -71,6 +75,7 @@ interface PropsChatSalaPanel {
   tamanoLetra: number;
   fuenteId?: ClaveFuenteSala;
   tema?: TemaSala;
+  moneda?: string;
   onActualizarSaldo?: () => void;
   onAbrirOperador?: () => void;
   onSalirPlataforma?: () => void;
@@ -84,10 +89,14 @@ export function ChatSalaPanel({
   tamanoLetra,
   fuenteId = "whatsapp",
   tema = "claro",
+  moneda = "USD",
   onActualizarSaldo,
   onAbrirOperador,
   onSalirPlataforma,
 }: PropsChatSalaPanel) {
+  const esBs = esGrupoBolivares(moneda);
+  const prefijo = prefijoMonedaGrupo(moneda);
+
   const [mensajes, setMensajes] = useState<any[]>([]);
   const [textoInput, setTextoInput] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -99,7 +108,15 @@ export function ChatSalaPanel({
   const [accionRapida, setAccionRapida] = useState<"Juego" | "Consigo" | "Doy">("Juego");
   const [puestoRapido, setPuestoRapido] = useState<string>("1P");
   const [ejemplarRapido, setEjemplarRapido] = useState<string>("1");
-  const [montoRapido, setMontoRapido] = useState<string>("20");
+  const [montoRapido, setMontoRapido] = useState<string>(esBs ? "5k" : "20");
+
+  useEffect(() => {
+    if (esBs) {
+      setMontoRapido("5k");
+    } else {
+      setMontoRapido("20");
+    }
+  }, [esBs]);
 
   const [sugerenciaPedagogica, setSugerenciaPedagogica] = useState<{
     mensaje: string;
@@ -292,7 +309,7 @@ export function ChatSalaPanel({
       const res = await salaApi.enviarMensaje({
         salaId: sala.id,
         grupoId,
-        texto: textoPersonalizado || (monto ? `Tomar $${monto}` : "Tomar jugada total"),
+        texto: textoPersonalizado || (monto ? `Tomar ${prefijo}${formatearMontoRegional(monto)}` : "Tomar jugada total"),
         propuestaId,
         monto: monto,
       } as any);
@@ -1038,7 +1055,7 @@ export function ChatSalaPanel({
                 <span>Respondiendo a: {replyToPropuesta.remitente_nombre || "Jugador"}</span>
                 {(replyToPropuesta.monto_disponible || replyToPropuesta.monto_original) && (
                   <span className="font-mono text-amber-600">
-                    (Disp: ${replyToPropuesta.monto_disponible || replyToPropuesta.monto_original})
+                    (Disp: {prefijo}{formatearMontoRegional(replyToPropuesta.monto_disponible || replyToPropuesta.monto_original)})
                   </span>
                 )}
               </div>
@@ -1097,28 +1114,36 @@ export function ChatSalaPanel({
                 {[
                   "1P",
                   "1P-1/2N",
-                  "1/2-2N",
+                  "1/2N",
+                  "1/2N-2N",
                   "2N",
                   "2N-2/2N",
-                  "2/2-2P",
+                  "2/2N",
+                  "2/2N-2P",
                   "2P",
                   "2P-2/3N",
-                  "2/3-3N",
+                  "2/3N",
+                  "2/3N-3N",
                   "3N",
                   "3N-3/3N",
-                  "3/3-3P",
+                  "3/3N",
+                  "3/3N-3P",
                   "3P",
                   "3P-3/4N",
-                  "3/4-4N",
+                  "3/4N",
+                  "3/4N-4N",
                   "4N",
                   "4N-4/4N",
-                  "4/4-4P",
+                  "4/4N",
+                  "4/4N-4P",
                   "4P",
                   "4P-4/5N",
-                  "4/5-5N",
+                  "4/5N",
+                  "4/5N-5N",
                   "5N",
                   "5N-5/5N",
-                  "5/5-5P",
+                  "5/5N",
+                  "5/5N-5P",
                   "5P",
                 ].map((p) => (
                   <button
@@ -1159,23 +1184,48 @@ export function ChatSalaPanel({
             </div>
             <div className="flex items-center justify-between gap-1">
               <div className="flex items-center gap-1 flex-wrap">
-                <span className="text-[10px] font-bold">Monto $:</span>
-                {["10", "20", "50", "100", "200"].map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setMontoRapido(m)}
-                    className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] ${
-                      montoRapido === m
-                        ? "bg-[#008069] text-white"
-                        : esClaro
-                          ? "bg-gray-100 text-gray-800"
-                          : "bg-[#202c33] text-gray-300"
-                    }`}
-                  >
-                    ${m}
-                  </button>
-                ))}
+                <span className="text-[10px] font-bold">{esBs ? "Monto Bs:" : "Monto $:"}</span>
+                {esBs ? (
+                  [
+                    { val: "5k", label: "5k (5.000)" },
+                    { val: "10.000", label: "10.000" },
+                    { val: "20.000", label: "20.000" },
+                    { val: "50.000", label: "50.000" },
+                    { val: "100.000", label: "100.000" },
+                  ].map((item) => (
+                    <button
+                      key={item.val}
+                      type="button"
+                      onClick={() => setMontoRapido(item.val)}
+                      className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] ${
+                        montoRapido === item.val
+                          ? "bg-[#008069] text-white"
+                          : esClaro
+                            ? "bg-gray-100 text-gray-800"
+                            : "bg-[#202c33] text-gray-300"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))
+                ) : (
+                  ["10", "20", "50", "100", "200"].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMontoRapido(m)}
+                      className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] ${
+                        montoRapido === m
+                          ? "bg-[#008069] text-white"
+                          : esClaro
+                            ? "bg-gray-100 text-gray-800"
+                            : "bg-[#202c33] text-gray-300"
+                      }`}
+                    >
+                      ${m}
+                    </button>
+                  ))
+                )}
               </div>
               <button
                 type="button"
@@ -1183,7 +1233,7 @@ export function ChatSalaPanel({
                 onClick={() => enviarMensaje(`${accionRapida} ${puestoRapido} del ${ejemplarRapido} con ${montoRapido}`)}
                 className="bg-[#008069] hover:bg-[#017561] text-white font-black px-3 py-1 rounded-lg text-xs shadow-xs shrink-0"
               >
-                ➤ Publicar: {accionRapida} {puestoRapido} #{ejemplarRapido} ${montoRapido}
+                ➤ Publicar: {accionRapida} {puestoRapido} #{ejemplarRapido} {esBs ? `Bs. ${montoRapido}` : `$${montoRapido}`}
               </button>
             </div>
           </div>
@@ -1198,6 +1248,20 @@ export function ChatSalaPanel({
                 textoProp.includes("juego") || (replyToPropuesta.accion_proponente || "").toUpperCase() === "JUEGA";
               const disp = Number(replyToPropuesta.monto_disponible || replyToPropuesta.monto_original || 0);
 
+              const opcionesMonto = esBs
+                ? [
+                    { val: "5k", num: 5000, label: "5k (5.000)" },
+                    { val: "10.000", num: 10000, label: "10.000" },
+                    { val: "20.000", num: 20000, label: "20.000" },
+                    { val: "50.000", num: 50000, label: "50.000" },
+                  ]
+                : [
+                    { val: "10", num: 10, label: "$10" },
+                    { val: "20", num: 20, label: "$20" },
+                    { val: "50", num: 50, label: "$50" },
+                    { val: "100", num: 100, label: "$100" },
+                  ];
+
               if (esPropJuego) {
                 return (
                   <>
@@ -1206,19 +1270,19 @@ export function ChatSalaPanel({
                       disabled={enviando}
                       className="bg-[#008069] hover:bg-[#017561] text-white font-black px-2 py-0.5 rounded text-[11px] shadow-xs font-mono whitespace-nowrap"
                     >
-                      ⚡ Tomar Total (${disp})
+                      ⚡ Tomar Total ({prefijo}{formatearMontoRegional(disp)})
                     </button>
-                    {[10, 20, 50].filter((v) => v < disp).map((val) => (
+                    {opcionesMonto.filter((opt) => opt.num < disp).map((opt) => (
                       <button
-                        key={val}
-                        onClick={() => enviarMensaje(`Consigo ${val}`)}
+                        key={opt.val}
+                        onClick={() => enviarMensaje(`Consigo ${opt.val}`)}
                         className={`px-2 py-0.5 rounded border font-mono font-bold whitespace-nowrap ${
                           esClaro
                             ? "bg-white border-[#008069]/40 text-[#008069]"
                             : "bg-[#111b21] border-emerald-600/50 text-emerald-300"
                         }`}
                       >
-                        + Consigo {val}
+                        + Consigo {opt.label}
                       </button>
                     ))}
                     {["Doy", "J", "Ponte", "Jugaste"].map((v) => (
@@ -1244,19 +1308,19 @@ export function ChatSalaPanel({
                       disabled={enviando}
                       className="bg-[#008069] hover:bg-[#017561] text-white font-black px-2 py-0.5 rounded text-[11px] shadow-xs font-mono whitespace-nowrap"
                     >
-                      ⚡ Tomar Total (${disp})
+                      ⚡ Tomar Total ({prefijo}{formatearMontoRegional(disp)})
                     </button>
-                    {[10, 20, 50].filter((v) => v < disp).map((val) => (
+                    {opcionesMonto.filter((opt) => opt.num < disp).map((opt) => (
                       <button
-                        key={val}
-                        onClick={() => enviarMensaje(`Juego ${val}`)}
+                        key={opt.val}
+                        onClick={() => enviarMensaje(`Juego ${opt.val}`)}
                         className={`px-2 py-0.5 rounded border font-mono font-bold whitespace-nowrap ${
                           esClaro
                             ? "bg-white border-[#008069]/40 text-[#008069]"
                             : "bg-[#111b21] border-emerald-600/50 text-emerald-300"
                         }`}
                       >
-                        + Juego {val}
+                        + Juego {opt.label}
                       </button>
                     ))}
                     {["Voy", "J", "Ponte", "Jugue"].map((v) => (

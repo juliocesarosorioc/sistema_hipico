@@ -14,7 +14,11 @@ import {
   analizarYEstandarizarJugada,
   analizarComandoRetiro,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
-import { formatearMontoRegional } from "@/shared/lib/dinero";
+import {
+  formatearMontoRegional,
+  parsearMontoConK,
+  prefijoMonedaGrupo,
+} from "@/shared/lib/dinero";
 import {
   construirMensajeCarreraAbierta,
   construirMensajeCarreraCerrada,
@@ -1140,13 +1144,26 @@ export async function POST(req: Request) {
 
         const saldoDispAceptante = calcularDisponibleCliente(aceptante);
 
-        // Extraer monto solicitado de body.monto o del texto de respuesta (ej. "Juego 20", "Consigo 50", "Ponte 10")
+        // Consultar moneda del grupo para formato y mensajes
+        const { data: gMoneda } = await supabaseAdmin
+          .from("grupos_venta")
+          .select("moneda")
+          .eq("id", grupoId)
+          .maybeSingle();
+        const prefijo = prefijoMonedaGrupo(gMoneda?.moneda);
+
+        // Extraer monto solicitado de body.monto o del texto de respuesta (ej. "Juego 20", "Consigo 5k", "Ponte 10.000")
         let montoPedido = body.monto ? Number(body.monto) : remanenteDisponible;
         if (texto && typeof texto === "string") {
-          const matchNum = texto.match(/\b(\d+(?:[\.,]\d+)?)\b/);
+          const matchNum = texto.match(/([0-9kK\.,]+)/);
           if (matchNum) {
-            const val = parseFloat(matchNum[1].replace(",", "."));
-            if (val > 0) montoPedido = val;
+            const parsedK = parsearMontoConK(matchNum[1]);
+            if (parsedK && parsedK.monto > 0) {
+              montoPedido = parsedK.monto;
+            } else {
+              const val = parseFloat(matchNum[1].replace(",", "."));
+              if (val > 0) montoPedido = val;
+            }
           }
         }
 
@@ -1159,7 +1176,7 @@ export async function POST(req: Request) {
           if (saldoDispAceptante <= 0) {
             return NextResponse.json({
               ok: false,
-              error: `Saldo insuficiente ($0.00) para tomar esta jugada.`,
+              error: `Saldo insuficiente (${prefijo}0.00) para tomar esta jugada.`,
             }, { status: 400 });
           }
           excedioSaldoAceptante = true;
@@ -1486,7 +1503,13 @@ export async function POST(req: Request) {
         }
 
         // Análisis mediante Parser Pedagógico Determinístico
-        const analisis = analizarYEstandarizarJugada(texto, disponible, retirados);
+        const { data: gDataJugada } = await supabaseAdmin
+          .from("grupos_venta")
+          .select("moneda")
+          .eq("id", grupoId)
+          .maybeSingle();
+        const monedaGrupo = gDataJugada?.moneda || "USD";
+        const analisis = analizarYEstandarizarJugada(texto, disponible, retirados, 16, identidad.nombre, monedaGrupo);
 
         // Si tuvo intención de jugada pero superó saldo, retirado o formato erróneo
         if (analisis.esIntencionDeJugada && !analisis.valido) {
