@@ -1618,12 +1618,66 @@ export function calcularLiquidacionPuestosCarrera(
       const reglaIdentidad = clienteId || identidad;
       const reglaMismo = resolverReglaCrucePuestos(opcionesGrupo, reglaIdentidad, "mismoEjemplar");
       const reglaDiferente = resolverReglaCrucePuestos(opcionesGrupo, reglaIdentidad, "diferenteEjemplar");
-      // REGLA DE CRUCE OFICIAL (netting bruto): la comisión se calcula SOLO
-      // sobre el balance neto del jugador en la carrera (ganancias - pérdidas),
-      // NUNCA sobre el bruto ganado. No se "cruza" para reducir la base: el
-      // neteo ya absorbe las pérdidas. Así Fortuna: 610-300=310 -> -5% = 294,50.
-      perdidaCruzada = 0;
-      baseComision = Math.max(0, neto);
+      const perdidasRestantes = perdidas.map((p) => ({
+        entrada: p,
+        restante: Math.max(0, Number(p.monto)),
+      }));
+      const normCab = (c?: string) => String(c ?? "").trim().toUpperCase();
+
+      if (reglaMismo.activo) {
+        let aplicoMismo = false;
+        for (const p of perdidasRestantes) {
+          if (p.restante <= 0) continue;
+          const cabP = normCab(p.entrada.caballo);
+          for (const g of ganancias) {
+            if (g.disponible <= 0 || p.restante <= 0) continue;
+            const cabG = normCab(g.entrada.caballo);
+            const mismo =
+              (cabP !== "" && cabG !== "" && cabP === cabG) ||
+              (cabP === "" && cabG === "" && reglaDiferente.activo);
+            if (!mismo) continue;
+            const cruce = Math.min(g.disponible, p.restante);
+            if (cruce > 0) {
+              g.disponible = restarDinero(g.disponible, cruce);
+              p.restante = restarDinero(p.restante, cruce);
+              perdidaCruzada = sumarDinero(perdidaCruzada, cruce);
+              aplicoMismo = true;
+            }
+          }
+        }
+        if (aplicoMismo) {
+          modalidadesAplicadas.push({ modalidad: "mismoEjemplar", origen: reglaMismo.origen });
+        }
+      }
+
+      if (reglaDiferente.activo) {
+        let aplicoDif = false;
+        for (const p of perdidasRestantes) {
+          if (p.restante <= 0) continue;
+          const cabP = normCab(p.entrada.caballo);
+          for (const g of ganancias) {
+            if (g.disponible <= 0 || p.restante <= 0) continue;
+            const cabG = normCab(g.entrada.caballo);
+            const diferente =
+              (cabP !== "" && cabG !== "" && cabP !== cabG) ||
+              cabP === "" ||
+              cabG === "";
+            if (!diferente) continue;
+            const cruce = Math.min(g.disponible, p.restante);
+            if (cruce > 0) {
+              g.disponible = restarDinero(g.disponible, cruce);
+              p.restante = restarDinero(p.restante, cruce);
+              perdidaCruzada = sumarDinero(perdidaCruzada, cruce);
+              aplicoDif = true;
+            }
+          }
+        }
+        if (aplicoDif) {
+          modalidadesAplicadas.push({ modalidad: "diferenteEjemplar", origen: reglaDiferente.origen });
+        }
+      }
+
+      baseComision = Math.max(0, restarDinero(ganadoBruto, perdidaCruzada));
     }
     const comision = baseComision > 0 ? calcularComisionExacta(baseComision, pct) : 0;
     const netoCliente = restarDinero(neto, comision);

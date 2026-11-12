@@ -1,4 +1,5 @@
 // LÍNEA 1: Motor Determinístico de Estandarización Hípica y Corrección Pedagógica
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 export interface ResultadoAnalisisJugada {
   esIntencionDeJugada: boolean;
@@ -88,7 +89,7 @@ export function evaluarConcrecionEstricta(
   let msgPrivadoBot: string | undefined;
 
   if (excedioSaldo) {
-    msgPublicoBot = `Esta jugada solo por $${topeSaldo.toFixed(2)}`;
+    msgPublicoBot = `Esta jugada solo por $${formatearMontoRegional(topeSaldo)}`;
     msgPrivadoBot = `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
   }
 
@@ -222,15 +223,16 @@ export function analizarYEstandarizarJugada(
           requiereOperador: false,
           excedioSaldo: true,
           montoDisponibleValido: 0,
-          mensajePedagogicoPrivado: `🔒 Saldo insuficiente ($${saldoDisponible.toFixed(2)}). Debes recargar saldo antes de publicar jugadas.`,
+          mensajePedagogicoPrivado: `🔒 Saldo insuficiente ($${formatearMontoRegional(saldoDisponible)}). Debes recargar saldo antes de publicar jugadas.`,
           msgPublicoBot: `${nombreUsuario || 'El jugador'} no dispone de saldo suficiente para esta jugada.`,
           msgPrivadoBot: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
         };
       }
 
-      const jugadaEstandarizada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')} ${monto}`;
+      const montoTxtMatch = Number.isInteger(monto) ? String(monto) : formatearMontoRegional(monto);
+      const jugadaEstandarizada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')} ${montoTxtMatch}`;
       const msgPublicoBotMatch = excedioSaldoMatch
-        ? `${nombreUsuario || 'El jugador'} solo dispone de $${saldoDisponible.toFixed(2)} para esta jugada.`
+        ? `${nombreUsuario || 'El jugador'} solo dispone de $${formatearMontoRegional(saldoDisponible)} para esta jugada.`
         : undefined;
       const msgPrivadoBotMatch = excedioSaldoMatch
         ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
@@ -309,15 +311,16 @@ export function analizarYEstandarizarJugada(
           requiereOperador: false,
           excedioSaldo: true,
           montoDisponibleValido: 0,
-          mensajePedagogicoPrivado: `🔒 Saldo insuficiente ($${saldoDisponible.toFixed(2)}). Debes recargar saldo antes de publicar jugadas.`,
+          mensajePedagogicoPrivado: `🔒 Saldo insuficiente ($${formatearMontoRegional(saldoDisponible)}). Debes recargar saldo antes de publicar jugadas.`,
           msgPublicoBot: `${nombreUsuario || 'El jugador'} no dispone de saldo suficiente para esta jugada.`,
           msgPrivadoBot: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
         };
       }
 
-      const jugadaEstandarizada = `${verboEstandar} ${modLimpia} ${caballos.join('-')} ${monto}`;
+      const montoTxtPuesto = Number.isInteger(monto) ? String(monto) : formatearMontoRegional(monto);
+      const jugadaEstandarizada = `${verboEstandar} ${modLimpia} ${caballos.join('-')} ${montoTxtPuesto}`;
       const msgPublicoBotPuesto = excedioSaldoPuesto
-        ? `${nombreUsuario || 'El jugador'} solo dispone de $${saldoDisponible.toFixed(2)} para esta jugada.`
+        ? `${nombreUsuario || 'El jugador'} solo dispone de $${formatearMontoRegional(saldoDisponible)} para esta jugada.`
         : undefined;
       const msgPrivadoBotPuesto = excedioSaldoPuesto
         ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`

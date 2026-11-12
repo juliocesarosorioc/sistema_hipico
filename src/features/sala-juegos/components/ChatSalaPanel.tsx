@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { salaApi } from "../lib/sala-api";
 import { supabase } from "@/core/supabase";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 export type ClaveFuenteSala = "whatsapp" | "inter" | "roboto" | "sf" | "tabular";
 export type TemaSala = "claro" | "oscuro";
@@ -316,6 +317,40 @@ export function ChatSalaPanel({
     setTextoInput(sug);
     setSugerenciaPedagogica(null);
     enviarMensaje(sug);
+  };
+
+  /**
+   * Cierra directamente cada jugada abierta del jugador (todas o una individual)
+   * SIN enviar ningún mensaje al chat para no saturar el grupo.
+   */
+  const cerrarPropuestasDirectamente = async (propuestaIdEspecifica?: string) => {
+    if (!sala?.id) return;
+    // Actualización optimista inmediata de cada propuesta abierta
+    setMensajes((prev) =>
+      prev.map((m) => {
+        const esProp = m.tipo_mensaje === "propuesta_jugada" || m.tipo_mensaje === "PROPUESTA";
+        if (!esProp) return m;
+        if (!esMio(m.remitente_id, m.remitente_nombre)) return m;
+        if (propuestaIdEspecifica && m.id !== propuestaIdEspecifica) return m;
+        if (m.estado_propuesta === "abierta" && Number(m.monto_disponible ?? 0) > 0) {
+          return { ...m, estado_propuesta: "cerrada", monto_disponible: 0 };
+        }
+        return m;
+      })
+    );
+
+    try {
+      await salaApi.enviarMensaje({
+        salaId: sala.id,
+        grupoId,
+        texto: "Se fue",
+        ...(propuestaIdEspecifica ? { cerrarPropuestaId: propuestaIdEspecifica } : {}),
+      } as any);
+      await cargarMensajes();
+      onActualizarSaldo?.();
+    } catch {
+      await cargarMensajes();
+    }
   };
 
   const miId = identidad?.usuarioId || identidad?.clienteRow?.id;
@@ -651,24 +686,50 @@ export function ChatSalaPanel({
                           esClaro ? "text-[#008069]" : "text-emerald-400"
                         }`}
                       >
-                        ${m.monto_original}
+                        {formatearMontoRegional(m.monto_original)}
                       </span>
                     </div>
                     {m.monto_disponible < m.monto_original && m.monto_disponible > 0 && (
                       <div className="text-[10px] font-mono mt-0.5 flex items-center justify-between">
                         <span className={esClaro ? "text-[#54656f]" : "text-gray-300"}>Disponible:</span>
                         <span className="font-bold text-[#008069]">
-                          ${m.monto_disponible} de ${m.monto_original}
+                          {formatearMontoRegional(m.monto_disponible)} de {formatearMontoRegional(m.monto_original)}
                         </span>
+                      </div>
+                    )}
+
+                    {/* Desglose en vivo de quiénes van jugando en esta propuesta ("Eddie jugó 43,50") */}
+                    {Array.isArray(m.desglose_jugaron) && m.desglose_jugaron.length > 0 && (
+                      <div
+                        className={`mt-1 pt-1 border-t text-[11px] font-mono space-y-0.5 ${
+                          esClaro ? "border-black/10 text-[#111b21]" : "border-white/10 text-emerald-200"
+                        }`}
+                      >
+                        <div className="font-extrabold text-[#008069] flex items-center justify-between">
+                          <span>
+                            🤝 Van jugando por{" "}
+                            {formatearMontoRegional(
+                              m.monto_jugado_total ??
+                                m.desglose_jugaron.reduce((a: number, b: any) => a + Number(b.monto || 0), 0)
+                            )}
+                          </span>
+                        </div>
+                        {m.desglose_jugaron.map((item: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between text-[10px] pl-1">
+                            <span>
+                              • <strong>{item.jugador}</strong> jugó {formatearMontoRegional(item.monto)}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
 
-                  {/* Vigencia expirada sin interrumpir el chat */}
+                  {/* Vigencia expirada o cerrada sin interrumpir el chat */}
                   {estaVencida && m.estado_propuesta !== "anulada" && (
                     <div
                       className={`flex items-center justify-between text-[10px] font-bold px-2 py-0.5 rounded mt-0.5 ${
-                        disponible <= 0
+                        disponible <= 0 && Number(m.monto_jugado_total || 0) > 0
                           ? esClaro
                             ? "bg-[#e7fce3] text-[#008069]"
                             : "bg-emerald-950/60 text-emerald-300"
@@ -677,7 +738,13 @@ export function ChatSalaPanel({
                             : "bg-amber-950/60 text-amber-400 border border-amber-600/40"
                       }`}
                     >
-                      <span>{disponible <= 0 ? "🤝 Jugaron (Completada 100%)" : "⏰ Jugada cerrada por tiempo"}</span>
+                      <span>
+                        {disponible <= 0 && Number(m.monto_jugado_total || 0) >= Number(m.monto_original || 0)
+                          ? `🤝 Van jugando por ${formatearMontoRegional(m.monto_jugado_total || m.monto_original)} (100%)`
+                          : m.estado_propuesta === "cerrada" && disponible <= 0
+                            ? "🚫 Se fue (Jugada cerrada)"
+                            : "⏰ Jugada cerrada por tiempo"}
+                      </span>
                     </div>
                   )}
 
@@ -691,7 +758,7 @@ export function ChatSalaPanel({
                           className="col-span-1 bg-[#008069] hover:bg-[#017561] text-white font-black py-1 px-1.5 rounded text-[11px] transition flex items-center justify-center gap-0.5 shadow-xs"
                         >
                           <span>⚡</span>
-                          <span>Total (${disponible})</span>
+                          <span>Total ({formatearMontoRegional(disponible)})</span>
                         </button>
                         <button
                           onClick={() => {
@@ -732,7 +799,7 @@ export function ChatSalaPanel({
                           }`}
                         >
                           <div className="flex items-center justify-between text-[10px] font-semibold">
-                            <span>¿Cuánto tomas? (Máx: ${disponible})</span>
+                            <span>¿Cuánto tomas? (Máx: {formatearMontoRegional(disponible)})</span>
                             <button onClick={() => setTomandoParteId(null)} className="font-bold">
                               ✕
                             </button>
@@ -745,18 +812,17 @@ export function ChatSalaPanel({
                                 disabled={enviando}
                                 className="bg-[#008069] text-white px-2 py-0.5 rounded text-[10px] font-mono font-bold"
                               >
-                                ${val}
+                                {formatearMontoRegional(val)}
                               </button>
                             ))}
                           </div>
                           <div className="flex items-center gap-1">
                             <input
-                              type="number"
-                              min="1"
-                              max={disponible}
+                              type="text"
+                              inputMode="decimal"
                               value={montoParcialInput}
                               onChange={(e) => setMontoParcialInput(e.target.value)}
-                              placeholder={`Monto (1 - ${disponible})`}
+                              placeholder={`Monto (ej. 43,50 — máx ${formatearMontoRegional(disponible)})`}
                               className={`flex-1 text-xs px-2 py-1 rounded border outline-none font-mono ${
                                 esClaro
                                   ? "bg-white text-[#111b21] border-gray-300"
@@ -765,9 +831,9 @@ export function ChatSalaPanel({
                             />
                             <button
                               onClick={() => {
-                                const n = Number(montoParcialInput);
+                                const n = parseFloat(String(montoParcialInput).replace(",", "."));
                                 if (!n || n <= 0 || n > disponible) {
-                                  alert(`Ingresa un monto válido entre 1 y ${disponible}`);
+                                  alert(`Ingresa un monto válido entre 0,01 y ${formatearMontoRegional(disponible)}`);
                                   return;
                                 }
                                 aceptarPropuesta(m.id, n);
@@ -783,10 +849,10 @@ export function ChatSalaPanel({
                     </div>
                   )}
 
-                  {/* Botón de Retiro Rápido para el autor */}
+                  {/* Botón de Cierre Individual para el autor (sin saturar el chat) */}
                   {mio && activa && (
                     <button
-                      onClick={() => enviarMensaje("Se fue")}
+                      onClick={() => cerrarPropuestasDirectamente(m.id)}
                       disabled={enviando}
                       className={`w-full mt-1 py-1 px-2 rounded text-[10px] font-bold transition flex items-center justify-center gap-1 border ${
                         esClaro
@@ -795,7 +861,7 @@ export function ChatSalaPanel({
                       }`}
                     >
                       <span>🚫</span>
-                      <span>Se fue (Retirar jugada)</span>
+                      <span>Se fue (Cerrar esta jugada)</span>
                     </button>
                   )}
 
@@ -1224,14 +1290,14 @@ export function ChatSalaPanel({
               + Match (x)
             </button>
             <button
-              onClick={() => enviarMensaje("Se fue")}
+              onClick={() => cerrarPropuestasDirectamente()}
               disabled={enviando}
               className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] flex items-center gap-0.5 transition whitespace-nowrap border ${
                 esClaro
                   ? "bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
                   : "bg-red-950/70 hover:bg-red-900/80 text-red-300 border-red-700/50"
               }`}
-              title="Cierra todas tus jugadas abiertas no concretadas"
+              title="Cierra todas tus jugadas abiertas individualmente sin saturar el chat"
             >
               <span>🚫</span> Se fue
             </button>
@@ -1333,7 +1399,7 @@ export function ChatSalaPanel({
               {esMio(menuContextual.msg.remitente_id, menuContextual.msg.remitente_nombre) && (
                 <button
                   onClick={() => {
-                    enviarMensaje("Se fue");
+                    cerrarPropuestasDirectamente(menuContextual.msg.id);
                     setMenuContextual(null);
                   }}
                   className={`w-full text-left px-3 py-2 text-red-600 font-bold flex items-center gap-2 transition ${
@@ -1341,7 +1407,7 @@ export function ChatSalaPanel({
                   }`}
                 >
                   <span>🚫</span>
-                  <span>Retirar mis jugadas ("Se fue")</span>
+                  <span>Cerrar jugada ("Se fue")</span>
                 </button>
               )}
             </>

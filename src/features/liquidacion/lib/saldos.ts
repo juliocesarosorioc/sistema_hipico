@@ -778,11 +778,19 @@ export async function aplicarLiquidacionSaldos(
       let ganadoBrutoCarrera = 0;
       let perdidoBrutoCarrera = 0;
       let tasaComision = input.tasaComision ?? 5;
+      const entradasCruceCli: EntradaCrucePuestos[] = [];
 
       for (const d of decidibles) {
         const fila = d.fila;
         const res = d.res;
         const m = NUM(fila.monto_jugado);
+        const grupoFila =
+          grupoDeCuenta(
+            fila.grupo_cuenta_id as string | number | null | undefined,
+            fila.grupo_publicador_id as string | number | null | undefined,
+            fila.grupo_cobro_id as string | number | null | undefined
+          ) || String(contexto.grupoId ?? "").trim();
+        const cabFila = String(fila.caballo ?? fila.ejemplar_numero ?? "").trim();
 
         // Perspectiva como Juega
         if (esClienteJuega(fila)) {
@@ -790,12 +798,34 @@ export async function aplicarLiquidacionSaldos(
           if (res.ok) {
             const gananciaTicket = Math.max(0, restarDinero(res.totalClienteNeto + res.gananciaCasa, m));
             ganadoBrutoCarrera = sumarDinero(ganadoBrutoCarrera, gananciaTicket);
+            if (gananciaTicket > 0) {
+              entradasCruceCli.push({
+                cliente: cliNom || cliSeu || cliIdStr,
+                clienteId: cliIdStr,
+                grupoId: grupoFila,
+                caballo: cabFila,
+                ok: true,
+                bruto: gananciaTicket,
+                monto: 0,
+              });
+            }
           } else {
             const empateTotal = m > 0 && Math.abs(res.totalClienteNeto - m) < 0.01;
             const perdidaParcial = res.totalClienteNeto > 0 && !empateTotal;
             if (!empateTotal) {
               const perdidaTicket = perdidaParcial ? restarDinero(m, res.totalClienteNeto) : m;
               perdidoBrutoCarrera = sumarDinero(perdidoBrutoCarrera, perdidaTicket);
+              if (perdidaTicket > 0) {
+                entradasCruceCli.push({
+                  cliente: cliNom || cliSeu || cliIdStr,
+                  clienteId: cliIdStr,
+                  grupoId: grupoFila,
+                  caballo: cabFila,
+                  ok: false,
+                  bruto: 0,
+                  monto: perdidaTicket,
+                });
+              }
             }
           }
         }
@@ -807,6 +837,17 @@ export async function aplicarLiquidacionSaldos(
             // El lado Juega ganó -> Consigue pierde la ganancia neta otorgada
             const perdidaConsigue = Math.max(0, restarDinero(res.totalClienteNeto + res.gananciaCasa, m));
             perdidoBrutoCarrera = sumarDinero(perdidoBrutoCarrera, perdidaConsigue);
+            if (perdidaConsigue > 0) {
+              entradasCruceCli.push({
+                cliente: cliNom || cliSeu || cliIdStr,
+                clienteId: cliIdStr,
+                grupoId: grupoFila,
+                caballo: cabFila,
+                ok: false,
+                bruto: 0,
+                monto: perdidaConsigue,
+              });
+            }
           } else {
             // El lado Juega perdió -> Consigue gana lo EFECTIVAMENTE perdido por
             // Juega. Si la pérdida es PARCIAL (NINI/compuesta que devuelve parte
@@ -817,6 +858,17 @@ export async function aplicarLiquidacionSaldos(
             if (!empateTotal) {
               const gananciaConsigue = Math.max(0, restarDinero(m, res.totalClienteNeto));
               ganadoBrutoCarrera = sumarDinero(ganadoBrutoCarrera, gananciaConsigue);
+              if (gananciaConsigue > 0) {
+                entradasCruceCli.push({
+                  cliente: cliNom || cliSeu || cliIdStr,
+                  clienteId: cliIdStr,
+                  grupoId: grupoFila,
+                  caballo: cabFila,
+                  ok: true,
+                  bruto: gananciaConsigue,
+                  monto: 0,
+                });
+              }
             }
           }
         }
@@ -837,7 +889,20 @@ export async function aplicarLiquidacionSaldos(
       let montoIncentivo = 0;
       const incPct = Math.max(0, Number(cli.incentivo_pct ?? cli.devolucion) || 0);
 
-      if (diferenciaBruta > 0) {
+      if (input.permiteCruces === false) {
+        comisionCasaCarrera =
+          ganadoBrutoCarrera > 0 ? calcularComisionExacta(ganadoBrutoCarrera, tasaComision) : 0;
+        saldoNetoJugadas = restarDinero(diferenciaBruta, comisionCasaCarrera);
+      } else if (entradasCruceCli.length > 0 && contexto.crucesPuestos) {
+        const liqCruce = calcularLiquidacionPuestosCarrera(entradasCruceCli, {
+          ...contexto.crucesPuestos,
+          pctComision: tasaComision,
+        });
+        comisionCasaCarrera = redondearCentavos(
+          liqCruce.reduce((acc, item) => sumarDinero(acc, item.comision), 0)
+        );
+        saldoNetoJugadas = restarDinero(diferenciaBruta, comisionCasaCarrera);
+      } else if (diferenciaBruta > 0) {
         // Saldo positivo: la comisión se calcula sobre la diferencia neta positiva
         comisionCasaCarrera = calcularComisionExacta(diferenciaBruta, tasaComision);
         saldoNetoJugadas = restarDinero(diferenciaBruta, comisionCasaCarrera);

@@ -188,7 +188,7 @@ console.log("\n== Sin datos de cliente la proyección NO se topa ==");
     "proyectarFila SIN clientes conserva el monto pedido", JSON.stringify(solo));
 }
 
-console.log("\n== Modo libre respeta el saldo autorizado ==");
+console.log("\n== Modo libre juega sin restricciones de tope ==");
 {
   const estado = calcularEstadoCuentaCliente({
     id: "lib",
@@ -197,17 +197,53 @@ console.log("\n== Modo libre respeta el saldo autorizado ==");
     aval: 50,
     libre: true,
   });
-  si(estado.disponibleParaJugar === 150, "el estado contable no convierte el disponible en infinito");
+  si(estado.disponibleParaJugar === 150, "el estado contable reporta saldo + aval contable");
 
-  const cat = [{ id: "lib", nombre: "Lulo", saldo_actual: 100, aval: 50, modo_juego: "libre" }];
+  const cat = [{ id: "lib", nombre: "Lulo", saldo_actual: 100, aval: 50, modo_juego: "libre", libre: true }];
   const r = (t: string) => cat.find((c) => c.nombre.toLowerCase() === t.trim().toLowerCase()) ?? null;
   const p = proyectarFilasEnOrden(
     [{ jugada: "2p", caballo: "3", monto: "999", cliente1: "Lulo", cliente2: "" }],
     r
   );
-  si(p[0].proyeccion.ok && p[0].proyeccion.monto === 150, "libre recorta al saldo + aval");
-  si(p[0].montoExcedido === 849, "calcula el monto excedido");
-  si(p[0].observacionExceso === "Excedido 849", "registra la observación de exceso");
+  si(p[0].proyeccion.ok && p[0].proyeccion.monto === 999, "libre permite jugar sin restricción de tope");
+  si(p[0].montoExcedido === 0, "libre no recorta monto excedido");
+  si(p[0].queda === Number.POSITIVE_INFINITY, "libre mantiene disponible infinito");
+}
+
+console.log("\n== Tapa Derecho y Revés (1P #5 por 100): Con Cruces (100) vs Sin Cruces (95) ==");
+{
+  const cat = [
+    { id: "eddie", nombre: "Eddie", saldo_actual: 100, aval: 0 },
+    { id: "juan", nombre: "Juan", saldo_actual: 500, aval: 0 },
+    { id: "maria", nombre: "Maria", saldo_actual: 500, aval: 0 },
+  ];
+  const r = (t: string) => cat.find((c) => c.nombre.toLowerCase() === t.trim().toLowerCase()) ?? null;
+
+  // Caso A: El grupo PERMITE cruces sin cobrar comisión -> ambas jugadas hasta 100
+  const conCruces = proyectarFilasEnOrden(
+    [
+      { jugada: "1p", caballo: "5", monto: "100", cliente1: "Eddie", cliente2: "Juan" },
+      { jugada: "1p", caballo: "5", monto: "100", cliente1: "Maria", cliente2: "Eddie" },
+    ],
+    r,
+    5,
+    { permiteCruces: true }
+  );
+  si(conCruces[0].montoAceptado === 100 && conCruces[0].queda === 0, "con cruces: jugada 1 toma los 100 de Eddie");
+  si(conCruces[1].montoAceptado === 100 && conCruces[1].montoExcedido === 0, "con cruces: jugada inversa (tapa) permite los 100 completos");
+
+  // Caso B: El grupo NO permite cruces -> la segunda jugada solo hasta 95 (100 - 5% comisión)
+  const sinCruces = proyectarFilasEnOrden(
+    [
+      { jugada: "1p", caballo: "5", monto: "100", cliente1: "Eddie", cliente2: "Juan" },
+      { jugada: "1p", caballo: "5", monto: "100", cliente1: "Maria", cliente2: "Eddie" },
+    ],
+    r,
+    5,
+    { permiteCruces: false }
+  );
+  si(sinCruces[0].montoAceptado === 100 && sinCruces[0].queda === 0, "sin cruces: jugada 1 toma los 100 de Eddie");
+  si(sinCruces[1].montoAceptado === 95 && sinCruces[1].montoExcedido === 5, "sin cruces: jugada inversa (tapa) permite máximo 95 (100 menos 5% de comisión)");
 }
 
 console.log("\n== No se restaura el monto pedido cuando el reparto autoriza cero ==");

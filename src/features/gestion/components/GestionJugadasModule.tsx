@@ -35,6 +35,7 @@ import { PREFIJO_WPS, tipoWps } from "@/features/motores/lib/wps";
 import { guardarPizarraCentral, pizarraDesdeResultadoOficial } from "@/features/liquidacion/lib/pizarraCentral";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { emitirToast } from "@/shared/lib/mensajeria";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 import { useConfirmar } from "@/shared/store/useConfirmStore";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
 import { nombrePropioHipodromo, nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
@@ -1117,13 +1118,44 @@ const hipodromosDelDia = useMemo(() => {
     return null;
   };
 
+  const permiteCrucesEfectivo = useMemo(
+    () =>
+      Boolean(
+        conCruces &&
+          (grupoReglasCruce.mismoEjemplar !== false ||
+            grupoReglasCruce.diferenteEjemplar !== false) &&
+          (crucesOverrideCarrera.todos?.mismoEjemplar !== false ||
+            crucesOverrideCarrera.todos?.diferenteEjemplar !== false)
+      ),
+    [conCruces, grupoReglasCruce, crucesOverrideCarrera]
+  );
+
+  const jugadasPreviasCarreraSim = useMemo(
+    () =>
+      jugadasGuardadas
+        .filter((j) => !j.anulada && !j.es_adelantada)
+        .map((j, idx) => ({
+          id: j.id != null ? String(j.id) : `prev-${idx}`,
+          jugador: String(j.cliente_juega_nombre ?? ""),
+          tercio: String(j.cliente_consigue_nombre ?? "CASA"),
+          jugada: String(j.nombre_jugada ?? ""),
+          caballo: String(j.caballo ?? j.ejemplar_numero ?? ""),
+          monto: Number(j.monto_jugado ?? 0) || 0,
+          comisionPct: comisionNum,
+        })),
+    [jugadasGuardadas, comisionNum]
+  );
+
   /** Proyección de TODA la carga EN ORDEN: la fila 2 ya ve el saldo que dejó la
-      fila 1 del mismo cliente. Alimenta la celda "Saldo/Max", el aviso de saldo
-      y el color de recorte, para que la vista previa diga lo mismo que el cobro
-      (que también descuenta en orden, ver saldosEnCurso.ts). */
+      fila 1 del mismo cliente (tanto Jugador 1 como Jugador 2), verificando aval,
+      pozo, disponible, libre y neteo en vivo Derecho/Revés (Tapa) con o sin cruces. */
   const proyeccionesCarga = useMemo(
-    () => proyectarFilasEnOrden(filas, saldoCliente, comisionNum),
-    [filas, clientesDelGrupo, comisionNum]
+    () =>
+      proyectarFilasEnOrden(filas, saldoCliente, comisionNum, {
+        permiteCruces: permiteCrucesEfectivo,
+        jugadasPreviasCarrera: jugadasPreviasCarreraSim,
+      }),
+    [filas, clientesDelGrupo, comisionNum, permiteCrucesEfectivo, jugadasPreviasCarreraSim]
   );
 
   /**
@@ -2141,42 +2173,58 @@ const hipodromosDelDia = useMemo(() => {
       emitirToast("⚠️ No hay jugadas por cargar.", "warning");
       return;
     }
-    for (const f of filasTrabajo) {
+    const proyeccionesTrabajo = proyectarFilasEnOrden(
+      filasTrabajo,
+      saldoCliente,
+      comisionNum,
+      {
+        permiteCruces: permiteCrucesEfectivo,
+        jugadasPreviasCarrera: jugadasPreviasCarreraSim,
+      }
+    );
+    for (let idxFila = 0; idxFila < filasTrabajo.length; idxFila++) {
+      const f = filasTrabajo[idxFila];
       if (!f.jugada.trim() && !f.monto.trim()) continue;
       if (!f.caballo.trim() || !/\d/.test(f.caballo)) {
-        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: falta el ejemplar (condición sine qua non: toda jugada debe indicar caballo).`);
-        indicesError.push(filasTrabajo.indexOf(f));
+        errores.push(`Fila ${idxFila + 1}: falta el ejemplar (condición sine qua non: toda jugada debe indicar caballo).`);
+        indicesError.push(idxFila);
         continue;
       }
       const rc = revisionCaballo(f.caballo);
       if (!rc.ok) {
-        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: ${rc.motivo}`);
-        indicesError.push(filasTrabajo.indexOf(f));
+        errores.push(`Fila ${idxFila + 1}: ${rc.motivo}`);
+        indicesError.push(idxFila);
         continue;
       }
-      const v = valida(f, descontado);
+      const pFila = proyeccionesTrabajo[idxFila];
+      const v = pFila?.proyeccion ?? valida(f, descontado);
       const c1 = saldoCliente(f.cliente1);
       const c2 = saldoCliente(f.cliente2);
       const montoPedidoFila = parseFloat(String(f.monto).replace(",", ".")) || 0;
       if (!v.ok) {
-        if (c1 && montoPedidoFila > 0 && /S\/S|saldo/i.test(v.motivo)) {
-          const tel1 = telefonoMencionCliente(c1);
+        if ((c1 || c2) && montoPedidoFila > 0 && /S\/S|saldo/i.test(v.motivo)) {
+          const tel1 = c1 ? telefonoMencionCliente(c1) : null;
           const tel2 = telefonoMencionCliente(c2);
-          const nom1 = c1.nombre;
+          const nom1 = c1?.nombre ?? (f.cliente1.trim() || "Jugador 1");
           const nom2 = c2?.nombre ?? (f.cliente2.trim() || "Banca");
           const menc1 = tel1 ? `@${tel1} (${nom1})` : `@${nom1}`;
           const menc2 = tel2 ? `@${tel2} (${nom2})` : `@${nom2}`;
           const jugEtiq = f.caballo.trim() ? `${f.jugada.trim().toUpperCase()} (${f.caballo.trim()})` : f.jugada.trim().toUpperCase();
-          const resumenMencion = `${menc1} pidió ${monedaFmt(montoPedidoFila)} con ${menc2} en ${jugEtiq} → solo juegan 0 porque ${nom1} excede el saldo (S/S).`;
+          const dispC1 = pFila?.cliente1 ? limiteDeJugar(pFila.cliente1) : c1 ? limiteDeJugar(c1) : Infinity;
+          const dispC2 = pFila?.cliente2 ? limiteDeJugar(pFila.cliente2) : c2 ? limiteDeJugar(c2) : Infinity;
+          const c1SS = dispC1 <= 0;
+          const c2SS = dispC2 <= 0;
+          const quienExcede = c1SS && c2SS ? `${nom1} y ${nom2}` : c2SS && !c1SS ? nom2 : nom1;
+          const resumenMencion = `${menc1} pidió ${monedaFmt(montoPedidoFila)} con ${menc2} en ${jugEtiq} → solo juegan 0 porque ${quienExcede} excede el saldo (S/S).`;
           recortes.push(resumenMencion);
           setObservacionesExcesoCarrera((prev) => [
             ...prev,
             {
               orden: prev.length + 1,
-              jugador: nom1,
-              contraparte: nom2,
-              telefonoJugador: tel1 || null,
-              telefonoContraparte: tel2 || null,
+              jugador: quienExcede,
+              contraparte: quienExcede === nom2 ? nom1 : nom2,
+              telefonoJugador: quienExcede === nom2 ? (tel2 || null) : (tel1 || null),
+              telefonoContraparte: quienExcede === nom2 ? (tel1 || null) : (tel2 || null),
               jugada: jugEtiq,
               montoSolicitado: montoPedidoFila,
               montoAceptado: 0,
@@ -2190,41 +2238,41 @@ const hipodromosDelDia = useMemo(() => {
             obsPrev.includes(resumenMencion) ? obsPrev : [obsPrev.trim(), resumenMencion].filter(Boolean).join(" · ")
           );
         }
-        errores.push(`Fila ${filas.indexOf(f) + 1}: ${v.motivo}`);
-        indicesError.push(filas.indexOf(f));
+        errores.push(`Fila ${idxFila + 1}: ${v.motivo}`);
+        indicesError.push(idxFila);
         continue;
       }
       const c1Otro = clienteEnOtroGrupo(f.cliente1);
       if (c1Otro) {
-        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: el CLIENTE 1 «${f.cliente1}» está registrado en otro grupo. No se permite registrar jugadas fuera de su grupo.`);
-        indicesError.push(filasTrabajo.indexOf(f));
+        errores.push(`Fila ${idxFila + 1}: el CLIENTE 1 «${f.cliente1}» está registrado en otro grupo. No se permite registrar jugadas fuera de su grupo.`);
+        indicesError.push(idxFila);
         continue;
       }
       if (!c1 || !clientePerteneceAGrupo(c1, grupoSesion, gruposVenta)) {
-        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: el CLIENTE 1 «${f.cliente1}» no pertenece al grupo ${grupoCabecera}. Solo se permiten jugadores de este grupo.`);
-        indicesError.push(filasTrabajo.indexOf(f));
+        errores.push(`Fila ${idxFila + 1}: el CLIENTE 1 «${f.cliente1}» no pertenece al grupo ${grupoCabecera}. Solo se permiten jugadores de este grupo.`);
+        indicesError.push(idxFila);
         continue;
       }
       const esWpsFila = v.modalidad === "AMERICANAS" || Boolean(tipoWps(v.tipo || f.jugada));
       if (!esWpsFila && !f.cliente2.trim()) {
-        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: falta el CLIENTE 2 (dador o BANCA). Las jugadas se cargan con DOS clientes.`);
-        indicesError.push(filasTrabajo.indexOf(f));
+        errores.push(`Fila ${idxFila + 1}: falta el CLIENTE 2 (dador o BANCA). Las jugadas se cargan con DOS clientes.`);
+        indicesError.push(idxFila);
         continue;
       }
       const c2Otro = clienteEnOtroGrupo(f.cliente2);
       if (c2Otro) {
-        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: el CLIENTE 2 «${f.cliente2}» está registrado en otro grupo. No se permite interacción entre jugadores de distintos grupos.`);
-        indicesError.push(filasTrabajo.indexOf(f));
+        errores.push(`Fila ${idxFila + 1}: el CLIENTE 2 «${f.cliente2}» está registrado en otro grupo. No se permite interacción entre jugadores de distintos grupos.`);
+        indicesError.push(idxFila);
         continue;
       }
       if (c2 && !clientePerteneceAGrupo(c2, grupoSesion, gruposVenta)) {
-        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: el CLIENTE 2 «${c2.nombre}» no pertenece al grupo ${grupoCabecera}. No se permite interacción entre jugadores de distintos grupos.`);
-        indicesError.push(filasTrabajo.indexOf(f));
+        errores.push(`Fila ${idxFila + 1}: el CLIENTE 2 «${c2.nombre}» no pertenece al grupo ${grupoCabecera}. No se permite interacción entre jugadores de distintos grupos.`);
+        indicesError.push(idxFila);
         continue;
       }
       if (c1 && c2 && !clientesPertenecenAlMismoGrupo(c1, c2, gruposVenta)) {
-        errores.push(`Fila ${filasTrabajo.indexOf(f) + 1}: los jugadores pertenecen a grupos distintos. No se permite que los jugadores de un grupo interactúen en otro para nada.`);
-        indicesError.push(filasTrabajo.indexOf(f));
+        errores.push(`Fila ${idxFila + 1}: los jugadores pertenecen a grupos distintos. No se permite que los jugadores de un grupo interactúen en otro para nada.`);
+        indicesError.push(idxFila);
         continue;
       }
       const grupoId = grupoSesion;
@@ -2237,16 +2285,21 @@ const hipodromosDelDia = useMemo(() => {
         const menc2 = tel2 ? `@${tel2} (${nom2})` : `@${nom2}`;
         const jugEtiq = f.caballo.trim() ? `${v.tipo} (${f.caballo.trim()})` : v.tipo;
         const exc = Math.max(0, round2(v.montoPedido - v.monto));
-        const resumenMencion = `${menc1} pidió ${monedaFmt(v.montoPedido)} con ${menc2} en ${jugEtiq} → solo juegan ${monedaFmt(v.monto)} porque ${nom1} excede el saldo.`;
+        const dispC1 = pFila?.cliente1 ? limiteDeJugar(pFila.cliente1) : c1 ? limiteDeJugar(c1) : Infinity;
+        const dispC2 = pFila?.cliente2 ? limiteDeJugar(pFila.cliente2) : c2 ? limiteDeJugar(c2) : Infinity;
+        const c1Rec = dispC1 < v.montoPedido;
+        const c2Rec = dispC2 < v.montoPedido;
+        const quienExcede = c1Rec && c2Rec ? `${nom1} y ${nom2}` : c2Rec && !c1Rec ? nom2 : nom1;
+        const resumenMencion = `${menc1} pidió ${monedaFmt(v.montoPedido)} con ${menc2} en ${jugEtiq} → solo juegan ${monedaFmt(v.monto)} porque ${quienExcede} excede el saldo.`;
         recortes.push(resumenMencion);
         setObservacionesExcesoCarrera((prev) => [
           ...prev,
           {
             orden: prev.length + 1,
-            jugador: nom1,
-            contraparte: nom2,
-            telefonoJugador: tel1 || null,
-            telefonoContraparte: tel2 || null,
+            jugador: quienExcede,
+            contraparte: quienExcede === nom2 ? nom1 : nom2,
+            telefonoJugador: quienExcede === nom2 ? (tel2 || null) : (tel1 || null),
+            telefonoContraparte: quienExcede === nom2 ? (tel1 || null) : (tel2 || null),
             jugada: jugEtiq,
             montoSolicitado: v.montoPedido,
             montoAceptado: v.monto,
@@ -4172,6 +4225,38 @@ const hipodromosDelDia = useMemo(() => {
             </Button>
           </Guard>
           <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              let recortadas = 0;
+              let sinSaldo = 0;
+              let validas = 0;
+              setFilas((prevFilas) =>
+                prevFilas.map((f, idx) => {
+                  const v = proyeccionesCarga[idx]?.proyeccion;
+                  if (!v || (!f.jugada.trim() && !f.monto.trim() && !f.cliente1.trim())) return f;
+                  if (!v.ok) {
+                    sinSaldo++;
+                    return { ...f, error: v.motivo };
+                  }
+                  if (v.reparto?.recortado && v.monto > 0) {
+                    recortadas++;
+                    return { ...f, monto: formatearMontoRegional(v.monto), error: undefined };
+                  }
+                  validas++;
+                  return { ...f, error: undefined };
+                })
+              );
+              const modoCruces = permiteCrucesEfectivo ? "Cruces activos (tapa 100%)" : "Sin cruces (tapa neta menos comisión)";
+              const msg = `🛡️ Validación de saldos (${modoCruces}): ${validas} OK · ${recortadas} ajustada(s) al disponible · ${sinSaldo} S/S o con observación.`;
+              setAviso(msg);
+              emitirToast(msg, sinSaldo > 0 ? "warning" : "success");
+            }}
+            title="Validar saldos de Jugador 1 y Jugador 2 en orden (incluye Aval, Pozo, Libre y Tapa Derecho/Revés)"
+          >
+            🛡️ Validar saldos
+          </Button>
           {(() => {
             const avisos = filas
               .map((f, i) => avisoSaldo(f, proyeccionesCarga[i]?.cliente1 ?? null, proyeccionesCarga[i]?.cliente2 ?? null))

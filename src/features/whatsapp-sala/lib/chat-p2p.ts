@@ -56,6 +56,7 @@ export interface MensajeSala {
   // Propiedades calculadas en cliente
   esMio?: boolean;
   esPrivadoParaMi?: boolean;
+  desglose_jugaron?: Array<{ jugador: string; monto: number }>;
 }
 
 export interface TicketP2P {
@@ -400,53 +401,53 @@ export function parsearPropuestaChat(texto: string): PropuestaParseada | null {
   const tLimpio = t.replace(/\s+con\s+@?[a-zA-Z0-9_\-\.]+/i, "").trim();
 
   // 1. "Juego <jugada_puestos> <caballo> <monto>"
-  const m1 = /^(?:juego|jugar)\s+([0-9a-z\/\.\-]+)\s+(?:al?\s+)?([0-9\.\,x\-]+)\s+(?:por|\$)?\s*(\d+(?:\.\d+)?)$/i.exec(tLimpio);
+  const m1 = /^(?:juego|jugar)\s+([0-9a-z\/\.\-]+)\s+(?:al?\s+)?([0-9\.\,x\-]+)\s+(?:por|\$)?\s*(\d+(?:[\.,]\d+)?)$/i.exec(tLimpio);
   if (m1 && PATRON_PUESTOS_CHAT.test(m1[1])) {
     return {
       esPropuesta: true,
       rol: "JUEGA",
       jugada: m1[1].toUpperCase(),
       caballo: m1[2],
-      monto: parseFloat(m1[3]),
+      monto: parseFloat(m1[3].replace(",", ".")),
       contraparte,
     };
   }
 
   // 2. "Juego 7 100" o "Juego al 7 100" (puestos 1P por defecto)
-  const m1b = /^(?:juego|jugar)\s+(?:al?\s+)?([0-9]{1,2})\s+(?:por|\$)?\s*(\d+(?:\.\d+)?)$/i.exec(tLimpio);
+  const m1b = /^(?:juego|jugar)\s+(?:al?\s+)?([0-9]{1,2})\s+(?:por|\$)?\s*(\d+(?:[\.,]\d+)?)$/i.exec(tLimpio);
   if (m1b) {
     return {
       esPropuesta: true,
       rol: "JUEGA",
       jugada: "1P",
       caballo: m1b[1],
-      monto: parseFloat(m1b[2]),
+      monto: parseFloat(m1b[2].replace(",", ".")),
       contraparte,
     };
   }
 
   // 3. "<monto> <jugada_puestos> [al?] <caballo>" (ej. "50 2p 7", "50 2n al 1", "250 10/6 1.3")
-  const m2 = /^(\d+(?:\.\d+)?)\s+([0-9a-z\/\.\-]+)\s+(?:al?\s+)?([0-9\.\,x\-]+)$/i.exec(tLimpio);
+  const m2 = /^(\d+(?:[\.,]\d+)?)\s+([0-9a-z\/\.\-]+)\s+(?:al?\s+)?([0-9\.\,x\-]+)$/i.exec(tLimpio);
   if (m2 && PATRON_PUESTOS_CHAT.test(m2[2])) {
     return {
       esPropuesta: true,
       rol: "JUEGA",
       jugada: m2[2].toUpperCase(),
       caballo: m2[3],
-      monto: parseFloat(m2[1]),
+      monto: parseFloat(m2[1].replace(",", ".")),
       contraparte,
     };
   }
 
   // 4. "<monto> al <caballo>" (1P)
-  const m3 = /^(\d+(?:\.\d+)?)\s*(?:al|a)\s*([0-9]{1,2})$/i.exec(tLimpio);
+  const m3 = /^(\d+(?:[\.,]\d+)?)\s*(?:al|a)\s*([0-9]{1,2})$/i.exec(tLimpio);
   if (m3) {
     return {
       esPropuesta: true,
       rol: "JUEGA",
       jugada: "1P",
       caballo: m3[2],
-      monto: parseFloat(m3[1]),
+      monto: parseFloat(m3[1].replace(",", ".")),
       contraparte,
     };
   }

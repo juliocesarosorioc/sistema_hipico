@@ -27,6 +27,7 @@ import { SalaLeftPanelGrupos } from "./SalaLeftPanelGrupos";
 import { SalaRightPanelCarrera } from "./SalaRightPanelCarrera";
 import { SalaBurbujaMensaje } from "./SalaBurbujaMensaje";
 import { emitirToast } from "@/shared/lib/mensajeria";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 import {
   listarSalasPorGrupo,
   crearSalaEnGrupo,
@@ -375,9 +376,25 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     (m: MensajeSala | null | undefined): MensajeSala | null => {
       if (!m) return null;
       const alias = m.autor_id ? seudonimosPorId[String(m.autor_id)] : "";
-      return alias ? { ...m, autor_nombre: alias } : m;
+      const tktsProp =
+        m.tipo === "PROPUESTA"
+          ? tickets
+              .filter((t) => t.propuesta_msg_id === m.id)
+              .map((t) => ({
+                jugador:
+                  String(t.juega_nombre || "").toUpperCase() === String(m.autor_nombre || "").toUpperCase()
+                    ? t.da_nombre
+                    : t.juega_nombre,
+                monto: Number(t.monto || 0),
+              }))
+          : undefined;
+      return {
+        ...m,
+        ...(alias ? { autor_nombre: alias } : {}),
+        ...(tktsProp && tktsProp.length > 0 ? { desglose_jugaron: tktsProp } : {}),
+      };
     },
-    [seudonimosPorId]
+    [seudonimosPorId, tickets]
   );
 
   // 4. Sincronizar grupos de venta disponibles
@@ -926,34 +943,6 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
       )
     );
 
-    // 2. Anuncio oficial en el chat del grupo (PÚBLICO PARA TODOS)
-    const avisoTexto =
-      motivo === "USUARIO"
-        ? `🚫 *¡Propuesta Retirada!* @${propAAnular.autor_nombre} retiró su jugada (${propAAnular.datos_jugada?.jugada || "1P"} #${propAAnular.datos_jugada?.caballo || "1"}) ("Se fue").`
-        : `⚠️ *Propuesta Anulada por Administración*: La jugada de @${propAAnular.autor_nombre} (${propAAnular.datos_jugada?.jugada || "1P"} #${propAAnular.datos_jugada?.caballo || "1"}) fue retirada por corrección de herramienta.`;
-
-    const msgAnuncio: MensajeSala = {
-      id: `anul-${Date.now()}`,
-      grupo_id: grupoActivoId,
-      autor_id: null,
-      autor_nombre: "Agente IA Oficial",
-      autor_rol: "BOT",
-      texto: avisoTexto,
-      tipo: "TEXTO",
-      reply_to_msg_id: propAAnular.id,
-      created_at: nowIso,
-      esMio: false,
-    };
-
-    setMensajes((prev) => [...prev, msgAnuncio]);
-
-    // Broadcast a toda la sala
-    canalRealtimeRef.current?.send({
-      type: "broadcast",
-      event: "mensaje_sala",
-      payload: msgAnuncio,
-    });
-
     if (supabase) {
       try {
         await supabase
@@ -965,24 +954,56 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
               : null,
           })
           .eq("id", propAAnular.id);
-
-        await supabase.from("chat_mensajes_sala").insert([
-          {
-            id: msgAnuncio.id,
-            grupo_id: grupoActivoId,
-            autor_nombre: msgAnuncio.autor_nombre,
-            autor_rol: msgAnuncio.autor_rol,
-            texto: msgAnuncio.texto,
-            tipo: msgAnuncio.tipo,
-            reply_to_msg_id: propAAnular.id,
-          },
-        ]);
       } catch (err: any) {
         console.warn("[anularPropuestaEnChat] Error:", err?.message);
       }
     }
 
-    emitirToast(motivo === "USUARIO" ? "Propuesta retirada ('Se fue')" : "Propuesta anulada por Administración", "success");
+    // 2. Si es por USUARIO ("Se fue"), NO saturar el chat con mensajes de grupo
+    if (motivo === "ADMIN") {
+      const avisoTexto = `⚠️ *Propuesta Anulada por Administración*: La jugada de @${propAAnular.autor_nombre} (${propAAnular.datos_jugada?.jugada || "1P"} #${propAAnular.datos_jugada?.caballo || "1"}) fue retirada por corrección de herramienta.`;
+
+      const msgAnuncio: MensajeSala = {
+        id: `anul-${Date.now()}`,
+        grupo_id: grupoActivoId,
+        autor_id: null,
+        autor_nombre: "Agente IA Oficial",
+        autor_rol: "BOT",
+        texto: avisoTexto,
+        tipo: "TEXTO",
+        reply_to_msg_id: propAAnular.id,
+        created_at: nowIso,
+        esMio: false,
+      };
+
+      setMensajes((prev) => [...prev, msgAnuncio]);
+
+      canalRealtimeRef.current?.send({
+        type: "broadcast",
+        event: "mensaje_sala",
+        payload: msgAnuncio,
+      });
+
+      if (supabase) {
+        try {
+          await supabase.from("chat_mensajes_sala").insert([
+            {
+              id: msgAnuncio.id,
+              grupo_id: grupoActivoId,
+              autor_nombre: msgAnuncio.autor_nombre,
+              autor_rol: msgAnuncio.autor_rol,
+              texto: msgAnuncio.texto,
+              tipo: msgAnuncio.tipo,
+              reply_to_msg_id: propAAnular.id,
+            },
+          ]);
+        } catch (err: any) {
+          console.warn("[anularPropuestaEnChat] Error insert anuncio:", err?.message);
+        }
+      }
+    }
+
+    emitirToast(motivo === "USUARIO" ? "Jugada cerrada ('Se fue')" : "Propuesta anulada por Administración", "success");
     if (propAAnular.autor_id) refrescarSaldo(propAAnular.autor_id);
   };
 
@@ -1005,41 +1026,32 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
 
     // ────────────────────────────────────────────────────────────────────────
     // ANULACIÓN DE PROPUESTA POR EL USUARIO ("Se fue", "CF", "SF", "Sfue", "sefue", etc.)
+    // Cierra cada jugada abierta individualmente SIN enviar mensajes al grupo
     // ────────────────────────────────────────────────────────────────────────
     if (detectarAnulacionUsuario(texto)) {
-      let propAAnular: MensajeSala | undefined;
       if (replyId) {
-        propAAnular = mensajes.find((m) => m.id === replyId && m.tipo === "PROPUESTA");
-      }
-      if (!propAAnular) {
-        propAAnular = [...mensajes]
-          .reverse()
-          .find(
-            (m) =>
-              m.tipo === "PROPUESTA" &&
-              m.autor_id === sesion.id &&
-              (m.monto_disponible ?? 0) > 0 &&
-              !esPropuestaExpirada(m.created_at)
-          );
+        const propCitada = mensajes.find((m) => m.id === replyId && m.tipo === "PROPUESTA" && m.autor_id === sesion.id);
+        if (propCitada) {
+          await anularPropuestaEnChat(propCitada, "USUARIO");
+          setEnviando(false);
+          return;
+        }
       }
 
-      if (propAAnular) {
-        await anularPropuestaEnChat(propAAnular, "USUARIO");
+      const propsAbiertasUsuario = mensajes.filter(
+        (m) =>
+          m.tipo === "PROPUESTA" &&
+          m.autor_id === sesion.id &&
+          (m.monto_disponible ?? 0) > 0 &&
+          !esPropuestaExpirada(m.created_at)
+      );
+
+      if (propsAbiertasUsuario.length > 0) {
+        for (const p of propsAbiertasUsuario) {
+          await anularPropuestaEnChat(p, "USUARIO");
+        }
       } else {
-        const msgAviso: MensajeSala = {
-          id: `bot-dm-${Date.now()}`,
-          grupo_id: grupoActivoId,
-          autor_id: null,
-          autor_nombre: "Agente IA Oficial",
-          autor_rol: "BOT",
-          texto: `ℹ️ @${sesion.nombre}: No tienes ninguna propuesta abierta en esta carrera para retirar.`,
-          tipo: "DM_PRIVADO",
-          destinatario_privado_id: sesion.id,
-          created_at: nowIso,
-          esMio: false,
-          esPrivadoParaMi: true,
-        };
-        setMensajes((prev) => [...prev, msgAviso]);
+        emitirToast("No tienes jugadas abiertas para cerrar", "info");
       }
       setEnviando(false);
       return;
@@ -1812,14 +1824,30 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         if (!resFifo.ok) {
           emitirToast(resFifo.error || "No se pudo concretar la jugada", "warning");
         } else {
-          // Confirmación Oficial de Concreción (PÚBLICA PARA TODOS)
+          const montoConc = Number(resFifo.monto_concretado || 0);
+          const previosProp = tickets
+            .filter((t) => t.propuesta_msg_id === replyId)
+            .map((t) => ({
+              jugador:
+                String(t.juega_nombre || "").toUpperCase() === String(msgPropuesta.autor_nombre || "").toUpperCase()
+                  ? t.da_nombre
+                  : t.juega_nombre,
+              monto: Number(t.monto || 0),
+            }));
+          const listaDesglose = [...previosProp, { jugador: sesion.nombre, monto: montoConc }];
+          const totalVanJugando = listaDesglose.reduce((acc, x) => acc + x.monto, 0);
+          const lineasDesglose = listaDesglose
+            .map((x) => `• **${x.jugador}** jugó **${formatearMontoRegional(x.monto)}**`)
+            .join("\n");
+
+          // Confirmación Oficial de Concreción ("Van jugando por X" + desglose)
           const msgConcrecion: MensajeSala = {
             id: `conc-${Date.now()}`,
             grupo_id: grupoActivoId,
             autor_id: null,
             autor_nombre: "Agente IA Oficial",
             autor_rol: "BOT",
-            texto: `✅ *¡Jugada Aceptada!* Ticket \`#${resFifo.numero_ticket}\`\n\n👤 **@${sesion.nombre}** casó **$${resFifo.monto_concretado?.toFixed(2)}** contra **@${msgPropuesta.autor_nombre}** en ${msgPropuesta.datos_jugada?.jugada || "1P"} #${msgPropuesta.datos_jugada?.caballo || "1"}.\n${resFifo.parada_completa ? "🏁 *Parada 100% completada.*" : `Quedan **$${resFifo.monto_restante_propuesta?.toFixed(2)}** disponibles.`}`,
+            texto: `🤝 *Van jugando por ${formatearMontoRegional(totalVanJugando)}* (${msgPropuesta.datos_jugada?.jugada || "1P"} #${msgPropuesta.datos_jugada?.caballo || "1"} · Ticket \`#${resFifo.numero_ticket}\`)\n${lineasDesglose}\n${resFifo.parada_completa ? "✅ *¡Jugada completada!*" : `Remanente disponible: **${formatearMontoRegional(Number(resFifo.monto_restante_propuesta || 0))}**`}`,
             tipo: "CONCRECION",
             reply_to_msg_id: replyId,
             created_at: new Date().toISOString(),
@@ -1984,16 +2012,32 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     if (!res.ok) {
       emitirToast(res.error || "No se pudo tomar la propuesta", "warning");
     } else {
-      emitirToast(`Ticket #${res.numero_ticket} emitido ($${res.monto_concretado})`, "success");
+      const montoConc = Number(res.monto_concretado || 0);
+      emitirToast(`Ticket #${res.numero_ticket} emitido ($${formatearMontoRegional(montoConc)})`, "success");
 
-      // 2. Anuncio oficial de concreción para TODOS
+      const previosProp = tickets
+        .filter((t) => t.propuesta_msg_id === msgProp.id)
+        .map((t) => ({
+          jugador:
+            String(t.juega_nombre || "").toUpperCase() === String(msgProp.autor_nombre || "").toUpperCase()
+              ? t.da_nombre
+              : t.juega_nombre,
+          monto: Number(t.monto || 0),
+        }));
+      const listaDesglose = [...previosProp, { jugador: sesion.nombre, monto: montoConc }];
+      const totalVanJugando = listaDesglose.reduce((acc, x) => acc + x.monto, 0);
+      const lineasDesglose = listaDesglose
+        .map((x) => `• **${x.jugador}** jugó **${formatearMontoRegional(x.monto)}**`)
+        .join("\n");
+
+      // 2. Anuncio oficial de concreción ("Van jugando por X" + desglose)
       const msgConc: MensajeSala = {
         id: `conc-${Date.now()}`,
         grupo_id: grupoActivoId,
         autor_id: null,
         autor_nombre: "Agente IA Oficial",
         autor_rol: "BOT",
-        texto: `✅ *¡Jugada Aceptada!* Ticket \`#${res.numero_ticket}\`\n\n👤 **@${sesion.nombre}** casó **$${res.monto_concretado?.toFixed(2)}** contra **@${msgProp.autor_nombre}** en ${msgProp.datos_jugada?.jugada || "1P"} #${msgProp.datos_jugada?.caballo || "1"}.\n${res.parada_completa ? "🏁 *Parada 100% completada.*" : `Quedan **$${res.monto_restante_propuesta?.toFixed(2)}** disponibles.`}`,
+        texto: `🤝 *Van jugando por ${formatearMontoRegional(totalVanJugando)}* (${msgProp.datos_jugada?.jugada || "1P"} #${msgProp.datos_jugada?.caballo || "1"} · Ticket \`#${res.numero_ticket}\`)\n${lineasDesglose}\n${res.parada_completa ? "✅ *¡Jugada completada!*" : `Remanente disponible: **${formatearMontoRegional(Number(res.monto_restante_propuesta || 0))}**`}`,
         tipo: "CONCRECION",
         reply_to_msg_id: msgProp.id,
         created_at: new Date().toISOString(),

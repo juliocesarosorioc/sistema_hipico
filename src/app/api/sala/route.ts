@@ -14,6 +14,7 @@ import {
   analizarYEstandarizarJugada,
   analizarComandoRetiro,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 export const dynamic = "force-dynamic";
 
@@ -278,7 +279,51 @@ export async function GET(req: Request) {
         return false;
       });
 
-      return NextResponse.json({ ok: true, mensajes: mensajesFiltrados.reverse() });
+      // Adjuntar desglose de quiénes van jugando cada propuesta ("Eddie jugó 43,50")
+      const idsPropuestas = mensajesFiltrados
+        .filter((m) => m.tipo_mensaje === "propuesta_jugada" || m.tipo_mensaje === "PROPUESTA")
+        .map((m) => m.id)
+        .filter(Boolean);
+
+      const desglosePorPropuesta = new Map<string, Array<{ jugador: string; monto: number; hora?: string }>>();
+      if (idsPropuestas.length > 0) {
+        try {
+          const { data: ticketsProp } = await supabaseAdmin
+            .from("chat_tickets_fifo")
+            .select("propuesta_msg_id, aceptante_nombre, monto_concretado, created_at, estado")
+            .in("propuesta_msg_id", idsPropuestas)
+            .neq("estado", "ANULADO")
+            .order("created_at", { ascending: true });
+
+          for (const tk of ticketsProp || []) {
+            if (!tk.propuesta_msg_id) continue;
+            const arr = desglosePorPropuesta.get(tk.propuesta_msg_id) || [];
+            arr.push({
+              jugador: tk.aceptante_nombre || "Jugador",
+              monto: Number(tk.monto_concretado || 0),
+              hora: tk.created_at,
+            });
+            desglosePorPropuesta.set(tk.propuesta_msg_id, arr);
+          }
+        } catch {
+          // Resiliente si la tabla no responde
+        }
+      }
+
+      const mensajesEnriquecidos = mensajesFiltrados.reverse().map((m) => {
+        if (m.tipo_mensaje === "propuesta_jugada" || m.tipo_mensaje === "PROPUESTA") {
+          const desglose = desglosePorPropuesta.get(m.id) || [];
+          const totalJugado = desglose.reduce((acc, item) => acc + Number(item.monto || 0), 0);
+          return {
+            ...m,
+            desglose_jugaron: desglose,
+            monto_jugado_total: totalJugado,
+          };
+        }
+        return m;
+      });
+
+      return NextResponse.json({ ok: true, mensajes: mensajesEnriquecidos });
     }
 
     // 4. PUBLICIDAD
@@ -1102,7 +1147,33 @@ export async function POST(req: Request) {
             firma_sha256: firma,
           });
 
-          // Insertar mensaje de concreción en chat_mensajes para que aparezca en el chat ("Jugaron", nunca "CRUCE")
+          // Consultar todos los tickets de esta propuesta para armar el desglose acumulado ("Eddie jugó 43,50")
+          const { data: ticketsAcumulados } = await supabaseAdmin
+            .from("chat_tickets_fifo")
+            .select("aceptante_nombre, monto_concretado")
+            .eq("propuesta_msg_id", propuestaId)
+            .neq("estado", "ANULADO")
+            .order("created_at", { ascending: true });
+
+          const listaDesglose =
+            ticketsAcumulados && ticketsAcumulados.length > 0
+              ? ticketsAcumulados.map((tk) => ({
+                  jugador: tk.aceptante_nombre || identidad.nombre,
+                  monto: Number(tk.monto_concretado || 0),
+                }))
+              : [{ jugador: identidad.nombre, monto: montoConcretado }];
+
+          const totalVanJugando = listaDesglose.reduce((acc, d) => acc + d.monto, 0);
+          const lineasDesglose = listaDesglose
+            .map((d) => `• ${d.jugador} jugó ${formatearMontoRegional(d.monto)}`)
+            .join("\n");
+
+          const textoVanJugando =
+            `🤝 *Van jugando por ${formatearMontoRegional(totalVanJugando)}* (${propMsg.jugada_estandarizada || propMsg.contenido})\n` +
+            `${lineasDesglose}` +
+            (nuevoRemanente > 0 ? `\nDisponible: ${formatearMontoRegional(nuevoRemanente)}` : "");
+
+          // Insertar mensaje de concreción en chat_mensajes ("Van jugando por X" + desglose)
           await supabaseAdmin.from("chat_mensajes").insert({
             grupo_id: grupoId,
             sala_id: salaId,
@@ -1110,12 +1181,18 @@ export async function POST(req: Request) {
             remitente_nombre: identidad.nombre,
             es_operador: false,
             tipo_mensaje: "CONCRECION",
-            contenido: `🤝 *Jugaron* — ${identidad.nombre} tomó la jugada de ${propMsg.remitente_nombre} por $${montoConcretado.toFixed(2)} (${propMsg.contenido || propMsg.jugada_estandarizada})`,
+            contenido: textoVanJugando,
             reply_to_msg_id: propuestaId,
             carrera_id: propMsg.carrera_id || sala.carrera_activa_id,
           });
 
-          resFifo = { ok: true, cruceConcretado: true, monto: montoConcretado };
+          resFifo = {
+            ok: true,
+            cruceConcretado: true,
+            monto: montoConcretado,
+            totalVanJugando,
+            desglose: listaDesglose,
+          };
         } else {
           // Firmar ticket server-side y asociar sala_id
           const { data: ticketsCreados } = await supabaseAdmin
@@ -1133,21 +1210,64 @@ export async function POST(req: Request) {
               .eq("id", t.id);
           }
 
-          // Asegurar que cualquier mensaje derivado en chat_mensajes quede con sala_id y diga "Jugaron" (nunca "CRUCE")
+          // Consultar todos los tickets de la propuesta para mostrar "Van jugando por X" y el desglose ("Eddie jugó 43,50")
+          const { data: ticketsAcumulados } = await supabaseAdmin
+            .from("chat_tickets_fifo")
+            .select("aceptante_nombre, monto_concretado")
+            .eq("propuesta_msg_id", propuestaId)
+            .neq("estado", "ANULADO")
+            .order("created_at", { ascending: true });
+
+          const { data: propActualizada } = await supabaseAdmin
+            .from("chat_mensajes")
+            .select("monto_disponible, jugada_estandarizada, contenido")
+            .eq("id", propuestaId)
+            .maybeSingle();
+
+          const listaDesglose =
+            ticketsAcumulados && ticketsAcumulados.length > 0
+              ? ticketsAcumulados.map((tk) => ({
+                  jugador: tk.aceptante_nombre || identidad.nombre,
+                  monto: Number(tk.monto_concretado || 0),
+                }))
+              : [{ jugador: identidad.nombre, monto: montoPedido }];
+
+          const totalVanJugando = listaDesglose.reduce((acc, d) => acc + d.monto, 0);
+          const remRestante = Number(propActualizada?.monto_disponible ?? 0);
+          const lineasDesglose = listaDesglose
+            .map((d) => `• ${d.jugador} jugó ${formatearMontoRegional(d.monto)}`)
+            .join("\n");
+
+          const textoVanJugando =
+            `🤝 *Van jugando por ${formatearMontoRegional(totalVanJugando)}* (${propActualizada?.jugada_estandarizada || propActualizada?.contenido || propMsg.contenido})\n` +
+            `${lineasDesglose}` +
+            (remRestante > 0 ? `\nDisponible: ${formatearMontoRegional(remRestante)}` : "");
+
+          // Actualizar cualquier mensaje derivado en chat_mensajes con el formato "Van jugando por X" + desglose
           const { data: msgsDerivados } = await supabaseAdmin
             .from("chat_mensajes")
             .select("id, contenido")
-            .eq("reply_to_msg_id", propuestaId);
+            .eq("reply_to_msg_id", propuestaId)
+            .order("created_at", { ascending: false })
+            .limit(1);
 
-          for (const md of msgsDerivados || []) {
-            const contenidoLimpio = String(md.contenido || "")
-              .replace(/¡?CRUCE\s+CONFIRMADO!?/gi, "*Jugaron*")
-              .replace(/¡?CRUCE\s+REGISTRADO!?/gi, "*Jugaron*")
-              .replace(/\bCRUCE\b/gi, "Jugaron");
+          if (msgsDerivados && msgsDerivados.length > 0) {
             await supabaseAdmin
               .from("chat_mensajes")
-              .update({ sala_id: salaId, contenido: contenidoLimpio })
-              .eq("id", md.id);
+              .update({ sala_id: salaId, tipo_mensaje: "CONCRECION", contenido: textoVanJugando })
+              .eq("id", msgsDerivados[0].id);
+          } else {
+            await supabaseAdmin.from("chat_mensajes").insert({
+              grupo_id: grupoId,
+              sala_id: salaId,
+              remitente_id: identidad.usuarioId,
+              remitente_nombre: identidad.nombre,
+              es_operador: false,
+              tipo_mensaje: "CONCRECION",
+              contenido: textoVanJugando,
+              reply_to_msg_id: propuestaId,
+              carrera_id: propMsg.carrera_id || sala.carrera_activa_id,
+            });
           }
         }
 
@@ -1168,9 +1288,10 @@ export async function POST(req: Request) {
         const retirados = (sala as any).retirados || [];
 
         // 1. Detección de orden de cierre/retiro de jugadas abiertas ("Se fue", "sf", etc.)
+        // Se cierran directamente cada una de las jugadas abiertas individualmente SIN enviar mensaje al chat para no saturar.
         const analisisRetiro = analizarComandoRetiro(texto);
-        if (analisisRetiro.esComandoRetiro) {
-          if (!analisisRetiro.esValido) {
+        if (analisisRetiro.esComandoRetiro || body.cerrarPropuestaId) {
+          if (analisisRetiro.esComandoRetiro && !analisisRetiro.esValido && !body.cerrarPropuestaId) {
             // Aclaratoria pedagógica obligatoria si fue similar
             return NextResponse.json({
               ok: true,
@@ -1180,8 +1301,7 @@ export async function POST(req: Request) {
             });
           }
 
-          // Comando exacto válido: anula y cierra todas las propuestas abiertas no concretadas del jugador
-          const { data: propuestasAbiertas } = await supabaseAdmin
+          let queryAbiertas = supabaseAdmin
             .from("chat_mensajes")
             .select("id, monto_disponible, monto_original")
             .eq("sala_id", salaId)
@@ -1189,9 +1309,17 @@ export async function POST(req: Request) {
             .eq("estado_propuesta", "abierta")
             .gt("monto_disponible", 0);
 
+          if (body.cerrarPropuestaId) {
+            queryAbiertas = queryAbiertas.eq("id", body.cerrarPropuestaId);
+          }
+
+          const { data: propuestasAbiertas } = await queryAbiertas;
+
           let totalRemanenteLiberado = 0;
+          const idsCerrados: string[] = [];
           for (const prop of propuestasAbiertas || []) {
             totalRemanenteLiberado += Number(prop.monto_disponible || 0);
+            idsCerrados.push(prop.id);
             await supabaseAdmin
               .from("chat_mensajes")
               .update({
@@ -1214,23 +1342,13 @@ export async function POST(req: Request) {
               .eq("id", identidad.usuarioId);
           }
 
-          const textoAviso = `🚫 ${identidad.nombre} retiró todas sus jugadas abiertas no concretadas.`;
-          await supabaseAdmin.from("chat_mensajes").insert({
-            grupo_id: grupoId,
-            sala_id: salaId,
-            remitente_nombre: "Bot Sala",
-            es_operador: false,
-            tipo_mensaje: "ESTADO_CARRERA",
-            contenido: textoAviso,
-            solo_borrable_operador: true,
-          });
-
-          await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+          // No se inserta ningún mensaje al chat para no saturar el grupo: cada propuesta queda cerrada individualmente.
+          await emitirBroadcast(salaId, "nuevo_mensaje", { salaId, idsCerrados });
           return NextResponse.json({
             ok: true,
             comandoRetiro: true,
+            idsCerrados,
             totalLiberado: totalRemanenteLiberado,
-            mensaje: textoAviso,
           });
         }
 

@@ -5,6 +5,7 @@ import {
   evaluarConcrecionEstricta,
   analizarComandoRetiro,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 export interface MensajeEntranteWhatsApp {
   groupJid: string;
@@ -369,7 +370,32 @@ export async function procesarMensajeEntranteWhatsApp(
           });
         }
 
-        // Registrar mensaje de concreción en chat_mensajes ("Jugaron", nunca "CRUCE")
+        // Consultar desglose completo de quienes van jugando esta propuesta
+        const { data: ticketsPropuesta } = await supabaseAdmin
+          .from("chat_tickets_fifo")
+          .select("aceptante_nombre, monto_concretado, created_at")
+          .eq("propuesta_msg_id", propFresca.id)
+          .order("created_at", { ascending: true });
+
+        const listaJugaron =
+          ticketsPropuesta && ticketsPropuesta.length > 0
+            ? ticketsPropuesta.map((t: any) => ({
+                jugador: String(t.aceptante_nombre || nombreJugador),
+                monto: Number(t.monto_concretado || 0),
+              }))
+            : [{ jugador: nombreJugador, monto: montoConcretado }];
+
+        const totalVanJugando = listaJugaron.reduce((acc, x) => acc + x.monto, 0);
+        const lineasDesglose = listaJugaron
+          .map((x) => `• ${x.jugador} jugó ${formatearMontoRegional(x.monto)}`)
+          .join("\n");
+
+        const contenidoVanJugando =
+          `🤝 *Van jugando por ${formatearMontoRegional(totalVanJugando)}* (${propFresca.jugada_estandarizada || propFresca.contenido})\n` +
+          `${lineasDesglose}\n` +
+          `${nuevoRemanente > 0 ? `Remanente disponible: ${formatearMontoRegional(nuevoRemanente)}` : "✅ ¡Jugada completada!"}`;
+
+        // Registrar mensaje de concreción en chat_mensajes ("Van jugando por X", nunca "CRUCE")
         await supabaseAdmin.from("chat_mensajes").insert({
           grupo_id: grupoId,
           sala_id: salaId,
@@ -377,7 +403,7 @@ export async function procesarMensajeEntranteWhatsApp(
           remitente_nombre: nombreJugador,
           es_operador: false,
           tipo_mensaje: "CONCRECION",
-          contenido: `🤝 *Jugaron* — ${nombreJugador} tomó $${montoConcretado.toFixed(2)} de la jugada de ${propFresca.remitente_nombre} (${propFresca.jugada_estandarizada || propFresca.contenido}). Remanente: $${nuevoRemanente.toFixed(2)}`,
+          contenido: contenidoVanJugando,
           reply_to_msg_id: propFresca.id,
           whatsapp_msg_id: whatsappMsgId || null,
           whatsapp_quoted_msg_id: quotedMsgId,
@@ -387,21 +413,21 @@ export async function procesarMensajeEntranteWhatsApp(
 
         await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
 
-        // Mensajes del Bot según especificación exacta ("Jugaron", nunca "CRUCE")
+        // Mensajes del Bot según especificación exacta ("Van jugando por X", nunca "CRUCE")
         let msgPublicoBot: string | null = null;
         let msgPrivadoBot: string | null = null;
 
         if (evaluacion.excedioSaldo) {
-          msgPublicoBot = evaluacion.msgPublicoBot || `Esta jugada solo por $${saldoDisponible.toFixed(2)}`;
+          msgPublicoBot = evaluacion.msgPublicoBot || `Esta jugada solo por $${formatearMontoRegional(saldoDisponible)}`;
           msgPrivadoBot = evaluacion.msgPrivadoBot || `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
         }
 
         const msgGrupoFinal = msgPublicoBot
-          ? `${msgPublicoBot}\n🤝 *Jugaron* — ${nombreJugador} tomó $${montoConcretado.toFixed(2)}. ${nuevoRemanente > 0 ? `Quedan $${nuevoRemanente.toFixed(2)} disponibles.` : "¡Jugada completa!"}`
-          : `🤝 *Jugaron*\n${propFresca.remitente_nombre} vs ${nombreJugador}\nPor: $${montoConcretado.toFixed(2)} (${propFresca.jugada_estandarizada || propFresca.contenido})\n${nuevoRemanente > 0 ? `⚠️ Remanente disponible: $${nuevoRemanente.toFixed(2)}` : "✅ Jugada Completada al 100%"}`;
+          ? `${msgPublicoBot}\n${contenidoVanJugando}`
+          : contenidoVanJugando;
 
-        const msgPrivadoAceptante = msgPrivadoBot || `✅ Has tomado la jugada de ${propFresca.remitente_nombre} por $${montoConcretado.toFixed(2)}. Retención aplicada: $${montoConcretado.toFixed(2)}.`;
-        const msgPrivadoProponente = `🔔 ${nombreJugador} tomó $${montoConcretado.toFixed(2)} de tu jugada (${propFresca.jugada_estandarizada || propFresca.contenido}). ${nuevoRemanente > 0 ? `Remanente activo: $${nuevoRemanente.toFixed(2)}` : "Tu jugada está 100% pactada."}`;
+        const msgPrivadoAceptante = msgPrivadoBot || `✅ Has tomado la jugada de ${propFresca.remitente_nombre} por $${formatearMontoRegional(montoConcretado)}. Retención aplicada: $${formatearMontoRegional(montoConcretado)}.`;
+        const msgPrivadoProponente = `🔔 ${nombreJugador} jugó $${formatearMontoRegional(montoConcretado)} en tu jugada (${propFresca.jugada_estandarizada || propFresca.contenido}). Van jugando por $${formatearMontoRegional(totalVanJugando)}. ${nuevoRemanente > 0 ? `Remanente activo: $${formatearMontoRegional(nuevoRemanente)}` : "Tu jugada está 100% pactada."}`;
 
         return {
           ok: true,
@@ -438,7 +464,7 @@ export async function procesarMensajeEntranteWhatsApp(
       };
     }
 
-    // Cerrar todas las propuestas abiertas no concretadas del jugador en la sala
+    // Cerrar cada propuesta abierta no concretada del jugador individualmente SIN publicar mensaje en el chat del grupo
     const { data: propsAbiertas } = await supabaseAdmin
       .from("chat_mensajes")
       .select("id, monto_disponible")
@@ -468,26 +494,14 @@ export async function procesarMensajeEntranteWhatsApp(
         .eq("id", cliente.id);
     }
 
-    const msgGrupoRetiro = `🚫 ${nombreJugador} retiró todas sus jugadas abiertas no concretadas.`;
-    await supabaseAdmin.from("chat_mensajes").insert({
-      grupo_id: grupoId,
-      sala_id: salaId,
-      remitente_nombre: "Bot Sala",
-      es_operador: false,
-      tipo_mensaje: "ESTADO_CARRERA",
-      contenido: msgGrupoRetiro,
-      solo_borrable_operador: true,
-      origen_canal: "whatsapp",
-    });
-
     await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
 
     return {
       ok: true,
       tipo: "TEXTO",
       acciones: {
-        responderEnGrupo: msgGrupoRetiro,
-        enviarPrivadoJugador: `Has retirado exitosamente todas tus jugadas abiertas. Se liberó una retención de $${totalDevuelto.toFixed(2)}.`,
+        responderEnGrupo: null,
+        enviarPrivadoJugador: `Has cerrado exitosamente todas tus jugadas abiertas. Se liberó una retención de $${formatearMontoRegional(totalDevuelto)}.`,
       },
     };
   }
@@ -638,13 +652,13 @@ export async function procesarMensajeEntranteWhatsApp(
     let msgPrivadoBot: string | null = null;
 
     if (excedioSaldoRpc) {
-      msgPublicoBot = analisis.msgPublicoBot || `[${nombreJugador}] solo dispone de $${saldoDisponible.toFixed(2)} para esta jugada.`;
+      msgPublicoBot = analisis.msgPublicoBot || `[${nombreJugador}] solo dispone de $${formatearMontoRegional(saldoDisponible)} para esta jugada.`;
       msgPrivadoBot = analisis.msgPrivadoBot || `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
     }
 
     const msgGrupo = msgPublicoBot
-      ? `${msgPublicoBot}\n🏇 *Propuesta Registrada*: ${analisis.jugadaEstandarizada} por $${montoEfectivo.toFixed(2)}`
-      : `🏇 *Nueva Propuesta*: ${analisis.jugadaEstandarizada} ($${montoEfectivo.toFixed(2)})\n↩️ Responde a este mensaje con *Consigo*, *Doy*, *J* o *Ponte* para tomarla.`;
+      ? `${msgPublicoBot}\n🏇 *Propuesta Registrada*: ${analisis.jugadaEstandarizada} por $${formatearMontoRegional(montoEfectivo)}`
+      : `🏇 *Nueva Propuesta*: ${analisis.jugadaEstandarizada} ($${formatearMontoRegional(montoEfectivo)})\n↩️ Responde a este mensaje con *Consigo*, *Doy*, *J* o *Ponte* para tomarla.`;
 
     return {
       ok: true,

@@ -330,7 +330,8 @@ export function _comprometidoSimuladoCli(
   clienteNombre: string,
   jugadasCarrera: JugadaActivaSimulacion[],
   comisionPctDefault = 5,
-  caballosRetirados: Set<string> = new Set()
+  caballosRetirados: Set<string> = new Set(),
+  permiteCruces = false
 ): number {
   const target = normalizarNombreCliente(clienteNombre);
   if (!target) return 0;
@@ -391,12 +392,37 @@ export function _comprometidoSimuladoCli(
 
     const evaluarMapa = (mapa: Map<string, number>) => {
       let netoAcumuladoCentavos = 0;
-      for (const jug of jugadasCluster) {
-        const ev = evaluarJugadaEnEscenario(jug, mapa, comisionPctDefault);
-        const esJ1 = normalizarNombreCliente(jug.jugador) === target;
-        const esJ2 = normalizarNombreCliente(jug.tercio) === target;
-        if (esJ1) netoAcumuladoCentavos += aCentavos(ev.netoJuega);
-        if (esJ2) netoAcumuladoCentavos += aCentavos(ev.netoDa);
+      if (permiteCruces) {
+        let brutoGanadoCentavos = 0;
+        let brutoPerdidoCentavos = 0;
+        for (const jug of jugadasCluster) {
+          const ev = evaluarJugadaEnEscenario(jug, mapa, comisionPctDefault);
+          const esJ1 = normalizarNombreCliente(jug.jugador) === target;
+          const esJ2 = normalizarNombreCliente(jug.tercio) === target;
+          if (esJ1) {
+            brutoGanadoCentavos += aCentavos(ev.brutoGanadoJuega);
+            brutoPerdidoCentavos += aCentavos(ev.brutoPerdidoJuega);
+          }
+          if (esJ2) {
+            brutoGanadoCentavos += aCentavos(ev.brutoGanadoDa);
+            brutoPerdidoCentavos += aCentavos(ev.brutoPerdidoDa);
+          }
+        }
+        const netoBrutoCentavos = brutoGanadoCentavos - brutoPerdidoCentavos;
+        if (netoBrutoCentavos > 0) {
+          const com = calcularComisionExacta(deCentavos(netoBrutoCentavos), comisionPctDefault);
+          netoAcumuladoCentavos = netoBrutoCentavos - aCentavos(com);
+        } else {
+          netoAcumuladoCentavos = netoBrutoCentavos;
+        }
+      } else {
+        for (const jug of jugadasCluster) {
+          const ev = evaluarJugadaEnEscenario(jug, mapa, comisionPctDefault);
+          const esJ1 = normalizarNombreCliente(jug.jugador) === target;
+          const esJ2 = normalizarNombreCliente(jug.tercio) === target;
+          if (esJ1) netoAcumuladoCentavos += aCentavos(ev.netoJuega);
+          if (esJ2) netoAcumuladoCentavos += aCentavos(ev.netoDa);
+        }
       }
       if (netoAcumuladoCentavos < peorNetoCentavos) {
         peorNetoCentavos = netoAcumuladoCentavos;

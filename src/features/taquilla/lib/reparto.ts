@@ -137,9 +137,10 @@ export function explicarDisponible(c: ClienteRiesgo | null | undefined): string 
 }
 
 
-/** El modo libre no exime del tope: toda jugada se topa contra saldo + aval (regla SSOT). */
-export function esSinTope(_c: ClienteRiesgo | null | undefined): boolean {
-  return false;
+/** Si el cliente juega libre (`libre === true` o `modo_juego === 'libre'`), juega sin restricciones de tope. */
+export function esSinTope(c: ClienteRiesgo | null | undefined): boolean {
+  if (!c) return false;
+  return Boolean(c.libre === true || String(c.modo_juego ?? "").trim().toLowerCase() === "libre");
 }
 
 /** Fila mínima de `clientes` para el lookup de disponible del reporte. */

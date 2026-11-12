@@ -144,12 +144,28 @@ const FMT_ES_VE_0 = new Intl.NumberFormat("es-VE", {
 });
 
 /**
- * Formatea un monto numérico en formato local `es-VE` (ej. `1.000,00`)
+ * Formatea un monto numérico en formato local `es-VE` (ej. `1.000,00` o `43,50`)
  * ESTRICTAMENTE SIN SÍMBOLOS DE MONEDA (`$`, `Bs`, `USD`, `VES`).
  */
 export function formatearMontoSinMoneda(v: unknown, decimales: 0 | 2 = 2): string {
   const exacto = redondearCentavos(v);
   return decimales === 0 ? FMT_ES_VE_0.format(Math.round(exacto)) : FMT_ES_VE_2.format(exacto);
+}
+
+/**
+ * Formatea un monto con la configuración regional venezolana (coma `,` como separador decimal,
+ * ej. `43,50`, `100,00`). Si `ocultarCerosEnteros` es `true`, muestra enteros sin `,00` y
+ * decimales con `,XX` (ej. `100` y `43,50`).
+ */
+export function formatearMontoRegional(
+  v: unknown,
+  opciones?: { ocultarCerosEnteros?: boolean }
+): string {
+  const exacto = redondearCentavos(v);
+  if (opciones?.ocultarCerosEnteros && Number.isInteger(exacto)) {
+    return FMT_ES_VE_0.format(exacto);
+  }
+  return FMT_ES_VE_2.format(exacto);
 }
 
 /**

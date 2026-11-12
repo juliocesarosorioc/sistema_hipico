@@ -9,6 +9,7 @@ import {
 } from '../lib/parser-pedagogico';
 import { generarHashArchivoSHA256, generarHashTextoSHA256, cifrarMensajeSala } from '../lib/seguridad-crypto';
 import { supabase } from '@/core/supabase';
+import { formatearMontoRegional } from '@/shared/lib/dinero';
 
 export interface SalaActivaInfo {
   id: string;
@@ -236,13 +237,14 @@ export default function SalaJuegosWhatsApp({
           });
 
           if (respConc?.ok) {
+            const montoConcretadoReal = Number(respConc.monto_concretado ?? evalConc.montoEfectivo);
             // Si el aceptante respondió por encima de su propio saldo disponible
             if (evalConc.excedioSaldo || respConc.excedio_saldo_aceptante) {
               agregarMensajeLocal(salaActiva.id, {
                 remitente: '🤖 ASISTENTE DE SALA',
                 esBot: true,
                 tipo: 'alerta_bot',
-                contenido: `Esta jugada solo por $${Number(respConc.monto_concretado ?? evalConc.montoEfectivo).toFixed(2)}`,
+                contenido: `Esta jugada solo por $${formatearMontoRegional(montoConcretadoReal)}`,
               });
               setSugerenciaPedagogica({
                 mensaje: '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo',
@@ -250,8 +252,20 @@ export default function SalaJuegosWhatsApp({
               });
             }
 
-            // Publicación oficial en el grupo (*Aquí Jugaron*)
-            const msgPublico = respConc.msg_publico || `*Aquí Jugaron* por $${Number(respConc.monto_concretado).toFixed(2)} (${replyToPropuesta.remitente} vs ${usuarioActual.nombre}) — Quedan $${Number(respConc.remanente_propuesta).toFixed(2)} disponibles en esta parada.`;
+            const desglosePrevio: Array<{ jugador: string; monto: number }> = Array.isArray(replyToPropuesta.desgloseJugaron)
+              ? replyToPropuesta.desgloseJugaron
+              : [];
+            const nuevoDesglose = [...desglosePrevio, { jugador: usuarioActual.nombre, monto: montoConcretadoReal }];
+            const totalVanJugando = nuevoDesglose.reduce((acc, x) => acc + Number(x.monto || 0), 0);
+            const lineasDesglose = nuevoDesglose
+              .map((x) => `• ${x.jugador} jugó ${formatearMontoRegional(x.monto)}`)
+              .join('\n');
+
+            // Publicación oficial en el grupo ("Van jugando por X" + desglose)
+            const msgPublico =
+              `🤝 *Van jugando por ${formatearMontoRegional(totalVanJugando)}* (${replyToPropuesta.contenido})\n` +
+              `${lineasDesglose}\n` +
+              `${Number(respConc.remanente_propuesta) > 0 ? `Remanente disponible: ${formatearMontoRegional(Number(respConc.remanente_propuesta))}` : '✅ ¡Jugada completada!'}`;
             agregarMensajeLocal(salaActiva.id, {
               remitente: '🤖 ASISTENTE DE SALA',
               esBot: true,
@@ -265,7 +279,7 @@ export default function SalaJuegosWhatsApp({
                 remitente: 'ℹ️ AVISO DE CIERRE',
                 esBot: true,
                 tipo: 'aviso_remanente',
-                contenido: `⚡ Propuesta #${String(replyToPropuesta.id).slice(0, 8)} completada al 100%. Solo quedaban $${Number(respConc.monto_concretado).toFixed(2)} disponibles y fueron asignados a ${usuarioActual.nombre}.`,
+                contenido: `⚡ Propuesta #${String(replyToPropuesta.id).slice(0, 8)} completada al 100%. Solo quedaban $${formatearMontoRegional(montoConcretadoReal)} disponibles y fueron asignados a ${usuarioActual.nombre}.`,
               });
             }
 
@@ -278,6 +292,8 @@ export default function SalaJuegosWhatsApp({
                       ...m,
                       montoDisponible: Number(respConc.remanente_propuesta),
                       estadoPropuesta: Number(respConc.remanente_propuesta) <= 0 ? 'cerrada' : 'abierta',
+                      desgloseJugaron: nuevoDesglose,
+                      montoJugadoTotal: totalVanJugando,
                     }
                   : m
               ),
@@ -294,7 +310,7 @@ export default function SalaJuegosWhatsApp({
       return;
     }
 
-    // 2.B CASO COMANDO DE RETIRO ("Se fue", "sf", etc.)
+    // 2.B CASO COMANDO DE RETIRO ("Se fue", "sf", etc.) — Cierra cada jugada abierta individualmente SIN saturar el chat
     const analisisRetiro = analizarComandoRetiro(texto);
     if (analisisRetiro.esComandoRetiro) {
       if (!analisisRetiro.esValido) {
@@ -305,7 +321,7 @@ export default function SalaJuegosWhatsApp({
         return;
       }
 
-      // Cerrar todas las propuestas abiertas no concretadas del jugador en la sala
+      // Cerrar cada propuesta abierta no concretada del jugador individualmente sin enviar mensaje al grupo
       setMensajesPorSala((prev) => ({
         ...prev,
         [salaActiva.id]: (prev[salaActiva.id] || []).map((m) =>
@@ -314,13 +330,6 @@ export default function SalaJuegosWhatsApp({
             : m
         ),
       }));
-
-      agregarMensajeLocal(salaActiva.id, {
-        remitente: "🤖 ASISTENTE DE SALA",
-        esBot: true,
-        tipo: "alerta_bot",
-        contenido: `🚫 ${usuarioActual.nombre} retiró todas sus jugadas abiertas no concretadas.`,
-      });
 
       setTextoInput("");
       setSugerenciaPedagogica(null);
@@ -413,7 +422,7 @@ export default function SalaJuegosWhatsApp({
           remitente: '🤖 ASISTENTE DE SALA',
           esBot: true,
           tipo: 'alerta_bot',
-          contenido: `${usuarioActual.nombre} solo dispone de $${usuarioActual.saldoDisponible.toFixed(2)} para esta jugada.`,
+          contenido: `${usuarioActual.nombre} solo dispone de $${formatearMontoRegional(usuarioActual.saldoDisponible)} para esta jugada.`,
         });
 
         // El Bot le envía simultáneamente en privado al jugador:
@@ -558,7 +567,7 @@ export default function SalaJuegosWhatsApp({
           <div className="flex items-center bg-[#111b21] px-2.5 py-1 rounded border border-gray-700 text-xs font-mono tabular-nums">
             <span className="text-gray-400 mr-1">🔒 Saldo:</span>
             <span className="text-emerald-400 font-bold">
-              {ocultarSaldo ? '$ ••••' : `$${usuarioActual.saldoDisponible.toFixed(2)}`}
+              {ocultarSaldo ? '$ ••••' : `$${formatearMontoRegional(usuarioActual.saldoDisponible)}`}
             </span>
             <button onClick={() => setOcultarSaldo(!ocultarSaldo)} className="ml-2 text-gray-400 hover:text-white">
               👁️
@@ -627,11 +636,30 @@ export default function SalaJuegosWhatsApp({
               {/* SELECCIÓN Y BARRA EN VIVO PARA PROPUESTAS DE JUGADA */}
               {esPropuesta && (
                 <div className="mt-2.5 pt-2 border-t border-gray-700/60 font-sans">
-                  <div className="flex justify-between items-center text-[11px] mb-1 font-mono">
+                  <div className="flex justify-between items-center text-[11px] mb-1 font-mono gap-2">
                     <span className="text-gray-400">Estado de Parada:</span>
-                    <span className={`font-bold ${tieneDisponible ? 'text-emerald-400' : 'text-gray-500 line-through'}`}>
-                      Disponible: ${montoDisp.toFixed(2)} de ${montoOrig.toFixed(2)}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`font-bold ${tieneDisponible ? 'text-emerald-400' : 'text-gray-500 line-through'}`}>
+                        Disponible: ${formatearMontoRegional(montoDisp)} de ${formatearMontoRegional(montoOrig)}
+                      </span>
+                      {esMio && tieneDisponible && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMensajesPorSala((prev) => ({
+                              ...prev,
+                              [salaActiva.id]: (prev[salaActiva.id] || []).map((item) =>
+                                item.id === m.id ? { ...item, estadoPropuesta: 'cerrada', montoDisponible: 0 } : item
+                              ),
+                            }));
+                          }}
+                          className="bg-red-950/70 hover:bg-red-900 text-red-300 border border-red-700/50 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                          title="Cerrar esta jugada directamente sin enviar mensaje al chat"
+                        >
+                          🚫 Se fue
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
                     <div
@@ -639,6 +667,20 @@ export default function SalaJuegosWhatsApp({
                       style={{ width: `${montoOrig > 0 ? (montoDisp / montoOrig) * 100 : 0}%` }}
                     />
                   </div>
+
+                  {Array.isArray(m.desgloseJugaron) && m.desgloseJugaron.length > 0 && (
+                    <div className="mt-2 rounded-lg bg-black/30 border border-emerald-500/30 px-2.5 py-1.5 text-[11px] space-y-0.5">
+                      <div className="font-bold text-emerald-400">
+                        🤝 Van jugando por {formatearMontoRegional(Number(m.montoJugadoTotal ?? (montoOrig - montoDisp)))}
+                      </div>
+                      {m.desgloseJugaron.map((item: { jugador: string; monto: number }, idx: number) => (
+                        <div key={idx} className="text-gray-200 font-medium">
+                          • <span className="font-bold">{item.jugador}</span> jugó{' '}
+                          <span className="font-mono font-bold">{formatearMontoRegional(item.monto)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {!esMio && tieneDisponible && (
                     <div className="mt-2 space-y-1.5">
@@ -650,7 +692,7 @@ export default function SalaJuegosWhatsApp({
                         }}
                         className="w-full bg-[#00a884] hover:bg-emerald-400 text-black text-xs font-black py-1.5 px-3 rounded-lg flex items-center justify-center gap-1 transition shadow-sm"
                       >
-                        ⚡ Tomar Jugada Total (${montoDisp.toFixed(2)})
+                        ⚡ Tomar Jugada Total (${formatearMontoRegional(montoDisp)})
                       </button>
 
                       <div className="grid grid-cols-2 gap-1.5">

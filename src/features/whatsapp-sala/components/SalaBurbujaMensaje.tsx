@@ -4,6 +4,7 @@ import React, { useState, useRef, useCallback } from "react";
 import type { MensajeSala, EstadoCarreraGrupo } from "../lib/chat-p2p";
 import { SalaTarjetaCarreraGrafica } from "./SalaTarjetaCarreraGrafica";
 import { obtenerColorGualdrapa } from "../lib/chat-p2p";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 interface Props {
   mensaje: MensajeSala;
@@ -409,7 +410,7 @@ export function SalaBurbujaMensaje({
                       : "text-cyan-300"
                   }`}
                 >
-                  ${Number(mensaje.monto_disponible ?? mensaje.monto_propuesto).toFixed(2)}
+                  ${formatearMontoRegional(Number(mensaje.monto_disponible ?? mensaje.monto_propuesto))}
                 </span>
               </div>
             </div>
@@ -431,6 +432,24 @@ export function SalaBurbujaMensaje({
                     )}%`,
                   }}
                 />
+              </div>
+            )}
+
+            {/* Desglose en vivo: Van jugando por X + quiénes jugaron */}
+            {Array.isArray(mensaje.desglose_jugaron) && mensaje.desglose_jugaron.length > 0 && (
+              <div className="mb-2 rounded-lg bg-emerald-950/40 border border-emerald-500/30 px-2.5 py-1.5 text-[11px] space-y-0.5">
+                <div className="font-bold text-emerald-300">
+                  🤝 Van jugando por{" "}
+                  {formatearMontoRegional(
+                    mensaje.desglose_jugaron.reduce((acc, x) => acc + Number(x.monto || 0), 0)
+                  )}
+                </div>
+                {mensaje.desglose_jugaron.map((item, idx) => (
+                  <div key={idx} className="text-emerald-100/90 font-medium">
+                    • <span className="font-bold">{item.jugador}</span> jugó{" "}
+                    <span className="font-mono font-bold">{formatearMontoRegional(item.monto)}</span>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -486,7 +505,7 @@ export function SalaBurbujaMensaje({
                       onClick={() => onTomarPropuestaFifo(mensaje, "J")}
                       className="flex-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs py-1.5 px-2 shadow active:scale-95 transition-all text-center font-mono tabular-nums"
                     >
-                      ⚡ Jugar Todo (${Number(mensaje.monto_disponible).toFixed(0)})
+                      ⚡ Jugar Todo (${formatearMontoRegional(Number(mensaje.monto_disponible))})
                     </button>
                     {Number(mensaje.monto_disponible) >= 50 && (
                       <button
@@ -628,13 +647,13 @@ export function SalaBurbujaMensaje({
                       ) : (mensaje.monto_disponible ?? 0) <= 0 ? (
                         <span className="text-emerald-400">⚡ Concretada / Casada al 100%</span>
                       ) : (
-                        <span className="text-cyan-300">🟢 Activa (${Number(mensaje.monto_disponible).toFixed(2)} disponible)</span>
+                        <span className="text-cyan-300">🟢 Activa (${formatearMontoRegional(Number(mensaje.monto_disponible))} disponible)</span>
                       )}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-[#8696a0]">Monto inicial:</span>
-                    <span className="font-mono font-bold text-white">${Number(mensaje.monto_propuesto).toFixed(2)}</span>
+                    <span className="font-mono font-bold text-white">${formatearMontoRegional(Number(mensaje.monto_propuesto))}</span>
                   </div>
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-[#8696a0]">Caballo & Carrera:</span>

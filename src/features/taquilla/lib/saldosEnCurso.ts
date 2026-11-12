@@ -19,7 +19,7 @@
  */
 import { proyectarFila, type FilaProyeccion } from "@/features/taquilla/lib/validar";
 import { disponibleParaJugar, esSinTope } from "@/features/taquilla/lib/reparto";
-import { redondearCentavos, restarDinero, sumarDinero } from "@/shared/lib/dinero";
+import { calcularComisionExacta, redondearCentavos, restarDinero, sumarDinero } from "@/shared/lib/dinero";
 import {
   _comprometidoSimuladoCli,
   normalizarNombreCliente,
@@ -100,24 +100,40 @@ export function clienteConSaldoDescontado<C extends ClienteConSaldo>(
   };
 }
 
+export type OpcionesProyeccionEnOrden = {
+  /**
+   * Si el grupo permite cruces de jugadas sin cobrar comisión:
+   * - `true`: al jugar al derecho y al revés (tapa) permite hasta el 100% del monto cubierto (ej. 100 -> 100).
+   * - `false`: al jugar al derecho y al revés habiendo agotado saldo, permite hasta lo máximo que ganaría con cualquiera de las dos (`montoCubierto - comision`, ej. 100 al 5% -> 95).
+   * - `undefined`: modo compatible por defecto.
+   */
+  permiteCruces?: boolean;
+  /** Jugadas previas ya activas del cliente en la misma carrera. */
+  jugadasPreviasCarrera?: JugadaActivaSimulacion[];
+};
+
 /**
- * Proyecta TODAS las filas en el orden del plano, descontando del cliente 1 lo
- * autorizado en cada fila anterior y deduplicando por `id` de ticket si viene
- * informado. Devuelve, por fila, la proyección, los clientes ya con el saldo
- * restante y el desglose progresivo (`queda`, `montoSolicitado`, `montoAceptado`,
- * `montoExcedido`, `observacionExceso`).
+ * Proyecta TODAS las filas en el orden del plano, descontando progresivamente tanto a
+ * Jugador 1 (`cliente1`) como a Jugador 2 (`cliente2`) lo autorizado en cada fila anterior,
+ * verificando aval, pozo (`saldo_actual`), disponible y modo libre (`esSinTope`),
+ * y aplicando la regla de neteo en vivo (Tapa Derecho/Revés) con o sin cruces.
  */
 export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaDeCarga>(
   filas: F[],
   resolver: (texto: string) => C | null,
-  tasaComision?: number
+  tasaComision?: number,
+  opts?: OpcionesProyeccionEnOrden
 ): ProyeccionEnCurso<C>[] {
   const descontado = new Map<string, number>();
   const ticketsVistos = new Set<string>();
-  const jugadasActivas: JugadaActivaSimulacion[] = [];
+  const jugadasActivas: JugadaActivaSimulacion[] = Array.isArray(opts?.jugadasPreviasCarrera)
+    ? [...opts!.jugadasPreviasCarrera]
+    : [];
+  const tienePreviasExternas = jugadasActivas.length > 0;
   const clientesConJugadaActiva = new Map<string, C>();
   const out: ProyeccionEnCurso<C>[] = [];
   const comPct = tasaComision ?? 5;
+  const permiteCrucesSim = Boolean(opts?.permiteCruces);
 
   for (const f of filas) {
     const idTicket = f.id != null && String(f.id).trim() !== "" ? String(f.id).trim() : null;
@@ -131,41 +147,91 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
       parseFloat(String(f.monto ?? "").replace(",", ".")) || 0
     );
 
-    // Si base1 ya tiene jugadas en la carrera y esta nueva fila actúa como TAPA
-    // (su riesgo comprometido simulado disminuye respecto al descontado actual),
-    // liberamos el descuento previo para permitir la cobertura en vivo.
+    const rawJugada = String(f.jugada ?? "").trim();
+    const esInversaEnTexto = /^(?:doy|consigo|da)\s+/i.test(rawJugada);
+    const jugadaNormalizadaFila = esInversaEnTexto
+      ? rawJugada.replace(/^(?:doy|consigo|da)\s+/i, "").trim()
+      : rawJugada;
+
+    const nombre1 = String(base1?.nombre ?? f.cliente1 ?? "").trim();
+    const nombre2 = String(base2?.nombre ?? f.cliente2 ?? "").trim();
+
+    const construirTentativa = (monto: number): JugadaActivaSimulacion => ({
+      id: idTicket ?? `tmp-${out.length + 1}`,
+      jugador: esInversaEnTexto ? (nombre2 || "CONTRAPARTE") : nombre1,
+      tercio: esInversaEnTexto ? nombre1 : nombre2,
+      jugada: jugadaNormalizadaFila,
+      caballo: f.caballo.trim(),
+      monto,
+      comisionPct: comPct,
+    });
+
+    // Evaluar si la nueva fila actúa como TAPA (jugada al derecho y al revés sobre el mismo ejemplar)
+    // tanto para Jugador 1 (base1) como para Jugador 2 (base2).
     let mapaDescuentoEfectivo = descontado;
-    if (base1 && montoSolicitado > 0 && jugadasActivas.length > 0) {
-      const clave1 = String(base1.id ?? base1.nombre ?? "").trim().toUpperCase();
-      const nombre1 = String(base1.nombre ?? f.cliente1 ?? "").trim();
-      const usadoActual = descontado.get(clave1) ?? 0;
-      if (usadoActual > 0) {
-        const tentativa: JugadaActivaSimulacion = {
-          id: idTicket ?? `tmp-${out.length + 1}`,
-          jugador: nombre1,
-          tercio: String(base2?.nombre ?? f.cliente2 ?? "").trim(),
-          jugada: f.jugada,
-          caballo: f.caballo.trim(),
-          monto: montoSolicitado,
-          comisionPct: comPct,
-        };
-        const riesgoConTentativa = _comprometidoSimuladoCli(
-          nombre1,
-          [...jugadasActivas, tentativa],
-          comPct
-        );
-        if (riesgoConTentativa < usadoActual) {
-          mapaDescuentoEfectivo = new Map(descontado);
-          mapaDescuentoEfectivo.set(clave1, 0);
-          if (base1.id != null) mapaDescuentoEfectivo.set(String(base1.id), 0);
-        }
+    let fueTapa1 = false;
+    let fueTapa2 = false;
+
+    const evaluarCupoTapaCliente = (baseCli: C | null, nombreCli: string): { esTapa: boolean; cupoLiberado: number; usadoActual: number; clave: string } => {
+      if (!baseCli || !nombreCli || montoSolicitado <= 0 || jugadasActivas.length === 0) {
+        return { esTapa: false, cupoLiberado: 0, usadoActual: 0, clave: "" };
+      }
+      const clave = String(baseCli.id ?? baseCli.nombre ?? "").trim().toUpperCase();
+      const usadoActual = descontado.get(clave) ?? 0;
+      const riesgoBrutoAntes = _comprometidoSimuladoCli(nombreCli, jugadasActivas, 0, new Set(), true);
+      if (usadoActual <= 0 && riesgoBrutoAntes <= 0) {
+        return { esTapa: false, cupoLiberado: 0, usadoActual, clave };
+      }
+      const montoTest = Math.min(montoSolicitado, Math.max(usadoActual, riesgoBrutoAntes));
+      if (montoTest <= 0) {
+        return { esTapa: false, cupoLiberado: 0, usadoActual, clave };
+      }
+      const riesgoBrutoConTest = _comprometidoSimuladoCli(
+        nombreCli,
+        [...jugadasActivas, construirTentativa(montoTest)],
+        0,
+        new Set(),
+        true
+      );
+      if (riesgoBrutoConTest < riesgoBrutoAntes) {
+        const montoCubierto = restarDinero(riesgoBrutoAntes, riesgoBrutoConTest);
+        const cupoLiberado =
+          opts?.permiteCruces === false
+            ? Math.max(0, restarDinero(montoCubierto, calcularComisionExacta(montoCubierto, comPct)))
+            : montoCubierto;
+        return { esTapa: true, cupoLiberado, usadoActual, clave };
+      }
+      return { esTapa: false, cupoLiberado: 0, usadoActual, clave };
+    };
+
+    const tapa1 = evaluarCupoTapaCliente(base1, nombre1);
+    if (tapa1.esTapa) {
+      fueTapa1 = true;
+      if (mapaDescuentoEfectivo === descontado) mapaDescuentoEfectivo = new Map(descontado);
+      const nuevoDesc1 = tienePreviasExternas
+        ? restarDinero(tapa1.usadoActual, tapa1.cupoLiberado)
+        : Math.max(0, restarDinero(tapa1.usadoActual, tapa1.cupoLiberado));
+      mapaDescuentoEfectivo.set(tapa1.clave, nuevoDesc1);
+      if (base1?.id != null) mapaDescuentoEfectivo.set(String(base1.id), nuevoDesc1);
+    }
+
+    if (!esBanca2) {
+      const tapa2 = evaluarCupoTapaCliente(base2, nombre2);
+      if (tapa2.esTapa) {
+        fueTapa2 = true;
+        if (mapaDescuentoEfectivo === descontado) mapaDescuentoEfectivo = new Map(descontado);
+        const nuevoDesc2 = tienePreviasExternas
+          ? restarDinero(tapa2.usadoActual, tapa2.cupoLiberado)
+          : Math.max(0, restarDinero(tapa2.usadoActual, tapa2.cupoLiberado));
+        mapaDescuentoEfectivo.set(tapa2.clave, nuevoDesc2);
+        if (base2?.id != null) mapaDescuentoEfectivo.set(String(base2.id), nuevoDesc2);
       }
     }
 
     const cliente1 = clienteConSaldoDescontado(base1, mapaDescuentoEfectivo);
     const cliente2 = esBanca2 ? base2 : clienteConSaldoDescontado(base2, mapaDescuentoEfectivo);
     const proyeccion = proyectarFila({
-      jugada: f.jugada,
+      jugada: jugadaNormalizadaFila,
       caballo: f.caballo.trim(),
       monto: f.monto,
       tasaComision,
@@ -195,34 +261,42 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
     let riesgoComprometidoCliente2: number | undefined;
 
     if (proyeccion.ok && !duplicado && montoAceptado > 0) {
-      const nombreJ1 = String(base1?.nombre ?? f.cliente1 ?? "").trim();
-      const nombreJ2 = String(base2?.nombre ?? f.cliente2 ?? "").trim();
-      jugadasActivas.push({
-        id: idTicket ?? `fila-${out.length + 1}`,
-        jugador: nombreJ1,
-        tercio: nombreJ2,
-        jugada: f.jugada,
-        caballo: f.caballo.trim(),
-        monto: montoAceptado,
-        comisionPct: comPct,
-      });
+      jugadasActivas.push(construirTentativa(montoAceptado));
 
       if (base1) {
         const clave1 = String(base1.id ?? base1.nombre ?? "").trim().toUpperCase();
         clientesConJugadaActiva.set(clave1, base1);
         const riesgo1 = proyeccion.reparto ? proyeccion.reparto.lado1.riesgo : montoAceptado;
-        riesgoComprometido = riesgo1;
-        descontado.set(clave1, (descontado.get(clave1) ?? 0) + riesgo1);
-        if (base1.id != null) descontado.set(String(base1.id), (descontado.get(String(base1.id)) ?? 0) + riesgo1);
+        const acumuladoLineal1 = sumarDinero(descontado.get(clave1) ?? 0, riesgo1);
+        const riesgoPrevioExt1 = tienePreviasExternas
+          ? _comprometidoSimuladoCli(nombre1, opts!.jugadasPreviasCarrera!, comPct, new Set(), permiteCrucesSim)
+          : 0;
+        const riesgoSimTotal1 = _comprometidoSimuladoCli(nombre1, jugadasActivas, comPct, new Set(), permiteCrucesSim);
+        const riesgoSim1 = tienePreviasExternas
+          ? Math.max(0, restarDinero(riesgoSimTotal1, riesgoPrevioExt1))
+          : riesgoSimTotal1;
+        const nuevoComprometido1 = fueTapa1 || riesgoSim1 < acumuladoLineal1 ? riesgoSim1 : acumuladoLineal1;
+        riesgoComprometido = nuevoComprometido1;
+        descontado.set(clave1, nuevoComprometido1);
+        if (base1.id != null) descontado.set(String(base1.id), nuevoComprometido1);
       }
 
       if (base2 && !esBanca2) {
         const clave2 = String(base2.id ?? base2.nombre ?? "").trim().toUpperCase();
         clientesConJugadaActiva.set(clave2, base2);
         const riesgo2 = proyeccion.reparto ? proyeccion.reparto.lado2.riesgo : montoAceptado;
-        riesgoComprometidoCliente2 = riesgo2;
-        descontado.set(clave2, (descontado.get(clave2) ?? 0) + riesgo2);
-        if (base2.id != null) descontado.set(String(base2.id), (descontado.get(String(base2.id)) ?? 0) + riesgo2);
+        const acumuladoLineal2 = sumarDinero(descontado.get(clave2) ?? 0, riesgo2);
+        const riesgoPrevioExt2 = tienePreviasExternas
+          ? _comprometidoSimuladoCli(nombre2, opts!.jugadasPreviasCarrera!, comPct, new Set(), permiteCrucesSim)
+          : 0;
+        const riesgoSimTotal2 = _comprometidoSimuladoCli(nombre2, jugadasActivas, comPct, new Set(), permiteCrucesSim);
+        const riesgoSim2 = tienePreviasExternas
+          ? Math.max(0, restarDinero(riesgoSimTotal2, riesgoPrevioExt2))
+          : riesgoSimTotal2;
+        const nuevoComprometido2 = fueTapa2 || riesgoSim2 < acumuladoLineal2 ? riesgoSim2 : acumuladoLineal2;
+        riesgoComprometidoCliente2 = nuevoComprometido2;
+        descontado.set(clave2, nuevoComprometido2);
+        if (base2.id != null) descontado.set(String(base2.id), nuevoComprometido2);
       }
     }
 
