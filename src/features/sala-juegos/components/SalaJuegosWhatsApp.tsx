@@ -2,7 +2,11 @@
 // LÍNEA 1: Interfaz Completa de Sala de Juegos Estilo WhatsApp / WhatsApp Web
 
 import React, { useState, useRef } from 'react';
-import { analizarYEstandarizarJugada, evaluarConcrecionEstricta } from '../lib/parser-pedagogico';
+import {
+  analizarYEstandarizarJugada,
+  evaluarConcrecionEstricta,
+  analizarComandoRetiro,
+} from '../lib/parser-pedagogico';
 import { generarHashArchivoSHA256, generarHashTextoSHA256, cifrarMensajeSala } from '../lib/seguridad-crypto';
 import { supabase } from '@/core/supabase';
 
@@ -290,7 +294,40 @@ export default function SalaJuegosWhatsApp({
       return;
     }
 
-    // 2.B CASO NUEVA PROPUESTA O MENSAJE GENERAL
+    // 2.B CASO COMANDO DE RETIRO ("Se fue", "sf", etc.)
+    const analisisRetiro = analizarComandoRetiro(texto);
+    if (analisisRetiro.esComandoRetiro) {
+      if (!analisisRetiro.esValido) {
+        setSugerenciaPedagogica({
+          mensaje: analisisRetiro.mensajeAclaratoria || "Por favor aclara si deseas retirar tus jugadas con: 'Se fue' o 'sf'",
+          opciones: ["Se fue", "sf"],
+        });
+        return;
+      }
+
+      // Cerrar todas las propuestas abiertas no concretadas del jugador en la sala
+      setMensajesPorSala((prev) => ({
+        ...prev,
+        [salaActiva.id]: (prev[salaActiva.id] || []).map((m) =>
+          m.remitente === usuarioActual.nombre && m.tipo === "propuesta_jugada" && m.estadoPropuesta === "abierta"
+            ? { ...m, estadoPropuesta: "cerrada", montoDisponible: 0 }
+            : m
+        ),
+      }));
+
+      agregarMensajeLocal(salaActiva.id, {
+        remitente: "🤖 ASISTENTE DE SALA",
+        esBot: true,
+        tipo: "alerta_bot",
+        contenido: `🚫 ${usuarioActual.nombre} retiró todas sus jugadas abiertas no concretadas.`,
+      });
+
+      setTextoInput("");
+      setSugerenciaPedagogica(null);
+      return;
+    }
+
+    // 2.C CASO NUEVA PROPUESTA O MENSAJE GENERAL
     const analisis = analizarYEstandarizarJugada(
       texto,
       usuarioActual.saldoDisponible,
@@ -771,6 +808,13 @@ export default function SalaJuegosWhatsApp({
               className="bg-[#111b21] hover:bg-gray-800 text-gray-300 border border-gray-700 px-2 py-0.5 rounded font-mono text-xs"
             >
               + Match
+            </button>
+            <button
+              onClick={() => manejarEnvioMensaje('Se fue')}
+              className="bg-red-950/70 hover:bg-red-900/80 text-red-300 border border-red-700/50 px-2 py-0.5 rounded font-mono font-bold text-xs flex items-center gap-1"
+              title="Cierra todas tus jugadas abiertas no concretadas"
+            >
+              <span>🚫</span> Se fue (Retirar)
             </button>
           </div>
         )}

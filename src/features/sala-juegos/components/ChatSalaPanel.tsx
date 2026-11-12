@@ -35,8 +35,69 @@ export function ChatSalaPanel({
     jugadaEstandarizada?: string;
   } | null>(null);
 
+  // Control de menú contextual estilo WhatsApp
+  const [menuContextual, setMenuContextual] = useState<{
+    x: number;
+    y: number;
+    msg: any;
+  } | null>(null);
+
+  // Control táctil Swipe-to-reply
+  const [swipingId, setSwipingId] = useState<string | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);
+  const touchStartXRef = useRef<number>(0);
+  const touchStartYRef = useRef<number>(0);
+  const isSwipingRef = useRef<boolean>(false);
+
+  // Timer tick en vivo para actualizar expiración de vigencia cada 3s
+  const [ahora, setAhora] = useState<number>(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setAhora(Date.now()), 3000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Cerrar menú contextual al hacer clic fuera
+  useEffect(() => {
+    const handleClickFuera = () => setMenuContextual(null);
+    window.addEventListener("click", handleClickFuera);
+    return () => window.removeEventListener("click", handleClickFuera);
+  }, []);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleTouchStart = (e: React.TouchEvent, msg: any) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+    isSwipingRef.current = false;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent, msg: any) => {
+    const deltaX = e.touches[0].clientX - touchStartXRef.current;
+    const deltaY = Math.abs(e.touches[0].clientY - touchStartYRef.current);
+
+    if (deltaX > 8 && deltaY < 40) {
+      isSwipingRef.current = true;
+      setSwipingId(msg.id);
+      const capped = Math.min(80, Math.max(0, deltaX));
+      setSwipeOffset(capped);
+    }
+  };
+
+  const handleTouchEnd = (msg: any) => {
+    if (isSwipingRef.current && swipeOffset >= 40) {
+      if (typeof window !== "undefined" && (window as any).navigator?.vibrate) {
+        try {
+          (window as any).navigator.vibrate(20);
+        } catch {}
+      }
+      setReplyToPropuesta(msg);
+      inputRef.current?.focus();
+    }
+    setSwipingId(null);
+    setSwipeOffset(0);
+    isSwipingRef.current = false;
+  };
 
   const cargarMensajes = async () => {
     if (!sala?.id) return;
@@ -319,135 +380,217 @@ export function ChatSalaPanel({
           // VISTA PROPUESTA DE JUGADA
           const esPropuesta = m.tipo_mensaje === "propuesta_jugada" || m.tipo_mensaje === "PROPUESTA";
           if (esPropuesta) {
+            const tiempoVigencia = Number(sala?.tiempo_vigencia_segundos || 120);
+            const edadSegundos = (ahora - new Date(m.created_at).getTime()) / 1000;
             const disponible = Number(m.monto_disponible ?? m.monto_original ?? 0);
-            const activa = m.estado_propuesta === "abierta" && disponible > 0 && esCarreraAbierta;
+            const estaVencida =
+              edadSegundos > tiempoVigencia ||
+              m.estado_propuesta === "cerrada" ||
+              m.estado_propuesta === "vencida" ||
+              disponible <= 0;
+            const activa = m.estado_propuesta === "abierta" && disponible > 0 && esCarreraAbierta && !estaVencida;
+            const segundosRestantes = Math.max(0, Math.ceil(tiempoVigencia - edadSegundos));
+
+            const isSwipingEste = swipingId === m.id;
+            const transformStyle = isSwipingEste
+              ? { transform: `translateX(${swipeOffset}px)`, transition: "transform 0.05s ease-out" }
+              : { transition: "transform 0.2s ease" };
 
             return (
               <div
                 key={m.id}
-                className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 shadow-md ${
-                  mio
-                    ? "ml-auto bg-[#005c4b] border border-emerald-400/30 text-white rounded-tr-xs"
-                    : "mr-auto bg-[#202c33] border border-gray-700/60 text-[#e9edef] rounded-tl-xs"
-                }`}
+                className="relative group select-none flex items-center"
+                onTouchStart={(e) => handleTouchStart(e, m)}
+                onTouchMove={(e) => handleTouchMove(e, m)}
+                onTouchEnd={() => handleTouchEnd(m)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenuContextual({
+                    x: Math.min(e.clientX, window.innerWidth - 200),
+                    y: Math.min(e.clientY, window.innerHeight - 240),
+                    msg: m,
+                  });
+                }}
               >
-                <div className="flex items-center justify-between text-[11px] mb-1 font-bold gap-2">
-                  <span className={mio ? "text-emerald-200" : "text-emerald-400"}>
-                    {mio ? "Tú" : (m.remitente_nombre || "Usuario")} {m.es_operador && "👑 [Operador]"}
-                  </span>
-                  <span className="text-[10px] text-gray-400 font-mono">
-                    {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                </div>
-
-                <div className="bg-black/30 rounded-xl p-2.5 my-1.5 border border-white/10">
-                  <div className="font-bold text-sm text-amber-300 font-mono flex items-center justify-between">
-                    <span>{m.jugada_estandarizada || m.contenido}</span>
-                    <span className="text-emerald-400 font-black">${m.monto_original}</span>
+                {/* Indicador elástico de Swipe para responder estilo WhatsApp */}
+                {isSwipingEste && swipeOffset > 10 && (
+                  <div
+                    className="absolute left-2 z-10 w-7 h-7 rounded-full bg-emerald-500/90 text-black flex items-center justify-center text-xs font-bold shadow-lg transition-transform"
+                    style={{
+                      transform: `scale(${Math.min(1.2, swipeOffset / 35)}) rotate(${Math.min(360, swipeOffset * 4)}deg)`,
+                      opacity: Math.min(1, swipeOffset / 30),
+                    }}
+                  >
+                    ↩️
                   </div>
-                  {m.monto_disponible < m.monto_original && (
-                    <div className="text-[10px] text-gray-300 font-mono mt-1">
-                      Remanente disponible:{" "}
-                      <span className="text-emerald-400 font-bold">${m.monto_disponible}</span>
-                    </div>
-                  )}
-                  {m.firma_sha256 && (
-                    <div className="text-[9px] text-gray-400 font-mono mt-0.5 truncate">
-                      Huella: {m.firma_sha256.slice(0, 16)}...
-                    </div>
-                  )}
-                </div>
+                )}
 
-                {!mio && activa && (
-                  <div className="space-y-1.5 mt-2">
-                    <button
-                      onClick={() => aceptarPropuesta(m.id)}
-                      disabled={enviando}
-                      className="w-full bg-[#00a884] hover:bg-emerald-400 text-black font-black py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1 shadow-md"
-                    >
-                      <span>⚡</span>
-                      <span>Tomar Jugada Total (${disponible})</span>
-                    </button>
+                <div
+                  style={transformStyle}
+                  className={`w-full max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 shadow-md relative ${
+                    mio
+                      ? "ml-auto bg-[#005c4b] border border-emerald-400/30 text-white rounded-tr-xs"
+                      : "mr-auto bg-[#202c33] border border-gray-700/60 text-[#e9edef] rounded-tl-xs"
+                  }`}
+                >
+                  {/* Botón flotante desktop hover para citar/responder */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReplyToPropuesta(m);
+                      inputRef.current?.focus();
+                    }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 right-2 bg-[#202c33] hover:bg-[#2a3942] text-emerald-400 p-1 rounded-full shadow-lg border border-gray-700 text-[10px] z-10 flex items-center justify-center w-6 h-6"
+                    title="Responder citando (WhatsApp)"
+                  >
+                    ↩️
+                  </button>
 
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <button
-                        onClick={() => {
-                          setTomandoParteId(tomandoParteId === m.id ? null : m.id);
-                          setMontoParcialInput("");
-                        }}
-                        className="bg-[#111b21] hover:bg-[#2a3942] border border-gray-600 text-gray-200 font-bold py-1.5 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
-                      >
-                        <span>✂️</span>
-                        <span>Tomar una parte</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setReplyToPropuesta(m);
-                          inputRef.current?.focus();
-                        }}
-                        className="bg-[#111b21] hover:bg-[#2a3942] border border-emerald-600/50 text-emerald-300 font-bold py-1.5 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
-                      >
-                        <span>↩️</span>
-                        <span>Responder WA</span>
-                      </button>
+                  <div className="flex items-center justify-between text-[11px] mb-1 font-bold gap-2">
+                    <span className={mio ? "text-emerald-200" : "text-emerald-400"}>
+                      {mio ? "Tú" : (m.remitente_nombre || "Usuario")} {m.es_operador && "👑 [Operador]"}
+                    </span>
+                    <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-mono">
+                      {activa && (
+                        <span className="text-emerald-400 font-semibold flex items-center gap-0.5">
+                          <span>⏱️</span> {segundosRestantes}s
+                        </span>
+                      )}
+                      <span>
+                        {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
                     </div>
+                  </div>
 
-                    {tomandoParteId === m.id && (
-                      <div className="p-2 bg-[#111b21] rounded-lg border border-emerald-500/40 space-y-2 mt-1">
-                        <div className="text-[10px] text-gray-300 font-semibold flex items-center justify-between">
-                          <span>Indica cuánto quieres tomar (Máx: ${disponible}):</span>
-                          <button
-                            onClick={() => setTomandoParteId(null)}
-                            className="text-gray-400 hover:text-white text-xs font-bold"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {[10, 20, 50].filter((v) => v < disponible).map((val) => (
-                            <button
-                              key={val}
-                              onClick={() => aceptarPropuesta(m.id, val)}
-                              disabled={enviando}
-                              className="bg-[#202c33] hover:bg-emerald-600 hover:text-black text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-xs font-mono font-bold"
-                            >
-                              Tomar ${val}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="number"
-                            min="1"
-                            max={disponible}
-                            value={montoParcialInput}
-                            onChange={(e) => setMontoParcialInput(e.target.value)}
-                            placeholder={`Monto (1 - ${disponible})`}
-                            className="flex-1 bg-[#202c33] text-white text-xs px-2.5 py-1.5 rounded border border-gray-700 outline-none focus:border-emerald-400 font-mono"
-                          />
-                          <button
-                            onClick={() => {
-                              const n = Number(montoParcialInput);
-                              if (!n || n <= 0 || n > disponible) {
-                                alert(`Ingresa un monto válido entre 1 y ${disponible}`);
-                                return;
-                              }
-                              aceptarPropuesta(m.id, n);
-                            }}
-                            disabled={enviando || !montoParcialInput}
-                            className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-black font-black px-3 py-1.5 rounded text-xs"
-                          >
-                            ✓ Tomar
-                          </button>
-                        </div>
+                  <div className="bg-black/30 rounded-xl p-2.5 my-1.5 border border-white/10">
+                    <div className="font-bold text-sm text-amber-300 font-mono flex items-center justify-between">
+                      <span>{m.jugada_estandarizada || m.contenido}</span>
+                      <span className="text-emerald-400 font-black">${m.monto_original}</span>
+                    </div>
+                    {m.monto_disponible < m.monto_original && (
+                      <div className="text-[10px] text-gray-300 font-mono mt-1">
+                        Remanente disponible:{" "}
+                        <span className="text-emerald-400 font-bold">${m.monto_disponible}</span>
+                      </div>
+                    )}
+                    {m.firma_sha256 && (
+                      <div className="text-[9px] text-gray-400 font-mono mt-0.5 truncate">
+                        Huella: {m.firma_sha256.slice(0, 16)}...
                       </div>
                     )}
                   </div>
-                )}
 
-                {m.estado_propuesta === "anulada" && (
-                  <span className="text-[10px] text-red-400 font-bold block mt-1">🚫 Propuesta Anulada</span>
-                )}
+                  {/* Estado de Expiración Automática sin interrumpir */}
+                  {estaVencida && m.estado_propuesta !== "anulada" && (
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-950/60 border border-amber-600/40 px-2 py-0.5 rounded-md mt-1">
+                      <span>⏰</span>
+                      <span>Jugada vencida / cerrada</span>
+                    </div>
+                  )}
+
+                  {!mio && activa && (
+                    <div className="space-y-1.5 mt-2">
+                      <button
+                        onClick={() => aceptarPropuesta(m.id)}
+                        disabled={enviando}
+                        className="w-full bg-[#00a884] hover:bg-emerald-400 text-black font-black py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1 shadow-md"
+                      >
+                        <span>⚡</span>
+                        <span>Tomar Jugada Total (${disponible})</span>
+                      </button>
+
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          onClick={() => {
+                            setTomandoParteId(tomandoParteId === m.id ? null : m.id);
+                            setMontoParcialInput("");
+                          }}
+                          className="bg-[#111b21] hover:bg-[#2a3942] border border-gray-600 text-gray-200 font-bold py-1.5 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                        >
+                          <span>✂️</span>
+                          <span>Tomar una parte</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setReplyToPropuesta(m);
+                            inputRef.current?.focus();
+                          }}
+                          className="bg-[#111b21] hover:bg-[#2a3942] border border-emerald-600/50 text-emerald-300 font-bold py-1.5 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                        >
+                          <span>↩️</span>
+                          <span>Responder WA</span>
+                        </button>
+                      </div>
+
+                      {tomandoParteId === m.id && (
+                        <div className="p-2 bg-[#111b21] rounded-lg border border-emerald-500/40 space-y-2 mt-1">
+                          <div className="text-[10px] text-gray-300 font-semibold flex items-center justify-between">
+                            <span>Indica cuánto quieres tomar (Máx: ${disponible}):</span>
+                            <button
+                              onClick={() => setTomandoParteId(null)}
+                              className="text-gray-400 hover:text-white text-xs font-bold"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {[10, 20, 50].filter((v) => v < disponible).map((val) => (
+                              <button
+                                key={val}
+                                onClick={() => aceptarPropuesta(m.id, val)}
+                                disabled={enviando}
+                                className="bg-[#202c33] hover:bg-emerald-600 hover:text-black text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-xs font-mono font-bold"
+                              >
+                                Tomar ${val}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="1"
+                              max={disponible}
+                              value={montoParcialInput}
+                              onChange={(e) => setMontoParcialInput(e.target.value)}
+                              placeholder={`Monto (1 - ${disponible})`}
+                              className="flex-1 bg-[#202c33] text-white text-xs px-2.5 py-1.5 rounded border border-gray-700 outline-none focus:border-emerald-400 font-mono"
+                            />
+                            <button
+                              onClick={() => {
+                                const n = Number(montoParcialInput);
+                                if (!n || n <= 0 || n > disponible) {
+                                  alert(`Ingresa un monto válido entre 1 y ${disponible}`);
+                                  return;
+                                }
+                                aceptarPropuesta(m.id, n);
+                              }}
+                              disabled={enviando || !montoParcialInput}
+                              className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-black font-black px-3 py-1.5 rounded text-xs"
+                            >
+                              ✓ Tomar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Botón de Retiro Rápido para el autor */}
+                  {mio && activa && (
+                    <button
+                      onClick={() => enviarMensaje("Se fue")}
+                      disabled={enviando}
+                      className="w-full mt-2 bg-red-950/50 hover:bg-red-900/60 border border-red-600/40 text-red-300 py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5"
+                    >
+                      <span>🚫</span>
+                      <span>Retirar esta jugada ("Se fue")</span>
+                    </button>
+                  )}
+
+                  {m.estado_propuesta === "anulada" && (
+                    <span className="text-[10px] text-red-400 font-bold block mt-1">🚫 Propuesta Anulada</span>
+                  )}
+                </div>
               </div>
             );
           }
@@ -456,38 +599,85 @@ export function ChatSalaPanel({
           const citado = m.reply_to_msg_id ? mensajesMap.get(m.reply_to_msg_id) : null;
           const citadoEsMio = citado ? esMio(citado.remitente_id, citado.remitente_nombre) : false;
 
+          const isSwipingEste = swipingId === m.id;
+          const transformStyle = isSwipingEste
+            ? { transform: `translateX(${swipeOffset}px)`, transition: "transform 0.05s ease-out" }
+            : { transition: "transform 0.2s ease" };
+
           return (
             <div
               key={m.id}
-              className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow ${
-                mio
-                  ? "ml-auto bg-[#005c4b] text-white rounded-tr-xs"
-                  : "mr-auto bg-[#202c33] text-[#e9edef] rounded-tl-xs border border-gray-700/40"
-              }`}
+              className="relative group select-none flex items-center"
+              onTouchStart={(e) => handleTouchStart(e, m)}
+              onTouchMove={(e) => handleTouchMove(e, m)}
+              onTouchEnd={() => handleTouchEnd(m)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setMenuContextual({
+                  x: Math.min(e.clientX, window.innerWidth - 200),
+                  y: Math.min(e.clientY, window.innerHeight - 200),
+                  msg: m,
+                });
+              }}
             >
-              <div className="flex items-center justify-between text-[11px] mb-1 font-bold gap-2">
-                <span className={mio ? "text-emerald-200" : "text-emerald-400"}>
-                  {mio ? "Tú" : (m.remitente_nombre || "Usuario")} {m.es_operador && "👑 [Operador]"}
-                </span>
-                <span className="text-[9px] text-gray-400 font-mono">
-                  {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </span>
-              </div>
-
-              {/* Caja de cita estilo WhatsApp si cita o responde a otro mensaje */}
-              {citado && (
-                <div className="mb-2 p-2 rounded-lg bg-black/35 border-l-4 border-emerald-400 text-[11px] select-text">
-                  <div className="font-bold text-emerald-300 text-[10px] flex items-center gap-1">
-                    <span>↩️</span>
-                    <span>{citadoEsMio ? "Tú" : (citado.remitente_nombre || "Usuario")}</span>
-                  </div>
-                  <div className="text-gray-300 truncate font-mono text-[11px] mt-0.5">
-                    {citado.jugada_estandarizada || citado.contenido}
-                  </div>
+              {/* Indicador elástico de Swipe para responder estilo WhatsApp */}
+              {isSwipingEste && swipeOffset > 10 && (
+                <div
+                  className="absolute left-2 z-10 w-7 h-7 rounded-full bg-emerald-500/90 text-black flex items-center justify-center text-xs font-bold shadow-lg transition-transform"
+                  style={{
+                    transform: `scale(${Math.min(1.2, swipeOffset / 35)}) rotate(${Math.min(360, swipeOffset * 4)}deg)`,
+                    opacity: Math.min(1, swipeOffset / 30),
+                  }}
+                >
+                  ↩️
                 </div>
               )}
 
-              <p className="text-xs break-words leading-relaxed whitespace-pre-wrap">{m.contenido}</p>
+              <div
+                style={transformStyle}
+                className={`w-full max-w-[85%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow relative ${
+                  mio
+                    ? "ml-auto bg-[#005c4b] text-white rounded-tr-xs"
+                    : "mr-auto bg-[#202c33] text-[#e9edef] rounded-tl-xs border border-gray-700/40"
+                }`}
+              >
+                {/* Botón flotante desktop hover para citar/responder */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setReplyToPropuesta(m);
+                    inputRef.current?.focus();
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 right-2 bg-[#202c33] hover:bg-[#2a3942] text-emerald-400 p-1 rounded-full shadow-lg border border-gray-700 text-[10px] z-10 flex items-center justify-center w-6 h-6"
+                  title="Responder citando (WhatsApp)"
+                >
+                  ↩️
+                </button>
+
+                <div className="flex items-center justify-between text-[11px] mb-1 font-bold gap-2">
+                  <span className={mio ? "text-emerald-200" : "text-emerald-400"}>
+                    {mio ? "Tú" : (m.remitente_nombre || "Usuario")} {m.es_operador && "👑 [Operador]"}
+                  </span>
+                  <span className="text-[9px] text-gray-400 font-mono">
+                    {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+
+                {/* Caja de cita estilo WhatsApp si cita o responde a otro mensaje */}
+                {citado && (
+                  <div className="mb-2 p-2 rounded-lg bg-black/35 border-l-4 border-emerald-400 text-[11px] select-text">
+                    <div className="font-bold text-emerald-300 text-[10px] flex items-center gap-1">
+                      <span>↩️</span>
+                      <span>{citadoEsMio ? "Tú" : (citado.remitente_nombre || "Usuario")}</span>
+                    </div>
+                    <div className="text-gray-300 truncate font-mono text-[11px] mt-0.5">
+                      {citado.jugada_estandarizada || citado.contenido}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-xs break-words leading-relaxed whitespace-pre-wrap">{m.contenido}</p>
+              </div>
             </div>
           );
         })}
@@ -677,6 +867,14 @@ export function ChatSalaPanel({
             >
               + Doy
             </button>
+            <button
+              onClick={() => enviarMensaje("Se fue")}
+              disabled={enviando}
+              className="bg-red-950/70 hover:bg-red-900/80 text-red-300 border border-red-700/50 px-2 py-0.5 rounded font-mono font-bold text-[11px] flex items-center gap-1 transition"
+              title="Cierra todas tus jugadas abiertas no concretadas"
+            >
+              <span>🚫</span> Se fue (Retirar)
+            </button>
           </div>
         )}
 
@@ -710,6 +908,70 @@ export function ChatSalaPanel({
           </button>
         </form>
       </div>
+
+      {/* Menú Contextual Flotante estilo WhatsApp */}
+      {menuContextual && (
+        <div
+          className="fixed z-50 bg-[#233138] border border-[#2a3942] rounded-xl shadow-2xl py-1.5 min-w-[190px] text-xs font-semibold text-[#e9edef] select-none"
+          style={{ left: menuContextual.x, top: menuContextual.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              setReplyToPropuesta(menuContextual.msg);
+              setMenuContextual(null);
+              inputRef.current?.focus();
+            }}
+            className="w-full text-left px-3.5 py-2 hover:bg-[#182229] flex items-center gap-2 transition"
+          >
+            <span>↩️</span>
+            <span>Responder / Citar</span>
+          </button>
+
+          {(menuContextual.msg.tipo_mensaje === "propuesta_jugada" ||
+            menuContextual.msg.tipo_mensaje === "PROPUESTA") && (
+            <>
+              {!esMio(menuContextual.msg.remitente_id, menuContextual.msg.remitente_nombre) && (
+                <>
+                  <button
+                    onClick={() => {
+                      aceptarPropuesta(menuContextual.msg.id);
+                      setMenuContextual(null);
+                    }}
+                    className="w-full text-left px-3.5 py-2 hover:bg-[#182229] text-emerald-400 flex items-center gap-2 transition"
+                  >
+                    <span>⚡</span>
+                    <span>Tomar Jugada Total</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setTomandoParteId(menuContextual.msg.id);
+                      setMenuContextual(null);
+                    }}
+                    className="w-full text-left px-3.5 py-2 hover:bg-[#182229] text-amber-300 flex items-center gap-2 transition"
+                  >
+                    <span>✂️</span>
+                    <span>Tomar una parte</span>
+                  </button>
+                </>
+              )}
+
+              {esMio(menuContextual.msg.remitente_id, menuContextual.msg.remitente_nombre) && (
+                <button
+                  onClick={() => {
+                    enviarMensaje("Se fue");
+                    setMenuContextual(null);
+                  }}
+                  className="w-full text-left px-3.5 py-2 hover:bg-[#182229] text-red-400 flex items-center gap-2 transition"
+                >
+                  <span>🚫</span>
+                  <span>Retirar mis jugadas ("Se fue")</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

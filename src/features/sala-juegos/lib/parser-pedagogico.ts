@@ -376,3 +376,42 @@ export function analizarYEstandarizarJugada(
     ],
   };
 }
+
+export interface ResultadoComandoRetiro {
+  esComandoRetiro: boolean;
+  esValido: boolean;
+  mensajeAclaratoria?: string;
+}
+
+/**
+ * Detecta si el jugador escribió la orden para cerrar/retirar todas sus jugadas abiertas
+ * Palabras exactas autorizadas: "Se fue", "sf", "cf", "c fue", "ce fue"
+ * Si escribió una similar, el bot pide aclaratoria.
+ */
+export function analizarComandoRetiro(textoInput: string): ResultadoComandoRetiro {
+  const texto = (textoInput || "").trim().toLowerCase();
+
+  // 1. Palabras exactas autorizadas
+  const regexExacto = /^(se\s*fue|sf|cf|c\s*fue|ce\s*fue)$/i;
+  if (regexExacto.test(texto)) {
+    return {
+      esComandoRetiro: true,
+      esValido: true,
+    };
+  }
+
+  // 2. Palabras similares que requieren aclaratoria obligatoria del bot
+  const regexSimilar = /^(se\s*fu|sefve|c\s*fuee|cefue|se\s*fuee|se\s*va|c\s*va|me\s*fui|retirar|cancelar|cerrar\s*jugadas)$/i;
+  if (regexSimilar.test(texto)) {
+    return {
+      esComandoRetiro: true,
+      esValido: false,
+      mensajeAclaratoria: "Por favor aclara si deseas retirar tus jugadas con: 'Se fue' o 'sf'",
+    };
+  }
+
+  return {
+    esComandoRetiro: false,
+    esValido: false,
+  };
+}

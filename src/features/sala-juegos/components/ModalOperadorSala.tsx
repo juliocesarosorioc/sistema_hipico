@@ -347,11 +347,55 @@ export function ModalOperadorSala({
                     },
                   })
                 }
-                className="w-full bg-[#00a884] hover:bg-emerald-500 text-black font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm"
+                className="w-full bg-[#00a884] hover:bg-emerald-500 text-black font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-lg"
               >
                 <span>🏁</span>
                 <span>Liquidar Carrera y Publicar Resultados</span>
               </button>
+
+              {/* Acciones Críticas de Operador / Administrador */}
+              <div className="pt-4 border-t border-gray-800 space-y-2.5">
+                <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>⚠️</span> Acciones Especiales de Corrección
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={cargando}
+                    onClick={() => {
+                      if (
+                        confirm(
+                          "¿Estás seguro de REVERSAR la liquidación de esta carrera?\n\nSe restablecerán los saldos, se descontarán premios acreditados y los tickets volverán a estado previo."
+                        )
+                      ) {
+                        ejecutarAccion("reversar-carrera");
+                      }
+                    }}
+                    className="bg-amber-950/60 hover:bg-amber-900/60 border border-amber-600/50 text-amber-300 font-bold py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 text-xs"
+                  >
+                    <span>🔄</span>
+                    <span>Reversar Liquidación</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={cargando}
+                    onClick={() => {
+                      if (
+                        confirm(
+                          "¿Estás seguro de ANULAR la carrera por completo?\n\nSe devolverá el 100% del dinero comprometido a todos los participantes y todos los tickets quedarán anulados sin cobrar comisión."
+                        )
+                      ) {
+                        ejecutarAccion("anular-carrera");
+                      }
+                    }}
+                    className="bg-red-950/60 hover:bg-red-900/60 border border-red-600/50 text-red-300 font-bold py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 text-xs"
+                  >
+                    <span>🚫</span>
+                    <span>Anular Carrera (100%)</span>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

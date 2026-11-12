@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/core/supabase-admin";
 import {
   analizarYEstandarizarJugada,
   evaluarConcrecionEstricta,
+  analizarComandoRetiro,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
 
 export interface MensajeEntranteWhatsApp {
@@ -197,13 +198,23 @@ export async function procesarMensajeEntranteWhatsApp(
         };
       }
 
+      // Control estricto de vigencia de la jugada (tiempo configurable, default 120s)
+      const tiempoVigencia = Number(sala.tiempo_vigencia_segundos || 120);
+      const edadSegundos = (Date.now() - new Date(propMsg.created_at).getTime()) / 1000;
       const remanenteDisponible = Number(propMsg.monto_disponible ?? propMsg.monto_original ?? 0);
-      if (remanenteDisponible <= 0 || propMsg.estado_propuesta !== "abierta") {
+
+      if (edadSegundos > tiempoVigencia || propMsg.estado_propuesta !== "abierta" || remanenteDisponible <= 0) {
+        if (propMsg.estado_propuesta === "abierta") {
+          await supabaseAdmin
+            .from("chat_mensajes")
+            .update({ estado_propuesta: "cerrada", monto_disponible: 0 })
+            .eq("id", propMsg.id);
+        }
         return {
           ok: false,
           tipo: "PEDAGOGICO",
           acciones: {
-            responderEnGrupo: `🔒 Esta jugada ya fue completamente tomada o cerrada.`,
+            responderEnGrupo: "Jugada no concreta por estar vencida.",
           },
         };
       }
@@ -218,12 +229,43 @@ export async function procesarMensajeEntranteWhatsApp(
           .single();
 
         const remanenteActual = Number(propFresca?.monto_disponible ?? propFresca?.monto_original ?? 0);
-        if (remanenteActual <= 0 || propFresca?.estado_propuesta !== "abierta") {
+        const edadFresca = (Date.now() - new Date(propFresca?.created_at || propMsg.created_at).getTime()) / 1000;
+
+        if (edadFresca > tiempoVigencia || remanenteActual <= 0 || propFresca?.estado_propuesta !== "abierta") {
+          if (propFresca?.estado_propuesta === "abierta") {
+            await supabaseAdmin
+              .from("chat_mensajes")
+              .update({ estado_propuesta: "cerrada", monto_disponible: 0 })
+              .eq("id", propMsg.id);
+          }
           return {
             ok: false,
             tipo: "PEDAGOGICO",
             acciones: {
-              responderEnGrupo: `🔒 Esta jugada ya fue tomada por otro participante justo antes.`,
+              responderEnGrupo: "Jugada no concreta por estar vencida.",
+            },
+          };
+        }
+
+        // Control dinámico de saldo concurrente del proponente
+        const { data: proponente } = await supabaseAdmin
+          .from("clientes")
+          .select("id, nombre, saldo_actual, saldo_retenido, libre, aval")
+          .eq("id", propFresca.remitente_id)
+          .single();
+
+        const saldoDispProponente = calcularDisponibleCliente(proponente);
+        if (!proponente?.libre && saldoDispProponente <= 0) {
+          await supabaseAdmin
+            .from("chat_mensajes")
+            .update({ estado_propuesta: "cerrada", monto_disponible: 0 })
+            .eq("id", propFresca.id);
+
+          return {
+            ok: false,
+            tipo: "PEDAGOGICO",
+            acciones: {
+              responderEnGrupo: "Jugada no concreta por falta de saldo disponible.",
             },
           };
         }
@@ -263,7 +305,12 @@ export async function procesarMensajeEntranteWhatsApp(
           };
         }
 
-        const montoConcretado = evaluacion.montoEfectivo;
+        let montoConcretado = evaluacion.montoEfectivo;
+        let excedioSaldoProponente = false;
+        if (!proponente?.libre && montoConcretado > saldoDispProponente) {
+          montoConcretado = saldoDispProponente;
+          excedioSaldoProponente = true;
+        }
         const nuevoRemanente = Math.max(0, Number((remanenteActual - montoConcretado).toFixed(2)));
 
         // Intentar ejecutar el RPC atómico oficial
@@ -375,8 +422,76 @@ export async function procesarMensajeEntranteWhatsApp(
   }
 
   // =========================================================================
-  // CASO 2: MENSAJE SIN CITA -> ANALIZAR SI ES PROPUESTA NUEVA O TEXTO GENERAL
+  // CASO 2: MENSAJE SIN CITA -> ANALIZAR SI ES COMANDO RETIRO, PROPUESTA O TEXTO
   // =========================================================================
+
+  // 1. Detección de orden de cierre/retiro de jugadas abiertas ("Se fue", "sf", etc.)
+  const analisisRetiro = analizarComandoRetiro(textoLimpio);
+  if (analisisRetiro.esComandoRetiro) {
+    if (!analisisRetiro.esValido) {
+      return {
+        ok: false,
+        tipo: "PEDAGOGICO",
+        acciones: {
+          responderEnGrupo: analisisRetiro.mensajeAclaratoria || "Por favor aclara si deseas retirar tus jugadas con: 'Se fue' o 'sf'",
+        },
+      };
+    }
+
+    // Cerrar todas las propuestas abiertas no concretadas del jugador en la sala
+    const { data: propsAbiertas } = await supabaseAdmin
+      .from("chat_mensajes")
+      .select("id, monto_disponible")
+      .eq("sala_id", salaId)
+      .eq("remitente_id", cliente.id)
+      .eq("estado_propuesta", "abierta")
+      .gt("monto_disponible", 0);
+
+    let totalDevuelto = 0;
+    for (const p of propsAbiertas || []) {
+      totalDevuelto += Number(p.monto_disponible || 0);
+      await supabaseAdmin
+        .from("chat_mensajes")
+        .update({ estado_propuesta: "cerrada", monto_disponible: 0 })
+        .eq("id", p.id);
+    }
+
+    if (!cliente.libre && totalDevuelto > 0) {
+      const retAct = Number(cliente.saldo_retenido || 0);
+      const nuevoRet = Math.max(0, Number((retAct - totalDevuelto).toFixed(2)));
+      await supabaseAdmin
+        .from("clientes")
+        .update({
+          saldo_retenido: nuevoRet,
+          saldo_disponible: Math.max(0, Number(((cliente.saldo_actual || 0) + (cliente.aval || 0) - nuevoRet).toFixed(2))),
+        })
+        .eq("id", cliente.id);
+    }
+
+    const msgGrupoRetiro = `🚫 ${nombreJugador} retiró todas sus jugadas abiertas no concretadas.`;
+    await supabaseAdmin.from("chat_mensajes").insert({
+      grupo_id: grupoId,
+      sala_id: salaId,
+      remitente_nombre: "Bot Sala",
+      es_operador: false,
+      tipo_mensaje: "ESTADO_CARRERA",
+      contenido: msgGrupoRetiro,
+      solo_borrable_operador: true,
+      origen_canal: "whatsapp",
+    });
+
+    await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+
+    return {
+      ok: true,
+      tipo: "TEXTO",
+      acciones: {
+        responderEnGrupo: msgGrupoRetiro,
+        enviarPrivadoJugador: `Has retirado exitosamente todas tus jugadas abiertas. Se liberó una retención de $${totalDevuelto.toFixed(2)}.`,
+      },
+    };
+  }
+
   const retirados = sala.retirados || [];
   const analisis = analizarYEstandarizarJugada(textoLimpio, saldoDisponible, retirados, 16, nombreJugador);
 

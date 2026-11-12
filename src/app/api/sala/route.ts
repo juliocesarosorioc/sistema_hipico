@@ -10,7 +10,10 @@ import {
   resolverGrupoEfectivo,
   type IdentidadSala,
 } from "@/features/sala-juegos/lib/sala-auth";
-import { analizarYEstandarizarJugada } from "@/features/sala-juegos/lib/parser-pedagogico";
+import {
+  analizarYEstandarizarJugada,
+  analizarComandoRetiro,
+} from "@/features/sala-juegos/lib/parser-pedagogico";
 
 export const dynamic = "force-dynamic";
 
@@ -575,6 +578,280 @@ async function liquidarCarreraFallback(
   };
 }
 
+/**
+ * Reversa la liquidación de una carrera: revierte balances ganados/perdidos y restablece tickets y saldos.
+ */
+async function reversarCarrera(grupoId: string, salaId: string, operadorNombre: string) {
+  const { data: sala } = await supabaseAdmin
+    .from("salas_juego")
+    .select("*")
+    .eq("id", salaId)
+    .single();
+
+  if (!sala) throw new Error("Sala no encontrada");
+
+  const hipodromo = sala.hipodromo_activo || "HIPÓDROMO";
+  const numCarrera = sala.numero_carrera_activa || 1;
+  const carreraId = sala.carrera_recien_cerrada_id || sala.carrera_activa_id;
+
+  // 1. Obtener tickets liquidados de esta carrera
+  let queryTickets = supabaseAdmin
+    .from("chat_tickets_fifo")
+    .select("*")
+    .eq("grupo_id", grupoId)
+    .eq("sala_id", salaId)
+    .in("estado", ["GANADOR_PROPONENTE", "GANADOR_ACEPTANTE", "EMPATE"]);
+
+  if (carreraId) {
+    queryTickets = queryTickets.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+  }
+
+  const { data: tickets, error: errTickets } = await queryTickets;
+  if (errTickets) throw new Error("Error leyendo tickets: " + errTickets.message);
+
+  if (!tickets || tickets.length === 0) {
+    throw new Error("No hay tickets liquidados para reversar en esta carrera.");
+  }
+
+  // 2. Obtener movimientos de liquidación generados en libro_mayor_clientes
+  const { data: movimientos } = await supabaseAdmin
+    .from("libro_mayor_clientes")
+    .select("*")
+    .eq("grupo_id", grupoId)
+    .eq("hipodromo", hipodromo)
+    .eq("carrera", numCarrera)
+    .in("tipo_movimiento", ["JUGADA_GANADA_NETO", "JUGADA_PERDIDA"]);
+
+  // Revertir en clientes
+  for (const mov of movimientos || []) {
+    const { data: cl } = await supabaseAdmin
+      .from("clientes")
+      .select("saldo_actual, saldo_retenido, libre, aval")
+      .eq("id", mov.cliente_id)
+      .single();
+
+    if (cl) {
+      let ajusteSaldo = 0;
+      if (mov.tipo_movimiento === "JUGADA_GANADA_NETO") {
+        ajusteSaldo = -Number(mov.monto || 0);
+      } else if (mov.tipo_movimiento === "JUGADA_PERDIDA") {
+        ajusteSaldo = Number(mov.monto || 0);
+      }
+
+      const nuevoSaldo = Number(((cl.saldo_actual || 0) + ajusteSaldo).toFixed(2));
+      await supabaseAdmin
+        .from("clientes")
+        .update({
+          saldo_actual: nuevoSaldo,
+          saldo_disponible: cl.libre ? 999999 : Math.max(0, Number((nuevoSaldo + (cl.aval || 0) - Number(cl.saldo_retenido || 0)).toFixed(2))),
+        })
+        .eq("id", mov.cliente_id);
+
+      await supabaseAdmin.from("libro_mayor_clientes").insert({
+        cliente_id: mov.cliente_id,
+        cliente_nombre: mov.cliente_nombre,
+        grupo_id: grupoId,
+        tipo_movimiento: "ANULACION_RESTITUCION",
+        monto_centavos: Math.round(Math.abs(ajusteSaldo) * 100),
+        monto: Math.abs(ajusteSaldo),
+        hipodromo,
+        carrera: numCarrera,
+        fecha_carrera: new Date().toISOString().split("T")[0],
+        observacion: `Reversión de Liquidación Carrera ${hipodromo} C${numCarrera}`,
+        creado_por: operadorNombre,
+      });
+    }
+  }
+
+  // 3. Restablecer estado de los tickets a ACTIVO y re-retener
+  for (const t of tickets) {
+    await supabaseAdmin
+      .from("chat_tickets_fifo")
+      .update({ estado: "ACTIVO" })
+      .eq("id", t.id);
+
+    for (const jId of [t.proponente_id, t.aceptante_id]) {
+      const { data: cl } = await supabaseAdmin
+        .from("clientes")
+        .select("saldo_retenido, libre, saldo_actual, aval")
+        .eq("id", jId)
+        .single();
+      if (cl && !cl.libre) {
+        const ret = Number(((cl.saldo_retenido || 0) + Number(t.monto_concretado || 0)).toFixed(2));
+        await supabaseAdmin
+          .from("clientes")
+          .update({
+            saldo_retenido: ret,
+            saldo_disponible: Math.max(0, Number(((cl.saldo_actual || 0) + (cl.aval || 0) - ret).toFixed(2))),
+          })
+          .eq("id", jId);
+      }
+    }
+  }
+
+  // 4. Actualizar estado de sala a cerrada
+  await supabaseAdmin
+    .from("salas_juego")
+    .update({
+      estado_carrera: "cerrada",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", salaId);
+
+  await sincronizarEstadoGrupo(grupoId);
+
+  const textoAviso = `🔄 *LIQUIDACIÓN REVERSADA*\nEl operador ha reversado la liquidación de la carrera ${hipodromo} C${numCarrera}. Se han recalculado los saldos y tickets al estado previo a la liquidación.`;
+  await supabaseAdmin.from("chat_mensajes").insert({
+    grupo_id: grupoId,
+    sala_id: salaId,
+    remitente_nombre: "Operador de Sala",
+    es_operador: true,
+    tipo_mensaje: "ESTADO_CARRERA",
+    contenido: textoAviso,
+    solo_borrable_operador: true,
+  });
+
+  await emitirBroadcast(salaId, "carrera_reversada", { salaId, carreraId });
+
+  return { ok: true, mensaje: textoAviso };
+}
+
+/**
+ * Anula una carrera: devuelve el 100% del dinero comprometido a todos (reembolso total y anulación de tickets).
+ */
+async function anularCarrera(grupoId: string, salaId: string, operadorNombre: string) {
+  const { data: sala } = await supabaseAdmin
+    .from("salas_juego")
+    .select("*")
+    .eq("id", salaId)
+    .single();
+
+  if (!sala) throw new Error("Sala no encontrada");
+
+  const hipodromo = sala.hipodromo_activo || "HIPÓDROMO";
+  const numCarrera = sala.numero_carrera_activa || 1;
+  const carreraId = sala.carrera_activa_id || sala.carrera_recien_cerrada_id;
+
+  // 1. Obtener todos los tickets de esta carrera en chat_tickets_fifo
+  let queryTickets = supabaseAdmin
+    .from("chat_tickets_fifo")
+    .select("*")
+    .eq("grupo_id", grupoId)
+    .eq("sala_id", salaId)
+    .neq("estado", "ANULADO");
+
+  if (carreraId) {
+    queryTickets = queryTickets.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+  }
+
+  const { data: tickets } = await queryTickets;
+
+  // 2. Por cada ticket, anular y liberar saldo retenido a proponente y aceptante
+  for (const t of tickets || []) {
+    await supabaseAdmin
+      .from("chat_tickets_fifo")
+      .update({ estado: "ANULADO" })
+      .eq("id", t.id);
+
+    const monto = Number(t.monto_concretado || 0);
+
+    for (const [jId, jNombre] of [
+      [t.proponente_id, t.proponente_nombre],
+      [t.aceptante_id, t.aceptante_nombre],
+    ]) {
+      const { data: cl } = await supabaseAdmin
+        .from("clientes")
+        .select("saldo_retenido, saldo_actual, libre, aval")
+        .eq("id", jId)
+        .single();
+
+      if (cl) {
+        const nuevoRet = Math.max(0, Number(((cl.saldo_retenido || 0) - monto).toFixed(2)));
+        await supabaseAdmin
+          .from("clientes")
+          .update({
+            saldo_retenido: nuevoRet,
+            saldo_disponible: cl.libre ? 999999 : Math.max(0, Number(((cl.saldo_actual || 0) + (cl.aval || 0) - nuevoRet).toFixed(2))),
+          })
+          .eq("id", jId);
+
+        await supabaseAdmin.from("libro_mayor_clientes").insert({
+          cliente_id: jId,
+          cliente_nombre: jNombre,
+          grupo_id: grupoId,
+          tipo_movimiento: "ANULACION_RESTITUCION",
+          monto_centavos: Math.round(monto * 100),
+          monto,
+          hipodromo,
+          carrera: numCarrera,
+          fecha_carrera: new Date().toISOString().split("T")[0],
+          observacion: `Reembolso 100% por anulación de carrera ${hipodromo} C${numCarrera} (Ticket #${t.codigo_ticket})`,
+          creado_por: operadorNombre,
+        });
+      }
+    }
+  }
+
+  // 3. Cerrar y liberar todas las propuestas abiertas de esta carrera
+  const { data: propuestasAbiertas } = await supabaseAdmin
+    .from("chat_mensajes")
+    .select("*")
+    .eq("sala_id", salaId)
+    .eq("estado_propuesta", "abierta");
+
+  for (const p of propuestasAbiertas || []) {
+    const rem = Number(p.monto_disponible || 0);
+    if (rem > 0 && p.remitente_id) {
+      const { data: cl } = await supabaseAdmin
+        .from("clientes")
+        .select("saldo_retenido, saldo_actual, libre, aval")
+        .eq("id", p.remitente_id)
+        .single();
+      if (cl && !cl.libre) {
+        const nuevoRet = Math.max(0, Number(((cl.saldo_retenido || 0) - rem).toFixed(2)));
+        await supabaseAdmin
+          .from("clientes")
+          .update({
+            saldo_retenido: nuevoRet,
+            saldo_disponible: Math.max(0, Number(((cl.saldo_actual || 0) + (cl.aval || 0) - nuevoRet).toFixed(2))),
+          })
+          .eq("id", p.remitente_id);
+      }
+    }
+    await supabaseAdmin
+      .from("chat_mensajes")
+      .update({ estado_propuesta: "anulada", monto_disponible: 0 })
+      .eq("id", p.id);
+  }
+
+  // 4. Actualizar sala a cerrada
+  await supabaseAdmin
+    .from("salas_juego")
+    .update({
+      estado_carrera: "cerrada",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", salaId);
+
+  await sincronizarEstadoGrupo(grupoId);
+
+  const textoAviso = `🚫 *CARRERA ANULADA*\nSe ha cancelado y anulado la carrera ${hipodromo} C${numCarrera}. Se ha reembolsado y restituido el 100% de los fondos y jugadas comprometidas a todos los participantes.`;
+
+  await supabaseAdmin.from("chat_mensajes").insert({
+    grupo_id: grupoId,
+    sala_id: salaId,
+    remitente_nombre: "Operador de Sala",
+    es_operador: true,
+    tipo_mensaje: "ESTADO_CARRERA",
+    contenido: textoAviso,
+    solo_borrable_operador: true,
+  });
+
+  await emitirBroadcast(salaId, "carrera_anulada", { salaId, carreraId });
+
+  return { ok: true, mensaje: textoAviso };
+}
+
 // ============================================================================
 // POST: Mensaje, Revisión LLM, Recarga Blindada, Operador, Sala
 // ============================================================================
@@ -640,7 +917,45 @@ export async function POST(req: Request) {
           return NextResponse.json({ ok: false, error: "La carrera está cerrada para nuevas jugadas" }, { status: 400 });
         }
 
-        // Obtener saldo disponible del aceptante
+        // 1. Control estricto de vigencia de la jugada (tiempo configurable, default 120s)
+        const tiempoVigencia = Number(sala.tiempo_vigencia_segundos || 120);
+        const edadSegundos = (Date.now() - new Date(propMsg.created_at).getTime()) / 1000;
+        const remanenteDisponible = Number(propMsg.monto_disponible ?? propMsg.monto_original ?? 0);
+
+        if (edadSegundos > tiempoVigencia || propMsg.estado_propuesta !== "abierta" || remanenteDisponible <= 0) {
+          if (propMsg.estado_propuesta === "abierta") {
+            await supabaseAdmin
+              .from("chat_mensajes")
+              .update({ estado_propuesta: "cerrada", monto_disponible: 0 })
+              .eq("id", propuestaId);
+          }
+          return NextResponse.json({
+            ok: false,
+            error: "Jugada no concreta por estar vencida.",
+          }, { status: 400 });
+        }
+
+        // 2. Control dinámico de saldo concurrente del proponente
+        const { data: proponente } = await supabaseAdmin
+          .from("clientes")
+          .select("id, nombre, saldo_actual, saldo_retenido, libre, aval")
+          .eq("id", propMsg.remitente_id)
+          .single();
+
+        const saldoDispProponente = calcularDisponibleCliente(proponente);
+        if (!proponente?.libre && saldoDispProponente <= 0) {
+          await supabaseAdmin
+            .from("chat_mensajes")
+            .update({ estado_propuesta: "cerrada", monto_disponible: 0 })
+            .eq("id", propuestaId);
+
+          return NextResponse.json({
+            ok: false,
+            error: "Jugada no concreta por falta de saldo disponible.",
+          }, { status: 400 });
+        }
+
+        // 3. Obtener saldo disponible del aceptante
         const { data: aceptante } = await supabaseAdmin
           .from("clientes")
           .select("id, nombre, saldo_actual, saldo_retenido, libre, aval")
@@ -648,7 +963,6 @@ export async function POST(req: Request) {
           .single();
 
         const saldoDispAceptante = calcularDisponibleCliente(aceptante);
-        const remanenteDisponible = Number(propMsg.monto_disponible ?? propMsg.monto_original ?? 0);
 
         // Extraer monto solicitado de body.monto o del texto de respuesta (ej. "Juego 20", "Consigo 50", "Ponte 10")
         let montoPedido = body.monto ? Number(body.monto) : remanenteDisponible;
@@ -674,6 +988,11 @@ export async function POST(req: Request) {
           }
           excedioSaldoAceptante = true;
           montoPedido = Math.min(montoPedido, saldoDispAceptante);
+        }
+
+        // Topar también al saldo disponible del proponente si no es libre
+        if (!proponente?.libre && montoPedido > saldoDispProponente) {
+          montoPedido = Math.min(montoPedido, saldoDispProponente);
         }
 
         montoPedido = Math.min(montoPedido, remanenteDisponible);
@@ -825,6 +1144,73 @@ export async function POST(req: Request) {
 
         const disponible = calcularDisponibleCliente(cl);
         const retirados = (sala as any).retirados || [];
+
+        // 1. Detección de orden de cierre/retiro de jugadas abiertas ("Se fue", "sf", etc.)
+        const analisisRetiro = analizarComandoRetiro(texto);
+        if (analisisRetiro.esComandoRetiro) {
+          if (!analisisRetiro.esValido) {
+            // Aclaratoria pedagógica obligatoria si fue similar
+            return NextResponse.json({
+              ok: true,
+              esCorreccionPedagogica: true,
+              mensajePedagogico: analisisRetiro.mensajeAclaratoria || "Por favor aclara si deseas retirar tus jugadas con: 'Se fue' o 'sf'",
+              sugerencias: ["Se fue", "sf"],
+            });
+          }
+
+          // Comando exacto válido: anula y cierra todas las propuestas abiertas no concretadas del jugador
+          const { data: propuestasAbiertas } = await supabaseAdmin
+            .from("chat_mensajes")
+            .select("id, monto_disponible, monto_original")
+            .eq("sala_id", salaId)
+            .eq("remitente_id", identidad.usuarioId)
+            .eq("estado_propuesta", "abierta")
+            .gt("monto_disponible", 0);
+
+          let totalRemanenteLiberado = 0;
+          for (const prop of propuestasAbiertas || []) {
+            totalRemanenteLiberado += Number(prop.monto_disponible || 0);
+            await supabaseAdmin
+              .from("chat_mensajes")
+              .update({
+                estado_propuesta: "cerrada",
+                monto_disponible: 0,
+              })
+              .eq("id", prop.id);
+          }
+
+          // Liberar el saldo retenido no comprometido
+          if (!cl?.libre && totalRemanenteLiberado > 0) {
+            const retActual = Number(cl?.saldo_retenido || 0);
+            const nuevoRetenido = Math.max(0, Number((retActual - totalRemanenteLiberado).toFixed(2)));
+            await supabaseAdmin
+              .from("clientes")
+              .update({
+                saldo_retenido: nuevoRetenido,
+                saldo_disponible: Math.max(0, Number(((cl?.saldo_actual || 0) + (cl?.aval || 0) - nuevoRetenido).toFixed(2))),
+              })
+              .eq("id", identidad.usuarioId);
+          }
+
+          const textoAviso = `🚫 ${identidad.nombre} retiró todas sus jugadas abiertas no concretadas.`;
+          await supabaseAdmin.from("chat_mensajes").insert({
+            grupo_id: grupoId,
+            sala_id: salaId,
+            remitente_nombre: "Bot Sala",
+            es_operador: false,
+            tipo_mensaje: "ESTADO_CARRERA",
+            contenido: textoAviso,
+            solo_borrable_operador: true,
+          });
+
+          await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+          return NextResponse.json({
+            ok: true,
+            comandoRetiro: true,
+            totalLiberado: totalRemanenteLiberado,
+            mensaje: textoAviso,
+          });
+        }
 
         // Análisis mediante Parser Pedagógico Determinístico
         const analisis = analizarYEstandarizarJugada(texto, disponible, retirados);
@@ -1216,6 +1602,26 @@ export async function POST(req: Request) {
 
         const resLiq = await liquidarCarreraFallback(grupoId, salaId, pizarra, identidad.nombre);
         return NextResponse.json({ ...resLiq });
+      }
+
+      // 4.e.1 REVERSAR LIQUIDACIÓN DE CARRERA
+      if (subaccion === "reversar-carrera") {
+        if (!puedeLiquidarSala(identidad, grupoId)) {
+          return NextResponse.json({ ok: false, error: "No autorizado para reversar liquidaciones" }, { status: 403 });
+        }
+
+        const resRev = await reversarCarrera(grupoId, salaId, identidad.nombre);
+        return NextResponse.json({ ...resRev });
+      }
+
+      // 4.e.2 ANULAR CARRERA (REEMBOLSO TOTAL 100%)
+      if (subaccion === "anular-carrera") {
+        if (!puedeLiquidarSala(identidad, grupoId)) {
+          return NextResponse.json({ ok: false, error: "No autorizado para anular carreras" }, { status: 403 });
+        }
+
+        const resAnul = await anularCarrera(grupoId, salaId, identidad.nombre);
+        return NextResponse.json({ ...resAnul });
       }
 
       // 4.f PUBLICIDAD
