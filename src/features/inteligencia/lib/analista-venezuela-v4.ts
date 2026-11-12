@@ -117,7 +117,7 @@ export const COLORES_GUALDRAPA: Record<number, { bg: string; text: string; nombr
   4: { bg: "#FACC15", text: "#000000", nombreColor: "Amarillo", border: "#CA8A04" },
   5: { bg: "#16A34A", text: "#FFFFFF", nombreColor: "Verde", border: "#15803D" },
   6: { bg: "#09090B", text: "#FFFFFF", nombreColor: "Negro", border: "#27272A" },
-  7: { bg: "#EA580C", text: "#FFFFFF", nombreColor: "Naranja", border: "#C2410C" },
+  7: { bg: "#EA580C", text: "#000000", nombreColor: "Naranja", border: "#C2410C" },
   8: { bg: "#F472B6", text: "#000000", nombreColor: "Rosado", border: "#DB2777" },
   9: { bg: "#06B6D4", text: "#000000", nombreColor: "Turquesa", border: "#0891B2" },
   10: { bg: "#9333EA", text: "#FFFFFF", nombreColor: "Morado", border: "#7E22CE" },

@@ -117,7 +117,7 @@ const GUALDRAPAS_MAP: Record<number, ColorGualdrapa> = {
   4: { bg: "#facc15", text: "#000000", border: "#ca8a04", nombreColor: "Amarillo" },
   5: { bg: "#16a34a", text: "#ffffff", border: "#15803d", nombreColor: "Verde" },
   6: { bg: "#0f172a", text: "#fde047", border: "#334155", nombreColor: "Negro" },
-  7: { bg: "#ea580c", text: "#ffffff", border: "#c2410c", nombreColor: "Naranja" },
+  7: { bg: "#ea580c", text: "#000000", border: "#c2410c", nombreColor: "Naranja" },
   8: { bg: "#ec4899", text: "#ffffff", border: "#be185d", nombreColor: "Rosado" },
   9: { bg: "#06b6d4", text: "#000000", border: "#0e7490", nombreColor: "Turquesa" },
   10: { bg: "#9333ea", text: "#ffffff", border: "#7e22ce", nombreColor: "Morado" },
