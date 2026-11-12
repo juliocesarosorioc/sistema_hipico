@@ -609,10 +609,6 @@ async function reversarCarrera(grupoId: string, salaId: string, operadorNombre: 
   const { data: tickets, error: errTickets } = await queryTickets;
   if (errTickets) throw new Error("Error leyendo tickets: " + errTickets.message);
 
-  if (!tickets || tickets.length === 0) {
-    throw new Error("No hay tickets liquidados para reversar en esta carrera.");
-  }
-
   // 2. Obtener movimientos de liquidación generados en libro_mayor_clientes
   const { data: movimientos } = await supabaseAdmin
     .from("libro_mayor_clientes")
@@ -664,7 +660,7 @@ async function reversarCarrera(grupoId: string, salaId: string, operadorNombre: 
   }
 
   // 3. Restablecer estado de los tickets a ACTIVO y re-retener
-  for (const t of tickets) {
+  for (const t of tickets || []) {
     await supabaseAdmin
       .from("chat_tickets_fifo")
       .update({ estado: "ACTIVO" })
@@ -689,18 +685,34 @@ async function reversarCarrera(grupoId: string, salaId: string, operadorNombre: 
     }
   }
 
-  // 4. Actualizar estado de sala a cerrada
+  // 3b. Eliminar pizarra de resultados_carreras y volver carreras a "Programada"
+  try {
+    await supabaseAdmin
+      .from("resultados_carreras")
+      .delete()
+      .ilike("hipodromo", `%${hipodromo.replace(/\s+/g, "%")}%`)
+      .eq("carrera", numCarrera);
+    await supabaseAdmin
+      .from("carreras")
+      .update({ estado: "Programada" })
+      .ilike("hipodromo", `%${hipodromo.replace(/\s+/g, "%")}%`)
+      .eq("carrera", numCarrera);
+  } catch {
+    /* best-effort */
+  }
+
+  // 4. Actualizar estado de sala a abierta (sin pizarra ni liquidación)
   await supabaseAdmin
     .from("salas_juego")
     .update({
-      estado_carrera: "cerrada",
+      estado_carrera: "abierta",
       updated_at: new Date().toISOString(),
     })
     .eq("id", salaId);
 
   await sincronizarEstadoGrupo(grupoId);
 
-  const textoAviso = `🔄 *LIQUIDACIÓN REVERSADA*\nEl operador ha reversado la liquidación de la carrera ${hipodromo} C${numCarrera}. Se han recalculado los saldos y tickets al estado previo a la liquidación.`;
+  const textoAviso = `🔄 *LIQUIDACIÓN REVERSADA*\nEl operador ha reversado la liquidación de la carrera ${hipodromo} C${numCarrera} y eliminado la pizarra colocada. Se han restituido los saldos y tickets al estado previo a la liquidación.`;
   await supabaseAdmin.from("chat_mensajes").insert({
     grupo_id: grupoId,
     sala_id: salaId,
@@ -1090,7 +1102,7 @@ export async function POST(req: Request) {
             firma_sha256: firma,
           });
 
-          // Insertar mensaje de concreción en chat_mensajes para que aparezca en el chat
+          // Insertar mensaje de concreción en chat_mensajes para que aparezca en el chat ("Jugaron", nunca "CRUCE")
           await supabaseAdmin.from("chat_mensajes").insert({
             grupo_id: grupoId,
             sala_id: salaId,
@@ -1098,7 +1110,7 @@ export async function POST(req: Request) {
             remitente_nombre: identidad.nombre,
             es_operador: false,
             tipo_mensaje: "CONCRECION",
-            contenido: `🤝 ¡CRUCE CONFIRMADO! ${identidad.nombre} tomó la jugada de ${propMsg.remitente_nombre} por $${montoConcretado.toFixed(2)} (${propMsg.contenido || propMsg.jugada_estandarizada})`,
+            contenido: `🤝 *Jugaron* — ${identidad.nombre} tomó la jugada de ${propMsg.remitente_nombre} por $${montoConcretado.toFixed(2)} (${propMsg.contenido || propMsg.jugada_estandarizada})`,
             reply_to_msg_id: propuestaId,
             carrera_id: propMsg.carrera_id || sala.carrera_activa_id,
           });
@@ -1121,12 +1133,22 @@ export async function POST(req: Request) {
               .eq("id", t.id);
           }
 
-          // Asegurar que cualquier mensaje derivado en chat_mensajes quede con sala_id
-          await supabaseAdmin
+          // Asegurar que cualquier mensaje derivado en chat_mensajes quede con sala_id y diga "Jugaron" (nunca "CRUCE")
+          const { data: msgsDerivados } = await supabaseAdmin
             .from("chat_mensajes")
-            .update({ sala_id: salaId })
-            .eq("reply_to_msg_id", propuestaId)
-            .is("sala_id", null);
+            .select("id, contenido")
+            .eq("reply_to_msg_id", propuestaId);
+
+          for (const md of msgsDerivados || []) {
+            const contenidoLimpio = String(md.contenido || "")
+              .replace(/¡?CRUCE\s+CONFIRMADO!?/gi, "*Jugaron*")
+              .replace(/¡?CRUCE\s+REGISTRADO!?/gi, "*Jugaron*")
+              .replace(/\bCRUCE\b/gi, "Jugaron");
+            await supabaseAdmin
+              .from("chat_mensajes")
+              .update({ sala_id: salaId, contenido: contenidoLimpio })
+              .eq("id", md.id);
+          }
         }
 
         await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });

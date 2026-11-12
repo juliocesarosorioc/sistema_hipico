@@ -32,7 +32,7 @@ import { supabase } from "@/core/supabase";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { revertirLiquidacionCarrera } from "@/features/liquidacion/lib/recalcular";
-import { revertirResultadoCentral } from "@/features/carreras/lib/carreras-dia";
+import { marcarCarreraReversadaLocal, revertirResultadoCentral } from "@/features/carreras/lib/carreras-dia";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { exigirPermiso, tieneCapacidad } from "@/features/seguridad/lib/vigente";
 import { registrarAuditoria } from "@/features/grupos/lib/grupos";
@@ -356,7 +356,8 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
   const pol = await reabrirPollasDelDia(dia);
   errores.push(...pol.errores);
 
-  // 5) Resultado central → la carrera vuelve a "Programada" (ABIERTA).
+  // 5) Resultado central → la carrera vuelve a "Programada" (ABIERTA) y se elimina la pizarra.
+  marcarCarreraReversadaLocal(dia, hipodromo, carrera);
   let resultadoCentral = false;
   try {
     const central = await revertirResultadoCentral({ fecha: dia, hipodromo, carrera });
@@ -438,6 +439,7 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
         carrera,
         estado: "Programada",
         ganadores: [],
+        orden_llegada_raya: [],
         aplicado_a_tablas: false,
       });
     } else {
@@ -447,6 +449,7 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
         carrera,
         estado: "Programada",
         ganadores: [],
+        orden_llegada_raya: [],
         aplicado_a_tablas: false,
       });
     }
@@ -459,6 +462,7 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
         ...listaActual[idx],
         estado: "Programada",
         ganadores: [],
+        orden_llegada_raya: [],
         aplicado_a_tablas: false,
       };
       useRegistroCentral.setState({

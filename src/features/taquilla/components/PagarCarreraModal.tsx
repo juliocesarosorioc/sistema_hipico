@@ -117,10 +117,7 @@ export function PagarCarreraModal() {
       const dia = (await jornadaDeCarrera(hip, n)) ?? hoyLocal();
       setJornada(dia);
       const r = await leerResultadoOficial(hip, n, dia);
-      // Fallback: si en esa jornada no hay resultado, se prueba sin fecha (la
-      // más reciente) para no perder el botón «Reversar» por un desfase.
-      const rr = r ?? (await leerResultadoOficial(hip, n));
-      setLiquidada(!!rr && rr.puestos.length > 0);
+      setLiquidada(!!r && r.puestos.length > 0);
     } catch {
       setLiquidada(false);
     }
@@ -154,10 +151,11 @@ export function PagarCarreraModal() {
       });
       setResultado(r.ok ? `🔄 ${r.motivo}` : `❌ ${r.motivo}${r.errores.length ? ` · ${r.errores.join(" | ")}` : ""}`);
       if (r.ok) {
-        toast("Liquidación reversada: la carrera quedó ABIERTA.", "success");
+        toast("Liquidación reversada: la carrera quedó ABIERTA y la pizarra eliminada.", "success");
         setResumen(null);
         setTablaMensaje("");
         setReporteCarrera(null);
+        setUltimaPizarraPagada(null);
         setLiquidada(false);
       } else {
         toast(r.errores[0] ?? r.motivo, "error");

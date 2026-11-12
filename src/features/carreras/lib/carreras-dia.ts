@@ -35,6 +35,81 @@ function hoy(): string {
   return hoyLocal();
 }
 
+/**
+ * Control persistente de carreras reversadas por jornada (`reversadas:YYYY-MM-DD`).
+ * Garantiza que al reversar una liquidación se elimine la pizarra y la carrera
+ * NUNCA vuelva a aparecer como Liquidada ni con pizarra registrada hasta que el
+ * operador o administrador la liquide de nuevo explícitamente.
+ */
+export function marcarCarreraReversadaLocal(
+  fecha: string | undefined,
+  hipodromo: string,
+  carrera: number | string
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    const f = String(fecha || hoy()).slice(0, 10);
+    const cur = claveHipodromo(hipodromo);
+    const num = Number(carrera) || 0;
+    if (!f || !cur || !num) return;
+    const key = `reversadas:${f}`;
+    const raw = window.localStorage.getItem(key);
+    const prev = raw ? (JSON.parse(raw) as string[]) : [];
+    const set = new Set(Array.isArray(prev) ? prev.map(String) : []);
+    set.add(`${cur}|${num}`);
+    window.localStorage.setItem(key, JSON.stringify([...set]));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function desmarcarCarreraReversadaLocal(
+  fecha: string | undefined,
+  hipodromo: string,
+  carrera: number | string
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    const f = String(fecha || hoy()).slice(0, 10);
+    const cur = claveHipodromo(hipodromo);
+    const num = Number(carrera) || 0;
+    if (!f || !cur || !num) return;
+    const key = `reversadas:${f}`;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return;
+    const prev = JSON.parse(raw) as string[];
+    if (!Array.isArray(prev)) return;
+    const set = new Set(prev.map(String));
+    if (set.delete(`${cur}|${num}`)) {
+      window.localStorage.setItem(key, JSON.stringify([...set]));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+export function esCarreraReversadaLocal(
+  fecha: string | undefined,
+  hipodromo: string,
+  carrera: number | string
+): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const f = String(fecha || hoy()).slice(0, 10);
+    const cur = claveHipodromo(hipodromo);
+    const num = Number(carrera) || 0;
+    if (!f || !cur || !num) return false;
+    const raw = window.localStorage.getItem(`reversadas:${f}`);
+    if (!raw) return false;
+    const arr = JSON.parse(raw) as string[];
+    if (!Array.isArray(arr)) return false;
+    const target = `${cur}|${num}`;
+    return arr.some((x) => String(x).toUpperCase().replace(/\s+/g, "") === target);
+  } catch {
+    return false;
+  }
+}
+
 function normalizarRenglon(r: Record<string, unknown>): CarreraDelDia {
   const detalle = (r.detalle && typeof r.detalle === "object" && !Array.isArray(r.detalle)
     ? r.detalle
@@ -95,7 +170,10 @@ export async function leerResultadoOficial(
   const hip = String(hipodromo ?? "").trim().toUpperCase();
   if (!hip) return null;
   try {
-    const fechaEfectiva = fecha || (await jornadaDeCarrera(hip, carrera));
+    const fechaEfectiva = (fecha ? String(fecha).slice(0, 10) : null) || (await jornadaDeCarrera(hip, carrera));
+    if (fechaEfectiva && esCarreraReversadaLocal(fechaEfectiva, hip, carrera)) {
+      return null;
+    }
     const q = supabase
       .from("resultados_carreras")
       .select("fecha, hipodromo, carrera, ganadores, orden_llegada, dividendos")
@@ -106,10 +184,15 @@ export async function leerResultadoOficial(
     const { data, error } = fechaEfectiva ? await q.eq("fecha", fechaEfectiva) : await q;
     if (error || !data?.length) return null;
     const r = data[0] as { fecha?: unknown; hipodromo?: unknown; carrera?: unknown; ganadores?: unknown; orden_llegada?: unknown; dividendos?: unknown };
+    const fechaRow = String(r.fecha ?? fechaEfectiva ?? "").slice(0, 10);
+    if (fechaRow && esCarreraReversadaLocal(fechaRow, hip, carrera)) {
+      return null;
+    }
     // `orden_llegada` es [{numero,puesto}] y `ganadores` es text[]: ambos se
     // normalizan a la lista 1º..8º que entiende la pizarra.
     const oficial = puestosDesdeOrdenLlegada(r.orden_llegada);
     const puestos = oficial.length ? oficial : puestosDesdeOrdenLlegada(r.ganadores);
+    if (!puestos.length) return null;
     let puestosRaya: string[] = puestos;
     if (Array.isArray(r.orden_llegada) && r.orden_llegada.length > 0) {
       const p0 = r.orden_llegada[0] as Record<string, unknown> | null;
@@ -124,7 +207,7 @@ export async function leerResultadoOficial(
     }
     const div = r.dividendos;
     return {
-      fecha: String(r.fecha ?? fecha ?? "").slice(0, 10),
+      fecha: fechaRow,
       hipodromo: String(r.hipodromo ?? hip).toUpperCase(),
       carrera: (r.carrera ?? carrera) as number | string,
       puestos,
@@ -311,6 +394,7 @@ export async function cargarCarrerasDelDia(fecha?: string): Promise<CarreraDelDi
     if (error) throw error;
     for (const r of (data ?? []) as unknown[]) {
       const c = normalizarRenglon(r as Record<string, unknown>);
+      if (esCarreraReversadaLocal(f, c.hipodromo, c.carrera)) continue;
       porClave.set(claveCarrera(c.hipodromo, c.carrera), c);
     }
   } catch {
@@ -327,7 +411,8 @@ export async function cargarCarrerasDelDia(fecha?: string): Promise<CarreraDelDi
     if (m.ok) {
       for (const fila of m.filas) {
         const c = aCarreraCentral(fila);
-        const prev = porClave.get(claveCarrera(c.hipodromo, c.carrera));
+        const reversada = esCarreraReversadaLocal(f, c.hipodromo, c.carrera);
+        const prev = reversada ? undefined : porClave.get(claveCarrera(c.hipodromo, c.carrera));
         if (prev) {
           const retPrev = (String(prev.retirados ?? "")
             .replace(/NO\s+HUBO\s+RETIROS?/gi, "")
@@ -339,20 +424,25 @@ export async function cargarCarrerasDelDia(fecha?: string): Promise<CarreraDelDi
           });
           continue;
         }
-        const propio = String(fila.estado ?? "").trim();
+        const propio = reversada ? "Programada" : String(fila.estado ?? "").trim();
         const estado: CarreraDelDia["estado"] =
-          propio === "Liquidada" || propio === "Resultados" || propio === "Programada"
-            ? propio
-            : estadoDeCarrera(fila, null) === "Liquidada"
-              ? "Liquidada"
-              : "Programada";
+          reversada
+            ? "Programada"
+            : propio === "Liquidada" || propio === "Resultados" || propio === "Programada"
+              ? propio
+              : estadoDeCarrera(fila, null) === "Liquidada"
+                ? "Liquidada"
+                : "Programada";
         res.push({
           fecha: f,
           hipodromo: c.hipodromo,
           carrera: c.carrera,
           estado,
+          ganadores: reversada ? [] : undefined,
+          aplicado_a_tablas: reversada ? false : undefined,
           retirados: c.retirados?.join(", ") || undefined,
           ventas: [],
+          pago: null,
         });
       }
     }
@@ -516,6 +606,9 @@ export async function upsertResultadoCentral(
     return { ok: false, error: (e as Error).message };
   }
   const f = input.fecha || hoy();
+  // Al guardar y liquidar un resultado nuevo explícitamente, se desmarca la reversión previa
+  desmarcarCarreraReversadaLocal(f, input.hipodromo, input.carrera);
+
   const estado = useCarrerasDiaStore.getState().estadoDe(input.hipodromo, input.carrera, f);
   const ventas = estado?.ventas ?? [];
   const pago = estado?.pago ?? null;
@@ -581,14 +674,10 @@ const PERMISOS_REVERTIR_RESULTADO = [
 /**
  * REVIERTE el resultado central de una carrera: la deja SIN resultado oficial
  * (`aplicado_a_tablas=false`, `ganadores`/`orden_llegada`/`dividendos` en
- * blanco) para que el semáforo y «Carreras del Día» vuelvan a "Programada" —
- * o sea, la carrera vuelve a estar ABIERTA y se puede cargar y liquidar de
- * nuevo. Es el paso final de `reversarLiquidacionCarrera`.
- *
- * Escribe por la RPC dedicada `club_revertir_resultado_carrera` (valida
- * `gestion_jugadas:fn_reabrir_carrera` en el servidor). Si esa RPC todavía no
- * está aplicada, cae al camino de `guardarResultado` con los campos en blanco
- * (que valida los permisos de carga/liquidación).
+ * blanco y eliminando la fila de pizarra en `resultados_carreras`) para que el
+ * semáforo y «Carreras del Día» vuelvan a "Programada" — o sea, la carrera
+ * vuelve a estar ABIERTA y sin pizarra colocada hasta que el operador la
+ * liquide de nuevo.
  */
 export async function revertirResultadoCentral(input: {
   fecha?: string;
@@ -605,17 +694,45 @@ export async function revertirResultadoCentral(input: {
   const ventas = estado?.ventas ?? [];
   let dbOk = false;
 
-  // Store en vivo: la carrera vuelve a "Programada" (sin ganadores ni pago).
+  // Persistir inmediatamente la marca local de reversión para que ninguna lectura
+  // recargue la pizarra ni el estado Liquidada.
+  marcarCarreraReversadaLocal(f, hip, carrera);
+
+  // Store en vivo: la carrera vuelve a "Programada" (sin ganadores, sin pizarra ni pago).
   useCarrerasDiaStore.getState().upsert({
     fecha: f,
     hipodromo: hip,
     carrera,
     estado: "Programada",
     ganadores: [],
+    premio_oficial: undefined,
+    premio_recalculado: undefined,
     aplicado_a_tablas: false,
     ventas,
     pago: null,
   });
+
+  // 0) Ejecutar primero por la ruta administrativa con service_role para eliminar
+  //    la pizarra de `resultados_carreras`, volver `carreras` a "Programada",
+  //    reabrir `tablas_fijas` y pasar `tickets_apuestas` a "Pendiente" sin bloqueos RLS.
+  try {
+    const resApi = await fetch("/api/carreras/guardar-resultado", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accion: "revertir",
+        fecha: f,
+        hipodromo: hip,
+        carrera,
+      }),
+    });
+    const json = await resApi.json();
+    if (json?.ok) {
+      dbOk = true;
+    }
+  } catch {
+    /* fallback a cliente / RPC */
+  }
 
   if (!supabase) return { ok: true };
   const sdb = supabase;

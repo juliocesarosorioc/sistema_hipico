@@ -460,25 +460,29 @@ export default function ReporteLiquidacionModal({
         const cantPos = (s?: string | null) =>
           (s ?? "").replace(/["'{}]/g, "").split(/[\s·,\/\-]+/).filter((x) => /^\d+$/.test(x)).length;
 
-        if (pizarraInicial && cantPos(pizarraInicial) > cantPos(c.pizarra)) {
-          c.pizarra = pizarraInicial;
-        }
-        if (cantPos(c.pizarra) <= 1) {
-          try {
-            const { leerResultadoOficial } = await import("@/features/carreras/lib/carreras-dia");
-            const ofi =
-              (await leerResultadoOficial(hipoActivo, carrActiva, fechaActiva)) ||
-              (await leerResultadoOficial(hipoActivo, carrActiva));
-            if (ofi?.puestos && ofi.puestos.length > cantPos(c.pizarra)) {
-              c.pizarra = ofi.puestos.join(" · ");
-              if (ofi.puestosRaya?.length) c.pizarraRaya = ofi.puestosRaya.join(" · ");
-            }
-          } catch {
-            /* ignore */
+        const { esCarreraReversadaLocal, leerResultadoOficial } = await import("@/features/carreras/lib/carreras-dia");
+        const reversada = esCarreraReversadaLocal(fechaActiva, hipoActivo, carrActiva);
+        if (reversada) {
+          c.pizarra = "";
+          c.pizarraRaya = undefined;
+        } else {
+          if (pizarraInicial && cantPos(pizarraInicial) > cantPos(c.pizarra)) {
+            c.pizarra = pizarraInicial;
           }
-        }
-        if (pizarraInicial && cantPos(pizarraInicial) > cantPos(c.pizarra)) {
-          c.pizarra = pizarraInicial;
+          if (cantPos(c.pizarra) <= 1) {
+            try {
+              const ofi = await leerResultadoOficial(hipoActivo, carrActiva, fechaActiva);
+              if (ofi?.puestos && ofi.puestos.length > cantPos(c.pizarra)) {
+                c.pizarra = ofi.puestos.join(" · ");
+                if (ofi.puestosRaya?.length) c.pizarraRaya = ofi.puestosRaya.join(" · ");
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+          if (pizarraInicial && cantPos(pizarraInicial) > cantPos(c.pizarra)) {
+            c.pizarra = pizarraInicial;
+          }
         }
         setDetalle({ reporte: c, frescos });
       })

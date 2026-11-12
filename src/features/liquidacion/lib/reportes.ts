@@ -13,6 +13,7 @@
  * grupo: dia_inicio_semana → dia_fin_semana).
  */
 import { supabase } from "@/core/supabase";
+import { esCarreraReversadaLocal } from "@/features/carreras/lib/carreras-dia";
 import { hoyLocal, leerProgramaPorFecha } from "@/features/gaceta/lib/programa";
 import { rangoSemanaDeGrupo, cicloSemanalDe } from "@/features/liquidacion/lib/semana";
 import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
@@ -793,6 +794,7 @@ export function normalizarPizarra(r: {
 export async function leerPizarra(fecha: string, hipodromo: string, carrera: number | string): Promise<PizarraCarrera | null> {
   if (!supabase) return null;
   try {
+    const reversada = esCarreraReversadaLocal(fecha, hipodromo, carrera);
     const hipLimpio = String(hipodromo ?? "")
       .replace(/\([^)]*\)/g, "")
       .replace(/^(hip[oó]dromo\s+de\s+|hip[oó]dromo\s+)/i, "")
@@ -800,12 +802,14 @@ export async function leerPizarra(fecha: string, hipodromo: string, carrera: num
     const patronHipo = hipLimpio.length >= 3 ? `%${hipLimpio}%` : `%${String(hipodromo).trim()}%`;
 
     const [resR, carR, tabR] = await Promise.all([
-      supabase
-        .from("resultados_carreras")
-        .select("ganadores, orden_llegada, dividendos, retirados")
-        .eq("fecha", fecha)
-        .eq("carrera", carrera)
-        .ilike("hipodromo", patronHipo),
+      reversada
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from("resultados_carreras")
+            .select("ganadores, orden_llegada, dividendos, retirados")
+            .eq("fecha", fecha)
+            .eq("carrera", carrera)
+            .ilike("hipodromo", patronHipo),
       supabase
         .from("carreras")
         .select("retirados, caballos")
@@ -819,8 +823,8 @@ export async function leerPizarra(fecha: string, hipodromo: string, carrera: num
         .eq("carrera", carrera)
         .ilike("hipodromo", patronHipo),
     ]);
-    let data = resR.data as Array<Record<string, unknown>> | null;
-    if (resR.error && /retirados/i.test(resR.error.message)) {
+    let data = reversada ? null : (resR.data as Array<Record<string, unknown>> | null);
+    if (!reversada && resR.error && /retirados/i.test(resR.error.message)) {
       const r2 = await supabase
         .from("resultados_carreras")
         .select("ganadores, orden_llegada, dividendos")
@@ -839,80 +843,56 @@ export async function leerPizarra(fecha: string, hipodromo: string, carrera: num
       retExtra.push(...extraerNumerosRetiradosDeCaballos(row.caballos));
     }
     let basePizarra: PizarraCarrera | null = null;
-    for (const row of data ?? []) {
-      const norm = normalizarPizarra(row);
-      if (norm) {
-        if (!basePizarra) {
-          basePizarra = norm;
-        } else {
-          if (!basePizarra.puestos.length && norm.puestos.length) {
-            basePizarra.puestos = norm.puestos;
-            basePizarra.puestosRaya = norm.puestosRaya;
-          }
-          if (!basePizarra.dividendos && norm.dividendos) basePizarra.dividendos = norm.dividendos;
-          basePizarra.retirados = unirRetirados(basePizarra.retirados, norm.retirados);
-        }
-      }
-    }
-
-    // Fallback 1: Si no hay puestos por fecha exacta, consultar resultados_carreras más reciente para este hipódromo y carrera
-    if (!basePizarra?.puestos?.length) {
-      try {
-        const rFallback = await supabase
-          .from("resultados_carreras")
-          .select("ganadores, orden_llegada, dividendos, retirados")
-          .eq("carrera", carrera)
-          .ilike("hipodromo", patronHipo)
-          .order("fecha", { ascending: false })
-          .limit(2);
-        for (const row of (rFallback.data ?? []) as Array<Record<string, unknown>>) {
-          const norm = normalizarPizarra(row);
-          if (norm?.puestos?.length) {
-            if (!basePizarra) {
-              basePizarra = norm;
-            } else {
+    if (!reversada) {
+      for (const row of data ?? []) {
+        const norm = normalizarPizarra(row);
+        if (norm) {
+          if (!basePizarra) {
+            basePizarra = norm;
+          } else {
+            if (!basePizarra.puestos.length && norm.puestos.length) {
               basePizarra.puestos = norm.puestos;
               basePizarra.puestosRaya = norm.puestosRaya;
-              if (!basePizarra.dividendos) basePizarra.dividendos = norm.dividendos;
             }
-            break;
+            if (!basePizarra.dividendos && norm.dividendos) basePizarra.dividendos = norm.dividendos;
+            basePizarra.retirados = unirRetirados(basePizarra.retirados, norm.retirados);
           }
         }
-      } catch {
-        /* best effort */
+      }
+
+      // Fallback 2: Consultar store en memoria central useCarrerasDiaStore (solo para la MISMA fecha)
+      if (!basePizarra?.puestos?.length) {
+        try {
+          const { useCarrerasDiaStore } = await import("@/shared/store/useCarrerasDiaStore");
+          const diaFiltro = String(fecha ?? "").slice(0, 10);
+          const enStore = useCarrerasDiaStore.getState().carreras.find((c) => {
+            const fechaOk = !diaFiltro || String(c.fecha ?? "").slice(0, 10) === diaFiltro;
+            const numOk = Number(c.carrera) === Number(carrera);
+            const hipoUpper = String(c.hipodromo ?? "").toUpperCase();
+            const hipoTarget = String(hipodromo ?? "").toUpperCase();
+            const hipoOk =
+              hipoUpper === hipoTarget ||
+              hipoUpper.includes(hipLimpio.toUpperCase()) ||
+              hipLimpio.toUpperCase().includes(hipoUpper);
+            return fechaOk && numOk && hipoOk && Array.isArray(c.ganadores) && c.ganadores.length > 0;
+          });
+          if (enStore?.ganadores?.length) {
+            const p = enStore.ganadores.map(String).map((s) => s.trim()).filter(Boolean);
+            if (!basePizarra) {
+              basePizarra = { puestos: p, puestosRaya: p, dividendos: null, retirados: [] };
+            } else if (!basePizarra.puestos.length) {
+              basePizarra.puestos = p;
+              basePizarra.puestosRaya = p;
+            }
+          }
+        } catch {
+          /* best effort */
+        }
       }
     }
 
-    // Fallback 2: Consultar store en memoria central useCarrerasDiaStore
-    if (!basePizarra?.puestos?.length) {
-      try {
-        const { useCarrerasDiaStore } = await import("@/shared/store/useCarrerasDiaStore");
-        const enStore = useCarrerasDiaStore.getState().carreras.find((c) => {
-          const numOk = Number(c.carrera) === Number(carrera);
-          const hipoUpper = String(c.hipodromo ?? "").toUpperCase();
-          const hipoTarget = String(hipodromo ?? "").toUpperCase();
-          const hipoOk =
-            hipoUpper === hipoTarget ||
-            hipoUpper.includes(hipLimpio.toUpperCase()) ||
-            hipLimpio.toUpperCase().includes(hipoUpper);
-          return numOk && hipoOk && Array.isArray(c.ganadores) && c.ganadores.length > 0;
-        });
-        if (enStore?.ganadores?.length) {
-          const p = enStore.ganadores.map(String).map((s) => s.trim()).filter(Boolean);
-          if (!basePizarra) {
-            basePizarra = { puestos: p, puestosRaya: p, dividendos: null, retirados: [] };
-          } else if (!basePizarra.puestos.length) {
-            basePizarra.puestos = p;
-            basePizarra.puestosRaya = p;
-          }
-        }
-      } catch {
-        /* best effort */
-      }
-    }
-
-    const puestosFinal = basePizarra?.puestos ?? [];
-    const puestosRayaFinal = basePizarra?.puestosRaya ?? [];
+    const puestosFinal = reversada ? [] : (basePizarra?.puestos ?? []);
+    const puestosRayaFinal = reversada ? [] : (basePizarra?.puestosRaya ?? []);
     const retiradosFinal = filtrarRetiradosSinLlegada(
       unirRetirados(basePizarra?.retirados, retExtra),
       puestosFinal,
@@ -922,7 +902,7 @@ export async function leerPizarra(fecha: string, hipodromo: string, carrera: num
     return {
       puestos: puestosFinal,
       puestosRaya: puestosRayaFinal,
-      dividendos: basePizarra?.dividendos ?? null,
+      dividendos: reversada ? null : (basePizarra?.dividendos ?? null),
       retirados: retiradosFinal,
     };
   } catch {
@@ -1368,6 +1348,7 @@ export async function leerPizarrasHipodromo(fecha: string, hipodromo: string): P
     for (const row of data ?? []) {
       const k = claveCarrera(row.carrera);
       if (!k) continue;
+      if (esCarreraReversadaLocal(fecha, hipodromo, k)) continue;
       const norm = normalizarPizarra(row);
       const prev = porCarrera.get(k);
       if (!prev) {
@@ -1949,15 +1930,18 @@ async function carreraReporte(
   if (!filas.some((f) => f.rol !== "CRUCE")) return null;
 
   const subtotal = Math.round(filas.reduce((a, f) => a + (f.resultado ?? 0), 0) * 100) / 100;
-  let puestos = pizarra?.puestos ?? [];
-  let puestosRaya = pizarra?.puestosRaya ?? [];
+  const reversada = esCarreraReversadaLocal(fecha, hipodromo, numero);
+  let puestos = reversada ? [] : (pizarra?.puestos ?? []);
+  let puestosRaya = reversada ? [] : (pizarra?.puestosRaya ?? []);
 
-  // Robustez: si puestos esta vacio o tiene <= 1 ejemplar, enriquecer con resultado central oficial o store en memoria
-  if (puestos.length <= 1) {
+  // Robustez: si puestos esta vacio o tiene <= 1 ejemplar y la carrera NO fue reversada, enriquecer con resultado central oficial o store en memoria
+  if (!reversada && puestos.length <= 1) {
     try {
       const { useCarrerasDiaStore } = await import("@/shared/store/useCarrerasDiaStore");
+      const diaFiltro = String(fecha ?? "").slice(0, 10);
       const cMem = useCarrerasDiaStore.getState().carreras.find((cd) => {
         return (
+          (!diaFiltro || String(cd.fecha ?? "").slice(0, 10) === diaFiltro) &&
           Number(cd.carrera) === Number(numero) &&
           (cd.hipodromo.toUpperCase() === hipodromo.toUpperCase() ||
             cd.hipodromo.toLowerCase().includes(hipodromo.toLowerCase()) ||
@@ -1976,9 +1960,7 @@ async function carreraReporte(
     if (puestos.length <= 1) {
       try {
         const { leerResultadoOficial } = await import("@/features/carreras/lib/carreras-dia");
-        const ofi =
-          (await leerResultadoOficial(hipodromo, numero, fecha)) ||
-          (await leerResultadoOficial(hipodromo, numero));
+        const ofi = await leerResultadoOficial(hipodromo, numero, fecha);
         if (ofi?.puestos && ofi.puestos.length > puestos.length) {
           puestos = ofi.puestos.map(String).map((x) => x.trim()).filter(Boolean);
           puestosRaya = ofi.puestosRaya?.length
@@ -1991,7 +1973,7 @@ async function carreraReporte(
     }
   }
 
-  if (!puestos.length) {
+  if (!reversada && !puestos.length) {
     // Si la carrera ya fue pagada y hay tickets ganadores, inferir el ganador de los tickets
     const ganadoresDeTickets = new Set<string>();
     for (const t of tickets) {

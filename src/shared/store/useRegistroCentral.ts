@@ -243,16 +243,22 @@ export async function cargarRegistroCarreras(fecha: string, version = 0): Promis
       }
       const base = await completarResultadosDelDia(f, r.datos ?? []);
       // Aplicar reversiones persistidas: una carrera reversada NO debe mostrarse
-      // como liquidada aunque la BD aún no se haya actualizado.
+      // como liquidada ni conservar pizarra aunque la BD aún no se haya actualizado.
       try {
         if (typeof window !== "undefined") {
           const raw = window.localStorage.getItem(`reversadas:${f}`);
           if (raw) {
-            const set = new Set(JSON.parse(raw) as string[]);
+            const set = new Set((JSON.parse(raw) as string[]).map((x) => String(x).toUpperCase().replace(/\s+/g, "")));
             return base.map((c) => {
               const key = `${claveHipodromo(c.hipodromo)}|${Number(c.carrera)}`;
               if (set.has(key)) {
-                return { ...c, estado: "Programada", ganadores: [], aplicado_a_tablas: false };
+                return {
+                  ...c,
+                  estado: "Programada",
+                  ganadores: [],
+                  orden_llegada_raya: [],
+                  aplicado_a_tablas: false,
+                };
               }
               return c;
             });

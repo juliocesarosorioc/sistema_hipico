@@ -103,7 +103,7 @@ export function PanelVinculacionSalasWhatsApp() {
       await new Promise((r) => setTimeout(r, 1000));
       agregarLog("2️⃣ Jugador B (Carlos): Cita la propuesta y responde 'Consigo 90'", "info");
       await new Promise((r) => setTimeout(r, 800));
-      agregarLog("🤝 ¡CRUCE CONFIRMADO! Carlos tomó $90.00 de Pedro. ⚠️ Remanente disponible: $10.00", "cruce");
+      agregarLog("🤝 *Jugaron* — Carlos tomó $90.00 de Pedro. ⚠️ Remanente disponible: $10.00", "cruce");
       agregarLog("📱 Bot Privado a Carlos: 'Has tomado $90.00 de Pedro. Saldo retenido: $90.00'", "bot");
       setFaseSimulacion(3);
 

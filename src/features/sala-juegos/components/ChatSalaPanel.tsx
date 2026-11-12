@@ -1,8 +1,66 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { salaApi } from "../lib/sala-api";
 import { supabase } from "@/core/supabase";
+
+export type ClaveFuenteSala = "whatsapp" | "inter" | "roboto" | "sf" | "tabular";
+export type TemaSala = "claro" | "oscuro";
+
+export const FAMILIAS_FUENTE_SALA: Record<ClaveFuenteSala, { nombre: string; css: string }> = {
+  whatsapp: {
+    nombre: "WhatsApp Original (Predeterminada)",
+    css: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+  },
+  inter: {
+    nombre: "Inter Hípica Nítida",
+    css: '"Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+  },
+  roboto: {
+    nombre: "Roboto Android Nativa",
+    css: 'Roboto, "Helvetica Neue", Arial, sans-serif',
+  },
+  sf: {
+    nombre: "Apple SF Pro (iPhone / Mac)",
+    css: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
+  },
+  tabular: {
+    nombre: "Gaceta Tabular (Monospace)",
+    css: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+  },
+};
+
+const COLORES_NOMBRE_REMITENTE = [
+  "#008069",
+  "#1b6ca8",
+  "#b45309",
+  "#7c3aed",
+  "#be123c",
+  "#0f766e",
+  "#4338ca",
+  "#9a3412",
+];
+
+function colorNombreRemitente(nombre?: string): string {
+  const s = String(nombre || "Usuario");
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) {
+    hash = s.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return COLORES_NOMBRE_REMITENTE[Math.abs(hash) % COLORES_NOMBRE_REMITENTE.length];
+}
+
+/**
+ * Regla Oficial: Cuando se concretan jugadas NUNCA se dice CRUCE, se dice "Jugaron".
+ */
+function normalizarTerminologiaJugaron(texto?: string | null): string {
+  if (!texto) return "";
+  return String(texto)
+    .replace(/¡?CRUCE\s+CONFIRMADO!?/gi, "*Jugaron*")
+    .replace(/¡?CRUCE\s+REGISTRADO!?/gi, "*Jugaron*")
+    .replace(/¡?AQU[IÍ]\s+JUGARON!?/gi, "*Jugaron*")
+    .replace(/\bCRUCE\b/gi, "Jugaron");
+}
 
 interface PropsChatSalaPanel {
   sala: any;
@@ -10,8 +68,11 @@ interface PropsChatSalaPanel {
   grupoNombre: string;
   identidad: any;
   tamanoLetra: number;
+  fuenteId?: ClaveFuenteSala;
+  tema?: TemaSala;
   onActualizarSaldo?: () => void;
   onAbrirOperador?: () => void;
+  onSalirPlataforma?: () => void;
 }
 
 export function ChatSalaPanel({
@@ -20,8 +81,11 @@ export function ChatSalaPanel({
   grupoNombre,
   identidad,
   tamanoLetra,
+  fuenteId = "whatsapp",
+  tema = "claro",
   onActualizarSaldo,
   onAbrirOperador,
+  onSalirPlataforma,
 }: PropsChatSalaPanel) {
   const [mensajes, setMensajes] = useState<any[]>([]);
   const [textoInput, setTextoInput] = useState("");
@@ -29,6 +93,13 @@ export function ChatSalaPanel({
   const [replyToPropuesta, setReplyToPropuesta] = useState<any | null>(null);
   const [tomandoParteId, setTomandoParteId] = useState<string | null>(null);
   const [montoParcialInput, setMontoParcialInput] = useState<string>("");
+  const [filtroFeed, setFiltroFeed] = useState<"todos" | "abiertas" | "jugaron" | "mias">("todos");
+  const [tecladoRapidoAbierto, setTecladoRapidoAbierto] = useState<boolean>(false);
+  const [accionRapida, setAccionRapida] = useState<"Juego" | "Consigo" | "Doy">("Juego");
+  const [puestoRapido, setPuestoRapido] = useState<string>("1P");
+  const [ejemplarRapido, setEjemplarRapido] = useState<string>("1");
+  const [montoRapido, setMontoRapido] = useState<string>("20");
+
   const [sugerenciaPedagogica, setSugerenciaPedagogica] = useState<{
     mensaje: string;
     sugerencias: string[];
@@ -42,17 +113,17 @@ export function ChatSalaPanel({
     msg: any;
   } | null>(null);
 
-  // Control táctil Swipe-to-reply
+  // Control táctil Swipe-to-reply (celular Android/iPhone y PC)
   const [swipingId, setSwipingId] = useState<string | null>(null);
   const [swipeOffset, setSwipeOffset] = useState<number>(0);
   const touchStartXRef = useRef<number>(0);
   const touchStartYRef = useRef<number>(0);
   const isSwipingRef = useRef<boolean>(false);
 
-  // Timer tick en vivo para actualizar expiración de vigencia cada 3s
+  // Timer tick en vivo para actualizar expiración de vigencia cada 2s
   const [ahora, setAhora] = useState<number>(Date.now());
   useEffect(() => {
-    const t = setInterval(() => setAhora(Date.now()), 3000);
+    const t = setInterval(() => setAhora(Date.now()), 2000);
     return () => clearInterval(t);
   }, []);
 
@@ -66,7 +137,7 @@ export function ChatSalaPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleTouchStart = (e: React.TouchEvent, msg: any) => {
+  const handleTouchStart = (e: React.TouchEvent, _msg: any) => {
     touchStartXRef.current = e.touches[0].clientX;
     touchStartYRef.current = e.touches[0].clientY;
     isSwipingRef.current = false;
@@ -79,16 +150,16 @@ export function ChatSalaPanel({
     if (deltaX > 8 && deltaY < 40) {
       isSwipingRef.current = true;
       setSwipingId(msg.id);
-      const capped = Math.min(80, Math.max(0, deltaX));
+      const capped = Math.min(76, Math.max(0, deltaX));
       setSwipeOffset(capped);
     }
   };
 
   const handleTouchEnd = (msg: any) => {
-    if (isSwipingRef.current && swipeOffset >= 40) {
+    if (isSwipingRef.current && swipeOffset >= 38) {
       if (typeof window !== "undefined" && (window as any).navigator?.vibrate) {
         try {
-          (window as any).navigator.vibrate(20);
+          (window as any).navigator.vibrate(18);
         } catch {}
       }
       setReplyToPropuesta(msg);
@@ -101,7 +172,7 @@ export function ChatSalaPanel({
 
   const cargarMensajes = async () => {
     if (!sala?.id) return;
-    const res = await salaApi.getMensajes(sala.id, 60);
+    const res = await salaApi.getMensajes(sala.id, 80);
     if (res.ok && res.data?.mensajes) {
       setMensajes(res.data.mensajes);
     }
@@ -109,26 +180,25 @@ export function ChatSalaPanel({
 
   useEffect(() => {
     cargarMensajes();
-
-    // Polling resiliente cada 2500ms
     const interval = setInterval(cargarMensajes, 2500);
 
-    // Suscripción en tiempo real instantánea (<100ms) vía Supabase Channel
     let canal: any = null;
     if (supabase && sala?.id) {
       try {
         canal = supabase
           .channel(`sala-${sala.id}`)
-          .on("broadcast", { event: "nuevo_mensaje" }, () => {
-            cargarMensajes();
-          })
-          .on("broadcast", { event: "carrera_abierta" }, () => {
-            cargarMensajes();
-          })
-          .on("broadcast", { event: "carrera_cerrada" }, () => {
-            cargarMensajes();
-          })
+          .on("broadcast", { event: "nuevo_mensaje" }, () => cargarMensajes())
+          .on("broadcast", { event: "carrera_abierta" }, () => cargarMensajes())
+          .on("broadcast", { event: "carrera_cerrada" }, () => cargarMensajes())
           .on("broadcast", { event: "carrera_liquidada" }, () => {
+            cargarMensajes();
+            onActualizarSaldo?.();
+          })
+          .on("broadcast", { event: "carrera_reversada" }, () => {
+            cargarMensajes();
+            onActualizarSaldo?.();
+          })
+          .on("broadcast", { event: "carrera_anulada" }, () => {
             cargarMensajes();
             onActualizarSaldo?.();
           })
@@ -140,13 +210,11 @@ export function ChatSalaPanel({
               table: "chat_mensajes",
               filter: `sala_id=eq.${sala.id}`,
             },
-            () => {
-              cargarMensajes();
-            }
+            () => cargarMensajes()
           )
           .subscribe();
       } catch {
-        // En caso de que Realtime no esté habilitado en el entorno
+        // Realtime fallback
       }
     }
 
@@ -155,9 +223,7 @@ export function ChatSalaPanel({
       if (canal && supabase) {
         try {
           supabase.removeChannel(canal);
-        } catch {
-          // noop
-        }
+        } catch {}
       }
     };
   }, [sala?.id]);
@@ -199,6 +265,7 @@ export function ChatSalaPanel({
           setReplyToPropuesta(null);
           setTomandoParteId(null);
           setMontoParcialInput("");
+          setTecladoRapidoAbierto(false);
           await cargarMensajes();
           onActualizarSaldo?.();
         }
@@ -260,7 +327,7 @@ export function ChatSalaPanel({
     return false;
   };
 
-  const mensajesMap = React.useMemo(() => {
+  const mensajesMap = useMemo(() => {
     const map = new Map<string, any>();
     for (const m of mensajes) {
       if (m?.id) map.set(m.id, m);
@@ -269,43 +336,110 @@ export function ChatSalaPanel({
   }, [mensajes]);
 
   const esCarreraAbierta = sala?.estado_carrera === "abierta";
+  const esClaro = tema === "claro";
+  const fontFamilyCss = FAMILIAS_FUENTE_SALA[fuenteId]?.css || FAMILIAS_FUENTE_SALA.whatsapp.css;
+
+  const mensajesFiltrados = useMemo(() => {
+    if (filtroFeed === "todos") return mensajes;
+    const tiempoVigencia = Number(sala?.tiempo_vigencia_segundos || 120);
+    return mensajes.filter((m) => {
+      if (filtroFeed === "mias") {
+        return esMio(m.remitente_id, m.remitente_nombre);
+      }
+      if (filtroFeed === "jugaron") {
+        return m.tipo_mensaje === "CONCRECION";
+      }
+      if (filtroFeed === "abiertas") {
+        const esProp = m.tipo_mensaje === "propuesta_jugada" || m.tipo_mensaje === "PROPUESTA";
+        if (!esProp) return false;
+        const disp = Number(m.monto_disponible ?? m.monto_original ?? 0);
+        const edad = (ahora - new Date(m.created_at).getTime()) / 1000;
+        return m.estado_propuesta === "abierta" && disp > 0 && edad <= tiempoVigencia;
+      }
+      return true;
+    });
+  }, [mensajes, filtroFeed, ahora, sala?.tiempo_vigencia_segundos]);
 
   return (
-    <div className="flex flex-col h-full bg-[#0b141a] border-x border-[#202c33] overflow-hidden select-none">
-      {/* Cabecera de la Sala */}
-      <div className="bg-[#202c33] px-4 py-2.5 flex items-center justify-between border-b border-[#2a3942]">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-emerald-700/40 border border-emerald-500/40 flex items-center justify-center text-sm font-black text-emerald-400">
+    <div
+      style={{ fontFamily: fontFamilyCss }}
+      className={`flex flex-col h-full overflow-hidden select-none border-x ${
+        esClaro ? "bg-[#efeae2] border-[#d1d7db] text-[#111b21]" : "bg-[#0b141a] border-[#202c33] text-[#e9edef]"
+      }`}
+    >
+      {/* Sub-Cabecera Compacta de la Sala + Filtros Rápidos */}
+      <div
+        className={`px-2 py-1 flex flex-wrap items-center justify-between gap-1 border-b ${
+          esClaro ? "bg-[#f0f2f5] border-[#d1d7db]" : "bg-[#202c33] border-[#2a3942]"
+        }`}
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div
+            className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
+              esClaro
+                ? "bg-[#008069] text-white"
+                : "bg-emerald-700/40 border border-emerald-500/40 text-emerald-400"
+            }`}
+          >
             🏇
           </div>
-          <div>
-            <h2 className="text-xs font-bold text-white flex items-center gap-1.5">
-              <span>{sala?.nombre_sala}</span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1">
+              <span className={`text-xs font-extrabold truncate ${esClaro ? "text-[#111b21]" : "text-white"}`}>
+                {sala?.hipodromo_activo || "HIPÓDROMO"} · C{sala?.numero_carrera_activa || 1}
+              </span>
               <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full font-black uppercase ${
+                className={`text-[9px] px-1.5 py-0.2 rounded-full font-black uppercase ${
                   esCarreraAbierta
-                    ? "bg-emerald-950 text-emerald-400 border border-emerald-600/50"
-                    : "bg-amber-950 text-amber-400 border border-amber-600/50"
+                    ? esClaro
+                      ? "bg-[#d9fdd3] text-[#008069] border border-[#008069]/30"
+                      : "bg-emerald-950 text-emerald-400 border border-emerald-600/50"
+                    : esClaro
+                      ? "bg-amber-100 text-amber-800 border border-amber-300"
+                      : "bg-amber-950 text-amber-400 border border-amber-600/50"
                 }`}
               >
                 ● {sala?.estado_carrera || "CERRADA"}
               </span>
-            </h2>
-            <p className="text-[11px] text-gray-400">
-              {sala?.hipodromo_activo || "HIPÓDROMO"} — Carrera #{sala?.numero_carrera_activa || 1}
-              {sala?.distancia_activa ? ` (${sala.distancia_activa}m)` : ""}
-            </p>
+              <span className={`text-[10px] hidden sm:inline ${esClaro ? "text-[#667781]" : "text-gray-400"}`}>
+                ⏱️ Vigencia: {Number(sala?.tiempo_vigencia_segundos || 120)}s
+              </span>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-emerald-400 font-mono hidden sm:inline bg-[#111b21] px-2 py-0.5 rounded border border-gray-800">
-            🔒 E2EE SHA-256
-          </span>
-          {identidad.esOperador && (
+        {/* Filtros de Agilidad estilo WhatsApp + Botón Operador / Salir */}
+        <div className="flex items-center gap-1 overflow-x-auto">
+          {(
+            [
+              { id: "todos", label: "Todos" },
+              { id: "abiertas", label: "🟢 Abiertas" },
+              { id: "jugaron", label: "🤝 Jugaron" },
+              { id: "mias", label: "🙋‍♂️ Mías" },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setFiltroFeed(tab.id)}
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition whitespace-nowrap ${
+                filtroFeed === tab.id
+                  ? esClaro
+                    ? "bg-[#008069] text-white shadow-xs"
+                    : "bg-[#00a884] text-black shadow-xs"
+                  : esClaro
+                    ? "bg-white text-[#54656f] border border-[#d1d7db] hover:bg-gray-50"
+                    : "bg-[#111b21] text-gray-300 border border-gray-700 hover:bg-gray-800"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+
+          {identidad?.esOperador && (
             <button
               onClick={onAbrirOperador}
-              className="bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-[11px] px-2.5 py-1 rounded-md transition flex items-center gap-1"
+              className="bg-[#008069] hover:bg-[#017561] text-white font-bold text-[10px] px-2 py-0.5 rounded-full transition flex items-center gap-0.5 shrink-0"
             >
               <span>🛠️</span>
               <span>Operador</span>
@@ -314,70 +448,88 @@ export function ChatSalaPanel({
         </div>
       </div>
 
-      {/* Feed de Mensajes */}
+      {/* Feed de Mensajes con Márgenes Mínimos y Densidad WhatsApp */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#0b141a]/95"
-        style={{ fontSize: `${tamanoLetra}px` }}
+        className={`flex-1 overflow-y-auto px-1.5 sm:px-2.5 py-1 space-y-1 ${
+          esClaro ? "bg-[#efeae2]" : "bg-[#0b141a]"
+        }`}
+        style={{
+          fontSize: `${tamanoLetra}px`,
+          backgroundImage: esClaro
+            ? "radial-gradient(rgba(0, 128, 105, 0.05) 1px, transparent 0)"
+            : "radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 0)",
+          backgroundSize: "18px 18px",
+        }}
       >
-        {mensajes.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-gray-500 text-xs text-center p-6 space-y-2">
-            <span className="text-3xl">🏇</span>
-            <p className="font-semibold text-gray-400">La sala está lista y segura.</p>
-            <p className="text-[11px] max-w-xs">
-              Escribe tus jugadas de puestos (ej. <code className="text-emerald-400">Juego 1p del 5 con 100</code>) o
-              match (ej. <code className="text-emerald-400">Juego 1x4 50</code>).
+        {mensajesFiltrados.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center text-center p-4 space-y-1.5">
+            <span className="text-2xl">🏇</span>
+            <p className={`font-bold text-xs ${esClaro ? "text-[#111b21]" : "text-gray-300"}`}>
+              {filtroFeed === "todos" ? "Sala Hípica lista para tus jugadas." : "No hay mensajes en este filtro."}
+            </p>
+            <p className={`text-[11px] max-w-xs ${esClaro ? "text-[#667781]" : "text-gray-400"}`}>
+              Desliza cualquier jugada a la derecha para responder como en WhatsApp o escribe ej.{" "}
+              <code className="font-bold text-[#008069]">Juego 1p del 5 con 100</code>.
             </p>
           </div>
         )}
 
-        {mensajes.map((m) => {
+        {mensajesFiltrados.map((m) => {
           const mio = esMio(m.remitente_id, m.remitente_nombre);
+          const contenidoNormalizado = normalizarTerminologiaJugaron(m.contenido);
 
-          // VISTA DESTACADA: ESTADO DE CARRERA
+          // 1. AVISO OFICIAL DE ESTADO DE CARRERA
           if (m.tipo_mensaje === "ESTADO_CARRERA") {
             return (
               <div
                 key={m.id}
-                className="my-3 mx-auto max-w-lg bg-gradient-to-r from-emerald-950/80 via-[#111b21] to-emerald-950/80 border-2 border-emerald-500/50 rounded-2xl p-3.5 shadow-xl text-center"
+                className={`my-1 mx-auto max-w-md rounded-xl px-3 py-1.5 shadow-xs text-center border ${
+                  esClaro
+                    ? "bg-[#fff8e6] border-amber-300 text-[#111b21]"
+                    : "bg-[#182229] border-emerald-500/40 text-white"
+                }`}
               >
-                <div className="text-emerald-400 text-xs font-black tracking-wide uppercase flex items-center justify-center gap-1.5 mb-1">
+                <div className="text-[#008069] text-[10px] font-black tracking-wide uppercase flex items-center justify-center gap-1">
                   <span>🏇</span>
                   <span>AVISO OFICIAL DE PISTA</span>
-                  <span>🏇</span>
                 </div>
-                <p className="text-white text-xs font-semibold whitespace-pre-wrap leading-relaxed">
-                  {m.contenido}
+                <p className="text-[12px] font-semibold whitespace-pre-wrap leading-snug">
+                  {contenidoNormalizado}
                 </p>
-                <span className="text-[10px] text-gray-400 font-mono mt-1 block">
+                <span className={`text-[9px] font-mono block ${esClaro ? "text-[#667781]" : "text-gray-400"}`}>
                   {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                 </span>
               </div>
             );
           }
 
-          // VISTA PIZARRA DE LIQUIDACIÓN
+          // 2. PIZARRA DE LIQUIDACIÓN
           if (m.tipo_mensaje === "PIZARRA") {
             return (
               <div
                 key={m.id}
-                className="my-3 mx-auto max-w-lg bg-[#111b21] border border-amber-500/40 rounded-2xl p-4 shadow-xl"
+                className={`my-1 mx-auto max-w-md rounded-xl px-3 py-2 shadow-sm border ${
+                  esClaro
+                    ? "bg-white border-[#008069]/40 text-[#111b21]"
+                    : "bg-[#111b21] border-amber-500/40 text-gray-100"
+                }`}
               >
-                <div className="text-amber-400 text-xs font-black uppercase flex items-center gap-2 mb-2">
+                <div className="text-[#008069] text-[11px] font-black uppercase flex items-center gap-1.5 mb-1">
                   <span>🏁</span>
-                  <span>RESULTADOS Y LIQUIDACIÓN</span>
+                  <span>RESULTADOS Y LIQUIDACIÓN OFICIAL</span>
                 </div>
-                <div className="text-gray-200 text-xs font-mono whitespace-pre-wrap leading-relaxed">
-                  {m.contenido}
+                <div className="text-[12px] font-mono whitespace-pre-wrap leading-snug">
+                  {contenidoNormalizado}
                 </div>
-                <span className="text-[10px] text-gray-500 font-mono mt-2 block text-right">
+                <span className={`text-[9px] font-mono mt-1 block text-right ${esClaro ? "text-[#667781]" : "text-gray-400"}`}>
                   {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                 </span>
               </div>
             );
           }
 
-          // VISTA PROPUESTA DE JUGADA
+          // 3. PROPUESTA DE JUGADA (BURBUJA INTERACTIVA WHATSAPP)
           const esPropuesta = m.tipo_mensaje === "propuesta_jugada" || m.tipo_mensaje === "PROPUESTA";
           if (esPropuesta) {
             const tiempoVigencia = Number(sala?.tiempo_vigencia_segundos || 120);
@@ -393,8 +545,8 @@ export function ChatSalaPanel({
 
             const isSwipingEste = swipingId === m.id;
             const transformStyle = isSwipingEste
-              ? { transform: `translateX(${swipeOffset}px)`, transition: "transform 0.05s ease-out" }
-              : { transition: "transform 0.2s ease" };
+              ? { transform: `translateX(${swipeOffset}px)`, transition: "transform 0.04s ease-out" }
+              : { transition: "transform 0.18s ease" };
 
             return (
               <div
@@ -403,6 +555,10 @@ export function ChatSalaPanel({
                 onTouchStart={(e) => handleTouchStart(e, m)}
                 onTouchMove={(e) => handleTouchMove(e, m)}
                 onTouchEnd={() => handleTouchEnd(m)}
+                onDoubleClick={() => {
+                  setReplyToPropuesta(m);
+                  inputRef.current?.focus();
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenuContextual({
@@ -412,13 +568,12 @@ export function ChatSalaPanel({
                   });
                 }}
               >
-                {/* Indicador elástico de Swipe para responder estilo WhatsApp */}
                 {isSwipingEste && swipeOffset > 10 && (
                   <div
-                    className="absolute left-2 z-10 w-7 h-7 rounded-full bg-emerald-500/90 text-black flex items-center justify-center text-xs font-bold shadow-lg transition-transform"
+                    className="absolute left-1.5 z-10 w-6 h-6 rounded-full bg-[#008069] text-white flex items-center justify-center text-xs font-bold shadow"
                     style={{
-                      transform: `scale(${Math.min(1.2, swipeOffset / 35)}) rotate(${Math.min(360, swipeOffset * 4)}deg)`,
-                      opacity: Math.min(1, swipeOffset / 30),
+                      transform: `scale(${Math.min(1.15, swipeOffset / 35)})`,
+                      opacity: Math.min(1, swipeOffset / 28),
                     }}
                   >
                     ↩️
@@ -427,125 +582,174 @@ export function ChatSalaPanel({
 
                 <div
                   style={transformStyle}
-                  className={`w-full max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 shadow-md relative ${
+                  className={`w-full max-w-[90%] sm:max-w-[76%] rounded-lg px-2.5 py-1.5 relative ${
                     mio
-                      ? "ml-auto bg-[#005c4b] border border-emerald-400/30 text-white rounded-tr-xs"
-                      : "mr-auto bg-[#202c33] border border-gray-700/60 text-[#e9edef] rounded-tl-xs"
+                      ? esClaro
+                        ? "ml-auto bg-[#d9fdd3] text-[#111b21] rounded-tr-none shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]"
+                        : "ml-auto bg-[#005c4b] text-white rounded-tr-none shadow"
+                      : esClaro
+                        ? "mr-auto bg-white text-[#111b21] rounded-tl-none shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]"
+                        : "mr-auto bg-[#202c33] text-[#e9edef] rounded-tl-none shadow"
                   }`}
                 >
-                  {/* Botón flotante desktop hover para citar/responder */}
+                  {/* Botón rápido citar en hover */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setReplyToPropuesta(m);
                       inputRef.current?.focus();
                     }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 right-2 bg-[#202c33] hover:bg-[#2a3942] text-emerald-400 p-1 rounded-full shadow-lg border border-gray-700 text-[10px] z-10 flex items-center justify-center w-6 h-6"
+                    className={`opacity-0 group-hover:opacity-100 transition-opacity absolute top-1 right-1 px-1.5 py-0.5 rounded text-[10px] z-10 shadow-xs ${
+                      esClaro
+                        ? "bg-white/90 text-[#008069] border border-gray-200"
+                        : "bg-[#202c33] text-emerald-400 border border-gray-700"
+                    }`}
                     title="Responder citando (WhatsApp)"
                   >
                     ↩️
                   </button>
 
-                  <div className="flex items-center justify-between text-[11px] mb-1 font-bold gap-2">
-                    <span className={mio ? "text-emerald-200" : "text-emerald-400"}>
-                      {mio ? "Tú" : (m.remitente_nombre || "Usuario")} {m.es_operador && "👑 [Operador]"}
+                  {/* Cabecera compacta de remitente y vigencia */}
+                  <div className="flex items-center justify-between gap-2 leading-tight mb-0.5">
+                    <span
+                      style={{ color: mio ? (esClaro ? "#008069" : "#a7f3d0") : colorNombreRemitente(m.remitente_nombre) }}
+                      className="font-bold text-[11px] truncate"
+                    >
+                      {mio ? "Tú" : m.remitente_nombre || "Jugador"} {m.es_operador && "👑"}
                     </span>
-                    <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-mono">
+                    <div className="flex items-center gap-1 text-[10px] font-mono shrink-0">
                       {activa && (
-                        <span className="text-emerald-400 font-semibold flex items-center gap-0.5">
-                          <span>⏱️</span> {segundosRestantes}s
+                        <span
+                          className={`font-bold px-1 rounded ${
+                            esClaro ? "bg-[#008069]/10 text-[#008069]" : "text-emerald-400"
+                          }`}
+                        >
+                          ⏱️{segundosRestantes}s
                         </span>
                       )}
-                      <span>
+                      <span className={esClaro ? "text-[#667781]" : "text-gray-400"}>
                         {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </span>
+                      {mio && <span className="text-[#53bdeb] font-bold text-[10px]">✓✓</span>}
                     </div>
                   </div>
 
-                  <div className="bg-black/30 rounded-xl p-2.5 my-1.5 border border-white/10">
-                    <div className="font-bold text-sm text-amber-300 font-mono flex items-center justify-between">
-                      <span>{m.jugada_estandarizada || m.contenido}</span>
-                      <span className="text-emerald-400 font-black">${m.monto_original}</span>
+                  {/* Tarjeta interna de la jugada */}
+                  <div
+                    className={`rounded-md px-2 py-1 my-0.5 border ${
+                      esClaro
+                        ? "bg-black/[0.04] border-black/10"
+                        : "bg-black/30 border-white/10"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 font-bold">
+                      <span className={esClaro ? "text-[#111b21]" : "text-amber-300"}>
+                        🏇 {m.jugada_estandarizada || contenidoNormalizado}
+                      </span>
+                      <span
+                        className={`font-black font-mono shrink-0 ${
+                          esClaro ? "text-[#008069]" : "text-emerald-400"
+                        }`}
+                      >
+                        ${m.monto_original}
+                      </span>
                     </div>
-                    {m.monto_disponible < m.monto_original && (
-                      <div className="text-[10px] text-gray-300 font-mono mt-1">
-                        Remanente disponible:{" "}
-                        <span className="text-emerald-400 font-bold">${m.monto_disponible}</span>
-                      </div>
-                    )}
-                    {m.firma_sha256 && (
-                      <div className="text-[9px] text-gray-400 font-mono mt-0.5 truncate">
-                        Huella: {m.firma_sha256.slice(0, 16)}...
+                    {m.monto_disponible < m.monto_original && m.monto_disponible > 0 && (
+                      <div className="text-[10px] font-mono mt-0.5 flex items-center justify-between">
+                        <span className={esClaro ? "text-[#54656f]" : "text-gray-300"}>Disponible:</span>
+                        <span className="font-bold text-[#008069]">
+                          ${m.monto_disponible} de ${m.monto_original}
+                        </span>
                       </div>
                     )}
                   </div>
 
-                  {/* Estado de Expiración Automática sin interrumpir */}
+                  {/* Vigencia expirada sin interrumpir el chat */}
                   {estaVencida && m.estado_propuesta !== "anulada" && (
-                    <div className="flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-950/60 border border-amber-600/40 px-2 py-0.5 rounded-md mt-1">
-                      <span>⏰</span>
-                      <span>Jugada vencida / cerrada</span>
+                    <div
+                      className={`flex items-center justify-between text-[10px] font-bold px-2 py-0.5 rounded mt-0.5 ${
+                        disponible <= 0
+                          ? esClaro
+                            ? "bg-[#e7fce3] text-[#008069]"
+                            : "bg-emerald-950/60 text-emerald-300"
+                          : esClaro
+                            ? "bg-amber-50 text-amber-800 border border-amber-200"
+                            : "bg-amber-950/60 text-amber-400 border border-amber-600/40"
+                      }`}
+                    >
+                      <span>{disponible <= 0 ? "🤝 Jugaron (Completada 100%)" : "⏰ Jugada cerrada por tiempo"}</span>
                     </div>
                   )}
 
+                  {/* Botones de Acción Rápida si está activa y es de otro jugador */}
                   {!mio && activa && (
-                    <div className="space-y-1.5 mt-2">
-                      <button
-                        onClick={() => aceptarPropuesta(m.id)}
-                        disabled={enviando}
-                        className="w-full bg-[#00a884] hover:bg-emerald-400 text-black font-black py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1 shadow-md"
-                      >
-                        <span>⚡</span>
-                        <span>Tomar Jugada Total (${disponible})</span>
-                      </button>
-
-                      <div className="grid grid-cols-2 gap-1.5">
+                    <div className="space-y-1 mt-1">
+                      <div className="grid grid-cols-3 gap-1">
+                        <button
+                          onClick={() => aceptarPropuesta(m.id)}
+                          disabled={enviando}
+                          className="col-span-1 bg-[#008069] hover:bg-[#017561] text-white font-black py-1 px-1.5 rounded text-[11px] transition flex items-center justify-center gap-0.5 shadow-xs"
+                        >
+                          <span>⚡</span>
+                          <span>Total (${disponible})</span>
+                        </button>
                         <button
                           onClick={() => {
                             setTomandoParteId(tomandoParteId === m.id ? null : m.id);
                             setMontoParcialInput("");
                           }}
-                          className="bg-[#111b21] hover:bg-[#2a3942] border border-gray-600 text-gray-200 font-bold py-1.5 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                          className={`py-1 px-1.5 rounded text-[11px] font-bold border transition flex items-center justify-center gap-0.5 ${
+                            esClaro
+                              ? "bg-white hover:bg-gray-50 border-gray-300 text-[#111b21]"
+                              : "bg-[#111b21] hover:bg-[#2a3942] border-gray-600 text-gray-200"
+                          }`}
                         >
                           <span>✂️</span>
-                          <span>Tomar una parte</span>
+                          <span>Parte</span>
                         </button>
                         <button
                           onClick={() => {
                             setReplyToPropuesta(m);
                             inputRef.current?.focus();
                           }}
-                          className="bg-[#111b21] hover:bg-[#2a3942] border border-emerald-600/50 text-emerald-300 font-bold py-1.5 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                          className={`py-1 px-1.5 rounded text-[11px] font-bold border transition flex items-center justify-center gap-0.5 ${
+                            esClaro
+                              ? "bg-white hover:bg-gray-50 border-[#008069]/40 text-[#008069]"
+                              : "bg-[#111b21] hover:bg-[#2a3942] border-emerald-600/50 text-emerald-300"
+                          }`}
                         >
                           <span>↩️</span>
-                          <span>Responder WA</span>
+                          <span>Responder</span>
                         </button>
                       </div>
 
                       {tomandoParteId === m.id && (
-                        <div className="p-2 bg-[#111b21] rounded-lg border border-emerald-500/40 space-y-2 mt-1">
-                          <div className="text-[10px] text-gray-300 font-semibold flex items-center justify-between">
-                            <span>Indica cuánto quieres tomar (Máx: ${disponible}):</span>
-                            <button
-                              onClick={() => setTomandoParteId(null)}
-                              className="text-gray-400 hover:text-white text-xs font-bold"
-                            >
+                        <div
+                          className={`p-1.5 rounded-md border space-y-1 ${
+                            esClaro
+                              ? "bg-gray-50 border-[#008069]/40"
+                              : "bg-[#111b21] border-emerald-500/40"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-[10px] font-semibold">
+                            <span>¿Cuánto tomas? (Máx: ${disponible})</span>
+                            <button onClick={() => setTomandoParteId(null)} className="font-bold">
                               ✕
                             </button>
                           </div>
-                          <div className="flex gap-1.5 flex-wrap">
-                            {[10, 20, 50].filter((v) => v < disponible).map((val) => (
+                          <div className="flex gap-1 flex-wrap">
+                            {[10, 20, 50, 100].filter((v) => v < disponible).map((val) => (
                               <button
                                 key={val}
                                 onClick={() => aceptarPropuesta(m.id, val)}
                                 disabled={enviando}
-                                className="bg-[#202c33] hover:bg-emerald-600 hover:text-black text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-xs font-mono font-bold"
+                                className="bg-[#008069] text-white px-2 py-0.5 rounded text-[10px] font-mono font-bold"
                               >
-                                Tomar ${val}
+                                ${val}
                               </button>
                             ))}
                           </div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1">
                             <input
                               type="number"
                               min="1"
@@ -553,7 +757,11 @@ export function ChatSalaPanel({
                               value={montoParcialInput}
                               onChange={(e) => setMontoParcialInput(e.target.value)}
                               placeholder={`Monto (1 - ${disponible})`}
-                              className="flex-1 bg-[#202c33] text-white text-xs px-2.5 py-1.5 rounded border border-gray-700 outline-none focus:border-emerald-400 font-mono"
+                              className={`flex-1 text-xs px-2 py-1 rounded border outline-none font-mono ${
+                                esClaro
+                                  ? "bg-white text-[#111b21] border-gray-300"
+                                  : "bg-[#202c33] text-white border-gray-700"
+                              }`}
                             />
                             <button
                               onClick={() => {
@@ -565,9 +773,9 @@ export function ChatSalaPanel({
                                 aceptarPropuesta(m.id, n);
                               }}
                               disabled={enviando || !montoParcialInput}
-                              className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-black font-black px-3 py-1.5 rounded text-xs"
+                              className="bg-[#008069] text-white font-black px-2.5 py-1 rounded text-xs"
                             >
-                              ✓ Tomar
+                              ✓ Jugaron
                             </button>
                           </div>
                         </div>
@@ -580,29 +788,34 @@ export function ChatSalaPanel({
                     <button
                       onClick={() => enviarMensaje("Se fue")}
                       disabled={enviando}
-                      className="w-full mt-2 bg-red-950/50 hover:bg-red-900/60 border border-red-600/40 text-red-300 py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5"
+                      className={`w-full mt-1 py-1 px-2 rounded text-[10px] font-bold transition flex items-center justify-center gap-1 border ${
+                        esClaro
+                          ? "bg-red-50 hover:bg-red-100 border-red-200 text-red-700"
+                          : "bg-red-950/50 hover:bg-red-900/60 border-red-600/40 text-red-300"
+                      }`}
                     >
                       <span>🚫</span>
-                      <span>Retirar esta jugada ("Se fue")</span>
+                      <span>Se fue (Retirar jugada)</span>
                     </button>
                   )}
 
                   {m.estado_propuesta === "anulada" && (
-                    <span className="text-[10px] text-red-400 font-bold block mt-1">🚫 Propuesta Anulada</span>
+                    <span className="text-[10px] text-red-500 font-bold block mt-0.5">🚫 Jugada Retirada ("Se fue")</span>
                   )}
                 </div>
               </div>
             );
           }
 
-          // VISTA BURBUJA DE TEXTO ESTÁNDAR / CONCRECIÓN / MENSAJE NORMAL
+          // 4. BURBUJA DE TEXTO ESTÁNDAR / CONCRECIÓN ("Jugaron") / MENSAJE NORMAL
           const citado = m.reply_to_msg_id ? mensajesMap.get(m.reply_to_msg_id) : null;
           const citadoEsMio = citado ? esMio(citado.remitente_id, citado.remitente_nombre) : false;
+          const esJugaron = m.tipo_mensaje === "CONCRECION" || /\bJugaron\b/i.test(contenidoNormalizado);
 
           const isSwipingEste = swipingId === m.id;
           const transformStyle = isSwipingEste
-            ? { transform: `translateX(${swipeOffset}px)`, transition: "transform 0.05s ease-out" }
-            : { transition: "transform 0.2s ease" };
+            ? { transform: `translateX(${swipeOffset}px)`, transition: "transform 0.04s ease-out" }
+            : { transition: "transform 0.18s ease" };
 
           return (
             <div
@@ -611,6 +824,10 @@ export function ChatSalaPanel({
               onTouchStart={(e) => handleTouchStart(e, m)}
               onTouchMove={(e) => handleTouchMove(e, m)}
               onTouchEnd={() => handleTouchEnd(m)}
+              onDoubleClick={() => {
+                setReplyToPropuesta(m);
+                inputRef.current?.focus();
+              }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setMenuContextual({
@@ -620,13 +837,12 @@ export function ChatSalaPanel({
                 });
               }}
             >
-              {/* Indicador elástico de Swipe para responder estilo WhatsApp */}
               {isSwipingEste && swipeOffset > 10 && (
                 <div
-                  className="absolute left-2 z-10 w-7 h-7 rounded-full bg-emerald-500/90 text-black flex items-center justify-center text-xs font-bold shadow-lg transition-transform"
+                  className="absolute left-1.5 z-10 w-6 h-6 rounded-full bg-[#008069] text-white flex items-center justify-center text-xs font-bold shadow"
                   style={{
-                    transform: `scale(${Math.min(1.2, swipeOffset / 35)}) rotate(${Math.min(360, swipeOffset * 4)}deg)`,
-                    opacity: Math.min(1, swipeOffset / 30),
+                    transform: `scale(${Math.min(1.15, swipeOffset / 35)})`,
+                    opacity: Math.min(1, swipeOffset / 28),
                   }}
                 >
                   ↩️
@@ -635,48 +851,70 @@ export function ChatSalaPanel({
 
               <div
                 style={transformStyle}
-                className={`w-full max-w-[85%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow relative ${
-                  mio
-                    ? "ml-auto bg-[#005c4b] text-white rounded-tr-xs"
-                    : "mr-auto bg-[#202c33] text-[#e9edef] rounded-tl-xs border border-gray-700/40"
+                className={`w-full max-w-[90%] sm:max-w-[74%] rounded-lg px-2.5 py-1.5 relative ${
+                  esJugaron
+                    ? esClaro
+                      ? "mx-auto sm:ml-0 bg-[#e7fce3] border border-[#008069]/35 text-[#111b21] shadow-xs"
+                      : "mx-auto sm:ml-0 bg-emerald-950/60 border border-emerald-500/40 text-emerald-100 shadow"
+                    : mio
+                      ? esClaro
+                        ? "ml-auto bg-[#d9fdd3] text-[#111b21] rounded-tr-none shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]"
+                        : "ml-auto bg-[#005c4b] text-white rounded-tr-none shadow"
+                      : esClaro
+                        ? "mr-auto bg-white text-[#111b21] rounded-tl-none shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]"
+                        : "mr-auto bg-[#202c33] text-[#e9edef] rounded-tl-none shadow"
                 }`}
               >
-                {/* Botón flotante desktop hover para citar/responder */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setReplyToPropuesta(m);
                     inputRef.current?.focus();
                   }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 right-2 bg-[#202c33] hover:bg-[#2a3942] text-emerald-400 p-1 rounded-full shadow-lg border border-gray-700 text-[10px] z-10 flex items-center justify-center w-6 h-6"
+                  className={`opacity-0 group-hover:opacity-100 transition-opacity absolute top-1 right-1 px-1.5 py-0.5 rounded text-[10px] z-10 shadow-xs ${
+                    esClaro
+                      ? "bg-white/90 text-[#008069] border border-gray-200"
+                      : "bg-[#202c33] text-emerald-400 border border-gray-700"
+                  }`}
                   title="Responder citando (WhatsApp)"
                 >
                   ↩️
                 </button>
 
-                <div className="flex items-center justify-between text-[11px] mb-1 font-bold gap-2">
-                  <span className={mio ? "text-emerald-200" : "text-emerald-400"}>
-                    {mio ? "Tú" : (m.remitente_nombre || "Usuario")} {m.es_operador && "👑 [Operador]"}
+                <div className="flex items-center justify-between gap-2 leading-tight mb-0.5">
+                  <span
+                    style={{ color: mio ? (esClaro ? "#008069" : "#a7f3d0") : colorNombreRemitente(m.remitente_nombre) }}
+                    className="font-bold text-[11px] truncate"
+                  >
+                    {esJugaron ? "🤝 Jugaron" : mio ? "Tú" : m.remitente_nombre || "Jugador"}{" "}
+                    {m.es_operador && "👑"}
                   </span>
-                  <span className="text-[9px] text-gray-400 font-mono">
-                    {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
+                  <div className="flex items-center gap-1 text-[9px] font-mono shrink-0">
+                    <span className={esClaro ? "text-[#667781]" : "text-gray-400"}>
+                      {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    {mio && <span className="text-[#53bdeb] font-bold text-[10px]">✓✓</span>}
+                  </div>
                 </div>
 
-                {/* Caja de cita estilo WhatsApp si cita o responde a otro mensaje */}
+                {/* Caja de cita estilo WhatsApp */}
                 {citado && (
-                  <div className="mb-2 p-2 rounded-lg bg-black/35 border-l-4 border-emerald-400 text-[11px] select-text">
-                    <div className="font-bold text-emerald-300 text-[10px] flex items-center gap-1">
+                  <div
+                    className={`mb-1 px-2 py-1 rounded border-l-4 border-[#008069] text-[11px] select-text ${
+                      esClaro ? "bg-black/[0.05]" : "bg-black/30"
+                    }`}
+                  >
+                    <div className="font-bold text-[#008069] text-[10px] flex items-center gap-1">
                       <span>↩️</span>
-                      <span>{citadoEsMio ? "Tú" : (citado.remitente_nombre || "Usuario")}</span>
+                      <span>{citadoEsMio ? "Tú" : citado.remitente_nombre || "Jugador"}</span>
                     </div>
-                    <div className="text-gray-300 truncate font-mono text-[11px] mt-0.5">
-                      {citado.jugada_estandarizada || citado.contenido}
+                    <div className={`truncate font-mono text-[11px] ${esClaro ? "text-[#54656f]" : "text-gray-300"}`}>
+                      {citado.jugada_estandarizada || normalizarTerminologiaJugaron(citado.contenido)}
                     </div>
                   </div>
                 )}
 
-                <p className="text-xs break-words leading-relaxed whitespace-pre-wrap">{m.contenido}</p>
+                <p className="break-words leading-snug whitespace-pre-wrap">{contenidoNormalizado}</p>
               </div>
             </div>
           );
@@ -684,21 +922,27 @@ export function ChatSalaPanel({
 
         {/* Tarjeta de Corrección Pedagógica Privada */}
         {sugerenciaPedagogica && (
-          <div className="my-2 p-3.5 bg-[#182229] border border-emerald-500/60 rounded-2xl shadow-xl space-y-2">
-            <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs">
-              <span>🤖</span>
-              <span>Corrección Pedagógica (Privado para ti)</span>
+          <div
+            className={`my-1 p-2.5 border rounded-xl shadow-md space-y-1.5 ${
+              esClaro
+                ? "bg-white border-[#008069] text-[#111b21]"
+                : "bg-[#182229] border-emerald-500/60 text-white"
+            }`}
+          >
+            <div className="flex items-center justify-between text-[#008069] font-bold text-xs">
+              <span>🤖 Asistente de Sala (Privado para ti)</span>
+              <button onClick={() => setSugerenciaPedagogica(null)} className="text-xs opacity-60 hover:opacity-100">
+                ✕
+              </button>
             </div>
-            <p className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed font-mono">
-              {sugerenciaPedagogica.mensaje}
-            </p>
+            <p className="text-xs whitespace-pre-wrap leading-snug font-mono">{sugerenciaPedagogica.mensaje}</p>
             {sugerenciaPedagogica.sugerencias.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
+              <div className="flex flex-wrap gap-1 pt-0.5">
                 {sugerenciaPedagogica.sugerencias.map((sug, i) => (
                   <button
                     key={i}
                     onClick={() => aplicarSugerencia(sug)}
-                    className="bg-[#00a884] hover:bg-emerald-400 text-black font-black text-xs px-3 py-1.5 rounded-lg transition shadow"
+                    className="bg-[#008069] hover:bg-[#017561] text-white font-black text-xs px-2.5 py-1 rounded-lg transition shadow-xs"
                   >
                     👉 {sug}
                   </button>
@@ -709,28 +953,36 @@ export function ChatSalaPanel({
         )}
       </div>
 
-      {/* Barra de Entrada / Envío con Cita y Respuestas Rápidas estilo WhatsApp */}
-      <div className="bg-[#202c33] p-3 border-t border-[#2a3942] space-y-2">
-        {/* Banner de Citación Activa estilo WhatsApp */}
+      {/* Barra Inferior Compacta estilo WhatsApp con Citación + Compositor Rápido 1-Toque */}
+      <div
+        className={`px-2 py-1.5 border-t space-y-1 ${
+          esClaro ? "bg-[#f0f2f5] border-[#d1d7db]" : "bg-[#202c33] border-[#2a3942]"
+        }`}
+      >
+        {/* Banner de Citación Activa */}
         {replyToPropuesta && (
-          <div className="bg-[#111b21] border-l-4 border-emerald-400 rounded-lg p-2.5 flex items-center justify-between text-xs animate-fadeIn">
+          <div
+            className={`border-l-4 border-[#008069] rounded-md px-2.5 py-1 flex items-center justify-between text-xs ${
+              esClaro ? "bg-white text-[#111b21] shadow-xs" : "bg-[#111b21] text-white"
+            }`}
+          >
             <div className="truncate mr-2">
-              <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-[11px]">
+              <div className="flex items-center gap-1 text-[#008069] font-bold text-[11px]">
                 <span>↩️</span>
-                <span>
-                  Respondiendo a: {replyToPropuesta.remitente_nombre || "Usuario"}
-                </span>
-                <span className="text-amber-300 font-mono">
-                  (Disp: ${replyToPropuesta.monto_disponible || replyToPropuesta.monto_original})
-                </span>
+                <span>Respondiendo a: {replyToPropuesta.remitente_nombre || "Jugador"}</span>
+                {(replyToPropuesta.monto_disponible || replyToPropuesta.monto_original) && (
+                  <span className="font-mono text-amber-600">
+                    (Disp: ${replyToPropuesta.monto_disponible || replyToPropuesta.monto_original})
+                  </span>
+                )}
               </div>
-              <p className="text-gray-300 text-[11px] truncate font-mono mt-0.5">
-                {replyToPropuesta.jugada_estandarizada || replyToPropuesta.contenido}
+              <p className={`text-[11px] truncate font-mono ${esClaro ? "text-[#54656f]" : "text-gray-300"}`}>
+                {replyToPropuesta.jugada_estandarizada || normalizarTerminologiaJugaron(replyToPropuesta.contenido)}
               </p>
             </div>
             <button
               onClick={() => setReplyToPropuesta(null)}
-              className="text-gray-400 hover:text-white bg-[#202c33] p-1.5 rounded-full text-xs font-bold"
+              className="opacity-70 hover:opacity-100 px-1.5 py-0.5 rounded-full text-xs font-bold"
               title="Cancelar citación"
             >
               ✕
@@ -738,13 +990,118 @@ export function ChatSalaPanel({
           </div>
         )}
 
+        {/* Teclado Rápido 1-Toque desplegable */}
+        {tecladoRapidoAbierto && !replyToPropuesta && (
+          <div
+            className={`p-2 rounded-lg border space-y-1.5 text-xs ${
+              esClaro ? "bg-white border-[#d1d7db]" : "bg-[#111b21] border-gray-700"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-black text-[10px] uppercase tracking-wider text-[#008069]">
+                ⚡ Compositor Rápido 1-Toque
+              </span>
+              <button
+                type="button"
+                onClick={() => setTecladoRapidoAbierto(false)}
+                className="text-[11px] font-bold opacity-60 hover:opacity-100"
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              {(["Juego", "Consigo", "Doy"] as const).map((acc) => (
+                <button
+                  key={acc}
+                  type="button"
+                  onClick={() => setAccionRapida(acc)}
+                  className={`px-2 py-0.5 rounded font-bold text-[11px] ${
+                    accionRapida === acc
+                      ? "bg-[#008069] text-white"
+                      : esClaro
+                        ? "bg-gray-100 text-gray-700"
+                        : "bg-[#202c33] text-gray-300"
+                  }`}
+                >
+                  {acc}
+                </button>
+              ))}
+              <span className="opacity-40">|</span>
+              {["1P", "2P", "3P", "4P", "5P"].map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPuestoRapido(p)}
+                  className={`px-1.5 py-0.5 rounded font-mono font-bold text-[11px] ${
+                    puestoRapido === p
+                      ? "bg-[#008069] text-white"
+                      : esClaro
+                        ? "bg-gray-100 text-gray-700"
+                        : "bg-[#202c33] text-gray-300"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+              <span className="text-[10px] font-bold shrink-0">Ejemplar #:</span>
+              {Array.from({ length: 14 }, (_, i) => String(i + 1)).map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => setEjemplarRapido(num)}
+                  className={`w-6 h-6 rounded-full font-mono font-bold text-[11px] shrink-0 ${
+                    ejemplarRapido === num
+                      ? "bg-[#008069] text-white"
+                      : esClaro
+                        ? "bg-gray-100 text-gray-800"
+                        : "bg-[#202c33] text-gray-300"
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center justify-between gap-1">
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-[10px] font-bold">Monto $:</span>
+                {["10", "20", "50", "100", "200"].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMontoRapido(m)}
+                    className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] ${
+                      montoRapido === m
+                        ? "bg-[#008069] text-white"
+                        : esClaro
+                          ? "bg-gray-100 text-gray-800"
+                          : "bg-[#202c33] text-gray-300"
+                    }`}
+                  >
+                    ${m}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={enviando}
+                onClick={() => enviarMensaje(`${accionRapida} ${puestoRapido} del ${ejemplarRapido} con ${montoRapido}`)}
+                className="bg-[#008069] hover:bg-[#017561] text-white font-black px-3 py-1 rounded-lg text-xs shadow-xs shrink-0"
+              >
+                ➤ Publicar: {accionRapida} {puestoRapido} #{ejemplarRapido} ${montoRapido}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Chips de Respuestas Predefinidas estilo WhatsApp */}
         {replyToPropuesta ? (
-          <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px] text-gray-300">
-            {/* Opciones inteligentes según verbo */}
+          <div className="flex gap-1 overflow-x-auto pb-0.5 text-[11px]">
             {(() => {
               const textoProp = (replyToPropuesta.contenido || replyToPropuesta.jugada_estandarizada || "").toLowerCase();
-              const esPropJuego = textoProp.includes("juego") || (replyToPropuesta.accion_proponente || "").toUpperCase() === "JUEGA";
+              const esPropJuego =
+                textoProp.includes("juego") || (replyToPropuesta.accion_proponente || "").toUpperCase() === "JUEGA";
               const disp = Number(replyToPropuesta.monto_disponible || replyToPropuesta.monto_original || 0);
 
               if (esPropJuego) {
@@ -753,43 +1110,36 @@ export function ChatSalaPanel({
                     <button
                       onClick={() => aceptarPropuesta(replyToPropuesta.id)}
                       disabled={enviando}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-black font-black px-2.5 py-1 rounded text-xs shadow font-mono"
+                      className="bg-[#008069] hover:bg-[#017561] text-white font-black px-2 py-0.5 rounded text-[11px] shadow-xs font-mono whitespace-nowrap"
                     >
                       ⚡ Tomar Total (${disp})
                     </button>
-                    {[10, 20, 50].filter(v => v < disp).map(val => (
+                    {[10, 20, 50].filter((v) => v < disp).map((val) => (
                       <button
                         key={val}
                         onClick={() => enviarMensaje(`Consigo ${val}`)}
-                        className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-emerald-600/50 font-mono text-emerald-300"
+                        className={`px-2 py-0.5 rounded border font-mono font-bold whitespace-nowrap ${
+                          esClaro
+                            ? "bg-white border-[#008069]/40 text-[#008069]"
+                            : "bg-[#111b21] border-emerald-600/50 text-emerald-300"
+                        }`}
                       >
                         + Consigo {val}
                       </button>
                     ))}
-                    <button
-                      onClick={() => enviarMensaje("Doy")}
-                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
-                    >
-                      + Doy
-                    </button>
-                    <button
-                      onClick={() => enviarMensaje("J")}
-                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
-                    >
-                      + J
-                    </button>
-                    <button
-                      onClick={() => enviarMensaje("Ponte")}
-                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
-                    >
-                      + Ponte
-                    </button>
-                    <button
-                      onClick={() => enviarMensaje("Jugaste")}
-                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
-                    >
-                      + Jugaste
-                    </button>
+                    {["Doy", "J", "Ponte", "Jugaste"].map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => enviarMensaje(v)}
+                        className={`px-2 py-0.5 rounded border font-mono whitespace-nowrap ${
+                          esClaro
+                            ? "bg-white border-gray-300 text-[#111b21]"
+                            : "bg-[#111b21] border-gray-700 text-gray-200"
+                        }`}
+                      >
+                        + {v}
+                      </button>
+                    ))}
                   </>
                 );
               } else {
@@ -798,43 +1148,36 @@ export function ChatSalaPanel({
                     <button
                       onClick={() => aceptarPropuesta(replyToPropuesta.id)}
                       disabled={enviando}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-black font-black px-2.5 py-1 rounded text-xs shadow font-mono"
+                      className="bg-[#008069] hover:bg-[#017561] text-white font-black px-2 py-0.5 rounded text-[11px] shadow-xs font-mono whitespace-nowrap"
                     >
                       ⚡ Tomar Total (${disp})
                     </button>
-                    {[10, 20, 50].filter(v => v < disp).map(val => (
+                    {[10, 20, 50].filter((v) => v < disp).map((val) => (
                       <button
                         key={val}
                         onClick={() => enviarMensaje(`Juego ${val}`)}
-                        className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-emerald-600/50 font-mono text-emerald-300"
+                        className={`px-2 py-0.5 rounded border font-mono font-bold whitespace-nowrap ${
+                          esClaro
+                            ? "bg-white border-[#008069]/40 text-[#008069]"
+                            : "bg-[#111b21] border-emerald-600/50 text-emerald-300"
+                        }`}
                       >
                         + Juego {val}
                       </button>
                     ))}
-                    <button
-                      onClick={() => enviarMensaje("Voy")}
-                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
-                    >
-                      + Voy
-                    </button>
-                    <button
-                      onClick={() => enviarMensaje("J")}
-                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
-                    >
-                      + J
-                    </button>
-                    <button
-                      onClick={() => enviarMensaje("Ponte")}
-                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
-                    >
-                      + Ponte
-                    </button>
-                    <button
-                      onClick={() => enviarMensaje("Jugue")}
-                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
-                    >
-                      + Jugue
-                    </button>
+                    {["Voy", "J", "Ponte", "Jugue"].map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => enviarMensaje(v)}
+                        className={`px-2 py-0.5 rounded border font-mono whitespace-nowrap ${
+                          esClaro
+                            ? "bg-white border-gray-300 text-[#111b21]"
+                            : "bg-[#111b21] border-gray-700 text-gray-200"
+                        }`}
+                      >
+                        + {v}
+                      </button>
+                    ))}
                   </>
                 );
               }
@@ -842,38 +1185,55 @@ export function ChatSalaPanel({
           </div>
         ) : (
           /* Atajos rápidos generales para proponer */
-          <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px] text-gray-300">
+          <div className="flex gap-1 overflow-x-auto pb-0.5 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setTecladoRapidoAbierto((v) => !v)}
+              className={`px-2 py-0.5 rounded font-bold whitespace-nowrap border ${
+                tecladoRapidoAbierto
+                  ? "bg-[#008069] text-white border-[#008069]"
+                  : esClaro
+                    ? "bg-white text-[#008069] border-[#008069]/40"
+                    : "bg-[#111b21] text-emerald-400 border-emerald-600/40"
+              }`}
+            >
+              ⚡ 1-Toque
+            </button>
             <button
               onClick={() => setTextoInput("Juego 1P ")}
-              className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
+              className={`px-2 py-0.5 rounded border font-mono whitespace-nowrap ${
+                esClaro ? "bg-white border-gray-300 text-[#111b21]" : "bg-[#111b21] border-gray-700 text-gray-200"
+              }`}
             >
               + Juego 1P
             </button>
             <button
               onClick={() => setTextoInput("Consigo 1P ")}
-              className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
+              className={`px-2 py-0.5 rounded border font-mono whitespace-nowrap ${
+                esClaro ? "bg-white border-gray-300 text-[#111b21]" : "bg-[#111b21] border-gray-700 text-gray-200"
+              }`}
             >
               + Consigo 1P
             </button>
             <button
               onClick={() => setTextoInput("Juego 1 x 4 50")}
-              className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
+              className={`px-2 py-0.5 rounded border font-mono whitespace-nowrap ${
+                esClaro ? "bg-white border-gray-300 text-[#111b21]" : "bg-[#111b21] border-gray-700 text-gray-200"
+              }`}
             >
               + Match (x)
             </button>
             <button
-              onClick={() => setTextoInput("Doy ")}
-              className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
-            >
-              + Doy
-            </button>
-            <button
               onClick={() => enviarMensaje("Se fue")}
               disabled={enviando}
-              className="bg-red-950/70 hover:bg-red-900/80 text-red-300 border border-red-700/50 px-2 py-0.5 rounded font-mono font-bold text-[11px] flex items-center gap-1 transition"
+              className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] flex items-center gap-0.5 transition whitespace-nowrap border ${
+                esClaro
+                  ? "bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+                  : "bg-red-950/70 hover:bg-red-900/80 text-red-300 border-red-700/50"
+              }`}
               title="Cierra todas tus jugadas abiertas no concretadas"
             >
-              <span>🚫</span> Se fue (Retirar)
+              <span>🚫</span> Se fue
             </button>
           </div>
         )}
@@ -883,7 +1243,7 @@ export function ChatSalaPanel({
             e.preventDefault();
             enviarMensaje();
           }}
-          className="flex items-center gap-2"
+          className="flex items-center gap-1.5"
         >
           <input
             ref={inputRef}
@@ -894,15 +1254,19 @@ export function ChatSalaPanel({
               replyToPropuesta
                 ? `Responder a ${replyToPropuesta.remitente_nombre || "propuesta"} (ej. Consigo 20, Ponte, J)...`
                 : esCarreraAbierta
-                ? "Escribe tu jugada (ej. Juego 1p del 5 con 100)..."
-                : "Carrera cerrada (solo mensajes de consulta)..."
+                  ? "Escribe un mensaje o jugada (ej. Juego 1p del 5 con 100)..."
+                  : "Carrera cerrada (solo mensajes de consulta)..."
             }
-            className="flex-1 bg-[#2a3942] text-white placeholder-gray-400 text-xs rounded-xl px-4 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+            className={`flex-1 text-xs rounded-full px-3.5 py-2 outline-none font-medium border ${
+              esClaro
+                ? "bg-white text-[#111b21] placeholder-[#667781] border-[#d1d7db] focus:border-[#008069]"
+                : "bg-[#2a3942] text-white placeholder-gray-400 border-transparent focus:border-emerald-500"
+            }`}
           />
           <button
             type="submit"
             disabled={enviando || !textoInput.trim()}
-            className="bg-[#00a884] hover:bg-emerald-400 disabled:opacity-40 text-black font-black p-2.5 rounded-xl transition flex items-center justify-center text-sm shadow"
+            className="bg-[#008069] hover:bg-[#017561] disabled:opacity-40 text-white font-black w-9 h-9 rounded-full transition flex items-center justify-center text-sm shadow-sm shrink-0"
           >
             <span>➤</span>
           </button>
@@ -912,7 +1276,11 @@ export function ChatSalaPanel({
       {/* Menú Contextual Flotante estilo WhatsApp */}
       {menuContextual && (
         <div
-          className="fixed z-50 bg-[#233138] border border-[#2a3942] rounded-xl shadow-2xl py-1.5 min-w-[190px] text-xs font-semibold text-[#e9edef] select-none"
+          className={`fixed z-50 border rounded-xl shadow-2xl py-1 min-w-[185px] text-xs font-semibold select-none ${
+            esClaro
+              ? "bg-white border-gray-200 text-[#111b21]"
+              : "bg-[#233138] border-[#2a3942] text-[#e9edef]"
+          }`}
           style={{ left: menuContextual.x, top: menuContextual.y }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -922,7 +1290,9 @@ export function ChatSalaPanel({
               setMenuContextual(null);
               inputRef.current?.focus();
             }}
-            className="w-full text-left px-3.5 py-2 hover:bg-[#182229] flex items-center gap-2 transition"
+            className={`w-full text-left px-3 py-2 flex items-center gap-2 transition ${
+              esClaro ? "hover:bg-gray-100" : "hover:bg-[#182229]"
+            }`}
           >
             <span>↩️</span>
             <span>Responder / Citar</span>
@@ -938,7 +1308,9 @@ export function ChatSalaPanel({
                       aceptarPropuesta(menuContextual.msg.id);
                       setMenuContextual(null);
                     }}
-                    className="w-full text-left px-3.5 py-2 hover:bg-[#182229] text-emerald-400 flex items-center gap-2 transition"
+                    className={`w-full text-left px-3 py-2 text-[#008069] font-bold flex items-center gap-2 transition ${
+                      esClaro ? "hover:bg-gray-100" : "hover:bg-[#182229]"
+                    }`}
                   >
                     <span>⚡</span>
                     <span>Tomar Jugada Total</span>
@@ -948,7 +1320,9 @@ export function ChatSalaPanel({
                       setTomandoParteId(menuContextual.msg.id);
                       setMenuContextual(null);
                     }}
-                    className="w-full text-left px-3.5 py-2 hover:bg-[#182229] text-amber-300 flex items-center gap-2 transition"
+                    className={`w-full text-left px-3 py-2 text-amber-600 font-bold flex items-center gap-2 transition ${
+                      esClaro ? "hover:bg-gray-100" : "hover:bg-[#182229]"
+                    }`}
                   >
                     <span>✂️</span>
                     <span>Tomar una parte</span>
@@ -962,7 +1336,9 @@ export function ChatSalaPanel({
                     enviarMensaje("Se fue");
                     setMenuContextual(null);
                   }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[#182229] text-red-400 flex items-center gap-2 transition"
+                  className={`w-full text-left px-3 py-2 text-red-600 font-bold flex items-center gap-2 transition ${
+                    esClaro ? "hover:bg-gray-100" : "hover:bg-[#182229]"
+                  }`}
                 >
                   <span>🚫</span>
                   <span>Retirar mis jugadas ("Se fue")</span>

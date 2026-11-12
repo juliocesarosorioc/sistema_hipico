@@ -369,7 +369,7 @@ export async function procesarMensajeEntranteWhatsApp(
           });
         }
 
-        // Registrar mensaje de concreción en chat_mensajes
+        // Registrar mensaje de concreción en chat_mensajes ("Jugaron", nunca "CRUCE")
         await supabaseAdmin.from("chat_mensajes").insert({
           grupo_id: grupoId,
           sala_id: salaId,
@@ -377,7 +377,7 @@ export async function procesarMensajeEntranteWhatsApp(
           remitente_nombre: nombreJugador,
           es_operador: false,
           tipo_mensaje: "CONCRECION",
-          contenido: `🤝 ¡CRUCE CONFIRMADO! ${nombreJugador} tomó $${montoConcretado.toFixed(2)} de la jugada de ${propFresca.remitente_nombre} (${propFresca.jugada_estandarizada || propFresca.contenido}). Remanente: $${nuevoRemanente.toFixed(2)}`,
+          contenido: `🤝 *Jugaron* — ${nombreJugador} tomó $${montoConcretado.toFixed(2)} de la jugada de ${propFresca.remitente_nombre} (${propFresca.jugada_estandarizada || propFresca.contenido}). Remanente: $${nuevoRemanente.toFixed(2)}`,
           reply_to_msg_id: propFresca.id,
           whatsapp_msg_id: whatsappMsgId || null,
           whatsapp_quoted_msg_id: quotedMsgId,
@@ -387,7 +387,7 @@ export async function procesarMensajeEntranteWhatsApp(
 
         await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
 
-        // Mensajes del Bot según especificación exacta
+        // Mensajes del Bot según especificación exacta ("Jugaron", nunca "CRUCE")
         let msgPublicoBot: string | null = null;
         let msgPrivadoBot: string | null = null;
 
@@ -397,8 +397,8 @@ export async function procesarMensajeEntranteWhatsApp(
         }
 
         const msgGrupoFinal = msgPublicoBot
-          ? `${msgPublicoBot}\n🤝 ¡CRUCE REGISTRADO! ${nombreJugador} tomó $${montoConcretado.toFixed(2)}. ${nuevoRemanente > 0 ? `Quedan $${nuevoRemanente.toFixed(2)} disponibles.` : "¡Jugada completa!"}`
-          : `🤝 *Aquí Jugaron*\n${propFresca.remitente_nombre} vs ${nombreJugador}\nPor: $${montoConcretado.toFixed(2)} (${propFresca.jugada_estandarizada || propFresca.contenido})\n${nuevoRemanente > 0 ? `⚠️ Remanente disponible: $${nuevoRemanente.toFixed(2)}` : "✅ Jugada Completada al 100%"}`;
+          ? `${msgPublicoBot}\n🤝 *Jugaron* — ${nombreJugador} tomó $${montoConcretado.toFixed(2)}. ${nuevoRemanente > 0 ? `Quedan $${nuevoRemanente.toFixed(2)} disponibles.` : "¡Jugada completa!"}`
+          : `🤝 *Jugaron*\n${propFresca.remitente_nombre} vs ${nombreJugador}\nPor: $${montoConcretado.toFixed(2)} (${propFresca.jugada_estandarizada || propFresca.contenido})\n${nuevoRemanente > 0 ? `⚠️ Remanente disponible: $${nuevoRemanente.toFixed(2)}` : "✅ Jugada Completada al 100%"}`;
 
         const msgPrivadoAceptante = msgPrivadoBot || `✅ Has tomado la jugada de ${propFresca.remitente_nombre} por $${montoConcretado.toFixed(2)}. Retención aplicada: $${montoConcretado.toFixed(2)}.`;
         const msgPrivadoProponente = `🔔 ${nombreJugador} tomó $${montoConcretado.toFixed(2)} de tu jugada (${propFresca.jugada_estandarizada || propFresca.contenido}). ${nuevoRemanente > 0 ? `Remanente activo: $${nuevoRemanente.toFixed(2)}` : "Tu jugada está 100% pactada."}`;

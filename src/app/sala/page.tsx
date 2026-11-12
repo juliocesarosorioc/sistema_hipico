@@ -27,8 +27,8 @@ function SalaContenido() {
  */
 export default function SalaJuegosPage() {
   return (
-    <main className="h-[100dvh] w-screen overflow-hidden bg-[#0b141a]">
-      <Suspense fallback={<div className="flex h-full w-full items-center justify-center text-emerald-400 font-bold text-sm">Cargando Sala de Juegos…</div>}>
+    <main className="h-[100dvh] w-screen overflow-hidden bg-[#efeae2]">
+      <Suspense fallback={<div className="flex h-full w-full items-center justify-center text-[#008069] font-bold text-sm">Cargando Sala de Juegos…</div>}>
         <SalaContenido />
       </Suspense>
     </main>

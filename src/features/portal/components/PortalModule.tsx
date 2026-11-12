@@ -940,15 +940,16 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
             <button
               type="button"
               onClick={() => setChatAbierto(false)}
-              className="shrink-0 rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/20"
-              aria-label="Cerrar mensajería"
+              className="shrink-0 rounded-lg border border-white/25 bg-[#008069] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#017561]"
+              aria-label="Salir a la plataforma"
             >
-              ✕ Cerrar
+              ← Salir a la Plataforma
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">
             <SalaJuegosApp
               esEmbebido
+              onSalirPlataforma={() => setChatAbierto(false)}
               grupoIdInicial={
                 sesion?.cliente?.grupo_id
                   ? String(sesion.cliente.grupo_id)

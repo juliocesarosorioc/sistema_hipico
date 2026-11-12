@@ -508,17 +508,28 @@ export default function SalaJuegosWhatsApp({
         <span className="text-[11px] text-emerald-400 font-mono hidden sm:inline">🔒 E2EE SHA-256 Activo</span>
       </div>
 
-      {/* CABECERA ESTILO WHATSAPP WEB + SELECTOR DE HASTA 2 SALAS ACTIVAS + BILLETERA PRIVADA */}
-      <div className="bg-[#202c33] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-gray-800">
+      {/* CABECERA ESTILO WHATSAPP WEB + BOTÓN SALIR A LA PLATAFORMA + SELECTOR DE HASTA 2 SALAS ACTIVAS + BILLETERA PRIVADA */}
+      <div className="bg-[#008069] text-white px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-1.5 border-b border-[#016b58]">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-emerald-400 text-sm">{grupoNombre}</span>
-          <div className="flex bg-[#111b21] rounded-lg p-0.5">
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                window.location.href = usuarioActual.esOperador ? '/inicio' : '/portal';
+              }
+            }}
+            className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-2.5 py-1 rounded-lg text-xs font-extrabold transition"
+          >
+            ← Salir a la Plataforma
+          </button>
+          <span className="font-bold text-white text-sm">{grupoNombre}</span>
+          <div className="flex bg-[#016b58] rounded-lg p-0.5">
             {salas.map((s) => (
               <button
                 key={s.id}
                 onClick={() => setSalaSeleccionadaId(s.id)}
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition ${
-                  salaActiva?.id === s.id ? 'bg-[#00a884] text-black' : 'text-gray-300 hover:text-white'
+                className={`px-2.5 py-0.5 rounded-md text-xs font-semibold transition ${
+                  salaActiva?.id === s.id ? 'bg-white text-[#008069] font-bold' : 'text-white/80 hover:text-white'
                 }`}
               >
                 {s.nombreSala} ({s.hipodromoActivo} C{s.numeroCarreraActiva})
