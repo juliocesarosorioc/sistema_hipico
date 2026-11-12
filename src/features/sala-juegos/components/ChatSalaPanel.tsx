@@ -1182,7 +1182,7 @@ export function ChatSalaPanel({
                 </button>
               ))}
             </div>
-            <div className="flex items-center justify-between gap-1">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 pt-0.5">
               <div className="flex items-center gap-1 flex-wrap">
                 <span className="text-[10px] font-bold">{esBs ? "Monto Bs:" : "Monto $:"}</span>
                 {esBs ? (
@@ -1231,7 +1231,7 @@ export function ChatSalaPanel({
                 type="button"
                 disabled={enviando}
                 onClick={() => enviarMensaje(`${accionRapida} ${puestoRapido} del ${ejemplarRapido} con ${montoRapido}`)}
-                className="bg-[#008069] hover:bg-[#017561] text-white font-black px-3 py-1 rounded-lg text-xs shadow-xs shrink-0"
+                className="bg-[#008069] hover:bg-[#017561] text-white font-black px-3 py-1.5 rounded-lg text-xs shadow-xs shrink-0 text-center transition active:scale-[0.98]"
               >
                 ➤ Publicar: {accionRapida} {puestoRapido} #{ejemplarRapido} {esBs ? `Bs. ${montoRapido}` : `$${montoRapido}`}
               </button>
