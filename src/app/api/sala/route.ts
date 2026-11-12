@@ -15,6 +15,12 @@ import {
   analizarComandoRetiro,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
 import { formatearMontoRegional } from "@/shared/lib/dinero";
+import {
+  sincronizarTicketsPropuestaATaquilla,
+  actualizarTicketEspejoLiquidado,
+  revertirTicketsEspejoSala,
+  anularTicketsEspejoSala,
+} from "@/features/whatsapp-sala/lib/sincronizar-tickets-sala";
 
 export const dynamic = "force-dynamic";
 
@@ -409,7 +415,7 @@ async function liquidarCarreraFallback(
     .select("*")
     .eq("grupo_id", grupoId)
     .eq("sala_id", salaId)
-    .in("estado", ["PENDIENTE", "ACTIVO"]);
+    .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"]);
 
   if (carreraId) {
     queryTickets = queryTickets.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
@@ -488,6 +494,14 @@ async function liquidarCarreraFallback(
       .from("chat_tickets_fifo")
       .update({ estado: nuevoEstadoTicket })
       .eq("id", t.id);
+
+    await actualizarTicketEspejoLiquidado(supabaseAdmin, {
+      codigoTicket: t.codigo_ticket,
+      accionProponente: t.accion_proponente,
+      factor,
+      monto,
+      porcentajeComision,
+    });
   }
 
   // 4. Liquidar y asentar saldos
@@ -705,6 +719,10 @@ async function reversarCarrera(grupoId: string, salaId: string, operadorNombre: 
   }
 
   // 3. Restablecer estado de los tickets a ACTIVO y re-retener
+  await revertirTicketsEspejoSala(
+    supabaseAdmin,
+    (tickets || []).map((t) => String(t.codigo_ticket || "")).filter(Boolean)
+  );
   for (const t of tickets || []) {
     await supabaseAdmin
       .from("chat_tickets_fifo")
@@ -804,6 +822,10 @@ async function anularCarrera(grupoId: string, salaId: string, operadorNombre: st
   const { data: tickets } = await queryTickets;
 
   // 2. Por cada ticket, anular y liberar saldo retenido a proponente y aceptante
+  await anularTicketsEspejoSala(
+    supabaseAdmin,
+    (tickets || []).map((t) => String(t.codigo_ticket || "")).filter(Boolean)
+  );
   for (const t of tickets || []) {
     await supabaseAdmin
       .from("chat_tickets_fifo")
@@ -1147,6 +1169,13 @@ export async function POST(req: Request) {
             firma_sha256: firma,
           });
 
+          await sincronizarTicketsPropuestaATaquilla(supabaseAdmin, {
+            propuestaMsgId: propuestaId,
+            sala,
+            grupoId,
+            condicionProponente: propMsg.condicion_proponente,
+          });
+
           // Consultar todos los tickets de esta propuesta para armar el desglose acumulado ("Eddie jugó 43,50")
           const { data: ticketsAcumulados } = await supabaseAdmin
             .from("chat_tickets_fifo")
@@ -1209,6 +1238,13 @@ export async function POST(req: Request) {
               .update({ firma_sha256: firma, sala_id: salaId })
               .eq("id", t.id);
           }
+
+          await sincronizarTicketsPropuestaATaquilla(supabaseAdmin, {
+            propuestaMsgId: propuestaId,
+            sala,
+            grupoId,
+            condicionProponente: propMsg.condicion_proponente,
+          });
 
           // Consultar todos los tickets de la propuesta para mostrar "Van jugando por X" y el desglose ("Eddie jugó 43,50")
           const { data: ticketsAcumulados } = await supabaseAdmin
@@ -1797,7 +1833,7 @@ export async function POST(req: Request) {
           .from("chat_tickets_fifo")
           .select("*")
           .eq("sala_id", salaId)
-          .in("estado", ["PENDIENTE", "ACTIVO"]);
+          .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"]);
 
         return NextResponse.json({
           ok: true,

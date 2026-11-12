@@ -707,6 +707,60 @@ export async function aplicarLiquidacionSaldos(
 
   await Promise.all(updatesTickets);
 
+  // Sincronización con Sala P2P: si alguno de los tickets decididos provino de la Sala (`SALA_P2P:<codigo>`),
+  // liberar su `saldo_retenido` en `clientes` y marcar su estado en `chat_tickets_fifo` para evitar doble liquidación.
+  const ticketsSalaP2P = decidibles.filter((d) =>
+    String(d.fila.nota_auditoria ?? "").startsWith("SALA_P2P:")
+  );
+  if (ticketsSalaP2P.length > 0) {
+    try {
+      const liberacionPorCliente = new Map<string, number>();
+      for (const { fila, res } of ticketsSalaP2P) {
+        const codigoTicket = String(fila.nota_auditoria ?? "").slice("SALA_P2P:".length).trim();
+        const montoF = NUM(fila.monto_jugado);
+        const jId = String(fila.cliente_juega_id ?? "").trim();
+        const cId = String(fila.cliente_consigue_id ?? "").trim();
+        if (jId && montoF > 0) {
+          liberacionPorCliente.set(jId, sumarDinero(liberacionPorCliente.get(jId) ?? 0, montoF));
+        }
+        if (cId && montoF > 0) {
+          liberacionPorCliente.set(cId, sumarDinero(liberacionPorCliente.get(cId) ?? 0, montoF));
+        }
+        if (codigoTicket) {
+          const estadoFifo = !res.ok && Math.abs(res.totalClienteNeto - montoF) < 0.01
+            ? "EMPATE"
+            : res.ok
+            ? "GANADOR_PROPONENTE"
+            : "GANADOR_ACEPTANTE";
+          await sdb
+            .from("chat_tickets_fifo")
+            .update({ estado: estadoFifo })
+            .eq("codigo_ticket", codigoTicket)
+            .in("estado", ["ABIERTO", "ACTIVO", "PENDIENTE"]);
+        }
+      }
+      for (const [cliId, montoLiberar] of liberacionPorCliente.entries()) {
+        const { data: cl } = await sdb
+          .from("clientes")
+          .select("saldo_retenido, saldo_actual, aval, libre")
+          .eq("id", cliId)
+          .maybeSingle();
+        if (cl) {
+          const nuevoRet = Math.max(0, restarDinero(NUM(cl.saldo_retenido), montoLiberar));
+          const nuevoDisp = cl.libre
+            ? 999999
+            : Math.max(0, restarDinero(sumarDinero(NUM(cl.saldo_actual), NUM(cl.aval)), nuevoRet));
+          await sdb
+            .from("clientes")
+            .update({ saldo_retenido: nuevoRet, saldo_disponible: nuevoDisp })
+            .eq("id", cliId);
+        }
+      }
+    } catch (errSala) {
+      console.warn("[saldos] No se pudo liberar retención de tickets SALA_P2P:", errSala);
+    }
+  }
+
   // ── UNIFICACIÓN DE SALDOS, CRUCES Y DEVOLUCIONES CARRERA A CARRERA (SSOT) ──
   emitirMensajePaso("⏳ Unificando saldos por carrera con cruces e incentivos...", "info");
 

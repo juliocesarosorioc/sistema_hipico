@@ -6,6 +6,7 @@ import {
   analizarComandoRetiro,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
 import { formatearMontoRegional } from "@/shared/lib/dinero";
+import { sincronizarTicketsPropuestaATaquilla } from "./sincronizar-tickets-sala";
 
 export interface MensajeEntranteWhatsApp {
   groupJid: string;
@@ -369,6 +370,13 @@ export async function procesarMensajeEntranteWhatsApp(
             firma_sha256: firma,
           });
         }
+
+        await sincronizarTicketsPropuestaATaquilla(supabaseAdmin, {
+          propuestaMsgId: propFresca.id,
+          sala,
+          grupoId,
+          condicionProponente: propFresca.condicion_proponente,
+        });
 
         // Consultar desglose completo de quienes van jugando esta propuesta
         const { data: ticketsPropuesta } = await supabaseAdmin
