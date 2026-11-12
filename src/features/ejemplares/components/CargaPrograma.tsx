@@ -136,6 +136,67 @@ function parseLineas(t: string, hipo: string): Caballo[] {
 }
 
 /**
+ * Detecta y parsea múltiples carreras cuando se pega una cartelera completa o gaceta:
+ * Ej: "1ra Carrera ... 2da Carrera ... Race 3 ..."
+ */
+export function detectarYParsearMultiCarrera(
+  texto: string,
+  hipo: string,
+  fecha: string
+): CarreraPrograma[] {
+  if (!texto) return [];
+  const lineas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const mapa = new Map<number, Caballo[]>();
+  let carreraActual = 0;
+
+  for (const lin of lineas) {
+    const mRace =
+      lin.match(/^(?:Carrera|Race)\s*#?\s*(\d{1,2})\b/i) ||
+      lin.match(/^(\d{1,2})(?:st|nd|rd|th|a|ra|da|ta|ª)?\s+(?:Carrera|Race)\b/i) ||
+      lin.match(/^[RC](\d{1,2})\s*[-:]/i);
+
+    if (mRace) {
+      carreraActual = parseInt(mRace[1], 10);
+      if (!mapa.has(carreraActual)) {
+        mapa.set(carreraActual, []);
+      }
+      continue;
+    }
+
+    if (carreraActual > 0) {
+      const parsedCaballos = parseLineas(lin, hipo);
+      if (parsedCaballos.length > 0) {
+        const arr = mapa.get(carreraActual)!;
+        for (const cb of parsedCaballos) {
+          if (!arr.some((x) => x.numero === cb.numero)) {
+            arr.push(cb);
+          }
+        }
+      }
+    }
+  }
+
+  if (mapa.size < 2) return [];
+  const res: CarreraPrograma[] = [];
+  const sortedKeys = Array.from(mapa.keys()).sort((a, b) => a - b);
+  for (const k of sortedKeys) {
+    const caballos = mapa.get(k) || [];
+    if (caballos.length > 0) {
+      res.push({
+        hipodromo: (hipo || "").trim().toUpperCase(),
+        fecha,
+        carrera: k,
+        distancia: 1200,
+        superficie: "ARENA",
+        premio: 0,
+        caballos,
+      });
+    }
+  }
+  return res;
+}
+
+/**
  * "Carga de Programa" — paridad funcional con el legacy (programa_dia.js /
  * ensamblaje). Ofrece dos modos que convergen al mismo payload:
  *
@@ -223,37 +284,37 @@ export function CargaPrograma() {
   const handleImportarDrfDirecto = async (urlCustom?: string) => {
     const raw = (urlCustom || urlDrfDirecta).trim();
     if (!raw) {
-      toast("Pega un enlace oficial de DRF primero.", "warning");
+      toast("Pega un enlace válido de carreras americanas (DRF, Equibase, TVG, FanDuel) primero.", "warning");
       return;
     }
     const meta = parsearUrlDrf(raw);
     if (!meta) {
-      toast("Estructura DRF inválida. Debe ser https://www.drf.com/race-entries/track/{TRACK}/country/{COUNTRY}/date/{MM-DD-YYYY}", "warning");
+      toast("Enlace no reconocido. Admite enlaces de DRF, Equibase static entry, TVG y FanDuel.", "warning");
       return;
     }
 
     setSincronizandoDrf(true);
-    toast(`⚡ Importando DRF: ${meta.trackCode} (${meta.hipodromo}) · Fecha ${meta.fechaDRF}...`, "info");
+    toast(`⚡ Importando ${meta.portal || "Cartelera"}: ${meta.trackCode} (${meta.hipodromo}) · Fecha ${meta.fechaDRF}...`, "info");
     try {
       const res = await sincronizarCarrerasAmericanasDia({
         fechaISO: meta.fechaISO,
         tracksFiltro: [meta.trackCode],
         urlDirectaDrf: meta.urlPublica,
-        fuentePreferida: "DRF",
+        fuentePreferida: meta.portal === "DRF" ? "DRF" : "AUTO_TVG_DRF",
       });
 
       if (res.ok) {
         setFecha(meta.fechaISO);
         setHipodromo(meta.hipodromo.toUpperCase());
         await cargarPrograma(meta.fechaISO);
-        toast(`✅ Importado ${meta.hipodromo} con éxito (${res.totalCarreras} carreras, ${res.totalEjemplares} ejemplares).`, "success");
+        toast(`✅ Importado ${meta.hipodromo} con éxito (${res.totalCarreras} carreras, ${res.totalEjemplares} ejemplares) desde ${meta.portal || "Cartelera Oficial"}.`, "success");
         setUrlDrfDirecta("");
       } else {
         toast(`⚠️ Importación: ${res.error || "Sin carreras devueltas"}`, "warning");
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      toast(`❌ Error al importar DRF: ${msg}`, "error");
+      toast(`❌ Error al importar: ${msg}`, "error");
     } finally {
       setSincronizandoDrf(false);
     }
@@ -370,6 +431,186 @@ export function CargaPrograma() {
   // Vista previa en vivo del bloque pegado (máx. 6 filas + contador).
   const previewRapida = useMemo(() => parseLineas(textoRapida, hipodromo), [textoRapida, hipodromo]);
 
+  // Detección multi-carrera inteligente del bloque pegado
+  const multiCarrerasDetectadas = useMemo(() => {
+    return detectarYParsearMultiCarrera(textoRapida, hipodromo, fecha);
+  }, [textoRapida, hipodromo, fecha]);
+
+  const totalEjemplaresMulti = useMemo(() => {
+    return multiCarrerasDetectadas.reduce((a, c) => a + c.caballos.length, 0);
+  }, [multiCarrerasDetectadas]);
+
+  const handleAutoDistribuirMultiCarreras = () => {
+    if (multiCarrerasDetectadas.length === 0) return;
+    setCarreras(multiCarrerasDetectadas);
+    setDestino(0);
+    setTextoRapida("");
+    toast(
+      `⚡ Auto-distribuidas ${multiCarrerasDetectadas.length} carreras (${totalEjemplaresMulti} ejemplares) exitosamente.`,
+      "success"
+    );
+  };
+
+  // Utilidades por carrera en Carga Manual
+  const renumerarCarrera = (index: number) => {
+    setCarreras((prev) =>
+      prev.map((c, idx) => {
+        if (idx !== index) return c;
+        const renum = (c.caballos || []).map((cb, j) => ({
+          ...cb,
+          numero: j + 1,
+        }));
+        return { ...c, caballos: renum };
+      })
+    );
+    toast(`🔢 Carrera ${index + 1} renumerada del 1 al ${carreras[index]?.caballos?.length || 0}.`, "info");
+  };
+
+  const limpiarVaciosCarrera = (index: number) => {
+    setCarreras((prev) =>
+      prev.map((c, idx) => {
+        if (idx !== index) return c;
+        const limpios = (c.caballos || []).filter((cb) => Boolean(cb.nombre && String(cb.nombre).trim()));
+        return { ...c, caballos: limpios.length ? limpios : [plantaCaballo(1)] };
+      })
+    );
+    toast(`🧹 Ejemplares vacíos removidos de la Carrera ${index + 1}.`, "info");
+  };
+
+  const llenarChalecos = (index: number, cantidad: number) => {
+    setCarreras((prev) =>
+      prev.map((c, idx) => {
+        if (idx !== index) return c;
+        const actuales = [...(c.caballos || [])];
+        const faltan = cantidad - actuales.length;
+        if (faltan > 0) {
+          for (let k = 0; k < faltan; k++) {
+            actuales.push(plantaCaballo(actuales.length + 1));
+          }
+        }
+        return { ...c, caballos: actuales };
+      })
+    );
+    toast(`➕ Carrera ${index + 1} completada hasta ${cantidad} chalecos.`, "info");
+  };
+
+  const duplicadosCarrera = (caballos: Caballo[]): string[] => {
+    const nums = (caballos || []).map((cb) => String(cb.numero).trim()).filter(Boolean);
+    const conteo = new Map<string, number>();
+    for (const n of nums) conteo.set(n, (conteo.get(n) || 0) + 1);
+    const dups: string[] = [];
+    for (const [num, count] of conteo.entries()) {
+      if (count > 1) dups.push(num);
+    }
+    return dups;
+  };
+
+  // LocalStorage Auto-Draft
+  const draftKey = useMemo(() => {
+    if (!fecha || !hipodromo) return "";
+    return `hipico_draft_programa_${fecha}_${hipodromo.trim().toUpperCase()}`;
+  }, [fecha, hipodromo]);
+
+  const [borradorDisponible, setBorradorDisponible] = useState<CarreraPrograma[] | null>(null);
+
+  // Comprobar borrador al cambiar fecha o hipódromo
+  useEffect(() => {
+    if (!draftKey || typeof window === "undefined") {
+      setBorradorDisponible(null);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setBorradorDisponible(parsed);
+          return;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    setBorradorDisponible(null);
+  }, [draftKey]);
+
+  // Guardar borrador local debounced
+  useEffect(() => {
+    if (!draftKey || typeof window === "undefined" || carreras.length === 0) return;
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify(carreras));
+      } catch {
+        /* ignore */
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [draftKey, carreras]);
+
+  const restaurarBorrador = () => {
+    if (borradorDisponible && borradorDisponible.length > 0) {
+      setCarreras(borradorDisponible);
+      setBorradorDisponible(null);
+      toast(`💾 Borrador restaurado con ${borradorDisponible.length} carreras.`, "success");
+    }
+  };
+
+  const descartarBorrador = () => {
+    if (draftKey && typeof window !== "undefined") {
+      localStorage.removeItem(draftKey);
+    }
+    setBorradorDisponible(null);
+    toast("🗑️ Borrador local descartado.", "info");
+  };
+
+  // Exportar e Importar JSON
+  const exportarJsonPrograma = () => {
+    if (carreras.length === 0) return toast("No hay carreras para exportar.", "warning");
+    const data = {
+      fecha,
+      hipodromo: hipodromo.trim().toUpperCase(),
+      carreras,
+      exportado_en: new Date().toISOString(),
+    };
+    const jsonStr = JSON.stringify(data, null, 2);
+    try {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(jsonStr);
+      }
+    } catch {
+      /* ignore */
+    }
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `programa_${hipodromo}_${fecha}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("📥 Archivo JSON descargado y copiado al portapapeles.", "success");
+  };
+
+  const importarJsonPrograma = () => {
+    const raw = prompt("Pega aquí el contenido JSON del programa:");
+    if (!raw || !raw.trim()) return;
+    try {
+      const data = JSON.parse(raw);
+      if (Array.isArray(data.carreras) && data.carreras.length > 0) {
+        if (data.fecha) setFecha(data.fecha);
+        if (data.hipodromo) setHipodromo(data.hipodromo);
+        setCarreras(data.carreras);
+        toast(`✅ Importadas ${data.carreras.length} carreras desde JSON.`, "success");
+      } else if (Array.isArray(data) && data.length > 0) {
+        setCarreras(data);
+        toast(`✅ Importadas ${data.length} carreras desde JSON.`, "success");
+      } else {
+        toast("El JSON no tiene una lista válida de carreras.", "warning");
+      }
+    } catch {
+      toast("Error al leer el JSON. Verifica que sea un formato válido.", "error");
+    }
+  };
+
   const setCarrera = (i: number, patch: Partial<CarreraPrograma>) =>
     setCarreras((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
 
@@ -478,6 +719,14 @@ export function CargaPrograma() {
       if (res.data) setPrograma(res.data);
 
       useRegistroCentral.getState().invalidarCarreras();
+      if (draftKey && typeof window !== "undefined") {
+        try {
+          localStorage.removeItem(draftKey);
+        } catch {
+          /* ignore */
+        }
+      }
+      setBorradorDisponible(null);
       setGuardado(`Programa guardado · ${pref.length} carrera(s) · ${totalEjemplares} ejemplar(es) · ${new Date().toLocaleTimeString("es-VE")}`);
       toast(
         `✅ Programa guardado: ${pref.length} carrera(s) actualizadas en la matriz maestra, ${totalEjemplares} ejemplar(es). Padrón: ${tot.nuevos} nuevo(s), ${tot.vinculados} vinculado(s)${tot.fallidos ? `, ${tot.fallidos} fallido(s)` : ""}.`,
@@ -572,7 +821,7 @@ export function CargaPrograma() {
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-1">
                 <label htmlFor="input-url-drf-carga" className="text-[11px] font-black uppercase tracking-wider text-amber-700">
-                  🔗 1. Pegar Enlace Directo Oficial de DRF (Cualquier Hipódromo y Fecha)
+                  🔗 1. Pegar Enlace Directo (DRF, Equibase, TVG o FanDuel)
                 </label>
                 {urlDrfDirecta && (
                   <button
@@ -588,7 +837,7 @@ export function CargaPrograma() {
                 <input
                   id="input-url-drf-carga"
                   type="url"
-                  placeholder="https://www.drf.com/race-entries/track/CD/country/USA/date/11-04-2026"
+                  placeholder="https://www.drf.com/... o https://www.equibase.com/static/entry/... o https://www.tvg.com/races/..."
                   value={urlDrfDirecta}
                   onChange={(e) => setUrlDrfDirecta(e.target.value)}
                   className="flex-1 rounded-xl border border-line bg-surface px-3 py-2 text-xs font-mono font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -600,22 +849,25 @@ export function CargaPrograma() {
                   onClick={() => void handleImportarDrfDirecto()}
                   className="!bg-amber-500 hover:!bg-amber-400 !text-slate-950 font-black"
                 >
-                  {sincronizandoDrf ? "Importando…" : "⚡ Importar DRF al Instante"}
+                  {sincronizandoDrf ? "Importando…" : `⚡ Importar ${metaDrfDirecto?.portal || "Cartelera"} al Instante`}
                 </Button>
               </div>
 
               {metaDrfDirecto ? (
                 <div className="flex flex-wrap items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-300 px-2.5 py-1.5 text-xs text-emerald-800">
-                  <span className="font-black">✓ URL DRF Válida:</span>
+                  <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-black uppercase text-white">
+                    {metaDrfDirecto.portal || "OFICIAL"}
+                  </span>
+                  <span className="font-black">✓ URL Válida:</span>
                   <span className="rounded bg-emerald-200 px-1.5 py-0.5 font-mono font-black text-emerald-950">
                     {metaDrfDirecto.trackCode} ({metaDrfDirecto.hipodromo})
                   </span>
                   <span>· País: <b>{metaDrfDirecto.country}</b></span>
-                  <span>· Fecha DRF: <b>{metaDrfDirecto.fechaDRF}</b> (ISO: {metaDrfDirecto.fechaISO})</span>
+                  <span>· Fecha: <b>{metaDrfDirecto.fechaISO}</b></span>
                 </div>
               ) : (
                 <p className="text-[10px] text-slate-400 font-mono">
-                  Formato admitido: https://www.drf.com/race-entries/track/{`{TRACK_CODE}`}/country/{`{COUNTRY}`}/date/{`{MM-DD-YYYY}`}
+                  Soporta DRF (drf.com/...), Equibase (equibase.com/static/entry/...), TVG (tvg.com/races/...) y FanDuel Racing.
                 </p>
               )}
             </div>
@@ -767,26 +1019,74 @@ export function CargaPrograma() {
         <Card className="p-8 text-center text-xs font-semibold text-slate-500">Cargando catálogos…</Card>
       ) : (
         <>
-          {/* Selector de modalidad */}
-          <div className="flex w-full max-w-md items-center gap-1 rounded-xl border border-line bg-surface p-1">
-            <button
-              type="button"
-              onClick={() => setModo("rapida")}
-              className={`flex-1 rounded-lg px-3 py-2 text-[11px] font-black uppercase tracking-wide transition-colors ${
-                modo === "rapida" ? "bg-primary-600 text-white shadow" : "text-slate-500 hover:bg-surfaceAlt"
-              }`}
-            >
-              ⚡ Carga Rápida
-            </button>
-            <button
-              type="button"
-              onClick={() => setModo("manual")}
-              className={`flex-1 rounded-lg px-3 py-2 text-[11px] font-black uppercase tracking-wide transition-colors ${
-                modo === "manual" ? "bg-primary-600 text-white shadow" : "text-slate-500 hover:bg-surfaceAlt"
-              }`}
-            >
-              🛠 Carga Manual
-            </button>
+          {/* Alerta de Borrador Local Recuperado */}
+          {borradorDisponible && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-amber-500/50 bg-gradient-to-r from-amber-500/15 via-slate-900 to-amber-950/30 p-3.5 shadow-md">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl">💾</span>
+                <div>
+                  <div className="text-xs font-black uppercase tracking-wider text-amber-300">
+                    Borrador Local Detectado ({borradorDisponible.length} carreras)
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    Existe un borrador guardado en este navegador para {nombrePropioHipodromo(hipodromo, hipodromosActivos)} ({fecha}).
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="default" size="sm" onClick={restaurarBorrador} className="!bg-amber-400 hover:!bg-amber-300 !text-slate-950 font-black text-xs uppercase shadow">
+                  Restaurar Borrador
+                </Button>
+                <Button variant="ghost" size="sm" onClick={descartarBorrador} className="text-xs text-slate-400 hover:text-white">
+                  Descartar
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Selector de modalidad y Herramientas JSON */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex w-full max-w-xs items-center gap-1 rounded-xl border border-line bg-surface p-1">
+              <button
+                type="button"
+                onClick={() => setModo("rapida")}
+                className={`flex-1 rounded-lg px-3 py-2 text-[11px] font-black uppercase tracking-wide transition-colors ${
+                  modo === "rapida" ? "bg-primary-600 text-white shadow" : "text-slate-500 hover:bg-surfaceAlt"
+                }`}
+              >
+                ⚡ Carga Rápida
+              </button>
+              <button
+                type="button"
+                onClick={() => setModo("manual")}
+                className={`flex-1 rounded-lg px-3 py-2 text-[11px] font-black uppercase tracking-wide transition-colors ${
+                  modo === "manual" ? "bg-primary-600 text-white shadow" : "text-slate-500 hover:bg-surfaceAlt"
+                }`}
+              >
+                🛠 Carga Manual
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={exportarJsonPrograma}
+                title="Descargar o copiar copia de seguridad en JSON de este programa"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface hover:bg-surfaceAlt px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs transition-all active:scale-95"
+              >
+                <span>📥</span>
+                <span>Exportar JSON</span>
+              </button>
+              <button
+                type="button"
+                onClick={importarJsonPrograma}
+                title="Cargar programa desde un archivo o texto JSON"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface hover:bg-surfaceAlt px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs transition-all active:scale-95"
+              >
+                <span>📤</span>
+                <span>Importar JSON</span>
+              </button>
+            </div>
           </div>
 
           {modo === "rapida" ? (
@@ -831,6 +1131,32 @@ export function CargaPrograma() {
                     ➕ Nueva carrera
                   </button>
                 </div>
+
+                {/* Banner de detección multi-carrera */}
+                {multiCarrerasDetectadas.length > 1 && (
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/80 to-teal-950/80 border border-emerald-500/50 text-emerald-100 shadow-lg animate-in fade-in">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">⚡</span>
+                        <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                          Multi-Carrera Detectada en el Texto ({multiCarrerasDetectadas.length} carreras)
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-emerald-200/90">
+                        Se detectaron {multiCarrerasDetectadas.length} carreras ({totalEjemplaresMulti} ejemplares en total:{" "}
+                        {multiCarrerasDetectadas.map((mc) => `C${mc.carrera}: ${mc.caballos.length}`).join(", ")}).
+                      </p>
+                    </div>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleAutoDistribuirMultiCarreras}
+                      className="!bg-emerald-500 hover:!bg-emerald-400 !text-slate-950 font-black uppercase text-xs shadow-md whitespace-nowrap active:scale-95"
+                    >
+                      ⚡ Auto-Distribuir en Todas las Carreras
+                    </Button>
+                  </div>
+                )}
 
                 <div className="grid w-full grid-cols-1 gap-4 lg:grid-cols-2">
                   {/* Bloque de pegado */}
@@ -935,6 +1261,50 @@ export function CargaPrograma() {
                     <span className="rounded-full bg-primary-600 px-2 py-0.5 text-[9px] font-black uppercase text-white">
                       {(c.caballos || []).filter((cb) => cb.nombre).length} ejemplares
                     </span>
+
+                    {/* Alerta de Chalecos Duplicados */}
+                    {duplicadosCarrera(c.caballos).length > 0 && (
+                      <span className="rounded-md bg-red-100 border border-red-300 px-2 py-0.5 text-[10px] font-black text-red-700 animate-pulse">
+                        ⚠️ Chalecos repetidos: #{duplicadosCarrera(c.caballos).join(", #")}
+                      </span>
+                    )}
+
+                    {/* Utilidades de Carrera */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => renumerarCarrera(i)}
+                        title="Renumerar ejemplares del 1 al N secuencialmente"
+                        className="rounded-lg border border-line bg-surface px-2 py-1 text-[10px] font-black text-slate-700 hover:bg-surfaceAlt transition-colors"
+                      >
+                        🔢 1..N
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => limpiarVaciosCarrera(i)}
+                        title="Eliminar filas de ejemplares vacíos sin nombre"
+                        className="rounded-lg border border-line bg-surface px-2 py-1 text-[10px] font-black text-slate-700 hover:bg-surfaceAlt transition-colors"
+                      >
+                        🧹 Limpiar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => llenarChalecos(i, 8)}
+                        title="Rellenar hasta 8 ejemplares"
+                        className="rounded-lg border border-line bg-surface px-2 py-1 text-[10px] font-black text-slate-700 hover:bg-surfaceAlt transition-colors"
+                      >
+                        +8
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => llenarChalecos(i, 10)}
+                        title="Rellenar hasta 10 ejemplares"
+                        className="rounded-lg border border-line bg-surface px-2 py-1 text-[10px] font-black text-slate-700 hover:bg-surfaceAlt transition-colors"
+                      >
+                        +10
+                      </button>
+                    </div>
+
                     <div className="ml-auto flex flex-wrap items-center gap-2">
                       <Input label="" hint="" aria-label="Distancia"
                         type="number" placeholder="Dist. m" value={c.distancia || ""}

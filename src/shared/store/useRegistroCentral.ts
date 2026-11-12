@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * REGISTRO CENTRAL de hipódromos y carreras del día.
  *

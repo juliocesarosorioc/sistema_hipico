@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { parsearUrlCarreraUsa, parsearTextoPegadoUsa } from "@/features/carreras/lib/parser-usa-util";
 
 export const dynamic = "force-dynamic";
 
@@ -456,28 +457,67 @@ export async function GET(req: NextRequest) {
 }
 
 // ----------------------------------------------------------------------------
-// POST: Sincronización y Descarga de Carreras DRF
+// POST: Sincronización y Descarga de Carreras DRF / USA
 // ----------------------------------------------------------------------------
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     let fecha = String(body.fecha || new Date().toISOString().slice(0, 10));
     let tracksFiltro: string[] = Array.isArray(body.tracks) && body.tracks.length > 0 ? body.tracks : [];
-    const urlDirecta = String(body.urlDirectaDrf || "").trim();
+    const urlDirecta = String(body.urlDirectaDrf || body.urlDirecta || "").trim();
+    const textoPegado = String(body.htmlOTextoPegado || body.textoPegado || "").trim();
 
-    // Si viene de URL directa DRF
+    // 1. Si viene texto pegado directamente (de DRF, Equibase, TVG, etc.)
+    if (textoPegado && !urlDirecta) {
+      const hipoTarget = body.hipodromoPegado || body.hipodromo || "Gulfstream Park";
+      const carrerasPegadas = parsearTextoPegadoUsa(textoPegado, hipoTarget, fecha);
+      if (carrerasPegadas.length > 0) {
+        const fechaResult = carrerasPegadas[0].fecha || fecha;
+        const tracksPegados = [...new Set(carrerasPegadas.map((c) => c.hipodromo.toUpperCase()))];
+
+        const supabase = getAdminClient();
+        if (supabase) {
+          try {
+            for (const h of tracksPegados) {
+              await supabase.from("hipodromos").upsert({ nombre: h, pais: "USA", activo: true }, { onConflict: "nombre" });
+            }
+          } catch {
+            /* best-effort */
+          }
+        }
+
+        const totalEjs = carrerasPegadas.reduce((a, c) => a + c.caballos.length, 0);
+        const totalRets = carrerasPegadas.reduce((a, c) => a + (c.retirados?.length || 0), 0);
+
+        return NextResponse.json({
+          ok: true,
+          fecha: fechaResult,
+          tracksProcesados: tracksPegados,
+          totalCarreras: carrerasPegadas.length,
+          totalEjemplares: totalEjs,
+          totalRetirados: totalRets,
+          detallesPorTrack: tracksPegados.map((h) => ({
+            hipodromo: h,
+            carreras: carrerasPegadas.filter((c) => c.hipodromo.toUpperCase() === h).length,
+            ejemplares: carrerasPegadas.filter((c) => c.hipodromo.toUpperCase() === h).reduce((a, c) => a + c.caballos.length, 0),
+            retirados: carrerasPegadas.filter((c) => c.hipodromo.toUpperCase() === h).reduce((a, c) => a + (c.retirados?.length || 0), 0),
+            listaRetirados: [...new Set(carrerasPegadas.filter((c) => c.hipodromo.toUpperCase() === h).flatMap((c) => c.retirados || []))],
+          })),
+          carreras: carrerasPegadas.map((c) => ({
+            ...c,
+            hipodromo: c.hipodromo.toUpperCase(),
+          })),
+        });
+      }
+    }
+
+    // 2. Si viene de URL directa (DRF, Equibase, TVG, FanDuel)
     if (urlDirecta) {
-      const m = urlDirecta.match(/track\/([A-Za-z0-9]+)(?:\/country\/([A-Za-z]+))?\/date\/([0-9-]+)/i) ||
-                urlDirecta.match(/id\/([A-Za-z0-9]+)(?:\/country\/([A-Za-z]+))?\/date\/([0-9-]+)/i);
-      if (m) {
-        const code = normalizarCodigo(m[1]);
-        tracksFiltro = [code];
-        const dateRaw = m[3];
-        const mIso = dateRaw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-        if (mIso) {
-          fecha = `${mIso[3]}-${mIso[1].padStart(2, "0")}-${mIso[2].padStart(2, "0")}`;
-        } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
-          fecha = dateRaw;
+      const metaUniversal = parsearUrlCarreraUsa(urlDirecta);
+      if (metaUniversal) {
+        tracksFiltro = [metaUniversal.trackCode];
+        if (metaUniversal.fechaISO) {
+          fecha = metaUniversal.fechaISO;
         }
       }
     }
@@ -493,7 +533,7 @@ export async function POST(req: NextRequest) {
     for (const rawTrack of tracksFiltro) {
       const codeNorm = normalizarCodigo(rawTrack);
       const meta = CATALOGO_DRF[codeNorm];
-      const nomTrack = meta?.nombre || rawTrack;
+      const nomTrack = String(meta?.nombre || rawTrack).trim().toUpperCase();
       const country = meta?.pais || "USA";
 
       // 1. REGLA FUNDAMENTAL: Aislamiento Jurisdiccional USA (Prohibido Venezuela)

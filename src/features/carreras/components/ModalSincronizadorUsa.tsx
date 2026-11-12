@@ -100,7 +100,8 @@ export function ModalSincronizadorUsa({
         setSeleccionTodos(false);
         setSeleccionados([parsed.hipodromo]);
       }
-      emitirToast(`🎯 Detectado enlace DRF: ${parsed.trackCode} (${parsed.hipodromo}) · ${parsed.fechaDRF}`, "info");
+      const portalLabel = parsed.portal || "DRF / USA";
+      emitirToast(`🎯 Detectado enlace ${portalLabel}: ${parsed.trackCode} (${parsed.hipodromo}) · ${parsed.fechaDRF}`, "info");
     }
   };
 
@@ -518,7 +519,7 @@ export function ModalSincronizadorUsa({
               <input
                 id="url-drf-directa-input"
                 type="url"
-                placeholder="https://www.drf.com/race-entries/track/CD/country/USA/date/11-04-2026"
+                placeholder="https://www.drf.com/... o https://www.equibase.com/static/entry/... o https://www.tvg.com/races/..."
                 value={urlDrf}
                 onChange={(e) => handleCambioUrlDrf(e.target.value)}
                 className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-mono text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none"
@@ -527,24 +528,27 @@ export function ModalSincronizadorUsa({
                 type="button"
                 disabled={!metaDrf || cargando}
                 onClick={() => void ejecutarSincronizacionUrlDirecta()}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-400 px-4 py-2 text-xs font-black uppercase text-slate-950 hover:bg-amber-300 active:scale-95 disabled:opacity-40 transition-all shadow-md"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-4 py-2 text-xs font-black uppercase text-slate-950 hover:from-amber-300 hover:to-amber-400 active:scale-95 disabled:opacity-40 transition-all shadow-md"
               >
                 <span>⚡</span>
-                <span>{cargando ? "Importando..." : "Importar DRF al Instante"}</span>
+                <span>{cargando ? "Importando..." : `Importar ${metaDrf?.portal || "Cartelera"} al Instante`}</span>
               </button>
             </div>
             {metaDrf ? (
               <div className="flex flex-wrap items-center gap-2 rounded-xl bg-emerald-950/50 border border-emerald-500/40 px-3 py-2 text-xs">
-                <span className="font-bold text-emerald-300">✓ Enlace Detectado:</span>
+                <span className="rounded bg-emerald-500 text-slate-950 font-black px-1.5 py-0.5 text-[10px] uppercase">
+                  {metaDrf.portal || "OFICIAL"}
+                </span>
+                <span className="font-bold text-emerald-300">Enlace Reconocido:</span>
                 <span className="rounded bg-emerald-900/60 px-2 py-0.5 font-mono font-bold text-white">
                   {metaDrf.trackCode} ({metaDrf.hipodromo})
                 </span>
                 <span className="text-slate-300">· País: <strong>{metaDrf.country}</strong></span>
-                <span className="text-slate-300">· Fecha DRF: <strong>{metaDrf.fechaDRF}</strong> (ISO: {metaDrf.fechaISO})</span>
+                <span className="text-slate-300">· Fecha: <strong>{metaDrf.fechaISO}</strong></span>
               </div>
             ) : (
-              <p className="text-[10px] text-slate-500 font-mono">
-                Estructura admitida: https://www.drf.com/race-entries/track/[TRACK]/country/[COUNTRY]/date/[MM-DD-YYYY]
+              <p className="text-[10px] text-slate-400">
+                🌐 <strong>Portales soportados:</strong> DRF (<code className="text-amber-300">drf.com/...</code>), Equibase Fast Entry (<code className="text-amber-300">equibase.com/static/entry/...</code>), TVG (<code className="text-amber-300">tvg.com/races/...</code>), FanDuel Racing (<code className="text-amber-300">racing.fanduel.com/...</code>).
               </p>
             )}
           </div>
