@@ -48,6 +48,9 @@ const gestion = leer("src", "features", "gestion", "components", "GestionJugadas
 // ---------------------------------------------------------------------------
 console.log("\n[1] Núcleo puro: modalidad del ticket por nombre_jugada");
 ok("TABLA FIJA → TABLA", modalidadDeTicket("TABLA FIJA (LA RINCONADA C1)") === "TABLA");
+ok("TF 4 → TABLA", modalidadDeTicket("TF 4") === "TABLA");
+ok("TABLA 4 → TABLA", modalidadDeTicket("TABLA 4") === "TABLA");
+ok("Objeto { nombre_jugada: 'TF 5' } → TABLA", modalidadDeTicket({ nombre_jugada: "TF 5" }) === "TABLA");
 ok("MARCA x → MARCA", modalidadDeTicket("MARCA 3 vs 5") === "MARCA");
 ok("MARCA sola → MARCA", modalidadDeTicket("MARCA") === "MARCA");
 ok("DUPLETA → DUPLETA", modalidadDeTicket("DUPLETA 3 x 5") === "DUPLETA");
@@ -89,6 +92,8 @@ ok("reabre remates (club_reabrir_remate vía reabrirRemate)", /reabrirRemate\(/.
 ok("reabre pollas (cambiarEstadoPolla)", /cambiarEstadoPolla\(/.test(reversar));
 ok("borra el resultado central (revertirResultadoCentral)", /revertirResultadoCentral\(/.test(reversar));
 ok("resetea estado/premio/monto/comisión del ticket", /estado: "Pendiente", premio_pagar: 0, monto_decidido: 0, comision_pagada: 0/.test(reversar));
+ok("barrido de seguridad total resetea todos los tickets restantes", /BARRIDO DE SEGURIDAD TOTAL/.test(reversar));
+ok("reversión contempla saldos del jugador que consigue (Cliente 2)", /cliente_consigue_id/.test(reversar));
 ok("deja traza en la auditoría", /"REVERSAR_LIQUIDACION"/.test(reversar));
 
 console.log("\n[5] carreras-dia.ts: revertir el resultado central deja la carrera ABIERTA");
@@ -117,6 +122,7 @@ const cuerpoReversar = (() => {
   return gestion.slice(i, j < 0 ? i + 2200 : j + 4);
 })();
 ok("el handler de reversión NO usa window.confirm", !/window\.confirm/.test(cuerpoReversar));
+ok("carreraLiquidadaVista respeta carrerasReversadas", /carreraLiquidadaVista\s*=\s*!carrerasReversadas\.has/.test(gestion));
 ok("el modal pide confirmación explícita", gestion.includes("Sí, reversar liquidación"));
 
 // ---------------------------------------------------------------------------

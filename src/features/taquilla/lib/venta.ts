@@ -223,6 +223,29 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
   const esDadorSistema = (USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(dadorFinal.toUpperCase());
   const riesgoDador =
     dadorFinal && !esDadorSistema ? calcularRiesgoCliente2(montoNum, String(v.jugada ?? "")) : 0;
+
+  // Descontar saldo del jugador que consigue en base de datos si es un cliente real del grupo
+  const idDadorEfectivo = v.clienteDadorId || dadorCliData?.id;
+  if (idDadorEfectivo && riesgoDador > 0 && r.ticket_id != null) {
+    try {
+      const { data: dadorRow } = await supabase
+        .from("clientes")
+        .select("saldo_actual")
+        .eq("id", idDadorEfectivo)
+        .maybeSingle();
+      if (dadorRow) {
+        const saldoPrevio = Number(dadorRow.saldo_actual ?? 0);
+        const nuevoSaldo = Math.round((saldoPrevio - riesgoDador) * 100) / 100;
+        await supabase
+          .from("clientes")
+          .update({ saldo_actual: nuevoSaldo })
+          .eq("id", idDadorEfectivo);
+      }
+    } catch (e) {
+      console.warn("No se pudo descontar saldo de jugador que consigue en BD:", e);
+    }
+  }
+
   void generarAsientoCompromisoJugada({
     ticketId: r.ticket_id as string | number | undefined,
     fecha: fechaCarrera || v.fecha,
@@ -263,6 +286,50 @@ export async function anularJugada(
     return { ok: false, error: /club_anular_jugada|not found|404/i.test(texto) ? MENSAJE_SIN_RPC : texto };
   }
   const r = (data ?? {}) as Record<string, unknown>;
+  // Reintegrar también el saldo del jugador que consigue si la jugada tenía contraparte real
+  try {
+    const { data: tkData } = await supabase
+      .from("tickets_apuestas")
+      .select("cliente_consigue_id, cliente_consigue_nombre, monto_jugado, nombre_jugada")
+      .eq("id", ticketId)
+      .maybeSingle();
+    if (tkData && (tkData.cliente_consigue_id || tkData.cliente_consigue_nombre)) {
+      const nomDador = String(tkData.cliente_consigue_nombre ?? "").trim().toUpperCase();
+      const esSistema = (USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(nomDador);
+      if (!esSistema) {
+        const riesgoConsigue = calcularRiesgoCliente2(Number(tkData.monto_jugado ?? 0), String(tkData.nombre_jugada ?? ""));
+        if (riesgoConsigue > 0) {
+          let idConsigue = tkData.cliente_consigue_id;
+          if (!idConsigue && nomDador) {
+            const { data: cRow } = await supabase
+              .from("clientes")
+              .select("id")
+              .or(`nombre.ilike.${nomDador},seudonimo.ilike.${nomDador}`)
+              .limit(1)
+              .maybeSingle();
+            idConsigue = cRow?.id;
+          }
+          if (idConsigue) {
+            const { data: cData } = await supabase
+              .from("clientes")
+              .select("saldo_actual")
+              .eq("id", idConsigue)
+              .maybeSingle();
+            if (cData) {
+              const saldoActual = Number(cData.saldo_actual ?? 0);
+              await supabase
+                .from("clientes")
+                .update({ saldo_actual: Math.round((saldoActual + riesgoConsigue) * 100) / 100 })
+                .eq("id", idConsigue);
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("No se pudo restaurar saldo de jugador que consigue al anular:", e);
+  }
+
   limpiarCacheClientes();
   limpiarCacheClientesVenta();
   if (typeof window !== "undefined") {

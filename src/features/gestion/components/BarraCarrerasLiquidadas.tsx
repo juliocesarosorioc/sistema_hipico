@@ -107,6 +107,19 @@ export function BarraCarrerasLiquidadas({
     const centrales = hipodromo ? carrerasDe(hipodromo) : [];
     const recolectadas: ItemCarreraLiquidada[] = [];
 
+    const reversadasSet = new Set<string>();
+    if (typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(`reversadas:${fechaObjetivo}`);
+        if (raw) {
+          const arr = JSON.parse(raw) as string[];
+          if (Array.isArray(arr)) arr.forEach((k) => reversadasSet.add(String(k).toUpperCase().replace(/\s+/g, "")));
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
     // 1. Items extra (filtrados estrictamente al día consultado)
     for (const it of itemsExtra) {
       if (!it) continue;
@@ -133,6 +146,7 @@ export function BarraCarrerasLiquidadas({
       if (!esLiq) continue;
 
       const numC = Number(c.carrera);
+      if (reversadasSet.has(`${hipo}|${numC}`)) continue;
       const jugCount =
         numC === carreraActiva && conteoJugadasActiva > 0
           ? conteoJugadasActiva
@@ -168,6 +182,7 @@ export function BarraCarrerasLiquidadas({
       if (String(r.estado ?? "").toLowerCase() !== "liquidada") continue;
 
       const numC = Number(r.carrera);
+      if (reversadasSet.has(`${hipoKey(r.hipodromo)}|${numC}`)) continue;
       const rAny = r as unknown as Record<string, unknown>;
       recolectadas.push({
         fecha: fR || fechaObjetivo,
@@ -190,6 +205,7 @@ export function BarraCarrerasLiquidadas({
       if (!esCerrada) continue;
 
       const numC = Number(t.carrera);
+      if (reversadasSet.has(`${hipoKey(t.hipodromo)}|${numC}`)) continue;
       const tAny = t as unknown as Record<string, unknown>;
       recolectadas.push({
         fecha: fT || fechaObjetivo,

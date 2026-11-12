@@ -649,8 +649,7 @@ export async function revertirResultadoCentral(input: {
     /* best-effort */
   }
 
-  // 2) Resetear la fila en `resultados_carreras` (o eliminarla) para que la
-  // carrera quede limpia. Mismo criterio robusto por id.
+  // 2) Resetear la fila en `resultados_carreras` (eliminarla para limpieza absoluta o blanquearla)
   try {
     const { data: rows } = await sdb
       .from("resultados_carreras")
@@ -661,35 +660,50 @@ export async function revertirResultadoCentral(input: {
       .filter((r: Record<string, unknown>) => claveHipodromo(String(r.hipodromo ?? "")) === clave)
       .map((r: Record<string, unknown>) => r.id);
     if (ids.length > 0) {
-      const { error } = await sdb
-        .from("resultados_carreras")
-        .update({
-          estado: "Programada",
-          ganadores: null,
-          aplicado_a_tablas: false,
-          orden_llegada: null,
-          dividendos: null,
-          premio_oficial: null,
-          premio_recalculado: null,
-        })
-        .in("id", ids as never[]);
-      if (!error) dbOk = true;
+      const { error: errDel } = await sdb.from("resultados_carreras").delete().in("id", ids as never[]);
+      if (!errDel) {
+        dbOk = true;
+      } else {
+        const { error } = await sdb
+          .from("resultados_carreras")
+          .update({
+            estado: "Programada",
+            ganadores: null,
+            aplicado_a_tablas: false,
+            orden_llegada: null,
+            dividendos: null,
+            premio_oficial: null,
+            premio_recalculado: null,
+          })
+          .in("id", ids as never[]);
+        if (!error) dbOk = true;
+      }
     } else {
-      const { error } = await sdb
+      const { error: errDel } = await sdb
         .from("resultados_carreras")
-        .update({
-          estado: "Programada",
-          ganadores: null,
-          aplicado_a_tablas: false,
-          orden_llegada: null,
-          dividendos: null,
-          premio_oficial: null,
-          premio_recalculado: null,
-        })
+        .delete()
         .eq("fecha", f)
         .ilike("hipodromo", `%${hip.replace(/\s+/g, "%")}%`)
         .eq("carrera", carrera);
-      if (!error) dbOk = true;
+      if (!errDel) {
+        dbOk = true;
+      } else {
+        const { error } = await sdb
+          .from("resultados_carreras")
+          .update({
+            estado: "Programada",
+            ganadores: null,
+            aplicado_a_tablas: false,
+            orden_llegada: null,
+            dividendos: null,
+            premio_oficial: null,
+            premio_recalculado: null,
+          })
+          .eq("fecha", f)
+          .ilike("hipodromo", `%${hip.replace(/\s+/g, "%")}%`)
+          .eq("carrera", carrera);
+        if (!error) dbOk = true;
+      }
     }
   } catch {
     /* best-effort */

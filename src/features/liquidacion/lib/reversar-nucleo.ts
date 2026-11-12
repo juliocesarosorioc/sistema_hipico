@@ -69,9 +69,13 @@ export function esEstadoDecidido(estado: unknown): boolean {
 
 /** Clasifica la modalidad de un ticket por su `nombre_jugada`. */
 export function modalidadDeTicket(nombre: unknown): ModalidadReversion {
-  const n = TXT(nombre).toUpperCase();
-  if (n.startsWith("TABLA FIJA")) return "TABLA";
-  if (n === "MARCA" || n.startsWith("MARCA ")) return "MARCA";
+  const raw =
+    typeof nombre === "object" && nombre !== null && "nombre_jugada" in (nombre as Record<string, unknown>)
+      ? (nombre as Record<string, unknown>).nombre_jugada
+      : nombre;
+  const n = TXT(raw).toUpperCase();
+  if (n.startsWith("TABLA FIJA") || /^TABLA\b|^TF\b/i.test(n)) return "TABLA";
+  if (n === "MARCA" || n.startsWith("MARCA ") || /^MARCAS?\b/i.test(n)) return "MARCA";
   if (n.startsWith("DUPLETA")) return "DUPLETA";
   return "UNIVERSAL";
 }

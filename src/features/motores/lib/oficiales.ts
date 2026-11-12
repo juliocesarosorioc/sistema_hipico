@@ -175,7 +175,7 @@ export function liquidarTabla(
   tasaComision?: number | null,
 ): ResultadoMotor | null {
   const tipo = String(t.tipo_jugada ?? "").trim().toUpperCase();
-  if (!/^TABLA/.test(tipo)) return null;
+  if (!/^TABLA|^TF\b/i.test(tipo)) return null;
   const n = /N(\d+)/.exec(tipo);
   const cabNum = t.caballo != null && /^\d+$/.test(String(t.caballo).trim()) ? String(t.caballo).trim() : null;
   const ejemplar = n ? n[1] : cabNum;

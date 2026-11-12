@@ -71,9 +71,9 @@ console.log("\n== Clientes distintos: cada saldo es independiente ==");
 }
 
 // ---------------------------------------------------------------------------
-// 3. El CLIENTE 2 (dador) NO se descuenta: solo el que juega paga
+// 3. El CLIENTE 2 (jugador que consigue): se valida y descuenta igual que el que juega
 // ---------------------------------------------------------------------------
-console.log("\n== El dador (cliente 2) no se descuenta ==");
+console.log("\n== El jugador que consigue (cliente 2) se valida y descuenta igual que el cliente 1 ==");
 {
   const filas: FilaDeCarga[] = [
     { jugada: "1p", caballo: "1x2", monto: "800", cliente1: "Ana", cliente2: "Beto" },
@@ -81,11 +81,11 @@ console.log("\n== El dador (cliente 2) no se descuenta ==");
   ];
   const p = proyectarFilasEnOrden(filas, resolver);
   si(p[0].proyeccion.ok && p[0].proyeccion.monto === 800,
-    "fila 1 (dador): autoriza 800", JSON.stringify(p[0].proyeccion));
-  si(p[1].cliente2?.saldo_actual === 900,
-    "Beto (dador) sigue con 900: no se le descuenta", String(p[1].cliente2?.saldo_actual));
-  si(p[1].proyeccion.ok && p[1].proyeccion.monto === 200,
-    "fila 2: topada por el saldo restante de Ana (200)", JSON.stringify(p[1].proyeccion));
+    "fila 1: autoriza 800", JSON.stringify(p[0].proyeccion));
+  si(p[1].cliente2?.saldo_actual === 100,
+    "Beto (consigue) ve su saldo descontado (900 − 800 = 100)", String(p[1].cliente2?.saldo_actual));
+  si(p[1].proyeccion.ok && p[1].proyeccion.monto === 100,
+    "fila 2: topada por el saldo restante de Beto (100)", JSON.stringify(p[1].proyeccion));
 }
 
 // ---------------------------------------------------------------------------

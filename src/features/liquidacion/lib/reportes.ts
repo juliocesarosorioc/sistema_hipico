@@ -21,6 +21,7 @@ import { pizarraDesdeNums, esVentaDeRemate } from "@/features/impresion/lib/repo
 import {
   desgloseJugada,
   esMarca,
+  extraerNumeroTablaFija,
   extraerPrecioUnitarioTabla,
   resolverContraparteModalidad,
 } from "@/features/liquidacion/lib/etiquetas-reporte";
@@ -414,7 +415,7 @@ function evaluar(
     return { ok: false, bruto: monto, comision: 0, tasa: 0, resultadoJuega: 0, resultadoDa: 0 };
   }
   const nombreJugada = txt(f.nombre_jugada).toUpperCase();
-  const esTablaFija = nombreJugada.startsWith("TABLA FIJA");
+  const esTablaFija = /^TABLA\b|^TF\b/i.test(nombreJugada);
   const tienePct =
     f.comision_porcentaje != null && String(f.comision_porcentaje).trim() !== "";
   const pct = cifra(f.comision_porcentaje);
@@ -552,7 +553,7 @@ function evaluar(
       };
     }
     const puestosRaya = (pizarra?.puestosRaya?.length ? pizarra.puestosRaya : pizarra?.puestos) ?? [];
-    const numEjemplar = txt(f.ejemplar_numero) || (/^\d+$/.test(txt(f.caballo)) ? txt(f.caballo) : "");
+    const numEjemplar = extraerNumeroTablaFija(f) || txt(f.ejemplar_numero) || (/^\d+$/.test(txt(f.caballo)) ? txt(f.caballo) : "");
     let ganaTabla: boolean | null = null;
     if (puestosRaya.length > 0 && numEjemplar) {
       ganaTabla = txt(puestosRaya[0]) === numEjemplar;
@@ -613,7 +614,7 @@ function evaluar(
   const esRemate = /^REMATE\b/i.test(nombreJugada);
   if (esRemate) {
     const puestosRaya = (pizarra?.puestosRaya?.length ? pizarra.puestosRaya : pizarra?.puestos) ?? [];
-    const numEjemplar = txt(f.ejemplar_numero) || (/^\d+$/.test(txt(f.caballo)) ? txt(f.caballo) : "");
+    const numEjemplar = extraerNumeroTablaFija(f) || txt(f.ejemplar_numero) || (/^\d+$/.test(txt(f.caballo)) ? txt(f.caballo) : "");
     if (puestosRaya.length > 0 && numEjemplar) {
       const ganoEnRaya = txt(puestosRaya[0]) === numEjemplar;
       if (!ganoEnRaya) {

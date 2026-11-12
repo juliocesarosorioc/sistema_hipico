@@ -137,12 +137,9 @@ export function explicarDisponible(c: ClienteRiesgo | null | undefined): string 
 }
 
 
-/** Los jugadores con estatus LIBRE no tienen limitaciones de saldo para jugar. */
-export function esSinTope(c: ClienteRiesgo | null | undefined): boolean {
-  if (!c) return false;
-  if (c.libre === true) return true;
-  const modo = String(c.modo_juego ?? "").trim().toLowerCase();
-  return modo === "libre";
+/** El modo libre no exime del tope: toda jugada se topa contra saldo + aval (regla SSOT). */
+export function esSinTope(_c: ClienteRiesgo | null | undefined): boolean {
+  return false;
 }
 
 /** Fila mínima de `clientes` para el lookup de disponible del reporte. */
@@ -456,10 +453,12 @@ export function calcularReparto(o: OpcionesReparto): Reparto {
     let riesgo1 = montoPedido;
     let riesgo2 = montoPedido * (q / p);
 
-    // Cliente 2 actúa como dador puro cuando no juega ejemplares (cab2 vacío).
-    // Como dador (banca/contraparte) que cubre la jugada, su saldo de apuesta no debe
-    // bloquear ni recortar a 0 la jugada del Cliente 1.
-    const c2EsDadorPuro = cab2.length === 0 || sinCliente2;
+    // Cliente 2 actúa como banca del sistema solo si se nombra explícitamente BANCA/CASA/SISTEMA o está vacío.
+    // Si es un jugador del club (jugador que consigue), su saldo disponible se valida y descuenta igual que Cliente 1.
+    const esBancaSistema =
+      !o.cliente2 ||
+      !String(o.cliente2.nombre ?? "").trim() ||
+      ["BANCA", "CASA", "SISTEMA"].includes(String(o.cliente2.nombre ?? "").trim().toUpperCase());
 
     if (!l1 && d1 < riesgo1 - 0.005) {
       // Cliente 1 no cubre: se escala su parte y la del 2 en la misma razón.
@@ -468,13 +467,18 @@ export function calcularReparto(o: OpcionesReparto): Reparto {
       avisos.push(
         `${o.cliente1?.nombre ?? "Cliente 1"} tiene ${explicarDisponible(o.cliente1)}: se autoriza ${round2(riesgo1)} en razón ${p}:${q}.`
       );
-    } else if (!l2 && !c2EsDadorPuro && d2 < riesgo2 - 0.005) {
-      // Cliente 2 no cubre: se baja hasta que su parte quepa en su disponible.
-      riesgo2 = Math.max(0, d2);
-      riesgo1 = riesgo2 * (p / q);
-      avisos.push(
-        `${o.cliente2?.nombre ?? "Cliente 2"} tiene ${explicarDisponible(o.cliente2)}: se autoriza ${round2(riesgo1)} en razón ${p}:${q}.`
-      );
+    }
+    if (!l2 && !esBancaSistema && d2 < riesgo2 - 0.005) {
+      // Cliente 2 (jugador que consigue) no cubre: se escala en la misma razón hasta su disponible.
+      const riesgo2Max = Math.max(0, d2);
+      const riesgo1Max = riesgo2Max * (p / q);
+      if (riesgo1Max < riesgo1) {
+        riesgo1 = riesgo1Max;
+        riesgo2 = riesgo2Max;
+        avisos.push(
+          `${o.cliente2?.nombre ?? "Cliente 2"} tiene ${explicarDisponible(o.cliente2)}: se autoriza ${round2(riesgo1)} en razón ${p}:${q}.`
+        );
+      }
     }
 
     return {
@@ -494,26 +498,28 @@ export function calcularReparto(o: OpcionesReparto): Reparto {
   const l1 = esSinTope(o.cliente1);
   const l2 = esSinTope(o.cliente2);
 
-  // Cliente 2 actúa como dador puro cuando no juega ejemplares (cab2 vacío).
-  // Como dador (banca/contraparte) que cubre la jugada, su saldo de apuesta no debe
-  // bloquear ni recortar a 0 la jugada del Cliente 1.
-  const c2EsDadorPuro = cab2.length === 0 || sinCliente2;
+  // Cliente 2 actúa como banca solo si es BANCA/CASA/SISTEMA o vacío.
+  // Como jugador que consigue, su saldo de apuesta descuenta y topa igual que Cliente 1.
+  const esBancaSistema =
+    !o.cliente2 ||
+    !String(o.cliente2.nombre ?? "").trim() ||
+    ["BANCA", "CASA", "SISTEMA"].includes(String(o.cliente2.nombre ?? "").trim().toUpperCase());
 
   let autorizado = montoPedido;
-  if (!l1 && !l2 && !c2EsDadorPuro) {
+  if (!l1 && !l2 && !esBancaSistema) {
     autorizado = Math.max(0, Math.min(montoPedido, d1, d2));
   } else if (!l1) {
     autorizado = Math.max(0, Math.min(montoPedido, d1));
-  } else if (!l2 && !c2EsDadorPuro) {
+  } else if (!l2 && !esBancaSistema) {
     autorizado = Math.max(0, Math.min(montoPedido, d2));
   }
 
   if (round2(autorizado) < round2(montoPedido)) {
-    const corto = !l1 && !l2
+    const corto = !l1 && !l2 && !esBancaSistema
       ? `el menor disponible (${round2(Math.min(d1, d2))})`
       : `el disponible del cliente con tope`;
-    const quien = !l1 && !l2
-      ? ""
+    const quien = !l1 && !l2 && !esBancaSistema
+      ? (d2 < d1 ? ` de ${o.cliente2?.nombre ?? "Cliente 2"}` : ` de ${o.cliente1?.nombre ?? "Cliente 1"}`)
       : l1
         ? ` de ${o.cliente2?.nombre ?? "Cliente 2"}`
         : ` de ${o.cliente1?.nombre ?? "Cliente 1"}`;

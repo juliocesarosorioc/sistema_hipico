@@ -126,7 +126,8 @@ async function revertirEspecialesDeCarrera(opts: {
   let deltaReversionMarcas = 0;
 
   for (const f of filas) {
-    if (modalidadDeTicket(f) === "MARCA") {
+    const mod = modalidadDeTicket(f.nombre_jugada ?? f);
+    if (mod === "MARCA") {
       const est = String(f.estado ?? "").trim().toUpperCase();
       const monto = NUM(f.monto_jugado);
       const tasa = f.comision_porcentaje != null && String(f.comision_porcentaje).trim() !== "" ? NUM(f.comision_porcentaje) : 5;
@@ -138,6 +139,42 @@ async function revertirEspecialesDeCarrera(opts: {
         const comGrupo = Math.round(monto * (tasa / 100) * 100) / 100;
         const cobroNeto = Math.round((monto - comGrupo) * 100) / 100;
         deltaReversionMarcas = Math.round((deltaReversionMarcas - cobroNeto) * 100) / 100;
+      }
+    }
+
+    // Reversión de saldos del jugador que consigue (Cliente 2) si es un cliente registrado
+    if (f.cliente_consigue_id != null) {
+      const est = String(f.estado ?? "").trim().toUpperCase();
+      const monto = NUM(f.monto_jugado);
+      const tasa = f.comision_porcentaje != null && String(f.comision_porcentaje).trim() !== "" ? NUM(f.comision_porcentaje) : 5;
+      const comision = Math.round(monto * (tasa / 100) * 100) / 100;
+      const gananciaC2 = Math.round((monto - comision) * 100) / 100;
+      const riesgoDador = NUM(f.riesgo_dador) || (mod === "TABLA" ? monto : (mod === "MARCA" ? Math.round((monto * 5) / 6) : monto));
+      if (est === "PERDEDOR") {
+        const creditoC2 = Math.round((riesgoDador + gananciaC2) * 100) / 100;
+        if (creditoC2 > 0) {
+          updates.push(
+            (async () => {
+              const { data: c2, error: e2 } = await sdb.from("clientes").select("saldo_actual").eq("id", f.cliente_consigue_id as never).maybeSingle();
+              if (!e2 && c2) {
+                const act = NUM((c2 as Record<string, unknown>).saldo_actual);
+                await sdb.from("clientes").update({ saldo_actual: Math.round((act - creditoC2) * 100) / 100 }).eq("id", f.cliente_consigue_id as never);
+              }
+            })()
+          );
+        }
+      } else if (est === "RETIRADO") {
+        if (riesgoDador > 0) {
+          updates.push(
+            (async () => {
+              const { data: c2, error: e2 } = await sdb.from("clientes").select("saldo_actual").eq("id", f.cliente_consigue_id as never).maybeSingle();
+              if (!e2 && c2) {
+                const act = NUM((c2 as Record<string, unknown>).saldo_actual);
+                await sdb.from("clientes").update({ saldo_actual: Math.round((act - riesgoDador) * 100) / 100 }).eq("id", f.cliente_consigue_id as never);
+              }
+            })()
+          );
+        }
       }
     }
   }
@@ -342,10 +379,34 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
     const idsReabrir = ((tablasRows ?? []) as Array<Record<string, unknown>>)
       .filter((t) => claveHipodromo(String(t.hipodromo ?? "")) === clave)
       .filter((t) => String(t.fecha ?? t.fecha_creacion ?? "").slice(0, 10) === dia)
-      .filter((t) => String(t.estado ?? "").toLowerCase() === "cerrada")
+      .filter((t) => String(t.estado ?? "").toLowerCase() !== "abierta")
       .map((t) => t.id);
     if (idsReabrir.length > 0) {
-      await supabase.from("tablas_fijas").update({ estado: "Abierta" }).in("id", idsReabrir as never[]);
+      await supabase.from("tablas_fijas").update({ estado: "Abierta", ganador: null, ganadores: null }).in("id", idsReabrir as never[]);
+    }
+  } catch {
+    // best-effort
+  }
+
+  // 5c) BARRIDO DE SEGURIDAD TOTAL: Asegurar que TODO ticket de la carrera vuelva a Pendiente
+  try {
+    const { data: ticketsRestantes } = await supabase
+      .from("tickets_apuestas")
+      .select("id, hipodromo")
+      .eq("carrera", carrera)
+      .or(filtroDiaJornada(dia))
+      .in("estado", ["Ganador", "Perdedor", "Retirado", "Liquidada", "GANO", "PERDIO", "Solucionado", "SOLUCIONADO"])
+      .or("anulada.is.null,anulada.eq.false")
+      .limit(2000);
+    const clave = claveHipodromo(hipodromo);
+    const idsReset = ((ticketsRestantes ?? []) as Array<Record<string, unknown>>)
+      .filter((t) => claveHipodromo(String(t.hipodromo ?? "")) === clave)
+      .map((t) => t.id);
+    if (idsReset.length > 0) {
+      await supabase
+        .from("tickets_apuestas")
+        .update({ estado: "Pendiente", premio_pagar: 0, monto_decidido: 0, comision_pagada: 0 })
+        .in("id", idsReset as never[]);
     }
   } catch {
     // best-effort

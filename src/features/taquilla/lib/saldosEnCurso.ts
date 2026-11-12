@@ -125,7 +125,8 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
     if (idTicket) ticketsVistos.add(idTicket);
 
     const base1 = resolver(f.cliente1);
-    const cliente2 = resolver(f.cliente2);
+    const base2 = resolver(f.cliente2);
+    const esBanca2 = !base2 || !String(base2.nombre ?? "").trim() || ["BANCA", "CASA", "SISTEMA"].includes(String(base2.nombre ?? "").trim().toUpperCase());
     const montoSolicitado = redondearCentavos(
       parseFloat(String(f.monto ?? "").replace(",", ".")) || 0
     );
@@ -142,7 +143,7 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
         const tentativa: JugadaActivaSimulacion = {
           id: idTicket ?? `tmp-${out.length + 1}`,
           jugador: nombre1,
-          tercio: String(cliente2?.nombre ?? f.cliente2 ?? "").trim(),
+          tercio: String(base2?.nombre ?? f.cliente2 ?? "").trim(),
           jugada: f.jugada,
           caballo: f.caballo.trim(),
           monto: montoSolicitado,
@@ -162,6 +163,7 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
     }
 
     const cliente1 = clienteConSaldoDescontado(base1, mapaDescuentoEfectivo);
+    const cliente2 = esBanca2 ? base2 : clienteConSaldoDescontado(base2, mapaDescuentoEfectivo);
     const proyeccion = proyectarFila({
       jugada: f.jugada,
       caballo: f.caballo.trim(),
@@ -171,10 +173,16 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
       cliente2,
     });
 
-    const dispAntes = cliente1
+    const dispAntes1 = cliente1
       ? esSinTope(cliente1)
         ? Number.POSITIVE_INFINITY
         : redondearCentavos(disponibleParaJugar(cliente1))
+      : Number.POSITIVE_INFINITY;
+
+    const dispAntes2 = cliente2 && !esBanca2
+      ? esSinTope(cliente2)
+        ? Number.POSITIVE_INFINITY
+        : redondearCentavos(disponibleParaJugar(cliente2))
       : Number.POSITIVE_INFINITY;
 
     const montoAceptado = proyeccion.ok ? redondearCentavos(proyeccion.monto) : 0;
@@ -185,11 +193,10 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
 
     let riesgoComprometido: number | undefined;
     let riesgoComprometidoCliente2: number | undefined;
-    let quedaCliente2: number | undefined;
 
     if (proyeccion.ok && !duplicado && montoAceptado > 0) {
       const nombreJ1 = String(base1?.nombre ?? f.cliente1 ?? "").trim();
-      const nombreJ2 = String(cliente2?.nombre ?? f.cliente2 ?? "").trim();
+      const nombreJ2 = String(base2?.nombre ?? f.cliente2 ?? "").trim();
       jugadasActivas.push({
         id: idTicket ?? `fila-${out.length + 1}`,
         jugador: nombreJ1,
@@ -203,26 +210,19 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
       if (base1) {
         const clave1 = String(base1.id ?? base1.nombre ?? "").trim().toUpperCase();
         clientesConJugadaActiva.set(clave1, base1);
-        const riesgoSim1 = _comprometidoSimuladoCli(nombreJ1, jugadasActivas, comPct);
-        riesgoComprometido = riesgoSim1;
-        descontado.set(clave1, riesgoSim1);
-        if (base1.id != null) descontado.set(String(base1.id), riesgoSim1);
+        const riesgo1 = proyeccion.reparto ? proyeccion.reparto.lado1.riesgo : montoAceptado;
+        riesgoComprometido = riesgo1;
+        descontado.set(clave1, (descontado.get(clave1) ?? 0) + riesgo1);
+        if (base1.id != null) descontado.set(String(base1.id), (descontado.get(String(base1.id)) ?? 0) + riesgo1);
       }
 
-      if (cliente2) {
-        const clave2 = String(cliente2.id ?? cliente2.nombre ?? "").trim().toUpperCase();
-        const riesgoSim2 = _comprometidoSimuladoCli(nombreJ2, jugadasActivas, comPct);
-        riesgoComprometidoCliente2 = riesgoSim2;
-        if (clientesConJugadaActiva.has(clave2)) {
-          descontado.set(clave2, riesgoSim2);
-          if (cliente2.id != null) descontado.set(String(cliente2.id), riesgoSim2);
-        }
-        const dispTotal2 = esSinTope(cliente2)
-          ? Number.POSITIVE_INFINITY
-          : redondearCentavos(disponibleParaJugar(cliente2));
-        quedaCliente2 = Number.isFinite(dispTotal2)
-          ? Math.max(0, restarDinero(dispTotal2, riesgoSim2))
-          : Number.POSITIVE_INFINITY;
+      if (base2 && !esBanca2) {
+        const clave2 = String(base2.id ?? base2.nombre ?? "").trim().toUpperCase();
+        clientesConJugadaActiva.set(clave2, base2);
+        const riesgo2 = proyeccion.reparto ? proyeccion.reparto.lado2.riesgo : montoAceptado;
+        riesgoComprometidoCliente2 = riesgo2;
+        descontado.set(clave2, (descontado.get(clave2) ?? 0) + riesgo2);
+        if (base2.id != null) descontado.set(String(base2.id), (descontado.get(String(base2.id)) ?? 0) + riesgo2);
       }
     }
 
@@ -232,41 +232,53 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
         : redondearCentavos(disponibleParaJugar(base1))
       : Number.POSITIVE_INFINITY;
 
+    const gasto1 = base1 ? (descontado.get(String(base1.id ?? base1.nombre ?? "").trim().toUpperCase()) ?? 0) : 0;
     const queda = base1
       ? Number.isFinite(dispInicial1)
-        ? Math.max(
-            0,
-            restarDinero(
-              dispInicial1,
-              riesgoComprometido != null
-                ? riesgoComprometido
-                : (descontado.get(String(base1.id ?? base1.nombre ?? "").trim().toUpperCase()) ?? 0)
-            )
-          )
+        ? Math.max(0, restarDinero(dispInicial1, gasto1))
         : Number.POSITIVE_INFINITY
-      : quedaCliente2 != null
-        ? quedaCliente2
-        : Number.POSITIVE_INFINITY;
+      : Number.POSITIVE_INFINITY;
+
+    const dispInicial2 = base2 && !esBanca2
+      ? esSinTope(base2)
+        ? Number.POSITIVE_INFINITY
+        : redondearCentavos(disponibleParaJugar(base2))
+      : Number.POSITIVE_INFINITY;
+
+    const gasto2 = base2 && !esBanca2 ? (descontado.get(String(base2.id ?? base2.nombre ?? "").trim().toUpperCase()) ?? 0) : 0;
+    const quedaCliente2 = base2 && !esBanca2
+      ? Number.isFinite(dispInicial2)
+        ? Math.max(0, restarDinero(dispInicial2, gasto2))
+        : Number.POSITIVE_INFINITY
+      : Number.POSITIVE_INFINITY;
 
     let observacionExceso: string | null = null;
     let observacionMencion: string | null = null;
     let alertaProponer: string | null = null;
     let alertaConcretar: string | null = null;
-    if (cliente1 && !esSinTope(cliente1) && montoSolicitado > 0) {
-      const nom1 = String(cliente1.nombre ?? f.cliente1 ?? "Jugador 1").trim();
+
+    const excede1 = Boolean(cliente1 && !esSinTope(cliente1) && montoSolicitado > 0 && dispAntes1 < montoSolicitado);
+    const excede2 = Boolean(cliente2 && !esBanca2 && !esSinTope(cliente2) && montoSolicitado > 0 && dispAntes2 < montoSolicitado);
+
+    if ((excede1 || excede2) && montoSolicitado > 0) {
+      const nom1 = String(cliente1?.nombre ?? f.cliente1 ?? "Jugador 1").trim();
+      const nom2 = String(cliente2?.nombre ?? f.cliente2 ?? "Jugador 2").trim();
+      const quienExcede = excede1 && excede2 ? `${nom1} y ${nom2}` : excede1 ? nom1 : nom2;
       const fmtN = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
-      if (montoAceptado <= 0 && dispAntes <= 0) {
+
+      if (montoAceptado <= 0) {
         observacionExceso = "Sin saldo";
-        alertaProponer = `${nom1} sin saldo disponible`;
-        alertaConcretar = `${nom1} sin saldo disponible`;
+        alertaProponer = `${quienExcede} sin saldo disponible`;
+        alertaConcretar = `${quienExcede} sin saldo disponible`;
       } else if (montoExcedido > 0) {
         const excEntero = Number.isInteger(montoExcedido)
           ? String(montoExcedido)
           : montoExcedido.toFixed(2);
         observacionExceso = `Excedido ${excEntero}`;
-        alertaProponer = `Atento "${nom1}", disponible ${fmtN(dispAntes)}`;
-        alertaConcretar = `${nom1} hasta ${fmtN(montoAceptado)}`;
+        alertaProponer = `Atento "${quienExcede}", disponible ${fmtN(Math.min(dispAntes1, dispAntes2))}`;
+        alertaConcretar = `${quienExcede} hasta ${fmtN(montoAceptado)}`;
       }
+
       if (observacionExceso) {
         const limpiarTel = (c: ClienteConSaldo | null | undefined) => {
           if (!c) return "";
@@ -275,13 +287,12 @@ export function proyectarFilasEnOrden<C extends ClienteConSaldo, F extends FilaD
           const cod = String(c.codigo_pais ?? "").replace(/\D+/g, "");
           return cod && !t.startsWith(cod) ? `${cod}${t}` : t;
         };
-        const nom2 = String(cliente2?.nombre ?? f.cliente2 ?? "Banca").trim() || "Banca";
         const tel1 = limpiarTel(cliente1);
         const tel2 = limpiarTel(cliente2);
         const menc1 = tel1 ? `@${tel1} (${nom1})` : `@${nom1}`;
         const menc2 = tel2 ? `@${tel2} (${nom2})` : `@${nom2}`;
         const jugEtiq = f.caballo.trim() ? `${f.jugada.trim().toUpperCase()} (${f.caballo.trim()})` : f.jugada.trim().toUpperCase();
-        observacionMencion = `${menc1} pidió ${fmtN(montoSolicitado)} con ${menc2} en ${jugEtiq} → solo juegan ${fmtN(montoAceptado)} porque ${nom1} excede el saldo.`;
+        observacionMencion = `${menc1} pidió ${fmtN(montoSolicitado)} con ${menc2} en ${jugEtiq} → solo juegan ${fmtN(montoAceptado)} porque ${quienExcede} excede el saldo.`;
       }
     }
 

@@ -29,6 +29,9 @@ import {
 } from "@/features/motores/lib/puestos";
 import { cargarOpcionesCrucesPuestosPorGrupos } from "@/features/gestion/lib/cruces-carrera";
 import { grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
+import { extraerNumeroTablaFija } from "@/features/liquidacion/lib/etiquetas-reporte";
+import { pagoPotencialTablaFija } from "@/features/liquidacion/lib/reportes";
+import { calcularRiesgoCliente2 } from "@/features/motores/lib/puestos";
 
 /**
  * Suma de todos los tickets de la carrera. El comando puede traer el monto al
@@ -818,6 +821,118 @@ export async function liquidarTablasFijasDeCarrera(
     tablas += 1;
     pagado += r.pagado ?? 0;
     comision += r.comision ?? 0;
+  }
+
+  // ── LIQUIDACIÓN DIRECTA DE TICKETS DE TABLA FIJA EN tickets_apuestas ──
+  try {
+    const { data: ticketsTF } = await supabase
+      .from("tickets_apuestas")
+      .select("*")
+      .eq("carrera", carrera)
+      .or(filtroDiaJornada(dia))
+      .in("estado", ["Pendiente", "Perdedor"])
+      .or("anulada.is.null,anulada.eq.false")
+      .limit(1000);
+
+    const clave = claveHipodromo(hipodromo);
+    const ticketsDeCarrera = ((ticketsTF ?? []) as Array<Record<string, unknown>>)
+      .filter((t) => claveHipodromo(String(t.hipodromo ?? "")) === clave)
+      .filter((t) => {
+        const nom = String(t.nombre_jugada ?? "").toUpperCase();
+        return nom.startsWith("TABLA FIJA") || /^TABLA\b|^TF\b/i.test(nom);
+      });
+
+    const ganadoresList = ganadores.split(",").map((s) => s.trim()).filter(Boolean);
+    const retiradosList = Array.isArray(pizarra.retirados)
+      ? pizarra.retirados.map((r) => String(r).trim())
+      : String(pizarra.retirados ?? "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+    for (const tk of ticketsDeCarrera) {
+      const id = tk.id;
+      const monto = Number(tk.monto_jugado) || 0;
+      const c1Id = tk.cliente_juega_id;
+      const c2Id = tk.cliente_consigue_id;
+      const tasa = tk.comision_porcentaje != null && String(tk.comision_porcentaje).trim() !== ""
+        ? Number(tk.comision_porcentaje) || 5
+        : 5;
+      const numEjemplar = extraerNumeroTablaFija(tk);
+      const estaRetirado = retiradosList.includes(numEjemplar) || (tk.caballo && retiradosList.includes(String(tk.caballo).trim()));
+      const riesgoDador = Number(tk.riesgo_dador) || calcularRiesgoCliente2(monto, String(tk.nombre_jugada ?? ""));
+
+      if (estaRetirado) {
+        // Reembolso: devuelve stake a C1 y riesgo a C2
+        if (c1Id != null && monto > 0) {
+          const { data: c1 } = await supabase.from("clientes").select("saldo_actual").eq("id", c1Id as never).maybeSingle();
+          if (c1) {
+            const act = Number(c1.saldo_actual) || 0;
+            await supabase.from("clientes").update({ saldo_actual: Math.round((act + monto) * 100) / 100 }).eq("id", c1Id as never);
+          }
+        }
+        if (c2Id != null && riesgoDador > 0) {
+          const { data: c2 } = await supabase.from("clientes").select("saldo_actual").eq("id", c2Id as never).maybeSingle();
+          if (c2) {
+            const act = Number(c2.saldo_actual) || 0;
+            await supabase.from("clientes").update({ saldo_actual: Math.round((act + riesgoDador) * 100) / 100 }).eq("id", c2Id as never);
+          }
+        }
+        await supabase.from("tickets_apuestas").update({
+          estado: "Retirado",
+          premio_pagar: monto,
+          monto_decidido: monto,
+          comision_pagada: 0,
+        }).eq("id", id as never);
+        tablas += 1;
+      } else if (ganadoresList.includes(numEjemplar)) {
+        // GANÓ
+        const pagoBruto = pagoPotencialTablaFija(tk);
+        const ganancia = Math.max(0, pagoBruto - monto);
+        const comisionTicket = Math.round(ganancia * (tasa / 100) * 100) / 100;
+        const pagoNeto = Math.round((pagoBruto - comisionTicket) * 100) / 100;
+
+        if (c1Id != null && pagoNeto > 0) {
+          const { data: c1 } = await supabase.from("clientes").select("saldo_actual").eq("id", c1Id as never).maybeSingle();
+          if (c1) {
+            const act = Number(c1.saldo_actual) || 0;
+            await supabase.from("clientes").update({ saldo_actual: Math.round((act + pagoNeto) * 100) / 100 }).eq("id", c1Id as never);
+          }
+        }
+        await supabase.from("tickets_apuestas").update({
+          estado: "Ganador",
+          premio_pagar: pagoBruto,
+          monto_decidido: pagoBruto,
+          comision_pagada: comisionTicket,
+        }).eq("id", id as never);
+        tablas += 1;
+        pagado += pagoNeto;
+        comision += comisionTicket;
+      } else {
+        // PERDIÓ
+        const comisionTicket = Math.round(monto * (tasa / 100) * 100) / 100;
+        const gananciaDador = Math.round((monto - comisionTicket) * 100) / 100;
+        const abonoDador = Math.round((riesgoDador + gananciaDador) * 100) / 100;
+
+        if (c2Id != null && abonoDador > 0) {
+          const { data: c2 } = await supabase.from("clientes").select("saldo_actual").eq("id", c2Id as never).maybeSingle();
+          if (c2) {
+            const act = Number(c2.saldo_actual) || 0;
+            await supabase.from("clientes").update({ saldo_actual: Math.round((act + abonoDador) * 100) / 100 }).eq("id", c2Id as never);
+          }
+        }
+        await supabase.from("tickets_apuestas").update({
+          estado: "Perdedor",
+          premio_pagar: 0,
+          monto_decidido: 0,
+          comision_pagada: comisionTicket,
+        }).eq("id", id as never);
+        tablas += 1;
+        comision += comisionTicket;
+      }
+    }
+  } catch (e) {
+    errores.push(`Tickets tabla fija: ${(e as Error).message}`);
   }
   return {
     ok: errores.length === 0,

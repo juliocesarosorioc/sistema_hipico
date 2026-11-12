@@ -930,7 +930,7 @@ const hipodromosDelDia = useMemo(() => {
       monto: f.monto,
       tasaComision: comisionNum,
       cliente1: clienteConSaldoDescontado(saldoCliente(f.cliente1), descontado ?? new Map()),
-      cliente2: saldoCliente(f.cliente2),
+      cliente2: clienteConSaldoDescontado(saldoCliente(f.cliente2), descontado ?? new Map()),
     });
   };
 
@@ -1611,8 +1611,8 @@ const hipodromosDelDia = useMemo(() => {
 
   /** Filas del panel: persistidas (✅) + ventas de la sesión sin duplicar. */
   const filasPreview = useMemo(
-    () => armarFilasPreview(jugadasGuardadas, ticketsDeCarrera, pizarraPuestosActual, retiradosPizarraActual),
-    [jugadasGuardadas, ticketsDeCarrera, pizarraPuestosActual, retiradosPizarraActual]
+    () => armarFilasPreview(jugadasGuardadas, ticketsDeCarrera, pizarraPuestosActual, retiradosPizarraActual, pizarraRayaActual),
+    [jugadasGuardadas, ticketsDeCarrera, pizarraPuestosActual, retiradosPizarraActual, pizarraRayaActual]
   );
   const totalesPreview = useMemo(() => resumenPreview(filasPreview), [filasPreview]);
   const filasPreviewEnVivo = useMemo(() => filasPreview.filter((f) => !f.anulada && !f.esAdelantada), [filasPreview]);
@@ -2271,6 +2271,7 @@ const hipodromosDelDia = useMemo(() => {
         clienteId: String(c1.id),
         grupoId,
         clienteDador: f.cliente2.trim() || c2?.nombre || (esWpsFila ? "CASA" : null),
+        clienteDadorId: c2 ? String(c2.id) : undefined,
         comision: comisionNum,
         // El banquero se negocia por modalidad: las americanas W/P/S van como
         // 'WPS' (el `origen` del ticket sigue siendo 'TAQUILLA').
@@ -2291,8 +2292,10 @@ const hipodromosDelDia = useMemo(() => {
          tanto en esta tanda como en el estado reactivo local y caché global. */
       const riesgoC2 = calcularRiesgoCliente2(v.monto, v.tipo);
       descontado.set(String(c1.id), (descontado.get(String(c1.id)) ?? 0) + v.monto);
+      if (c1.nombre) descontado.set(c1.nombre.trim().toUpperCase(), (descontado.get(c1.nombre.trim().toUpperCase()) ?? 0) + v.monto);
       if (c2 && riesgoC2 > 0) {
         descontado.set(String(c2.id), (descontado.get(String(c2.id)) ?? 0) + riesgoC2);
+        if (c2.nombre) descontado.set(c2.nombre.trim().toUpperCase(), (descontado.get(c2.nombre.trim().toUpperCase()) ?? 0) + riesgoC2);
       }
       setClientes((prev) =>
         prev.map((cli) => {
@@ -4106,6 +4109,11 @@ const hipodromosDelDia = useMemo(() => {
                     <div className="flex flex-col gap-0.5">
                       <span className="block truncate leading-none">
                         {infoCliente(enCurso?.cliente2 ?? null, f.monto, v.ok && v.cliente2 ? v.cliente2.cobroNeto : 0)}
+                        {enCurso && enCurso.cliente2 && Number.isFinite(enCurso.quedaCliente2) && (
+                          <span className="ml-1 text-[9px] font-bold text-slate-500">
+                            · Queda: {monedaFmt(enCurso.quedaCliente2 ?? 0)}
+                          </span>
+                        )}
                       </span>
                       <SearchableSelect
                         options={opcionesCliente2}
@@ -4472,10 +4480,11 @@ const hipodromosDelDia = useMemo(() => {
               : [];
 
             const carreraLiquidadaVista =
-              carreraLiquidada ||
-              centralDeCarrera?.estado === "liquidada" ||
-              (centralDeCarrera?.ganadores?.length ?? 0) > 0 ||
-              filasPreview.some((f) => f.estadoLiquidacion === "Liquidada");
+              !carrerasReversadas.has(Number(carrera)) &&
+              (carreraLiquidada ||
+                centralDeCarrera?.estado === "liquidada" ||
+                (centralDeCarrera?.ganadores?.length ?? 0) > 0 ||
+                filasPreview.some((f) => f.estadoLiquidacion === "Liquidada"));
             const mostrarPizarraEnVivo =
               !esTablaAdelantada && carreraLiquidadaVista && pizarraPuestosActual.length > 0;
             const hayDistanciamiento =
@@ -5051,10 +5060,10 @@ const hipodromosDelDia = useMemo(() => {
                           : {}),
                         retirados: retiradosPizarraActual,
                       },
-                      liquidada: carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0,
+                      liquidada: !carrerasReversadas.has(Number(carrera)) && (carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0),
                       jugadasVivo: [
                         ...filasPreviewEnVivo.map((f) => {
-                          const estaLiquidada = carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0;
+                          const estaLiquidada = !carrerasReversadas.has(Number(carrera)) && (carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0);
                           return {
                             juega: resolverSeudonimoCliente(f.cliente1) || f.cliente1,
                             aposto: f.monto,
@@ -5087,7 +5096,7 @@ const hipodromosDelDia = useMemo(() => {
                           };
                         }),
                         ...filasPreviewAdelantadas.map((f) => {
-                          const estaLiquidada = carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0;
+                          const estaLiquidada = !carrerasReversadas.has(Number(carrera)) && (carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0);
                           return {
                             juega: resolverSeudonimoCliente(f.cliente1) || f.cliente1,
                             aposto: f.aposto1 ?? f.monto,

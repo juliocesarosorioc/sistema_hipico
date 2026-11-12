@@ -253,7 +253,7 @@ function ladosDeLaJugada(
 ): { lado1: LadoResultado; lado2: LadoResultado; aposto1: number; aposto2: number } {
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const jugTxt = TXT(nombreJugada).toUpperCase();
-  const esTablaFija = /^TABLA\s+FIJA\b|^TF\b|^TABLA$/i.test(jugTxt);
+  const esTablaFija = /^TABLA\s+FIJA\b|^TF\b|^TABLA\b/i.test(jugTxt);
   const esMarca = /^MARCAS?\b/i.test(jugTxt);
 
   const pagoTabla = esTablaFija
@@ -371,13 +371,17 @@ function filaDesdePersistida(
   j: JugadaPersistida,
   sesion?: TicketSesion,
   pizarraPuestos?: string[],
-  retirados?: Array<string | number>
+  retirados?: Array<string | number>,
+  pizarraRaya?: string[]
 ): FilaPreviewCarrera {
   const monto = NUM(j.monto_jugado);
   const nombreJug = TXT(j.nombre_jugada);
   const jRec = j as unknown as Record<string, unknown>;
   const esJugMarca = esMarca(nombreJug);
-  const esJugTabla = esTablaFija(nombreJug);
+  const esJugTabla =
+    esTablaFija(nombreJug) ||
+    /^TABLA\b|^TF\b/i.test(nombreJug) ||
+    jRec.categoriaAdelantada === "tablas";
   const caballo = esJugMarca
     ? extraerPareoMarca(jRec).caballoPareo
     : esJugTabla
@@ -456,6 +460,23 @@ function filaDesdePersistida(
   } else if (!anulada && /^MARCAS?\b/i.test(nombreJug) && estado === "Retirado") {
     sinDecision = true;
   }
+
+  // Evaluación en vivo de TABLAS FIJAS según el resultado de la carrera (`pizarraRaya` / `pizarraPuestos`):
+  // Si ya se cargó el resultado, se decide si el ejemplar de la Tabla Fija cruzó primero la raya para
+  // reflejar su liquidación ganadora o perdedora inmediatamente, sin permanecer pendiente.
+  if (!anulada && esJugTabla && (pizarraRaya?.length || pizarraPuestos?.length)) {
+    const ganadorRaya = String(pizarraRaya?.[0] || pizarraPuestos?.[0] || "").trim();
+    const numEjemplar = extraerNumeroTablaFija(jRec) || (j.ejemplar_numero != null ? String(j.ejemplar_numero).trim() : "") || (caballo.match(/\d+/)?.[0] ?? "");
+    if (involucraRetirado) {
+      estado = "Retirado";
+    } else if (ganadorRaya && numEjemplar) {
+      if (numEjemplar === ganadorRaya) {
+        estado = "Ganador";
+      } else {
+        estado = "Perdedor";
+      }
+    }
+  }
   // Evaluación de jugadas de puestos / NINI / combinadas (ej. 2Y3N):
   // - Si `totalClienteNeto === monto` (empate NINI 0/0, ej. 2N en 2°): estado = "Retirado" con `esEmpateNini = true` (0 / 0 Empate).
   // - Si `0 < totalClienteNeto < monto` (pérdida parcial, ej. 2Y3N en 3°): estado = "Perdedor" con `premioPagarEfectivo = totalClienteNeto`
@@ -505,7 +526,7 @@ function filaDesdePersistida(
   let tieneProyeccion = true;
 
   if (estado === "Ganador") {
-    premioSaldo = premioPagarEfectivo;
+    premioSaldo = esJugTabla ? pagoPotencialTablaFija(jRec) : premioPagarEfectivo;
     esPremio = premioSaldo > 0;
   } else if (estado === "Perdedor") {
     const perdidaFila =
@@ -595,7 +616,9 @@ function filaDesdePersistida(
 
 function filaDesdeSesion(
   t: TicketSesion,
-  retirados?: Array<string | number>
+  retirados?: Array<string | number>,
+  pizarraPuestos?: string[],
+  pizarraRaya?: string[]
 ): FilaPreviewCarrera {
   const monto = NUM(t.monto);
   const mejor = mejorCobreDe(t);
@@ -607,8 +630,25 @@ function filaDesdeSesion(
     Array.isArray(retirados) &&
     retirados.length > 0 &&
     jugadaInvolucraRetirado(caballo, null, nombreJug, retirados);
-  const estado = involucraRetirado ? "Retirado" : "Pendiente";
-  const { lado1, lado2, aposto1, aposto2 } = ladosDeLaJugada(monto, estado, 0, 0, nombreJug);
+  const esJugTabla = esTablaFija(nombreJug) || /^TABLA\b|^TF\b/i.test(nombreJug);
+  let estado = involucraRetirado ? "Retirado" : "Pendiente";
+  let premioPagarEfectivo = 0;
+
+  if (!involucraRetirado && esJugTabla && (pizarraRaya?.length || pizarraPuestos?.length)) {
+    const ganadorRaya = String(pizarraRaya?.[0] || pizarraPuestos?.[0] || "").trim();
+    const numEjemplar = extraerNumeroTablaFija({ jugada: nombreJug, caballo }) || (caballo.match(/\d+/)?.[0] ?? "");
+    if (ganadorRaya && numEjemplar) {
+      if (numEjemplar === ganadorRaya) {
+        estado = "Ganador";
+        premioPagarEfectivo = mejor > monto ? mejor : monto * 2;
+      } else {
+        estado = "Perdedor";
+        premioPagarEfectivo = 0;
+      }
+    }
+  }
+
+  const { lado1, lado2, aposto1, aposto2 } = ladosDeLaJugada(monto, estado, premioPagarEfectivo, 0, nombreJug);
   const esAdel = Boolean(t.esAdelantada) || esNombreModalidadAdelantada(nombreJug);
   const c1Final = resolverSeudonimoCliente(t.cliente1) || TXT(t.cliente1);
   const c2Raw = resolverSeudonimoCliente(t.cliente2) || TXT(t.cliente2);
@@ -624,12 +664,12 @@ function filaDesdeSesion(
     cliente1: c1Final,
     cliente2: c2Final,
     estado,
-    estadoLiquidacion: involucraRetirado ? "Liquidada" : "Pendiente",
+    estadoLiquidacion: estadoLiquidacionDe(estado),
     validada: ticketId !== null,
     anulada: false,
     soloSesion: true,
-    premioSaldo: involucraRetirado ? 0 : esPremio ? mejor - monto : -monto,
-    esPremio: involucraRetirado ? false : esPremio,
+    premioSaldo: involucraRetirado ? 0 : estado === "Ganador" ? premioPagarEfectivo - monto : estado === "Perdedor" ? -monto : esPremio ? mejor - monto : -monto,
+    esPremio: involucraRetirado ? false : estado === "Ganador" ? true : estado === "Perdedor" ? false : esPremio,
     tieneProyeccion: true,
     lado1,
     lado2,
@@ -649,7 +689,8 @@ export function armarFilasPreview(
   persistidas: JugadaPersistida[],
   sesion: TicketSesion[],
   pizarraPuestos?: string[],
-  retirados?: Array<string | number>
+  retirados?: Array<string | number>,
+  pizarraRaya?: string[]
 ): FilaPreviewCarrera[] {
   const ticketsSesion = sesion.filter((t) => {
     const cmd = TXT(t.comando);
@@ -673,13 +714,13 @@ export function armarFilasPreview(
     const id = String(j.id ?? "").trim();
     const sesionDeFila = id ? porTicketId.get(id) : undefined;
     if (id) idsUsados.add(id);
-    filas.push(filaDesdePersistida(j, sesionDeFila, pizarraPuestos, retirados));
+    filas.push(filaDesdePersistida(j, sesionDeFila, pizarraPuestos, retirados, pizarraRaya));
   }
 
   for (const t of ticketsSesion) {
     const id = t.ticketId != null ? String(t.ticketId) : "";
     if (id && idsUsados.has(id)) continue;
-    filas.push(filaDesdeSesion(t, retirados));
+    filas.push(filaDesdeSesion(t, retirados, pizarraPuestos, pizarraRaya));
   }
 
   return filas;

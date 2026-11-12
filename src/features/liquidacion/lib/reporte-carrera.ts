@@ -84,7 +84,7 @@ export function categoriaJugadaAdelantada(entrada: unknown): CategoriaJugadaAdel
       : entrada;
   const t = String(raw ?? "").trim().toUpperCase();
   if (/^MARCA\b/.test(t) || t.includes("MARCA")) return "marcas";
-  if (/^TABLA\b/.test(t) || t.includes("TABLA")) return "tablas";
+  if (/^TABLA\b|^TF\b/.test(t) || t.includes("TABLA")) return "tablas";
   if (/^(REMATE|POLLA)\b/.test(t) || t.includes("REMATE")) return "remates";
   if (/^DUPLETA\b/.test(t) || t.includes("DUPLETA")) return "dupletas";
   return "tercios";
