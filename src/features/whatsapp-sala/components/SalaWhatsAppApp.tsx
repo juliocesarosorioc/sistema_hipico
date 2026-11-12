@@ -29,6 +29,10 @@ import { SalaBurbujaMensaje } from "./SalaBurbujaMensaje";
 import { emitirToast } from "@/shared/lib/mensajeria";
 import { formatearMontoRegional } from "@/shared/lib/dinero";
 import {
+  construirMensajeCarreraAbierta,
+  construirMensajeCarreraCerrada,
+} from "@/features/sala-juegos/lib/mensajes-carrera";
+import {
   listarSalasPorGrupo,
   crearSalaEnGrupo,
   editarSala,
@@ -1338,7 +1342,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           autor_id: sesion.id,
           autor_nombre: sesion.nombre,
           autor_rol: "OPERADOR",
-          texto: `🟢 Carrera ABIERTA: ${hipoNuevo} Carrera ${cNum}`,
+          texto: construirMensajeCarreraAbierta(hipoNuevo, cNum),
           tipo: "IMAGEN_CARRERA",
           solo_borrable_operador: true,
           created_at: nowIso,
@@ -1404,7 +1408,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           autor_id: sesion.id,
           autor_nombre: sesion.nombre,
           autor_rol: "OPERADOR",
-          texto: `🚨 *¡CARRERA CERRADA!*\n\n${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera}) ha sido **CERRADA** por el operador. No se admiten más jugadas.`,
+          texto: construirMensajeCarreraCerrada(carreraActiva.hipodromo, carreraActiva.carrera),
           tipo: "ESTADO_CARRERA",
           created_at: nowIso,
           esMio: true,
@@ -2113,8 +2117,8 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
 
     const txt =
       nuevo === "ABIERTA"
-        ? `🟢 *CARRERA ABIERTA*: ${carreraActiva.hipodromo} C${carreraActiva.carrera}`
-        : `🚨 *CARRERA CERRADA*: ${carreraActiva.hipodromo} C${carreraActiva.carrera}`;
+        ? construirMensajeCarreraAbierta(carreraActiva.hipodromo, carreraActiva.carrera)
+        : construirMensajeCarreraCerrada(carreraActiva.hipodromo, carreraActiva.carrera);
 
     const msgEst: MensajeSala = {
       id: `est-${Date.now()}`,

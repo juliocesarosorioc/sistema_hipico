@@ -10,6 +10,7 @@ import {
 import { generarHashArchivoSHA256, generarHashTextoSHA256, cifrarMensajeSala } from '../lib/seguridad-crypto';
 import { supabase } from '@/core/supabase';
 import { formatearMontoRegional } from '@/shared/lib/dinero';
+import { construirMensajeCarreraAbierta } from '../lib/mensajes-carrera';
 
 export interface SalaActivaInfo {
   id: string;
@@ -132,10 +133,7 @@ export default function SalaJuegosWhatsApp({
       remitente: '🏇 CONTROL DE SALA',
       esBot: true,
       tipo: 'apertura_vista_2',
-      contenido:
-        `🏇 ¡ABIERTA ${hipodromo.toUpperCase()} - CARRERA ${numero} (${distancia}m)! 🏇\n` +
-        `La sala está habilitada para recibir sus propuestas \n` +
-        `¡Hagan sus jugadas y mucha suerte a todos! 🍀`,
+      contenido: construirMensajeCarreraAbierta(hipodromo, numero),
     });
   };
 

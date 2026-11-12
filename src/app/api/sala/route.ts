@@ -16,6 +16,11 @@ import {
 } from "@/features/sala-juegos/lib/parser-pedagogico";
 import { formatearMontoRegional } from "@/shared/lib/dinero";
 import {
+  construirMensajeCarreraAbierta,
+  construirMensajeCarreraCerrada,
+  parsearPizarraLlegadaTexto,
+} from "@/features/sala-juegos/lib/mensajes-carrera";
+import {
   sincronizarTicketsPropuestaATaquilla,
   actualizarTicketEspejoLiquidado,
   revertirTicketsEspejoSala,
@@ -1529,6 +1534,9 @@ export async function POST(req: Request) {
 
       // Mensaje de texto estándar (o emitido por Staff / Jugador)
       const esOperador = puedeOperarSala(identidad, grupoId);
+      const pizarraLlegada = puedeLiquidarSala(identidad, grupoId)
+        ? parsearPizarraLlegadaTexto(texto)
+        : null;
       const remitenteUuid = esUuidValido(identidad.usuarioId) ? identidad.usuarioId : null;
       const destPrivadoUuid = esUuidValido(destinatarioPrivadoId) ? destinatarioPrivadoId : null;
       const replyMsgUuid = esUuidValido(replyToMsgId) ? replyToMsgId : null;
@@ -1541,7 +1549,7 @@ export async function POST(req: Request) {
           remitente_id: remitenteUuid,
           remitente_nombre: identidad.nombre,
           es_operador: esOperador,
-          tipo_mensaje: destPrivadoUuid ? "DM_PRIVADO" : "TEXTO",
+          tipo_mensaje: pizarraLlegada ? "PIZARRA" : destPrivadoUuid ? "DM_PRIVADO" : "TEXTO",
           contenido: texto,
           destinatario_privado_id: destPrivadoUuid,
           reply_to_msg_id: replyMsgUuid,
@@ -1553,6 +1561,12 @@ export async function POST(req: Request) {
 
       if (errInsert) {
         return NextResponse.json({ ok: false, error: errInsert.message }, { status: 500 });
+      }
+
+      if (pizarraLlegada) {
+        const resLiq = await liquidarCarreraFallback(grupoId, salaId, pizarraLlegada, identidad.nombre);
+        await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+        return NextResponse.json({ ok: true, mensaje: msgInsertado, liquidacionAutomatica: resLiq });
       }
 
       await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
@@ -1667,10 +1681,7 @@ export async function POST(req: Request) {
         await sincronizarEstadoGrupo(grupoId);
 
         // Mensaje destacado exacto según especificación
-        const textoDestacado =
-          `🏇 ¡ABIERTA ${hipoTexto} - CARRERA ${carreraNum} (${distNum}m)! 🏇\n` +
-          `Modalidades habilitadas: Puestos (1P, 2P, 3P), Llaves y Match (Caballo x Caballo).\n` +
-          `¡Hagan sus propuestas y cierres en vivo!`;
+        const textoDestacado = construirMensajeCarreraAbierta(hipoTexto, carreraNum);
 
         await supabaseAdmin.from("chat_mensajes").insert({
           grupo_id: grupoId,
@@ -1701,13 +1712,18 @@ export async function POST(req: Request) {
 
         await sincronizarEstadoGrupo(grupoId);
 
+        const textoCierre = construirMensajeCarreraCerrada(
+          sala?.hipodromo_activo || "HIPÓDROMO",
+          sala?.numero_carrera_activa || 1
+        );
+
         await supabaseAdmin.from("chat_mensajes").insert({
           grupo_id: grupoId,
           sala_id: salaId,
           remitente_nombre: "Operador de Sala",
           es_operador: true,
           tipo_mensaje: "ESTADO_CARRERA",
-          contenido: "🔒 CARRERA CERRADA - No se reciben más jugadas para esta carrera.",
+          contenido: textoCierre,
           solo_borrable_operador: true,
         });
 
