@@ -46,11 +46,11 @@ export function generarSalasDefaultGrupo(grupoId: string, nombreGrupo?: string):
   const etiquetaGrupo = nombreGrupo ? ` · ${nombreGrupo}` : "";
   return [
     {
-      id: `${grupoId}_rinconada`,
+      id: `${grupoId}_venezuela`,
       grupo_id: String(grupoId),
-      nombre: `La Rinconada${etiquetaGrupo}`,
-      descripcion: "Chat exclusivo de carreras de La Rinconada",
-      hipodromo: "LA RINCONADA",
+      nombre: `Venezuela${etiquetaGrupo}`,
+      descripcion: "Chat exclusivo de carreras de Venezuela (La Rinconada y Valencia)",
+      hipodromo: "VENEZUELA",
       es_principal: true,
       activo: true,
       orden: 1,
@@ -81,6 +81,20 @@ export async function listarSalasPorGrupo(
   if (!grupoId) return [];
   const gId = String(grupoId);
 
+  function normalizarSalas(lista: SalaChat[]): SalaChat[] {
+    return lista.map((s) => {
+      if (/RINCONADA/i.test(s.nombre) || s.hipodromo === "LA RINCONADA") {
+        return {
+          ...s,
+          nombre: s.nombre.replace(/La Rinconada/gi, "Venezuela").replace(/RINCONADA/gi, "VENEZUELA"),
+          descripcion: "Chat exclusivo de carreras de Venezuela (La Rinconada y Valencia)",
+          hipodromo: "VENEZUELA",
+        };
+      }
+      return s;
+    });
+  }
+
   // 1. Intentar consultar Supabase
   if (supabase) {
     try {
@@ -93,8 +107,9 @@ export async function listarSalasPorGrupo(
         .order("created_at", { ascending: true });
 
       if (!error && data && data.length > 0) {
-        setLocalSalas(gId, data);
-        return data;
+        const norm = normalizarSalas(data);
+        setLocalSalas(gId, norm);
+        return norm;
       }
     } catch {
       /* fallback a cache local / defaults */
@@ -104,7 +119,9 @@ export async function listarSalasPorGrupo(
   // 2. Fallback a almacenamiento local del navegador
   const locales = getLocalSalas(gId);
   if (locales.length > 0) {
-    return locales;
+    const norm = normalizarSalas(locales);
+    setLocalSalas(gId, norm);
+    return norm;
   }
 
   // 3. Si no existen salas registradas para este grupo, sembrar las salas iniciales por defecto

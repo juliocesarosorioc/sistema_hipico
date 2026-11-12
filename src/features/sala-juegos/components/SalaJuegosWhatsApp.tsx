@@ -876,7 +876,7 @@ export default function SalaJuegosWhatsApp({
               onClick={() =>
                 abrirCarreraOperador(
                   salaActiva,
-                  salaActiva.hipodromoActivo || 'LA RINCONADA',
+                  salaActiva.hipodromoActivo || (salaActiva.nombreSala?.toUpperCase().includes('AMERICANA') ? 'GULFSTREAM PARK' : 'LA RINCONADA'),
                   salaActiva.numeroCarreraActiva || 5,
                   salaActiva.distanciaActiva || 1200
                 )

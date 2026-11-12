@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { salaApi } from "../lib/sala-api";
+import { colorDeNumero, textoDeNumero } from "@/features/tablas/lib/tipos";
+import { supabase } from "@/core/supabase";
 
 interface PropsModalOperador {
   sala: any;
@@ -11,6 +13,32 @@ interface PropsModalOperador {
   onActualizado: () => void;
   onAbrirPrejugadas: () => void;
 }
+
+const HIPODROMOS_AMERICANOS_COMUNES = [
+  "GULFSTREAM PARK",
+  "TAMPA BAY DOWNS",
+  "AQUEDUCT",
+  "BELMONT PARK",
+  "SARATOGA",
+  "CHURCHILL DOWNS",
+  "KEENELAND",
+  "DEL MAR",
+  "SANTA ANITA",
+  "CHARLES TOWN",
+  "MOUNTAINEER",
+  "PARX RACING",
+  "MAHONING VALLEY",
+  "TURFWAY PARK",
+  "PENN NATIONAL",
+  "DELTA DOWNS",
+  "REMINGTON PARK",
+  "OAKLAWN PARK",
+  "HAWTHORNE",
+  "FAIR GROUNDS",
+  "GOLDEN GATE FIELDS",
+];
+
+type FilaLlegada = { numero: string; empate: boolean };
 
 export function ModalOperadorSala({
   sala,
@@ -24,26 +52,123 @@ export function ModalOperadorSala({
   const [cargando, setCargando] = useState(false);
   const [msgFeedback, setMsgFeedback] = useState<string | null>(null);
 
+  // Detección de sala: VENEZUELA vs AMERICANAS
+  const nombreSalaUpper = String(sala.nombre_sala || "").toUpperCase();
+  const esVenezuela =
+    nombreSalaUpper.includes("VENEZUELA") ||
+    nombreSalaUpper.includes("RINCONADA") ||
+    sala.orden_sala === 1;
+  const esAmericanas =
+    nombreSalaUpper.includes("AMERICANA") ||
+    nombreSalaUpper.includes("USA") ||
+    sala.orden_sala === 2;
+
   // Apertura
-  const [hipodromo, setHipodromo] = useState(sala.hipodromo_activo || "LA RINCONADA");
+  const [hipodromo, setHipodromo] = useState<string>(() => {
+    if (esVenezuela) {
+      return sala.hipodromo_activo === "VALENCIA" ? "VALENCIA" : "LA RINCONADA";
+    }
+    if (esAmericanas) {
+      const act = sala.hipodromo_activo;
+      if (act && act !== "LA RINCONADA" && act !== "VALENCIA") return act;
+      return "GULFSTREAM PARK";
+    }
+    return sala.hipodromo_activo || "LA RINCONADA";
+  });
   const [numeroCarrera, setNumeroCarrera] = useState(sala.numero_carrera_activa || 1);
   const [distancia, setDistancia] = useState(sala.distancia_activa || 1200);
 
   // Retirados
   const [ejemplarRetirado, setEjemplarRetirado] = useState("");
 
-  // Liquidación
-  const [p1, setP1] = useState("");
-  const [p2, setP2] = useState("");
-  const [p3, setP3] = useState("");
-  const [p4, setP4] = useState("");
-  const [p5, setP5] = useState("");
+  // Liquidación dinámica (como en la plataforma: posiciones, empates Dead Heat y adición de ejemplares)
+  const [filasLlegada, setFilasLlegada] = useState<FilaLlegada[]>([
+    { numero: "", empate: false },
+    { numero: "", empate: false },
+    { numero: "", empate: false },
+    { numero: "", empate: false },
+    { numero: "", empate: false },
+  ]);
+  const [plataformaResultado, setPlataformaResultado] = useState<{
+    ganadores: string[];
+    empates?: number[];
+  } | null>(null);
+  const [cargandoPlataforma, setCargandoPlataforma] = useState(false);
 
   // Publicidad
   const [pubTitulo, setPubTitulo] = useState("");
   const [pubContenido, setPubContenido] = useState("");
   const [pubEnlace, setPubEnlace] = useState("");
   const [pubFijado, setPubFijado] = useState(false);
+
+  // Consultar si la plataforma ya tiene resultado cargado para esta carrera
+  useEffect(() => {
+    let activo = true;
+    async function verificarResultadoPlataforma() {
+      if (!supabase) return;
+      const hip = String(sala.hipodromo_activo || hipodromo).trim();
+      const num = Number(sala.numero_carrera_activa || numeroCarrera);
+      const hoy = new Date().toISOString().slice(0, 10);
+      if (!hip || !num) return;
+
+      setCargandoPlataforma(true);
+      try {
+        const { data } = await supabase
+          .from("resultados_carreras")
+          .select("ganadores, orden_llegada, dividendos")
+          .eq("fecha", hoy)
+          .ilike("hipodromo", `%${hip}%`)
+          .eq("carrera", num)
+          .maybeSingle();
+
+        if (activo && data && Array.isArray(data.ganadores) && data.ganadores.length > 0) {
+          setPlataformaResultado({
+            ganadores: data.ganadores.map(String),
+          });
+        } else if (activo) {
+          setPlataformaResultado(null);
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        if (activo) setCargandoPlataforma(false);
+      }
+    }
+
+    void verificarResultadoPlataforma();
+    return () => {
+      activo = false;
+    };
+  }, [sala.hipodromo_activo, sala.numero_carrera_activa, hipodromo, numeroCarrera]);
+
+  // Tomar resultado directamente de la plataforma
+  const tomarResultadoDePlataforma = () => {
+    if (!plataformaResultado || !plataformaResultado.ganadores?.length) return;
+    const g = plataformaResultado.ganadores;
+    const minLength = Math.max(5, g.length);
+    const nuevasFilas: FilaLlegada[] = Array.from({ length: minLength }, (_, idx) => ({
+      numero: g[idx] ? String(g[idx]).trim() : "",
+      empate: Boolean(plataformaResultado.empates?.includes(idx + 1)),
+    }));
+    setFilasLlegada(nuevasFilas);
+    setMsgFeedback(`📥 Pizarra tomada de la plataforma: #${g.join(" - #")}`);
+  };
+
+  // Validaciones de duplicados en la pizarra
+  const validacionPizarra = useMemo(() => {
+    const llenas = filasLlegada.map((f) => f.numero.trim()).filter(Boolean);
+    if (llenas.length === 0) return { ok: false, error: "Ingresa al menos el 1° lugar" };
+    const vistos = new Set<string>();
+    for (let i = 0; i < filasLlegada.length; i++) {
+      const num = filasLlegada[i].numero.trim();
+      if (!num) continue;
+      if (vistos.has(num) && !filasLlegada[i].empate && !filasLlegada[i - 1]?.empate) {
+        return { ok: false, error: `El ejemplar #${num} está duplicado en la llegada` };
+      }
+      vistos.add(num);
+    }
+    return { ok: true, error: null };
+  }, [filasLlegada]);
 
   const ejecutarAccion = async (subaccion: string, extraPayload: Record<string, any> = {}) => {
     setCargando(true);
@@ -81,7 +206,8 @@ export function ModalOperadorSala({
               <span>🛠️</span> Panel de Control del Operador
             </h3>
             <p className="text-xs text-gray-400">
-              {sala.nombre_sala} | Grupo: <span className="text-emerald-400 font-semibold">{grupoNombre}</span>
+              Sala: <span className="text-white font-bold">{sala.nombre_sala}</span> | Grupo:{" "}
+              <span className="text-emerald-400 font-semibold">{grupoNombre}</span>
             </p>
           </div>
           <button onClick={onCerrar} className="text-gray-400 hover:text-white px-2 py-1 text-sm rounded">
@@ -161,17 +287,58 @@ export function ModalOperadorSala({
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-2.5">
+              {/* Selector de Hipódromo con restricción por sala */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
                 <div>
-                  <label className="block text-gray-300 font-medium mb-1">Hipódromo</label>
-                  <input
-                    type="text"
-                    value={hipodromo}
-                    onChange={(e) => setHipodromo(e.target.value.toUpperCase())}
-                    placeholder="LA RINCONADA"
-                    className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-white font-bold"
-                  />
+                  <label className="block text-gray-300 font-medium mb-1">
+                    Hipódromo {esVenezuela ? "(Venezuela)" : esAmericanas ? "(Americanas)" : ""}
+                  </label>
+                  {esVenezuela ? (
+                    <select
+                      value={hipodromo}
+                      onChange={(e) => setHipodromo(e.target.value)}
+                      className="w-full bg-[#0b141a] border border-emerald-500/80 rounded-lg p-2.5 text-white font-bold"
+                    >
+                      <option value="LA RINCONADA">LA RINCONADA</option>
+                      <option value="VALENCIA">VALENCIA</option>
+                    </select>
+                  ) : esAmericanas ? (
+                    <div>
+                      <input
+                        list="hipodromos-americanos-list"
+                        type="text"
+                        value={hipodromo}
+                        onChange={(e) => {
+                          const v = e.target.value.toUpperCase();
+                          setHipodromo(v);
+                        }}
+                        placeholder="GULFSTREAM PARK"
+                        className="w-full bg-[#0b141a] border border-blue-500/80 rounded-lg p-2.5 text-white font-bold"
+                      />
+                      <datalist id="hipodromos-americanos-list">
+                        {HIPODROMOS_AMERICANOS_COMUNES.map((h) => (
+                          <option key={h} value={h} />
+                        ))}
+                      </datalist>
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={hipodromo}
+                      onChange={(e) => setHipodromo(e.target.value.toUpperCase())}
+                      placeholder="HIPÓDROMO"
+                      className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-white font-bold"
+                    />
+                  )}
+                  <p className="mt-1 text-[10px] text-gray-400">
+                    {esVenezuela
+                      ? "🇻🇪 En esta sala solo se permiten La Rinconada o Valencia."
+                      : esAmericanas
+                      ? "🇺🇸 En esta sala solo se permiten hipódromos americanos."
+                      : ""}
+                  </p>
                 </div>
+
                 <div>
                   <label className="block text-gray-300 font-medium mb-1">Nº Carrera</label>
                   <input
@@ -179,17 +346,18 @@ export function ModalOperadorSala({
                     min="1"
                     max="20"
                     value={numeroCarrera}
-                    onChange={(e) => setNumeroCarrera(parseInt(e.target.value, 10))}
+                    onChange={(e) => setNumeroCarrera(parseInt(e.target.value, 10) || 1)}
                     className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-white font-bold"
                   />
                 </div>
+
                 <div>
                   <label className="block text-gray-300 font-medium mb-1">Distancia (m)</label>
                   <input
                     type="number"
                     step="50"
                     value={distancia}
-                    onChange={(e) => setDistancia(parseInt(e.target.value, 10))}
+                    onChange={(e) => setDistancia(parseInt(e.target.value, 10) || 1200)}
                     className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-white font-bold"
                   />
                 </div>
@@ -199,13 +367,22 @@ export function ModalOperadorSala({
                 <button
                   type="button"
                   disabled={cargando}
-                  onClick={() =>
+                  onClick={() => {
+                    const hipLimpio = hipodromo.trim().toUpperCase();
+                    if (esVenezuela && hipLimpio !== "LA RINCONADA" && hipLimpio !== "VALENCIA") {
+                      setMsgFeedback("❌ En el chat de VENEZUELA solo pueden abrirse carreras de LA RINCONADA o VALENCIA.");
+                      return;
+                    }
+                    if (esAmericanas && (hipLimpio.includes("RINCONADA") || hipLimpio.includes("VALENCIA"))) {
+                      setMsgFeedback("❌ En el chat de AMERICANAS solo pueden abrirse hipódromos americanos.");
+                      return;
+                    }
                     ejecutarAccion("abrir-carrera", {
-                      hipodromo,
+                      hipodromo: hipLimpio,
                       numeroCarrera,
                       distancia,
-                    })
-                  }
+                    });
+                  }}
                   className="bg-[#00a884] hover:bg-emerald-500 text-black font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"
                 >
                   <span>🏇</span>
@@ -272,89 +449,163 @@ export function ModalOperadorSala({
 
           {tab === "liquidacion" && (
             <div className="space-y-4">
-              <div className="bg-[#0b141a] p-4 rounded-xl border border-gray-800">
-                <h4 className="font-bold text-white mb-1">Liquidación con Netting Condicional (5%)</h4>
-                <p className="text-gray-400 text-[11px] leading-relaxed">
-                  Evalúa universalmente los tickets (1P, 2P, 3P, Llaves y Match). Aplica la comisión del 5% únicamente sobre
-                  el balance bruto positivo si los cruces están habilitados. Genera la relación con 🟢 POSITIVOS y 🔴 NEGATIVOS.
+              <div className="bg-[#0b141a] p-3.5 rounded-xl border border-gray-800">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-white">Liquidación de Carrera (Pizarra Oficial)</h4>
+                  <span className="text-[10px] text-emerald-400 font-bold uppercase">
+                    {sala.hipodromo_activo || hipodromo} C{sala.numero_carrera_activa || numeroCarrera}
+                  </span>
+                </div>
+                <p className="text-gray-400 text-[11px] mt-1 leading-relaxed">
+                  Carga la llegada con soporte para <b>Empates (Dead Heat)</b> y añade tantas posiciones como sea necesario.
+                  La sala puede tomar directamente la llegada oficial de la plataforma.
                 </p>
               </div>
 
-              <div className="grid grid-cols-5 gap-2">
-                <div>
-                  <label className="block text-emerald-400 font-bold mb-1 text-center">1º (Ganador)</label>
-                  <input
-                    type="text"
-                    value={p1}
-                    onChange={(e) => setP1(e.target.value)}
-                    placeholder="#"
-                    className="w-full bg-[#0b141a] border border-emerald-500 rounded-lg p-2.5 text-center text-white font-bold text-base"
-                  />
+              {/* Botón / Banner: Tomar de la plataforma */}
+              {plataformaResultado && (
+                <div className="bg-emerald-950/40 border border-emerald-600/50 rounded-xl p-3 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-emerald-400 block">
+                      ✅ Pizarra oficial en plataforma detectada
+                    </span>
+                    <span className="text-white font-mono text-xs font-bold">
+                      Llegada: {plataformaResultado.ganadores.map((n) => `#${n}`).join(" - ")}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={tomarResultadoDePlataforma}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow"
+                  >
+                    📥 Tomar de Plataforma
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-gray-400 font-medium mb-1 text-center">2º</label>
-                  <input
-                    type="text"
-                    value={p2}
-                    onChange={(e) => setP2(e.target.value)}
-                    placeholder="#"
-                    className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-center text-white font-bold text-base"
-                  />
+              )}
+
+              {/* Filas dinámicas de posiciones de llegada */}
+              <div className="space-y-2 bg-[#0b141a] p-3.5 rounded-xl border border-gray-800">
+                <div className="text-[11px] font-bold text-gray-400 pb-1 flex items-center justify-between">
+                  <span>Posición y Ejemplar</span>
+                  <span>Empate (Dead Heat)</span>
                 </div>
-                <div>
-                  <label className="block text-gray-400 font-medium mb-1 text-center">3º</label>
-                  <input
-                    type="text"
-                    value={p3}
-                    onChange={(e) => setP3(e.target.value)}
-                    placeholder="#"
-                    className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-center text-white font-bold text-base"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-400 font-medium mb-1 text-center">4º</label>
-                  <input
-                    type="text"
-                    value={p4}
-                    onChange={(e) => setP4(e.target.value)}
-                    placeholder="#"
-                    className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-center text-white font-bold text-base"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-400 font-medium mb-1 text-center">5º</label>
-                  <input
-                    type="text"
-                    value={p5}
-                    onChange={(e) => setP5(e.target.value)}
-                    placeholder="#"
-                    className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-center text-white font-bold text-base"
-                  />
+
+                {filasLlegada.map((f, idx) => {
+                  const numLimpio = f.numero.trim();
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between gap-3 p-1.5 rounded-lg bg-[#111b21] border border-gray-800"
+                    >
+                      <div className="flex items-center gap-2">
+                        {/* Insignia / Gualdrapa con número y color oficial */}
+                        <span
+                          className="grid h-7 w-8 shrink-0 place-items-center rounded-md text-[11px] font-black"
+                          style={{
+                            backgroundColor: numLimpio ? colorDeNumero(numLimpio) : "#202c33",
+                            color: numLimpio ? textoDeNumero(numLimpio) : "#8696a0",
+                          }}
+                        >
+                          {numLimpio || idx + 1}
+                        </span>
+
+                        <span className="w-8 font-bold text-gray-300 text-xs">{idx + 1}º</span>
+
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={f.numero}
+                          placeholder="#"
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9]/g, "");
+                            setFilasLlegada((prev) =>
+                              prev.map((row, i) => (i === idx ? { ...row, numero: val } : row))
+                            );
+                          }}
+                          className="w-16 bg-[#0b141a] border border-gray-700 focus:border-emerald-500 rounded-lg p-1.5 text-center text-white font-bold text-sm"
+                        />
+                      </div>
+
+                      <label className="flex items-center gap-1.5 cursor-pointer text-gray-300 font-medium">
+                        <input
+                          type="checkbox"
+                          checked={f.empate}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setFilasLlegada((prev) =>
+                              prev.map((row, i) => (i === idx ? { ...row, empate: checked } : row))
+                            );
+                          }}
+                          className="rounded text-emerald-500 accent-emerald-500 h-4 w-4"
+                        />
+                        <span className="text-[11px]">Empate</span>
+                      </label>
+                    </div>
+                  );
+                })}
+
+                {/* Controles de adición / supresión de posiciones */}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={filasLlegada.length <= 1}
+                    onClick={() => setFilasLlegada((prev) => prev.slice(0, -1))}
+                    className="flex-1 bg-[#202c33] hover:bg-[#2a3942] disabled:opacity-40 text-gray-300 font-bold py-1.5 rounded-lg text-xs transition"
+                  >
+                    − Quitar {filasLlegada.length}° lugar
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={filasLlegada.length >= 10}
+                    onClick={() =>
+                      setFilasLlegada((prev) => [...prev, { numero: "", empate: false }])
+                    }
+                    className="flex-1 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-600/50 text-emerald-300 font-bold py-1.5 rounded-lg text-xs transition"
+                  >
+                    ＋ Añadir {filasLlegada.length + 1}° lugar
+                  </button>
                 </div>
               </div>
 
+              {validacionPizarra.error && (
+                <div className="p-2.5 rounded-lg bg-amber-950/50 border border-amber-600/50 text-amber-300 text-xs">
+                  ⚠️ {validacionPizarra.error}
+                </div>
+              )}
+
               <button
                 type="button"
-                disabled={cargando || !p1.trim()}
-                onClick={() =>
+                disabled={cargando || !validacionPizarra.ok}
+                onClick={() => {
+                  const ganadores = filasLlegada.map((f) => f.numero.trim()).filter(Boolean);
+                  const empates = filasLlegada
+                    .map((f, i) => (f.empate ? i + 1 : null))
+                    .filter((x): x is number => x !== null);
+
                   ejecutarAccion("liquidar", {
                     pizarra: {
-                      primero: p1.trim(),
-                      segundo: p2.trim() || undefined,
-                      tercero: p3.trim() || undefined,
-                      cuarto: p4.trim() || undefined,
-                      quinto: p5.trim() || undefined,
+                      primero: ganadores[0] || "",
+                      segundo: ganadores[1] || undefined,
+                      tercero: ganadores[2] || undefined,
+                      cuarto: ganadores[3] || undefined,
+                      quinto: ganadores[4] || undefined,
+                      sexto: ganadores[5] || undefined,
+                      septimo: ganadores[6] || undefined,
+                      octavo: ganadores[7] || undefined,
+                      ganadores,
+                      empates,
                     },
-                  })
-                }
-                className="w-full bg-[#00a884] hover:bg-emerald-500 text-black font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-lg"
+                  });
+                }}
+                className="w-full bg-[#00a884] hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-400 text-black font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-lg"
               >
                 <span>🏁</span>
                 <span>Liquidar Carrera y Publicar Resultados</span>
               </button>
 
               {/* Acciones Críticas de Operador / Administrador */}
-              <div className="pt-4 border-t border-gray-800 space-y-2.5">
+              <div className="pt-3 border-t border-gray-800 space-y-2.5">
                 <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
                   <span>⚠️</span> Acciones Especiales de Corrección
                 </div>

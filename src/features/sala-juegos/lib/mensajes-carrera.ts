@@ -57,26 +57,31 @@ export interface PizarraParseada {
   tercero?: string;
   cuarto?: string;
   quinto?: string;
+  sexto?: string;
+  septimo?: string;
+  octavo?: string;
+  ganadores: string[];
 }
 
 /**
  * Reconoce comandos de llegada/pizarra escritos por el operador en el chat o WhatsApp:
- * Ej: "LLEGADA 5-2-7-1", "LLEGADA: 5 2 7 1", "PIZARRA 5-2-7-1"
+ * Ej: "LLEGADA: 1.2.3.4.5", "LLEGADA 5-2-7-1", "LLEGADA: 5 2 7 1", "PIZARRA: 1.2.3.4.5"
  */
 export function parsearPizarraLlegadaTexto(texto: string): PizarraParseada | null {
   const limpio = String(texto || "").trim();
-  const match = /^(?:llegada|pizarra)\s*[:=\-]?\s*([0-9]+(?:\s*[-,./·\s]\s*[0-9]+){1,4})\s*\.?$/i.exec(limpio);
+  const match = /^(?:llegada|pizarra)\s*[:=\-]?\s*([0-9\s,./·\-_]+)\.?$/i.exec(limpio);
   if (!match) return null;
-  const nums = match[1]
-    .split(/[-,./·\s]+/)
-    .map((s) => s.trim())
-    .filter((s) => /^\d+$/.test(s));
-  if (nums.length < 2) return null;
+  const nums = match[1].match(/\b\d+\b/g) || [];
+  if (nums.length < 1) return null;
   return {
-    primero: nums[0],
+    primero: nums[0] || "",
     segundo: nums[1],
     tercero: nums[2],
     cuarto: nums[3],
     quinto: nums[4],
+    sexto: nums[5],
+    septimo: nums[6],
+    octavo: nums[7],
+    ganadores: nums,
   };
 }

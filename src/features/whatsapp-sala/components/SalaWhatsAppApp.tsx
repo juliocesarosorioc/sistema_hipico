@@ -1319,12 +1319,48 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
       // ABRIR CARRERA (Segmentado por Hipódromo del Chat y alimenta la BD)
       if (cmdOp.tipo === "ABRIR_CARRERA") {
         const salaSeleccionada = salas.find((s) => s.id === grupoActivoId);
-        const hipoChat =
-          salaSeleccionada?.hipodromo ||
-          (salaSeleccionada?.nombre?.toUpperCase().includes("RINCONADA") ? "LA RINCONADA" : null) ||
-          (salaSeleccionada?.nombre?.toUpperCase().includes("VALENCIA") ? "VALENCIA" : null);
+        const nomSala = (salaSeleccionada?.nombre || "").toUpperCase();
+        const esChatVenezuela =
+          nomSala.includes("VENEZUELA") ||
+          nomSala.includes("RINCONADA") ||
+          salaSeleccionada?.orden === 1;
+        const esChatAmericanas =
+          nomSala.includes("AMERICANA") ||
+          nomSala.includes("USA") ||
+          salaSeleccionada?.orden === 2;
 
-        const hipoNuevo = cmdOp.hipodromo || hipoChat || carreraActiva.hipodromo || "LA RINCONADA";
+        let hipoNuevo = (cmdOp.hipodromo || "").trim().toUpperCase();
+        if (esChatVenezuela) {
+          if (!hipoNuevo) hipoNuevo = "LA RINCONADA";
+          const esHipoVe =
+            hipoNuevo.includes("RINCONADA") ||
+            hipoNuevo.includes("VALENCIA") ||
+            hipoNuevo === "LR" ||
+            hipoNuevo === "VAL";
+          if (!esHipoVe) {
+            alert("❌ En el chat de VENEZUELA solo pueden abrirse carreras de LA RINCONADA o VALENCIA.");
+            setEnviando(false);
+            return;
+          }
+        } else if (esChatAmericanas) {
+          if (!hipoNuevo) hipoNuevo = "GULFSTREAM PARK";
+          const esHipoVe =
+            hipoNuevo.includes("RINCONADA") ||
+            hipoNuevo.includes("VALENCIA") ||
+            hipoNuevo === "LR" ||
+            hipoNuevo === "VAL";
+          if (esHipoVe) {
+            alert("❌ En el chat de AMERICANAS solo pueden abrirse hipódromos americanos.");
+            setEnviando(false);
+            return;
+          }
+        } else {
+          const hipoChat =
+            salaSeleccionada?.hipodromo ||
+            (nomSala.includes("VALENCIA") ? "VALENCIA" : null);
+          hipoNuevo = hipoNuevo || hipoChat || carreraActiva.hipodromo || "LA RINCONADA";
+        }
+
         const cNum = cmdOp.carrera;
         const fechaHoy = new Date().toISOString().slice(0, 10);
 
@@ -1450,8 +1486,15 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           operadorNombre: sesion.nombre,
         });
 
-        // Actualizar estado en carreras de la base de datos
+        // Actualizar estado en carreras y sincronizar en resultados_carreras para la plataforma
         const fechaHoy = new Date().toISOString().slice(0, 10);
+        const fechaEfectiva = carreraActiva.fecha || fechaHoy;
+        const hipoEfectivo = (carreraActiva.hipodromo || "LA RINCONADA").toUpperCase().trim();
+        const carreraEfectiva = Number(carreraActiva.carrera) || 1;
+        const ganadoresLista = cmdOp.pizarra.split(/[- ,/.]+/).filter(Boolean);
+
+        setCarreraActiva((prev) => ({ ...prev, estado: "CERRADA" }));
+
         if (supabase) {
           try {
             await supabase
@@ -1461,9 +1504,35 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
                 estado: "FINALIZADA",
                 updated_at: nowIso,
               })
-              .eq("fecha", carreraActiva.fecha || fechaHoy)
-              .eq("hipodromo", carreraActiva.hipodromo)
-              .eq("carrera", carreraActiva.carrera);
+              .eq("fecha", fechaEfectiva)
+              .eq("hipodromo", hipoEfectivo)
+              .eq("carrera", carreraEfectiva);
+
+            if (ganadoresLista.length > 0) {
+              const { data: resExist } = await supabase
+                .from("resultados_carreras")
+                .select("id")
+                .eq("fecha", fechaEfectiva)
+                .ilike("hipodromo", `%${hipoEfectivo}%`)
+                .eq("carrera", carreraEfectiva)
+                .maybeSingle();
+
+              const payloadRes = {
+                fecha: fechaEfectiva,
+                hipodromo: hipoEfectivo,
+                carrera: carreraEfectiva,
+                ganadores: ganadoresLista,
+                orden_llegada: ganadoresLista.map((n, idx) => ({ numero: n, puesto: idx + 1 })),
+                cargado_por: sesion.nombre || "OPERADOR-WHATSAPP",
+                updated_at: nowIso,
+              };
+
+              if (resExist?.id) {
+                await supabase.from("resultados_carreras").update(payloadRes).eq("id", resExist.id);
+              } else {
+                await supabase.from("resultados_carreras").insert(payloadRes);
+              }
+            }
           } catch {
             /* noop */
           }

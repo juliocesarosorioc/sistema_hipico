@@ -478,7 +478,7 @@ export function SalaLeftPanelGrupos({
                   autoFocus
                   value={nombreNuevoChat}
                   onChange={(e) => setNombreNuevoChat(e.target.value)}
-                  placeholder="Ej. La Rinconada, Americanas, Gulfstream..."
+                  placeholder="Ej. Venezuela, Americanas, Gulfstream..."
                   className="w-full rounded-lg bg-[#111b21] border border-[#2a3942] px-3 py-2 text-[13px] text-[#e9edef] placeholder-[#8696a0] focus:border-[#00a884] focus:outline-none"
                 />
               </div>

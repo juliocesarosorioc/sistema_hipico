@@ -313,11 +313,13 @@ export type ComandoOperadorDetectado =
 export function detectarComandoOperador(texto: string): ComandoOperadorDetectado {
   const t = texto.trim();
 
-  // 1. Pizarra de llegada (ej. "LLEGADA 5-2-7-1", "Pizarra 9-8-6", "LLEGADA: 9 8 6")
-  const mPizarra = /^(?:pizarra|llegada)\s*[:=\-]?\s*([0-9\s,\/\-]+)\.?$/i.exec(t);
+  // 1. Pizarra de llegada (ej. "LLEGADA: 1.2.3.4.5", "LLEGADA 5-2-7-1", "Pizarra 9-8-6", "LLEGADA: 9 8 6")
+  const mPizarra = /^(?:pizarra|llegada)\s*[:=\-]?\s*([0-9\s,\/\.\-·_]+)\.?$/i.exec(t);
   if (mPizarra) {
-    const piz = mPizarra[1].trim().replace(/\s+/g, "-").replace(/,/g, "-");
-    return { tipo: "PIZARRA", pizarra: piz };
+    const rawNums = mPizarra[1].match(/\b\d+\b/g) || [];
+    if (rawNums.length > 0) {
+      return { tipo: "PIZARRA", pizarra: rawNums.join("-") };
+    }
   }
 
   // 2. Cerrada

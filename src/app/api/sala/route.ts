@@ -389,7 +389,18 @@ export async function GET(req: Request) {
 async function liquidarCarreraFallback(
   grupoId: string,
   salaId: string,
-  pizarra: { primero: string; segundo?: string; tercero?: string; cuarto?: string; quinto?: string },
+  pizarra: {
+    primero: string;
+    segundo?: string;
+    tercero?: string;
+    cuarto?: string;
+    quinto?: string;
+    sexto?: string;
+    septimo?: string;
+    octavo?: string;
+    ganadores?: string[];
+    empates?: number[];
+  },
   operadorNombre: string
 ) {
   // 1. Obtener sala y grupo
@@ -405,6 +416,34 @@ async function liquidarCarreraFallback(
   const numCarrera = sala.numero_carrera_activa || 1;
   const carreraId = sala.carrera_activa_id || sala.carrera_recien_cerrada_id;
 
+  // Si la carrera estaba abierta y el operador manda la llegada o liquida:
+  // cerramos la carrera inmediatamente para la recién cerrada
+  if (sala.estado_carrera === "abierta") {
+    await supabaseAdmin
+      .from("salas_juego")
+      .update({
+        estado_carrera: "cerrada",
+        carrera_recien_cerrada_id: sala.carrera_activa_id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", salaId);
+
+    const textoCierre = construirMensajeCarreraCerrada(
+      sala.hipodromo_activo || "HIPÓDROMO",
+      sala.numero_carrera_activa || 1
+    );
+
+    await supabaseAdmin.from("chat_mensajes").insert({
+      grupo_id: grupoId,
+      sala_id: salaId,
+      remitente_nombre: "Operador de Sala",
+      es_operador: true,
+      tipo_mensaje: "ESTADO_CARRERA",
+      contenido: textoCierre,
+      solo_borrable_operador: true,
+    });
+  }
+
   const { data: grupo } = await supabaseAdmin
     .from("grupos_venta")
     .select("permite_cruces, comision_default")
@@ -413,6 +452,65 @@ async function liquidarCarreraFallback(
 
   const permiteCruces = grupo?.permite_cruces ?? true;
   const porcentajeComision = (grupo?.comision_default ?? 5) / 100;
+
+  // Extraer lista completa de ganadores
+  const ganadoresArray: string[] =
+    Array.isArray(pizarra.ganadores) && pizarra.ganadores.length > 0
+      ? pizarra.ganadores
+      : [
+          pizarra.primero,
+          pizarra.segundo,
+          pizarra.tercero,
+          pizarra.cuarto,
+          pizarra.quinto,
+          pizarra.sexto,
+          pizarra.septimo,
+          pizarra.octavo,
+        ]
+          .filter((x): x is string => Boolean(x && String(x).trim()))
+          .map((x) => String(x).trim());
+
+  // Sincronizar llegada oficial a resultados_carreras y carreras de la plataforma
+  const fechaHoy = new Date().toISOString().split("T")[0];
+  try {
+    const { data: resExistente } = await supabaseAdmin
+      .from("resultados_carreras")
+      .select("id")
+      .eq("fecha", fechaHoy)
+      .ilike("hipodromo", `%${hipodromo.trim()}%`)
+      .eq("carrera", numCarrera)
+      .maybeSingle();
+
+    const payloadResultados = {
+      fecha: fechaHoy,
+      hipodromo: hipodromo.trim().toUpperCase(),
+      carrera: numCarrera,
+      ganadores: ganadoresArray,
+      orden_llegada: ganadoresArray.map((n, idx) => ({ numero: n, puesto: idx + 1 })),
+      cargado_por: operadorNombre || "OPERADOR-SALA",
+      updated_at: new Date().toISOString(),
+    };
+
+    if (resExistente?.id) {
+      await supabaseAdmin.from("resultados_carreras").update(payloadResultados).eq("id", resExistente.id);
+    } else {
+      await supabaseAdmin.from("resultados_carreras").insert(payloadResultados);
+    }
+
+    // Actualizar estado en carreras de la plataforma
+    await supabaseAdmin
+      .from("carreras")
+      .update({
+        estado: "Finalizada",
+        pizarra_oficial: ganadoresArray,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("fecha", fechaHoy)
+      .ilike("hipodromo", `%${hipodromo.trim()}%`)
+      .eq("carrera", numCarrera);
+  } catch (errRes) {
+    console.error("Error sincronizando resultado a resultados_carreras:", errRes);
+  }
 
   // 2. Obtener tickets pendientes de esta sala/carrera
   let queryTickets = supabaseAdmin
@@ -470,11 +568,11 @@ async function liquidarCarreraFallback(
       p_modalidad: t.modalidad || "1P",
       p_caballos_a: t.caballos_bando_a || (t.ejemplar_numero ? [t.ejemplar_numero] : []),
       p_caballos_b: t.caballos_bando_b || [],
-      p_p1: pizarra.primero,
-      p_p2: pizarra.segundo || null,
-      p_p3: pizarra.tercero || null,
-      p_p4: pizarra.cuarto || null,
-      p_p5: pizarra.quinto || null,
+      p_p1: ganadoresArray[0] || pizarra.primero,
+      p_p2: ganadoresArray[1] || pizarra.segundo || null,
+      p_p3: ganadoresArray[2] || pizarra.tercero || null,
+      p_p4: ganadoresArray[3] || pizarra.cuarto || null,
+      p_p5: ganadoresArray[4] || pizarra.quinto || null,
     });
 
     const factor = evalErr ? 0 : Number(evalRes);
@@ -512,7 +610,6 @@ async function liquidarCarreraFallback(
   // 4. Liquidar y asentar saldos
   const reportePositivos: string[] = [];
   const reporteNegativos: string[] = [];
-  const fechaHoy = new Date().toISOString().split("T")[0];
 
   for (const [jugadorId, b] of Object.entries(balancePorJugador)) {
     let balanceNetoFinal = 0;
@@ -602,15 +699,10 @@ async function liquidarCarreraFallback(
   await sincronizarEstadoGrupo(grupoId);
 
   // 6. Construir mensaje de reporte y pregunta al operador
-  const pizarraTexto = [
-    `1º: #${pizarra.primero}`,
-    pizarra.segundo ? `2º: #${pizarra.segundo}` : null,
-    pizarra.tercero ? `3º: #${pizarra.tercero}` : null,
-    pizarra.cuarto ? `4º: #${pizarra.cuarto}` : null,
-    pizarra.quinto ? `5º: #${pizarra.quinto}` : null,
-  ]
-    .filter(Boolean)
-    .join(" | ");
+  const empatesSet = new Set(pizarra.empates || []);
+  const pizarraTexto = ganadoresArray
+    .map((num, idx) => `${idx + 1}º: #${num}${empatesSet.has(idx + 1) ? " (Empate)" : ""}`)
+    .join(" | ") || `1º: #${pizarra.primero}`;
 
   const mensajeReporte =
     `🏁 *RESULTADOS OFICIALES ${hipodromo.toUpperCase()} - C${numCarrera}*\n` +
@@ -1664,7 +1756,46 @@ export async function POST(req: Request) {
         const { hipodromo, numeroCarrera, distancia, carreraId } = body;
         const distNum = Number(distancia || 1200);
         const carreraNum = Number(numeroCarrera || 1);
-        const hipoTexto = String(hipodromo || "LA RINCONADA").toUpperCase();
+        const hipoTexto = String(hipodromo || "LA RINCONADA").toUpperCase().trim();
+
+        // Validar restricción geográfica de salas:
+        // - En sala VENEZUELA: solo LA RINCONADA o VALENCIA
+        // - En sala AMERICANAS: solo hipódromos americanos (no venezolanos)
+        const { data: salaActual } = await supabaseAdmin
+          .from("salas_juego")
+          .select("id, nombre_sala, orden_sala")
+          .eq("id", salaId)
+          .maybeSingle();
+
+        const nombreSalaUpper = String(salaActual?.nombre_sala || "").toUpperCase();
+        const esChatVenezuela =
+          nombreSalaUpper.includes("VENEZUELA") ||
+          nombreSalaUpper.includes("RINCONADA") ||
+          salaActual?.orden_sala === 1;
+        const esChatAmericanas =
+          nombreSalaUpper.includes("AMERICANA") ||
+          nombreSalaUpper.includes("USA") ||
+          salaActual?.orden_sala === 2;
+
+        const esHipoVenezuela =
+          hipoTexto.includes("RINCONADA") ||
+          hipoTexto.includes("VALENCIA") ||
+          hipoTexto === "LR" ||
+          hipoTexto === "VAL";
+
+        if (esChatVenezuela && !esHipoVenezuela) {
+          return NextResponse.json(
+            { ok: false, error: "En el chat de VENEZUELA solo pueden abrirse carreras de LA RINCONADA o VALENCIA." },
+            { status: 400 }
+          );
+        }
+
+        if (esChatAmericanas && esHipoVenezuela) {
+          return NextResponse.json(
+            { ok: false, error: "En el chat de AMERICANAS solo pueden abrirse hipódromos americanos." },
+            { status: 400 }
+          );
+        }
 
         await supabaseAdmin
           .from("salas_juego")
