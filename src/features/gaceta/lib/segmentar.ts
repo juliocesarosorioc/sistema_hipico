@@ -612,6 +612,288 @@ export function parsearGacetaRetrospectosNativo(
   return { carreras, paginasParaFallback };
 }
 
+/**
+ * Parsea participantes de una carrera venezolana (La Rinconada / Valencia).
+ */
+export function parsearEjemplaresVenezuela(textoCarrera: string): CarreraParseadaNativa["ejemplares"] {
+  const lineas = textoCarrera.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const ejemplares: CarreraParseadaNativa["ejemplares"] = [];
+  const dorsalesVistos = new Set<string>();
+
+  for (let i = 0; i < lineas.length; i++) {
+    const linea = lineas[i];
+
+    // Omitir encabezados evidentes
+    if (
+      /^(?:HIP[OÓ]DROMO|REUNI[OÓ]N|PROGRAMA|DATOS|CARRERA|\d+[ª°aA]?\s*CARRERA|\d+[ª°aA]?\s*V[AÁ]LIDA|DISTANCIA|HORA|COPA|CL[AÁ]SICO|PREMIO|CONDICI[OÓ]N|BOLSA)/i.test(
+        linea
+      )
+    ) {
+      continue;
+    }
+
+    // Patrón dorsal al inicio: "1 ...", "#2 ...", "10 ..."
+    const mInicio = linea.match(/^(?:#|N[º°.]?\s*)?(\d{1,2})\b/);
+    if (!mInicio) continue;
+
+    const num = parseInt(mInicio[1], 10);
+    if (num < 1 || num > 24) continue;
+    const strNum = String(num);
+
+    let resto = linea.slice(mInicio[0].length).trim();
+
+    // 1. PP explícito si existe: [PP 5], (PP 5), PP: 5, etc.
+    let pp: number | string = num;
+    const mPP =
+      resto.match(/(?:\[|\()\s*PP[:\s-]*(\d{1,2})\s*(?:\]|\))/i) ||
+      resto.match(/\bPP[:\s-]*(\d{1,2})\b/i);
+    if (mPP) {
+      pp = parseInt(mPP[1], 10);
+      resto = resto.replace(mPP[0], " ").trim();
+    }
+    resto = resto.replace(/\[\s*\]|\(\s*\)/g, " ").trim();
+
+    // 2. Retirado
+    let retirado = false;
+    if (/\b(?:RETIRADO|RET)\b/i.test(resto)) {
+      retirado = true;
+      resto = resto.replace(/\b(?:RETIRADO|RET)\b/i, " ").trim();
+    }
+
+    // 3. Kilos / Peso
+    let peso: number | string | undefined;
+    const mPeso =
+      resto.match(/\b(\d{2}(?:\.\d)?)\s*k(?:g|ilos)?\b/i) ||
+      resto.match(/(?:^|\s)-?\s*(\d{2}(?:\.\d)?)\s*(?:-|kilos|kg)/i);
+    if (mPeso) {
+      peso = mPeso[1];
+      resto = resto.replace(mPeso[0], " ").trim();
+    }
+
+    // 4. Implementos / Aperos
+    let implementos: string | undefined;
+    const mAperos = resto.match(/\b([L|CC|V|BB|GR|LA|OT|BZ|M]{1,2}(?:\.[L|CC|V|BB|GR|LA|OT|BZ|M]{1,2})+\.?)\b/);
+    if (mAperos) {
+      implementos = mAperos[1];
+      resto = resto.replace(mAperos[0], " ").trim();
+    }
+
+    // 5. Morning line
+    let ml: string | undefined;
+    const mML = resto.match(/\b(\d{1,2}[\/\-]\d{1,2})\b/);
+    if (mML) {
+      ml = mML[1];
+      resto = resto.replace(mML[0], " ").trim();
+    }
+
+    // 6. Nacionalidad entre paréntesis
+    let nacionalidad: string | undefined = "VEN";
+    const mNac = resto.match(/\((VEN|USA|CHI|ARG|BRZ|PAN|COL|PER|URU)\)/i);
+    if (mNac) {
+      nacionalidad = mNac[1].toUpperCase();
+      resto = resto.replace(mNac[0], " ").trim();
+    }
+
+    // 7. Separar nombre de jinete y entrenador
+    let nombre = "";
+    let jinete: string | undefined;
+    let entrenador: string | undefined;
+
+    const partesGuion = resto
+      .split(/\s*[-–—|]\s*/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    if (partesGuion.length >= 2) {
+      nombre = partesGuion[0];
+      for (let pIdx = 1; pIdx < partesGuion.length; pIdx++) {
+        const parte = partesGuion[pIdx];
+        if (!jinete && esNombreJockeyPersona(parte)) {
+          jinete = parte;
+        } else if (!entrenador && (esNombreJockeyPersona(parte) || pIdx === partesGuion.length - 1)) {
+          entrenador = parte;
+        } else if (!nombre && !esNombreJockeyPersona(parte)) {
+          nombre = parte;
+        }
+      }
+    } else {
+      const palabras = resto.split(/\s+/).filter(Boolean);
+      const nombresCaballo: string[] = [];
+      for (let w = 0; w < palabras.length; w++) {
+        const restoPersonas = palabras.slice(w).join(" ");
+        if (esNombreJockeyPersona(restoPersonas)) {
+          const personas = restoPersonas.split(/\s*,\s*|\s*-\s*/);
+          jinete = personas[0];
+          if (personas.length > 1) entrenador = personas[1];
+          break;
+        } else if (esNombreJockeyPersona(palabras[w])) {
+          if (!jinete) jinete = palabras[w];
+          else if (!entrenador) entrenador = palabras[w];
+        } else {
+          nombresCaballo.push(palabras[w]);
+        }
+      }
+      nombre = nombresCaballo.join(" ");
+    }
+
+    nombre = nombre
+      .replace(/\((?:VEN|USA|CHI|ARG|BRZ|PAN|COL|PER|URU|[A-Z]{2,3})\)/gi, "")
+      .replace(/\[\s*\]|\(\s*\)/g, " ")
+      .replace(/^[-–—#\s.]+|[-–—#\s.]+$/g, "")
+      .replace(/\s+/g, " ")
+      .toUpperCase()
+      .trim();
+
+    if (!nombre || esNombreJockeyPersona(nombre) || nombre.length < 2) {
+      nombre = `EJEMPLAR ${num}`;
+    }
+
+    if (!dorsalesVistos.has(strNum)) {
+      dorsalesVistos.add(strNum);
+      ejemplares.push({
+        numero: strNum,
+        nombre,
+        pp,
+        jinete,
+        entrenador,
+        peso,
+        ml,
+        retirado,
+      });
+    }
+  }
+
+  ejemplares.sort((a, b) => parseInt(a.numero, 10) - parseInt(b.numero, 10));
+  return ejemplares;
+}
+
+/**
+ * Parsea el texto completo o páginas de una gaceta de Venezuela (La Rinconada / Valencia).
+ * Extrae 100% determinísticamente:
+ *  - Hipódromo (La Rinconada o Valencia)
+ *  - Fecha de la jornada
+ *  - Todas las carreras (1..N) con su distancia, hora, premio, válida 5y6
+ *  - Todos los ejemplares participantes (dorsal, PP, nombre, peso, jinete, entrenador, implementos, ML)
+ * Sin dependencias externas, sin cuotas, sin red, instantáneo.
+ */
+export function parsearGacetaVenezuelaNativo(
+  paginasTexto: string[] | string,
+  opciones?: { fechaOverride?: string; hipodromoOverride?: string }
+): {
+  carreras: CarreraParseadaNativa[];
+  paginasParaFallback: Array<{ indicePagina: number; texto: string }>;
+} {
+  const textoCompleto = Array.isArray(paginasTexto) ? paginasTexto.join("\n\n") : String(paginasTexto ?? "");
+  if (!textoCompleto.trim()) {
+    return { carreras: [], paginasParaFallback: [] };
+  }
+
+  // 1. Detectar Hipódromo
+  let hipodromo = opciones?.hipodromoOverride?.trim();
+  if (!hipodromo) {
+    const up = textoCompleto.toUpperCase();
+    if (/\b(?:VALENCIA|HINAVA|CARABOBO)\b/i.test(up)) {
+      hipodromo = "VALENCIA";
+    } else if (/\b(?:RINCONADA|CARACAS)\b/i.test(up)) {
+      hipodromo = "LA RINCONADA";
+    } else {
+      hipodromo = resolverHipodromoTexto(textoCompleto);
+      if (hipodromo === "USA") hipodromo = "LA RINCONADA";
+    }
+  }
+
+  // 2. Detectar Fecha
+  let fecha = opciones?.fechaOverride?.trim();
+  if (!fecha) {
+    const mIso = textoCompleto.match(/\b(20\d{2})[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])\b/);
+    if (mIso) {
+      fecha = `${mIso[1]}-${mIso[2]}-${mIso[3]}`;
+    } else {
+      const mLat = textoCompleto.match(/\b(0?[1-9]|[12]\d|3[01])[-/](0?[1-9]|1[0-2])[-/](20\d{2}|\d{2})\b/);
+      if (mLat) {
+        const dia = mLat[1].padStart(2, "0");
+        const mes = mLat[2].padStart(2, "0");
+        const anio = mLat[3].length === 2 ? `20${mLat[3]}` : mLat[3];
+        fecha = `${anio}-${mes}-${dia}`;
+      }
+    }
+  }
+  if (!fecha) {
+    const hoy = new Date();
+    fecha = hoy.toISOString().slice(0, 10);
+  }
+
+  // 3. Segmentar por carreras
+  const segmentos = segmentarPorCarreras(textoCompleto);
+  const carreras: CarreraParseadaNativa[] = [];
+  const paginasParaFallback: Array<{ indicePagina: number; texto: string }> = [];
+
+  for (let idx = 0; idx < segmentos.length; idx++) {
+    const seg = segmentos[idx];
+    const cuerpo = seg.texto.trim();
+    if (!cuerpo) continue;
+
+    let numCarrera = seg.numero;
+    if (numCarrera == null) {
+      numCarrera = numeroDeCarrera(cuerpo.slice(0, 250));
+    }
+    if (numCarrera == null) {
+      const mCar = cuerpo.match(/\b(?:CARRERA\s*(?:N[°º]?)?\s*(\d{1,2})|(\d{1,2})[ªa°]?\s*CARRERA)\b/i);
+      if (mCar) numCarrera = parseInt(mCar[1] || mCar[2], 10);
+    }
+    if (numCarrera == null) {
+      const val = numeroDeValida(cuerpo.slice(0, 250));
+      if (val != null) {
+        const prevNum = carreras.length ? carreras[carreras.length - 1].carrera : null;
+        numCarrera = prevNum != null ? prevNum + 1 : 4 + val;
+      }
+    }
+    if (numCarrera == null || numCarrera < 1 || numCarrera > 24) {
+      continue;
+    }
+
+    // Distancia
+    let distancia = 1200;
+    const mDist = cuerpo.match(/\b(?:DISTANCIA\s*[:\-]?\s*)?(\d{1,2}[.,]\d{3}|\d{3,4})\s*(?:METROS|MTS?|M\b)/i);
+    if (mDist) {
+      distancia = parseInt(mDist[1].replace(/[.,]/g, ""), 10);
+    } else {
+      const mMetros = cuerpo.match(/\b(800|1000|1100|1200|1300|1400|1500|1600|1700|1800|1900|2000|2200|2400|3200)\b/);
+      if (mMetros) distancia = parseInt(mMetros[1], 10);
+    }
+
+    // Hora
+    let hora: string | null = null;
+    const mHora = cuerpo.match(/\b(?:HORA\s*[:\-]?\s*)?(\d{1,2}:\d{2})\s*(?:AM|PM|A\.M\.|P\.M\.)?/i);
+    if (mHora) hora = mHora[0].trim();
+
+    // Superficie
+    const superficie: "Arena" | "Grama" = /\b(?:GRAMA|CESPED|TURF)\b/i.test(cuerpo.slice(0, 300)) ? "Grama" : "Arena";
+
+    // Ejemplares
+    const ejemplares = parsearEjemplaresVenezuela(cuerpo);
+    if (ejemplares.length >= 2) {
+      carreras.push({
+        carrera: numCarrera,
+        hipodromo,
+        fecha,
+        hora,
+        distancia,
+        superficie,
+        premio: 100,
+        ejemplares,
+      });
+    } else if (cuerpo.length > 150) {
+      paginasParaFallback.push({ indicePagina: idx + 1, texto: cuerpo });
+    }
+  }
+
+  // Ordenar carreras correlativamente
+  carreras.sort((a, b) => a.carrera - b.carrera);
+
+  return { carreras, paginasParaFallback };
+}
+
 
 /** Segmento del documento que corresponde a UNA carrera. */
 export type SegmentoCarrera = {

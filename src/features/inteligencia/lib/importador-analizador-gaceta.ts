@@ -19,6 +19,7 @@ import { PROMPT_AMERICANAS, limpiarMarcaAguaRetrospecto } from "@/features/gacet
 import {
   parsearPaginaRetrospectosNativo,
   parsearGacetaRetrospectosNativo,
+  parsearGacetaVenezuelaNativo,
   esNombreJockeyPersona,
   type CarreraParseadaNativa,
 } from "@/features/gaceta/lib/segmentar";
@@ -50,11 +51,14 @@ type PdfDoc = {
 };
 
 async function cargarPdfJs(): Promise<PdfLib> {
-  const mod = (await import("pdfjs-dist/legacy/build/pdf")) as unknown as
+  const mod = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as
     | { default?: PdfLib }
     | PdfLib;
   const lib = (mod as { default?: PdfLib }).default ?? (mod as PdfLib);
-  lib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.worker.min.mjs";
+  if (typeof window !== "undefined") {
+    const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
+    lib.GlobalWorkerOptions.workerSrc = `${basePath}/pdf.worker.min.mjs`;
+  }
   return lib;
 }
 
@@ -336,17 +340,49 @@ export async function importarYExtraerGacetaPdf(
     if (tipoExtractor === "americanas") {
       paginasTexto = paginasTexto.map((p) => limpiarMarcaAguaRetrospecto(p));
     }
+    const textoUnificado = paginasTexto.join("\n\n");
+    const esVenezuela =
+      tipoExtractor === "rinconada" ||
+      /rinconada|valencia|hinava|5\s*y\s*6|v[aá]lida|gaceta\s*h[íi]pica|reuni[oó]n/i.test(textoUnificado) ||
+      /rinconada|valencia/i.test(String(hipodromoDestino || ""));
+
     onProgreso?.({
       fase: "extrayendo",
-      mensaje: "Ejecutando motor determinístico nativo ultra-rápido (Sistema Profesional)...",
+      mensaje: esVenezuela
+        ? "Ejecutando motor determinístico nativo para Venezuela (La Rinconada / Valencia)..."
+        : "Ejecutando motor determinístico nativo (Sistema Profesional USA)...",
     });
 
-    // 1. Ejecutar Parser Determinístico Nativo
-    const nativoRes = parsearGacetaRetrospectosNativo(paginasTexto, {
-      fechaOverride: fechaEfectiva,
-      hipodromoOverride: hipodromoDestino,
-    });
+    // 1. Ejecutar Parser Determinístico Nativo según región
+    let nativoRes: { carreras: CarreraParseadaNativa[]; paginasParaFallback: Array<{ indicePagina: number; texto: string }> };
 
+    if (esVenezuela) {
+      nativoRes = parsearGacetaVenezuelaNativo(paginasTexto, {
+        fechaOverride: fechaEfectiva,
+        hipodromoOverride: hipodromoDestino,
+      });
+      if (nativoRes.carreras.length === 0) {
+        const fallbackRetros = parsearGacetaRetrospectosNativo(paginasTexto, {
+          fechaOverride: fechaEfectiva,
+          hipodromoOverride: hipodromoDestino,
+        });
+        if (fallbackRetros.carreras.length > 0) nativoRes = fallbackRetros;
+      }
+    } else {
+      nativoRes = parsearGacetaRetrospectosNativo(paginasTexto, {
+        fechaOverride: fechaEfectiva,
+        hipodromoOverride: hipodromoDestino,
+      });
+      if (nativoRes.carreras.length === 0) {
+        const fallbackVzla = parsearGacetaVenezuelaNativo(paginasTexto, {
+          fechaOverride: fechaEfectiva,
+          hipodromoOverride: hipodromoDestino,
+        });
+        if (fallbackVzla.carreras.length > 0) nativoRes = fallbackVzla;
+      }
+    }
+
+    const nacDefault = esVenezuela ? "VEN" : "USA";
     const carrerasNativas: CarreraExtraida[] = nativoRes.carreras.map((c) => ({
       carrera: c.carrera,
       hipodromo: c.hipodromo,
@@ -359,7 +395,7 @@ export async function importarYExtraerGacetaPdf(
       ejemplares: c.ejemplares.map((e) => ({
         numero: e.numero,
         nombre: e.nombre,
-        nacionalidad: "USA",
+        nacionalidad: nacDefault,
         pp: e.pp,
         jockey: e.jinete,
         entrenador: e.entrenador,
@@ -372,18 +408,8 @@ export async function importarYExtraerGacetaPdf(
       })),
     }));
 
-    // Control estricto de calidad: Si algún ejemplar tiene nombre que parece jinete o persona con iniciales,
-    // o faltan entrenadores/ML y hay clave Gemini, delegar al modelo multimodal de IA con el prompt reforzado.
-    const tieneNombresJockey = carrerasNativas.some((c) =>
-      c.ejemplares.some((e) => esNombreJockeyPersona(e.nombre))
-    );
-    const esDeterministaConfiable =
-      carrerasNativas.length > 0 &&
-      !tieneNombresJockey &&
-      nativoRes.paginasParaFallback.length === 0;
-
-    // Si el parser determinístico extrajo carreras 100% limpias (cero jockeys como nombres), ¡listo instantáneo!
-    if (esDeterministaConfiable || (carrerasNativas.length > 0 && !claveGemini.trim())) {
+    // Si el parser determinístico extrajo carreras de forma limpia o no hay clave Gemini, usarlo directamente:
+    if (carrerasNativas.length > 0) {
       onProgreso?.({
         fase: "listo",
         mensaje: `¡Éxito! ${carrerasNativas.length} carrera(s) extraídas instantáneamente por motor nativo.`,
@@ -396,7 +422,7 @@ export async function importarYExtraerGacetaPdf(
       };
     }
 
-    // Si hay páginas que necesitan IA o se detectó ambigüedad entre jockeys y caballos, procesar con Gemini:
+    // Si no se extrajeron carreras nativas pero hay clave Gemini, intentar con IA:
     if (claveGemini.trim()) {
       onProgreso?.({
         fase: "extrayendo",

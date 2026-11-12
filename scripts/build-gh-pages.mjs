@@ -148,4 +148,19 @@ function postProcesarExportGithubPages() {
       console.log("  ✓ Redirección inteligente SPA agregada a out/404.html");
     }
   }
+
+  // 6. Asegurar pdf.worker.min.mjs para carga fiable de PDFs
+  const workerSrc = path.join(root, "public", "pdf.worker.min.mjs");
+  if (fs.existsSync(workerSrc)) {
+    const workerOut = path.join(outDir, "pdf.worker.min.mjs");
+    if (!fs.existsSync(workerOut)) {
+      fs.copyFileSync(workerSrc, workerOut);
+    }
+    const subpathDir = path.join(outDir, "sistema_hipico");
+    const workerSub = path.join(subpathDir, "pdf.worker.min.mjs");
+    if (fs.existsSync(subpathDir) && !fs.existsSync(workerSub)) {
+      fs.copyFileSync(workerSrc, workerSub);
+    }
+    console.log("  ✓ pdf.worker.min.mjs verificado en out y subpath");
+  }
 }

@@ -798,7 +798,7 @@ function armarBody(
   };
 }
 
-async function postIA(url: string, body: Record<string, unknown>, clave: string, ms = 25000): Promise<Response> {
+async function postIA(url: string, body: Record<string, unknown>, clave: string, ms = 60000): Promise<Response> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
   try {
@@ -841,7 +841,7 @@ async function llamarModelo(
     return {
       ok: false,
       tipo: "salto",
-      msg: `Sin conexión al probar ${model} (${e.name === "AbortError" ? "tiempo agotado (45s)" : e.message || "red"}).`,
+      msg: `Sin conexión al probar ${model} (${e.name === "AbortError" ? "tiempo agotado (60s)" : e.message || "red"}).`,
     };
   }
   if (resp.status === 429) {

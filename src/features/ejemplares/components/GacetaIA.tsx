@@ -20,6 +20,10 @@ import {
   type ReporteValidacionLote,
   type DiagnosticoCarrera,
 } from "@/features/gaceta/lib/validador";
+import {
+  parsearGacetaVenezuelaNativo,
+  parsearGacetaRetrospectosNativo,
+} from "@/features/gaceta/lib/segmentar";
 import { guardarHistorialGaceta, registrarEjemplares, registrarGacetaEHistorial } from "@/features/gaceta/lib/padron";
 import { PROMPT_RINCONADA } from "@/features/gaceta/lib/prompts/prompt-rinconada";
 import { PROMPT_AMERICANAS, limpiarMarcaAguaRetrospecto } from "@/features/gaceta/lib/prompts/prompt-americanas";
@@ -132,15 +136,14 @@ type PdfDoc = {
 };
 
 async function cargarPdfJs(): Promise<PdfLib> {
-  const mod = (await import("pdfjs-dist/legacy/build/pdf")) as unknown as
+  const mod = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as
     | { default?: PdfLib }
     | PdfLib;
   const lib = (mod as { default?: PdfLib }).default ?? (mod as PdfLib);
-  // Worker vía CDN (mismo patrón que el legacy: js/gaceta.js). Emitirlo como
-  // asset local rompe el build: el worker de pdfjs-dist 4.x es ESM (.mjs) y el
-  // minificador de Next (Terser) no compila `import`/`export` toplevel. Con el
-  // sufijo `?url` además quedaba workerSrc === undefined y ningún PDF cargaba.
-  lib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.worker.min.mjs";
+  if (typeof window !== "undefined") {
+    const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
+    lib.GlobalWorkerOptions.workerSrc = `${basePath}/pdf.worker.min.mjs`;
+  }
   return lib;
 }
 
@@ -946,19 +949,40 @@ export function GacetaIA() {
               } catch {
                 /* sin capa de texto: se usa la vía de imágenes */
               }
-              setEstado(`Renderizando ${f.name}...`);
-              const pag = await renderPdfAPaginas(
-                f,
-                (pagN, total) => setEstado(`Renderizando ${f.name} · página ${pagN} de ${total}...`),
-                tope > 0 ? tope : undefined
-              );
-              const umbralMinTexto = Math.max(400, Math.min(pag.length, 6) * 160);
-              const tieneTexto = textoExtraido.trim().length >= umbralMinTexto;
+              let pag: string[] = [];
+              try {
+                setEstado(`Renderizando ${f.name}...`);
+                pag = await renderPdfAPaginas(
+                  f,
+                  (pagN, total) => setEstado(`Renderizando ${f.name} · página ${pagN} de ${total}...`),
+                  tope > 0 ? tope : undefined
+                );
+              } catch (eRender) {
+                console.warn("Renderizado visual de páginas omitido:", eRender);
+              }
+
+              const tieneTexto = textoExtraido.trim().length >= 60;
               if (tieneTexto) {
                 nuevosTextos.push({ nombre: f.name, texto: textoExtraido });
+                // Auto-detección de hipódromo / región
+                const esVzla = /rinconada|valencia|hinava|carabobo|caracas|5\s*y\s*6|v[aá]lida|gaceta\s*h[íi]pica/i.test(textoExtraido);
+                if (esVzla) {
+                  setSubPestana("rinconada");
+                } else if (/purse|claiming|furlong|entries/i.test(textoExtraido)) {
+                  setSubPestana("americanas");
+                }
               }
-              for (let k = 0; k < pag.length; k++) {
-                nuevas.push(generar(pag[k], tieneTexto, f.name, paginasTexto[k] || ""));
+
+              if (pag.length > 0) {
+                for (let k = 0; k < pag.length; k++) {
+                  nuevas.push(generar(pag[k], tieneTexto, f.name, paginasTexto[k] || ""));
+                }
+              } else if (tieneTexto) {
+                // Crear al menos una entrada de documento con el texto si el renderizado de canvas no completó
+                const placeholderCanvas = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(
+                  `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400" fill="#f8fafc"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="45%" text-anchor="middle" fill="#475569" font-family="sans-serif" font-size="16" font-weight="bold">📄 Documento Gaceta</text><text x="50%" y="55%" text-anchor="middle" fill="#64748b" font-family="sans-serif" font-size="12">${f.name}</text></svg>`
+                );
+                nuevas.push(generar(placeholderCanvas, true, f.name, textoExtraido));
               }
             } else {
               const dataUrl = await leerArchivoComoDataUrl(f);
@@ -1031,30 +1055,32 @@ export function GacetaIA() {
   }, [clave, toast]);
 
   const alTransformar = useCallback(async () => {
-    if (!clave.trim()) {
-      setEstado("Primero guarda tu clave de Gemini.");
-      toast("Primero guarda tu clave de Gemini.", "warning");
-      return;
-    }
     const paginasSel = paginas.filter((p) => seleccionadas.has(p.id));
     const imgs = paginasSel.map((p) => p.dataUrl);
     const docsConTextoActivos = textosDocumentos.filter(
       (doc) =>
-        doc.texto.trim().length >= 400 &&
+        doc.texto.trim().length >= 60 &&
         (paginas.length === 0 || paginasSel.some((p) => p.archivo === doc.nombre))
     );
-    const hayTexto = docsConTextoActivos.length > 0 || textoDocumento.trim().length >= 400;
+    const hayTexto = docsConTextoActivos.length > 0 || textoDocumento.trim().length >= 60;
     if (!imgs.length && !hayTexto) {
-      setEstado("Selecciona al menos una página.");
-      toast("Selecciona al menos una página.", "warning");
+      setEstado("Selecciona al menos una página o arrastra un archivo de gaceta.");
+      toast("Selecciona al menos una página o arrastra un archivo de gaceta.", "warning");
       return;
     }
+
+    if (!clave.trim() && !hayTexto) {
+      setEstado("El archivo requiere visión IA por ser imagen escaneada. Ingresa tu clave de Gemini.");
+      toast("Introduce tu clave gratuita de Gemini para transcribir imágenes.", "warning");
+      return;
+    }
+
     const pesoSel = `${imgs.reduce((a, d) => a + pesoMB(d), 0).toFixed(1)} MB`;
     setTrabajando(true);
     setFaseRegistro("extrayendo");
     setEstado(
       hayTexto
-        ? `🤖 Extrayendo ejemplares y carreras con IA (${Math.max(1, docsConTextoActivos.length)} gaceta(s))...`
+        ? `⚡ Extrayendo carreras y ejemplares de forma inteligente (${Math.max(1, docsConTextoActivos.length)} gaceta(s))...`
         : `🤖 Extrayendo ejemplares y carreras con IA... · ${imgs.length} página(s) (${pesoSel})`
     );
     setDiag("");
@@ -1069,7 +1095,6 @@ export function GacetaIA() {
       const listaTextos =
         docsConTextoActivos.length > 0
           ? docsConTextoActivos.map((doc) => {
-              // Si el usuario seleccionó páginas específicas, enviamos ÚNICAMENTE el texto de esas páginas seleccionadas
               const paginasDocSel = paginasSel.filter(
                 (p) => p.archivo === doc.nombre && p.texto && p.texto.trim().length > 0
               );
@@ -1085,42 +1110,96 @@ export function GacetaIA() {
             ? [{ nombre: "documento", texto: textoDocumento }]
             : [];
 
-      const promptActivo = subPestana === "rinconada" ? PROMPT_RINCONADA : PROMPT_AMERICANAS;
+      // 1. PRIMER INTENTO: Extracción determinística nativa (instantánea, offline y sin consumo de tokens)
+      const fechaDestinoRef = fechaJornadaRef.current;
+      if (hayTexto) {
+        setEstado("⚡ Analizando gaceta con motor determinístico de alta precisión...");
+        for (const doc of listaTextos) {
+          const esVzla =
+            subPestana === "rinconada" ||
+            /rinconada|valencia|hinava|5\s*y\s*6|v[aá]lida|gaceta\s*h[íi]pica/i.test(doc.texto);
 
-      for (let idxDoc = 0; idxDoc < listaTextos.length; idxDoc++) {
-        const doc = listaTextos[idxDoc];
-        const prefijo = listaTextos.length > 1 ? `[${idxDoc + 1}/${listaTextos.length} · ${doc.nombre}] ` : "";
-        const textoAEnviar = subPestana === "americanas" ? limpiarMarcaAguaRetrospecto(doc.texto) : doc.texto;
-        const resDoc = await transformarGacetaTexto(
-          clave.trim(),
-          textoAEnviar,
-          (hecho, total) => setProgreso({ hecho, total }),
-          (s) => setEstado(`${prefijo}${s}`),
-          doc.nombre,
-          promptActivo
-        );
-        if (resDoc.diag) diags.push(prefijo ? `${prefijo}\n${resDoc.diag}` : resDoc.diag);
-        if (resDoc.cuotaTotal) huboCuotaTotal = true;
-        if (resDoc.avisoNumeracion) avisosNum.push(`${prefijo}${resDoc.avisoNumeracion}`);
-        if (resDoc.ok && resDoc.carreras.length > 0) {
-          const carrerasConDoc = resDoc.carreras.map((c) => ({
-            ...c,
-            archivoOrigen: c.archivoOrigen || doc.nombre,
-          }));
-          carrerasAcumuladas.push(...carrerasConDoc);
-          archivosTextoExitosos.add(doc.nombre);
-        } else if (resDoc.error) {
-          ultimoError = resDoc.error;
+          const nativo = esVzla
+            ? parsearGacetaVenezuelaNativo(doc.texto, {
+                fechaOverride: fechaDestinoRef,
+                hipodromoOverride: normalizarHipodromoAlCatalogo(
+                  subPestana === "rinconada" ? "LA RINCONADA" : "VALENCIA",
+                  hipodromos
+                ),
+              })
+            : parsearGacetaRetrospectosNativo([doc.texto], {
+                fechaOverride: fechaDestinoRef,
+              });
+
+          if (nativo.carreras.length > 0) {
+            const carrerasNativas: CarreraExtraida[] = nativo.carreras.map((c) => ({
+              carrera: c.carrera,
+              hipodromo: c.hipodromo,
+              fecha: c.fecha,
+              hora: c.hora,
+              distancia: c.distancia,
+              superficie: c.superficie,
+              premio: c.premio,
+              archivoOrigen: doc.nombre,
+              ejemplares: c.ejemplares.map((e) => ({
+                numero: e.numero,
+                nombre: e.nombre,
+                nacionalidad: esVzla ? "VEN" : "USA",
+                pp: e.pp,
+                jockey: e.jinete,
+                entrenador: e.entrenador,
+                peso: e.peso,
+                ml: e.ml,
+                stud: e.stud,
+                pedigri: e.pedigri,
+                retirado: e.retirado ?? false,
+                condicionElegibilidad: e.condicionElegibilidad,
+              })),
+            }));
+            carrerasAcumuladas.push(...carrerasNativas);
+            archivosTextoExitosos.add(doc.nombre);
+          }
         }
       }
 
-      // Páginas seleccionadas de gacetas escaneadas (sin capa de texto) o cuyo
-      // texto embebido no produjo carreras (fuentes corruptas): se procesan por visión.
+      // 2. SEGUNDO INTENTO: Si no hubo carreras nativas y hay clave de Gemini, procesar con IA
+      if (carrerasAcumuladas.length === 0 && listaTextos.length > 0 && clave.trim()) {
+        const promptActivo = subPestana === "rinconada" ? PROMPT_RINCONADA : PROMPT_AMERICANAS;
+        for (let idxDoc = 0; idxDoc < listaTextos.length; idxDoc++) {
+          const doc = listaTextos[idxDoc];
+          const prefijo = listaTextos.length > 1 ? `[${idxDoc + 1}/${listaTextos.length} · ${doc.nombre}] ` : "";
+          const textoAEnviar = subPestana === "americanas" ? limpiarMarcaAguaRetrospecto(doc.texto) : doc.texto;
+          const resDoc = await transformarGacetaTexto(
+            clave.trim(),
+            textoAEnviar,
+            (hecho, total) => setProgreso({ hecho, total }),
+            (s) => setEstado(`${prefijo}${s}`),
+            doc.nombre,
+            promptActivo
+          );
+          if (resDoc.diag) diags.push(prefijo ? `${prefijo}\n${resDoc.diag}` : resDoc.diag);
+          if (resDoc.cuotaTotal) huboCuotaTotal = true;
+          if (resDoc.avisoNumeracion) avisosNum.push(`${prefijo}${resDoc.avisoNumeracion}`);
+          if (resDoc.ok && resDoc.carreras.length > 0) {
+            const carrerasConDoc = resDoc.carreras.map((c) => ({
+              ...c,
+              archivoOrigen: c.archivoOrigen || doc.nombre,
+            }));
+            carrerasAcumuladas.push(...carrerasConDoc);
+            archivosTextoExitosos.add(doc.nombre);
+          } else if (resDoc.error) {
+            ultimoError = resDoc.error;
+          }
+        }
+      }
+
+      // 3. PÁGINAS ESCANEADAS / IMÁGENES: procesar por visión si hay clave Gemini
       const imgsParaVision = paginasSel
         .filter((p) => !p.conTexto || !p.archivo || !archivosTextoExitosos.has(p.archivo))
         .map((p) => p.dataUrl);
 
-      if (imgsParaVision.length > 0 && !huboCuotaTotal) {
+      if (imgsParaVision.length > 0 && !huboCuotaTotal && clave.trim()) {
+        const promptActivo = subPestana === "rinconada" ? PROMPT_RINCONADA : PROMPT_AMERICANAS;
         const archivoVision = paginasSel.find((p) => p.archivo)?.archivo;
         const resImg = await transformarGaceta(
           clave.trim(),
@@ -1138,6 +1217,8 @@ export function GacetaIA() {
         } else if (resImg.error) {
           ultimoError = resImg.error;
         }
+      } else if (carrerasAcumuladas.length === 0 && !clave.trim() && imgsParaVision.length > 0) {
+        ultimoError = "Las páginas seleccionadas no contienen texto digital y requieren clave de Gemini para transcribir las imágenes.";
       }
 
       const res = {
@@ -2084,15 +2165,23 @@ export function GacetaIA() {
             variant="default"
             size="lg"
             className="mt-4 w-full"
-            disabled={trabajando || !clave.trim() || (seleccionadas.size === 0 && textoDocumento.trim().length < 400)}
+            disabled={
+              trabajando ||
+              (seleccionadas.size === 0 && textoDocumento.trim().length < 60 && textosDocumentos.length === 0) ||
+              (!clave.trim() && textoDocumento.trim().length < 60 && textosDocumentos.length === 0)
+            }
             onClick={() => void alTransformar()}
             title={
-              seleccionadas.size === 0 && textoDocumento.trim().length < 400
-                ? "Selecciona al menos una página para extraer sus carreras"
-                : `Enviar ${textoDocumento.trim().length >= 400 ? "el documento por bloques" : `${seleccionadas.size} página(s) seleccionada(s)`} a Gemini`
+              textoDocumento.trim().length >= 60 || textosDocumentos.length > 0
+                ? "Procesar y registrar carreras automáticamente con motor de precisión"
+                : seleccionadas.size === 0
+                ? "Selecciona al menos una página o sube un documento de gaceta"
+                : "Enviar páginas seleccionadas a Gemini"
             }
           >
-            ✨ Transformar con IA y Registrar en el Día
+            {textoDocumento.trim().length >= 60 || textosDocumentos.length > 0
+              ? "⚡ Procesar Gaceta y Registrar en el Día"
+              : "✨ Transformar con IA y Registrar en el Día"}
           </Button>
 
           <div className="mt-3 flex items-center justify-between border-t border-line pt-2.5">
