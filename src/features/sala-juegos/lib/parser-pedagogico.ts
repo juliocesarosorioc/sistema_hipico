@@ -259,16 +259,12 @@ export function analizarYEstandarizarJugada(
     }
   }
 
-  // 3. CASO B: JUGADAS DE PUESTOS Y LLAVES ("1p", "2n", "2p", "2y2n", "2n y 2y2n", "3n", "3p", "4n")
-  // Ejemplos:
-  // - "Juego 1p del 5 con 100" / "Juego 1p #5 100" / "Juego 1p 5 con 100" -> "Juego 1P 5 100"
-  // - "Consigo 1p del 5 con 100" / "Doy 1p 5 100" -> "Consigo 1P 5 100"
-  // - "Juego 1p de la 45 100" / "juego 1p de 4 .5 100" -> "Juego 1P 4-5 100"
-  const regexPuestos = /^(?:(juego|consigo|doy)\s+)?(1p|2p|3p|4p|2n\s+y\s+2y2n|3n\s+y\s+3y3n|2y2n|3y3n|2n|3n|4n)\s+(?:de\s+la\s+|del\s+|de\s+|la\s+|el\s+|#)?([0-9A-Za-z\.\-,\s]+?)\s+(?:con\s+|por\s+|\$)?(\d+(?:[\.,]\d+)?)$/i;
+  // 3. CASO B: JUGADAS DE PUESTOS Y LLAVES ("1p", "1p-1/2n", "1/2-2n", "2n", ..., hasta "5p")
+  const regexPuestos = /^(?:(juego|consigo|doy)\s+)?([1-5]p\s*-\s*[1-5]\/[1-5]n|[1-5]\/[1-5]\s*-\s*[1-5][pn]|[1-5]n\s*-\s*[1-5]\/[1-5]n|[1-5]\/[1-5]n|[1-5]n\s+y\s+[1-5]y[1-5]n|[1-5]p\s+y\s+[1-5]y[1-5]n|[1-5]y[1-5]n|[1-5][pn])\s+(?:de\s+la\s+|del\s+|de\s+|la\s+|el\s+|#)?([0-9A-Za-z\.\-,\s]+?)\s+(?:con\s+|por\s+|\$)?(\d+(?:[\.,]\d+)?)$/i;
   const matchPuesto = texto.match(regexPuestos);
 
   if (matchPuesto) {
-    const modLimpia = matchPuesto[2].toUpperCase().replace(/\s+/g, ' ');
+    const modLimpia = matchPuesto[2].toUpperCase().replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ');
     const caballos = normalizarBandoCaballos(matchPuesto[3], maxEjemplarCarrera);
     const monto = parseFloat(matchPuesto[4].replace(',', '.'));
 

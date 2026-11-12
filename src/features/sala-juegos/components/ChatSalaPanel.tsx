@@ -1093,22 +1093,50 @@ export function ChatSalaPanel({
                 </button>
               ))}
               <span className="opacity-40">|</span>
-              {["1P", "2P", "3P", "4P", "5P"].map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPuestoRapido(p)}
-                  className={`px-1.5 py-0.5 rounded font-mono font-bold text-[11px] ${
-                    puestoRapido === p
-                      ? "bg-[#008069] text-white"
-                      : esClaro
-                        ? "bg-gray-100 text-gray-700"
-                        : "bg-[#202c33] text-gray-300"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
+              <div className="flex flex-wrap items-center gap-1 max-h-24 overflow-y-auto">
+                {[
+                  "1P",
+                  "1P-1/2N",
+                  "1/2-2N",
+                  "2N",
+                  "2N-2/2N",
+                  "2/2-2P",
+                  "2P",
+                  "2P-2/3N",
+                  "2/3-3N",
+                  "3N",
+                  "3N-3/3N",
+                  "3/3-3P",
+                  "3P",
+                  "3P-3/4N",
+                  "3/4-4N",
+                  "4N",
+                  "4N-4/4N",
+                  "4/4-4P",
+                  "4P",
+                  "4P-4/5N",
+                  "4/5-5N",
+                  "5N",
+                  "5N-5/5N",
+                  "5/5-5P",
+                  "5P",
+                ].map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPuestoRapido(p)}
+                    className={`px-1.5 py-0.5 rounded font-mono font-bold text-[11px] whitespace-nowrap ${
+                      puestoRapido === p
+                        ? "bg-[#008069] text-white"
+                        : esClaro
+                          ? "bg-gray-100 text-gray-700"
+                          : "bg-[#202c33] text-gray-300"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
               <span className="text-[10px] font-bold shrink-0">Ejemplar #:</span>
