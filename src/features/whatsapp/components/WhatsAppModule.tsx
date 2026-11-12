@@ -6,6 +6,7 @@ import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { GestionPlantillasModal } from "@/features/whatsapp/components/GestionPlantillasModal";
 import { TabSalaJugadasIa } from "@/features/soporte/components/TabSalaJugadasIa";
+import { PanelVinculacionSalasWhatsApp } from "@/features/whatsapp-sala/components/PanelVinculacionSalasWhatsApp";
 import {
   CLUB_NOMBRE,
   CODIGOS_PAIS,
@@ -450,6 +451,11 @@ export function WhatsAppModule() {
         <div className="h-[540px] flex flex-col">
           <TabSalaJugadasIa />
         </div>
+      </section>
+
+      {/* ============ VINCULACIÓN BIDIRECCIONAL SALAS ↔ WHATSAPP & MONITOR BOT ============ */}
+      <section aria-label="Vinculación Salas WhatsApp" className="overflow-hidden rounded-2xl border border-emerald-500/40 bg-slate-950 p-4 text-white shadow-lg">
+        <PanelVinculacionSalasWhatsApp />
       </section>
 
       {/* ============ CONEXIÓN AL GRUPO (WhatsApp Cloud API) ============ */}

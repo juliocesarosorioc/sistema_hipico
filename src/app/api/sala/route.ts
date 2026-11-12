@@ -648,14 +648,35 @@ export async function POST(req: Request) {
           .single();
 
         const saldoDispAceptante = calcularDisponibleCliente(aceptante);
-        const montoRequerido = Number(propMsg.monto_disponible || propMsg.monto_original || 0);
+        const remanenteDisponible = Number(propMsg.monto_disponible ?? propMsg.monto_original ?? 0);
 
-        if (!aceptante?.libre && saldoDispAceptante < montoRequerido) {
-          return NextResponse.json({
-            ok: false,
-            error: `Saldo insuficiente ($${saldoDispAceptante.toFixed(2)}) para aceptar $${montoRequerido.toFixed(2)}`,
-          }, { status: 400 });
+        // Extraer monto solicitado de body.monto o del texto de respuesta (ej. "Juego 20", "Consigo 50", "Ponte 10")
+        let montoPedido = body.monto ? Number(body.monto) : remanenteDisponible;
+        if (texto && typeof texto === "string") {
+          const matchNum = texto.match(/\b(\d+(?:[\.,]\d+)?)\b/);
+          if (matchNum) {
+            const val = parseFloat(matchNum[1].replace(",", "."));
+            if (val > 0) montoPedido = val;
+          }
         }
+
+        if (!montoPedido || isNaN(montoPedido) || montoPedido <= 0) {
+          montoPedido = remanenteDisponible;
+        }
+
+        let excedioSaldoAceptante = false;
+        if (!aceptante?.libre && montoPedido > saldoDispAceptante) {
+          if (saldoDispAceptante <= 0) {
+            return NextResponse.json({
+              ok: false,
+              error: `Saldo insuficiente ($0.00) para tomar esta jugada.`,
+            }, { status: 400 });
+          }
+          excedioSaldoAceptante = true;
+          montoPedido = Math.min(montoPedido, saldoDispAceptante);
+        }
+
+        montoPedido = Math.min(montoPedido, remanenteDisponible);
 
         let resFifo: any = null;
         let fifoExitoso = false;
@@ -673,6 +694,7 @@ export async function POST(req: Request) {
               p_sala_id: salaId,
               p_propuesta_msg_id: propuestaId,
               p_aceptante_id: identidad.usuarioId,
+              p_monto_pedido: montoPedido,
             });
             if (!errAtomico && resAtomico && (resAtomico as any).ok !== false) {
               resFifo = resAtomico;
@@ -706,7 +728,9 @@ export async function POST(req: Request) {
 
         // Fallback directo transaccional garantizado si los RPC fallaron por desincronización de estado
         if (!fifoExitoso) {
-          const montoConcretado = montoRequerido;
+          const montoConcretado = Math.min(montoPedido, remanenteDisponible);
+          const nuevoRemanente = Math.max(0, Number((remanenteDisponible - montoConcretado).toFixed(2)));
+
           if (!aceptante?.libre) {
             const retAceptante = Number((Number(aceptante?.saldo_retenido || 0) + montoConcretado).toFixed(2));
             await supabaseAdmin
@@ -715,12 +739,12 @@ export async function POST(req: Request) {
               .eq("id", identidad.usuarioId);
           }
 
-          // Marcar propuesta como cerrada
+          // Actualizar remanente y estado de la propuesta
           await supabaseAdmin
             .from("chat_mensajes")
             .update({
-              monto_disponible: 0,
-              estado_propuesta: "cerrada",
+              monto_disponible: nuevoRemanente,
+              estado_propuesta: nuevoRemanente <= 0 ? "cerrada" : "abierta",
             })
             .eq("id", propuestaId);
 

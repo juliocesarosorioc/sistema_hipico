@@ -1,9 +1,10 @@
 'use client';
 // LÍNEA 1: Interfaz Completa de Sala de Juegos Estilo WhatsApp / WhatsApp Web
 
-import React, { useState } from 'react';
-import { analizarYEstandarizarJugada } from '../lib/parser-pedagogico';
+import React, { useState, useRef } from 'react';
+import { analizarYEstandarizarJugada, evaluarConcrecionEstricta } from '../lib/parser-pedagogico';
 import { generarHashArchivoSHA256, generarHashTextoSHA256, cifrarMensajeSala } from '../lib/seguridad-crypto';
+import { supabase } from '@/core/supabase';
 
 export interface SalaActivaInfo {
   id: string;
@@ -13,6 +14,8 @@ export interface SalaActivaInfo {
   distanciaActiva: number;
   estadoCarrera: 'abierta' | 'cerrada' | 'liquidada';
   retirados: string[];
+  carreraActivaId?: string;
+  whatsappGroupJid?: string;
 }
 
 interface PropsSalaJuegos {
@@ -48,6 +51,31 @@ export default function SalaJuegosWhatsApp({
   const [textoInput, setTextoInput] = useState<string>('');
   const [modalPrejugadasAbierto, setModalPrejugadasAbierto] = useState<boolean>(false);
   const [modalRecargaAbierto, setModalRecargaAbierto] = useState<boolean>(false);
+
+  // Propuesta citada para responder/concretar
+  const [replyToPropuesta, setReplyToPropuesta] = useState<any | null>(null);
+  const [tomandoParteId, setTomandoParteId] = useState<string | null>(null);
+  const [montoParcialInput, setMontoParcialInput] = useState<string>('');
+
+  // Cola secuencial (Mutex) para procesar estrictamente una sola concreción a la vez
+  const colaConcrecionesRef = useRef<Promise<any>>(Promise.resolve());
+  const encolarConcrecion = <T,>(fn: () => Promise<T>): Promise<T> => {
+    const next = colaConcrecionesRef.current.then(fn, fn);
+    colaConcrecionesRef.current = next.then(() => {}, () => {});
+    return next;
+  };
+
+  const invocarRpc = async (nombreRpc: string, params: Record<string, any>) => {
+    if (onEjecutarRpc) {
+      return await onEjecutarRpc(nombreRpc, params);
+    }
+    if (supabase) {
+      const { data, error } = await supabase.rpc(nombreRpc, params);
+      if (error) throw error;
+      return data;
+    }
+    return null;
+  };
 
   // Estado local de mensajes y jugadas para respuesta inmediata (< 5ms)
   const [mensajesPorSala, setMensajesPorSala] = useState<Record<string, any[]>>({});
@@ -168,11 +196,107 @@ export default function SalaJuegosWhatsApp({
       return;
     }
 
-    // Analizar jugada del jugador con el Motor Pedagógico
+    // 2.A CASO CONCRECIÓN: Si hay una propuesta citada en replyToPropuesta
+    if (replyToPropuesta) {
+      const accionPropuesta = replyToPropuesta.accionProponente || (replyToPropuesta.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE');
+      const remanenteDisponible = Number(replyToPropuesta.montoDisponible ?? replyToPropuesta.monto ?? 0);
+
+      const evalConc = evaluarConcrecionEstricta(
+        texto,
+        accionPropuesta,
+        remanenteDisponible,
+        usuarioActual.saldoDisponible,
+        usuarioActual.nombre
+      );
+
+      if (!evalConc.valido) {
+        setSugerenciaPedagogica({
+          mensaje: evalConc.motivoRechazo || 'Respuesta no válida para concretar.',
+          opciones: accionPropuesta === 'JUEGA' ? ['Consigo', 'Doy', 'Jugaste'] : ['Juego', 'Voy', 'Ponte'],
+        });
+        return;
+      }
+
+      setSugerenciaPedagogica(null);
+      setTextoInput('');
+
+      // Encolar en mutex secuencial (1 sola concreción a la vez)
+      await encolarConcrecion(async () => {
+        try {
+          const respConc = await invocarRpc('concretar_jugada_fifo_atomica', {
+            p_grupo_id: grupoId,
+            p_sala_id: salaActiva.id,
+            p_propuesta_msg_id: replyToPropuesta.id,
+            p_aceptante_id: usuarioActual.id,
+            p_monto_pedido: evalConc.montoEfectivo,
+          });
+
+          if (respConc?.ok) {
+            // Si el aceptante respondió por encima de su propio saldo disponible
+            if (evalConc.excedioSaldo || respConc.excedio_saldo_aceptante) {
+              agregarMensajeLocal(salaActiva.id, {
+                remitente: '🤖 ASISTENTE DE SALA',
+                esBot: true,
+                tipo: 'alerta_bot',
+                contenido: `Esta jugada solo por $${Number(respConc.monto_concretado ?? evalConc.montoEfectivo).toFixed(2)}`,
+              });
+              setSugerenciaPedagogica({
+                mensaje: '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo',
+                opciones: [],
+              });
+            }
+
+            // Publicación oficial en el grupo (*Aquí Jugaron*)
+            const msgPublico = respConc.msg_publico || `*Aquí Jugaron* por $${Number(respConc.monto_concretado).toFixed(2)} (${replyToPropuesta.remitente} vs ${usuarioActual.nombre}) — Quedan $${Number(respConc.remanente_propuesta).toFixed(2)} disponibles en esta parada.`;
+            agregarMensajeLocal(salaActiva.id, {
+              remitente: '🤖 ASISTENTE DE SALA',
+              esBot: true,
+              tipo: 'concrecion_fifo',
+              contenido: msgPublico,
+            });
+
+            // Si fue recortado por remanente (Caso Cascada 90 + 10 = 100)
+            if (respConc.fue_recortado_por_remanente) {
+              agregarMensajeLocal(salaActiva.id, {
+                remitente: 'ℹ️ AVISO DE CIERRE',
+                esBot: true,
+                tipo: 'aviso_remanente',
+                contenido: `⚡ Propuesta #${String(replyToPropuesta.id).slice(0, 8)} completada al 100%. Solo quedaban $${Number(respConc.monto_concretado).toFixed(2)} disponibles y fueron asignados a ${usuarioActual.nombre}.`,
+              });
+            }
+
+            // Actualizar el estado de la propuesta en el feed
+            setMensajesPorSala((prev) => ({
+              ...prev,
+              [salaActiva.id]: (prev[salaActiva.id] || []).map((m) =>
+                m.id === replyToPropuesta.id
+                  ? {
+                      ...m,
+                      montoDisponible: Number(respConc.remanente_propuesta),
+                      estadoPropuesta: Number(respConc.remanente_propuesta) <= 0 ? 'cerrada' : 'abierta',
+                    }
+                  : m
+              ),
+            }));
+          } else {
+            alert(respConc?.error || respConc?.motivo || 'No se pudo concretar la jugada.');
+          }
+        } catch (err: any) {
+          alert('Error al concretar jugada: ' + (err?.message || err));
+        } finally {
+          setReplyToPropuesta(null);
+        }
+      });
+      return;
+    }
+
+    // 2.B CASO NUEVA PROPUESTA O MENSAJE GENERAL
     const analisis = analizarYEstandarizarJugada(
       texto,
       usuarioActual.saldoDisponible,
-      salaActiva.retirados
+      salaActiva.retirados,
+      16,
+      usuarioActual.nombre
     );
 
     if (analisis.esIntencionDeJugada && !analisis.valido) {
@@ -200,15 +324,78 @@ export default function SalaJuegosWhatsApp({
     const firma = await generarHashTextoSHA256(`${grupoId}|${salaActiva.id}|${usuarioActual.id}|${textoFinalAPublicar}|${Date.now()}`);
     const cifrado = await cifrarMensajeSala(textoFinalAPublicar, grupoId);
 
-    agregarMensajeLocal(salaActiva.id, {
-      remitente: usuarioActual.nombre,
-      esBot: false,
-      tipo: analisis.esIntencionDeJugada ? 'propuesta_jugada' : 'texto',
-      contenido: textoFinalAPublicar,
-      monto: analisis.monto,
-      firmaSha256: firma.slice(0, 12),
-      payloadCifrado: cifrado,
-    });
+    if (analisis.esIntencionDeJugada) {
+      let propId = crypto.randomUUID();
+      let montoPublicado = analisis.monto;
+      let excedio = Boolean(analisis.excedioSaldo);
+
+      try {
+        const respRpc = await invocarRpc('publicar_propuesta_atomica', {
+          p_grupo_id: grupoId,
+          p_sala_id: salaActiva.id,
+          p_carrera_id: salaActiva.carreraActivaId || '00000000-0000-0000-2026-111400000001',
+          p_jugador_id: usuarioActual.id,
+          p_accion: analisis.accionProponente,
+          p_es_match: analisis.esMatch,
+          p_modalidad: analisis.modalidad,
+          p_caballos_a: analisis.caballosBandoA,
+          p_caballos_b: analisis.caballosBandoB,
+          p_ejemplar_texto: analisis.ejemplarTexto,
+          p_proporcion: '1x1',
+          p_monto_solicitado: analisis.monto,
+          p_texto_estandarizado: analisis.jugadaEstandarizada,
+        });
+
+        if (respRpc?.propuesta_id) propId = respRpc.propuesta_id;
+        if (respRpc?.monto_publicado != null) montoPublicado = Number(respRpc.monto_publicado);
+        if (respRpc?.excedio_saldo != null) excedio = Boolean(respRpc.excedio_saldo);
+      } catch (err: any) {
+        console.warn('Fallback local para propuesta:', err);
+      }
+
+      // Publicar la burbuja de propuesta en el chat
+      agregarMensajeLocal(salaActiva.id, {
+        id: propId,
+        remitente: usuarioActual.nombre,
+        esBot: false,
+        tipo: 'propuesta_jugada',
+        contenido: textoFinalAPublicar,
+        monto: analisis.monto,
+        montoOriginal: analisis.monto,
+        montoDisponible: montoPublicado,
+        accionProponente: analisis.accionProponente,
+        estadoPropuesta: 'abierta',
+        firmaSha256: firma.slice(0, 12),
+        payloadCifrado: cifrado,
+      });
+
+      // Si el jugador publicó por más de su saldoDisponible:
+      if (excedio) {
+        // El Bot publica inmediatamente en el grupo citando la jugada:
+        agregarMensajeLocal(salaActiva.id, {
+          remitente: '🤖 ASISTENTE DE SALA',
+          esBot: true,
+          tipo: 'alerta_bot',
+          contenido: `${usuarioActual.nombre} solo dispone de $${usuarioActual.saldoDisponible.toFixed(2)} para esta jugada.`,
+        });
+
+        // El Bot le envía simultáneamente en privado al jugador:
+        setSugerenciaPedagogica({
+          mensaje: '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo',
+          opciones: [],
+        });
+      }
+    } else {
+      // Mensaje de texto estándar
+      agregarMensajeLocal(salaActiva.id, {
+        remitente: usuarioActual.nombre,
+        esBot: false,
+        tipo: 'texto',
+        contenido: textoFinalAPublicar,
+        firmaSha256: firma.slice(0, 12),
+        payloadCifrado: cifrado,
+      });
+    }
 
     setTextoInput('');
   };
@@ -346,26 +533,161 @@ export default function SalaJuegosWhatsApp({
 
       {/* CUERPO CENTRAL DE MENSAJES DE LA SALA */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ fontSize: `${tamanoLetra}px` }}>
-        {mensajesSala.map((m) => (
-          <div
-            key={m.id}
-            className={`max-w-xl rounded-lg p-3 shadow ${
-              m.tipo === 'apertura_vista_2'
-                ? 'bg-emerald-950/90 border-2 border-emerald-500 text-center mx-auto font-bold text-emerald-200 whitespace-pre-line'
-                : m.esBot
-                ? 'bg-[#1f2c34] border-l-4 border-amber-400 text-gray-100 whitespace-pre-line'
-                : m.remitente === usuarioActual.nombre
-                ? 'bg-[#005c4b] ml-auto text-white'
-                : 'bg-[#202c33] text-gray-100'
-            }`}
-          >
-            <div className="flex justify-between text-[11px] text-emerald-300/80 mb-1 font-mono">
-              <span>{m.remitente}</span>
-              <span>{m.hora} {m.firmaSha256 ? `🔒#${m.firmaSha256}` : ''}</span>
+        {mensajesSala.map((m) => {
+          const esPropuesta = m.tipo === 'propuesta_jugada';
+          const montoOrig = Number(m.montoOriginal || m.monto || 0);
+          const montoDisp = Number(m.montoDisponible ?? m.monto ?? 0);
+          const tieneDisponible = montoDisp > 0;
+          const esMio = m.remitente === usuarioActual.nombre;
+
+          return (
+            <div
+              key={m.id}
+              className={`max-w-xl rounded-2xl p-3 shadow-md ${
+                m.tipo === 'apertura_vista_2'
+                  ? 'bg-emerald-950/90 border-2 border-emerald-500 text-center mx-auto font-bold text-emerald-200 whitespace-pre-line'
+                  : m.esBot
+                  ? 'bg-[#1f2c34] border-l-4 border-amber-400 text-gray-100 whitespace-pre-line mr-auto'
+                  : esMio
+                  ? 'bg-[#005c4b] ml-auto text-white rounded-tr-xs'
+                  : 'bg-[#202c33] mr-auto text-gray-100 rounded-tl-xs border border-gray-700/50'
+              }`}
+            >
+              <div className="flex justify-between items-center text-[11px] mb-1 font-mono gap-2">
+                <span className={`font-semibold ${esMio ? 'text-emerald-200' : 'text-emerald-400'}`}>
+                  {esMio ? 'Tú' : m.remitente}
+                </span>
+                <span className="text-[10px] text-gray-400">
+                  {m.hora} {m.firmaSha256 ? `🔒#${m.firmaSha256}` : ''}
+                </span>
+              </div>
+
+              {/* Mensaje citado si existe */}
+              {m.propuestaCitada && (
+                <div className="mb-2 p-2 rounded-lg bg-black/30 border-l-4 border-emerald-400 text-[11px]">
+                  <span className="font-bold text-emerald-300 block text-[10px]">
+                    ↩️ {m.propuestaCitada.remitente}
+                  </span>
+                  <p className="text-gray-300 truncate font-mono text-[11px]">
+                    {m.propuestaCitada.contenido}
+                  </p>
+                </div>
+              )}
+
+              <div className="tabular-nums font-medium text-xs leading-relaxed">{m.contenido}</div>
+
+              {/* SELECCIÓN Y BARRA EN VIVO PARA PROPUESTAS DE JUGADA */}
+              {esPropuesta && (
+                <div className="mt-2.5 pt-2 border-t border-gray-700/60 font-sans">
+                  <div className="flex justify-between items-center text-[11px] mb-1 font-mono">
+                    <span className="text-gray-400">Estado de Parada:</span>
+                    <span className={`font-bold ${tieneDisponible ? 'text-emerald-400' : 'text-gray-500 line-through'}`}>
+                      Disponible: ${montoDisp.toFixed(2)} de ${montoOrig.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="bg-emerald-500 h-1.5 rounded-full transition-all"
+                      style={{ width: `${montoOrig > 0 ? (montoDisp / montoOrig) * 100 : 0}%` }}
+                    />
+                  </div>
+
+                  {!esMio && tieneDisponible && (
+                    <div className="mt-2 space-y-1.5">
+                      <button
+                        onClick={() => {
+                          const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
+                          setReplyToPropuesta(m);
+                          manejarEnvioMensaje(esJuego ? `Consigo ${montoDisp}` : `Juego ${montoDisp}`);
+                        }}
+                        className="w-full bg-[#00a884] hover:bg-emerald-400 text-black text-xs font-black py-1.5 px-3 rounded-lg flex items-center justify-center gap-1 transition shadow-sm"
+                      >
+                        ⚡ Tomar Jugada Total (${montoDisp.toFixed(2)})
+                      </button>
+
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          onClick={() => {
+                            setTomandoParteId(tomandoParteId === m.id ? null : m.id);
+                            setMontoParcialInput('');
+                          }}
+                          className="bg-[#111b21] hover:bg-[#2a3942] border border-gray-600 text-gray-200 font-bold py-1 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                        >
+                          ✂️ Tomar una parte
+                        </button>
+                        <button
+                          onClick={() => {
+                            setReplyToPropuesta(m);
+                            const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
+                            setTextoInput(esJuego ? 'Consigo ' : 'Juego ');
+                          }}
+                          className="bg-[#111b21] hover:bg-[#2a3942] border border-emerald-600/50 text-emerald-300 font-bold py-1 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                        >
+                          ↩️ Responder WA
+                        </button>
+                      </div>
+
+                      {tomandoParteId === m.id && (
+                        <div className="p-2 bg-[#111b21] rounded-lg border border-emerald-500/40 space-y-2 mt-1">
+                          <div className="text-[10px] text-gray-300 font-semibold flex items-center justify-between">
+                            <span>Monto a tomar (Máx: ${montoDisp}):</span>
+                            <button onClick={() => setTomandoParteId(null)} className="text-gray-400 hover:text-white text-xs font-bold">
+                              ✕
+                            </button>
+                          </div>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {[10, 20, 50].filter(v => v < montoDisp).map(val => (
+                              <button
+                                key={val}
+                                onClick={() => {
+                                  const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
+                                  setReplyToPropuesta(m);
+                                  setTomandoParteId(null);
+                                  manejarEnvioMensaje(esJuego ? `Consigo ${val}` : `Juego ${val}`);
+                                }}
+                                className="bg-[#202c33] hover:bg-emerald-600 hover:text-black text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-xs font-mono font-bold"
+                              >
+                                Tomar ${val}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="1"
+                              max={montoDisp}
+                              value={montoParcialInput}
+                              onChange={(e) => setMontoParcialInput(e.target.value)}
+                              placeholder={`Monto (1 - ${montoDisp})`}
+                              className="flex-1 bg-[#202c33] text-white text-xs px-2.5 py-1.5 rounded border border-gray-700 outline-none focus:border-emerald-400 font-mono"
+                            />
+                            <button
+                              onClick={() => {
+                                const n = Number(montoParcialInput);
+                                if (!n || n <= 0 || n > montoDisp) {
+                                  alert(`Monto inválido. Ingrese entre 1 y ${montoDisp}`);
+                                  return;
+                                }
+                                const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
+                                setReplyToPropuesta(m);
+                                setTomandoParteId(null);
+                                setMontoParcialInput('');
+                                manejarEnvioMensaje(esJuego ? `Consigo ${n}` : `Juego ${n}`);
+                              }}
+                              className="bg-emerald-500 hover:bg-emerald-400 text-black font-black px-3 py-1.5 rounded text-xs"
+                            >
+                              ✓ Tomar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="tabular-nums">{m.contenido}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* BURBUJA PRIVADA DE CORRECCIÓN PEDAGÓGICA (SOLO VISIBLE PARA EL JUGADOR) */}
@@ -391,37 +713,103 @@ export default function SalaJuegosWhatsApp({
         </div>
       )}
 
-      {/* BARRA INFERIOR DE ESCRITURA ESTILO WHATSAPP */}
-      <div className="bg-[#202c33] p-3 flex items-center gap-2">
-        {usuarioActual.esOperador && (
+      {/* BANNER DE CITACIÓN AL RESPONDER / CONCRETAR PROPUESTA */}
+      {replyToPropuesta && (
+        <div className="bg-[#182229] border-t border-[#00a884]/40 px-3 py-2 flex items-center justify-between text-xs animate-in fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-emerald-400 text-sm">↩️</span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold text-emerald-400 truncate">
+                Respondiendo a {replyToPropuesta.remitente} (Disponible: ${Number(replyToPropuesta.montoDisponible ?? replyToPropuesta.monto ?? 0).toFixed(2)})
+              </p>
+              <p className="text-[11px] text-gray-300 font-mono truncate">{replyToPropuesta.contenido}</p>
+            </div>
+          </div>
           <button
-            onClick={() =>
-              abrirCarreraOperador(
-                salaActiva,
-                salaActiva.hipodromoActivo || 'LA RINCONADA',
-                salaActiva.numeroCarreraActiva || 5,
-                salaActiva.distanciaActiva || 1200
-              )
-            }
-            className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2.5 rounded-lg"
+            onClick={() => setReplyToPropuesta(null)}
+            className="text-gray-400 hover:text-white px-2 py-1 font-bold text-xs"
+            title="Cancelar respuesta"
           >
-            🏇 Abrir Carrera (2 Vistas)
+            ✕ Cancelar
           </button>
+        </div>
+      )}
+
+      {/* BARRA INFERIOR DE ESCRITURA ESTILO WHATSAPP */}
+      <div className="bg-[#202c33] p-3 space-y-2">
+        {replyToPropuesta ? (
+          <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px]">
+            {((replyToPropuesta.accionProponente || (replyToPropuesta.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA'
+              ? ['Consigo', 'Doy', 'J', 'Jugaste', 'Jugamos', 'Ponte']
+              : ['Juego', 'Jugue', 'Jugué', 'Voy', 'Ponte']
+            ).map((verbo) => (
+              <button
+                key={verbo}
+                onClick={() => setTextoInput(`${verbo} `)}
+                className="bg-[#111b21] hover:bg-emerald-950/80 text-emerald-300 border border-emerald-600/40 px-2.5 py-0.5 rounded font-mono text-xs font-bold"
+              >
+                + {verbo}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px]">
+            <button
+              onClick={() => setTextoInput('Juego 1P ')}
+              className="bg-[#111b21] hover:bg-gray-800 text-gray-300 border border-gray-700 px-2 py-0.5 rounded font-mono text-xs"
+            >
+              + Juego 1P
+            </button>
+            <button
+              onClick={() => setTextoInput('Consigo 1P ')}
+              className="bg-[#111b21] hover:bg-gray-800 text-gray-300 border border-gray-700 px-2 py-0.5 rounded font-mono text-xs"
+            >
+              + Consigo 1P
+            </button>
+            <button
+              onClick={() => setTextoInput('Juego 1x4 50')}
+              className="bg-[#111b21] hover:bg-gray-800 text-gray-300 border border-gray-700 px-2 py-0.5 rounded font-mono text-xs"
+            >
+              + Match
+            </button>
+          </div>
         )}
-        <input
-          type="text"
-          value={textoInput}
-          onChange={(e) => setTextoInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && manejarEnvioMensaje()}
-          placeholder="Escribe tu jugada (Ej: Juego 1p del 5 con 100 | Juego la 15 x 46 con 100)..."
-          className="flex-1 bg-[#2a3942] text-white rounded-lg px-4 py-2.5 text-sm focus:outline-none"
-        />
-        <button
-          onClick={() => manejarEnvioMensaje()}
-          className="bg-[#00a884] hover:bg-emerald-500 text-black font-bold px-5 py-2.5 rounded-lg text-sm"
-        >
-          Enviar
-        </button>
+
+        <div className="flex items-center gap-2">
+          {usuarioActual.esOperador && (
+            <button
+              onClick={() =>
+                abrirCarreraOperador(
+                  salaActiva,
+                  salaActiva.hipodromoActivo || 'LA RINCONADA',
+                  salaActiva.numeroCarreraActiva || 5,
+                  salaActiva.distanciaActiva || 1200
+                )
+              }
+              className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2.5 rounded-lg shrink-0"
+            >
+              🏇 Abrir Carrera
+            </button>
+          )}
+          <input
+            type="text"
+            value={textoInput}
+            onChange={(e) => setTextoInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && manejarEnvioMensaje()}
+            placeholder={
+              replyToPropuesta
+                ? `Concretar jugada de ${replyToPropuesta.remitente} (Ej: Consigo ${replyToPropuesta.montoDisponible ?? replyToPropuesta.monto})...`
+                : 'Escribe tu jugada (Ej: Juego 1p del 5 con 100 | Juego la 15 x 46 con 100)...'
+            }
+            className="flex-1 bg-[#2a3942] text-white rounded-lg px-4 py-2.5 text-sm focus:outline-none"
+          />
+          <button
+            onClick={() => manejarEnvioMensaje()}
+            className="bg-[#00a884] hover:bg-emerald-500 text-black font-bold px-5 py-2.5 rounded-lg text-sm shrink-0"
+          >
+            Enviar
+          </button>
+        </div>
       </div>
 
       {/* MODAL DE REPORTE DE PREJUGADAS (WHATSAPP + IMAGEN PNG) */}

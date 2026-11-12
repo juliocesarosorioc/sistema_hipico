@@ -26,6 +26,9 @@ export function ChatSalaPanel({
   const [mensajes, setMensajes] = useState<any[]>([]);
   const [textoInput, setTextoInput] = useState("");
   const [enviando, setEnviando] = useState(false);
+  const [replyToPropuesta, setReplyToPropuesta] = useState<any | null>(null);
+  const [tomandoParteId, setTomandoParteId] = useState<string | null>(null);
+  const [montoParcialInput, setMontoParcialInput] = useState<string>("");
   const [sugerenciaPedagogica, setSugerenciaPedagogica] = useState<{
     mensaje: string;
     sugerencias: string[];
@@ -110,11 +113,17 @@ export function ChatSalaPanel({
 
     setEnviando(true);
     try {
-      const res = await salaApi.enviarMensaje({
+      const payload: any = {
         salaId: sala.id,
         grupoId,
         texto,
-      });
+      };
+
+      if (replyToPropuesta?.id) {
+        payload.propuestaId = replyToPropuesta.id;
+      }
+
+      const res = await salaApi.enviarMensaje(payload);
 
       if (res.ok) {
         if (res.data?.esCorreccionPedagogica) {
@@ -126,11 +135,14 @@ export function ChatSalaPanel({
         } else {
           setSugerenciaPedagogica(null);
           setTextoInput("");
+          setReplyToPropuesta(null);
+          setTomandoParteId(null);
+          setMontoParcialInput("");
           await cargarMensajes();
           onActualizarSaldo?.();
         }
       } else {
-        alert(res.error || "No se pudo enviar el mensaje");
+        alert(res.error || "No se pudo procesar la jugada");
       }
     } catch (err: any) {
       alert("Error: " + (err?.message || err));
@@ -139,7 +151,7 @@ export function ChatSalaPanel({
     }
   };
 
-  const aceptarPropuesta = async (propuestaId: string) => {
+  const aceptarPropuesta = async (propuestaId: string, monto?: number, textoPersonalizado?: string) => {
     if (!sala?.id) return;
     if (sala.estado_carrera !== "abierta") {
       alert("La carrera está cerrada para nuevas jugadas.");
@@ -151,15 +163,19 @@ export function ChatSalaPanel({
       const res = await salaApi.enviarMensaje({
         salaId: sala.id,
         grupoId,
-        texto: "Acepto",
+        texto: textoPersonalizado || (monto ? `Tomar $${monto}` : "Tomar jugada total"),
         propuestaId,
-      });
+        monto: monto,
+      } as any);
 
       if (res.ok) {
+        setTomandoParteId(null);
+        setMontoParcialInput("");
+        setReplyToPropuesta(null);
         await cargarMensajes();
         onActualizarSaldo?.();
       } else {
-        alert(res.error || "No se pudo concretar el cruce");
+        alert(res.error || "No se pudo tomar la jugada");
       }
     } catch (err: any) {
       alert("Error: " + (err?.message || err));
@@ -174,9 +190,22 @@ export function ChatSalaPanel({
     enviarMensaje(sug);
   };
 
-  const esMio = (remitenteId?: string, remitenteNombre?: string) =>
-    (Boolean(remitenteId) && remitenteId === identidad?.usuarioId) ||
-    (Boolean(remitenteNombre) && Boolean(identidad?.nombre) && remitenteNombre === identidad?.nombre);
+  const miId = identidad?.usuarioId || identidad?.clienteRow?.id;
+  const miNombre = identidad?.nombre || identidad?.clienteRow?.nombre;
+
+  const esMio = (remitenteId?: string, remitenteNombre?: string) => {
+    if (miId && remitenteId && String(remitenteId).toLowerCase() === String(miId).toLowerCase()) return true;
+    if (miNombre && remitenteNombre && remitenteNombre.trim().toLowerCase() === miNombre.trim().toLowerCase()) return true;
+    return false;
+  };
+
+  const mensajesMap = React.useMemo(() => {
+    const map = new Map<string, any>();
+    for (const m of mensajes) {
+      if (m?.id) map.set(m.id, m);
+    }
+    return map;
+  }, [mensajes]);
 
   const esCarreraAbierta = sala?.estado_carrera === "abierta";
 
@@ -290,7 +319,7 @@ export function ChatSalaPanel({
           // VISTA PROPUESTA DE JUGADA
           const esPropuesta = m.tipo_mensaje === "propuesta_jugada" || m.tipo_mensaje === "PROPUESTA";
           if (esPropuesta) {
-            const disponible = Number(m.monto_disponible || m.monto_original || 0);
+            const disponible = Number(m.monto_disponible ?? m.monto_original ?? 0);
             const activa = m.estado_propuesta === "abierta" && disponible > 0 && esCarreraAbierta;
 
             return (
@@ -298,13 +327,13 @@ export function ChatSalaPanel({
                 key={m.id}
                 className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 shadow-md ${
                   mio
-                    ? "ml-auto bg-[#005c4b] border border-emerald-400/30 text-white"
-                    : "mr-auto bg-[#202c33] border border-gray-700/60 text-[#e9edef]"
+                    ? "ml-auto bg-[#005c4b] border border-emerald-400/30 text-white rounded-tr-xs"
+                    : "mr-auto bg-[#202c33] border border-gray-700/60 text-[#e9edef] rounded-tl-xs"
                 }`}
               >
-                <div className="flex items-center justify-between text-[11px] mb-1 font-bold">
+                <div className="flex items-center justify-between text-[11px] mb-1 font-bold gap-2">
                   <span className={mio ? "text-emerald-200" : "text-emerald-400"}>
-                    {m.remitente_nombre} {mio && "(Tú)"}
+                    {mio ? "Tú" : (m.remitente_nombre || "Usuario")} {m.es_operador && "👑 [Operador]"}
                   </span>
                   <span className="text-[10px] text-gray-400 font-mono">
                     {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -330,14 +359,90 @@ export function ChatSalaPanel({
                 </div>
 
                 {!mio && activa && (
-                  <button
-                    onClick={() => aceptarPropuesta(m.id)}
-                    disabled={enviando}
-                    className="w-full mt-1.5 bg-[#00a884] hover:bg-emerald-400 text-black font-black py-1.5 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1 shadow-md"
-                  >
-                    <span>⚡</span>
-                    <span>Cerrar Jugada (${disponible})</span>
-                  </button>
+                  <div className="space-y-1.5 mt-2">
+                    <button
+                      onClick={() => aceptarPropuesta(m.id)}
+                      disabled={enviando}
+                      className="w-full bg-[#00a884] hover:bg-emerald-400 text-black font-black py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1 shadow-md"
+                    >
+                      <span>⚡</span>
+                      <span>Tomar Jugada Total (${disponible})</span>
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        onClick={() => {
+                          setTomandoParteId(tomandoParteId === m.id ? null : m.id);
+                          setMontoParcialInput("");
+                        }}
+                        className="bg-[#111b21] hover:bg-[#2a3942] border border-gray-600 text-gray-200 font-bold py-1.5 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                      >
+                        <span>✂️</span>
+                        <span>Tomar una parte</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setReplyToPropuesta(m);
+                          inputRef.current?.focus();
+                        }}
+                        className="bg-[#111b21] hover:bg-[#2a3942] border border-emerald-600/50 text-emerald-300 font-bold py-1.5 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                      >
+                        <span>↩️</span>
+                        <span>Responder WA</span>
+                      </button>
+                    </div>
+
+                    {tomandoParteId === m.id && (
+                      <div className="p-2 bg-[#111b21] rounded-lg border border-emerald-500/40 space-y-2 mt-1">
+                        <div className="text-[10px] text-gray-300 font-semibold flex items-center justify-between">
+                          <span>Indica cuánto quieres tomar (Máx: ${disponible}):</span>
+                          <button
+                            onClick={() => setTomandoParteId(null)}
+                            className="text-gray-400 hover:text-white text-xs font-bold"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {[10, 20, 50].filter((v) => v < disponible).map((val) => (
+                            <button
+                              key={val}
+                              onClick={() => aceptarPropuesta(m.id, val)}
+                              disabled={enviando}
+                              className="bg-[#202c33] hover:bg-emerald-600 hover:text-black text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-xs font-mono font-bold"
+                            >
+                              Tomar ${val}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="1"
+                            max={disponible}
+                            value={montoParcialInput}
+                            onChange={(e) => setMontoParcialInput(e.target.value)}
+                            placeholder={`Monto (1 - ${disponible})`}
+                            className="flex-1 bg-[#202c33] text-white text-xs px-2.5 py-1.5 rounded border border-gray-700 outline-none focus:border-emerald-400 font-mono"
+                          />
+                          <button
+                            onClick={() => {
+                              const n = Number(montoParcialInput);
+                              if (!n || n <= 0 || n > disponible) {
+                                alert(`Ingresa un monto válido entre 1 y ${disponible}`);
+                                return;
+                              }
+                              aceptarPropuesta(m.id, n);
+                            }}
+                            disabled={enviando || !montoParcialInput}
+                            className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-black font-black px-3 py-1.5 rounded text-xs"
+                          >
+                            ✓ Tomar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {m.estado_propuesta === "anulada" && (
@@ -347,25 +452,42 @@ export function ChatSalaPanel({
             );
           }
 
-          // VISTA BURBUJA DE TEXTO ESTÁNDAR
+          // VISTA BURBUJA DE TEXTO ESTÁNDAR / CONCRECIÓN / MENSAJE NORMAL
+          const citado = m.reply_to_msg_id ? mensajesMap.get(m.reply_to_msg_id) : null;
+          const citadoEsMio = citado ? esMio(citado.remitente_id, citado.remitente_nombre) : false;
+
           return (
             <div
               key={m.id}
               className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 shadow ${
                 mio
-                  ? "ml-auto bg-[#005c4b] text-white rounded-tr-none"
-                  : "mr-auto bg-[#202c33] text-[#e9edef] rounded-tl-none border border-gray-700/40"
+                  ? "ml-auto bg-[#005c4b] text-white rounded-tr-xs"
+                  : "mr-auto bg-[#202c33] text-[#e9edef] rounded-tl-xs border border-gray-700/40"
               }`}
             >
-              {!mio && (
-                <span className="text-[11px] font-bold text-emerald-400 block mb-0.5">
-                  {m.remitente_nombre} {m.es_operador && "👑 [Operador]"}
+              <div className="flex items-center justify-between text-[11px] mb-1 font-bold gap-2">
+                <span className={mio ? "text-emerald-200" : "text-emerald-400"}>
+                  {mio ? "Tú" : (m.remitente_nombre || "Usuario")} {m.es_operador && "👑 [Operador]"}
                 </span>
+                <span className="text-[9px] text-gray-400 font-mono">
+                  {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </div>
+
+              {/* Caja de cita estilo WhatsApp si cita o responde a otro mensaje */}
+              {citado && (
+                <div className="mb-2 p-2 rounded-lg bg-black/35 border-l-4 border-emerald-400 text-[11px] select-text">
+                  <div className="font-bold text-emerald-300 text-[10px] flex items-center gap-1">
+                    <span>↩️</span>
+                    <span>{citadoEsMio ? "Tú" : (citado.remitente_nombre || "Usuario")}</span>
+                  </div>
+                  <div className="text-gray-300 truncate font-mono text-[11px] mt-0.5">
+                    {citado.jugada_estandarizada || citado.contenido}
+                  </div>
+                </div>
               )}
-              <p className="text-xs break-words leading-relaxed">{m.contenido}</p>
-              <span className="text-[9px] text-gray-400 font-mono block text-right mt-0.5">
-                {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-              </span>
+
+              <p className="text-xs break-words leading-relaxed whitespace-pre-wrap">{m.contenido}</p>
             </div>
           );
         })}
@@ -397,35 +519,166 @@ export function ChatSalaPanel({
         )}
       </div>
 
-      {/* Barra de Entrada / Envío */}
+      {/* Barra de Entrada / Envío con Cita y Respuestas Rápidas estilo WhatsApp */}
       <div className="bg-[#202c33] p-3 border-t border-[#2a3942] space-y-2">
-        {/* Atajos rápidos */}
-        <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px] text-gray-300">
-          <button
-            onClick={() => setTextoInput("Juego 1P ")}
-            className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
-          >
-            + Juego 1P
-          </button>
-          <button
-            onClick={() => setTextoInput("Consigo 1P ")}
-            className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
-          >
-            + Consigo 1P
-          </button>
-          <button
-            onClick={() => setTextoInput("Juego 1 x 4 50")}
-            className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
-          >
-            + Match (x)
-          </button>
-          <button
-            onClick={() => setTextoInput("Doy ")}
-            className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
-          >
-            + Doy
-          </button>
-        </div>
+        {/* Banner de Citación Activa estilo WhatsApp */}
+        {replyToPropuesta && (
+          <div className="bg-[#111b21] border-l-4 border-emerald-400 rounded-lg p-2.5 flex items-center justify-between text-xs animate-fadeIn">
+            <div className="truncate mr-2">
+              <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-[11px]">
+                <span>↩️</span>
+                <span>
+                  Respondiendo a: {replyToPropuesta.remitente_nombre || "Usuario"}
+                </span>
+                <span className="text-amber-300 font-mono">
+                  (Disp: ${replyToPropuesta.monto_disponible || replyToPropuesta.monto_original})
+                </span>
+              </div>
+              <p className="text-gray-300 text-[11px] truncate font-mono mt-0.5">
+                {replyToPropuesta.jugada_estandarizada || replyToPropuesta.contenido}
+              </p>
+            </div>
+            <button
+              onClick={() => setReplyToPropuesta(null)}
+              className="text-gray-400 hover:text-white bg-[#202c33] p-1.5 rounded-full text-xs font-bold"
+              title="Cancelar citación"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Chips de Respuestas Predefinidas estilo WhatsApp */}
+        {replyToPropuesta ? (
+          <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px] text-gray-300">
+            {/* Opciones inteligentes según verbo */}
+            {(() => {
+              const textoProp = (replyToPropuesta.contenido || replyToPropuesta.jugada_estandarizada || "").toLowerCase();
+              const esPropJuego = textoProp.includes("juego") || (replyToPropuesta.accion_proponente || "").toUpperCase() === "JUEGA";
+              const disp = Number(replyToPropuesta.monto_disponible || replyToPropuesta.monto_original || 0);
+
+              if (esPropJuego) {
+                return (
+                  <>
+                    <button
+                      onClick={() => aceptarPropuesta(replyToPropuesta.id)}
+                      disabled={enviando}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-black font-black px-2.5 py-1 rounded text-xs shadow font-mono"
+                    >
+                      ⚡ Tomar Total (${disp})
+                    </button>
+                    {[10, 20, 50].filter(v => v < disp).map(val => (
+                      <button
+                        key={val}
+                        onClick={() => enviarMensaje(`Consigo ${val}`)}
+                        className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-emerald-600/50 font-mono text-emerald-300"
+                      >
+                        + Consigo {val}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => enviarMensaje("Doy")}
+                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
+                    >
+                      + Doy
+                    </button>
+                    <button
+                      onClick={() => enviarMensaje("J")}
+                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
+                    >
+                      + J
+                    </button>
+                    <button
+                      onClick={() => enviarMensaje("Ponte")}
+                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
+                    >
+                      + Ponte
+                    </button>
+                    <button
+                      onClick={() => enviarMensaje("Jugaste")}
+                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
+                    >
+                      + Jugaste
+                    </button>
+                  </>
+                );
+              } else {
+                return (
+                  <>
+                    <button
+                      onClick={() => aceptarPropuesta(replyToPropuesta.id)}
+                      disabled={enviando}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-black font-black px-2.5 py-1 rounded text-xs shadow font-mono"
+                    >
+                      ⚡ Tomar Total (${disp})
+                    </button>
+                    {[10, 20, 50].filter(v => v < disp).map(val => (
+                      <button
+                        key={val}
+                        onClick={() => enviarMensaje(`Juego ${val}`)}
+                        className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-emerald-600/50 font-mono text-emerald-300"
+                      >
+                        + Juego {val}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => enviarMensaje("Voy")}
+                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
+                    >
+                      + Voy
+                    </button>
+                    <button
+                      onClick={() => enviarMensaje("J")}
+                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
+                    >
+                      + J
+                    </button>
+                    <button
+                      onClick={() => enviarMensaje("Ponte")}
+                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
+                    >
+                      + Ponte
+                    </button>
+                    <button
+                      onClick={() => enviarMensaje("Jugue")}
+                      className="bg-[#111b21] hover:bg-gray-800 px-2 py-1 rounded border border-gray-700 font-mono"
+                    >
+                      + Jugue
+                    </button>
+                  </>
+                );
+              }
+            })()}
+          </div>
+        ) : (
+          /* Atajos rápidos generales para proponer */
+          <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px] text-gray-300">
+            <button
+              onClick={() => setTextoInput("Juego 1P ")}
+              className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
+            >
+              + Juego 1P
+            </button>
+            <button
+              onClick={() => setTextoInput("Consigo 1P ")}
+              className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
+            >
+              + Consigo 1P
+            </button>
+            <button
+              onClick={() => setTextoInput("Juego 1 x 4 50")}
+              className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
+            >
+              + Match (x)
+            </button>
+            <button
+              onClick={() => setTextoInput("Doy ")}
+              className="bg-[#111b21] hover:bg-gray-800 px-2 py-0.5 rounded border border-gray-700 font-mono"
+            >
+              + Doy
+            </button>
+          </div>
+        )}
 
         <form
           onSubmit={(e) => {
@@ -440,7 +693,9 @@ export function ChatSalaPanel({
             value={textoInput}
             onChange={(e) => setTextoInput(e.target.value)}
             placeholder={
-              esCarreraAbierta
+              replyToPropuesta
+                ? `Responder a ${replyToPropuesta.remitente_nombre || "propuesta"} (ej. Consigo 20, Ponte, J)...`
+                : esCarreraAbierta
                 ? "Escribe tu jugada (ej. Juego 1p del 5 con 100)..."
                 : "Carrera cerrada (solo mensajes de consulta)..."
             }

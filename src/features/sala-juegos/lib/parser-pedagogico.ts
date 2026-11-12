@@ -15,6 +15,92 @@ export interface ResultadoAnalisisJugada {
   requiereOperador: boolean;
   mensajePedagogicoPrivado?: string;
   sugerenciasUnClic?: string[];
+  excedioSaldo?: boolean;
+  montoDisponibleValido?: number;
+  msgPublicoBot?: string;
+  msgPrivadoBot?: string;
+}
+
+export interface ResultadoConcrecionEstricta {
+  valido: boolean;
+  motivoRechazo?: string;
+  montoSolicitado: number;
+  montoEfectivo: number;
+  excedioSaldo: boolean;
+  msgPublicoBot?: string;
+  msgPrivadoBot?: string;
+}
+
+/**
+ * Valida de forma estricta las palabras autorizadas para responder y concretar una propuesta
+ */
+export function evaluarConcrecionEstricta(
+  textoRespuesta: string,
+  accionPropuesta: 'JUEGA' | 'CONSIGUE',
+  montoDisponiblePropuesta: number,
+  saldoDisponibleAceptante: number,
+  nombreAceptante?: string
+): ResultadoConcrecionEstricta {
+  const texto = (textoRespuesta || '').trim();
+
+  // Validar verbos autorizados según el rol de la propuesta citada:
+  // - Si la propuesta es Juego: solo acepta Consigo, Doy, J, Jugaste, Jugamos, Ponte
+  // - Si la propuesta es Consigo / Doy: solo acepta Juego, Jugue, Jugué, J, Voy, Ponte
+  const esPropuestaJuego = accionPropuesta === 'JUEGA';
+
+  const regexJuego = /^(consigo|doy|j|jugaste|jugamos|ponte)(?:\s+(?:con\s+|por\s+|\$)?(\d+(?:[\.,]\d+)?))?$/i;
+  const regexConsigo = /^(juego|jugue|jugué|j|voy|ponte)(?:\s+(?:con\s+|por\s+|\$)?(\d+(?:[\.,]\d+)?))?$/i;
+
+  const match = esPropuestaJuego ? texto.match(regexJuego) : texto.match(regexConsigo);
+
+  if (!match) {
+    const permitidas = esPropuestaJuego
+      ? 'Consigo, Doy, J, Jugaste, Jugamos, Ponte'
+      : 'Juego, Jugue, Jugué, J, Voy, Ponte';
+    return {
+      valido: false,
+      motivoRechazo: `Palabra no autorizada para concretar. Palabras válidas: ${permitidas}`,
+      montoSolicitado: 0,
+      montoEfectivo: 0,
+      excedioSaldo: false,
+    };
+  }
+
+  // Extraer monto especificado, o tomar el remanente disponible si no se indicó monto explícito
+  const montoParsed = match[2] ? parseFloat(match[2].replace(',', '.')) : montoDisponiblePropuesta;
+  const montoSolicitado = Math.max(0, Number.isFinite(montoParsed) ? montoParsed : montoDisponiblePropuesta);
+
+  if (montoSolicitado <= 0) {
+    return {
+      valido: false,
+      motivoRechazo: 'El monto a concretar debe ser mayor a 0',
+      montoSolicitado: 0,
+      montoEfectivo: 0,
+      excedioSaldo: false,
+    };
+  }
+
+  const excedioSaldo = montoSolicitado > saldoDisponibleAceptante;
+  const topeSaldo = Math.max(0, saldoDisponibleAceptante);
+  const montoEfectivo = Math.min(montoSolicitado, topeSaldo, montoDisponiblePropuesta);
+
+  let msgPublicoBot: string | undefined;
+  let msgPrivadoBot: string | undefined;
+
+  if (excedioSaldo) {
+    msgPublicoBot = `Esta jugada solo por $${topeSaldo.toFixed(2)}`;
+    msgPrivadoBot = `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
+  }
+
+  return {
+    valido: montoEfectivo > 0,
+    motivoRechazo: montoEfectivo <= 0 ? 'Saldo insuficiente para concretar' : undefined,
+    montoSolicitado,
+    montoEfectivo,
+    excedioSaldo,
+    msgPublicoBot,
+    msgPrivadoBot,
+  };
 }
 
 // Normaliza bloques de caballos como "45", "1.5", "1,5", "4 .5", "la 15" -> ["1", "5"] -> "1-5"
@@ -51,7 +137,8 @@ export function analizarYEstandarizarJugada(
   textoUsuario: string,
   saldoDisponible: number,
   ejemplaresRetirados: string[] = [],
-  maxEjemplarCarrera = 16
+  maxEjemplarCarrera = 16,
+  nombreUsuario?: string
 ): ResultadoAnalisisJugada {
   const texto = textoUsuario.trim().replace(/\s+/g, ' ');
 
@@ -118,9 +205,8 @@ export function analizarYEstandarizarJugada(
       }
 
       // Verificar saldo disponible
-      if (monto > saldoDisponible) {
-        const montoSugerido = Math.floor(saldoDisponible);
-        const estandarAjustada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')} ${montoSugerido}`;
+      const excedioSaldoMatch = monto > saldoDisponible;
+      if (excedioSaldoMatch && saldoDisponible <= 0) {
         return {
           esIntencionDeJugada: true,
           valido: false,
@@ -131,15 +217,25 @@ export function analizarYEstandarizarJugada(
           caballosBandoB: bandoB,
           ejemplarTexto: `${bandoA.join('-')} x ${bandoB.join('-')}`,
           monto,
-          jugadaEstandarizada: estandarAjustada,
+          jugadaEstandarizada: '',
           confianza: 1.0,
           requiereOperador: false,
-          mensajePedagogicoPrivado: `🔒 Solo visible para ti: Tu jugada supera tu saldo disponible ($${saldoDisponible.toFixed(2)}). Puedes enviarla hasta tu monto disponible:`,
-          sugerenciasUnClic: montoSugerido > 0 ? [estandarAjustada] : [],
+          excedioSaldo: true,
+          montoDisponibleValido: 0,
+          mensajePedagogicoPrivado: `🔒 Saldo insuficiente ($${saldoDisponible.toFixed(2)}). Debes recargar saldo antes de publicar jugadas.`,
+          msgPublicoBot: `${nombreUsuario || 'El jugador'} no dispone de saldo suficiente para esta jugada.`,
+          msgPrivadoBot: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
         };
       }
 
       const jugadaEstandarizada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')} ${monto}`;
+      const msgPublicoBotMatch = excedioSaldoMatch
+        ? `${nombreUsuario || 'El jugador'} solo dispone de $${saldoDisponible.toFixed(2)} para esta jugada.`
+        : undefined;
+      const msgPrivadoBotMatch = excedioSaldoMatch
+        ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
+        : undefined;
+
       return {
         esIntencionDeJugada: true,
         valido: true,
@@ -153,6 +249,10 @@ export function analizarYEstandarizarJugada(
         jugadaEstandarizada,
         confianza: 0.99,
         requiereOperador: false,
+        excedioSaldo: excedioSaldoMatch,
+        montoDisponibleValido: excedioSaldoMatch ? saldoDisponible : monto,
+        msgPublicoBot: msgPublicoBotMatch,
+        msgPrivadoBot: msgPrivadoBotMatch,
       };
     }
   }
@@ -192,9 +292,8 @@ export function analizarYEstandarizarJugada(
         };
       }
 
-      if (monto > saldoDisponible) {
-        const montoSugerido = Math.floor(saldoDisponible);
-        const estandarAjustada = `${verboEstandar} ${modLimpia} ${caballos.join('-')} ${montoSugerido}`;
+      const excedioSaldoPuesto = monto > saldoDisponible;
+      if (excedioSaldoPuesto && saldoDisponible <= 0) {
         return {
           esIntencionDeJugada: true,
           valido: false,
@@ -205,15 +304,25 @@ export function analizarYEstandarizarJugada(
           caballosBandoB: [],
           ejemplarTexto: caballos.join('-'),
           monto,
-          jugadaEstandarizada: estandarAjustada,
+          jugadaEstandarizada: '',
           confianza: 1.0,
           requiereOperador: false,
-          mensajePedagogicoPrivado: `🔒 Solo visible para ti: Tu saldo disponible es $${saldoDisponible.toFixed(2)}. ¿Deseas publicar la jugada hasta tu disponible?`,
-          sugerenciasUnClic: montoSugerido > 0 ? [estandarAjustada] : [],
+          excedioSaldo: true,
+          montoDisponibleValido: 0,
+          mensajePedagogicoPrivado: `🔒 Saldo insuficiente ($${saldoDisponible.toFixed(2)}). Debes recargar saldo antes de publicar jugadas.`,
+          msgPublicoBot: `${nombreUsuario || 'El jugador'} no dispone de saldo suficiente para esta jugada.`,
+          msgPrivadoBot: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
         };
       }
 
       const jugadaEstandarizada = `${verboEstandar} ${modLimpia} ${caballos.join('-')} ${monto}`;
+      const msgPublicoBotPuesto = excedioSaldoPuesto
+        ? `${nombreUsuario || 'El jugador'} solo dispone de $${saldoDisponible.toFixed(2)} para esta jugada.`
+        : undefined;
+      const msgPrivadoBotPuesto = excedioSaldoPuesto
+        ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
+        : undefined;
+
       return {
         esIntencionDeJugada: true,
         valido: true,
@@ -227,6 +336,10 @@ export function analizarYEstandarizarJugada(
         jugadaEstandarizada,
         confianza: 0.99,
         requiereOperador: false,
+        excedioSaldo: excedioSaldoPuesto,
+        montoDisponibleValido: excedioSaldoPuesto ? saldoDisponible : monto,
+        msgPublicoBot: msgPublicoBotPuesto,
+        msgPrivadoBot: msgPrivadoBotPuesto,
       };
     }
   }
