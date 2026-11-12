@@ -63,7 +63,7 @@ export function ModalOperadorSala({
     nombreSalaUpper.includes("USA") ||
     sala.orden_sala === 2;
 
-  // Apertura
+  // Apertura / Cierre
   const [hipodromo, setHipodromo] = useState<string>(() => {
     if (esVenezuela) {
       return sala.hipodromo_activo === "VALENCIA" ? "VALENCIA" : "LA RINCONADA";
@@ -76,12 +76,24 @@ export function ModalOperadorSala({
     return sala.hipodromo_activo || "LA RINCONADA";
   });
   const [numeroCarrera, setNumeroCarrera] = useState(sala.numero_carrera_activa || 1);
-  const [distancia, setDistancia] = useState(sala.distancia_activa || 1200);
+
+  // Estado de la carrera activa en la sala
+  const estadoCarreraActual = String(sala.estado_carrera || "cerrada").toLowerCase();
+  const hipActivoSala = String(sala.hipodromo_activo || "").trim().toUpperCase();
+  const numActivoSala = Number(sala.numero_carrera_activa || 0);
+
+  const esMismaCarrera =
+    hipActivoSala === hipodromo.trim().toUpperCase() &&
+    numActivoSala === Number(numeroCarrera);
+
+  const carreraEstaAbierta = esMismaCarrera && estadoCarreraActual === "abierta";
+  const carreraEstaCerrada = esMismaCarrera && estadoCarreraActual === "cerrada";
+  const carreraEstaLiquidada = esMismaCarrera && estadoCarreraActual === "liquidada";
 
   // Retirados
   const [ejemplarRetirado, setEjemplarRetirado] = useState("");
 
-  // Liquidación dinámica (como en la plataforma: posiciones, empates Dead Heat y adición de ejemplares)
+  // Liquidación dinámica
   const [filasLlegada, setFilasLlegada] = useState<FilaLlegada[]>([
     { numero: "", empate: false },
     { numero: "", empate: false },
@@ -141,7 +153,6 @@ export function ModalOperadorSala({
     };
   }, [sala.hipodromo_activo, sala.numero_carrera_activa, hipodromo, numeroCarrera]);
 
-  // Tomar resultado directamente de la plataforma
   const tomarResultadoDePlataforma = () => {
     if (!plataformaResultado || !plataformaResultado.ganadores?.length) return;
     const g = plataformaResultado.ganadores;
@@ -154,7 +165,6 @@ export function ModalOperadorSala({
     setMsgFeedback(`📥 Pizarra tomada de la plataforma: #${g.join(" - #")}`);
   };
 
-  // Validaciones de duplicados en la pizarra
   const validacionPizarra = useMemo(() => {
     const llenas = filasLlegada.map((f) => f.numero.trim()).filter(Boolean);
     if (llenas.length === 0) return { ok: false, error: "Ingresa al menos el 1° lugar" };
@@ -183,11 +193,10 @@ export function ModalOperadorSala({
       if (!res.ok) {
         setMsgFeedback(`❌ Error: ${res.error || "Operación fallida"}`);
       } else {
-        setMsgFeedback("✅ Operación completada con éxito.");
+        setMsgFeedback("✅ Operación completada.");
         onActualizado();
-        if (subaccion === "liquidar" && res.data?.preguntaOperador) {
-          setMsgFeedback(`✅ Liquidación completada.\n${res.data.preguntaOperador}`);
-        }
+        // Cierre automático del modal para ver de inmediato el chat
+        onCerrar();
       }
     } catch (err: any) {
       setMsgFeedback(`❌ Error de conexión: ${err?.message || err}`);
@@ -196,77 +205,110 @@ export function ModalOperadorSala({
     }
   };
 
+  const aplicarPresetPublicidad = (modalidad: "tablas" | "remates" | "marcas" | "pollas") => {
+    if (modalidad === "tablas") {
+      setPubTitulo("📊 ¡Tablas Fijas Disponibles!");
+      setPubContenido("Ingresa ahora a jugar las Tablas Fijas de la jornada. ¡Cupos limitados!");
+      setPubEnlace("/tablas-fijas");
+      setPubFijado(true);
+    } else if (modalidad === "remates") {
+      setPubTitulo("🔨 ¡Remates en Vivo!");
+      setPubContenido("Participa ya en los Remates activos con adjudicación inmediata y excelentes dividendos.");
+      setPubEnlace("/remates");
+      setPubFijado(true);
+    } else if (modalidad === "marcas") {
+      setPubTitulo("⭐ ¡Marcas Oficiales!");
+      setPubContenido("Revisa y juega las Marcas de la jornada con los ejemplares recomendados.");
+      setPubEnlace("/marcas");
+      setPubFijado(true);
+    } else if (modalidad === "pollas") {
+      setPubTitulo("🎟️ ¡Gran Polla Hípica!");
+      setPubContenido("Arma tu combinación ganadora en la Polla Hípica y compite por el acumulado.");
+      setPubEnlace("/pollas");
+      setPubFijado(true);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
-      <div className="bg-[#111b21] border border-[#202c33] rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
-        {/* Header */}
-        <div className="px-5 py-4 border-b border-[#202c33] flex items-center justify-between bg-[#202c33]/40">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xs p-2 sm:p-4">
+      <div className="bg-[#111b21] border border-[#202c33] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
+        {/* Header Compacto UX/UI */}
+        <div className="px-3.5 py-2.5 border-b border-[#202c33] flex items-center justify-between bg-[#202c33]/50">
           <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <span>🛠️</span> Panel de Control del Operador
+            <h3 className="text-sm font-black text-white flex items-center gap-1.5 leading-tight">
+              <span>🛠️</span> Control de Operador
             </h3>
-            <p className="text-xs text-gray-400">
+            <p className="text-[11px] text-gray-400 leading-none mt-0.5">
               Sala: <span className="text-white font-bold">{sala.nombre_sala}</span> | Grupo:{" "}
               <span className="text-emerald-400 font-semibold">{grupoNombre}</span>
             </p>
           </div>
-          <button onClick={onCerrar} className="text-gray-400 hover:text-white px-2 py-1 text-sm rounded">
+          <button
+            onClick={onCerrar}
+            className="text-gray-400 hover:text-white px-2 py-1 text-sm rounded transition hover:bg-white/10"
+            title="Cerrar modal"
+          >
             ✕
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-[#202c33] bg-[#0b141a] px-3 pt-2 gap-1 text-xs font-semibold">
+        {/* Tabs Compactas */}
+        <div className="flex border-b border-[#202c33] bg-[#0b141a] px-2 pt-1.5 gap-1 text-[11px] font-bold">
           <button
             onClick={() => setTab("carrera")}
-            className={`px-3 py-2 rounded-t-lg transition ${
+            className={`px-2.5 py-1.5 rounded-t-lg transition flex items-center gap-1 ${
               tab === "carrera" ? "bg-[#111b21] text-emerald-400 border-t-2 border-emerald-500" : "text-gray-400 hover:text-white"
             }`}
           >
-            🏇 Apertura / Cierre
+            <span>🏇</span>
+            <span>Carrera</span>
           </button>
           <button
             onClick={() => setTab("retirados")}
-            className={`px-3 py-2 rounded-t-lg transition ${
+            className={`px-2.5 py-1.5 rounded-t-lg transition flex items-center gap-1 ${
               tab === "retirados" ? "bg-[#111b21] text-emerald-400 border-t-2 border-emerald-500" : "text-gray-400 hover:text-white"
             }`}
           >
-            🚫 Retirados
+            <span>🚫</span>
+            <span>Retirados</span>
           </button>
           <button
             onClick={() => setTab("liquidacion")}
-            className={`px-3 py-2 rounded-t-lg transition ${
+            className={`px-2.5 py-1.5 rounded-t-lg transition flex items-center gap-1 ${
               tab === "liquidacion" ? "bg-[#111b21] text-emerald-400 border-t-2 border-emerald-500" : "text-gray-400 hover:text-white"
             }`}
           >
-            🏁 Liquidación
+            <span>🏁</span>
+            <span>Liquidación</span>
           </button>
           <button
             onClick={() => setTab("publicidad")}
-            className={`px-3 py-2 rounded-t-lg transition ${
+            className={`px-2.5 py-1.5 rounded-t-lg transition flex items-center gap-1 ${
               tab === "publicidad" ? "bg-[#111b21] text-emerald-400 border-t-2 border-emerald-500" : "text-gray-400 hover:text-white"
             }`}
           >
-            📢 Publicidad
+            <span>📢</span>
+            <span>Promoción</span>
           </button>
         </div>
 
         {/* Feedback message */}
         {msgFeedback && (
-          <div className="mx-5 mt-4 p-3 bg-emerald-950/60 border border-emerald-700/60 rounded-xl text-xs font-mono text-emerald-300 whitespace-pre-wrap">
+          <div className="mx-3 mt-2.5 p-2 bg-emerald-950/70 border border-emerald-700/60 rounded-lg text-[11px] font-mono text-emerald-300 whitespace-pre-wrap">
             {msgFeedback}
           </div>
         )}
 
-        {/* Tab Content */}
-        <div className="p-5 flex-1 overflow-y-auto text-xs space-y-4">
+        {/* Tab Content con scroll y altura optimizada */}
+        <div className="p-3 sm:p-4 flex-1 overflow-y-auto text-xs space-y-3">
           {tab === "carrera" && (
-            <div className="space-y-4">
-              <div className="bg-[#0b141a] p-3.5 rounded-xl border border-gray-800 flex items-center justify-between">
+            <div className="space-y-3">
+              {/* Tarjeta de Estado Actual */}
+              <div className="bg-[#0b141a] p-2.5 rounded-xl border border-gray-800 flex items-center justify-between">
                 <div>
-                  <span className="text-gray-400 text-[11px] block">Estado Actual de la Sala</span>
+                  <span className="text-gray-400 text-[10px] uppercase font-bold block">Estado en Sala</span>
                   <span
-                    className={`font-bold text-sm uppercase ${
+                    className={`font-black text-xs uppercase flex items-center gap-1 ${
                       sala.estado_carrera === "abierta"
                         ? "text-emerald-400"
                         : sala.estado_carrera === "cerrada"
@@ -274,30 +316,31 @@ export function ModalOperadorSala({
                         : "text-blue-400"
                     }`}
                   >
-                    ● {sala.estado_carrera || "CERRADA"}
+                    <span>●</span>
+                    <span>{sala.hipodromo_activo || hipodromo} C{sala.numero_carrera_activa || numeroCarrera} — {sala.estado_carrera || "CERRADA"}</span>
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={onAbrirPrejugadas}
-                  className="bg-[#202c33] hover:bg-[#2a3942] border border-gray-700 text-amber-300 px-3 py-2 rounded-lg font-bold transition flex items-center gap-1.5"
+                  className="bg-[#202c33] hover:bg-[#2a3942] border border-gray-700 text-amber-300 px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 shadow-xs"
                 >
                   <span>📋</span>
-                  <span>Reporte Prejugadas (PNG)</span>
+                  <span>Prejugadas (PNG)</span>
                 </button>
               </div>
 
-              {/* Selector de Hipódromo con restricción por sala */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                <div>
-                  <label className="block text-gray-300 font-medium mb-1">
+              {/* Selector de Hipódromo y Carrera (Sin campo de distancia, optimizado a 2 columnas) */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="block text-gray-300 font-bold text-[11px] mb-1">
                     Hipódromo {esVenezuela ? "(Venezuela)" : esAmericanas ? "(Americanas)" : ""}
                   </label>
                   {esVenezuela ? (
                     <select
                       value={hipodromo}
                       onChange={(e) => setHipodromo(e.target.value)}
-                      className="w-full bg-[#0b141a] border border-emerald-500/80 rounded-lg p-2.5 text-white font-bold"
+                      className="w-full bg-[#0b141a] border border-emerald-500/80 rounded-lg px-2.5 py-2 text-white font-bold text-xs"
                     >
                       <option value="LA RINCONADA">LA RINCONADA</option>
                       <option value="VALENCIA">VALENCIA</option>
@@ -308,12 +351,9 @@ export function ModalOperadorSala({
                         list="hipodromos-americanos-list"
                         type="text"
                         value={hipodromo}
-                        onChange={(e) => {
-                          const v = e.target.value.toUpperCase();
-                          setHipodromo(v);
-                        }}
+                        onChange={(e) => setHipodromo(e.target.value.toUpperCase())}
                         placeholder="GULFSTREAM PARK"
-                        className="w-full bg-[#0b141a] border border-blue-500/80 rounded-lg p-2.5 text-white font-bold"
+                        className="w-full bg-[#0b141a] border border-blue-500/80 rounded-lg px-2.5 py-2 text-white font-bold text-xs"
                       />
                       <datalist id="hipodromos-americanos-list">
                         {HIPODROMOS_AMERICANOS_COMUNES.map((h) => (
@@ -327,108 +367,136 @@ export function ModalOperadorSala({
                       value={hipodromo}
                       onChange={(e) => setHipodromo(e.target.value.toUpperCase())}
                       placeholder="HIPÓDROMO"
-                      className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-white font-bold"
-                    />
+                      className="w-full bg-[#0b141a] border border-gray-700 rounded-lg px-2.5 py-2 text-white font-bold text-xs"
+                    >
+                    </input>
                   )}
-                  <p className="mt-1 text-[10px] text-gray-400">
+                  <p className="mt-0.5 text-[9px] text-gray-400">
                     {esVenezuela
-                      ? "🇻🇪 En esta sala solo se permiten La Rinconada o Valencia."
+                      ? "🇻🇪 Solo La Rinconada o Valencia."
                       : esAmericanas
-                      ? "🇺🇸 En esta sala solo se permiten hipódromos americanos."
+                      ? "🇺🇸 Solo hipódromos americanos."
                       : ""}
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-gray-300 font-medium mb-1">Nº Carrera</label>
+                  <label className="block text-gray-300 font-bold text-[11px] mb-1">Nº Carrera</label>
                   <input
                     type="number"
                     min="1"
                     max="20"
                     value={numeroCarrera}
                     onChange={(e) => setNumeroCarrera(parseInt(e.target.value, 10) || 1)}
-                    className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-white font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-gray-300 font-medium mb-1">Distancia (m)</label>
-                  <input
-                    type="number"
-                    step="50"
-                    value={distancia}
-                    onChange={(e) => setDistancia(parseInt(e.target.value, 10) || 1200)}
-                    className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-white font-bold"
+                    className="w-full bg-[#0b141a] border border-gray-700 rounded-lg px-2.5 py-2 text-white font-bold text-xs text-center"
                   />
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2 pt-2">
-                <button
-                  type="button"
-                  disabled={cargando}
-                  onClick={() => {
-                    const hipLimpio = hipodromo.trim().toUpperCase();
-                    if (esVenezuela && hipLimpio !== "LA RINCONADA" && hipLimpio !== "VALENCIA") {
-                      setMsgFeedback("❌ En el chat de VENEZUELA solo pueden abrirse carreras de LA RINCONADA o VALENCIA.");
-                      return;
-                    }
-                    if (esAmericanas && (hipLimpio.includes("RINCONADA") || hipLimpio.includes("VALENCIA"))) {
-                      setMsgFeedback("❌ En el chat de AMERICANAS solo pueden abrirse hipódromos americanos.");
-                      return;
-                    }
-                    ejecutarAccion("abrir-carrera", {
-                      hipodromo: hipLimpio,
-                      numeroCarrera,
-                      distancia,
-                    });
-                  }}
-                  className="bg-[#00a884] hover:bg-emerald-500 text-black font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"
-                >
-                  <span>🏇</span>
-                  <span>Abrir Carrera (Doble Vista + Destacado Oficial)</span>
-                </button>
+              {/* Botonera de Acción Dinámica */}
+              <div className="pt-1.5 space-y-2">
+                {carreraEstaAbierta ? (
+                  // Caso 1: La carrera está ABIERTA -> El botón principal es CERRAR CARRERA
+                  <div className="space-y-1.5">
+                    <button
+                      type="button"
+                      disabled={cargando}
+                      onClick={() => ejecutarAccion("cerrar-carrera")}
+                      className="w-full bg-amber-500 hover:bg-amber-400 text-black font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
+                    >
+                      <span>🔒</span>
+                      <span>Cerrar Carrera</span>
+                    </button>
 
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    disabled={cargando}
-                    onClick={() => ejecutarAccion("cerrar-carrera")}
-                    className="flex-1 bg-amber-600/30 hover:bg-amber-600/40 border border-amber-500/50 text-amber-300 font-bold py-2.5 rounded-lg transition"
-                  >
-                    🔒 Cerrar Carrera
-                  </button>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        disabled={cargando}
+                        onClick={() => {
+                          if (
+                            confirm(
+                              `¿Estás seguro de ANULAR la carrera activa (${hipodromo} C${numeroCarrera})?\n\nSe devolverá el saldo y se anularán las jugadas sin cobrar comisión.`
+                            )
+                          ) {
+                            ejecutarAccion("anular-carrera");
+                          }
+                        }}
+                        className="text-[10px] text-red-400 hover:text-red-300 border border-red-900/60 hover:bg-red-950/40 rounded px-2 py-1 transition flex items-center gap-1 font-bold"
+                      >
+                        <span>⚠️</span>
+                        <span>Anular Carrera</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : carreraEstaCerrada ? (
+                  // Caso 2: La carrera está CERRADA -> El botón principal es REABRIR CARRERA
                   <button
                     type="button"
                     disabled={cargando}
                     onClick={() => ejecutarAccion("reabrir-carrera")}
-                    className="flex-1 bg-[#202c33] hover:bg-[#2a3942] text-gray-300 font-bold py-2.5 rounded-lg transition"
+                    className="w-full bg-[#00a884] hover:bg-emerald-500 text-black font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
                   >
-                    🔓 Reabrir
+                    <span>🔓</span>
+                    <span>Reabrir Carrera</span>
                   </button>
-                </div>
+                ) : carreraEstaLiquidada ? (
+                  // Caso 3: La carrera está LIQUIDADA -> No se puede reabrir en el chat, se debe elegir otra carrera
+                  <div className="rounded-xl border border-blue-900/60 bg-blue-950/40 p-2.5 text-center space-y-1">
+                    <span className="text-blue-300 font-bold text-xs block">
+                      🏁 Esta carrera ya fue liquidada
+                    </span>
+                    <span className="text-gray-400 text-[10px] block leading-relaxed">
+                      No se puede reabrir en el chat. Seleccione la siguiente carrera arriba para abrirla.
+                    </span>
+                  </div>
+                ) : (
+                  // Caso 4: Nueva carrera seleccionada o carrera no abierta -> ABRIR CARRERA
+                  <button
+                    type="button"
+                    disabled={cargando}
+                    onClick={() => {
+                      const hipLimpio = hipodromo.trim().toUpperCase();
+                      if (esVenezuela && hipLimpio !== "LA RINCONADA" && hipLimpio !== "VALENCIA") {
+                        setMsgFeedback("❌ En el chat de VENEZUELA solo pueden abrirse carreras de LA RINCONADA o VALENCIA.");
+                        return;
+                      }
+                      if (esAmericanas && (hipLimpio.includes("RINCONADA") || hipLimpio.includes("VALENCIA"))) {
+                        setMsgFeedback("❌ En el chat de AMERICANAS solo pueden abrirse hipódromos americanos.");
+                        return;
+                      }
+                      ejecutarAccion("abrir-carrera", {
+                        hipodromo: hipLimpio,
+                        numeroCarrera,
+                        distancia: 1200,
+                      });
+                    }}
+                    className="w-full bg-[#00a884] hover:bg-emerald-500 text-black font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
+                  >
+                    <span>🟢</span>
+                    <span>Abrir Carrera</span>
+                  </button>
+                )}
               </div>
             </div>
           )}
 
           {tab === "retirados" && (
-            <div className="space-y-4">
-              <div className="bg-[#0b141a] p-4 rounded-xl border border-gray-800">
-                <h4 className="font-bold text-white mb-1">Retirado Oficial en Vivo</h4>
-                <p className="text-gray-400 text-[11px] leading-relaxed">
-                  Al procesar un retirado, el sistema bloquea inmediatamente nuevas jugadas con ese ejemplar, anula las
-                  pactadas existentes y reintegra los saldos en el libro mayor.
+            <div className="space-y-3">
+              <div className="bg-[#0b141a] p-2.5 rounded-xl border border-gray-800">
+                <h4 className="font-bold text-white text-xs mb-0.5">Retirado Oficial en Vivo</h4>
+                <p className="text-gray-400 text-[10px] leading-relaxed">
+                  Al procesar un retirado se anulan automáticamente las jugadas comprometidas con ese ejemplar y se devuelve el saldo.
                 </p>
               </div>
 
               <div>
-                <label className="block text-gray-300 font-medium mb-1">Número de Ejemplar Retirado</label>
+                <label className="block text-gray-300 font-bold text-[11px] mb-1">Número de Ejemplar Retirado</label>
                 <input
                   type="text"
                   value={ejemplarRetirado}
                   onChange={(e) => setEjemplarRetirado(e.target.value.toUpperCase())}
-                  placeholder="Ej. 5 o 5A"
-                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-3 text-white font-bold text-base"
+                  placeholder="Ej. 5"
+                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2 text-white font-bold text-sm text-center"
                 />
               </div>
 
@@ -439,7 +507,7 @@ export function ModalOperadorSala({
                   ejecutarAccion("retirado", { ejemplar: ejemplarRetirado.trim() });
                   setEjemplarRetirado("");
                 }}
-                className="w-full bg-red-600/30 hover:bg-red-600/40 border border-red-500/50 text-red-300 font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"
+                className="w-full bg-red-600/30 hover:bg-red-600/40 border border-red-500/50 text-red-300 font-bold py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow"
               >
                 <span>🚫</span>
                 <span>Procesar Retirado Oficial #{ejemplarRetirado || "?"}</span>
@@ -448,44 +516,43 @@ export function ModalOperadorSala({
           )}
 
           {tab === "liquidacion" && (
-            <div className="space-y-4">
-              <div className="bg-[#0b141a] p-3.5 rounded-xl border border-gray-800">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-white">Liquidación de Carrera (Pizarra Oficial)</h4>
-                  <span className="text-[10px] text-emerald-400 font-bold uppercase">
-                    {sala.hipodromo_activo || hipodromo} C{sala.numero_carrera_activa || numeroCarrera}
+            <div className="space-y-3">
+              <div className="bg-[#0b141a] p-2.5 rounded-xl border border-gray-800 flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-white text-xs">Pizarra Oficial de Liquidación</h4>
+                  <span className="text-[10px] text-gray-400">
+                    Posiciones de llegada y empates (Dead Heat)
                   </span>
                 </div>
-                <p className="text-gray-400 text-[11px] mt-1 leading-relaxed">
-                  Carga la llegada con soporte para <b>Empates (Dead Heat)</b> y añade tantas posiciones como sea necesario.
-                  La sala puede tomar directamente la llegada oficial de la plataforma.
-                </p>
+                <span className="text-[10px] text-emerald-400 font-black uppercase">
+                  {sala.hipodromo_activo || hipodromo} C{sala.numero_carrera_activa || numeroCarrera}
+                </span>
               </div>
 
-              {/* Botón / Banner: Tomar de la plataforma */}
+              {/* Botón: Tomar de Plataforma */}
               {plataformaResultado && (
-                <div className="bg-emerald-950/40 border border-emerald-600/50 rounded-xl p-3 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-emerald-400 block">
-                      ✅ Pizarra oficial en plataforma detectada
+                <div className="bg-emerald-950/40 border border-emerald-600/50 rounded-xl p-2.5 flex items-center justify-between gap-2">
+                  <div className="truncate">
+                    <span className="text-[9px] uppercase font-black text-emerald-400 block">
+                      ✅ Pizarra oficial en plataforma
                     </span>
-                    <span className="text-white font-mono text-xs font-bold">
+                    <span className="text-white font-mono text-[11px] font-bold truncate block">
                       Llegada: {plataformaResultado.ganadores.map((n) => `#${n}`).join(" - ")}
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={tomarResultadoDePlataforma}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow"
+                    className="shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg transition shadow"
                   >
-                    📥 Tomar de Plataforma
+                    📥 Tomar
                   </button>
                 </div>
               )}
 
-              {/* Filas dinámicas de posiciones de llegada */}
-              <div className="space-y-2 bg-[#0b141a] p-3.5 rounded-xl border border-gray-800">
-                <div className="text-[11px] font-bold text-gray-400 pb-1 flex items-center justify-between">
+              {/* Filas compactas de posiciones de llegada */}
+              <div className="space-y-1.5 bg-[#0b141a] p-2.5 rounded-xl border border-gray-800">
+                <div className="text-[10px] font-bold text-gray-400 pb-0.5 flex items-center justify-between">
                   <span>Posición y Ejemplar</span>
                   <span>Empate (Dead Heat)</span>
                 </div>
@@ -495,12 +562,11 @@ export function ModalOperadorSala({
                   return (
                     <div
                       key={idx}
-                      className="flex items-center justify-between gap-3 p-1.5 rounded-lg bg-[#111b21] border border-gray-800"
+                      className="flex items-center justify-between gap-2 p-1 rounded-lg bg-[#111b21] border border-gray-800"
                     >
-                      <div className="flex items-center gap-2">
-                        {/* Insignia / Gualdrapa con número y color oficial */}
+                      <div className="flex items-center gap-1.5">
                         <span
-                          className="grid h-7 w-8 shrink-0 place-items-center rounded-md text-[11px] font-black"
+                          className="grid h-6 w-7 shrink-0 place-items-center rounded text-[10px] font-black"
                           style={{
                             backgroundColor: numLimpio ? colorDeNumero(numLimpio) : "#202c33",
                             color: numLimpio ? textoDeNumero(numLimpio) : "#8696a0",
@@ -509,7 +575,7 @@ export function ModalOperadorSala({
                           {numLimpio || idx + 1}
                         </span>
 
-                        <span className="w-8 font-bold text-gray-300 text-xs">{idx + 1}º</span>
+                        <span className="w-6 font-bold text-gray-300 text-[11px]">{idx + 1}º</span>
 
                         <input
                           type="text"
@@ -522,11 +588,11 @@ export function ModalOperadorSala({
                               prev.map((row, i) => (i === idx ? { ...row, numero: val } : row))
                             );
                           }}
-                          className="w-16 bg-[#0b141a] border border-gray-700 focus:border-emerald-500 rounded-lg p-1.5 text-center text-white font-bold text-sm"
+                          className="w-14 h-7 bg-[#0b141a] border border-gray-700 focus:border-emerald-500 rounded p-1 text-center text-white font-bold text-xs"
                         />
                       </div>
 
-                      <label className="flex items-center gap-1.5 cursor-pointer text-gray-300 font-medium">
+                      <label className="flex items-center gap-1 cursor-pointer text-gray-300 font-medium text-[11px]">
                         <input
                           type="checkbox"
                           checked={f.empate}
@@ -536,23 +602,22 @@ export function ModalOperadorSala({
                               prev.map((row, i) => (i === idx ? { ...row, empate: checked } : row))
                             );
                           }}
-                          className="rounded text-emerald-500 accent-emerald-500 h-4 w-4"
+                          className="rounded text-emerald-500 accent-emerald-500 h-3.5 w-3.5"
                         />
-                        <span className="text-[11px]">Empate</span>
+                        <span>Empate</span>
                       </label>
                     </div>
                   );
                 })}
 
-                {/* Controles de adición / supresión de posiciones */}
-                <div className="flex gap-2 pt-2">
+                <div className="flex gap-2 pt-1">
                   <button
                     type="button"
                     disabled={filasLlegada.length <= 1}
                     onClick={() => setFilasLlegada((prev) => prev.slice(0, -1))}
-                    className="flex-1 bg-[#202c33] hover:bg-[#2a3942] disabled:opacity-40 text-gray-300 font-bold py-1.5 rounded-lg text-xs transition"
+                    className="flex-1 bg-[#202c33] hover:bg-[#2a3942] disabled:opacity-40 text-gray-300 font-bold py-1 rounded text-[11px] transition"
                   >
-                    − Quitar {filasLlegada.length}° lugar
+                    − Quitar {filasLlegada.length}°
                   </button>
 
                   <button
@@ -561,15 +626,15 @@ export function ModalOperadorSala({
                     onClick={() =>
                       setFilasLlegada((prev) => [...prev, { numero: "", empate: false }])
                     }
-                    className="flex-1 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-600/50 text-emerald-300 font-bold py-1.5 rounded-lg text-xs transition"
+                    className="flex-1 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-600/50 text-emerald-300 font-bold py-1 rounded text-[11px] transition"
                   >
-                    ＋ Añadir {filasLlegada.length + 1}° lugar
+                    ＋ Añadir {filasLlegada.length + 1}°
                   </button>
                 </div>
               </div>
 
               {validacionPizarra.error && (
-                <div className="p-2.5 rounded-lg bg-amber-950/50 border border-amber-600/50 text-amber-300 text-xs">
+                <div className="p-2 rounded-lg bg-amber-950/50 border border-amber-600/50 text-amber-300 text-[11px]">
                   ⚠️ {validacionPizarra.error}
                 </div>
               )}
@@ -590,110 +655,106 @@ export function ModalOperadorSala({
                       tercero: ganadores[2] || undefined,
                       cuarto: ganadores[3] || undefined,
                       quinto: ganadores[4] || undefined,
-                      sexto: ganadores[5] || undefined,
-                      septimo: ganadores[6] || undefined,
-                      octavo: ganadores[7] || undefined,
                       ganadores,
                       empates,
                     },
                   });
                 }}
-                className="w-full bg-[#00a884] hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-400 text-black font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-lg"
+                className="w-full bg-[#00a884] hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-400 text-black font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
               >
                 <span>🏁</span>
-                <span>Liquidar Carrera y Publicar Resultados</span>
+                <span>Liquidar Carrera y Publicar</span>
               </button>
-
-              {/* Acciones Críticas de Operador / Administrador */}
-              <div className="pt-3 border-t border-gray-800 space-y-2.5">
-                <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>⚠️</span> Acciones Especiales de Corrección
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={cargando}
-                    onClick={() => {
-                      if (
-                        confirm(
-                          "¿Estás seguro de REVERSAR la liquidación de esta carrera?\n\nSe restablecerán los saldos, se descontarán premios acreditados y los tickets volverán a estado previo."
-                        )
-                      ) {
-                        ejecutarAccion("reversar-carrera");
-                      }
-                    }}
-                    className="bg-amber-950/60 hover:bg-amber-900/60 border border-amber-600/50 text-amber-300 font-bold py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 text-xs"
-                  >
-                    <span>🔄</span>
-                    <span>Reversar Liquidación</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={cargando}
-                    onClick={() => {
-                      if (
-                        confirm(
-                          "¿Estás seguro de ANULAR la carrera por completo?\n\nSe devolverá el 100% del dinero comprometido a todos los participantes y todos los tickets quedarán anulados sin cobrar comisión."
-                        )
-                      ) {
-                        ejecutarAccion("anular-carrera");
-                      }
-                    }}
-                    className="bg-red-950/60 hover:bg-red-900/60 border border-red-600/50 text-red-300 font-bold py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 text-xs"
-                  >
-                    <span>🚫</span>
-                    <span>Anular Carrera (100%)</span>
-                  </button>
-                </div>
-              </div>
             </div>
           )}
 
           {tab === "publicidad" && (
-            <div className="space-y-3.5">
+            <div className="space-y-2.5">
+              {/* Accesos Rápidos a Promociones de Modalidades */}
               <div>
-                <label className="block text-gray-300 font-medium mb-1">Título de la Publicidad</label>
+                <label className="block text-gray-400 font-bold text-[10px] uppercase mb-1">
+                  Promocionar Modalidad (Click directo en el Banner)
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => aplicarPresetPublicidad("tablas")}
+                    className="bg-[#202c33] hover:bg-[#2a3942] border border-emerald-500/40 text-emerald-300 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
+                  >
+                    <span>📊</span>
+                    <span>Tablas Fijas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => aplicarPresetPublicidad("remates")}
+                    className="bg-[#202c33] hover:bg-[#2a3942] border border-amber-500/40 text-amber-300 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
+                  >
+                    <span>🔨</span>
+                    <span>Remates</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => aplicarPresetPublicidad("marcas")}
+                    className="bg-[#202c33] hover:bg-[#2a3942] border border-blue-500/40 text-blue-300 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
+                  >
+                    <span>⭐</span>
+                    <span>Marcas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => aplicarPresetPublicidad("pollas")}
+                    className="bg-[#202c33] hover:bg-[#2a3942] border border-purple-500/40 text-purple-300 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
+                  >
+                    <span>🎟️</span>
+                    <span>Polla</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-gray-300 font-bold text-[11px] mb-0.5">Título del Anuncio</label>
                 <input
                   type="text"
                   value={pubTitulo}
                   onChange={(e) => setPubTitulo(e.target.value)}
-                  placeholder="Ej. Promoción de Recargas o Super Match"
-                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-white"
+                  placeholder="Ej. ¡Tablas Fijas Activas!"
+                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-white text-xs font-bold"
                 />
               </div>
 
               <div>
-                <label className="block text-gray-300 font-medium mb-1">Texto del Mensaje</label>
+                <label className="block text-gray-300 font-bold text-[11px] mb-0.5">Texto del Mensaje</label>
                 <textarea
                   value={pubContenido}
                   onChange={(e) => setPubContenido(e.target.value)}
-                  placeholder="Mensaje a transmitir en tiempo real en la sala..."
-                  rows={3}
-                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-white"
+                  placeholder="Mensaje a transmitir en el banner..."
+                  rows={2}
+                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-white text-xs leading-tight"
                 />
               </div>
 
               <div>
-                <label className="block text-gray-300 font-medium mb-1">Enlace / Botón de Acción (Opcional)</label>
+                <label className="block text-gray-300 font-bold text-[11px] mb-0.5">
+                  Enlace al hacer click (Ruta interna ej. /tablas-fijas o URL)
+                </label>
                 <input
-                  type="url"
+                  type="text"
                   value={pubEnlace}
                   onChange={(e) => setPubEnlace(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2.5 text-white font-mono"
+                  placeholder="/tablas-fijas, /remates o https://..."
+                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs"
                 />
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 pt-0.5">
                 <input
                   type="checkbox"
                   id="pubFijado"
                   checked={pubFijado}
                   onChange={(e) => setPubFijado(e.target.checked)}
-                  className="rounded text-emerald-500"
+                  className="rounded text-emerald-500 accent-emerald-500 h-3.5 w-3.5"
                 />
-                <label htmlFor="pubFijado" className="text-gray-300 cursor-pointer">
+                <label htmlFor="pubFijado" className="text-gray-300 cursor-pointer text-[11px]">
                   Fijar en el tope de la sala (Banner destacado permanente)
                 </label>
               </div>
@@ -712,9 +773,9 @@ export function ModalOperadorSala({
                   setPubContenido("");
                   setPubEnlace("");
                 }}
-                className="w-full bg-[#00a884] hover:bg-emerald-500 text-black font-bold py-2.5 rounded-lg transition"
+                className="w-full bg-[#00a884] hover:bg-emerald-500 text-black font-black py-2.5 rounded-xl transition text-xs shadow-md"
               >
-                Publicar en Tiempo Real
+                📢 Publicar Promoción
               </button>
             </div>
           )}

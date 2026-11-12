@@ -391,9 +391,24 @@ export function GestionJugadasModule() {
       ? String(grupoActivo).trim()
       : null;
 
-  /** El usuario/grupo Principal ("Todos los grupos") es solo de gestión y no puede registrar jugadas directamente. */
+  /**
+   * Grupo de la caja: dueño de la comisión de las "jugadas entre tercios". Para
+   * el super administrador es el grupo que está mirando; para el resto, el de
+   * los clientes cargados (el RLS ya los acota a su grupo).
+   */
+  const grupoSesion = useMemo(() => {
+    if (grupoActivoValido) return String(grupoActivoValido);
+    if (miGrupoId) return String(miGrupoId);
+    const g = clientes.find((c) => c.grupo_id != null || (c.grupos && c.grupos.length > 0));
+    if (!g) return null;
+    return g.grupo_id != null ? String(g.grupo_id) : String(g.grupos[0]);
+  }, [grupoActivoValido, miGrupoId, clientes]);
+
+  const tieneGrupoEfectivo = Boolean(grupoActivoValido || miGrupoId || grupoSesion);
+
+  /** El usuario/grupo Principal ("Todos los grupos") es solo de gestión y no puede registrar jugadas directamente si no tiene ningún grupo seleccionado. */
   const principalSinGrupoSeleccionado = Boolean(
-    esUsuarioOAdminPrincipal && !grupoActivoValido
+    esUsuarioOAdminPrincipal && !tieneGrupoEfectivo
   );
 
   /**
@@ -624,6 +639,7 @@ export function GestionJugadasModule() {
   const tickets = useTaquillaStore((s) => s.tickets);
   const eliminarTicket = useTaquillaStore((s) => s.eliminarTicket);
   const agregarTicket = useTaquillaStore((s) => s.agregarTicket);
+  const agregarTickets = useTaquillaStore((s) => s.agregarTickets);
   const modalidadTiempo = useTaquillaStore((s) => s.modalidadTiempo);
   const setModalidadTiempo = useTaquillaStore((s) => s.setModalidadTiempo);
   const [visorWhatsappTipo, setVisorWhatsappTipo] = useState<"prejugadas" | "resultados" | "saldos" | null>(null);
@@ -715,19 +731,6 @@ const hipodromosDelDia = useMemo(() => {
     const n = parseFloat(comision.replace(",", "."));
     return Number.isFinite(n) && n >= 0 ? n : 5;
   }, [comision]);
-
-  /**
-   * Grupo de la caja: dueño de la comisión de las "jugadas entre tercios". Para
-   * el super administrador es el grupo que está mirando; para el resto, el de
-   * los clientes cargados (el RLS ya los acota a su grupo).
-   */
-  const grupoSesion = useMemo(() => {
-    if (grupoActivo) return String(grupoActivo);
-    if (miGrupoId) return String(miGrupoId);
-    const g = clientes.find((c) => c.grupo_id != null || c.grupos.length > 0);
-    if (!g) return null;
-    return g.grupo_id != null ? String(g.grupo_id) : String(g.grupos[0]);
-  }, [grupoActivo, miGrupoId, clientes]);
 
   /** Clientes que pertenecen estrictamente al grupo en que se encuentra la sesión/caja. */
   const clientesDelGrupo = useMemo(() => {
@@ -2164,6 +2167,8 @@ const hipodromosDelDia = useMemo(() => {
     const indicesError: number[] = [];
     const recortes: string[] = [];
     const descontado = new Map<string, number>();
+    const nuevosTicketsParaTaquilla: Parameters<typeof agregarTicket>[0][] = [];
+    const ticketsAdelantadosIds: (string | number)[] = [];
     const filasTrabajo = filasAProcesar ?? filas;
     const filasConDatos = filasTrabajo.filter(
       (f) => f.jugada.trim() || f.monto.trim() || f.caballo.trim() || f.cliente1.trim()
@@ -2331,6 +2336,9 @@ const hipodromosDelDia = useMemo(() => {
         // 'WPS' (el `origen` del ticket sigue siendo 'TAQUILLA').
         modalidad: v.modalidad === "AMERICANAS" ? "WPS" : v.modalidad,
         idempotencia: claveIdempotenciaJugada(),
+        clienteRow: c1,
+        clienteDadorRow: c2 ?? null,
+        omitirEventos: true,
       });
       if (!venta.ok) {
         errores.push(`Fila ${filas.indexOf(f) + 1}: ${venta.error ?? "no se pudo registrar la venta"}`);
@@ -2351,19 +2359,7 @@ const hipodromosDelDia = useMemo(() => {
         descontado.set(String(c2.id), (descontado.get(String(c2.id)) ?? 0) + riesgoC2);
         if (c2.nombre) descontado.set(c2.nombre.trim().toUpperCase(), (descontado.get(c2.nombre.trim().toUpperCase()) ?? 0) + riesgoC2);
       }
-      setClientes((prev) =>
-        prev.map((cli) => {
-          if (String(cli.id) === String(c1.id)) {
-            return { ...cli, saldo_actual: round2(saldoDeCliente(cli) - v.monto) };
-          }
-          if (c2 && riesgoC2 > 0 && String(cli.id) === String(c2.id)) {
-            return { ...cli, saldo_actual: round2(saldoDeCliente(cli) - riesgoC2) };
-          }
-          return cli;
-        })
-      );
-      limpiarCacheClientesVenta();
-      agregarTicket({
+      nuevosTicketsParaTaquilla.push({
         comando: `${v.monto} ${v.tipo}`,
         monto: v.monto,
         caballo: f.caballo.trim() || undefined,
@@ -2383,7 +2379,7 @@ const hipodromosDelDia = useMemo(() => {
         es_adelantada: modalidadTiempo === "ADELANTADA",
       });
       if (modalidadTiempo === "ADELANTADA" && venta.ticketId) {
-        void marcarTicketsAdelantados([venta.ticketId], true);
+        ticketsAdelantadosIds.push(venta.ticketId);
       }
       n += 1;
     }
@@ -2399,6 +2395,28 @@ const hipodromosDelDia = useMemo(() => {
       setAviso("⚠️ No hay jugadas por cargar.");
       emitirToast("⚠️ No hay jugadas por cargar.", "warning");
       return;
+    }
+    if (nuevosTicketsParaTaquilla.length > 0) {
+      agregarTickets(nuevosTicketsParaTaquilla);
+    }
+    if (ticketsAdelantadosIds.length > 0) {
+      void marcarTicketsAdelantados(ticketsAdelantadosIds, true);
+    }
+    if (descontado.size > 0) {
+      setClientes((prev) =>
+        prev.map((cli) => {
+          const desc = descontado.get(String(cli.id)) ?? 0;
+          if (desc > 0) {
+            return { ...cli, saldo_actual: round2(saldoDeCliente(cli) - desc) };
+          }
+          return cli;
+        })
+      );
+      limpiarCacheClientesVenta();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("hipico:saldos-actualizados"));
+        window.dispatchEvent(new CustomEvent("hipico_tickets_actualizados"));
+      }
     }
     if (modoManual) void consolidarManual();
     if (!jugadasPorCarrera.includes(carrera)) setJugadasPorCarrera((j) => [...j, carrera]);

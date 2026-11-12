@@ -55,6 +55,12 @@ export type VentaJugada = {
   usuario?: string | null;
   /** Clave de idempotencia: reintentar con la misma no vuelve a descontar. */
   idempotencia?: string | null;
+  /** Datos precargados del cliente que juega para agilizar batches sin queries repetitivas */
+  clienteRow?: { id: string | number; nombre: string; seudonimo?: string | null; grupo_id?: string | number | null } | null;
+  /** Datos precargados del cliente dador para agilizar batches sin queries repetitivas */
+  clienteDadorRow?: { id: string | number; nombre: string; seudonimo?: string | null; grupo_id?: string | number | null } | null;
+  /** Omitir disparo de eventos de ventana si se despachan al final del lote */
+  omitirEventos?: boolean;
 };
 
 export type ResultadoVentaJugada = {
@@ -97,23 +103,45 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     };
   }
   const grupoSeleccionado = grupoDeVentaVigente();
-  if (veTodosLosGruposVigente() && !grupoSeleccionado) {
+  let grupoEfectivo = v.grupoId || grupoSeleccionado || null;
+
+  if (!grupoEfectivo && v.clienteRow?.grupo_id) {
+    grupoEfectivo = String(v.clienteRow.grupo_id);
+  }
+
+  if (veTodosLosGruposVigente() && !grupoEfectivo) {
     return {
       ok: false,
       error: "⚠️ El usuario o grupo principal es solo de gestión y no puede registrar jugadas. Seleccione un grupo primero.",
     };
   }
-  const grupoEfectivo = grupoSeleccionado || v.grupoId || null;
   const dadorResuelto = resolverContraparteModalidad(v.jugada, v.clienteDador, v.modalidad);
 
   // Aislamiento estricto de grupo: el jugador no puede registrar en otro grupo
-  let cRowData: { id: string; nombre: string; seudonimo?: string | null } | null = null;
+  let cRowData: { id: string; nombre: string; seudonimo?: string | null } | null = v.clienteRow
+    ? {
+        id: String(v.clienteRow.id),
+        nombre: v.clienteRow.nombre,
+        seudonimo: v.clienteRow.seudonimo,
+      }
+    : null;
   if (grupoEfectivo && v.clienteId) {
-    const { data: cRow } = await supabase
-      .from("clientes")
-      .select("id, nombre, seudonimo, grupo_id")
-      .eq("id", v.clienteId)
-      .maybeSingle();
+    let cRow = v.clienteRow
+      ? {
+          id: String(v.clienteRow.id),
+          nombre: v.clienteRow.nombre,
+          seudonimo: v.clienteRow.seudonimo,
+          grupo_id: v.clienteRow.grupo_id != null ? String(v.clienteRow.grupo_id) : null,
+        }
+      : null;
+    if (!cRow) {
+      const { data } = await supabase
+        .from("clientes")
+        .select("id, nombre, seudonimo, grupo_id")
+        .eq("id", v.clienteId)
+        .maybeSingle();
+      cRow = data;
+    }
     if (cRow) {
       cRowData = cRow;
       let pertenece = String(cRow.grupo_id) === String(grupoEfectivo);
@@ -136,29 +164,40 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
 
   // Aislamiento estricto de grupo: prohibido que jugadores de distintos grupos interactúen
   const dadorTexto = String(dadorResuelto || v.clienteDador || "").trim();
-  let dadorCliData: { id: string; nombre: string; seudonimo?: string | null } | null = null;
+  let dadorCliData: { id: string; nombre: string; seudonimo?: string | null; grupo_id?: string | null } | null =
+    v.clienteDadorRow
+      ? {
+          id: String(v.clienteDadorRow.id),
+          nombre: v.clienteDadorRow.nombre,
+          seudonimo: v.clienteDadorRow.seudonimo,
+          grupo_id: v.clienteDadorRow.grupo_id != null ? String(v.clienteDadorRow.grupo_id) : null,
+        }
+      : null;
   if (grupoEfectivo && dadorTexto && !["CASA", "BANCA", "SISTEMA"].includes(dadorTexto.toUpperCase())) {
-    const { data: dadorRows } = await supabase
-      .from("clientes")
-      .select("id, nombre, seudonimo, grupo_id")
-      .or(`nombre.ilike.${dadorTexto},seudonimo.ilike.${dadorTexto}`)
-      .limit(1);
-    if (dadorRows && dadorRows.length > 0) {
-      const dadorCli = dadorRows[0];
-      dadorCliData = dadorCli;
-      let perteneceDador = String(dadorCli.grupo_id) === String(grupoEfectivo);
+    if (!dadorCliData) {
+      const { data: dadorRows } = await supabase
+        .from("clientes")
+        .select("id, nombre, seudonimo, grupo_id")
+        .or(`nombre.ilike.${dadorTexto},seudonimo.ilike.${dadorTexto}`)
+        .limit(1);
+      if (dadorRows && dadorRows.length > 0) {
+        dadorCliData = dadorRows[0];
+      }
+    }
+    if (dadorCliData) {
+      let perteneceDador = String(dadorCliData.grupo_id) === String(grupoEfectivo);
       if (!perteneceDador) {
         const { data: cgDador } = await supabase
           .from("clientes_grupos")
           .select("grupo_id")
-          .eq("cliente_id", dadorCli.id)
+          .eq("cliente_id", dadorCliData.id)
           .eq("grupo_id", grupoEfectivo);
         perteneceDador = Boolean(cgDador && cgDador.length > 0);
       }
       if (!perteneceDador) {
         return {
           ok: false,
-          error: `⛔ El jugador dador «${dadorCli.seudonimo || dadorTexto}» pertenece a otro grupo. No se permite interacción entre jugadores de distintos grupos.`,
+          error: `⛔ El jugador dador «${dadorCliData.seudonimo || dadorTexto}» pertenece a otro grupo. No se permite interacción entre jugadores de distintos grupos.`,
         };
       }
     }
@@ -212,11 +251,13 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
       }
     }
   }
-  limpiarCacheClientes();
-  limpiarCacheClientesVenta();
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("hipico:saldos-actualizados"));
-    window.dispatchEvent(new CustomEvent("hipico_tickets_actualizados"));
+  if (!v.omitirEventos) {
+    limpiarCacheClientes();
+    limpiarCacheClientesVenta();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("hipico:saldos-actualizados"));
+      window.dispatchEvent(new CustomEvent("hipico_tickets_actualizados"));
+    }
   }
   const montoNum = Number(v.monto) || 0;
   const dadorFinal = String(dadorResuelto || v.clienteDador || "").trim();

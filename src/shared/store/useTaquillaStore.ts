@@ -60,6 +60,7 @@ export type TaquillaState = {
   modalidadTiempo: ModalidadTiempo;
   setModalidadTiempo: (m: ModalidadTiempo) => void;
   agregarTicket: (t: Omit<TicketTaquilla, "id" | "addedAt">) => void;
+  agregarTickets: (ts: Omit<TicketTaquilla, "id" | "addedAt">[]) => void;
   eliminarTicket: (id: string) => void;
   limpiarTickets: () => void;
 };
@@ -102,6 +103,18 @@ export const useTaquillaStore = create<TaquillaState>()(
           if (!esTicketSesionValido(nuevo)) return s;
           return {
             tickets: [...s.tickets.filter(esTicketSesionValido), nuevo],
+          };
+        }),
+
+      agregarTickets: (ts) =>
+        set((s) => {
+          if (!ts || ts.length === 0) return s;
+          const nuevos: TicketTaquilla[] = ts
+            .map((t) => ({ ...t, id: uid(), addedAt: Date.now() }))
+            .filter(esTicketSesionValido);
+          if (nuevos.length === 0) return s;
+          return {
+            tickets: [...s.tickets.filter(esTicketSesionValido), ...nuevos],
           };
         }),
 

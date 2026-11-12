@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { salaApi, configurarCredencialesSala } from "../lib/sala-api";
 import { ChatSalaPanel, FAMILIAS_FUENTE_SALA, type ClaveFuenteSala, type TemaSala } from "./ChatSalaPanel";
 import { ModalOperadorSala } from "./ModalOperadorSala";
@@ -37,6 +37,7 @@ export function SalaJuegosApp({
   const [grupoActivo, setGrupoActivo] = useState<any>(null);
   const [salas, setSalas] = useState<any[]>([]);
   const [publicidad, setPublicidad] = useState<any[]>([]);
+  const [bannerDescartadoId, setBannerDescartadoId] = useState<string | null>(null);
 
   const [salaSeleccionadaId, setSalaSeleccionadaId] = useState<string>("");
   const [vistaDual, setVistaDual] = useState<boolean>(false);
@@ -221,6 +222,42 @@ export function SalaJuegosApp({
   const saldoDisp = identidad?.clienteRow?.saldo_disponible ?? 0;
   const esLibre = Boolean(identidad?.clienteRow?.libre);
 
+  // Resolver publicidad activa y destino para clics hacia Tablas Fijas, Remates, Marcas, etc.
+  const pubActiva = publicidad.find((p) => String(p.id) !== bannerDescartadoId) || null;
+
+  const destinoPublicidad = useMemo(() => {
+    if (!pubActiva) return null;
+    const enlace = String(pubActiva.enlace_accion || "").trim();
+    const titulo = String(pubActiva.titulo || "").toLowerCase();
+    const texto = String(pubActiva.contenido_texto || "").toLowerCase();
+    const todo = `${titulo} ${texto} ${enlace.toLowerCase()}`;
+
+    if (todo.includes("tabla")) {
+      return { url: enlace || "/tablas-fijas", label: "Ir a Tablas Fijas", icono: "📊" };
+    }
+    if (todo.includes("remate")) {
+      return { url: enlace || "/remates", label: "Ir a Remates", icono: "🔨" };
+    }
+    if (todo.includes("marca")) {
+      return { url: enlace || "/marcas", label: "Ir a Marcas", icono: "⭐" };
+    }
+    if (todo.includes("polla")) {
+      return { url: enlace || "/pollas", label: "Ir a Polla", icono: "🎟️" };
+    }
+    if (todo.includes("taquilla") || todo.includes("jugada")) {
+      return { url: enlace || "/taquilla", label: "Ir a Taquilla", icono: "🏇" };
+    }
+    if (enlace) {
+      return { url: enlace, label: "Ver Promoción", icono: "🚀" };
+    }
+    return null;
+  }, [pubActiva]);
+
+  const navegarPublicidad = (url: string) => {
+    if (!url) return;
+    window.open(url, "_blank");
+  };
+
   return (
     <div
       style={{ fontFamily: fontFamilyCss }}
@@ -229,30 +266,56 @@ export function SalaJuegosApp({
         esClaro ? "bg-[#efeae2] text-[#111b21]" : "bg-[#0b141a] text-[#e9edef]"
       } ${esEmbebido ? "h-full w-full" : "h-[100dvh] w-screen"}`}
     >
-      {/* 1. SECCIÓN DE PUBLICIDAD EN TOPE (MÁRGENES MÍNIMOS) */}
-      {publicidad.length > 0 && (
+      {/* 1. SECCIÓN DE PUBLICIDAD DESTACADA Y CLICKEABLE HACIA MODALIDADES (ALTA UX/UI) */}
+      {pubActiva && (
         <div
-          className={`px-2 py-0.5 flex items-center justify-between text-[11px] border-b ${
+          onClick={() => {
+            if (destinoPublicidad) {
+              navegarPublicidad(destinoPublicidad.url);
+            }
+          }}
+          className={`px-3 py-1.5 flex items-center justify-between gap-2 text-xs border-b transition-all duration-200 select-none ${
+            destinoPublicidad ? "cursor-pointer hover:brightness-110 active:scale-[0.995]" : ""
+          } ${
             esClaro
-              ? "bg-[#e7fce3] border-[#c1e8b8] text-[#111b21]"
-              : "bg-gradient-to-r from-emerald-950 via-[#111b21] to-emerald-950 border-emerald-800/40 text-gray-200"
+              ? "bg-gradient-to-r from-emerald-100 via-amber-50 to-emerald-100 border-emerald-300 text-slate-900 shadow-xs"
+              : "bg-gradient-to-r from-emerald-950 via-[#111b21] to-amber-950/70 border-emerald-600/40 text-white shadow-sm"
           }`}
         >
-          <div className="truncate flex items-center gap-1.5">
-            <span className="bg-[#008069] text-white font-bold px-1.5 py-0.2 rounded text-[10px]">
-              📢 {publicidad[0].titulo}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="truncate text-[11px]">{publicidad[0].contenido_texto}</span>
-            {publicidad[0].enlace_accion && (
-              <a
-                href={publicidad[0].enlace_accion}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[#008069] font-bold hover:underline text-[11px]"
-              >
-                Ver →
-              </a>
+
+            <span className="shrink-0 bg-emerald-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded uppercase tracking-wide flex items-center gap-1 shadow-xs">
+              <span>{destinoPublicidad?.icono || "📢"}</span>
+              <span className="truncate max-w-[120px] sm:max-w-none">{pubActiva.titulo}</span>
+            </span>
+
+            <span className="truncate text-[11px] font-medium opacity-90">
+              {pubActiva.contenido_texto}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {destinoPublicidad && (
+              <span className="bg-amber-400 hover:bg-amber-300 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs transition flex items-center gap-1">
+                <span>{destinoPublicidad.label}</span>
+                <span className="text-xs">➔</span>
+              </span>
             )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setBannerDescartadoId(String(pubActiva.id));
+              }}
+              title="Ocultar anuncio"
+              className="text-gray-400 hover:text-white text-xs px-1 hover:bg-white/10 rounded transition"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
