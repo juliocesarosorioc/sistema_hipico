@@ -392,6 +392,18 @@ export async function procesarMensajeEntranteWhatsApp(
       motivo_rechazo: "SINTAXIS_O_SALDO_INVALIDO",
     });
 
+    try {
+      await supabaseAdmin.from("diccionario_aprendizaje_bot").insert({
+        grupo_id: grupoId,
+        termino_original: textoLimpio,
+        jugada_corregida: analisis.jugadaEstandarizada || analisis.mensajePedagogicoPrivado,
+        usuario_id: cliente.id,
+        origen: "whatsapp",
+      });
+    } catch {
+      // Resiliente
+    }
+
     return {
       ok: false,
       tipo: "PEDAGOGICO",
@@ -415,49 +427,93 @@ export async function procesarMensajeEntranteWhatsApp(
       };
     }
 
-    const montoEfectivo = Number(analisis.monto);
+    let montoEfectivo = Number(analisis.monto);
+    let rpcExitoso = false;
+    let propId: string | null = null;
+    let excedioSaldoRpc = Boolean(analisis.excedioSaldo);
 
-    // Retener saldo de manera transaccional si no es libre
-    if (!cliente.libre) {
-      const saldoRetenidoActual = Number(cliente.saldo_retenido || 0);
-      const nuevoRetenido = Number((saldoRetenidoActual + montoEfectivo).toFixed(2));
-      await supabaseAdmin.from("clientes").update({ saldo_retenido: nuevoRetenido }).eq("id", cliente.id);
+    // Intentar primero RPC oficial publicar_propuesta_atomica
+    try {
+      const { data: resRpc, error: errRpc } = await supabaseAdmin.rpc("publicar_propuesta_atomica", {
+        p_grupo_id: grupoId,
+        p_sala_id: salaId,
+        p_carrera_id: sala.carrera_activa_id || "00000000-0000-0000-2026-111400000001",
+        p_jugador_id: cliente.id,
+        p_accion: analisis.accionProponente,
+        p_es_match: analisis.esMatch,
+        p_modalidad: analisis.modalidad,
+        p_caballos_a: analisis.caballosBandoA,
+        p_caballos_b: analisis.caballosBandoB,
+        p_ejemplar_texto: analisis.ejemplarTexto,
+        p_proporcion: "1x1",
+        p_monto_solicitado: analisis.monto,
+        p_texto_estandarizado: analisis.jugadaEstandarizada,
+      });
+
+      if (!errRpc && resRpc) {
+        propId = (resRpc as any).propuesta_id;
+        if ((resRpc as any).monto_publicado != null) montoEfectivo = Number((resRpc as any).monto_publicado);
+        if ((resRpc as any).excedio_saldo != null) excedioSaldoRpc = Boolean((resRpc as any).excedio_saldo);
+        rpcExitoso = true;
+      }
+    } catch {
+      rpcExitoso = false;
     }
 
-    const rawFirma = `PROPUESTA_WA:${salaId}:${cliente.id}:${montoEfectivo}:${Date.now()}`;
-    const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
+    // Si el RPC creó la propuesta, asociar el whatsapp_msg_id y canal
+    if (rpcExitoso && propId) {
+      await supabaseAdmin
+        .from("chat_mensajes")
+        .update({
+          whatsapp_msg_id: whatsappMsgId || null,
+          origen_canal: "whatsapp",
+        })
+        .eq("id", propId);
+    } else {
+      // Fallback directo si el RPC no estaba desplegado o falló por concurrencia
+      if (!cliente.libre) {
+        const saldoRetenidoActual = Number(cliente.saldo_retenido || 0);
+        const nuevoRetenido = Number((saldoRetenidoActual + montoEfectivo).toFixed(2));
+        await supabaseAdmin.from("clientes").update({ saldo_retenido: nuevoRetenido }).eq("id", cliente.id);
+      }
 
-    const { data: nuevaPropuesta, error: errInsert } = await supabaseAdmin
-      .from("chat_mensajes")
-      .insert({
-        grupo_id: grupoId,
-        sala_id: salaId,
-        remitente_id: cliente.id,
-        remitente_nombre: nombreJugador,
-        es_operador: false,
-        tipo_mensaje: "propuesta_jugada",
-        contenido: analisis.jugadaEstandarizada,
-        carrera_id: sala.carrera_activa_id || null,
-        accion_proponente: analisis.accionProponente || "JUEGA",
-        es_match: Boolean(analisis.esMatch),
-        modalidad_jugada: analisis.modalidad,
-        ejemplar_numero: analisis.ejemplarTexto,
-        caballos_bando_a: analisis.caballosBandoA || (analisis.ejemplarTexto ? [analisis.ejemplarTexto] : []),
-        caballos_bando_b: analisis.caballosBandoB || [],
-        jugada_estandarizada: analisis.jugadaEstandarizada,
-        monto_original: montoEfectivo,
-        monto_disponible: montoEfectivo,
-        estado_propuesta: "abierta",
-        proporcion_premio: "1x1",
-        firma_sha256: firma,
-        whatsapp_msg_id: whatsappMsgId || null,
-        origen_canal: "whatsapp",
-      })
-      .select()
-      .single();
+      const rawFirma = `PROPUESTA_WA:${salaId}:${cliente.id}:${montoEfectivo}:${Date.now()}`;
+      const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
 
-    if (errInsert) {
-      return { ok: false, tipo: "ERROR", mensaje: errInsert.message };
+      const { data: nuevaPropuesta, error: errInsert } = await supabaseAdmin
+        .from("chat_mensajes")
+        .insert({
+          grupo_id: grupoId,
+          sala_id: salaId,
+          remitente_id: cliente.id,
+          remitente_nombre: nombreJugador,
+          es_operador: false,
+          tipo_mensaje: "propuesta_jugada",
+          contenido: analisis.jugadaEstandarizada,
+          carrera_id: sala.carrera_activa_id || null,
+          accion_proponente: analisis.accionProponente || "JUEGA",
+          es_match: Boolean(analisis.esMatch),
+          modalidad_jugada: analisis.modalidad,
+          ejemplar_numero: analisis.ejemplarTexto,
+          caballos_bando_a: analisis.caballosBandoA || (analisis.ejemplarTexto ? [analisis.ejemplarTexto] : []),
+          caballos_bando_b: analisis.caballosBandoB || [],
+          jugada_estandarizada: analisis.jugadaEstandarizada,
+          monto_original: montoEfectivo,
+          monto_disponible: montoEfectivo,
+          estado_propuesta: "abierta",
+          proporcion_premio: "1x1",
+          firma_sha256: firma,
+          whatsapp_msg_id: whatsappMsgId || null,
+          origen_canal: "whatsapp",
+        })
+        .select()
+        .single();
+
+      if (errInsert) {
+        return { ok: false, tipo: "ERROR", mensaje: errInsert.message };
+      }
+
+      propId = nuevaPropuesta?.id;
     }
 
     await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
@@ -466,7 +522,7 @@ export async function procesarMensajeEntranteWhatsApp(
     let msgPublicoBot: string | null = null;
     let msgPrivadoBot: string | null = null;
 
-    if (analisis.excedioSaldo) {
+    if (excedioSaldoRpc) {
       msgPublicoBot = analisis.msgPublicoBot || `[${nombreJugador}] solo dispone de $${saldoDisponible.toFixed(2)} para esta jugada.`;
       msgPrivadoBot = analisis.msgPrivadoBot || `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
     }
@@ -483,7 +539,7 @@ export async function procesarMensajeEntranteWhatsApp(
         enviarPrivadoJugador: msgPrivadoBot,
       },
       data: {
-        propuestaId: nuevaPropuesta?.id,
+        propuestaId: propId,
         monto: montoEfectivo,
       },
     };
