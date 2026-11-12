@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/shared/store/useAuthStore";
+import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { esPantallaDeAcceso, esRutaPublica } from "@/features/seguridad/lib/capacidades";
 import { sesionActual } from "@/features/auth/lib/sesion";
 import {
@@ -11,6 +12,17 @@ import {
   registrarAccionUsuario,
   purgarActividadAntigua10Dias,
 } from "@/features/seguridad/lib/seguimiento-usuarios";
+
+const RESET_SEMANAL_EPOCH_KEY = "hipico_reset_semanal_epoch_20261112_v1";
+const KEYS_JUGADAS_Y_BALANCES_LOCAL = [
+  "sistema-hipico:taquilla",
+  "cargas-rapidas-saldo",
+  "movimientos-operador",
+  "eventos-libres",
+  "apuestas_eventos_especiales",
+  "hipico_cierres_jornada_v1",
+  "hipico_libro_mayor_local_v1",
+];
 
 /**
  * Al montar el SPA siembra la sesión RBAC (permisos en memoria + cookies para
@@ -30,6 +42,17 @@ export function AuthBootstrap() {
   const ruta = usePathname();
 
   useEffect(() => {
+    try {
+      if (typeof window !== "undefined" && localStorage.getItem(RESET_SEMANAL_EPOCH_KEY) !== "1") {
+        for (const k of KEYS_JUGADAS_Y_BALANCES_LOCAL) {
+          localStorage.removeItem(k);
+        }
+        useTaquillaStore.getState().limpiarTickets();
+        localStorage.setItem(RESET_SEMANAL_EPOCH_KEY, "1");
+      }
+    } catch {
+      // Ignorar errores de almacenamiento privado
+    }
     void inicializar();
   }, [inicializar]);
 
