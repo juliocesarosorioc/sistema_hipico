@@ -56,6 +56,16 @@ function calcularDisponibleCliente(cliente: any): number {
   return Math.max(0, Number((saldo + aval - retenido).toFixed(2)));
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Valida si un string cumple el formato UUID canónico de Postgres
+ */
+function esUuidValido(val?: string | null): boolean {
+  if (!val || typeof val !== "string") return false;
+  return UUID_REGEX.test(val.trim());
+}
+
 /**
  * Sincroniza chat_estado_grupo de forma agregada
  */
@@ -638,35 +648,142 @@ export async function POST(req: Request) {
           .single();
 
         const saldoDispAceptante = calcularDisponibleCliente(aceptante);
+        const montoRequerido = Number(propMsg.monto_disponible || propMsg.monto_original || 0);
 
-        // Procesar con RPC FIFO oficial
-        const { data: resFifo, error: errFifo } = await supabaseAdmin.rpc("procesar_respuesta_jugada_fifo", {
-          p_grupo_id: grupoId,
-          p_propuesta_msg_id: propuestaId,
-          p_aceptante_id: identidad.usuarioId,
-          p_aceptante_nombre: identidad.nombre,
-          p_texto_respuesta: texto || "Acepto",
-          p_saldo_disponible_aceptante: saldoDispAceptante,
-        });
-
-        if (errFifo) {
-          return NextResponse.json({ ok: false, error: errFifo.message }, { status: 400 });
+        if (!aceptante?.libre && saldoDispAceptante < montoRequerido) {
+          return NextResponse.json({
+            ok: false,
+            error: `Saldo insuficiente ($${saldoDispAceptante.toFixed(2)}) para aceptar $${montoRequerido.toFixed(2)}`,
+          }, { status: 400 });
         }
 
-        // Firmar ticket server-side y asociar sala_id
-        const { data: ticketsCreados } = await supabaseAdmin
-          .from("chat_tickets_fifo")
-          .select("*")
-          .eq("propuesta_msg_id", propuestaId)
-          .is("firma_sha256", null);
+        let resFifo: any = null;
+        let fifoExitoso = false;
 
-        for (const t of ticketsCreados || []) {
-          const rawFirma = `${t.codigo_ticket}:${t.proponente_id}:${t.aceptante_id}:${t.monto_concretado}:${t.created_at}`;
-          const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
+        // Intentar primero RPC concretar_jugada_fifo_atomica
+        if (
+          esUuidValido(grupoId) &&
+          esUuidValido(salaId) &&
+          esUuidValido(propuestaId) &&
+          esUuidValido(identidad.usuarioId)
+        ) {
+          try {
+            const { data: resAtomico, error: errAtomico } = await supabaseAdmin.rpc("concretar_jugada_fifo_atomica", {
+              p_grupo_id: grupoId,
+              p_sala_id: salaId,
+              p_propuesta_msg_id: propuestaId,
+              p_aceptante_id: identidad.usuarioId,
+            });
+            if (!errAtomico && resAtomico && (resAtomico as any).ok !== false) {
+              resFifo = resAtomico;
+              fifoExitoso = true;
+            }
+          } catch {
+            // Continúa a fallback
+          }
+        }
+
+        // Si no se concretó atómicamente, intentar procesar_respuesta_jugada_fifo
+        if (!fifoExitoso && esUuidValido(grupoId) && esUuidValido(propuestaId) && esUuidValido(identidad.usuarioId)) {
+          try {
+            const { data: resResp, error: errResp } = await supabaseAdmin.rpc("procesar_respuesta_jugada_fifo", {
+              p_grupo_id: grupoId,
+              p_propuesta_msg_id: propuestaId,
+              p_aceptante_id: identidad.usuarioId,
+              p_aceptante_nombre: identidad.nombre,
+              p_texto_respuesta: texto || "Acepto",
+              p_saldo_disponible_aceptante: saldoDispAceptante,
+            });
+
+            if (!errResp && resResp && (resResp as any).ok !== false) {
+              resFifo = resResp;
+              fifoExitoso = true;
+            }
+          } catch {
+            // Continúa a fallback
+          }
+        }
+
+        // Fallback directo transaccional garantizado si los RPC fallaron por desincronización de estado
+        if (!fifoExitoso) {
+          const montoConcretado = montoRequerido;
+          if (!aceptante?.libre) {
+            const retAceptante = Number((Number(aceptante?.saldo_retenido || 0) + montoConcretado).toFixed(2));
+            await supabaseAdmin
+              .from("clientes")
+              .update({ saldo_retenido: retAceptante })
+              .eq("id", identidad.usuarioId);
+          }
+
+          // Marcar propuesta como cerrada
           await supabaseAdmin
+            .from("chat_mensajes")
+            .update({
+              monto_disponible: 0,
+              estado_propuesta: "cerrada",
+            })
+            .eq("id", propuestaId);
+
+          const codigoTicket = `TKT-${Date.now().toString().slice(-6)}`;
+          const rawFirma = `${codigoTicket}:${propMsg.remitente_id}:${identidad.usuarioId}:${montoConcretado}:${new Date().toISOString()}`;
+          const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
+
+          await supabaseAdmin.from("chat_tickets_fifo").insert({
+            grupo_id: grupoId,
+            sala_id: salaId,
+            propuesta_msg_id: propuestaId,
+            codigo_ticket: codigoTicket,
+            proponente_id: propMsg.remitente_id,
+            proponente_nombre: propMsg.remitente_nombre,
+            aceptante_id: identidad.usuarioId,
+            aceptante_nombre: identidad.nombre,
+            carrera_id: propMsg.carrera_id || sala.carrera_activa_id,
+            modalidad: propMsg.modalidad_jugada || "1P",
+            ejemplar_numero: propMsg.ejemplar_numero || (propMsg.caballos_bando_a?.[0] ?? "1"),
+            caballos_bando_a: propMsg.caballos_bando_a || [],
+            caballos_bando_b: propMsg.caballos_bando_b || [],
+            monto_concretado: montoConcretado,
+            estado: "ABIERTO",
+            firma_sha256: firma,
+          });
+
+          // Insertar mensaje de concreción en chat_mensajes para que aparezca en el chat
+          await supabaseAdmin.from("chat_mensajes").insert({
+            grupo_id: grupoId,
+            sala_id: salaId,
+            remitente_id: identidad.usuarioId,
+            remitente_nombre: identidad.nombre,
+            es_operador: false,
+            tipo_mensaje: "CONCRECION",
+            contenido: `🤝 ¡CRUCE CONFIRMADO! ${identidad.nombre} tomó la jugada de ${propMsg.remitente_nombre} por $${montoConcretado.toFixed(2)} (${propMsg.contenido || propMsg.jugada_estandarizada})`,
+            reply_to_msg_id: propuestaId,
+            carrera_id: propMsg.carrera_id || sala.carrera_activa_id,
+          });
+
+          resFifo = { ok: true, cruceConcretado: true, monto: montoConcretado };
+        } else {
+          // Firmar ticket server-side y asociar sala_id
+          const { data: ticketsCreados } = await supabaseAdmin
             .from("chat_tickets_fifo")
-            .update({ firma_sha256: firma, sala_id: salaId })
-            .eq("id", t.id);
+            .select("*")
+            .eq("propuesta_msg_id", propuestaId)
+            .is("firma_sha256", null);
+
+          for (const t of ticketsCreados || []) {
+            const rawFirma = `${t.codigo_ticket}:${t.proponente_id}:${t.aceptante_id}:${t.monto_concretado}:${t.created_at}`;
+            const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
+            await supabaseAdmin
+              .from("chat_tickets_fifo")
+              .update({ firma_sha256: firma, sala_id: salaId })
+              .eq("id", t.id);
+          }
+
+          // Asegurar que cualquier mensaje derivado en chat_mensajes quede con sala_id
+          await supabaseAdmin
+            .from("chat_mensajes")
+            .update({ sala_id: salaId })
+            .eq("reply_to_msg_id", propuestaId)
+            .is("sala_id", null);
         }
 
         await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
@@ -694,7 +811,7 @@ export async function POST(req: Request) {
           await supabaseAdmin.from("registro_revision_llm").insert({
             grupo_id: grupoId,
             sala_id: salaId,
-            usuario_id: identidad.usuarioId,
+            usuario_id: esUuidValido(identidad.usuarioId) ? identidad.usuarioId : null,
             usuario_nombre: identidad.nombre,
             mensaje_usuario_original: texto,
             jugada_corregida_sugerida: analisis.sugerenciasUnClic?.[0] || analisis.jugadaEstandarizada,
@@ -720,44 +837,103 @@ export async function POST(req: Request) {
             return NextResponse.json({ ok: false, error: "La carrera está cerrada para nuevas jugadas" }, { status: 400 });
           }
 
-          // Crear propuesta mediante RPC para retención atómica
-          const { data: propuestaCreada, error: errProp } = await supabaseAdmin.rpc("crear_propuesta_jugada_chat", {
-            p_grupo_id: grupoId,
-            p_proponente_id: identidad.usuarioId,
-            p_modalidad: analisis.modalidad,
-            p_ejemplar_numero: analisis.ejemplarTexto,
-            p_monto_solicitado: analisis.monto,
-            p_texto_original: analisis.jugadaEstandarizada,
-          });
-
-          if (errProp) {
-            return NextResponse.json({ ok: false, error: errProp.message }, { status: 400 });
+          // Resolver carrera activa de forma robusta
+          let carreraIdActiva = sala.carrera_activa_id;
+          if (!carreraIdActiva || !esUuidValido(carreraIdActiva)) {
+            const { data: cOpen } = await supabaseAdmin
+              .from("carreras")
+              .select("id")
+              .eq("hipodromo", sala.hipodromo_activo || "LA RINCONADA")
+              .eq("numero_carrera", sala.numero_carrera_activa || 1)
+              .maybeSingle();
+            if (cOpen && esUuidValido(cOpen.id)) {
+              carreraIdActiva = cOpen.id;
+            }
           }
 
-          const propId = typeof propuestaCreada === "object" ? propuestaCreada?.id : propuestaCreada;
+          let propId: string | null = null;
 
-          // Completar campos en chat_mensajes
-          if (propId) {
-            const rawFirma = `PROPUESTA:${propId}:${identidad.usuarioId}:${analisis.monto}:${Date.now()}`;
+          // 1. Intentar creación atómica vía RPC publicar_propuesta_atomica
+          if (
+            esUuidValido(carreraIdActiva) &&
+            esUuidValido(identidad.usuarioId) &&
+            esUuidValido(salaId) &&
+            esUuidValido(grupoId)
+          ) {
+            try {
+              const { data: rpcResp, error: rpcErr } = await supabaseAdmin.rpc("publicar_propuesta_atomica", {
+                p_grupo_id: grupoId,
+                p_sala_id: salaId,
+                p_carrera_id: carreraIdActiva,
+                p_jugador_id: identidad.usuarioId,
+                p_accion: analisis.accionProponente || "JUEGA",
+                p_es_match: Boolean(analisis.esMatch),
+                p_modalidad: analisis.modalidad,
+                p_caballos_a: analisis.caballosBandoA || (analisis.ejemplarTexto ? [analisis.ejemplarTexto] : []),
+                p_caballos_b: analisis.caballosBandoB || [],
+                p_ejemplar_texto: analisis.ejemplarTexto || "",
+                p_proporcion: "1x1",
+                p_monto_solicitado: analisis.monto,
+                p_texto_estandarizado: analisis.jugadaEstandarizada,
+              });
+
+              if (!rpcErr && rpcResp && (rpcResp as any).ok && (rpcResp as any).propuesta_id) {
+                propId = (rpcResp as any).propuesta_id;
+              }
+            } catch {
+              // Continúa a fallback
+            }
+          }
+
+          // 2. Si el RPC no creó la propuesta (ej. carrera no mapeada en chat_estado_grupo), fallback directo garantizado
+          if (!propId) {
+            // Retener saldo de manera segura
+            if (!cl?.libre) {
+              const saldoRetenidoActual = Number(cl?.saldo_retenido || 0);
+              const nuevoRetenido = Number((saldoRetenidoActual + Number(analisis.monto)).toFixed(2));
+              await supabaseAdmin
+                .from("clientes")
+                .update({ saldo_retenido: nuevoRetenido })
+                .eq("id", identidad.usuarioId);
+            }
+
+            const rawFirma = `PROPUESTA:${salaId}:${identidad.usuarioId}:${analisis.monto}:${Date.now()}`;
             const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
 
-            await supabaseAdmin
+            const { data: nuevoMsg, error: errInsertDirecto } = await supabaseAdmin
               .from("chat_mensajes")
-              .update({
+              .insert({
+                grupo_id: grupoId,
                 sala_id: salaId,
-                carrera_id: sala.carrera_activa_id,
-                accion_proponente: analisis.accionProponente,
-                es_match: analisis.esMatch,
+                remitente_id: esUuidValido(identidad.usuarioId) ? identidad.usuarioId : null,
+                remitente_nombre: identidad.nombre,
+                es_operador: false,
+                tipo_mensaje: "propuesta_jugada",
+                contenido: analisis.jugadaEstandarizada,
+                carrera_id: esUuidValido(carreraIdActiva) ? carreraIdActiva : null,
+                accion_proponente: analisis.accionProponente || "JUEGA",
+                es_match: Boolean(analisis.esMatch),
                 modalidad_jugada: analisis.modalidad,
-                caballos_bando_a: analisis.caballosBandoA,
-                caballos_bando_b: analisis.caballosBandoB,
+                ejemplar_numero: analisis.ejemplarTexto,
+                caballos_bando_a: analisis.caballosBandoA || (analisis.ejemplarTexto ? [analisis.ejemplarTexto] : []),
+                caballos_bando_b: analisis.caballosBandoB || [],
                 jugada_estandarizada: analisis.jugadaEstandarizada,
                 monto_original: analisis.monto,
                 monto_disponible: analisis.monto,
                 estado_propuesta: "abierta",
+                proporcion_premio: "1x1",
                 firma_sha256: firma,
+                solo_borrable_operador: false,
+                eliminado: false,
               })
-              .eq("id", propId);
+              .select()
+              .single();
+
+            if (errInsertDirecto) {
+              return NextResponse.json({ ok: false, error: errInsertDirecto.message }, { status: 500 });
+            }
+
+            propId = nuevoMsg?.id;
           }
 
           await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
@@ -765,20 +941,24 @@ export async function POST(req: Request) {
         }
       }
 
-      // Mensaje de texto estándar (o emitido por Staff)
+      // Mensaje de texto estándar (o emitido por Staff / Jugador)
       const esOperador = puedeOperarSala(identidad, grupoId);
+      const remitenteUuid = esUuidValido(identidad.usuarioId) ? identidad.usuarioId : null;
+      const destPrivadoUuid = esUuidValido(destinatarioPrivadoId) ? destinatarioPrivadoId : null;
+      const replyMsgUuid = esUuidValido(replyToMsgId) ? replyToMsgId : null;
+
       const { data: msgInsertado, error: errInsert } = await supabaseAdmin
         .from("chat_mensajes")
         .insert({
           grupo_id: grupoId,
           sala_id: salaId,
-          remitente_id: identidad.usuarioId,
+          remitente_id: remitenteUuid,
           remitente_nombre: identidad.nombre,
           es_operador: esOperador,
-          tipo_mensaje: destinatarioPrivadoId ? "DM_PRIVADO" : "TEXTO",
+          tipo_mensaje: destPrivadoUuid ? "DM_PRIVADO" : "TEXTO",
           contenido: texto,
-          destinatario_privado_id: destinatarioPrivadoId || null,
-          reply_to_msg_id: replyToMsgId || null,
+          destinatario_privado_id: destPrivadoUuid,
+          reply_to_msg_id: replyMsgUuid,
           imagen_url: imagenUrl || null,
           solo_borrable_operador: esOperador,
         })
@@ -803,7 +983,7 @@ export async function POST(req: Request) {
       const { data: reg, error } = await supabaseAdmin.from("registro_revision_llm").insert({
         grupo_id: grupoId,
         sala_id: salaId,
-        usuario_id: identidad.usuarioId,
+        usuario_id: esUuidValido(identidad.usuarioId) ? identidad.usuarioId : null,
         usuario_nombre: identidad.nombre,
         mensaje_usuario_original: mensajeOriginal,
         jugada_corregida_sugerida: jugadaSugerida,

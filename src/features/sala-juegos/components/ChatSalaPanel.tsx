@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { salaApi } from "../lib/sala-api";
+import { supabase } from "@/core/supabase";
 
 interface PropsChatSalaPanel {
   sala: any;
@@ -44,8 +45,57 @@ export function ChatSalaPanel({
 
   useEffect(() => {
     cargarMensajes();
-    const interval = setInterval(cargarMensajes, 6000);
-    return () => clearInterval(interval);
+
+    // Polling resiliente cada 2500ms
+    const interval = setInterval(cargarMensajes, 2500);
+
+    // Suscripción en tiempo real instantánea (<100ms) vía Supabase Channel
+    let canal: any = null;
+    if (supabase && sala?.id) {
+      try {
+        canal = supabase
+          .channel(`sala-${sala.id}`)
+          .on("broadcast", { event: "nuevo_mensaje" }, () => {
+            cargarMensajes();
+          })
+          .on("broadcast", { event: "carrera_abierta" }, () => {
+            cargarMensajes();
+          })
+          .on("broadcast", { event: "carrera_cerrada" }, () => {
+            cargarMensajes();
+          })
+          .on("broadcast", { event: "carrera_liquidada" }, () => {
+            cargarMensajes();
+            onActualizarSaldo?.();
+          })
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "chat_mensajes",
+              filter: `sala_id=eq.${sala.id}`,
+            },
+            () => {
+              cargarMensajes();
+            }
+          )
+          .subscribe();
+      } catch {
+        // En caso de que Realtime no esté habilitado en el entorno
+      }
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (canal && supabase) {
+        try {
+          supabase.removeChannel(canal);
+        } catch {
+          // noop
+        }
+      }
+    };
   }, [sala?.id]);
 
   useEffect(() => {
@@ -76,7 +126,7 @@ export function ChatSalaPanel({
         } else {
           setSugerenciaPedagogica(null);
           setTextoInput("");
-          cargarMensajes();
+          await cargarMensajes();
           onActualizarSaldo?.();
         }
       } else {
@@ -106,7 +156,7 @@ export function ChatSalaPanel({
       });
 
       if (res.ok) {
-        cargarMensajes();
+        await cargarMensajes();
         onActualizarSaldo?.();
       } else {
         alert(res.error || "No se pudo concretar el cruce");
@@ -124,7 +174,10 @@ export function ChatSalaPanel({
     enviarMensaje(sug);
   };
 
-  const esMio = (remitenteId?: string) => remitenteId === identidad.usuarioId;
+  const esMio = (remitenteId?: string, remitenteNombre?: string) =>
+    (Boolean(remitenteId) && remitenteId === identidad?.usuarioId) ||
+    (Boolean(remitenteNombre) && Boolean(identidad?.nombre) && remitenteNombre === identidad?.nombre);
+
   const esCarreraAbierta = sala?.estado_carrera === "abierta";
 
   return (
@@ -189,7 +242,7 @@ export function ChatSalaPanel({
         )}
 
         {mensajes.map((m) => {
-          const mio = esMio(m.remitente_id);
+          const mio = esMio(m.remitente_id, m.remitente_nombre);
 
           // VISTA DESTACADA: ESTADO DE CARRERA
           if (m.tipo_mensaje === "ESTADO_CARRERA") {
