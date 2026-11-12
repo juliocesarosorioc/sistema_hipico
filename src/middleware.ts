@@ -35,6 +35,9 @@ const ES_PUBLICA = (p: string) => p === "/login" || p === "/" || p === "/verific
 
 /** Rutas y extensiones que deben bloquearse siempre con 403. */
 const BLOQUEAR = (p: string) => {
+  // Excepción para assets públicos legítimos como el worker de pdf.js
+  if (p === "/pdf.worker.min.mjs" || p.endsWith("/pdf.worker.min.mjs")) return false;
+
   // Archivos sensibles del repositorio
   if (
     p.endsWith(".sql") ||
@@ -73,6 +76,11 @@ const ES_API_SALA = (p: string) => p === "/api/sala" || p.startsWith("/api/sala/
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Permitir explícitamente el worker de pdf.js sin autenticación ni bloqueos
+  if (pathname === "/pdf.worker.min.mjs" || pathname.endsWith("/pdf.worker.min.mjs")) {
+    return NextResponse.next();
+  }
 
   const irA = (destino: string, motivo?: string) => {
     const url = req.nextUrl.clone();
