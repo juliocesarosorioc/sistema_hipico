@@ -84,9 +84,9 @@ async function asegurarHipodromosCatalogo(carreras: CarreraPrograma[], _creadoPo
     const clave = claveHipodromo(c.hipodromo);
     if (!clave) continue;
     if (presentes.has(clave)) {
-      // Normalizar al nombre canónico exacto de la base de datos
+      // Normalizar al nombre canónico exacto de la base de datos (siempre en mayúsculas para coherencia con tablas transaccionales)
       const exacto = catalogo.find((h) => claveHipodromo(h.nombre) === clave);
-      if (exacto) c.hipodromo = exacto.nombre;
+      if (exacto) c.hipodromo = String(exacto.nombre || "").trim().toUpperCase();
       continue;
     }
 
@@ -97,7 +97,7 @@ async function asegurarHipodromosCatalogo(carreras: CarreraPrograma[], _creadoPo
     });
 
     if (coincidencia) {
-      c.hipodromo = coincidencia.nombre;
+      c.hipodromo = String(coincidencia.nombre || "").trim().toUpperCase();
       continue;
     }
 

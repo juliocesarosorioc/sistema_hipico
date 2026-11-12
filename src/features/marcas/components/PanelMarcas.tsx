@@ -272,7 +272,8 @@ export function PanelMarcas() {
       visibles.filter((c) => {
         const cfg = configDe(c);
         if (!cfg) return false;
-        return !revisar(cfg, c.central.caballos ?? c.caballos ?? []).valida;
+        const cabs = (c.caballos && c.caballos.length > 0) ? c.caballos : (c.central?.caballos ?? []);
+        return !revisar(cfg, cabs).valida;
       }),
     [visibles, configDe, revisar]
   );
@@ -562,7 +563,8 @@ export function PanelMarcas() {
           cargadas pero con problemas:{" "}
           {conAvisos
             .map((c) => {
-              const rev = revisar(configDe(c)!, c.caballos ?? []);
+              const cabs = (c.caballos && c.caballos.length > 0) ? c.caballos : (c.central?.caballos ?? []);
+              const rev = revisar(configDe(c)!, cabs);
               return `C${c.carrera} (${rev.mensaje ?? "revisar marcas"})`;
             })
             .join(" · ")}

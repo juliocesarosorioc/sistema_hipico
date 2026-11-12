@@ -21,6 +21,7 @@ import {
   separarNumeros,
 } from "@/features/marcas/lib/jerarquia";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
+import { claveHipodromo } from "@/features/carreras/lib/claves";
 
 export * from "@/features/marcas/lib/jerarquia";
 export {
@@ -813,7 +814,7 @@ export async function listarPizarraMarcas(filtros: {
   ]);
   if (!central.ok) return { ok: false, filas: [], error: central.error };
 
-  const clave = (h: string, c: number) => `${h.trim().toUpperCase()}|${dia}|${c}`;
+  const clave = (h: string, c: number) => `${claveHipodromo(h)}|${dia}|${Number(c)}`;
   const porClave = new Map<string, PizarraMarca>();
   for (const cc of central.datos ?? []) {
     const k = clave(cc.hipodromo, cc.carrera);
@@ -833,9 +834,23 @@ export async function listarPizarraMarcas(filtros: {
   // que el operador vea el desajuste en vez de creer que se guardo.
   for (const mc of marcas) {
     const k = clave(mc.hipodromo, mc.carrera);
-    const fila = porClave.get(k);
-    if (fila) fila.config = mc;
-    else
+    let fila = porClave.get(k);
+    if (!fila) {
+      for (const pf of porClave.values()) {
+        if (Number(pf.carrera) === Number(mc.carrera) && (claveHipodromo(pf.hipodromo).includes(claveHipodromo(mc.hipodromo)) || claveHipodromo(mc.hipodromo).includes(claveHipodromo(pf.hipodromo)))) {
+          fila = pf;
+          break;
+        }
+      }
+    }
+    if (fila) {
+      fila.config = mc;
+      if (!fila.caballos || fila.caballos.length === 0) {
+        if (fila.central?.caballos && fila.central.caballos.length > 0) {
+          fila.caballos = fila.central.caballos;
+        }
+      }
+    } else {
       porClave.set(k, {
         hipodromo: mc.hipodromo,
         fecha: mc.fecha,
@@ -850,6 +865,7 @@ export async function listarPizarraMarcas(filtros: {
         ganador: null,
         sinCarreraCentral: true,
       });
+    }
   }
 
   const filas = [...porClave.values()].sort((a, b) => a.carrera - b.carrera);

@@ -200,6 +200,26 @@ export async function leerCarrerasMaestro(
 
   try {
     const conResultado = await consulta(true);
+    if (!conResultado.error && Array.isArray(conResultado.data) && conResultado.data.length > 0) {
+      maestroDisponible = true;
+      return cerrar(conResultado.data);
+    }
+    // Fallback: si PostgREST devuelve 0 filas (p. ej. cliente anon con RLS) o un error de embed,
+    // consultar la matriz mediante la API del servidor (Service Role)
+    if (typeof window !== "undefined" && typeof fetch === "function") {
+      try {
+        const resp = await fetch(`/api/carreras/matriz?fecha=${encodeURIComponent(f)}${hipo ? `&hipodromo=${encodeURIComponent(hipo)}` : ""}`);
+        if (resp.ok) {
+          const json = await resp.json();
+          if (json.ok && Array.isArray(json.filas) && json.filas.length > 0) {
+            maestroDisponible = true;
+            return cerrar(json.filas);
+          }
+        }
+      } catch {
+        /* continua al flujo normal */
+      }
+    }
     if (!conResultado.error) {
       maestroDisponible = true;
       return cerrar(conResultado.data);
@@ -466,7 +486,31 @@ export async function escribirCarrerasMaestro(
       /* Fallback directo a upsert masivo en 1 llamada si la RPC aún no está aplicada */
     }
 
-    // 2. Fallback Bulk Upsert directo en 1 sola petición HTTP a PostgREST
+    // 2. Intentar Bulk Upsert mediante API servidor con Service Role
+    if (typeof window !== "undefined" && typeof fetch === "function") {
+      try {
+        const resp = await fetch("/api/carreras/guardar-programa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            programa: { fecha: filas[0]?.fecha || fechaDef, carreras: filas },
+            creadoPor: usuarioVigente() || "sistema",
+            opciones: { registrarEnMatriz: true }
+          }),
+        });
+        if (resp.ok) {
+          const json = await resp.json();
+          if (json.ok) {
+            maestroDisponible = true;
+            return { ok: true, guardadas: filas.length };
+          }
+        }
+      } catch {
+        /* Fallback directo si fetch local no está disponible */
+      }
+    }
+
+    // 3. Fallback Bulk Upsert directo en 1 sola petición HTTP a PostgREST
     const { error } = await supabase
       .from("carreras")
       .upsert(filas, { onConflict: "fecha,hipodromo,carrera" });

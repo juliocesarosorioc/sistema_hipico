@@ -275,12 +275,31 @@ export async function guardarPrograma(
   creadoPor?: string,
   opciones: { registrarEnMatriz?: boolean; fusionarEjemplares?: boolean } = {}
 ): Promise<{ ok: boolean; data?: ProgramaDia; error?: string }> {
-  if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
   const fecha = p.fecha || hoyLocal();
   const hipodromos = [...new Set((p.hipodromos || []).map((h) => String(h).toUpperCase().trim()).filter(Boolean))];
   const carreras = (p.carreras || []).filter((c) => c.hipodromo).map(norm);
   const resumen = `${carreras.length} carrera(s) · ${hipodromos.join(", ")}`;
   const normP: ProgramaDia = { fecha, hipodromos, carreras, resumen, creado_por: creadoPor || "desconocido" };
+
+  // 1. Intentar persistencia mediante la API del servidor (Service Role)
+  // Bypassea bloqueos de RLS en el navegador y evita errores de sintaxis en RPCs legacy.
+  if (typeof window !== "undefined" && typeof fetch === "function") {
+    try {
+      const resp = await fetch("/api/carreras/guardar-programa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ programa: normP, creadoPor, opciones }),
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json.ok) return { ok: true, data: json.data || normP };
+      }
+    } catch {
+      /* Fallback si fetch local no está disponible */
+    }
+  }
+
+  if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
 
   // Persistencia directa resiliente en programa_dia y catálogo matriz
   const persistirDirecto = async (): Promise<{ ok: boolean; data?: ProgramaDia; error?: string }> => {
