@@ -1109,16 +1109,18 @@ function ReporteDiarioView({
   const [verTodasFechas, setVerTodasFechas] = useState(false);
 
   const datos = useMemo(() => {
-    const filtradas = verTodasFechas
-      ? (semana
-          ? sesion.arbolTickets.jugadas.filter((j) => {
-              const f = String(j.fechaCarrera ?? j.fecha ?? "").slice(0, 10);
-              return f >= semana.inicio && f <= semana.fin;
-            })
-          : sesion.arbolTickets.jugadas)
-      : sesion.arbolTickets.jugadas.filter(
-          (j) => (j.fechaCarrera ?? j.fecha ?? "").slice(0, 10) === fecha
-        );
+    const filtradas = (
+      verTodasFechas
+        ? (semana
+            ? sesion.arbolTickets.jugadas.filter((j) => {
+                const f = String(j.fechaCarrera ?? j.fecha ?? "").slice(0, 10);
+                return f >= semana.inicio && f <= semana.fin;
+              })
+            : sesion.arbolTickets.jugadas)
+        : sesion.arbolTickets.jugadas.filter(
+            (j) => (j.fechaCarrera ?? j.fecha ?? "").slice(0, 10) === fecha
+          )
+    ).filter((j) => !j.esAsientoCruce);
     const jugadas: JugadaReporte[] = filtradas.map((j) => {
       const fStr = String(j.fechaCarrera ?? j.fecha ?? fecha).slice(0, 10);
       const mHora = /(\d{2}:\d{2})/.exec(String(j.fecha ?? ""));
@@ -1137,6 +1139,8 @@ function ReporteDiarioView({
         premio: j.premio,
         resultadoNeto: j.resultadoNeto,
         devolucion: j.devolucion,
+        comisionDevuelta: j.comisionDevuelta,
+        comisionCobrada: j.comisionCobrada,
         anulada: esJugadaAnulada(j.estado, undefined),
       };
     });
@@ -1380,6 +1384,42 @@ function ResumenView({
             </thead>
             <tbody>
               {jugadas.map((j) => {
+                if (j.esAsientoCruce) {
+                  return (
+                    <tr key={j.id} className="border-t border-amber-300 bg-amber-50/80 hover:bg-amber-100/80 transition-colors">
+                      <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-700">{j.fechaTexto}</td>
+                      <td className="px-3 py-2 font-extrabold text-indigo-950">
+                        {nombreHipodromoParaMostrar(j.hipodromo)} <span className="text-slate-600 font-bold">· C{j.carrera}</span>
+                      </td>
+                      <td className="px-3 py-2 font-black text-amber-950">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-amber-600 text-sm">🔀</span>
+                          <span>{j.jugada}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="rounded-md bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-900 border border-amber-300">
+                          {j.caballo}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-slate-400">—</td>
+                      <td className="px-3 py-2 text-right font-mono font-black text-emerald-700">
+                        +{formatoMoneda(j.moneda, j.resultadoNeto)}
+                      </td>
+                      {mostrarIncentivo ? (
+                        <td className="px-3 py-2 text-right font-mono text-slate-400">—</td>
+                      ) : null}
+                      <td className="px-3 py-2">
+                        <span className="rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 text-[10px] font-black uppercase shadow-xs">
+                          🔀 APLICADO
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right text-[10px] font-bold text-slate-400">
+                        Asiento automático
+                      </td>
+                    </tr>
+                  );
+                }
                 const reclamable = dentroDeVentana(j.fechaCarrera ?? j.fecha, hoy, ventana, ciclo);
                 const resConDev = Math.round(((j.resultadoNeto ?? 0) + (j.devolucion ?? 0)) * 100) / 100;
                 return (

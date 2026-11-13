@@ -316,7 +316,7 @@ export function armarReporteDiario(jugadas: JugadaReporte[]): ReporteDiario {
   const calcularCruceCarrera = (f: FilaReporteDiario) => {
     const dets = f.jugadasDetalle ?? [];
     const lineas = dets
-      .filter((d) => d.resultadoNeto !== 0 && d.rol === "Juega")
+      .filter((d) => !d.jugada.includes("Cruce") && d.resultadoNeto !== 0)
       .map((d) => ({
         cliente: d.cliente,
         resultado: d.resultadoNeto,
@@ -328,7 +328,6 @@ export function armarReporteDiario(jugadas: JugadaReporte[]): ReporteDiario {
       // Asignar la comisión devuelta al cliente correspondiente en su primera jugada ganadora de la carrera
       const asignados = new Set<string>();
       for (const d of dets) {
-        if (d.rol !== "Juega") continue;
         const claveCli = d.cliente.trim().toUpperCase();
         const info = porCliente.get(claveCli);
         if (info && info.reembolsoCruce > 0 && !asignados.has(claveCli) && d.resultadoNeto > 0) {

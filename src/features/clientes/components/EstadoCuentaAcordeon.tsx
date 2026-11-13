@@ -96,26 +96,35 @@ function JugadasDesplegables({ nivel, devPct, nivelProf }: { nivel: NivelAcordeo
           Math.round(
             c.jugadas.reduce((acc, item) => acc + (item.resultadoNeto ?? 0) + (item.devolucion ?? 0), 0) * 100
           ) / 100;
+        const tieneCruceEnCarrera = c.jugadas.some((x) => x.esAsientoCruce);
+        const cruceMonto = c.jugadas.find((x) => x.esAsientoCruce)?.resultadoNeto ?? 0;
         return (
           <div key={`${nivelProf}-${i}-${c.titulo}`} className="rounded-xl border border-line px-3 py-2 bg-slate-50" style={{ marginLeft: (nivelProf + 1) * 12 }}>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
               <span className="text-[10px] font-bold text-slate-700">
                 <span className="mr-1 text-indigo-500">🏁</span>
                 {c.titulo} <span className="font-medium text-slate-400">· {c.subtitulo}</span>
               </span>
-              <span
-                className={`text-[10px] font-mono font-black ${
-                  resultadoTotalCarrera > 0
-                    ? "text-emerald-700"
-                    : resultadoTotalCarrera < 0
-                      ? "text-rose-700"
-                      : "text-slate-700"
-                }`}
-                title="Resultado total ganador o perdedor en la carrera (con devolución incluida)"
-              >
-                Resultado: {resultadoTotalCarrera > 0 ? "+" : ""}
-                {formatoMoneda("USD", resultadoTotalCarrera)}
-              </span>
+              <div className="flex items-center gap-2">
+                {tieneCruceEnCarrera && (
+                  <span className="rounded bg-amber-100 border border-amber-300 px-1.5 py-0.2 text-[9px] font-black text-amber-800 shadow-xs">
+                    🔀 Cruce: +{formatoMoneda("USD", cruceMonto)}
+                  </span>
+                )}
+                <span
+                  className={`text-[10px] font-mono font-black ${
+                    resultadoTotalCarrera > 0
+                      ? "text-emerald-700"
+                      : resultadoTotalCarrera < 0
+                        ? "text-rose-700"
+                        : "text-slate-700"
+                  }`}
+                  title="Resultado total en la carrera (con cruce y devolución incluida)"
+                >
+                  Saldo Carrera: {resultadoTotalCarrera > 0 ? "+" : ""}
+                  {formatoMoneda("USD", resultadoTotalCarrera)}
+                </span>
+              </div>
             </div>
             <div className="mt-2 overflow-x-auto">
               <table className="w-full text-[10px]">
@@ -135,6 +144,39 @@ function JugadasDesplegables({ nivel, devPct, nivelProf }: { nivel: NivelAcordeo
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {c.jugadas.map((j) => {
+                    if (j.esAsientoCruce) {
+                      return (
+                        <tr key={j.id} className="bg-amber-50/90 border-y border-amber-300 font-bold hover:bg-amber-100/70">
+                          <td className="px-2 py-1.5 font-bold text-amber-900">
+                            <span className="rounded bg-amber-200/90 px-1.5 py-0.5 text-[9px] font-bold text-amber-950 border border-amber-400">
+                              {j.caballo}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 font-black text-amber-950 flex items-center gap-1.5">
+                            <span className="text-amber-600 text-sm">🔀</span>
+                            <span>{j.jugada}</span>
+                          </td>
+                          <td className="px-2 py-1.5 text-center">
+                            <span className="rounded px-1.5 py-0.5 text-[8.5px] font-black uppercase bg-amber-200 text-amber-900 border border-amber-400">
+                              🔀 Cruce
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono text-slate-400">—</td>
+                          <td className="px-2 py-1.5 text-right font-mono text-slate-400">—</td>
+                          {devPct > 0 ? (
+                            <td className="px-2 py-1.5 text-right font-mono text-slate-400">—</td>
+                          ) : null}
+                          <td className="px-2 py-1.5 text-center">
+                            <span className="rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 text-[8.5px] font-black uppercase shadow-xs">
+                              🔀 Aplicado
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono font-black text-emerald-700">
+                            +{formatoMoneda(j.moneda, j.resultadoNeto)}
+                          </td>
+                        </tr>
+                      );
+                    }
                     const resJugadaConDev = Math.round(((j.resultadoNeto ?? 0) + (j.devolucion ?? 0)) * 100) / 100;
                     return (
                       <tr key={j.id} className="hover:bg-slate-50/70">

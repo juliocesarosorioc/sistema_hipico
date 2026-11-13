@@ -977,6 +977,11 @@ function FragmentCarrera({
             </span>
             <span className="font-black text-indigo-950">🏁 Carrera #{carrera.carrera}</span>
             <PizarraCarreraBadges puestos={puestosPizarra} retirados={retiradosPizarra} />
+            {comDev > 0 && (
+              <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-black text-amber-900 shadow-xs">
+                🔀 Cruce: +{dinero(comDev)}
+              </span>
+            )}
           </div>
         </td>
         <td className="whitespace-nowrap px-2 py-1 text-right font-bold tabular-nums text-slate-700">{numero(carrera.tickets)}</td>
@@ -1078,6 +1083,24 @@ function FragmentCarrera({
                         </div>
                       );
                     })}
+                    {mostrarComisionDevuelta && comDev > 0 && (
+                      <div className="p-2 flex flex-col gap-1 text-[11px] bg-amber-50/90 border-t-2 border-amber-300">
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="rounded-full px-1.5 py-0.2 text-[8px] font-black uppercase bg-amber-400 text-slate-950 border border-amber-500">
+                              🔀 CRUCE
+                            </span>
+                            <span className="font-black text-amber-950 truncate">
+                              Asiento de Cruce: Reembolso Comisión
+                            </span>
+                          </div>
+                          <span className="font-mono text-xs font-black text-emerald-700">+{dinero(comDev)}</span>
+                        </div>
+                        <div className="text-[10px] text-amber-800 font-semibold">
+                          Compensación automática de comisión entre jugadas de esta carrera
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1172,6 +1195,40 @@ function FragmentCarrera({
                         </tr>
                       );
                     })}
+                    {mostrarComisionDevuelta && comDev > 0 && (
+                      <tr className="bg-amber-50/80 border-t-2 border-amber-300 font-bold hover:bg-amber-100/70">
+                        <td className="whitespace-nowrap px-2 py-1 font-mono text-[10px] font-bold text-amber-900">
+                          🔀 Cruce
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-1">
+                          <span className="inline-block rounded-full px-2 py-0.5 text-[9px] font-black uppercase bg-amber-300 text-slate-950 border border-amber-400">
+                            🔀 Cruce
+                          </span>
+                        </td>
+                        {!esCliente && (
+                          <td className="whitespace-nowrap px-2 py-1 font-bold text-amber-900">—</td>
+                        )}
+                        <td className="whitespace-nowrap px-2 py-1 font-black text-amber-950">
+                          🔀 Asiento Adicional: Reembolso de Comisión por Cruce
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-1 text-[10px] font-semibold text-amber-800">
+                          Compensación por cruce de jugadas
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-1 text-right font-mono text-slate-400">—</td>
+                        <td className="whitespace-nowrap px-2 py-1 text-right font-mono text-slate-400">—</td>
+                        <td className="whitespace-nowrap px-2 py-1 text-right font-mono tabular-nums font-black text-emerald-700">
+                          +{dinero(comDev)}
+                        </td>
+                        {mostrarDevolucion && (
+                          <td className="whitespace-nowrap px-2 py-1 text-right font-mono text-slate-400">—</td>
+                        )}
+                        {mostrarComisionDevuelta && (
+                          <td className="whitespace-nowrap px-2 py-1 text-right font-mono tabular-nums font-black text-amber-800">
+                            +{dinero(comDev)}
+                          </td>
+                        )}
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

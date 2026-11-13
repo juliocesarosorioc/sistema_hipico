@@ -13,6 +13,7 @@ import { resumenDatosPago, type DatosPago } from "@/shared/lib/vzla";
 import { exigirCapacidad, esPrincipalVigente, grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import { resumenFormasPago, type FormaPago } from "@/features/clientes/lib/formasPago";
 import { redondearCentavos } from "@/shared/lib/dinero";
+import { _reembolsosCruce } from "@/features/taquilla/lib/cruces-y-tapas";
 import {
   calcularLiquidacionConIncentivosYSocios,
   emitirMensajePaso,
@@ -1338,6 +1339,14 @@ export type JugadaItem = {
   estado: string;
   /** Devolución / Incentivo calculado sobre el monto decidido/jugado. */
   devolucion: number;
+  /** Comisión efectivamente cobrada en la jugada ganadora. */
+  comisionCobrada?: number;
+  /** Comisión reembolsada por cruces en la carrera. */
+  comisionDevuelta?: number;
+  /** Marca este registro como asiento contable adicional de cruce por carrera. */
+  esAsientoCruce?: boolean;
+  /** Monto base de dinero cruzado / netting en la carrera. */
+  baseCruce?: number;
 };
 
 export type NivelAcordeon = { titulo: string; subtitulo?: string; monto: number; dec: number; hijos: NivelAcordeon[]; jugadas: JugadaItem[] };
@@ -1383,6 +1392,11 @@ export function construirEstadoCuenta(
     hipodromos: new Map(),
     carreras: new Map(),
   };
+
+  const padresCarrera = new Map<
+    string,
+    { c: NivelAcordeon; h: NivelAcordeon; d: NivelAcordeon; s: NivelAcordeon; g: NivelAcordeon }
+  >();
 
   const acumular = (n: NivelAcordeon, base: number, dec: number, jugada: JugadaItem) => {
     n.monto += base;
@@ -1536,18 +1550,23 @@ export function construirEstadoCuenta(
         moneda,
         estado: fila.estado,
         devolucion: decFila,
+        comisionCobrada: fila.comisionCobrada,
       };
 
       const g = get(construir.grupos, grupo, grupo);
       const s = get(construir.semanas, `${grupo}|${semana}`, semana, "Semana");
       const d = get(construir.dias, `${grupo}|${semana}|${dia}`, dia, "Día");
       const h = get(construir.hipodromos, `${grupo}|${semana}|${dia}|${hipodromo}`, hipodromo);
+      const cKey = `${grupo}|${semana}|${dia}|${hipodromo}|${carrera}`;
       const c = get(
         construir.carreras,
-        `${grupo}|${semana}|${dia}|${hipodromo}|${carrera}`,
+        cKey,
         `Carrera ${carrera}`,
         hipodromo
       );
+      if (!padresCarrera.has(cKey)) {
+        padresCarrera.set(cKey, { c, h, d, s, g });
+      }
 
       if (g.jugadas.length === 0 && !g.hijos.some((x) => x.titulo === s.titulo && x.subtitulo === s.subtitulo)) g.hijos.push(s);
       if (!s.hijos.some((x) => x.titulo === d.titulo && x.subtitulo === d.subtitulo)) s.hijos.push(d);
@@ -1565,6 +1584,76 @@ export function construirEstadoCuenta(
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Asientos Adicionales de Cruce por Carrera:
+  // Si en una carrera el jugador tiene jugadas ganadoras y perdedoras, se reembolsa la comisión
+  // sobre la base cruzada, sumándola al saldo de la carrera y creando el asiento visible de cruce.
+  // ---------------------------------------------------------------------------
+  const cRec = (clienteActual ?? {}) as Record<string, unknown>;
+  const permiteCruces = cRec.permite_cruces !== false;
+  if (permiteCruces) {
+    for (const [, { c, h, d, s, g }] of padresCarrera) {
+      const lineasCruce = c.jugadas
+        .filter((j) => !j.esAsientoCruce && String(j.estado).toUpperCase() !== "ANULADA" && j.resultadoNeto !== undefined && j.resultadoNeto !== 0)
+        .map((j) => ({
+          cliente: cliId || clienteActual?.nombre || clienteActual?.seudonimo || "CLIENTE",
+          clienteId: cliId || undefined,
+          resultado: j.resultadoNeto,
+          comisionCobrada: j.comisionCobrada,
+          comisionPct: tasaComisionCliente ?? 5,
+          rol: j.rol,
+        }));
+      if (lineasCruce.length >= 2) {
+        const resCruce = _reembolsosCruce(lineasCruce, "con_cruces", tasaComisionCliente ?? 5);
+        if (resCruce.totalReembolsado > 0) {
+          const reembolso = Math.round(resCruce.totalReembolsado * 100) / 100;
+          const infoCruce = resCruce.porCliente.values().next().value;
+          const baseCruce = infoCruce?.baseCruce ? Math.round(infoCruce.baseCruce * 100) / 100 : 0;
+          const ref = c.jugadas[0];
+
+          const asientoCruce: JugadaItem = {
+            id: `cruce-${c.titulo}-${ref?.fechaCarrera || ref?.fecha || "dia"}`,
+            fecha: ref?.fecha ?? null,
+            fechaTexto: ref?.fechaTexto ?? "—",
+            horaCarga: "🔀 Cruce",
+            rol: "Juega",
+            fechaCarrera: ref?.fechaCarrera ?? null,
+            hipodromo: ref?.hipodromo ?? "—",
+            carrera: ref?.carrera ?? 0,
+            grupo: ref?.grupo ?? "Directo",
+            semana: ref?.semana ?? "Semana",
+            dia: ref?.dia ?? "—",
+            caballo: `Base cruzada: $${baseCruce.toFixed(2)}`,
+            jugada: `🔀 Reembolso Comisión por Cruce de Jugadas`,
+            montoJugado: 0,
+            montoDecidido: 0,
+            premio: 0,
+            resultadoNeto: reembolso,
+            moneda: ref?.moneda ?? "USD",
+            estado: "APLICADO",
+            devolucion: 0,
+            comisionDevuelta: reembolso,
+            esAsientoCruce: true,
+            baseCruce: baseCruce,
+          };
+
+          c.monto = Math.round((c.monto + reembolso) * 100) / 100;
+          c.jugadas.push(asientoCruce);
+          h.monto = Math.round((h.monto + reembolso) * 100) / 100;
+          h.jugadas.push(asientoCruce);
+          d.monto = Math.round((d.monto + reembolso) * 100) / 100;
+          d.jugadas.push(asientoCruce);
+          s.monto = Math.round((s.monto + reembolso) * 100) / 100;
+          s.jugadas.push(asientoCruce);
+          g.monto = Math.round((g.monto + reembolso) * 100) / 100;
+          g.jugadas.push(asientoCruce);
+          raiz.monto = Math.round((raiz.monto + reembolso) * 100) / 100;
+          raiz.jugadas.push(asientoCruce);
+        }
+      }
+    }
+  }
+
   const numCarreraDeTitulo = (t: string): number =>
     Number(String(t ?? "").replace(/\D+/g, "")) || 0;
   const compararJugadaPorCarrera = (a: JugadaItem, b: JugadaItem): number => {
@@ -1573,9 +1662,17 @@ export function construirEstadoCuenta(
     if (fB !== fA) return fB.localeCompare(fA);
     const hCmp = String(a.hipodromo ?? "").localeCompare(String(b.hipodromo ?? ""), "es");
     if (hCmp !== 0) return hCmp;
-    return (Number(a.carrera) || 0) - (Number(b.carrera) || 0);
+    const cA = Number(a.carrera) || 0;
+    const cB = Number(b.carrera) || 0;
+    if (cA !== cB) return cA - cB;
+    if (a.esAsientoCruce && !b.esAsientoCruce) return 1;
+    if (!a.esAsientoCruce && b.esAsientoCruce) return -1;
+    return String(a.id).localeCompare(String(b.id));
   };
 
+  for (const c of construir.carreras.values()) {
+    c.jugadas.sort(compararJugadaPorCarrera);
+  }
   for (const h of construir.hipodromos.values()) {
     h.hijos.sort((a, b) => numCarreraDeTitulo(a.titulo) - numCarreraDeTitulo(b.titulo));
     h.jugadas.sort(compararJugadaPorCarrera);
@@ -1594,7 +1691,7 @@ export function construirEstadoCuenta(
   // Recálculo exacto de devoluciones por carrera (ganancias odds 10/5, cruces netos, bloque/dividida)
   for (const c of construir.carreras.values()) {
     const resC = calcularBaseDecididaCarrera(
-      c.jugadas.map((j) => ({
+      c.jugadas.filter((j) => !j.esAsientoCruce).map((j) => ({
         nombreJugada: j.jugada,
         montoJugado: j.montoJugado,
         premioPagar: j.premio,
