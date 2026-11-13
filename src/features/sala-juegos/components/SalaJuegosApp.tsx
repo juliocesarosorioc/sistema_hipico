@@ -690,7 +690,7 @@ export function SalaJuegosApp({
       {/* 3. CONTENIDO PRINCIPAL: 1 SALA O VISTA DUAL (2 SALAS SIMULTÁNEAS) */}
       <div className="flex-1 overflow-hidden relative">
         {vistaDual && salas.length >= 2 ? (
-          <div className="grid grid-cols-2 h-full">
+          <div className="grid grid-cols-1 lg:grid-cols-2 h-full min-h-0 overflow-hidden">
             <ChatSalaPanel
               sala={salas[0]}
               grupoId={grupoActivo?.id}

@@ -73,6 +73,7 @@ const ES_BOT_MALICIOSO = (ua: string): boolean => {
 const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
 const ES_SALA = (p: string) => p === "/sala" || p.startsWith("/sala/");
 const ES_API_SALA = (p: string) => p === "/api/sala" || p.startsWith("/api/sala/");
+const ES_API_RECARGAS = (p: string) => p === "/api/recargas/validar" || p.startsWith("/api/recargas/");
 const ES_WEBHOOK_WHATSAPP = (p: string) => p === "/api/whatsapp-sala" || p.startsWith("/api/whatsapp-sala/");
 
 export function middleware(req: NextRequest) {
@@ -110,7 +111,7 @@ export function middleware(req: NextRequest) {
 
   if (ES_PUBLICA(pathname)) return NextResponse.next();
 
-  if (ES_PORTAL(pathname) || ES_SALA(pathname) || ES_API_SALA(pathname) || ES_WEBHOOK_WHATSAPP(pathname)) return NextResponse.next();
+  if (ES_PORTAL(pathname) || ES_SALA(pathname) || ES_API_SALA(pathname) || ES_API_RECARGAS(pathname) || ES_WEBHOOK_WHATSAPP(pathname)) return NextResponse.next();
 
   const usuario = req.cookies.get("hipico_usuario")?.value ?? "";
   const perfil = req.cookies.get("hipico_perfil")?.value;

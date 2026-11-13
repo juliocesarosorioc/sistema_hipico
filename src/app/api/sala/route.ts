@@ -15,6 +15,7 @@ import {
   analizarYEstandarizarJugada,
   analizarComandoRetiro,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
+import { validarSolicitudRecargaServidor } from "@/features/sala-juegos/lib/recargas-server";
 import {
   formatearMontoRegional,
   parsearMontoConK,
@@ -301,10 +302,15 @@ export async function GET(req: Request) {
 
         if (cl) {
           const rec = cl as Record<string, unknown>;
-          const libre = Boolean(rec.libre || String(rec.modo_juego ?? "").toLowerCase() === "libre");
-          const disponible = calcularDisponibleCliente({ ...rec, libre });
+          // Nunca devolver credenciales de portal al navegador: son secretos
+          // del cliente y no los usa ninguna vista de la Sala.
+          const recSeguro = { ...rec };
+          delete recSeguro.portal_clave;
+          delete recSeguro.portal_token;
+          const libre = Boolean(recSeguro.libre || String(recSeguro.modo_juego ?? "").toLowerCase() === "libre");
+          const disponible = calcularDisponibleCliente({ ...recSeguro, libre });
           datosJugador = {
-            ...rec,
+            ...recSeguro,
             libre,
             saldo_retenido: Number(rec.saldo_retenido ?? 0) || 0,
             saldo_disponible: disponible,
@@ -1073,7 +1079,7 @@ async function anularCarrera(grupoId: string, salaId: string, operadorNombre: st
     .from("chat_mensajes")
     .select("*")
     .eq("sala_id", salaId)
-    .eq("estado_propuesta", "abierta");
+    .in("estado_propuesta", ["abierta", "parcial"]);
 
   for (const p of propuestasAbiertas || []) {
     const rem = Number(p.monto_disponible || 0);
@@ -1220,8 +1226,14 @@ export async function POST(req: Request) {
         const edadSegundos = (Date.now() - new Date(propMsg.created_at).getTime()) / 1000;
         const remanenteDisponible = Number(propMsg.monto_disponible ?? propMsg.monto_original ?? 0);
 
-        if (edadSegundos > tiempoVigencia || propMsg.estado_propuesta !== "abierta" || remanenteDisponible <= 0) {
-          if (propMsg.estado_propuesta === "abierta") {
+        // Una propuesta con tomas parciales queda en estado "parcial" y debe
+        // seguir aceptando el remanente (cascada 100 -> 10 + 90) hasta que la
+        // vigencia expire o el saldo llegue a cero.
+        const estadoAceptaTomas =
+          propMsg.estado_propuesta === "abierta" || propMsg.estado_propuesta === "parcial";
+
+        if (edadSegundos > tiempoVigencia || !estadoAceptaTomas || remanenteDisponible <= 0) {
+          if (estadoAceptaTomas) {
             await supabaseAdmin
               .from("chat_mensajes")
               .update({ estado_propuesta: "cerrada", monto_disponible: 0 })
@@ -1539,6 +1551,43 @@ export async function POST(req: Request) {
           }
         }
 
+        // Aviso público + privado cuando el aceptante intentó tomar más de su
+        // saldo disponible. El remanente queda abierto para la cascada
+        // (ej. propuesta de 100 -> 90 el primero y 10 el segundo).
+        if (excedioSaldoAceptante) {
+          const montoConcretadoAviso = Number((resFifo as any)?.monto ?? (resFifo as any)?.monto_concretado ?? montoPedido);
+          const disponibleAviso = Number((resFifo as any)?.saldo_disponible_aceptante ?? saldoDispAceptante);
+          const textoPublicoAviso =
+            `⚠️ ${identidad.nombre} solo disponía de ${prefijo}${formatearMontoRegional(disponibleAviso)} ` +
+            `para esta jugada. Se concretaron ${prefijo}${formatearMontoRegional(montoConcretadoAviso)}.`;
+
+          await supabaseAdmin.from("chat_mensajes").insert({
+            grupo_id: grupoId,
+            sala_id: salaId,
+            remitente_nombre: "🤖 ASISTENTE DE SALA",
+            es_operador: true,
+            tipo_mensaje: "ALERTA_SALDO",
+            contenido: textoPublicoAviso,
+            reply_to_msg_id: propuestaId,
+            solo_borrable_operador: true,
+          });
+
+          await supabaseAdmin.from("chat_mensajes").insert({
+            grupo_id: grupoId,
+            sala_id: salaId,
+            remitente_id: esUuidValido(identidad.usuarioId) ? identidad.usuarioId : null,
+            remitente_nombre: "🤖 ASISTENTE DE SALA",
+            es_operador: true,
+            tipo_mensaje: "DM_PRIVADO",
+            destinatario_privado_id: esUuidValido(identidad.usuarioId) ? identidad.usuarioId : null,
+            contenido:
+              '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo. ' +
+              `Tu jugada quedó por ${prefijo}${formatearMontoRegional(montoConcretadoAviso)}.`,
+            reply_to_msg_id: propuestaId,
+            solo_borrable_operador: true,
+          });
+        }
+
         await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
         return NextResponse.json({ ok: true, resultadoFifo: resFifo });
       }
@@ -1574,7 +1623,7 @@ export async function POST(req: Request) {
             .select("id, monto_disponible, monto_original")
             .eq("sala_id", salaId)
             .eq("remitente_id", identidad.usuarioId)
-            .eq("estado_propuesta", "abierta")
+            .in("estado_propuesta", ["abierta", "parcial"])
             .gt("monto_disponible", 0);
 
           if (body.cerrarPropuestaId) {
@@ -1835,50 +1884,30 @@ export async function POST(req: Request) {
     // 3. RECARGA BLINDADA (5 CANDADOS)
     // ------------------------------------------------------------------------
     if (accion === "recarga") {
-      const grupoId = resolverGrupoEfectivo(identidad, body.grupoId);
-      if (!grupoId || !grupoPermitido(identidad, grupoId)) {
-        return NextResponse.json({ ok: false, error: "Grupo no autorizado" }, { status: 403 });
-      }
-
-      const clienteId = identidad.tipo === "JUGADOR" ? identidad.usuarioId : body.clienteId;
-      const {
-        metodoPago,
-        bancoOrigen,
-        referencia,
-        monto,
-        moneda = "USD",
-        tasaCambio = 1.0,
-        comprobanteUrl = "https://sistema-hipico/comprobantes/recarga.png",
-        hashImagenSha256,
-        datosOcrIa = {},
-        confianzaIa = 0.85,
-      } = body;
-
-      if (!hashImagenSha256 || !referencia || !monto) {
-        return NextResponse.json({ ok: false, error: "Faltan campos requeridos para la recarga blindada" }, { status: 400 });
-      }
-
-      // Ejecutar RPC procesar_solicitud_recarga_blindada
-      const { data: recargaRes, error: errRecarga } = await supabaseAdmin.rpc("procesar_solicitud_recarga_blindada", {
-        p_grupo_id: grupoId,
-        p_cliente_id: clienteId,
-        p_metodo_pago: metodoPago,
-        p_banco_origen: bancoOrigen,
-        p_referencia: referencia,
-        p_monto_reportado: Number(monto),
-        p_moneda: moneda,
-        p_tasa_cambio: Number(tasaCambio),
-        p_comprobante_url: comprobanteUrl,
-        p_hash_imagen_sha256: hashImagenSha256,
-        p_datos_ocr_ia: datosOcrIa,
-        p_confianza_ia: Number(confianzaIa),
+      // Compatibilidad: la validación OCR/IA ya NO se acepta desde el body.
+      // Todo se calcula en el servidor (ver recargas-server.ts).
+      const resultado = await validarSolicitudRecargaServidor(identidad, {
+        grupoId: body.grupoId,
+        clienteId: body.clienteId,
+        metodoPago: body.metodoPago,
+        bancoOrigen: body.bancoOrigen,
+        referencia: body.referencia,
+        montoReportado: body.montoReportado ?? body.monto,
+        moneda: body.moneda,
+        nombreArchivo: body.nombreArchivo,
+        comprobanteUrl: body.comprobanteUrl,
+        hashImagenSha256: body.hashImagenSha256,
       });
 
-      if (errRecarga) {
-        return NextResponse.json({ ok: false, error: errRecarga.message }, { status: 400 });
+      if (!resultado.ok) {
+        return NextResponse.json({ ok: false, error: resultado.error }, { status: resultado.status });
       }
 
-      return NextResponse.json({ ok: true, resultado: recargaRes });
+      return NextResponse.json({
+        ok: true,
+        conciliacion: resultado.conciliacion,
+        resultado: resultado.resultado,
+      });
     }
 
     // ------------------------------------------------------------------------

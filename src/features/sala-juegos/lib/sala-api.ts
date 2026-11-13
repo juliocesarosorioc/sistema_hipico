@@ -190,6 +190,32 @@ async function requestApi<T = any>(
   }
 }
 
+async function requestRecarga<T = any>(
+  payload: Record<string, any>
+): Promise<{ ok: boolean; data?: T; error?: string; status?: number }> {
+  try {
+    const headers = await headersAuth();
+    const res = await fetch("/api/recargas/validar", {
+      method: "POST",
+      headers,
+      credentials: "include",
+      cache: "no-store",
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.ok === false) {
+      return {
+        ok: false,
+        status: res.status,
+        error: json.error || `Error ${res.status}: ${res.statusText}`,
+      };
+    }
+    return { ok: true, data: json };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || "Error de conexión con /api/recargas/validar" };
+  }
+}
+
 export const salaApi = {
   async bootstrap(grupoId?: string) {
     const q = grupoId ? `?accion=bootstrap&grupoId=${encodeURIComponent(grupoId)}` : "?accion=bootstrap";
@@ -224,6 +250,8 @@ export const salaApi = {
     texto: string;
     tipo?: string;
     propuestaId?: string;
+    monto?: number;
+    cerrarPropuestaId?: string;
     destinatarioPrivadoId?: string;
     replyToMsgId?: string;
     imagenUrl?: string;
@@ -250,6 +278,24 @@ export const salaApi = {
     });
   },
 
+  async validarRecarga(payload: {
+    grupoId: string;
+    clienteId?: string;
+    metodoPago: string;
+    bancoOrigen: string;
+    referencia: string;
+    montoReportado: number;
+    moneda?: string;
+    nombreArchivo?: string;
+    hashImagenSha256: string;
+  }) {
+    return requestRecarga({ ...payload });
+  },
+
+  /**
+   * @deprecated Usar `validarRecarga`. El endpoint viejo ya no acepta OCR ni
+   * confianza IA desde el navegador; este alias existe solo por compatibilidad.
+   */
   async procesarRecarga(payload: {
     grupoId: string;
     clienteId?: string;
@@ -261,12 +307,17 @@ export const salaApi = {
     tasaCambio?: number;
     comprobanteUrl?: string;
     hashImagenSha256: string;
-    datosOcrIa?: any;
-    confianzaIa?: number;
   }) {
-    return requestApi("", {
-      method: "POST",
-      body: JSON.stringify({ accion: "recarga", ...payload }),
+    return requestRecarga({
+      grupoId: payload.grupoId,
+      clienteId: payload.clienteId,
+      metodoPago: payload.metodoPago,
+      bancoOrigen: payload.bancoOrigen,
+      referencia: payload.referencia,
+      montoReportado: payload.monto,
+      moneda: payload.moneda,
+      nombreArchivo: payload.comprobanteUrl,
+      hashImagenSha256: payload.hashImagenSha256,
     });
   },
 

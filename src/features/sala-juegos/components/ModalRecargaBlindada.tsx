@@ -57,24 +57,16 @@ export function ModalRecargaBlindada({ grupoId, clienteId, onCerrar, onExito }: 
     });
 
     try {
-      const res = await salaApi.procesarRecarga({
+      const res = await salaApi.validarRecarga({
         grupoId,
         clienteId,
         metodoPago: metodo,
         bancoOrigen: banco,
         referencia: referencia.trim(),
-        monto: parseFloat(monto),
+        montoReportado: parseFloat(monto),
         moneda: "USD",
-        tasaCambio: 1.0,
-        comprobanteUrl: archivo.name,
+        nombreArchivo: archivo.name,
         hashImagenSha256: hashArchivo,
-        datosOcrIa: {
-          bancoDetectado: banco,
-          referenciaDetectada: referencia.trim(),
-          montoDetectado: parseFloat(monto),
-          formatoValido: true,
-        },
-        confianzaIa: 0.95,
       });
 
       if (!res.ok) {

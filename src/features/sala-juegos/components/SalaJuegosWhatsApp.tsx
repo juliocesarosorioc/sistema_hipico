@@ -1,13 +1,14 @@
 'use client';
 // LÍNEA 1: Interfaz Completa de Sala de Juegos Estilo WhatsApp / WhatsApp Web
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   analizarYEstandarizarJugada,
   evaluarConcrecionEstricta,
   analizarComandoRetiro,
 } from '../lib/parser-pedagogico';
 import { generarHashArchivoSHA256, generarHashTextoSHA256, cifrarMensajeSala } from '../lib/seguridad-crypto';
+import { salaApi } from '../lib/sala-api';
 import { supabase } from '@/core/supabase';
 import { formatearMontoRegional } from '@/shared/lib/dinero';
 import { construirMensajeCarreraAbierta } from '../lib/mensajes-carrera';
@@ -53,6 +54,17 @@ export default function SalaJuegosWhatsApp({
   const [salaSeleccionadaId, setSalaSeleccionadaId] = useState<string>(salas[0]?.id || 'sala-1');
   const [vistaDualEscritorio, setVistaDualEscritorio] = useState<boolean>(false);
   const [tamanoLetra, setTamanoLetra] = useState<number>(15);
+
+  // En escritorio (>= 1024px) con dos salas, abrir la vista dual por defecto.
+  useEffect(() => {
+    if (salas.length < 2) return;
+    try {
+      if (window.matchMedia('(min-width: 1024px)').matches) setVistaDualEscritorio(true);
+    } catch {
+      // Sin matchMedia: se mantiene la vista simple con su botón de alternancia.
+    }
+  }, [salas.length]);
+
   const [ocultarSaldo, setOcultarSaldo] = useState<boolean>(false);
   const [textoInput, setTextoInput] = useState<string>('');
   const [modalPrejugadasAbierto, setModalPrejugadasAbierto] = useState<boolean>(false);
@@ -75,12 +87,94 @@ export default function SalaJuegosWhatsApp({
     if (onEjecutarRpc) {
       return await onEjecutarRpc(nombreRpc, params);
     }
-    if (supabase) {
-      const { data, error } = await supabase.rpc(nombreRpc, params);
-      if (error) throw error;
-      return data;
+
+    // Puente seguro: las RPC privilegiadas se ejecutan en /api/sala con
+    // service role. El navegador nunca llama `supabase.rpc` para estas acciones.
+    const salaId =
+      params.p_sala_id ||
+      salas.find((s) => s.id === salaSeleccionadaId)?.id ||
+      salas[0]?.id;
+    switch (nombreRpc) {
+      case 'procesar_retirado_en_sala': {
+        const r = await salaApi.accionOperador('retirado', {
+          grupoId,
+          salaId,
+          ejemplar: params.p_ejemplar_retirado,
+          carreraId: params.p_carrera_id,
+        });
+        return r.ok ? r.data : { ok: false, error: r.error };
+      }
+      case 'liquidar_carrera_sala_oficial': {
+        const r = await salaApi.accionOperador('liquidar', {
+          grupoId,
+          salaId,
+          pizarra: {
+            primero: params.p_primero,
+            segundo: params.p_segundo,
+            tercero: params.p_tercero,
+            cuarto: params.p_cuarto,
+            quinto: params.p_quinto,
+          },
+        });
+        return r.ok ? r.data : { ok: false, error: r.error };
+      }
+      case 'registrar_interaccion_llm': {
+        const r = await salaApi.registrarRevisionLLM({
+          grupoId,
+          salaId,
+          mensajeOriginal: params.p_mensaje_original,
+          jugadaSugerida: params.p_mensaje_original,
+          intencion: 'jugada',
+          respuestaIa: params.p_respuesta_ia,
+          confianza: Number(params.p_confianza ?? 0),
+          requiereIntervencionHumana: Boolean(params.p_requiere_operador),
+        });
+        return r.ok ? r.data : { ok: false, error: r.error };
+      }
+      case 'publicar_propuesta_atomica': {
+        const r = await salaApi.enviarMensaje({
+          grupoId,
+          salaId,
+          texto: params.p_texto_estandarizado,
+        });
+        return r.ok
+          ? { ...(r.data || {}), propuesta_id: (r.data as any)?.propuestaId }
+          : { ok: false, error: r.error };
+      }
+      case 'concretar_jugada_fifo_atomica': {
+        const montoPedido = Number(params.p_monto_pedido || 0);
+        const r = await salaApi.enviarMensaje({
+          grupoId,
+          salaId,
+          propuestaId: params.p_propuesta_msg_id,
+          monto: montoPedido,
+          texto: `Tomar ${montoPedido}`,
+        });
+        if (!r.ok) return { ok: false, error: r.error };
+
+        // Releer la propuesta para reflejar el remanente real (cascada 100 -> 90 + 10)
+        let remanente = 0;
+        try {
+          const msgs = await salaApi.getMensajes(salaId, 80);
+          const prop = (msgs.data?.mensajes || []).find((m: any) => m.id === params.p_propuesta_msg_id);
+          remanente = Number(prop?.monto_disponible ?? 0);
+        } catch {
+          remanente = 0;
+        }
+        const fifo = (r.data as any)?.resultadoFifo || {};
+        return {
+          ...fifo,
+          ok: true,
+          monto_concretado: Number(fifo.monto_concretado ?? montoPedido),
+          remanente_propuesta: Number(fifo.remanente_propuesta ?? remanente),
+          fue_recortado_por_remanente: Boolean(fifo.fue_recortado_por_remanente),
+          excedio_saldo_aceptante: Boolean(fifo.excedio_saldo_aceptante),
+          ...(r.data || {}),
+        };
+      }
+      default:
+        throw new Error(`RPC no permitida desde el navegador: ${nombreRpc}`);
     }
-    return null;
   };
 
   // Estado local de mensajes y jugadas para respuesta inmediata (< 5ms)
@@ -107,6 +201,94 @@ export default function SalaJuegosWhatsApp({
       [salaId]: [...(prev[salaId] || []), { id: crypto.randomUUID(), hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), ...nuevoMsg }],
     }));
   };
+
+  const mapearMensajeServidor = (m: any) => {
+    const esPropuesta = m?.tipo_mensaje === 'propuesta_jugada' || m?.tipo_mensaje === 'PROPUESTA';
+    return {
+      id: m?.id,
+      remitente: m?.remitente_nombre || 'Sala',
+      esBot: Boolean(m?.es_operador) || !esPropuesta,
+      tipo: esPropuesta
+        ? 'propuesta_jugada'
+        : m?.tipo_mensaje === 'CONCRECION'
+        ? 'concrecion_fifo'
+        : m?.tipo_mensaje === 'ESTADO_CARRERA'
+        ? 'apertura_vista_2'
+        : 'texto',
+      contenido: m?.contenido || '',
+      hora: m?.created_at
+        ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '',
+      monto: m?.monto_original,
+      montoOriginal: m?.monto_original,
+      montoDisponible: m?.monto_disponible,
+      accionProponente: m?.accion_proponente,
+      estadoPropuesta: m?.estado_propuesta,
+      firmaSha256: m?.firma_sha256 ? String(m.firma_sha256).slice(0, 12) : undefined,
+      propuestaCitada: m?.reply_to_msg_id
+        ? { remitente: 'Mensaje citado', contenido: String(m.reply_to_msg_id).slice(0, 8) }
+        : undefined,
+    };
+  };
+
+  // Hidratación real + Realtime: cada panel de la vista dual escucha su propia sala.
+  useEffect(() => {
+    if (!salas.length) return;
+    let cancelado = false;
+
+    const cargarTodas = async () => {
+      for (const s of salas) {
+        try {
+          const res = await salaApi.getMensajes(s.id, 80);
+          if (cancelado) return;
+          if (res.ok && res.data?.mensajes) {
+            setMensajesPorSala((prev) => ({
+              ...prev,
+              [s.id]: (res.data.mensajes as any[]).map(mapearMensajeServidor),
+            }));
+          }
+        } catch {
+          // El sondeo sigue activo aunque falle una sala.
+        }
+      }
+    };
+
+    void cargarTodas();
+    const interval = setInterval(() => void cargarTodas(), 4000);
+
+    const canales: any[] = [];
+    if (supabase) {
+      for (const s of salas) {
+        try {
+          const canal = supabase
+            .channel(`sala-whatsapp-${s.id}`)
+            .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'chat_mensajes', filter: `sala_id=eq.${s.id}` },
+              () => void cargarTodas()
+            )
+            .on('broadcast', { event: 'nuevo_mensaje' }, () => void cargarTodas())
+            .subscribe();
+          canales.push(canal);
+        } catch {
+          // Fallback: el intervalo de 4 s mantiene la sala sincronizada.
+        }
+      }
+    }
+
+    return () => {
+      cancelado = true;
+      clearInterval(interval);
+      for (const canal of canales) {
+        try {
+          if (supabase) supabase.removeChannel(canal);
+        } catch {
+          // noop
+        }
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [salas.map((s) => s.id).join('|')]);
 
   // 1. APERTURA DE CARRERA CON DOBLE VISTA E INVITACIÓN EXACTA
   const abrirCarreraOperador = (sala: SalaActivaInfo, hipodromo: string, numero: number, distancia: number) => {
@@ -138,8 +320,12 @@ export default function SalaJuegosWhatsApp({
   };
 
   // 2. ENVÍO DE MENSAJE CON ESTANDARIZACIÓN AUTOMÁTICA Y CORRECCIÓN PEDAGÓGICA
-  const manejarEnvioMensaje = async (textoManual?: string) => {
+  const manejarEnvioMensaje = async (textoManual?: string, salaObjetivoId?: string) => {
     const texto = (textoManual ?? textoInput).trim();
+    const salaActiva =
+      salas.find((s) => s.id === salaObjetivoId) ||
+      salas.find((s) => s.id === salaSeleccionadaId) ||
+      salas[0];
     if (!texto || !salaActiva) return;
 
     // Comando de Operador: Retirado
@@ -319,11 +505,24 @@ export default function SalaJuegosWhatsApp({
         return;
       }
 
-      // Cerrar cada propuesta abierta no concretada del jugador individualmente sin enviar mensaje al grupo
+      // Cerrar en el servidor: libera el saldo retenido de las propuestas
+      // abiertas o parciales sin publicar mensajes innecesarios en el grupo.
+      const resRetiro = await salaApi.enviarMensaje({
+        salaId: salaActiva.id,
+        grupoId,
+        texto: 'Se fue',
+      });
+      if (!resRetiro.ok) {
+        alert(resRetiro.error || 'No se pudieron retirar las jugadas.');
+        return;
+      }
+
       setMensajesPorSala((prev) => ({
         ...prev,
         [salaActiva.id]: (prev[salaActiva.id] || []).map((m) =>
-          m.remitente === usuarioActual.nombre && m.tipo === "propuesta_jugada" && m.estadoPropuesta === "abierta"
+          m.remitente === usuarioActual.nombre &&
+          m.tipo === "propuesta_jugada" &&
+          (m.estadoPropuesta === "abierta" || m.estadoPropuesta === "parcial")
             ? { ...m, estadoPropuesta: "cerrada", montoDisponible: 0 }
             : m
         ),
@@ -481,28 +680,235 @@ export default function SalaJuegosWhatsApp({
     const hashImagen = await generarHashArchivoSHA256(archivoComprobante);
     setEstadoRecargaMsg(`🔒 Verificando huella SHA-256 (${hashImagen.slice(0, 10)}...) y conciliando con Bóveda Bancaria...`);
 
-    if (onEjecutarRpc) {
-      const resp = await onEjecutarRpc('procesar_solicitud_recarga_blindada', {
-        p_grupo_id: grupoId,
-        p_cliente_id: usuarioActual.id,
-        p_metodo_pago: metodoRecarga,
-        p_banco_origen: bancoRecarga,
-        p_referencia: referenciaRecarga,
-        p_monto_reportado: parseFloat(montoRecarga),
-        p_moneda: 'USD',
-        p_tasa_cambio: 1,
-        p_comprobante_url: archivoComprobante.name,
-        p_hash_imagen_sha256: hashImagen,
-        p_datos_ocr_ia: { verificado: true },
-        p_confianza_ia: 0.96,
-      });
+    const resp = await salaApi.validarRecarga({
+      grupoId,
+      clienteId: usuarioActual.id,
+      metodoPago: metodoRecarga,
+      bancoOrigen: bancoRecarga,
+      referencia: referenciaRecarga,
+      montoReportado: parseFloat(montoRecarga),
+      moneda: 'USD',
+      nombreArchivo: archivoComprobante.name,
+      hashImagenSha256: hashImagen,
+    });
 
-      if (resp?.auto_aprobado) {
-        setEstadoRecargaMsg(`✅ ¡Recarga Auto-Aprobada! Nuevo saldo acreditado: $${resp.nuevo_saldo_disponible}`);
-      } else {
-        setEstadoRecargaMsg(resp?.mensaje || '⏳ Solicitud pre-validada en espera de confirmación bancaria.');
-      }
+    if (!resp.ok) {
+      setEstadoRecargaMsg(`❌ ${resp.error || 'No se pudo validar la recarga.'}`);
+      return;
     }
+
+    const data = (resp.data?.resultado || {}) as Record<string, any>;
+    if (data.auto_aprobado) {
+      setEstadoRecargaMsg(`✅ ¡Recarga Auto-Aprobada! Nuevo saldo acreditado: $${data.nuevo_saldo_disponible}`);
+    } else {
+      setEstadoRecargaMsg(
+        data.mensaje ||
+          (resp.data?.conciliacion === 'pendiente'
+            ? '⏳ Solicitud pre-validada. Queda en espera de confirmación bancaria u operador.'
+            : '⏳ Solicitud pre-validada en espera de confirmación bancaria.')
+      );
+    }
+  };
+
+  const renderFeedSala = (sala: SalaActivaInfo) => {
+    return (
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3" style={{ fontSize: `${tamanoLetra}px` }}>
+          {(mensajesPorSala[sala.id] || []).map((m) => {
+            const esPropuesta = m.tipo === 'propuesta_jugada';
+            const montoOrig = Number(m.montoOriginal || m.monto || 0);
+            const montoDisp = Number(m.montoDisponible ?? m.monto ?? 0);
+            const tieneDisponible = montoDisp > 0;
+            const esMio = m.remitente === usuarioActual.nombre;
+
+            return (
+              <div
+                key={m.id}
+                className={`max-w-xl rounded-2xl p-3 shadow-md ${
+                  m.tipo === 'apertura_vista_2'
+                    ? 'bg-emerald-950/90 border-2 border-emerald-500 text-center mx-auto font-bold text-emerald-200 whitespace-pre-line'
+                    : m.esBot
+                    ? 'bg-[#1f2c34] border-l-4 border-amber-400 text-gray-100 whitespace-pre-line mr-auto'
+                    : esMio
+                    ? 'bg-[#005c4b] ml-auto text-white rounded-tr-xs'
+                    : 'bg-[#202c33] mr-auto text-gray-100 rounded-tl-xs border border-gray-700/50'
+                }`}
+              >
+                <div className="flex justify-between items-center text-[11px] mb-1 font-mono gap-2">
+                  <span className={`font-semibold ${esMio ? 'text-emerald-200' : 'text-emerald-400'}`}>
+                    {esMio ? 'Tú' : m.remitente}
+                  </span>
+                  <span className="text-[10px] text-gray-400">
+                    {m.hora} {m.firmaSha256 ? `🔒#${m.firmaSha256}` : ''}
+                  </span>
+                </div>
+
+                {/* Mensaje citado si existe */}
+                {m.propuestaCitada && (
+                  <div className="mb-2 p-2 rounded-lg bg-black/30 border-l-4 border-emerald-400 text-[11px]">
+                    <span className="font-bold text-emerald-300 block text-[10px]">
+                      ↩️ {m.propuestaCitada.remitente}
+                    </span>
+                    <p className="text-gray-300 truncate font-mono text-[11px]">
+                      {m.propuestaCitada.contenido}
+                    </p>
+                  </div>
+                )}
+
+                <div className="tabular-nums font-medium text-xs leading-relaxed">{m.contenido}</div>
+
+                {/* SELECCIÓN Y BARRA EN VIVO PARA PROPUESTAS DE JUGADA */}
+                {esPropuesta && (
+                  <div className="mt-2.5 pt-2 border-t border-gray-700/60 font-sans">
+                    <div className="flex justify-between items-center text-[11px] mb-1 font-mono gap-2">
+                      <span className="text-gray-400">Estado de Parada:</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`font-bold ${tieneDisponible ? 'text-emerald-400' : 'text-gray-500 line-through'}`}>
+                          Disponible: ${formatearMontoRegional(montoDisp)} de ${formatearMontoRegional(montoOrig)}
+                        </span>
+                        {esMio && tieneDisponible && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMensajesPorSala((prev) => ({
+                                ...prev,
+                                [sala.id]: (prev[sala.id] || []).map((item) =>
+                                  item.id === m.id ? { ...item, estadoPropuesta: 'cerrada', montoDisponible: 0 } : item
+                                ),
+                              }));
+                            }}
+                            className="bg-red-950/70 hover:bg-red-900 text-red-300 border border-red-700/50 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                            title="Cerrar esta jugada directamente sin enviar mensaje al chat"
+                          >
+                            🚫 Se fue
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="bg-emerald-500 h-1.5 rounded-full transition-all"
+                        style={{ width: `${montoOrig > 0 ? (montoDisp / montoOrig) * 100 : 0}%` }}
+                      />
+                    </div>
+
+                    {Array.isArray(m.desgloseJugaron) && m.desgloseJugaron.length > 0 && (
+                      <div className="mt-2 rounded-lg bg-black/30 border border-emerald-500/30 px-2.5 py-1.5 text-[11px] space-y-0.5">
+                        <div className="font-bold text-emerald-400">
+                          🤝 Van jugando por {formatearMontoRegional(Number(m.montoJugadoTotal ?? (montoOrig - montoDisp)))}
+                        </div>
+                        {m.desgloseJugaron.map((item: { jugador: string; monto: number }, idx: number) => (
+                          <div key={idx} className="text-gray-200 font-medium">
+                            • <span className="font-bold">{item.jugador}</span> jugó{' '}
+                            <span className="font-mono font-bold">{formatearMontoRegional(item.monto)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {!esMio && tieneDisponible && (
+                      <div className="mt-2 space-y-1.5">
+                        <button
+                          onClick={() => {
+                            const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
+                            setSalaSeleccionadaId(sala.id);
+                            setReplyToPropuesta(m);
+                            manejarEnvioMensaje(esJuego ? `Consigo ${montoDisp}` : `Juego ${montoDisp}`, sala.id);
+                          }}
+                          className="w-full bg-[#00a884] hover:bg-emerald-400 text-black text-xs font-black py-1.5 px-3 rounded-lg flex items-center justify-center gap-1 transition shadow-sm"
+                        >
+                          ⚡ Tomar Jugada Total (${formatearMontoRegional(montoDisp)})
+                        </button>
+
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            onClick={() => {
+                              setTomandoParteId(tomandoParteId === m.id ? null : m.id);
+                              setMontoParcialInput('');
+                            }}
+                            className="bg-[#111b21] hover:bg-[#2a3942] border border-gray-600 text-gray-200 font-bold py-1 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                          >
+                            ✂️ Tomar una parte
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSalaSeleccionadaId(sala.id);
+                            setReplyToPropuesta(m);
+                              const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
+                              setTextoInput(esJuego ? 'Consigo ' : 'Juego ');
+                            }}
+                            className="bg-[#111b21] hover:bg-[#2a3942] border border-emerald-600/50 text-emerald-300 font-bold py-1 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                          >
+                            ↩️ Responder WA
+                          </button>
+                        </div>
+
+                        {tomandoParteId === m.id && (
+                          <div className="p-2 bg-[#111b21] rounded-lg border border-emerald-500/40 space-y-2 mt-1">
+                            <div className="text-[10px] text-gray-300 font-semibold flex items-center justify-between">
+                              <span>Monto a tomar (Máx: ${montoDisp}):</span>
+                              <button onClick={() => setTomandoParteId(null)} className="text-gray-400 hover:text-white text-xs font-bold">
+                                ✕
+                              </button>
+                            </div>
+                            <div className="flex gap-1.5 flex-wrap">
+                              {[10, 20, 50].filter(v => v < montoDisp).map(val => (
+                                <button
+                                  key={val}
+                                  onClick={() => {
+                                    const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
+                                    setSalaSeleccionadaId(sala.id);
+                            setReplyToPropuesta(m);
+                                    setTomandoParteId(null);
+                                    manejarEnvioMensaje(esJuego ? `Consigo ${val}` : `Juego ${val}`, sala.id);
+                                  }}
+                                  className="bg-[#202c33] hover:bg-emerald-600 hover:text-black text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-xs font-mono font-bold"
+                                >
+                                  Tomar ${val}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="1"
+                                max={montoDisp}
+                                value={montoParcialInput}
+                                onChange={(e) => setMontoParcialInput(e.target.value)}
+                                placeholder={`Monto (1 - ${montoDisp})`}
+                                className="flex-1 bg-[#202c33] text-white text-xs px-2.5 py-1.5 rounded border border-gray-700 outline-none focus:border-emerald-400 font-mono"
+                              />
+                              <button
+                                onClick={() => {
+                                  const n = Number(montoParcialInput);
+                                  if (!n || n <= 0 || n > montoDisp) {
+                                    alert(`Monto inválido. Ingrese entre 1 y ${montoDisp}`);
+                                    return;
+                                  }
+                                  const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
+                                  setSalaSeleccionadaId(sala.id);
+                            setReplyToPropuesta(m);
+                                  setTomandoParteId(null);
+                                  setMontoParcialInput('');
+                                  manejarEnvioMensaje(esJuego ? `Consigo ${n}` : `Juego ${n}`, sala.id);
+                                }}
+                                className="bg-emerald-500 hover:bg-emerald-400 text-black font-black px-3 py-1.5 rounded text-xs"
+                              >
+                                ✓ Tomar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+
+    );
   };
 
   return (
@@ -586,197 +992,27 @@ export default function SalaJuegosWhatsApp({
         </div>
       </div>
 
-      {/* CUERPO CENTRAL DE MENSAJES DE LA SALA */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ fontSize: `${tamanoLetra}px` }}>
-        {mensajesSala.map((m) => {
-          const esPropuesta = m.tipo === 'propuesta_jugada';
-          const montoOrig = Number(m.montoOriginal || m.monto || 0);
-          const montoDisp = Number(m.montoDisponible ?? m.monto ?? 0);
-          const tieneDisponible = montoDisp > 0;
-          const esMio = m.remitente === usuarioActual.nombre;
-
-          return (
+      {vistaDualEscritorio && salas.length >= 2 ? (
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 overflow-hidden">
+          {salas.slice(0, 2).map((s) => (
             <div
-              key={m.id}
-              className={`max-w-xl rounded-2xl p-3 shadow-md ${
-                m.tipo === 'apertura_vista_2'
-                  ? 'bg-emerald-950/90 border-2 border-emerald-500 text-center mx-auto font-bold text-emerald-200 whitespace-pre-line'
-                  : m.esBot
-                  ? 'bg-[#1f2c34] border-l-4 border-amber-400 text-gray-100 whitespace-pre-line mr-auto'
-                  : esMio
-                  ? 'bg-[#005c4b] ml-auto text-white rounded-tr-xs'
-                  : 'bg-[#202c33] mr-auto text-gray-100 rounded-tl-xs border border-gray-700/50'
+              key={s.id}
+              onClick={() => setSalaSeleccionadaId(s.id)}
+              className={`flex flex-col min-h-0 border-r last:border-r-0 ${
+                salaSeleccionadaId === s.id ? 'ring-2 ring-inset ring-emerald-500/70' : ''
               }`}
             >
-              <div className="flex justify-between items-center text-[11px] mb-1 font-mono gap-2">
-                <span className={`font-semibold ${esMio ? 'text-emerald-200' : 'text-emerald-400'}`}>
-                  {esMio ? 'Tú' : m.remitente}
-                </span>
-                <span className="text-[10px] text-gray-400">
-                  {m.hora} {m.firmaSha256 ? `🔒#${m.firmaSha256}` : ''}
-                </span>
+              <div className="px-3 py-1.5 bg-[#111b21] border-b border-gray-700 flex items-center justify-between text-[11px]">
+                <span className="font-bold text-emerald-300 truncate">{s.nombreSala}</span>
+                <span className="text-gray-400 font-mono">{s.hipodromoActivo} C{s.numeroCarreraActiva}</span>
               </div>
-
-              {/* Mensaje citado si existe */}
-              {m.propuestaCitada && (
-                <div className="mb-2 p-2 rounded-lg bg-black/30 border-l-4 border-emerald-400 text-[11px]">
-                  <span className="font-bold text-emerald-300 block text-[10px]">
-                    ↩️ {m.propuestaCitada.remitente}
-                  </span>
-                  <p className="text-gray-300 truncate font-mono text-[11px]">
-                    {m.propuestaCitada.contenido}
-                  </p>
-                </div>
-              )}
-
-              <div className="tabular-nums font-medium text-xs leading-relaxed">{m.contenido}</div>
-
-              {/* SELECCIÓN Y BARRA EN VIVO PARA PROPUESTAS DE JUGADA */}
-              {esPropuesta && (
-                <div className="mt-2.5 pt-2 border-t border-gray-700/60 font-sans">
-                  <div className="flex justify-between items-center text-[11px] mb-1 font-mono gap-2">
-                    <span className="text-gray-400">Estado de Parada:</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className={`font-bold ${tieneDisponible ? 'text-emerald-400' : 'text-gray-500 line-through'}`}>
-                        Disponible: ${formatearMontoRegional(montoDisp)} de ${formatearMontoRegional(montoOrig)}
-                      </span>
-                      {esMio && tieneDisponible && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMensajesPorSala((prev) => ({
-                              ...prev,
-                              [salaActiva.id]: (prev[salaActiva.id] || []).map((item) =>
-                                item.id === m.id ? { ...item, estadoPropuesta: 'cerrada', montoDisponible: 0 } : item
-                              ),
-                            }));
-                          }}
-                          className="bg-red-950/70 hover:bg-red-900 text-red-300 border border-red-700/50 px-1.5 py-0.5 rounded text-[10px] font-bold"
-                          title="Cerrar esta jugada directamente sin enviar mensaje al chat"
-                        >
-                          🚫 Se fue
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="bg-emerald-500 h-1.5 rounded-full transition-all"
-                      style={{ width: `${montoOrig > 0 ? (montoDisp / montoOrig) * 100 : 0}%` }}
-                    />
-                  </div>
-
-                  {Array.isArray(m.desgloseJugaron) && m.desgloseJugaron.length > 0 && (
-                    <div className="mt-2 rounded-lg bg-black/30 border border-emerald-500/30 px-2.5 py-1.5 text-[11px] space-y-0.5">
-                      <div className="font-bold text-emerald-400">
-                        🤝 Van jugando por {formatearMontoRegional(Number(m.montoJugadoTotal ?? (montoOrig - montoDisp)))}
-                      </div>
-                      {m.desgloseJugaron.map((item: { jugador: string; monto: number }, idx: number) => (
-                        <div key={idx} className="text-gray-200 font-medium">
-                          • <span className="font-bold">{item.jugador}</span> jugó{' '}
-                          <span className="font-mono font-bold">{formatearMontoRegional(item.monto)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {!esMio && tieneDisponible && (
-                    <div className="mt-2 space-y-1.5">
-                      <button
-                        onClick={() => {
-                          const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
-                          setReplyToPropuesta(m);
-                          manejarEnvioMensaje(esJuego ? `Consigo ${montoDisp}` : `Juego ${montoDisp}`);
-                        }}
-                        className="w-full bg-[#00a884] hover:bg-emerald-400 text-black text-xs font-black py-1.5 px-3 rounded-lg flex items-center justify-center gap-1 transition shadow-sm"
-                      >
-                        ⚡ Tomar Jugada Total (${formatearMontoRegional(montoDisp)})
-                      </button>
-
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <button
-                          onClick={() => {
-                            setTomandoParteId(tomandoParteId === m.id ? null : m.id);
-                            setMontoParcialInput('');
-                          }}
-                          className="bg-[#111b21] hover:bg-[#2a3942] border border-gray-600 text-gray-200 font-bold py-1 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
-                        >
-                          ✂️ Tomar una parte
-                        </button>
-                        <button
-                          onClick={() => {
-                            setReplyToPropuesta(m);
-                            const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
-                            setTextoInput(esJuego ? 'Consigo ' : 'Juego ');
-                          }}
-                          className="bg-[#111b21] hover:bg-[#2a3942] border border-emerald-600/50 text-emerald-300 font-bold py-1 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
-                        >
-                          ↩️ Responder WA
-                        </button>
-                      </div>
-
-                      {tomandoParteId === m.id && (
-                        <div className="p-2 bg-[#111b21] rounded-lg border border-emerald-500/40 space-y-2 mt-1">
-                          <div className="text-[10px] text-gray-300 font-semibold flex items-center justify-between">
-                            <span>Monto a tomar (Máx: ${montoDisp}):</span>
-                            <button onClick={() => setTomandoParteId(null)} className="text-gray-400 hover:text-white text-xs font-bold">
-                              ✕
-                            </button>
-                          </div>
-                          <div className="flex gap-1.5 flex-wrap">
-                            {[10, 20, 50].filter(v => v < montoDisp).map(val => (
-                              <button
-                                key={val}
-                                onClick={() => {
-                                  const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
-                                  setReplyToPropuesta(m);
-                                  setTomandoParteId(null);
-                                  manejarEnvioMensaje(esJuego ? `Consigo ${val}` : `Juego ${val}`);
-                                }}
-                                className="bg-[#202c33] hover:bg-emerald-600 hover:text-black text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-xs font-mono font-bold"
-                              >
-                                Tomar ${val}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="number"
-                              min="1"
-                              max={montoDisp}
-                              value={montoParcialInput}
-                              onChange={(e) => setMontoParcialInput(e.target.value)}
-                              placeholder={`Monto (1 - ${montoDisp})`}
-                              className="flex-1 bg-[#202c33] text-white text-xs px-2.5 py-1.5 rounded border border-gray-700 outline-none focus:border-emerald-400 font-mono"
-                            />
-                            <button
-                              onClick={() => {
-                                const n = Number(montoParcialInput);
-                                if (!n || n <= 0 || n > montoDisp) {
-                                  alert(`Monto inválido. Ingrese entre 1 y ${montoDisp}`);
-                                  return;
-                                }
-                                const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
-                                setReplyToPropuesta(m);
-                                setTomandoParteId(null);
-                                setMontoParcialInput('');
-                                manejarEnvioMensaje(esJuego ? `Consigo ${n}` : `Juego ${n}`);
-                              }}
-                              className="bg-emerald-500 hover:bg-emerald-400 text-black font-black px-3 py-1.5 rounded text-xs"
-                            >
-                              ✓ Tomar
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+              {renderFeedSala(s)}
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      ) : (
+        renderFeedSala(salaActiva)
+      )}
 
       {/* BURBUJA PRIVADA DE CORRECCIÓN PEDAGÓGICA (SOLO VISIBLE PARA EL JUGADOR) */}
       {sugerenciaPedagogica && (
