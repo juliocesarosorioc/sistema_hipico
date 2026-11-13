@@ -371,7 +371,7 @@ export async function GET(req: Request) {
         .eq("id", salaId)
         .maybeSingle();
 
-      if (!sala || !grupoPermitido(identidad, sala.grupo_id)) {
+      if (!sala || (identidad.usuarioId !== "espectador" && !grupoPermitido(identidad, sala.grupo_id))) {
         return NextResponse.json({ ok: false, error: "Sala no encontrada o no autorizada" }, { status: 403 });
       }
 

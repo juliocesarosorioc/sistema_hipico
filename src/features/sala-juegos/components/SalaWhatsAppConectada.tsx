@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import SalaJuegosWhatsApp, { type SalaActivaInfo } from "./SalaJuegosWhatsApp";
-import { configurarCredencialesSala, salaApi } from "../lib/sala-api";
+import { configurarCredencialesSala, obtenerCredencialesGuardadas, salaApi } from "../lib/sala-api";
 
 interface Props {
   grupoIdInicial?: string;
@@ -57,12 +57,24 @@ export function SalaWhatsAppConectada({
   const [salas, setSalas] = useState<SalaActivaInfo[]>([]);
 
   useEffect(() => {
-    const esPortal = Boolean(portalTokenInicial && clienteIdInicial);
-    configurarCredencialesSala({
-      portalToken: esPortal ? portalTokenInicial : null,
-      clienteId: esPortal ? clienteIdInicial : null,
-      staffToken: esPortal ? null : staffTokenInicial || undefined,
-    });
+    if (portalTokenInicial && clienteIdInicial) {
+      configurarCredencialesSala({
+        portalToken: portalTokenInicial,
+        clienteId: clienteIdInicial,
+        staffToken: null,
+      });
+    } else if (staffTokenInicial) {
+      configurarCredencialesSala({
+        portalToken: null,
+        clienteId: null,
+        staffToken: staffTokenInicial,
+      });
+    }
+    const creds = obtenerCredencialesGuardadas();
+    const esPortal = Boolean(
+      (portalTokenInicial && clienteIdInicial) ||
+        (creds.portalToken && creds.clienteId && !creds.staffToken)
+    );
 
     let cancelado = false;
     const cargar = async () => {

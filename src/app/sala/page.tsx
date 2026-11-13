@@ -5,6 +5,51 @@ import { useSearchParams } from "next/navigation";
 import { SalaJuegosApp } from "@/features/sala-juegos/components/SalaJuegosApp";
 import { SalaWhatsAppConectada } from "@/features/sala-juegos/components/SalaWhatsAppConectada";
 
+class SalaErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; mensaje: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, mensaje: "" };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return {
+      hasError: true,
+      mensaje: error?.message || "Error inesperado al renderizar la Sala de Apuestas.",
+    };
+  }
+
+  override render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex h-full w-full flex-col items-center justify-center bg-[#efeae2] text-[#111b21] p-6 text-center gap-3">
+          <span className="text-4xl">🏇</span>
+          <h2 className="text-base font-black text-[#008069]">No se pudo mostrar la Sala</h2>
+          <p className="text-xs text-slate-600 max-w-md">{this.state.mensaje}</p>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="bg-[#008069] hover:bg-[#017561] text-white font-bold text-xs px-4 py-2 rounded-lg shadow-xs"
+            >
+              Recargar Sala
+            </button>
+            <a
+              href="/inicio"
+              className="bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs px-4 py-2 rounded-lg"
+            >
+              Volver al Inicio
+            </a>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function SalaContenido() {
   const params = useSearchParams();
   const grupoId = params.get("grupo") || params.get("grupoId") || undefined;
@@ -44,18 +89,20 @@ function SalaContenido() {
 export default function SalaJuegosPage() {
   return (
     <main className="min-h-[100dvh] h-[100dvh] w-full max-w-full overflow-hidden bg-[#efeae2] dark:bg-[#0b141a]">
-      <Suspense
-        fallback={
-          <div className="flex h-full w-full flex-col items-center justify-center bg-[#efeae2] dark:bg-[#0b141a] text-[#008069] gap-3 select-none">
-            <div className="w-10 h-10 border-4 border-[#008069] border-t-transparent rounded-full animate-spin" />
-            <span className="font-extrabold text-sm tracking-wide text-[#008069]">
-              Conectando a la Sala de Juegos…
-            </span>
-          </div>
-        }
-      >
-        <SalaContenido />
-      </Suspense>
+      <SalaErrorBoundary>
+        <Suspense
+          fallback={
+            <div className="flex h-full w-full flex-col items-center justify-center bg-[#efeae2] dark:bg-[#0b141a] text-[#008069] gap-3 select-none">
+              <div className="w-10 h-10 border-4 border-[#008069] border-t-transparent rounded-full animate-spin" />
+              <span className="font-extrabold text-sm tracking-wide text-[#008069]">
+                Conectando a la Sala de Juegos…
+              </span>
+            </div>
+          }
+        >
+          <SalaContenido />
+        </Suspense>
+      </SalaErrorBoundary>
     </main>
   );
 }

@@ -110,16 +110,22 @@ export function SalaJuegosApp({
     }
   };
 
-  // Inicializar credenciales. Si hay portal explícito, la Sala juega como ese
-  // cliente; si no, se usa la sesión staff y se descarta cualquier credencial
-  // de portal que hubiera quedado en el navegador.
+  // Inicializar credenciales solo cuando vengan explícitamente por props/URL,
+  // evitando borrar una sesión válida guardada en storage al abrir /sala.
   useEffect(() => {
-    const esPortal = Boolean(portalTokenInicial && clienteIdInicial);
-    configurarCredencialesSala({
-      portalToken: esPortal ? portalTokenInicial : null,
-      clienteId: esPortal ? clienteIdInicial : null,
-      staffToken: esPortal ? null : staffTokenInicial || undefined,
-    });
+    if (portalTokenInicial && clienteIdInicial) {
+      configurarCredencialesSala({
+        portalToken: portalTokenInicial,
+        clienteId: clienteIdInicial,
+        staffToken: null,
+      });
+    } else if (staffTokenInicial) {
+      configurarCredencialesSala({
+        portalToken: null,
+        clienteId: null,
+        staffToken: staffTokenInicial,
+      });
+    }
   }, [portalTokenInicial, clienteIdInicial, staffTokenInicial]);
 
   const cargarBootstrap = useCallback(async (gId?: string) => {
@@ -179,6 +185,43 @@ export function SalaJuegosApp({
   const esClaro = tema === "claro";
   const fontFamilyCss = FAMILIAS_FUENTE_SALA[fuenteId]?.css || FAMILIAS_FUENTE_SALA.whatsapp.css;
 
+  const salaActiva = salas.find((s) => s.id === salaSeleccionadaId) || salas[0];
+  const saldoDisp = identidad?.clienteRow?.saldo_disponible ?? 0;
+  const esLibre = Boolean(identidad?.clienteRow?.libre);
+  const esEspectador = identidad?.usuarioId === "espectador" || identidad?.tipo === "INVITADO";
+
+  // Resolver publicidad activa y destino para clics hacia Tablas Fijas, Remates, Marcas, etc.
+  // Todos los hooks deben ejecutarse incondicionalmente antes de cualquier return temprano.
+  const pubActiva = publicidad.find((p) => String(p.id) !== bannerDescartadoId) || null;
+
+  const destinoPublicidad = useMemo(() => {
+    if (!pubActiva) return null;
+    const enlace = String(pubActiva.enlace_accion || "").trim();
+    const titulo = String(pubActiva.titulo || "").toLowerCase();
+    const texto = String(pubActiva.contenido_texto || "").toLowerCase();
+    const todo = `${titulo} ${texto} ${enlace.toLowerCase()}`;
+
+    if (todo.includes("tabla")) {
+      return { url: enlace || "/tablas-fijas", label: "Ir a Tablas Fijas", icono: "📊" };
+    }
+    if (todo.includes("remate")) {
+      return { url: enlace || "/remates", label: "Ir a Remates", icono: "🔨" };
+    }
+    if (todo.includes("marca")) {
+      return { url: enlace || "/marcas", label: "Ir a Marcas", icono: "⭐" };
+    }
+    if (todo.includes("polla")) {
+      return { url: enlace || "/pollas", label: "Ir a Polla", icono: "🎟️" };
+    }
+    if (todo.includes("taquilla") || todo.includes("jugada")) {
+      return { url: enlace || "/taquilla", label: "Ir a Taquilla", icono: "🏇" };
+    }
+    if (enlace) {
+      return { url: enlace, label: "Ver Promoción", icono: "🚀" };
+    }
+    return null;
+  }, [pubActiva]);
+
   if (cargando) {
     return (
       <div
@@ -222,42 +265,6 @@ export function SalaJuegosApp({
       </div>
     );
   }
-
-  const salaActiva = salas.find((s) => s.id === salaSeleccionadaId) || salas[0];
-  const saldoDisp = identidad?.clienteRow?.saldo_disponible ?? 0;
-  const esLibre = Boolean(identidad?.clienteRow?.libre);
-  const esEspectador = identidad?.usuarioId === "espectador" || identidad?.tipo === "INVITADO";
-
-  // Resolver publicidad activa y destino para clics hacia Tablas Fijas, Remates, Marcas, etc.
-  const pubActiva = publicidad.find((p) => String(p.id) !== bannerDescartadoId) || null;
-
-  const destinoPublicidad = useMemo(() => {
-    if (!pubActiva) return null;
-    const enlace = String(pubActiva.enlace_accion || "").trim();
-    const titulo = String(pubActiva.titulo || "").toLowerCase();
-    const texto = String(pubActiva.contenido_texto || "").toLowerCase();
-    const todo = `${titulo} ${texto} ${enlace.toLowerCase()}`;
-
-    if (todo.includes("tabla")) {
-      return { url: enlace || "/tablas-fijas", label: "Ir a Tablas Fijas", icono: "📊" };
-    }
-    if (todo.includes("remate")) {
-      return { url: enlace || "/remates", label: "Ir a Remates", icono: "🔨" };
-    }
-    if (todo.includes("marca")) {
-      return { url: enlace || "/marcas", label: "Ir a Marcas", icono: "⭐" };
-    }
-    if (todo.includes("polla")) {
-      return { url: enlace || "/pollas", label: "Ir a Polla", icono: "🎟️" };
-    }
-    if (todo.includes("taquilla") || todo.includes("jugada")) {
-      return { url: enlace || "/taquilla", label: "Ir a Taquilla", icono: "🏇" };
-    }
-    if (enlace) {
-      return { url: enlace, label: "Ver Promoción", icono: "🚀" };
-    }
-    return null;
-  }, [pubActiva]);
 
   const navegarPublicidad = (url: string) => {
     if (!url) return;

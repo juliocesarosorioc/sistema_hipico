@@ -12,9 +12,9 @@ export interface CredencialesSala {
 }
 
 let _credenciales: CredencialesSala = {
-  portalToken: null,
-  clienteId: null,
-  staffToken: null,
+  portalToken: undefined,
+  clienteId: undefined,
+  staffToken: undefined,
 };
 
 export function configurarCredencialesSala(creds: Partial<CredencialesSala>) {
@@ -26,8 +26,13 @@ export function configurarCredencialesSala(creds: Partial<CredencialesSala>) {
     else if (creds.portalToken) sessionStorage.setItem("sala_portal_token", creds.portalToken);
     if (creds.clienteId === null) sessionStorage.removeItem("sala_cliente_id");
     else if (creds.clienteId) sessionStorage.setItem("sala_cliente_id", creds.clienteId);
-    if (creds.staffToken === null) sessionStorage.removeItem("sala_staff_token");
-    else if (creds.staffToken) sessionStorage.setItem("sala_staff_token", creds.staffToken);
+    if (creds.staffToken === null) {
+      sessionStorage.removeItem("sala_staff_token");
+      localStorage.removeItem("sala_staff_token");
+    } else if (creds.staffToken) {
+      sessionStorage.setItem("sala_staff_token", creds.staffToken);
+      localStorage.setItem("sala_staff_token", creds.staffToken);
+    }
   }
 }
 
@@ -82,8 +87,11 @@ export function obtenerCredencialesGuardadas(): CredencialesSala {
     }
 
     const sToken =
-      _credenciales.staffToken ||
-      sessionStorage.getItem("sala_staff_token");
+      _credenciales.staffToken === null
+        ? null
+        : _credenciales.staffToken ||
+          sessionStorage.getItem("sala_staff_token") ||
+          localStorage.getItem("sala_staff_token");
 
     return {
       portalToken: pToken || null,
@@ -152,6 +160,7 @@ export async function iniciarSesionStaffSala(
     }
     if (typeof window !== "undefined") {
       sessionStorage.setItem("sala_staff_token", String(data.token));
+      localStorage.setItem("sala_staff_token", String(data.token));
       _credenciales.staffToken = String(data.token);
     }
     return { ok: true, token: String(data.token) };
@@ -163,8 +172,9 @@ export async function iniciarSesionStaffSala(
 export function limpiarSesionStaffSala(): void {
   if (typeof window !== "undefined") {
     sessionStorage.removeItem("sala_staff_token");
+    localStorage.removeItem("sala_staff_token");
   }
-  _credenciales.staffToken = null;
+  _credenciales.staffToken = undefined;
 }
 
 async function requestApi<T = any>(
