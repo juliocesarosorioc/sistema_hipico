@@ -643,7 +643,7 @@ export async function liquidarMarcas(
         .update({
           estado: "Perdedor",
           premio_pagar: 0,
-          monto_decidido: 0,
+          monto_decidido: monto,
           comision_pagada: comGrupo,
           cliente_consigue_nombre: "MARCAS",
           ...(idUsuarioMarcas != null ? { cliente_consigue_id: idUsuarioMarcas } : {}),

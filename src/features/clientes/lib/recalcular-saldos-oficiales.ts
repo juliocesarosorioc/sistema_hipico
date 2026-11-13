@@ -2,6 +2,10 @@ import { supabase } from "@/core/supabase";
 import { redondearCentavos, sumarDinero, restarDinero } from "@/shared/lib/dinero";
 import { normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
 import { emitirToast } from "@/shared/lib/mensajeria";
+import {
+  resolverComisionTicket,
+  type GrupoComisiones,
+} from "@/features/grupos/lib/comisiones-convenio";
 
 export interface ResumenAjusteCliente {
   id: string | number;
@@ -59,14 +63,14 @@ export async function recalcularYActualizarSaldosOficiales(
       return { ok: true, totalClientes: 0, totalAjustados: 0, detalles: [] };
     }
 
-    // 2. Cargar comisiones por grupo
+    // 2. Cargar comisiones por grupo (todas las columnas de convenio por tipo de jugada)
     const { data: dbGrupos } = await supabase
       .from("grupos_venta")
-      .select("id, comision_default");
-    const comisionesGrupo = new Map<string, number>();
-    for (const g of (dbGrupos ?? []) as Array<{ id?: unknown; comision_default?: unknown }>) {
+      .select("id, nombre, comision_default, comision_marcas, comision_tablas, comision_remates, comision_polla, comision_wps, comision_dupletas");
+    const comisionesGrupo = new Map<string, GrupoComisiones>();
+    for (const g of (dbGrupos ?? []) as unknown as GrupoComisiones[]) {
       if (g.id != null) {
-        comisionesGrupo.set(String(g.id), Number(g.comision_default) || 5);
+        comisionesGrupo.set(String(g.id), g);
       }
     }
 
@@ -123,7 +127,8 @@ export async function recalcularYActualizarSaldosOficiales(
         0,
         Number(cli.devolucion ?? cli.incentivo_pct ?? 0) || 0
       );
-      const comPct = comisionesGrupo.get(String(cli.grupo_id ?? "")) ?? 5;
+      const grpCli = comisionesGrupo.get(String(cli.grupo_id ?? ""));
+      const comPctDefault = Number(grpCli?.comision_default ?? 5) || 5;
 
       // Filtrar tickets del cliente
       const ticketsCliente = ticketsValidos.filter((t) => {
@@ -208,11 +213,15 @@ export async function recalcularYActualizarSaldosOficiales(
         const difBruta = restarDinero(ganadoBruto, perdidoBruto);
         const montoDecidido = Math.abs(difBruta);
 
+        // Obtener la tasa de comisión correspondiente al tipo de jugada de la carrera
+        const tasasTickets = listT.map((t) => resolverComisionTicket(grpCli, t as Record<string, unknown>, comPctDefault));
+        const comPctCarrera = tasasTickets.length > 0 ? tasasTickets[0] : comPctDefault;
+
         let comisionCasa = 0;
         let netoCarrera = 0;
 
         if (difBruta > 0) {
-          comisionCasa = redondearCentavos(difBruta * (comPct / 100));
+          comisionCasa = redondearCentavos(difBruta * (comPctCarrera / 100));
           netoCarrera = restarDinero(difBruta, comisionCasa);
         } else {
           netoCarrera = difBruta;

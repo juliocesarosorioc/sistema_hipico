@@ -80,7 +80,15 @@ export function ModalConfiguracionPolla({
   const [p2, setP2] = useState(String(polla?.puntos.segundo ?? PUNTOS_POR_DEFECTO.segundo));
   const [p3, setP3] = useState(String(polla?.puntos.tercero ?? PUNTOS_POR_DEFECTO.tercero));
   const [precio, setPrecio] = useState(String(polla?.precioUnitario ?? 0));
-  const [comision, setComision] = useState(String(polla?.comisionPct ?? 0));
+  const grupoInicial =
+    grupos.find((g) => String(g.id) === String(polla?.grupo_id ?? "")) ??
+    grupos.find((g) => g.es_principal) ??
+    grupos[0];
+  const comisionInicial =
+    polla?.comisionPct != null
+      ? String(polla.comisionPct)
+      : String(grupoInicial?.comision_polla ?? grupoInicial?.comision_default ?? 0);
+  const [comision, setComision] = useState(comisionInicial);
   const [acumuladoPct, setAcumuladoPct] = useState(String(polla?.acumuladoPct ?? 0));
   const [meta, setMeta] = useState(String(polla?.metaPuntos ?? META_ACUMULADO_POR_DEFECTO));
   const [premio1, setPremio1] = useState(polla?.premios.primero?.toString() ?? "");
@@ -104,6 +112,17 @@ export function ModalConfiguracionPolla({
   const [notas, setNotas] = useState(polla?.notas ?? "");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const alCambiarGrupo = (nuevoGrpId: string) => {
+    setGrupoId(nuevoGrpId);
+    if (!polla) {
+      const g = grupos.find((x) => String(x.id) === String(nuevoGrpId));
+      if (g) {
+        const pct = g.comision_polla ?? g.comision_default ?? 0;
+        setComision(String(pct));
+      }
+    }
+  };
 
   /**
    * Carreras de la Polla, en el orden en que quedaron elegidas.
@@ -324,7 +343,7 @@ export function ModalConfiguracionPolla({
               <SearchableSelect
                 options={opcionesGrupo}
                 value={grupoId}
-                onChange={setGrupoId}
+                onChange={alCambiarGrupo}
                 placeholder="Sin grupo"
               />
             </div>

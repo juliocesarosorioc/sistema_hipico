@@ -171,6 +171,17 @@ export async function crearRemate(input: NuevoRemate): Promise<ResRemate> {
   if (!nombre) return { ok: false, error: "El remate necesita un nombre." };
   if (!input.hipodromo_id) return { ok: false, error: "Elegí el hipódromo." };
   if (!input.fecha) return { ok: false, error: "Elegí la fecha del programa." };
+  let comPct = input.comision_pct;
+  if (comPct == null && input.grupo_id) {
+    try {
+      const { data: g } = await supabase
+        .from("grupos_venta")
+        .select("comision_remates, comision_default")
+        .eq("id", input.grupo_id)
+        .maybeSingle();
+      if (g) comPct = g.comision_remates ?? g.comision_default ?? 20;
+    } catch {}
+  }
   try {
     // El insert vive en la RPC `security definer`: el navegador ya no escribe
     // `remates` directo (solo tiene SELECT). La RPC valida y normaliza en el
@@ -183,7 +194,7 @@ export async function crearRemate(input: NuevoRemate): Promise<ResRemate> {
       p_fecha: input.fecha,
       p_hora_cierre: input.hora_cierre != null ? String(input.hora_cierre) : null,
       p_distancia: input.distancia ?? null,
-      p_comision_pct: Number(input.comision_pct ?? 20) || 20,
+      p_comision_pct: Number(comPct ?? 20) || 20,
       p_notas: input.notas ?? null,
       p_grupo_id: input.grupo_id != null && String(input.grupo_id) !== "" ? String(input.grupo_id) : null,
       p_usuario: null,

@@ -39,6 +39,10 @@ import {
   esClienteAfiliadoAlSocio,
   type ClienteSocioLike,
 } from "@/features/clientes/lib/comisiones-socios";
+import {
+  resolverComisionTicket,
+  type GrupoComisiones,
+} from "@/features/grupos/lib/comisiones-convenio";
 
 export interface ResultadoLiquidacionClienteCarrera {
   clienteId: string;
@@ -233,6 +237,7 @@ export function calcularResumenContableCliente(params: {
   modalidadCruces?: ModalidadCruceCarrera | boolean;
   comisionPctDefault?: number;
   caballosRetiradosPorCarrera?: Map<string, Set<string>>;
+  gruposMap?: Map<string, GrupoComisiones>;
 }): ResumenContableCliente {
   const idStr = String(params.clienteId ?? "");
   const nombreNorm = normalizarNombreCliente(params.nombre);
@@ -319,10 +324,16 @@ export function calcularResumenContableCliente(params: {
         ? monto
         : redondearCentavos(t.monto_decidido ?? 0);
     const nombreJugRaw = String(t.nombre_jugada ?? t.jugada ?? "").trim().toUpperCase();
-    const comPct =
-      t.comision_porcentaje != null && String(t.comision_porcentaje).trim() !== ""
-        ? Number(t.comision_porcentaje)
-        : comDefault;
+    const tRec = t as Record<string, unknown>;
+    const grpTicketId = String(
+      tRec.grupo_cobro_id ??
+      tRec.grupo_comision_id ??
+      tRec.grupo_id ??
+      params.grupoId ??
+      ""
+    );
+    const grpTicket = params.gruposMap?.get(grpTicketId);
+    const comPct = resolverComisionTicket(grpTicket, tRec, comDefault);
     const raceKey = [
       String(t.fecha_carrera ?? t.fecha_registro ?? "").slice(0, 10),
       String(t.hipodromo ?? "").trim().toUpperCase(),
@@ -361,6 +372,7 @@ export function calcularResumenContableCliente(params: {
         const pagoTabla = redondearCentavos(
           premRaw > monto ? premRaw : premRaw > 0 ? premRaw : decRaw > 0 ? decRaw : monto
         );
+        const baseDecididaTF = decRaw > 0 ? decRaw : pagoTabla;
         if (esJugador) {
           ganadasBrutoCentavos += aCentavos(pagoTabla);
           const arr = lineasPorCarrera.get(raceKey) ?? [];
@@ -373,7 +385,7 @@ export function calcularResumenContableCliente(params: {
           lineasPorCarrera.set(raceKey, arr);
         }
         if (esDador) {
-          const comTabla = calcularComisionExacta(pagoTabla, comPct);
+          const comTabla = calcularComisionExacta(baseDecididaTF, comPct);
           const perdidaTf = sumarDinero(pagoTabla, comTabla);
           perdidasCentavos += aCentavos(perdidaTf);
           const arr = lineasPorCarrera.get(raceKey) ?? [];
@@ -384,6 +396,8 @@ export function calcularResumenContableCliente(params: {
       }
       if (esMarca) {
         const pagoMarca = redondearCentavos((monto * 5) / 6);
+        const decRaw = redondearCentavos(t.monto_decidido ?? 0);
+        const baseDecididaMarca = decRaw > 0 ? decRaw : pagoMarca;
         if (esJugador) {
           ganadasBrutoCentavos += aCentavos(pagoMarca);
           const arr = lineasPorCarrera.get(raceKey) ?? [];
@@ -396,7 +410,7 @@ export function calcularResumenContableCliente(params: {
           lineasPorCarrera.set(raceKey, arr);
         }
         if (esDador) {
-          const comMarca = calcularComisionExacta(pagoMarca, comPct);
+          const comMarca = calcularComisionExacta(baseDecididaMarca, comPct);
           const perdidaMarca = sumarDinero(pagoMarca, comMarca);
           perdidasCentavos += aCentavos(perdidaMarca);
           const arr = lineasPorCarrera.get(raceKey) ?? [];
@@ -766,6 +780,7 @@ export async function sincronizarSaldosRealesClientes<
 
   let tickets: TicketContableRaw[] = [];
   const telefonosMap = new Map<string, { telefono: string | null; codigo_pais: string | null }>();
+  const gruposMap = new Map<string, GrupoComisiones>();
   if (supabase) {
     try {
       const { data: telRows } = await supabase
@@ -780,6 +795,20 @@ export async function sincronizarSaldosRealesClientes<
               codigo_pais: row.codigo_pais ? String(row.codigo_pais) : null,
             });
           }
+        }
+      }
+    } catch {
+      /* fallback silencioso */
+    }
+    try {
+      const { data: grpRows } = await supabase
+        .from("grupos_venta")
+        .select(
+          "id, nombre, es_principal, comision_default, comision_marcas, comision_tablas, comision_remates, comision_polla, comision_wps, comision_dupletas, permite_cruces"
+        );
+      if (grpRows) {
+        for (const g of grpRows as unknown as GrupoComisiones[]) {
+          if (g.id != null) gruposMap.set(String(g.id), g);
         }
       }
     } catch {
@@ -1013,6 +1042,7 @@ export async function sincronizarSaldosRealesClientes<
       comisionSocioDevengada: comisionSocio,
       tickets,
       modalidadCruces: cRec.permite_cruces === false ? "sin_cruces" : "con_cruces",
+      gruposMap,
     });
 
     // `saldo_actual` es el libro mayor: se devuelve EXACTAMENTE como está en la
@@ -1086,6 +1116,7 @@ export function calcularEstadoCuentaCliente(params: {
   retiros?: number;
   movimientos?: TicketContableRaw[];
   jugadasActivasCarrera?: JugadaActivaSimulacion[];
+  gruposMap?: Map<string, GrupoComisiones>;
 }): ResumenContableCliente & {
   aval: number;
   fueSaneado: boolean;
@@ -1121,6 +1152,7 @@ export function calcularEstadoCuentaCliente(params: {
     comisionSocioDevengada: params.comisionSocioDevengada,
     tickets: ticketsCombinados,
     comisionPctDefault: Number(params.comisionPct ?? 5),
+    gruposMap: params.gruposMap,
   });
 
   return {

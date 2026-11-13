@@ -373,6 +373,18 @@ export async function guardarPolla(id: string | null, datos: DatosPolla): Promis
     return { ok: false, error: "Elegí al menos una carrera." };
   }
 
+  let comPct = datos.comisionPct;
+  if (comPct == null && datos.grupo_id) {
+    try {
+      const { data: g } = await supabase
+        .from("grupos_venta")
+        .select("comision_polla, comision_default")
+        .eq("id", datos.grupo_id)
+        .maybeSingle();
+      if (g) comPct = g.comision_polla ?? g.comision_default ?? 0;
+    } catch {}
+  }
+
   try {
     const { data, error } = await supabase.rpc("club_guardar_polla", {
       p_id: id || null,
@@ -386,7 +398,7 @@ export async function guardarPolla(id: string | null, datos: DatosPolla): Promis
         puntos_2o: datos.puntos?.segundo ?? PUNTOS_POR_DEFECTO.segundo,
         puntos_3o: datos.puntos?.tercero ?? PUNTOS_POR_DEFECTO.tercero,
         precio_unitario: datos.precioUnitario ?? 0,
-        comision_pct: datos.comisionPct ?? 0,
+        comision_pct: comPct ?? 0,
         acumulado_pct: datos.acumuladoPct ?? 0,
         meta_puntos: datos.metaPuntos ?? META_ACUMULADO_POR_DEFECTO,
         premio_1o: datos.premios?.primero ?? null,

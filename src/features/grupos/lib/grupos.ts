@@ -16,6 +16,12 @@ import { claveDeUsuario, guardarUsuarioSistema, leerUsuariosDelSistema } from "@
 import { disponibleParaJugar, esSinTope, explicarDisponible } from "@/features/taquilla/lib/reparto";
 import { redondearCentavos } from "@/shared/lib/dinero";
 import { sincronizarSaldosRealesClientes } from "@/features/saldos/lib/contabilidad-central";
+import {
+  comisionPctDeGrupo,
+  esConcepto,
+  type GrupoComisiones,
+  type ProductoConvenio,
+} from "./comisiones-convenio";
 
 export type GrupoVenta = {
   id: string | number;
@@ -235,11 +241,17 @@ export function grupoDeVentaVigente(): string {
  */
 export function comisionJugadasDeGrupo(
   grupos: GrupoVenta[],
-  grupoId: string | number | null | undefined
+  grupoId: string | number | null | undefined,
+  producto?: ProductoConvenio | string
 ): number | null {
   if (grupoId == null) return null;
   const g = grupos.find((x) => String(x.id) === String(grupoId));
-  const v = g?.comision_default;
+  if (!g) return null;
+  if (producto && esConcepto(producto)) {
+    const pct = comisionPctDeGrupo(g as unknown as GrupoComisiones, producto);
+    if (pct != null && isFinite(Number(pct))) return Number(pct);
+  }
+  const v = g.comision_default;
   return v != null && isFinite(Number(v)) ? Number(v) : null;
 }
 

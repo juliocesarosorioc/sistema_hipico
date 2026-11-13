@@ -154,7 +154,7 @@ function acumularTicket(t: FilaTicket, out: VentaConvenio[]): void {
   // Una jugada ANULADA no genera convenio: se devolvió el capital y no mueve
   // dinero. Sin este corte, la anulada seguía sumando su monto al total.
   if (esTicketAnulado(t)) return;
-  const producto = productoDeNota(t.nota_auditoria);
+  const producto = productoDeNota(t.nota_auditoria, t.nombre_jugada);
   if (!producto) return;
   // REGLA DE ORO CONTABLE: la comisión por convenio se le debe al grupo al que
   // el jugador le DA CUENTA (grupo_cuenta_id = su grupo). Si la migración no está
@@ -248,7 +248,7 @@ export async function cargarReporteComisiones(
       // Detalle: solo las jugadas clasificables y con grupo de cobro. Las
       // anuladas se excluyen (capital devuelto: no mueven dinero).
       if (esTicketAnulado(t)) continue;
-      const producto = productoDeNota(t.nota_auditoria);
+      const producto = productoDeNota(t.nota_auditoria, t.nombre_jugada);
       const grupoId = grupoDeCuenta(t.grupo_cuenta_id, t.grupo_publicador_id, t.grupo_cobro_id);
       if (!producto || !grupoId) continue;
       const monto = montoDeTicket(t);

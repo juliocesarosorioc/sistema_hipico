@@ -423,11 +423,13 @@ function ListaRemates({
   const [hipodromoId, setHipodromoId] = useState("");
   const [fecha, setFecha] = useState(hoy());
   const [carrera, setCarrera] = useState("");
-  const [comision, setComision] = useState("20");
+  const grupoInicial = grupos.find((g) => g.es_principal) ?? grupos[0];
+  const comisionInicial = String(grupoInicial?.comision_remates ?? grupoInicial?.comision_default ?? 20);
+  const [comision, setComision] = useState(comisionInicial);
   const [horaCierre, setHoraCierre] = useState("");
   const [distancia, setDistancia] = useState("");
   const [notas, setNotas] = useState("");
-  const [grupoId, setGrupoId] = useState("");
+  const [grupoId, setGrupoId] = useState(grupoInicial ? String(grupoInicial.id) : "");
   const [carreras, setCarreras] = useState<CarreraCentral[]>([]);
   const [cargandoCarreras, setCargandoCarreras] = useState(false);
   const [guardando, setGuardando] = useState(false);
@@ -652,7 +654,19 @@ function ListaRemates({
 
               <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600 md:col-span-2">
                 <span>Grupo de venta (banquero de Remates)</span>
-                <select value={grupoId} onChange={(e) => setGrupoId(e.target.value)} className={selectCls}>
+                <select
+                  value={grupoId}
+                  onChange={(e) => {
+                    const gid = e.target.value;
+                    setGrupoId(gid);
+                    const g = grupos.find((x) => String(x.id) === String(gid));
+                    if (g) {
+                      const pct = g.comision_remates ?? g.comision_default ?? 20;
+                      setComision(String(pct));
+                    }
+                  }}
+                  className={selectCls}
+                >
                   <option value="">— Sin grupo (sin banquero) —</option>
                   {grupos.map((g) => (
                     <option key={String(g.id)} value={String(g.id)}>

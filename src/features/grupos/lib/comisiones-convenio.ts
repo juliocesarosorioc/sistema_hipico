@@ -95,10 +95,13 @@ export function conceptoDe(clave: string): ConceptoConvenio | null {
  */
 export function productoDeTicket(
   origen: string | null | undefined,
-  modalidad?: string | null
+  modalidad?: string | null,
+  nombreJugada?: string | null
 ): ProductoConvenio | null {
   const o = String(origen ?? "").trim().toUpperCase();
   const m = String(modalidad ?? "").trim().toUpperCase();
+  const nj = String(nombreJugada ?? "").trim().toUpperCase();
+
   // WPS viaja por Taquilla con `modalidad='WPS'`, o migrado como `WPS_LEGACY`.
   if (m === "WPS" || o === "WPS" || o === "WPS_LEGACY") return "wps";
   switch (o) {
@@ -119,8 +122,20 @@ export function productoDeTicket(
     case "TAQUILLA":
       return "entre_tercios";
     default:
-      return null;
+      break;
   }
+
+  // Detección por nombre_jugada si origen no vino clasificado en la nota
+  if (nj) {
+    if (/^MARCAS?\b/i.test(nj) || nj.includes("MARCA")) return "marcas";
+    if (/^TABLAS?\b|^TF\b/i.test(nj) || nj.includes("TABLA")) return "tablas";
+    if (/^REMATES?\b/i.test(nj) || nj.includes("REMATE")) return "remates";
+    if (/^POLLAS?\b/i.test(nj) || nj.includes("POLLA")) return "polla";
+    if (/^DUPLETAS?\b/i.test(nj) || nj.includes("DUPLETA")) return "dupletas";
+    if (/^WPS\b|^GANADOR|^SEGUNDO|^TERCERO/i.test(nj) && m.includes("WPS")) return "wps";
+  }
+
+  return null;
 }
 
 /** Lee `origen` y `modalidad` de una `nota_auditoria` (texto o jsonb), sin romper. */
@@ -140,10 +155,54 @@ export function leerNota(nota: unknown): { origen: string; modalidad: string } {
   return { origen: String(o.origen ?? ""), modalidad: String(o.modalidad ?? o.origen ?? "") };
 }
 
-/** Producto de un ticket a partir de su `nota_auditoria` cruda. */
-export function productoDeNota(nota: unknown): ProductoConvenio | null {
+/** Producto de un ticket a partir de su `nota_auditoria` cruda y opcionalmente su `nombre_jugada`. */
+export function productoDeNota(nota: unknown, nombreJugada?: string | null): ProductoConvenio | null {
   const { origen, modalidad } = leerNota(nota);
-  return productoDeTicket(origen, modalidad);
+  return productoDeTicket(origen, modalidad, nombreJugada);
+}
+
+/**
+ * Identifica el producto de un ticket evaluando su nota de auditoría, origen, modalidad y nombre de jugada.
+ * Si no encaja en ningún producto específico, cae a "entre_tercios".
+ */
+export function identificarProductoDeFila(ticket: Record<string, unknown>): ProductoConvenio {
+  const nota = ticket.nota_auditoria;
+  const nj = String(ticket.nombre_jugada ?? ticket.jugada ?? "");
+  const pNota = productoDeNota(nota, nj);
+  if (pNota) return pNota;
+
+  const orig = String(ticket.origen ?? "");
+  const mod = String(ticket.modalidad ?? "");
+  const pDirecto = productoDeTicket(orig, mod, nj);
+  if (pDirecto) return pDirecto;
+
+  return "entre_tercios";
+}
+
+/**
+ * Resuelve la tasa de comisión para un ticket a partir de la configuración del grupo:
+ * 1. Si el ticket tiene `comision_porcentaje` explícito (> 0), se respeta.
+ * 2. Si no, identifica el producto de la jugada y toma la comisión configurada para ese tipo en el grupo.
+ * 3. Si el campo del producto es nulo en el grupo, hereda `comision_default`.
+ * 4. Respaldo final si no hay grupo: `fallback` (5%).
+ */
+export function resolverComisionTicket(
+  grupo: GrupoComisiones | null | undefined,
+  ticket: Record<string, unknown>,
+  fallback = 5
+): number {
+  const tkPct = ticket.comision_porcentaje;
+  if (tkPct != null && String(tkPct).trim() !== "") {
+    const n = Number(tkPct);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const prod = identificarProductoDeFila(ticket);
+  const pctGrupo = comisionPctDeGrupo(grupo, prod);
+  if (pctGrupo != null && Number.isFinite(pctGrupo)) return pctGrupo;
+  if (grupo?.comision_default != null && Number.isFinite(Number(grupo.comision_default))) {
+    return Number(grupo.comision_default);
+  }
+  return fallback;
 }
 
 /**

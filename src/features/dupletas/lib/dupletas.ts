@@ -121,12 +121,31 @@ export async function venderDupleta(v: VentaDupleta): Promise<ResultadoVentaDupl
   }
   const rVenta = (data ?? {}) as Record<string, unknown>;
   const fechaCarrera = String(v.fecha ?? "").trim().slice(0, 10);
-  if (rVenta.ticket_id != null && /^\d{4}-\d{2}-\d{2}$/.test(fechaCarrera)) {
+  if (rVenta.ticket_id != null) {
     try {
-      await supabase
-        .from("tickets_apuestas")
-        .update({ fecha_carrera: fechaCarrera } as never)
-        .eq("id", rVenta.ticket_id as never);
+      const patch: Record<string, unknown> = {};
+      if (/^\d{4}-\d{2}-\d{2}$/.test(fechaCarrera)) {
+        patch.fecha_carrera = fechaCarrera;
+      }
+      if (v.grupoId) {
+        const { data: g } = await supabase
+          .from("grupos_venta")
+          .select("comision_dupletas, comision_default")
+          .eq("id", v.grupoId)
+          .maybeSingle();
+        if (g) {
+          const com = (g as { comision_dupletas?: unknown; comision_default?: unknown }).comision_dupletas ??
+            (g as { comision_dupletas?: unknown; comision_default?: unknown }).comision_default ??
+            5;
+          patch.comision_porcentaje = Number(com);
+        }
+      }
+      if (Object.keys(patch).length > 0) {
+        await supabase
+          .from("tickets_apuestas")
+          .update(patch as never)
+          .eq("id", rVenta.ticket_id as never);
+      }
     } catch {
       /* best-effort */
     }
