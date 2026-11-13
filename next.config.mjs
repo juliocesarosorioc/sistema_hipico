@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import withPWAInit from "@ducanh2912/next-pwa";
 
 /**
  * Configuración de Next.js que convive con el sistema legacy (html/ + css/ + js/).
@@ -166,4 +167,10 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+const withPWA = withPWAInit({
+  dest: "public",
+  disable: process.env.NODE_ENV === "development",
+  register: true,
+});
+
+export default withPWA(nextConfig);

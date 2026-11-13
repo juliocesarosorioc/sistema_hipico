@@ -5,6 +5,12 @@ import React from "react";
 export const metadata: Metadata = {
   title: "Sala de Juegos · Agente IA Oficial",
   description: "Sala de juegos oficial hípica P2P estilo WhatsApp con Agente IA Autónomo.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Sala de Juegos",
+  },
 };
 
 export const viewport: Viewport = {
