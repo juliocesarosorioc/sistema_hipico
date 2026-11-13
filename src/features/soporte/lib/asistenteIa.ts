@@ -70,7 +70,7 @@ export const CATALOGO_RUTAS_PLATAFORMA: ReadonlyArray<RutaModuloPlataforma> = [
   { id: "ejemplares", icono: "🐎", etiqueta: "Ejemplares", ruta: "/ejemplares", patrones: [/\bejemplares\b/i] },
   { id: "proyecciones", icono: "🧠", etiqueta: "Proyecciones IA", ruta: "/inteligencia-hipica/proyecciones", patrones: [/\bproyecciones\b/i, /\binteligencia\s+h[ií]pica\b/i] },
   { id: "reglas", icono: "📜", etiqueta: "Reglas de Jugadas", ruta: "/reglas-jugadas", patrones: [/\breglas\s+de\s+jugadas\b/i] },
-  { id: "whatsapp", icono: "📲", etiqueta: "WhatsApp / Mensajería", ruta: "/whatsapp", patrones: [/\bmodulo\s+whatsapp\b/i] },
+  { id: "whatsapp", icono: "📲", etiqueta: "WhatsApp / Sala de Jugadas", ruta: "/whatsapp", patrones: [/\bmodulo\s+whatsapp\b/i] },
   { id: "seguridad", icono: "🛡️", etiqueta: "Seguridad y Permisos", ruta: "/seguridad", patrones: [/\bseguridad\b/i, /\bpermisos\b/i] },
   { id: "operadores", icono: "🧑‍💻", etiqueta: "Operadores", ruta: "/operadores", patrones: [/\boperadores\b/i] },
   { id: "diagnostico", icono: "🩺", etiqueta: "Diagnóstico", ruta: "/diagnostico", patrones: [/\bdiagn[oó]stico\b/i] },
