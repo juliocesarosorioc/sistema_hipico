@@ -238,7 +238,10 @@ export function calcularResumenContableCliente(params: {
   const nombreNorm = normalizarNombreCliente(params.nombre);
   const seudonimoNorm = normalizarNombreCliente(params.seudonimo);
   const avalVigente = Math.max(0, redondearCentavos(params.aval ?? 0));
-  const comDefault = params.comisionPctDefault ?? 5;
+  const comDefault =
+    params.comisionPctDefault && params.comisionPctDefault > 0
+      ? params.comisionPctDefault
+      : 5;
   const modCruces = params.modalidadCruces ?? "con_cruces";
 
   const depositos = redondearCentavos(params.depositos ?? 0);
@@ -530,9 +533,13 @@ export function calcularResumenContableCliente(params: {
   for (const [, listT] of ticketsPuestosPorCarreraParaIncentivo) {
     const resDevCarrera = calcularBaseDecididaCarrera(
       listT.map((tc) => {
+        const cIdT = tc.cliente_consigue_id != null ? String(tc.cliente_consigue_id) : "";
+        const jIdT = tc.cliente_juega_id != null ? String(tc.cliente_juega_id) : "";
         const jN = normalizarNombreCliente(tc.cliente_juega_nombre ?? tc.jugador);
         const cN = normalizarNombreCliente(tc.cliente_consigue_nombre ?? tc.tercio ?? tc.contraparte);
-        const esConsigue = Boolean(cN && cN === nombreNorm && jN !== nombreNorm);
+        const coincideJ = Boolean((idStr && jIdT === idStr) || (nombreNorm && jN === nombreNorm) || (seudonimoNorm && jN === seudonimoNorm));
+        const coincideC = Boolean((idStr && cIdT === idStr) || (nombreNorm && cN === nombreNorm) || (seudonimoNorm && cN === seudonimoNorm));
+        const esConsigue = coincideC && !coincideJ;
         const m = redondearCentavos(tc.monto_jugado ?? tc.monto ?? 0);
         const prem = redondearCentavos(tc.premio_pagar ?? 0);
         const st = String(tc.estado ?? "").trim().toUpperCase();
@@ -1063,6 +1070,7 @@ export function sanearSaldoHuerfano(
 export function calcularEstadoCuentaCliente(params: {
   id: string | number;
   nombre: string;
+  seudonimo?: string | null;
   grupoId?: string | number | null;
   grupoNombre?: string | null;
   saldoBaseBd?: number | string | null;
@@ -1101,6 +1109,7 @@ export function calcularEstadoCuentaCliente(params: {
   const r = calcularResumenContableCliente({
     clienteId: params.id,
     nombre: params.nombre,
+    seudonimo: params.seudonimo,
     grupoId: params.grupoId,
     aval: params.aval,
     saldoEnBase: params.saldoBaseBd,

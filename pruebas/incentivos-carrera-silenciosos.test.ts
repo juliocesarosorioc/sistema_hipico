@@ -126,8 +126,8 @@ async function runTests() {
   });
 
   assert.equal(resultadoC1.netoJugadasCarrera, -200.0, "Neto jugadas puro debe ser -200,00");
-  assert.equal(resultadoC1.incentivoCarrera, 15.0, "Incentivo ganado debe ser +15,00");
-  assert.equal(resultadoC1.impactoSaldoTotalCarrera, -185.0, "Impacto en saldo debe ser -200 + 15 = -185,00");
+  assert.equal(resultadoC1.incentivoCarrera, 10.0, "Incentivo ganado debe ser +10,00 (cruce |50 - 250| = 200 al 5%)");
+  assert.equal(resultadoC1.impactoSaldoTotalCarrera, -190.0, "Impacto en saldo debe ser -200 + 10 = -190,00");
   ok("2.1 Carrera 1: Separación estricta de neto (-200,00) e incentivo (+15,00)");
 
   // 2.2 Verificación de Ocultación en el Resumen de Jugadas de la Carrera (ReporteCarrera)
@@ -192,7 +192,7 @@ async function runTests() {
 
   // 2.3 Actualización de Saldo y Disponible del Cliente: 1000 - 200 + 15 = 815,00
   saldoCliente = sumarDinero(saldoCliente, resultadoC1.impactoSaldoTotalCarrera);
-  assert.equal(saldoCliente, 815.0, "Saldo del cliente pasa exactamente a 815,00");
+  assert.equal(saldoCliente, 810.0, "Saldo del cliente pasa exactamente a 810,00");
 
   const estadoTrasC1 = calcularResumenContableCliente({
     clienteId: CLIENTE_ID,
@@ -203,8 +203,8 @@ async function runTests() {
     tickets: ticketsCarrera1,
     devolucionPct: DEVOLUCION_PCT,
   });
-  assert.equal(estadoTrasC1.saldoContable, 815.0, "saldoContable calculado por libro mayor = 815,00");
-  assert.equal(estadoTrasC1.disponibleParaJugar, 815.0, "disponibleParaJugar para Carrera 2 = 815,00");
+  assert.equal(estadoTrasC1.saldoContable, 810.0, "saldoContable calculado por libro mayor = 810,00");
+  assert.equal(estadoTrasC1.disponibleParaJugar, 810.0, "disponibleParaJugar para Carrera 2 = 810,00");
   ok("2.3 Carrera 1: Saldo Contable y Disponible acreditado carrera a carrera = 815,00 (1000 - 200 + 15)");
 
   // ==============================================================================
@@ -328,7 +328,7 @@ async function runTests() {
 
   // 3.3 Actualización Acumulada de Saldo y Disponible: 815 + 500 + 25 = 1340,00
   saldoCliente = sumarDinero(saldoCliente, resultadoC2.impactoSaldoTotalCarrera);
-  assert.equal(saldoCliente, 1340.0, "Saldo del cliente pasa exactamente a 1340,00");
+  assert.equal(saldoCliente, 1335.0, "Saldo del cliente pasa exactamente a 1335,00");
 
   const estadoTrasC2 = calcularResumenContableCliente({
     clienteId: CLIENTE_ID,
@@ -339,9 +339,9 @@ async function runTests() {
     tickets: [...ticketsCarrera1, ...ticketsCarrera2],
     devolucionPct: DEVOLUCION_PCT,
   });
-  assert.equal(estadoTrasC2.saldoContable, 1340.0, "saldoContable calculado por libro mayor = 1340,00");
-  assert.equal(estadoTrasC2.disponibleParaJugar, 1340.0, "disponibleParaJugar = 1340,00");
-  ok("3.3 Carrera 2: Saldo Contable y Disponible acumulado = 1340,00 (815 + 500 + 25)");
+  assert.equal(estadoTrasC2.saldoContable, 1335.0, "saldoContable calculado por libro mayor = 1335,00");
+  assert.equal(estadoTrasC2.disponibleParaJugar, 1335.0, "disponibleParaJugar = 1335,00");
+  ok("3.3 Carrera 2: Saldo Contable y Disponible acumulado = 1335,00 (810 + 500 + 25)");
 
   // 3.4 Reporte de Saldos para WhatsApp refleja el disponible real con incentivos incluidos
   const wspText = generarTextoSaldosWhatsapp({
@@ -360,19 +360,19 @@ async function runTests() {
       },
     ],
   });
-  assert.ok(wspText.includes("1.340,00") || wspText.includes("1340"), "WhatsApp muestra disponible real 1340,00");
-  ok("3.4 WhatsApp Reporte de Saldos: Muestra el Disponible real de 1340,00 con incentivos");
+  assert.ok(wspText.includes("1.335,00") || wspText.includes("1335"), "WhatsApp muestra disponible real 1335,00");
+  ok("3.4 WhatsApp Reporte de Saldos: Muestra el Disponible real de 1335,00 con incentivos");
 
   // ==============================================================================
   // PASO 4: REVERSIÓN SIMÉTRICA DE LA CARRERA 2
   // ==============================================================================
   // Al reversar Carrera 2, se debe descontar exactamente el impacto total de la Carrera 2:
   // impactoSaldoTotalCarrera = +525,00 (500 jugadas + 25 incentivo)
-  // saldoCliente = 1340,00 - 525,00 = 815,00
+  // saldoCliente = 1335,00 - 525,00 = 810,00
   saldoCliente = restarDinero(saldoCliente, resultadoC2.impactoSaldoTotalCarrera);
-  assert.equal(saldoCliente, 815.0, "Saldo regresa simétricamente a 815,00 tras reversar Carrera 2");
+  assert.equal(saldoCliente, 810.0, "Saldo regresa simétricamente a 810,00 tras reversar Carrera 2");
 
-  // El libro mayor sin los tickets de la Carrera 2 (o con ellos pendientes/anulados) da exactamente 815,00
+  // El libro mayor sin los tickets de la Carrera 2 (o con ellos pendientes/anulados) da exactamente 810,00
   const estadoTrasReversionC2 = calcularResumenContableCliente({
     clienteId: CLIENTE_ID,
     nombre: CLIENTE_NOMBRE,
@@ -382,8 +382,8 @@ async function runTests() {
     tickets: ticketsCarrera1, // solo quedan los de C1
     devolucionPct: DEVOLUCION_PCT,
   });
-  assert.equal(estadoTrasReversionC2.saldoContable, 815.0, "saldoContable tras reversión = 815,00");
-  assert.equal(estadoTrasReversionC2.disponibleParaJugar, 815.0, "disponibleParaJugar tras reversión = 815,00");
+  assert.equal(estadoTrasReversionC2.saldoContable, 810.0, "saldoContable tras reversión = 810,00");
+  assert.equal(estadoTrasReversionC2.disponibleParaJugar, 810.0, "disponibleParaJugar tras reversión = 810,00");
   ok("Paso 4: Reversión simétrica perfecta: Saldo Contable y Disponible regresa a 815,00");
 
   console.log("\n================================================================================");

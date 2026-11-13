@@ -429,8 +429,12 @@ export function ReporteModule() {
               filas.map((fila) => ({
                 nombreJugada: fila.jugada,
                 montoJugado: fila.monto,
-                premioPagar: (fila.resultado ?? 0) > 0 ? fila.monto + (fila.resultado ?? 0) : 0,
+                premioPagar:
+                  (fila.resultado ?? 0) > 0
+                    ? redondearCentavos(fila.monto + (fila.resultado ?? 0) + (fila.comisionCobrada ?? 0))
+                    : 0,
                 resultado: fila.resultado,
+                comisionCobrada: fila.comisionCobrada,
                 estado:
                   (fila.resultado ?? 0) > 0
                     ? "GANADOR"
@@ -675,8 +679,12 @@ export function ReporteModule() {
               filasCli.map((f) => ({
                 nombreJugada: f.jugada,
                 montoJugado: f.monto,
-                premioPagar: (f.resultado ?? 0) > 0 ? (f.monto + (f.resultado ?? 0)) : 0,
+                premioPagar:
+                  (f.resultado ?? 0) > 0
+                    ? redondearCentavos(f.monto + (f.resultado ?? 0) + (f.comisionCobrada ?? 0))
+                    : 0,
                 resultado: f.resultado,
+                comisionCobrada: f.comisionCobrada,
                 estado: (f.resultado ?? 0) > 0 ? "GANADOR" : (f.resultado ?? 0) < 0 ? "PERDEDOR" : "PENDIENTE",
                 rol: f.rol,
               })),

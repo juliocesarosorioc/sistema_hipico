@@ -383,9 +383,10 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
     const fichaCalc = construirFichaEstadoCuentaUnificada({
       id: c.id,
       nombre: c.nombre ?? c.seudonimo ?? "",
+      seudonimo: c.seudonimo ?? null,
       saldoBaseBd,
       aval: c.aval ?? 0,
-      comisionPct: c.comision ?? 5,
+      comisionPct: Number(c.comision) > 0 ? Number(c.comision) : 5,
       devolucionPct: pct,
       devolucionIncentivo: tree.dec,
       comisionSocioDevengada,

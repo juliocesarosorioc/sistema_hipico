@@ -1425,7 +1425,9 @@ export function construirEstadoCuenta(
   );
   const tieneIdentidadCliente = Boolean((cliId && !cliId.startsWith("sys-")) || cliNombres.size > 0);
   const tasaComisionCliente =
-    clienteActual?.comision != null && String(clienteActual.comision).trim() !== ""
+    clienteActual?.comision != null &&
+    String(clienteActual.comision).trim() !== "" &&
+    num(clienteActual.comision) > 0
       ? num(clienteActual.comision)
       : null;
 
@@ -1448,11 +1450,11 @@ export function construirEstadoCuenta(
     let base = m;
     if (esG) {
       if (prem > m) {
-        base = (prem - m < m && comPag > 0) ? (prem - m + comPag) : (prem - m);
+        base = redondearCentavos(prem - m);
       } else if (mDecRaw > m) {
-        base = mDecRaw - m;
+        base = redondearCentavos(mDecRaw - m);
       } else if (mDecRaw > 0) {
-        base = mDecRaw;
+        base = redondearCentavos(mDecRaw);
       }
     } else if (esP) {
       if (prem >= m && m > 0) {
@@ -1691,15 +1693,23 @@ export function construirEstadoCuenta(
   // Recálculo exacto de devoluciones por carrera (ganancias odds 10/5, cruces netos, bloque/dividida)
   for (const c of construir.carreras.values()) {
     const resC = calcularBaseDecididaCarrera(
-      c.jugadas.filter((j) => !j.esAsientoCruce).map((j) => ({
-        nombreJugada: j.jugada,
-        montoJugado: j.montoJugado,
-        premioPagar: j.premio,
-        montoDecidido: j.montoDecidido,
-        resultado: j.resultadoNeto,
-        estado: j.estado,
-        rol: j.rol,
-      })),
+      c.jugadas.filter((j) => !j.esAsientoCruce).map((j) => {
+        const esCons = j.rol === "Consigue";
+        const resNeto = j.resultadoNeto ?? 0;
+        const montoBrutoFila = esCons
+          ? (resNeto > 0 ? j.montoJugado : Math.abs(resNeto))
+          : j.montoDecidido;
+        return {
+          nombreJugada: j.jugada,
+          montoJugado: j.montoJugado,
+          premioPagar: j.premio,
+          montoDecidido: montoBrutoFila,
+          resultado: j.resultadoNeto,
+          comisionCobrada: j.comisionCobrada,
+          estado: j.estado,
+          rol: j.rol,
+        };
+      }),
       devolucionPct
     );
     c.dec = resC.devolucion;

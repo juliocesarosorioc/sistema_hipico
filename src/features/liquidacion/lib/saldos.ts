@@ -37,6 +37,7 @@ import {
   calcularEstadoCuentaCliente,
   calcularResumenContableCliente,
   calcularIncentivoCarreraCliente,
+  esJugadaPuestosParaIncentivo,
   type TicketContableRaw,
 } from "@/features/saldos/lib/contabilidad-central";
 import {
@@ -957,6 +958,8 @@ export async function aplicarLiquidacionSaldos(
 
       let ganadoBrutoCarrera = 0;
       let perdidoBrutoCarrera = 0;
+      let ganadoBrutoSoloJuega = 0;
+      let perdidoBrutoSoloJuega = 0;
       let tasaComision = input.tasaComision ?? 5;
       const entradasCruceCli: EntradaCrucePuestos[] = [];
       const grupoClienteCanonico = String(cli.grupo_id ?? contexto.grupoId ?? "").trim();
@@ -974,6 +977,11 @@ export async function aplicarLiquidacionSaldos(
           ) ||
           String(contexto.grupoId ?? "").trim();
         const cabFila = String(fila.caballo ?? fila.ejemplar_numero ?? "").trim();
+        const elegibleIncentivo = esJugadaPuestosParaIncentivo(
+          String(fila.nombre_jugada ?? fila.tipo_jugada ?? ""),
+          fila.modalidad as string | null | undefined,
+          fila.origen as string | null | undefined
+        );
 
         // Perspectiva como Juega
         if (esClienteJuega(fila)) {
@@ -981,6 +989,9 @@ export async function aplicarLiquidacionSaldos(
           if (res.ok) {
             const gananciaTicket = Math.max(0, restarDinero(res.totalClienteNeto + res.gananciaCasa, m));
             ganadoBrutoCarrera = sumarDinero(ganadoBrutoCarrera, gananciaTicket);
+            if (elegibleIncentivo) {
+              ganadoBrutoSoloJuega = sumarDinero(ganadoBrutoSoloJuega, gananciaTicket);
+            }
             if (gananciaTicket > 0) {
               entradasCruceCli.push({
                 cliente: cliNom || cliSeu || cliIdStr,
@@ -998,6 +1009,9 @@ export async function aplicarLiquidacionSaldos(
             if (!empateTotal) {
               const perdidaTicket = perdidaParcial ? restarDinero(m, res.totalClienteNeto) : m;
               perdidoBrutoCarrera = sumarDinero(perdidoBrutoCarrera, perdidaTicket);
+              if (elegibleIncentivo) {
+                perdidoBrutoSoloJuega = sumarDinero(perdidoBrutoSoloJuega, perdidaTicket);
+              }
               if (perdidaTicket > 0) {
                 entradasCruceCli.push({
                   cliente: cliNom || cliSeu || cliIdStr,
@@ -1065,8 +1079,12 @@ export async function aplicarLiquidacionSaldos(
       // - Si solo perdió (ej. perdió 50) -> base = 50.
       // - Si solo ganó (ej. ganó 50) -> base = 50.
       // - Si en la carrera hubo cruce (ej. ganó 50 y perdió 20) -> base = |50 - 20| = 30.
+      // - Regla #6: sin cruce en la carrera, el rol Consigue NO devenga incentivo ni comisión de socio.
       const diferenciaBruta = restarDinero(ganadoBrutoCarrera, perdidoBrutoCarrera);
-      const montoDecididoCarrera = redondearCentavos(Math.abs(diferenciaBruta));
+      const hayCruceCarrera = ganadoBrutoCarrera > 0 && perdidoBrutoCarrera > 0;
+      const baseDecididaIncentivoCarrera = hayCruceCarrera
+        ? redondearCentavos(Math.abs(diferenciaBruta))
+        : redondearCentavos(sumarDinero(ganadoBrutoSoloJuega, perdidoBrutoSoloJuega));
       let saldoNetoJugadas = 0;
       let comisionCasaCarrera = 0;
       let montoIncentivo = 0;
@@ -1095,8 +1113,8 @@ export async function aplicarLiquidacionSaldos(
       }
 
       // Devolución / incentivo sobre monto neto decidido de la carrera SIN comisión (gane o pierda)
-      if (incPct > 0 && montoDecididoCarrera > 0) {
-        montoIncentivo = calcularComisionExacta(montoDecididoCarrera, incPct);
+      if (incPct > 0 && baseDecididaIncentivoCarrera > 0) {
+        montoIncentivo = calcularComisionExacta(baseDecididaIncentivoCarrera, incPct);
       }
 
       // Impacto total en el saldo del cliente por la carrera
@@ -1118,7 +1136,7 @@ export async function aplicarLiquidacionSaldos(
               montoIncentivo,
               referenciaId: `${dia}:${input.hipodromo}:C${input.carrera}`,
               usuario: "SISTEMA_LIQUIDACION",
-              nota: `Devolución sobre monto neto decidido C${input.carrera} ${input.hipodromo} (base: $${montoDecididoCarrera.toFixed(2)})`,
+              nota: `Devolución sobre monto neto decidido C${input.carrera} ${input.hipodromo} (base: $${baseDecididaIncentivoCarrera.toFixed(2)})`,
             });
           } catch {
             /* ignore non-blocking */
@@ -1129,8 +1147,8 @@ export async function aplicarLiquidacionSaldos(
       // Comisión confidencial al socio asignado sobre monto neto decidido de la carrera
       const socioIdRaw = (cli.socio_id ?? cli.socio_asignado) as string | null;
       const socPct = Math.max(0, Number(cli.socio_comision_pct ?? cli.comision_socio_pct) || 0);
-      if (socioIdRaw && socPct > 0 && montoDecididoCarrera > 0) {
-        const montoSocio = calcularComisionExacta(montoDecididoCarrera, socPct);
+      if (socioIdRaw && socPct > 0 && baseDecididaIncentivoCarrera > 0) {
+        const montoSocio = calcularComisionExacta(baseDecididaIncentivoCarrera, socPct);
         if (montoSocio > 0) {
           const { data: socioDb } = await sdb
             .from("clientes")

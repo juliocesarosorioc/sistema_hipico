@@ -555,9 +555,10 @@ async function construirSesion(clienteParam: ClienteRow): Promise<SesionPortal |
   const paramsContables = {
     id: cliente.id,
     nombre: cliente.nombre ?? cliente.seudonimo ?? "",
+    seudonimo: cliente.seudonimo ?? null,
     saldoBaseBd: cliente.saldo_actual ?? 0,
     aval: cliente.aval ?? 0,
-    comisionPct: cliente.comision ?? 5,
+    comisionPct: Number(cliente.comision) > 0 ? Number(cliente.comision) : 5,
     devolucionPct: pct,
     devolucionIncentivo: arbolTickets.dec,
     libre: false,

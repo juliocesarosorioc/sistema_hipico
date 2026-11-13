@@ -45,9 +45,10 @@ import { grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigen
 import {
   sincronizarSaldosRealesClientes,
   calcularIncentivoCarreraCliente,
+  esJugadaPuestosParaIncentivo,
   type TicketContableRaw,
 } from "@/features/saldos/lib/contabilidad-central";
-import { restarDinero, sumarDinero } from "@/shared/lib/dinero";
+import { redondearCentavos, restarDinero, sumarDinero } from "@/shared/lib/dinero";
 
 export { sincronizarSaldosRealesClientes };
 export {
@@ -325,6 +326,8 @@ export async function revertirLiquidacionCarrera(opts: {
         const cliSeu = String(cli.seudonimo ?? "").trim().toUpperCase();
         let ganadoBruto = 0;
         let perdidoBruto = 0;
+        let ganadoBrutoSoloJuega = 0;
+        let perdidoBrutoSoloJuega = 0;
         const tasa = Number(opts.tasaComision ?? 5);
 
         for (const d of decisiones) {
@@ -337,15 +340,28 @@ export async function revertirLiquidacionCarrera(opts: {
           const cNom = String(f.cliente_consigue_nombre ?? "").trim().toUpperCase();
           const esJuega = (cliIdStr && jId === cliIdStr) || (cliNom && jNom === cliNom) || (cliSeu && jNom === cliSeu);
           const esConsigue = (cliIdStr && cId === cliIdStr) || (cliNom && cNom === cliNom) || (cliSeu && cNom === cliSeu);
+          const elegibleIncentivo = esJugadaPuestosParaIncentivo(
+            String(f.nombre_jugada ?? f.tipo_jugada ?? ""),
+            f.modalidad as string | null | undefined,
+            f.origen as string | null | undefined
+          );
 
           if (esJuega) {
             if (r.ok) {
-              ganadoBruto = sumarDinero(ganadoBruto, Math.max(0, restarDinero(r.totalClienteNeto + r.gananciaCasa, m)));
+              const g = Math.max(0, restarDinero(r.totalClienteNeto + r.gananciaCasa, m));
+              ganadoBruto = sumarDinero(ganadoBruto, g);
+              if (elegibleIncentivo) {
+                ganadoBrutoSoloJuega = sumarDinero(ganadoBrutoSoloJuega, g);
+              }
             } else {
               const empateTotal = m > 0 && Math.abs(r.totalClienteNeto - m) < 0.01;
               if (!empateTotal) {
                 const perdidaParcial = r.totalClienteNeto > 0;
-                perdidoBruto = sumarDinero(perdidoBruto, perdidaParcial ? restarDinero(m, r.totalClienteNeto) : m);
+                const p = perdidaParcial ? restarDinero(m, r.totalClienteNeto) : m;
+                perdidoBruto = sumarDinero(perdidoBruto, p);
+                if (elegibleIncentivo) {
+                  perdidoBrutoSoloJuega = sumarDinero(perdidoBrutoSoloJuega, p);
+                }
               }
             }
           }
@@ -363,11 +379,14 @@ export async function revertirLiquidacionCarrera(opts: {
 
         if (ganadoBruto === 0 && perdidoBruto === 0) continue;
         const dif = restarDinero(ganadoBruto, perdidoBruto);
-        const montoDecididoCarrera = Math.abs(dif);
+        const hayCruce = ganadoBruto > 0 && perdidoBruto > 0;
+        const baseDecididaIncentivo = hayCruce
+          ? redondearCentavos(Math.abs(dif))
+          : redondearCentavos(sumarDinero(ganadoBrutoSoloJuega, perdidoBrutoSoloJuega));
         const comision = dif > 0 ? calcularComisionExacta(dif, tasa) : 0;
         const saldoNetoJugadas = restarDinero(dif, comision);
         const incPct = Math.max(0, Number(cli.incentivo_pct ?? cli.devolucion) || 0);
-        const montoIncentivo = incPct > 0 && montoDecididoCarrera > 0 ? calcularComisionExacta(montoDecididoCarrera, incPct) : 0;
+        const montoIncentivo = incPct > 0 && baseDecididaIncentivo > 0 ? calcularComisionExacta(baseDecididaIncentivo, incPct) : 0;
         const impactoTotalSaldo = sumarDinero(saldoNetoJugadas, montoIncentivo);
 
         if (impactoTotalSaldo !== 0) {
@@ -378,8 +397,8 @@ export async function revertirLiquidacionCarrera(opts: {
 
         const socioIdRaw = (cli.socio_id ?? cli.socio_asignado) as string | null;
         const socPct = Math.max(0, Number(cli.socio_comision_pct ?? cli.comision_socio_pct) || 0);
-        if (socioIdRaw && socPct > 0 && montoDecididoCarrera > 0) {
-          const montoSocio = calcularComisionExacta(montoDecididoCarrera, socPct);
+        if (socioIdRaw && socPct > 0 && baseDecididaIncentivo > 0) {
+          const montoSocio = calcularComisionExacta(baseDecididaIncentivo, socPct);
           if (montoSocio > 0) {
             const { data: socioDb } = await sdb
               .from("clientes")
