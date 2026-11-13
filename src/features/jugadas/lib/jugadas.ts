@@ -683,37 +683,40 @@ export async function editarJugada(
   }
 
   // Resolver IDs de clientes si se modificó cliente_juega_nombre o cliente_consigue_nombre sin pasar el ID
-  if ("cliente_juega_nombre" in payload && !("cliente_juega_id" in payload) && payload.cliente_juega_nombre) {
+  const resolverIdClientePorNombre = async (nombreBuscado: unknown): Promise<string | null> => {
+    if (!supabase || !nombreBuscado) return null;
     try {
-      const { data: cJuega } = await supabase
+      const buscado = String(nombreBuscado).trim();
+      if (!buscado) return null;
+      const byNombre = await supabase
         .from("clientes")
-        .select("id, nombre")
-        .ilike("nombre", String(payload.cliente_juega_nombre).trim())
+        .select("id")
+        .ilike("nombre", buscado)
         .limit(1)
         .maybeSingle();
-      if (cJuega?.id != null) {
-        payload.cliente_juega_id = String(cJuega.id);
-      }
+      if (byNombre.data?.id != null) return String(byNombre.data.id);
+      const bySeud = await supabase
+        .from("clientes")
+        .select("id")
+        .ilike("seudonimo", buscado)
+        .limit(1)
+        .maybeSingle();
+      return bySeud.data?.id != null ? String(bySeud.data.id) : null;
     } catch {
-      /* ignore */
+      return null;
     }
+  };
+
+  if ("cliente_juega_nombre" in payload && !("cliente_juega_id" in payload) && payload.cliente_juega_nombre) {
+    const idRes = await resolverIdClientePorNombre(payload.cliente_juega_nombre);
+    if (idRes) payload.cliente_juega_id = idRes;
   }
 
-
-  if ("cliente_consigue_nombre" in payload && !("cliente_consigue_id" in payload) && payload.cliente_consigue_nombre) {
-    try {
-      const { data: cDa } = await supabase
-        .from("clientes")
-        .select("id, nombre")
-        .ilike("nombre", String(payload.cliente_consigue_nombre).trim())
-        .limit(1)
-        .maybeSingle();
-      if (cDa?.id != null) {
-        payload.cliente_consigue_id = String(cDa.id);
-      }
-    } catch {
-      /* ignore */
-    }
+  if ("cliente_consigue_nombre" in payload && !payload.cliente_consigue_nombre && !("cliente_consigue_id" in payload)) {
+    payload.cliente_consigue_id = null;
+  } else if ("cliente_consigue_nombre" in payload && !("cliente_consigue_id" in payload) && payload.cliente_consigue_nombre) {
+    const idRes = await resolverIdClientePorNombre(payload.cliente_consigue_nombre);
+    if (idRes) payload.cliente_consigue_id = idRes;
   }
 
   // Sincronizar columnas de grupo si cambia grupo_cobro_nombre o grupo_cobro_id
@@ -744,23 +747,117 @@ export async function editarJugada(
       const nombre = await nombreDeEjemplarEnMatriz({
         fecha: fechaCarreraDeJugada(antes) ?? "",
         hipodromo: texto(antes.hipodromo),
-        carrera: num(antes.carrera),
+        carrera: payload.carrera != null ? num(payload.carrera) : num(antes.carrera),
         numero: numNuevo,
       });
       if (nombre) payload.caballo = nombre;
     }
   }
 
-  let { error } = await supabase.from("tickets_apuestas").update(payload).eq("id", id);
-  if (error && /(fecha_carrera|es_adelantada|banquero_nombre|does not exist|42703)/i.test(`${error.code ?? ""} ${error.message ?? ""}`)) {
-    const copia = { ...payload };
-    delete copia.fecha_carrera;
-    delete copia.es_adelantada;
-    delete copia.banquero_nombre;
-    const rFallback = await supabase.from("tickets_apuestas").update(copia).eq("id", id);
-    error = rFallback.error;
+  const COLUMNAS_OPCIONALES = new Set([
+    "fecha_carrera",
+    "es_adelantada",
+    "banquero_nombre",
+    "grupo",
+    "grupo_comision_nombre",
+    "grupo_comision_id",
+    "nota_auditoria",
+  ]);
+  const copiaUpdate: Record<string, unknown> = { ...payload };
+  let error: { code?: string; message: string } | null = null;
+  let actualizadas = 0;
+
+  for (let intento = 0; intento < 6; intento++) {
+    const resUpd = await supabase
+      .from("tickets_apuestas")
+      .update(copiaUpdate)
+      .eq("id", id)
+      .select("id");
+
+    if (!resUpd.error) {
+      error = null;
+      actualizadas = resUpd.data?.length ?? 0;
+      break;
+    }
+    error = resUpd.error;
+    const errTxt = `${resUpd.error.code ?? ""} ${resUpd.error.message ?? ""}`;
+    if (/(PGRST204|42703|does not exist|schema cache|Could not find)/i.test(errTxt)) {
+      const mCol =
+        errTxt.match(/Could not find the ['"]([^'"]+)['"] column/i)?.[1] ??
+        errTxt.match(/column\s+["']?([a-zA-Z0-9_]+)["']?\s+(?:of relation|does not exist)/i)?.[1];
+      if (mCol && mCol in copiaUpdate && COLUMNAS_OPCIONALES.has(mCol)) {
+        delete copiaUpdate[mCol];
+        continue;
+      }
+      if ("fecha_carrera" in copiaUpdate || "es_adelantada" in copiaUpdate || "banquero_nombre" in copiaUpdate) {
+        delete copiaUpdate.fecha_carrera;
+        delete copiaUpdate.es_adelantada;
+        delete copiaUpdate.banquero_nombre;
+        continue;
+      }
+    }
+    break;
   }
+
+  if ((error || actualizadas === 0) && typeof window !== "undefined") {
+    try {
+      const { data: sessData } = await supabase.auth.getSession();
+      const token = sessData?.session?.access_token ?? "";
+      if (token) {
+        const montoViejo = num(antes.monto_jugado);
+        const montoNuevo = payload.monto_jugado !== undefined ? num(payload.monto_jugado) : montoViejo;
+        const idViejo = antes.cliente_juega_id != null ? String(antes.cliente_juega_id).trim() : "";
+        const idNuevo =
+          payload.cliente_juega_id !== undefined
+            ? String(payload.cliente_juega_id ?? "").trim()
+            : idViejo;
+        const resp = await fetch("/api/jugadas/editar", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            id,
+            payload: copiaUpdate,
+            ajusteSaldo: {
+              anulada: Boolean(antes.anulada),
+              idViejo,
+              idNuevo,
+              montoViejo,
+              montoNuevo,
+            },
+            auditoria: {
+              ticket_id: String(id),
+              hipodromo: antes.hipodromo ?? null,
+              carrera: antes.carrera ?? null,
+              accion: "EDITAR",
+              motivo: motivo.trim() || null,
+              detalle: { antes, despues: payload },
+              imagen: null,
+              usuario: usuario || null,
+            },
+          }),
+        });
+        const json = (await resp.json().catch(() => null)) as { ok?: boolean; error?: string; auditError?: string | null } | null;
+        if (resp.ok && json?.ok) {
+          return json.auditError
+            ? { ok: true, error: `Cambio aplicado, pero la auditoría falló: ${json.auditError}` }
+            : { ok: true };
+        }
+        if (json?.error) {
+          return { ok: false, error: json.error };
+        }
+      }
+    } catch {
+      /* continúa con error original */
+    }
+  }
+
   if (error) return { ok: false, error: error.message };
+  if (actualizadas === 0) {
+    return { ok: false, error: "No se actualizó la jugada (verifique permisos o existencia del ticket)." };
+  }
 
   // Ajustar el saldo por el stake (monto_jugado) si cambió el monto o cambió el Jugador 1 (cliente_juega_id)
   if (!antes.anulada) {

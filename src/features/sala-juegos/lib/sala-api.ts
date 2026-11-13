@@ -90,11 +90,6 @@ async function headersAuth(): Promise<HeadersInit> {
     "Content-Type": "application/json",
   };
 
-  if (creds.portalToken && creds.clienteId) {
-    headers["X-Sala-Portal-Token"] = creds.portalToken;
-    headers["X-Sala-Cliente-Id"] = creds.clienteId;
-  }
-
   let tokenStaff = creds.staffToken;
   if (!tokenStaff && typeof window !== "undefined" && supabase) {
     try {
@@ -111,6 +106,26 @@ async function headersAuth(): Promise<HeadersInit> {
     }
   }
 
+  let tieneStaffLocal = Boolean(tokenStaff);
+  if (typeof window !== "undefined" && !tieneStaffLocal) {
+    try {
+      tieneStaffLocal = Boolean(
+        localStorage.getItem("hipico_usuario") ||
+          localStorage.getItem("hipico_sesion_admin_local") ||
+          localStorage.getItem("hipico_operador_actual") ||
+          document.cookie.includes("hipico_usuario=")
+      );
+    } catch {
+      /* noop */
+    }
+  }
+
+  const portalExplicito = Boolean(_credenciales.portalToken && _credenciales.clienteId);
+  if (creds.portalToken && creds.clienteId && (portalExplicito || !tieneStaffLocal)) {
+    headers["X-Sala-Portal-Token"] = creds.portalToken;
+    headers["X-Sala-Cliente-Id"] = creds.clienteId;
+  }
+
   if (tokenStaff) {
     headers["Authorization"] = `Bearer ${tokenStaff}`;
   }
@@ -118,13 +133,46 @@ async function headersAuth(): Promise<HeadersInit> {
   // Enviar respaldo de identidad de sesión de la aplicación (Staff / Operador)
   if (typeof window !== "undefined") {
     try {
-      const u =
+      let u =
         localStorage.getItem("hipico_usuario") ||
-        localStorage.getItem("hipico_sesion_admin_local") ||
-        localStorage.getItem("hipico_operador_actual");
-      const p = localStorage.getItem("hipico_perfil");
-      const perm = localStorage.getItem("hipico_permisos");
-      const g = localStorage.getItem("hipico_grupo_activo");
+        localStorage.getItem("hipico_sesion_admin_local");
+      let p = localStorage.getItem("hipico_perfil");
+      let perm = localStorage.getItem("hipico_permisos");
+      let g = localStorage.getItem("hipico_grupo_activo");
+
+      if (!u) {
+        const rawOp = localStorage.getItem("hipico_operador_actual");
+        if (rawOp) {
+          try {
+            const parsedOp = JSON.parse(rawOp);
+            u = parsedOp.nombre || parsedOp.usuario || parsedOp.id || "";
+            if (!g && parsedOp.grupo_id) g = String(parsedOp.grupo_id);
+          } catch {
+            u = rawOp;
+          }
+        }
+      }
+
+      // Si localStorage no tiene alguno de los campos, extraer de document.cookie
+      if (document.cookie) {
+        const cookies: Record<string, string> = {};
+        document.cookie.split(";").forEach((pair) => {
+          const [k, ...v] = pair.trim().split("=");
+          if (k) cookies[k] = decodeURIComponent(v.join("="));
+        });
+        if (!u && cookies["hipico_usuario"]) u = cookies["hipico_usuario"];
+        if (!p && cookies["hipico_perfil"]) p = cookies["hipico_perfil"];
+        if (!perm && cookies["hipico_permisos"]) perm = cookies["hipico_permisos"];
+        if (!g && cookies["hipico_grupo_activo"]) g = cookies["hipico_grupo_activo"];
+      }
+
+      // Si es admin principal o sesión admin activa
+      if (u === "josorioc" || localStorage.getItem("hipico_sesion_admin_local")) {
+        u = "josorioc";
+        p = "admin";
+        perm = "*";
+      }
+
       if (u) headers["X-Sala-Usuario"] = u;
       if (p) headers["X-Sala-Perfil"] = p;
       if (perm) headers["X-Sala-Permisos"] = perm;

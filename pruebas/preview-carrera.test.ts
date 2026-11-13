@@ -101,23 +101,25 @@ igual(soloSesion[0].monto, 100, "conserva el monto");
 const ventaConId = armarFilasPreview([], [ticketSesion({ ticketId: 500 })]);
 si(ventaConId[0].validada, "una venta de sesión con ticketId ya está validada");
 
-// ── 4. Modalidades adelantadas clasificadas en el panel ────────────────────
+// ── 4. Jugadas solo entran a Adelantadas si el usuario lo indica explícitamente
 const especiales = armarFilasPreview(
   [
-    persistida({ id: "1", nombre_jugada: "TABLA FIJA (HIPO C4)" }),
-    persistida({ id: "2", nombre_jugada: "MARCA 8" }),
-    persistida({ id: "3", nombre_jugada: "DUPLETA 1-2" }),
-    persistida({ id: "4", nombre_jugada: "REMATE LOTE 1" }),
-    persistida({ id: "5", nombre_jugada: "POLLA 9" }),
+    persistida({ id: "1", nombre_jugada: "TABLA FIJA (HIPO C4)", es_adelantada: true }),
+    persistida({ id: "2", nombre_jugada: "MARCA 8", es_adelantada: true }),
+    persistida({ id: "3", nombre_jugada: "DUPLETA 1-2", es_adelantada: true }),
+    persistida({ id: "4", nombre_jugada: "REMATE LOTE 1", es_adelantada: true }),
+    persistida({ id: "5", nombre_jugada: "POLLA 9", es_adelantada: true }),
     persistida({ id: "6", nombre_jugada: "2N" }),
+    persistida({ id: "7", nombre_jugada: "3Y3N (4)" }),
+    persistida({ id: "8", nombre_jugada: "(2x11)" }),
   ],
   []
 );
 const enVivoEspeciales = especiales.filter((f) => !f.esAdelantada);
 const adelantadasEspeciales = especiales.filter((f) => f.esAdelantada);
-igual(enVivoEspeciales.length, 1, "solo la jugada de taquilla en vivo (2N) entra a Jugadas en Vivo");
-igual(enVivoEspeciales[0].jugada, "2N", "la jugada en vivo que queda es 2N");
-igual(adelantadasEspeciales.length, 5, "las 5 jugadas adelantadas entran a JUGADAS ADELANTADAS (PRE-JUGADAS)");
+igual(enVivoEspeciales.length, 3, "las jugadas en vivo (2N, 3Y3N, 2x11) sin indicador adelantada entran a Jugadas en Vivo");
+igual(enVivoEspeciales[0].jugada, "2N", "la primera jugada en vivo que queda es 2N");
+igual(adelantadasEspeciales.length, 5, "las 5 jugadas marcadas es_adelantada=true entran a JUGADAS ADELANTADAS");
 
 // ── 5. Resultado: premio vs saldo ──────────────────────────────────────────
 const ganador = armarFilasPreview([persistida({ estado: "Ganador", premio_pagar: 320 })], []);

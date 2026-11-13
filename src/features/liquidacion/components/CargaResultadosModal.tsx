@@ -544,16 +544,18 @@ export function CargaResultadosModal({
                       </span>
                       <div className="flex items-center gap-1">
                         <span
-                          className="grid h-5 w-5 shrink-0 place-items-center rounded text-[9px] font-black"
+                          className="grid h-5 w-5 shrink-0 place-items-center rounded border text-[9px] font-black shadow-2xs"
                           style={{
                             backgroundColor: val ? colorDeNumero(val) : "#e2e8f0",
-                            color: val ? textoDeNumero(val) : "#94a3b8",
+                            color: val ? textoDeNumero(val) : "#64748b",
+                            borderColor: val ? getHorseColor(val).hex : "#cbd5e1",
                           }}
                         >
                           {val || idx + 1}
                         </span>
                         <input
                           value={val}
+                          disabled={editandoLiquidada}
                           onChange={(e) => {
                             const limpio = e.target.value.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
                             if (idx === 0) setRayaNumero(limpio);
@@ -566,7 +568,7 @@ export function CargaResultadosModal({
                           }}
                           inputMode="numeric"
                           placeholder={idx === 0 ? primerNumero || "1º" : `${idx + 1}º`}
-                          className="w-10 rounded-md border border-amber-300 bg-white px-1 py-0.5 text-center font-mono text-[11px] font-black text-slate-900 outline-none focus:ring-1 focus:ring-amber-500"
+                          className="w-10 rounded-md border border-amber-300 bg-white px-1 py-0.5 text-center font-mono text-[11px] font-black text-slate-900 outline-none focus:ring-1 focus:ring-amber-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                         />
                       </div>
                     </label>
@@ -609,10 +611,11 @@ export function CargaResultadosModal({
               <div key={i} className="py-1">
                 <div className="flex items-center gap-1.5 sm:gap-2">
                   <span
-                    className="grid h-6 w-7 shrink-0 place-items-center rounded-md text-[10px] font-black"
+                    className="grid h-6 w-7 shrink-0 place-items-center rounded-md border text-[10px] font-black shadow-2xs"
                     style={{
                       backgroundColor: r.numero ? colorDeNumero(r.numero) : "#e2e8f0",
-                      color: r.numero ? textoDeNumero(r.numero) : "#94a3b8",
+                      color: r.numero ? textoDeNumero(r.numero) : "#64748b",
+                      borderColor: r.numero ? getHorseColor(r.numero).hex : "#cbd5e1",
                     }}
                   >
                     {r.numero || i + 1}
@@ -623,12 +626,13 @@ export function CargaResultadosModal({
                       inputsRef.current[i] = el;
                     }}
                     value={r.numero}
+                    disabled={editandoLiquidada}
                     onChange={(e) => setNumero(i, e.target.value)}
                     onKeyDown={(e) => teclaPosicion(i, e)}
                     inputMode="numeric"
                     placeholder={caballos?.[i] ? String(caballos[i].numero) : "Nº"}
                     style={r.numero.trim() ? { borderColor: getHorseColor(r.numero).hex } : undefined}
-                    className="w-14 rounded-md border-2 bg-surface px-1 py-0.5 text-center text-xs font-black text-slate-900 placeholder:text-slate-400 outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    className="w-14 rounded-md border-2 bg-surface px-1 py-0.5 text-center text-xs font-black text-slate-900 placeholder:text-slate-400 outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                   />
                   <span className="flex flex-wrap gap-0.5">
                     {r.numero.trim() && pools.win && (
@@ -641,8 +645,8 @@ export function CargaResultadosModal({
                       <span className="rounded bg-amber-100 px-1 py-0.5 text-[8px] font-black uppercase text-amber-700">S</span>
                     )}
                   </span>
-                  <label className="ml-auto flex items-center gap-1 text-[9.5px] font-semibold text-slate-600">
-                    <input type="checkbox" checked={r.empate} onChange={() => toggleEmpate(i)} className="h-3.5 w-3.5 accent-amber-500" />
+                  <label className={`ml-auto flex items-center gap-1 text-[9.5px] font-semibold text-slate-600 ${editandoLiquidada ? "opacity-50 cursor-not-allowed" : ""}`}>
+                    <input type="checkbox" disabled={editandoLiquidada} checked={r.empate} onChange={() => toggleEmpate(i)} className="h-3.5 w-3.5 accent-amber-500 disabled:cursor-not-allowed" />
                     Empate
                   </label>
                 </div>
@@ -661,17 +665,18 @@ export function CargaResultadosModal({
             <button
               type="button"
               onClick={() => setFilas((f) => f.slice(0, -1))}
-              disabled={filas.length <= LUGARES_MIN}
+              disabled={editandoLiquidada || filas.length <= LUGARES_MIN}
               className="flex-1 rounded-lg border border-dashed border-slate-300 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               − Quitar {filas.length}° lugar
             </button>
             <button
               type="button"
+              disabled={editandoLiquidada}
               onClick={() =>
                 setFilas((f) => [...f, { numero: String((caballos ?? [])[f.length]?.numero ?? ""), empate: false }])
               }
-              className="flex-1 rounded-lg border border-dashed border-primary-400 bg-primary-500/5 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide text-primary-600 transition-colors hover:bg-primary-500/10"
+              className="flex-1 rounded-lg border border-dashed border-primary-400 bg-primary-500/5 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide text-primary-600 transition-colors hover:bg-primary-500/10 disabled:cursor-not-allowed disabled:opacity-40"
             >
               ＋ Añadir {filas.length + 1}° lugar
             </button>

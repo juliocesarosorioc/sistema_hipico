@@ -123,11 +123,7 @@ export function esJugadaAdelantadaReporte(j: {
   jugada?: string;
   esAdelantada?: boolean;
 }): boolean {
-  if (j.esAdelantada) return true;
-  const t = String(j.jugo ?? j.jugada ?? "").trim().toUpperCase();
-  if (/^(MARCA|TABLA|REMATE|TERCIO|DUPLETA|POLLA)\b/.test(t)) return true;
-  if (/^T\d{1,2}\b|3Y3/.test(t)) return true;
-  return false;
+  return Boolean(j.esAdelantada);
 }
 
 /**

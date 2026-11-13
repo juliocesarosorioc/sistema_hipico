@@ -164,14 +164,10 @@ const NUM = (v: unknown): number => {
 const TXT = (v: unknown): string => (v == null ? "" : String(v).trim());
 
 /**
- * ¿El nombre de jugada corresponde a una modalidad siempre adelantada
- * (MARCA, TABLA FIJA, TABLA, REMATE, DUPLETA, POLLA, TERCIO, 3Y3)?
+ * Las jugadas NUNCA se mueven a adelantadas automáticamente por su nomenclatura.
+ * La modalidad de tiempo (EN VIVO vs ADELANTADA) la define exclusivamente el usuario o la persistencia.
  */
-export function esNombreModalidadAdelantada(nombre: unknown): boolean {
-  const n = TXT(nombre).toUpperCase();
-  if (!n) return false;
-  if (/^(MARCA|TABLA|REMATE|DUPLETA|POLLA|TERCIO)\b/.test(n)) return true;
-  if (/^T\d{1,2}\b|3Y3/.test(n)) return true;
+export function esNombreModalidadAdelantada(_nombre: unknown): boolean {
   return false;
 }
 
@@ -555,10 +551,7 @@ function filaDesdePersistida(
     nombreJug
   );
 
-  const esAdel =
-    esAdelantadaDe(j) ||
-    Boolean(sesion?.esAdelantada) ||
-    esNombreModalidadAdelantada(nombreJug);
+  const esAdel = esAdelantadaDe(j) || Boolean(sesion?.esAdelantada);
 
   let cliente1Resuelto = TXT(j.cliente_juega_nombre) || TXT(sesion?.cliente1);
   if (!cliente1Resuelto && j.nota_auditoria) {
@@ -649,7 +642,7 @@ function filaDesdeSesion(
   }
 
   const { lado1, lado2, aposto1, aposto2 } = ladosDeLaJugada(monto, estado, premioPagarEfectivo, 0, nombreJug);
-  const esAdel = Boolean(t.esAdelantada) || esNombreModalidadAdelantada(nombreJug);
+  const esAdel = Boolean(t.esAdelantada);
   const c1Final = resolverSeudonimoCliente(t.cliente1) || TXT(t.cliente1);
   const c2Raw = resolverSeudonimoCliente(t.cliente2) || TXT(t.cliente2);
   const c2Final = resolverContraparteModalidad(nombreJug, c2Raw);

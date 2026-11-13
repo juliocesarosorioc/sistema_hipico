@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { salaApi } from "../lib/sala-api";
 import { colorDeNumero, textoDeNumero } from "@/features/tablas/lib/tipos";
+import { getHorseColor } from "@/shared/lib/horseColors";
 import { supabase } from "@/core/supabase";
 
 interface PropsModalOperador {
@@ -52,16 +53,14 @@ export function ModalOperadorSala({
   const [cargando, setCargando] = useState(false);
   const [msgFeedback, setMsgFeedback] = useState<string | null>(null);
 
-  // Detección de sala: VENEZUELA vs AMERICANAS
+  // Detección de sala: VENEZUELA vs AMERICANAS (solo si el nombre de la sala lo especifica)
   const nombreSalaUpper = String(sala.nombre_sala || "").toUpperCase();
   const esVenezuela =
     nombreSalaUpper.includes("VENEZUELA") ||
-    nombreSalaUpper.includes("RINCONADA") ||
-    sala.orden_sala === 1;
+    nombreSalaUpper.includes("RINCONADA");
   const esAmericanas =
     nombreSalaUpper.includes("AMERICANA") ||
-    nombreSalaUpper.includes("USA") ||
-    sala.orden_sala === 2;
+    nombreSalaUpper.includes("USA");
 
   // Apertura / Cierre
   const [hipodromo, setHipodromo] = useState<string>(() => {
@@ -440,14 +439,33 @@ export function ModalOperadorSala({
                     <span>Reabrir Carrera</span>
                   </button>
                 ) : carreraEstaLiquidada ? (
-                  // Caso 3: La carrera está LIQUIDADA -> No se puede reabrir en el chat, se debe elegir otra carrera
-                  <div className="rounded-xl border border-blue-900/60 bg-blue-950/40 p-2.5 text-center space-y-1">
-                    <span className="text-blue-300 font-bold text-xs block">
-                      🏁 Esta carrera ya fue liquidada
-                    </span>
-                    <span className="text-gray-400 text-[10px] block leading-relaxed">
-                      No se puede reabrir en el chat. Seleccione la siguiente carrera arriba para abrirla.
-                    </span>
+                  // Caso 3: La carrera está LIQUIDADA -> Bloqueado todo excepto Reversar Liquidación
+                  <div className="space-y-2">
+                    <div className="rounded-xl border border-blue-900/60 bg-blue-950/40 p-2.5 text-center space-y-1">
+                      <span className="text-blue-300 font-bold text-xs block">
+                        🏁 Esta carrera ya fue liquidada
+                      </span>
+                      <span className="text-gray-400 text-[10px] block leading-relaxed">
+                        Todas las opciones para esta carrera están bloqueadas. Para modificarla debes reversar la liquidación o seleccionar otra carrera arriba.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={cargando}
+                      onClick={() => {
+                        if (
+                          confirm(
+                            `¿Estás seguro de REVERSAR la liquidación de ${hipodromo} C${numeroCarrera}?\n\nSe restituirán los saldos y los tickets volverán al estado previo.`
+                          )
+                        ) {
+                          ejecutarAccion("reversar-carrera");
+                        }
+                      }}
+                      className="w-full bg-rose-600 hover:bg-rose-500 text-white font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
+                    >
+                      <span>🔄</span>
+                      <span>Reversar Liquidación</span>
+                    </button>
                   </div>
                 ) : (
                   // Caso 4: Nueva carrera seleccionada o carrera no abierta -> ABRIR CARRERA
@@ -489,25 +507,32 @@ export function ModalOperadorSala({
                 </p>
               </div>
 
+              {estadoCarreraActual === "liquidada" && (
+                <div className="rounded-xl border border-rose-500/40 bg-rose-950/40 p-2.5 text-center text-[11px] font-bold text-rose-300">
+                  🔒 Carrera liquidada: debes reversar la liquidación antes de procesar retirados.
+                </div>
+              )}
+
               <div>
                 <label className="block text-gray-300 font-bold text-[11px] mb-1">Número de Ejemplar Retirado</label>
                 <input
                   type="text"
+                  disabled={estadoCarreraActual === "liquidada"}
                   value={ejemplarRetirado}
                   onChange={(e) => setEjemplarRetirado(e.target.value.toUpperCase())}
                   placeholder="Ej. 5"
-                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2 text-white font-bold text-sm text-center"
+                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2 text-white font-bold text-sm text-center disabled:opacity-40 disabled:cursor-not-allowed"
                 />
               </div>
 
               <button
                 type="button"
-                disabled={cargando || !ejemplarRetirado.trim()}
+                disabled={cargando || estadoCarreraActual === "liquidada" || !ejemplarRetirado.trim()}
                 onClick={() => {
                   ejecutarAccion("retirado", { ejemplar: ejemplarRetirado.trim() });
                   setEjemplarRetirado("");
                 }}
-                className="w-full bg-red-600/30 hover:bg-red-600/40 border border-red-500/50 text-red-300 font-bold py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow"
+                className="w-full bg-red-600/30 hover:bg-red-600/40 border border-red-500/50 text-red-300 font-bold py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span>🚫</span>
                 <span>Procesar Retirado Oficial #{ejemplarRetirado || "?"}</span>
@@ -529,8 +554,14 @@ export function ModalOperadorSala({
                 </span>
               </div>
 
+              {estadoCarreraActual === "liquidada" && (
+                <div className="rounded-xl border border-rose-500/40 bg-rose-950/40 p-2.5 text-center text-[11px] font-bold text-rose-300">
+                  🔒 Esta carrera ya está liquidada. Solo puedes reversar la liquidación.
+                </div>
+              )}
+
               {/* Botón: Tomar de Plataforma */}
-              {plataformaResultado && (
+              {plataformaResultado && estadoCarreraActual !== "liquidada" && (
                 <div className="bg-emerald-950/40 border border-emerald-600/50 rounded-xl p-2.5 flex items-center justify-between gap-2">
                   <div className="truncate">
                     <span className="text-[9px] uppercase font-black text-emerald-400 block">
@@ -566,10 +597,11 @@ export function ModalOperadorSala({
                     >
                       <div className="flex items-center gap-1.5">
                         <span
-                          className="grid h-6 w-7 shrink-0 place-items-center rounded text-[10px] font-black"
+                          className="grid h-6 w-7 shrink-0 place-items-center rounded border text-[10px] font-black shadow-2xs"
                           style={{
                             backgroundColor: numLimpio ? colorDeNumero(numLimpio) : "#202c33",
                             color: numLimpio ? textoDeNumero(numLimpio) : "#8696a0",
+                            borderColor: numLimpio ? getHorseColor(numLimpio).hex : "#374151",
                           }}
                         >
                           {numLimpio || idx + 1}
@@ -580,6 +612,7 @@ export function ModalOperadorSala({
                         <input
                           type="text"
                           inputMode="numeric"
+                          disabled={estadoCarreraActual === "liquidada"}
                           value={f.numero}
                           placeholder="#"
                           onChange={(e) => {
@@ -588,13 +621,14 @@ export function ModalOperadorSala({
                               prev.map((row, i) => (i === idx ? { ...row, numero: val } : row))
                             );
                           }}
-                          className="w-14 h-7 bg-[#0b141a] border border-gray-700 focus:border-emerald-500 rounded p-1 text-center text-white font-bold text-xs"
+                          className="w-14 h-7 bg-[#0b141a] border border-gray-700 focus:border-emerald-500 rounded p-1 text-center text-white font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed"
                         />
                       </div>
 
-                      <label className="flex items-center gap-1 cursor-pointer text-gray-300 font-medium text-[11px]">
+                      <label className={`flex items-center gap-1 text-gray-300 font-medium text-[11px] ${estadoCarreraActual === "liquidada" ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}>
                         <input
                           type="checkbox"
+                          disabled={estadoCarreraActual === "liquidada"}
                           checked={f.empate}
                           onChange={(e) => {
                             const checked = e.target.checked;
@@ -602,7 +636,7 @@ export function ModalOperadorSala({
                               prev.map((row, i) => (i === idx ? { ...row, empate: checked } : row))
                             );
                           }}
-                          className="rounded text-emerald-500 accent-emerald-500 h-3.5 w-3.5"
+                          className="rounded text-emerald-500 accent-emerald-500 h-3.5 w-3.5 disabled:cursor-not-allowed"
                         />
                         <span>Empate</span>
                       </label>
@@ -613,58 +647,78 @@ export function ModalOperadorSala({
                 <div className="flex gap-2 pt-1">
                   <button
                     type="button"
-                    disabled={filasLlegada.length <= 1}
+                    disabled={estadoCarreraActual === "liquidada" || filasLlegada.length <= 1}
                     onClick={() => setFilasLlegada((prev) => prev.slice(0, -1))}
-                    className="flex-1 bg-[#202c33] hover:bg-[#2a3942] disabled:opacity-40 text-gray-300 font-bold py-1 rounded text-[11px] transition"
+                    className="flex-1 bg-[#202c33] hover:bg-[#2a3942] disabled:opacity-40 disabled:cursor-not-allowed text-gray-300 font-bold py-1 rounded text-[11px] transition"
                   >
                     − Quitar {filasLlegada.length}°
                   </button>
 
                   <button
                     type="button"
-                    disabled={filasLlegada.length >= 10}
+                    disabled={estadoCarreraActual === "liquidada" || filasLlegada.length >= 10}
                     onClick={() =>
                       setFilasLlegada((prev) => [...prev, { numero: "", empate: false }])
                     }
-                    className="flex-1 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-600/50 text-emerald-300 font-bold py-1 rounded text-[11px] transition"
+                    className="flex-1 bg-emerald-950/60 hover:bg-emerald-900/60 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-600/50 text-emerald-300 font-bold py-1 rounded text-[11px] transition"
                   >
                     ＋ Añadir {filasLlegada.length + 1}°
                   </button>
                 </div>
               </div>
 
-              {validacionPizarra.error && (
+              {validacionPizarra.error && estadoCarreraActual !== "liquidada" && (
                 <div className="p-2 rounded-lg bg-amber-950/50 border border-amber-600/50 text-amber-300 text-[11px]">
                   ⚠️ {validacionPizarra.error}
                 </div>
               )}
 
-              <button
-                type="button"
-                disabled={cargando || !validacionPizarra.ok}
-                onClick={() => {
-                  const ganadores = filasLlegada.map((f) => f.numero.trim()).filter(Boolean);
-                  const empates = filasLlegada
-                    .map((f, i) => (f.empate ? i + 1 : null))
-                    .filter((x): x is number => x !== null);
+              {estadoCarreraActual === "liquidada" ? (
+                <button
+                  type="button"
+                  disabled={cargando}
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `¿Estás seguro de REVERSAR la liquidación de ${sala.hipodromo_activo || hipodromo} C${sala.numero_carrera_activa || numeroCarrera}?\n\nSe restituirán los saldos y los tickets volverán al estado previo.`
+                      )
+                    ) {
+                      ejecutarAccion("reversar-carrera");
+                    }
+                  }}
+                  className="w-full bg-rose-600 hover:bg-rose-500 text-white font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
+                >
+                  <span>🔄</span>
+                  <span>Reversar Liquidación</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={cargando || !validacionPizarra.ok}
+                  onClick={() => {
+                    const ganadores = filasLlegada.map((f) => f.numero.trim()).filter(Boolean);
+                    const empates = filasLlegada
+                      .map((f, i) => (f.empate ? i + 1 : null))
+                      .filter((x): x is number => x !== null);
 
-                  ejecutarAccion("liquidar", {
-                    pizarra: {
-                      primero: ganadores[0] || "",
-                      segundo: ganadores[1] || undefined,
-                      tercero: ganadores[2] || undefined,
-                      cuarto: ganadores[3] || undefined,
-                      quinto: ganadores[4] || undefined,
-                      ganadores,
-                      empates,
-                    },
-                  });
-                }}
-                className="w-full bg-[#00a884] hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-400 text-black font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
-              >
-                <span>🏁</span>
-                <span>Liquidar Carrera y Publicar</span>
-              </button>
+                    ejecutarAccion("liquidar", {
+                      pizarra: {
+                        primero: ganadores[0] || "",
+                        segundo: ganadores[1] || undefined,
+                        tercero: ganadores[2] || undefined,
+                        cuarto: ganadores[3] || undefined,
+                        quinto: ganadores[4] || undefined,
+                        ganadores,
+                        empates,
+                      },
+                    });
+                  }}
+                  className="w-full bg-[#00a884] hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-400 text-black font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
+                >
+                  <span>🏁</span>
+                  <span>Liquidar Carrera y Publicar</span>
+                </button>
+              )}
             </div>
           )}
 

@@ -189,7 +189,34 @@ export async function GET(req: Request) {
         if (g) gruposDisponibles = [g];
       }
 
-      const grupoEfectivoId = grupoId || gruposDisponibles[0]?.id;
+      if (!gruposDisponibles || gruposDisponibles.length === 0) {
+        const { data: fallbackG } = await supabaseAdmin
+          .from("grupos_venta")
+          .select("id, nombre, permite_cruces, comision_default, activo, moneda")
+          .eq("activo", true)
+          .order("nombre");
+        gruposDisponibles = fallbackG || [];
+      }
+
+      let grupoEfectivoId = grupoId || gruposDisponibles[0]?.id;
+      if (!grupoEfectivoId) {
+        const { data: nuevoGrupo } = await supabaseAdmin
+          .from("grupos_venta")
+          .insert({
+            nombre: "Grupo Principal",
+            slug: "principal",
+            activo: true,
+            permite_cruces: true,
+            comision_default: 0,
+            moneda: "USD",
+          })
+          .select()
+          .single();
+        if (nuevoGrupo) {
+          gruposDisponibles = [nuevoGrupo];
+          grupoEfectivoId = nuevoGrupo.id;
+        }
+      }
       if (!grupoEfectivoId) {
         return NextResponse.json({ ok: false, error: "No hay grupo de juego disponible" }, { status: 400 });
       }
@@ -262,19 +289,23 @@ export async function GET(req: Request) {
         .eq("grupo_id", grupoEfectivoId)
         .maybeSingle();
 
-      // Saldo fresco si es jugador
+      // Saldo fresco si es jugador autenticado
       let datosJugador = null;
-      if (identidad.tipo === "JUGADOR" && identidad.usuarioId) {
+      if (identidad.tipo === "JUGADOR" && identidad.usuarioId && identidad.usuarioId !== "espectador") {
         const { data: cl } = await supabaseAdmin
           .from("clientes")
-          .select("id, nombre, seudonimo, telefono, saldo_actual, saldo_retenido, saldo_disponible, libre, modo_juego, grupo_id")
+          .select("*")
           .eq("id", identidad.usuarioId)
           .maybeSingle();
 
         if (cl) {
-          const disponible = calcularDisponibleCliente(cl);
+          const rec = cl as Record<string, unknown>;
+          const libre = Boolean(rec.libre || String(rec.modo_juego ?? "").toLowerCase() === "libre");
+          const disponible = calcularDisponibleCliente({ ...rec, libre });
           datosJugador = {
-            ...cl,
+            ...rec,
+            libre,
+            saldo_retenido: Number(rec.saldo_retenido ?? 0) || 0,
             saldo_disponible: disponible,
           };
         }
@@ -1857,12 +1888,10 @@ export async function POST(req: Request) {
         const nombreSalaUpper = String(salaActual?.nombre_sala || "").toUpperCase();
         const esChatVenezuela =
           nombreSalaUpper.includes("VENEZUELA") ||
-          nombreSalaUpper.includes("RINCONADA") ||
-          salaActual?.orden_sala === 1;
+          nombreSalaUpper.includes("RINCONADA");
         const esChatAmericanas =
           nombreSalaUpper.includes("AMERICANA") ||
-          nombreSalaUpper.includes("USA") ||
-          salaActual?.orden_sala === 2;
+          nombreSalaUpper.includes("USA");
 
         const esHipoVenezuela =
           hipoTexto.includes("RINCONADA") ||
@@ -1951,6 +1980,10 @@ export async function POST(req: Request) {
 
       // 4.c REABRIR CARRERA
       if (subaccion === "reabrir-carrera") {
+        const { data: sala } = await supabaseAdmin.from("salas_juego").select("estado_carrera").eq("id", salaId).maybeSingle();
+        if (sala?.estado_carrera === "liquidada") {
+          return NextResponse.json({ ok: false, error: "Carrera liquidada: debes reversar la liquidación antes de reabrir." }, { status: 400 });
+        }
         await supabaseAdmin
           .from("salas_juego")
           .update({
@@ -1972,6 +2005,9 @@ export async function POST(req: Request) {
 
         const { ejemplar, carreraId } = body;
         const { data: sala } = await supabaseAdmin.from("salas_juego").select("*").eq("id", salaId).single();
+        if (sala?.estado_carrera === "liquidada") {
+          return NextResponse.json({ ok: false, error: "Carrera liquidada: debes reversar la liquidación antes de procesar retirados." }, { status: 400 });
+        }
         const carreraEfectivaId = carreraId || sala?.carrera_activa_id || sala?.carrera_recien_cerrada_id;
 
         const { data: retRes, error: errRet } = await supabaseAdmin.rpc("procesar_retirado_en_sala", {
@@ -2003,6 +2039,11 @@ export async function POST(req: Request) {
       if (subaccion === "liquidar") {
         if (!puedeLiquidarSala(identidad, grupoId)) {
           return NextResponse.json({ ok: false, error: "No autorizado para liquidar carreras" }, { status: 403 });
+        }
+
+        const { data: sala } = await supabaseAdmin.from("salas_juego").select("estado_carrera").eq("id", salaId).maybeSingle();
+        if (sala?.estado_carrera === "liquidada") {
+          return NextResponse.json({ ok: false, error: "Carrera ya liquidada: debes reversar la liquidación antes de volver a liquidar." }, { status: 400 });
         }
 
         const { pizarra } = body;

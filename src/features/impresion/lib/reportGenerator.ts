@@ -560,11 +560,7 @@ export function relacionResultados(
     const nombreJug = String(j.jugada ?? "").trim().toUpperCase();
     const esJugTablaFija = /^TABLA\s*FIJA\b|^TF\b|^TABLA$/i.test(nombreJug);
     const esJugMarca = /^MARCAS?\b/i.test(nombreJug);
-    const esAdelantada =
-      Boolean(j.esAdelantada) ||
-      esJugTablaFija ||
-      esJugMarca ||
-      /^(DUPLETA|REMATE|POLLA|TERCIO)\b/i.test(nombreJug);
+    const esAdelantada = Boolean(j.esAdelantada);
     const destino = esAdelantada ? cuerpoAdelantadas : cuerpoEnVivo;
     const numOrden = esAdelantada ? ++idxAdelantada : ++idxEnVivo;
 
@@ -926,7 +922,7 @@ function mapearJugada(r: TicketApuestaJugada, mapaSeudonimos?: Map<string, strin
     ...(precioPorTablaUnitario !== undefined ? { precioPorTablaUnitario } : {}),
     premioPotencial: num(r.premio_pagar),
     comisionPct: r.comision_porcentaje != null ? num(r.comision_porcentaje) : undefined,
-    esAdelantada: esAdelantadaDe(rRec) || esJugMarca || esJugTabla,
+    esAdelantada: esAdelantadaDe(rRec),
     anulada: esAnuladaEstado,
     ganador: esAnuladaEstado ? false : ganoPorPremio || ganoPorEstado,
   };

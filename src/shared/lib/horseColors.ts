@@ -49,11 +49,11 @@ export const PALETA_GUALDRAPAS_OFICIAL = {
   5: { hex: "#15803D", label: "Verde", textHex: "#ffffff" },
   6: { hex: "#0F172A", label: "Negro/Oro", textHex: "#facc15" },
   7: { hex: "#EA580C", label: "Anaranjado", textHex: "#0f172a" },
-  8: { hex: "#EC4899", label: "Rosado", textHex: "#ffffff" },
+  8: { hex: "#EC4899", label: "Rosado", textHex: "#0f172a" },
   9: { hex: "#06B6D4", label: "Turquesa", textHex: "#0f172a" },
   10: { hex: "#7E22CE", label: "Morado", textHex: "#ffffff" },
-  11: { hex: "#64748B", label: "Gris", textHex: "#ffffff" },
-  12: { hex: "#65A30D", label: "Verde Lima", textHex: "#ffffff" },
+  11: { hex: "#94A3B8", label: "Gris", textHex: "#dc2626" },
+  12: { hex: "#84CC16", label: "Verde Lima", textHex: "#0f172a" },
   13: { hex: "#78350F", label: "Marrón", textHex: "#ffffff" },
   14: { hex: "#881337", label: "Vinotinto", textHex: "#facc15" },
 } as const;
@@ -74,11 +74,11 @@ const DICCIONARIO: Record<number, HorseColor> = {
   5: { bg: "bg-green-700", text: "text-white", border: "border-green-800", label: "Verde", hex: "#15803D", hexText: "#ffffff" },
   6: { bg: "bg-slate-900", text: "text-yellow-400", border: "border-slate-950", label: "Negro/Oro", hex: "#0F172A", hexText: "#facc15" },
   7: { bg: "bg-orange-600", text: "text-slate-950", border: "border-orange-700", label: "Anaranjado", hex: "#EA580C", hexText: "#0f172a" },
-  8: { bg: "bg-pink-500", text: "text-white", border: "border-pink-600", label: "Rosado", hex: "#EC4899", hexText: "#ffffff" },
+  8: { bg: "bg-pink-500", text: "text-slate-950 font-bold", border: "border-pink-600", label: "Rosado", hex: "#EC4899", hexText: "#0f172a" },
   9: { bg: "bg-cyan-500", text: "text-slate-900", border: "border-cyan-600", label: "Turquesa", hex: "#06B6D4", hexText: "#0f172a" },
   10: { bg: "bg-purple-700", text: "text-white", border: "border-purple-800", label: "Morado", hex: "#7E22CE", hexText: "#ffffff" },
-  11: { bg: "bg-slate-500", text: "text-white", border: "border-slate-600", label: "Gris", hex: "#64748B", hexText: "#ffffff" },
-  12: { bg: "bg-lime-600", text: "text-white", border: "border-lime-700", label: "Verde Lima", hex: "#65A30D", hexText: "#ffffff" },
+  11: { bg: "bg-slate-400", text: "text-red-600 font-bold", border: "border-slate-500", label: "Gris", hex: "#94A3B8", hexText: "#dc2626" },
+  12: { bg: "bg-lime-500", text: "text-slate-950 font-bold", border: "border-lime-600", label: "Verde Lima", hex: "#84CC16", hexText: "#0f172a" },
   13: { bg: "bg-amber-900", text: "text-white", border: "border-amber-950", label: "Marrón", hex: "#78350F", hexText: "#ffffff" },
   14: { bg: "bg-rose-900", text: "text-yellow-400", border: "border-rose-950", label: "Vinotinto", hex: "#881337", hexText: "#facc15" },
   15: { bg: "bg-lime-100", text: "text-slate-900", border: "border-lime-200", extra: "border border-slate-300 shadow-sm", label: "Caqui", hex: "#D4EFDF", hexText: "#0f172a" },
@@ -126,7 +126,7 @@ export function getHorseColor(num: number | string): HorseColor {
  */
 export function getGualdrapaClasses(num: number | string): string {
   const c = getHorseColor(num);
-  return c.extra ? `${c.bg} ${c.text} ${c.extra}` : `${c.bg} ${c.text}`;
+  return c.extra ? `${c.bg} ${c.text} ${c.border} ${c.extra}` : `${c.bg} ${c.text} ${c.border}`;
 }
 
 /**

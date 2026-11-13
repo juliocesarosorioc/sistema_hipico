@@ -140,6 +140,14 @@ async function postLoginSesionUnica(id: string, nombre?: string, rol?: string, g
     await invalidarSesionesPrevias(id);
     notificarInicioSesionUnica(id, sesionId);
 
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem("hipico_sesion_activa", sesionId);
+      } catch {
+        /* ignore */
+      }
+    }
+
     activarProteccionAntiClonacion({
       usuarioId: id,
       sesionId,
@@ -158,6 +166,12 @@ async function postLoginSesionUnica(id: string, nombre?: string, rol?: string, g
       rol,
       grupoId,
       ipInicial: ip,
+      onSesionInvalida: () => {
+        void useAuthStore.getState().salir(false);
+        useAuthStore.setState({
+          errorLogin: "⚠️ Sesión cerrada: Esta cuenta tiene una sesión abierta en otro dispositivo o ventana. Solo se permite 1 conexión por usuario.",
+        });
+      },
       onCambioIp: () => {
         void registrarCambioIpSesion({
           sesionId,
@@ -195,7 +209,7 @@ export function publicarPermisosEnCookies(
 ): string {
   const estado: "ok" | "sin" = perfiles.length > 0 || permisos.length > 0 ? "ok" : "sin";
   if (typeof document === "undefined") return estado;
-  const exp = "; path=/; max-age=86400; SameSite=Lax";
+  const exp = "; path=/; SameSite=Lax";
   // El middleware SOLO decide por ruta (`rutaPermitida`) y por el perfil de
   // cliente puro (`esRolCliente`), y para lo primero consulta una capacidad de
   // tipo "ruta" por pantalla. Publicar las 150+ capacidades del maestro
@@ -436,7 +450,91 @@ export function mensajeSinAcceso(identificador: string, falloLectura: boolean): 
  * termine bien. Termina siempre en `inicializada: true`, y el caso "no hay
  * sesión" es un estado legítimo, no un error.
  */
+if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+  try {
+    const chVivo = new BroadcastChannel("hipico_auth_canal_vivo");
+    chVivo.onmessage = (ev) => {
+      if (ev.data?.tipo === "PING_SESION" && sessionStorage.getItem("hipico_sesion_activa")) {
+        chVivo.postMessage({ tipo: "SESION_VIVA" });
+      }
+    };
+  } catch {
+    /* noop */
+  }
+}
+
+async function verificarOtraPestanaActiva(): Promise<boolean> {
+  if (typeof window === "undefined" || !("BroadcastChannel" in window)) return false;
+  if (!document.cookie.includes("hipico_usuario=")) return false;
+  return new Promise<boolean>((resolve) => {
+    let resuelto = false;
+    try {
+      const ch = new BroadcastChannel("hipico_auth_canal_vivo");
+      const timer = setTimeout(() => {
+        if (!resuelto) {
+          resuelto = true;
+          try { ch.close(); } catch {}
+          resolve(false);
+        }
+      }, 90);
+      ch.onmessage = (ev) => {
+        if (!resuelto && ev.data?.tipo === "SESION_VIVA") {
+          resuelto = true;
+          clearTimeout(timer);
+          try { ch.close(); } catch {}
+          resolve(true);
+        }
+      };
+      ch.postMessage({ tipo: "PING_SESION" });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promise<void> {
+  if (typeof window !== "undefined") {
+    let sesionActiva = sessionStorage.getItem("hipico_sesion_activa");
+    if (!sesionActiva) {
+      const hayOtraPestana = await verificarOtraPestanaActiva();
+      if (hayOtraPestana) {
+        sessionStorage.setItem("hipico_sesion_activa", "1");
+        sesionActiva = "1";
+      }
+    }
+    if (!sesionActiva) {
+      // El navegador fue cerrado: la sesión ha finalizado y se requiere nuevo inicio de sesión
+      guardarSesionAdminLocal(null);
+      try {
+        localStorage.removeItem(CLAVE_MODO_OPERADOR);
+        localStorage.removeItem(CLAVE_SESION_OPERADOR_LOCAL);
+        localStorage.removeItem(CLAVE_OPERADOR_ACTUAL);
+        localStorage.removeItem(CLAVE_SESION_ADMIN_LOCAL);
+      } catch {
+        /* sinop */
+      }
+      borrarCookiesDeAcceso();
+      limpiarAccesosVigentes();
+      set({
+        inicializada: true,
+        sembrada: false,
+        cargando: false,
+        usuario: inicioDefault.usuario,
+        email: inicioDefault.email,
+        perfiles: inicioDefault.perfiles,
+        permisos: inicioDefault.permisos,
+        tipoUsuario: null,
+        excepciones: {},
+        esPrincipal: false,
+        modoOperador: false,
+        grupoId: inicioDefault.grupoId,
+        grupoNombre: inicioDefault.grupoNombre,
+        veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
+      });
+      return;
+    }
+  }
+
   const sesion = await sesionActual();
   if (!sesion) {
     const adminLocal = leerSesionAdminLocal();
@@ -1130,6 +1228,9 @@ export const useAuthStore = create<EstadoAuth>()(
         guardarSesionAdminLocal(null);
         try {
           if (typeof window !== "undefined") {
+            sessionStorage.removeItem("hipico_sesion_activa");
+            const uActual = useAuthStore.getState().usuario;
+            if (uActual) localStorage.removeItem(`hipico_activa_${uActual}`);
             localStorage.removeItem(CLAVE_MODO_OPERADOR);
             localStorage.removeItem(CLAVE_SESION_OPERADOR_LOCAL);
             localStorage.removeItem(CLAVE_OPERADOR_ACTUAL);

@@ -234,28 +234,60 @@ export function GestionJugadasModule() {
   const [reversando, setReversando] = useState(false);
   /** Carreras reversadas en la sesión activa: fuerza el estado ABIERTO para permitir liquidar de inmediato */
   const [carrerasReversadas, setCarrerasReversadas] = useState<Set<number>>(new Set());
-  // Persistencia: las reversiones deben sobrevivir a salir/volver a la carrera, cambiar de hipódromo o recargar la página.
-  const sincronizarReversadasDesdeStorage = useCallback(() => {
-    try {
-      if (typeof window === "undefined") return;
-      const raw = window.localStorage.getItem(`reversadas:${String(fecha).slice(0, 10)}`);
-      if (raw) {
+  /** Carreras liquidadas en la sesión activa: garantiza bloqueo inmediato y botón Reversar tras liquidar */
+  const [carrerasLiquidadasLocal, setCarrerasLiquidadasLocal] = useState<Set<number>>(new Set());
+
+  const leerCarrerasSetStorage = useCallback(
+    (prefijo: "reversadas" | "liquidadas"): Set<number> => {
+      try {
+        if (typeof window === "undefined") return new Set();
+        const raw = window.localStorage.getItem(`${prefijo}:${String(fecha).slice(0, 10)}`);
+        if (!raw) return new Set();
         const arr = JSON.parse(raw) as string[];
-        if (Array.isArray(arr)) {
-          const cur = claveHipodromo(hipodromo);
-          const nums = arr
-            .filter((s) => String(s).toUpperCase().replace(/\s+/g, "").startsWith(`${cur}|`))
-            .map((s) => Number(String(s).split("|")[1]))
-            .filter((n) => Number.isFinite(n) && n > 0);
-          setCarrerasReversadas(new Set(nums));
-          return;
-        }
+        if (!Array.isArray(arr)) return new Set();
+        const cur = claveHipodromo(hipodromo);
+        const nums = arr
+          .filter((s) => String(s).toUpperCase().replace(/\s+/g, "").startsWith(`${cur}|`))
+          .map((s) => Number(String(s).split("|")[1]))
+          .filter((n) => Number.isFinite(n) && n > 0);
+        return new Set(nums);
+      } catch {
+        return new Set();
       }
-      setCarrerasReversadas(new Set());
-    } catch {
-      /* ignore */
-    }
-  }, [fecha, hipodromo]);
+    },
+    [fecha, hipodromo]
+  );
+
+  const guardarCarreraLiquidadaStorage = useCallback(
+    (numCarrera: number, liquidada: boolean) => {
+      try {
+        if (typeof window === "undefined" || !hipodromo || !numCarrera) return;
+        const claveStorage = `liquidadas:${String(fecha).slice(0, 10)}`;
+        const keyCarrera = `${claveHipodromo(hipodromo)}|${Number(numCarrera)}`;
+        const raw = window.localStorage.getItem(claveStorage);
+        const arr = raw ? (JSON.parse(raw) as string[]) : [];
+        const setKeys = new Set(Array.isArray(arr) ? arr.map(String) : []);
+        if (liquidada) setKeys.add(keyCarrera);
+        else setKeys.delete(keyCarrera);
+        window.localStorage.setItem(claveStorage, JSON.stringify([...setKeys]));
+      } catch {
+        /* ignore */
+      }
+      setCarrerasLiquidadasLocal((prev) => {
+        const next = new Set(prev);
+        if (liquidada) next.add(Number(numCarrera));
+        else next.delete(Number(numCarrera));
+        return next;
+      });
+    },
+    [fecha, hipodromo]
+  );
+
+  // Persistencia: las reversiones y liquidaciones locales sobreviven a salir/volver o recargar la página.
+  const sincronizarReversadasDesdeStorage = useCallback(() => {
+    setCarrerasReversadas(leerCarrerasSetStorage("reversadas"));
+    setCarrerasLiquidadasLocal(leerCarrerasSetStorage("liquidadas"));
+  }, [leerCarrerasSetStorage]);
 
   useEffect(() => {
     sincronizarReversadasDesdeStorage();
@@ -578,13 +610,13 @@ export function GestionJugadasModule() {
     if (carrerasReversadas.has(numCarrera)) {
       return false;
     }
+    if (carrerasLiquidadasLocal.has(numCarrera)) {
+      return true;
+    }
     const c = carrerasDelDia.find((x) => Number(x.carrera) === numCarrera);
     const est = String(c?.estado ?? "").toLowerCase();
     const centralLiq = est === "liquidada" || c?.aplicado_a_tablas === true;
     if (centralLiq) return true;
-    if (pizarraCentral?.pizarra && (pizarraCentral.pizarra.primero || pizarraCentral.llenas > 0) && (c?.aplicado_a_tablas === true || est === "liquidada")) {
-      return true;
-    }
     if (jugadasGuardadas.some((j) => {
       const e = String(j.estado ?? "").toLowerCase();
       return e === "ganador" || e === "perdedor" || e === "liquidada";
@@ -592,7 +624,7 @@ export function GestionJugadasModule() {
       return true;
     }
     return false;
-  }, [carrerasDelDia, carrera, pizarraCentral, jugadasGuardadas, carrerasReversadas]);
+  }, [hipodromo, carrerasDelDia, carrera, jugadasGuardadas, carrerasReversadas, carrerasLiquidadasLocal]);
 
   const tieneResultadoCargado = carreraLiquidada || Boolean(pizarraCentral);
 
@@ -1372,7 +1404,9 @@ const hipodromosDelDia = useMemo(() => {
     const ticketSesion = ticketSesionDeFila(fila);
 
     let campos: {
+      cliente_juega_id?: string | null;
       cliente_juega_nombre?: string | null;
+      cliente_consigue_id?: string | null;
       cliente_consigue_nombre?: string | null;
       carrera?: number | null;
       es_adelantada?: boolean | null;
@@ -1381,61 +1415,92 @@ const hipodromosDelDia = useMemo(() => {
       ejemplar_numero?: number | null;
       monto_jugado?: number | null;
     } | null = null;
+    const mostrarErrorPreview = (msg: string) => {
+      setErrorAccionPreview(msg);
+      setAviso(msg);
+      emitirToast(msg, "error");
+    };
+    const buscarCliente = (valor: string) => {
+      const k = valor.trim().toUpperCase();
+      if (!k) return undefined;
+      return clientes.find(
+        (x) =>
+          (x.nombre && x.nombre.toUpperCase() === k) ||
+          (x.seudonimo && x.seudonimo.toUpperCase() === k) ||
+          String(x.id).toUpperCase() === k
+      );
+    };
     if (accion.modo === "editar") {
       if (!edicionPreview) return;
       const jugador1 = edicionPreview.jugador1.trim().toUpperCase();
       if (!jugador1) {
-        setAviso("⚠️ El Jugador 1 (Quien Juega) no puede quedar vacío.");
+        mostrarErrorPreview("⚠️ El Jugador 1 (Quien Juega) no puede quedar vacío.");
         return;
       }
       const nombre = edicionPreview.jugada.trim().toUpperCase();
       if (!nombre) {
-        setAviso("⚠️ La jugada (nomenclatura) no puede quedar vacía.");
+        mostrarErrorPreview("⚠️ La jugada (nomenclatura) no puede quedar vacía.");
         return;
       }
       const caballo = edicionPreview.caballo.trim().toUpperCase();
-      if (!caballo || !/\d/.test(caballo)) {
-        setAviso("⚠️ Condición sine qua non: toda jugada debe tener ejemplar (número de caballo).");
+      if (!caballo || caballo === "—" || (!/\d/.test(caballo) && caballo.length < 2)) {
+        mostrarErrorPreview("⚠️ Condición sine qua non: toda jugada debe tener ejemplar (número o nombre válido).");
         return;
       }
       const carreraNueva = Number(edicionPreview.carrera) || carrera;
       if (!Number.isFinite(carreraNueva) || carreraNueva < 1) {
-        setAviso("⚠️ El número de carrera no es válido.");
+        mostrarErrorPreview("⚠️ El número de carrera no es válido.");
         return;
       }
       const monto = Number(edicionPreview.monto.replace(",", "."));
       if (!Number.isFinite(monto) || monto <= 0) {
-        setAviso("⚠️ El monto debe ser mayor a 0.");
+        mostrarErrorPreview("⚠️ El monto debe ser mayor a 0.");
         return;
       }
-      const cli = clientes.find((x) =>
-        (x.nombre && x.nombre.toUpperCase() === jugador1) ||
-        (x.seudonimo && x.seudonimo.toUpperCase() === jugador1) ||
-        String(x.id) === jugador1
+      const cli = buscarCliente(jugador1);
+      const cliOriginal = buscarCliente(fila.cliente1 || "");
+      const esMismoJugador = Boolean(
+        (cli && cliOriginal && String(cli.id) === String(cliOriginal.id)) ||
+          jugador1 === (fila.cliente1 || "").trim().toUpperCase()
       );
       if (cli) {
         const montoAnterior = Number(fila.monto ?? 0);
-        const disp = Number(cli.saldo_actual ?? 0) + Number(cli.aval ?? 0) + montoAnterior;
-        if (monto > disp) {
-          const msg = `⛔ Saldo insuficiente: El monto (${monto}) excede el saldo disponible (${disp.toFixed(2)}) de ${cli.seudonimo || cli.nombre}. No se permite modificar el monto por encima de su saldo disponible.`;
-          setAviso(msg);
-          emitirToast(msg, "error");
+        const saldoDispActual = Number(cli.saldo_actual ?? 0) + Number(cli.aval ?? 0);
+        if (esMismoJugador) {
+          const incremento = monto - montoAnterior;
+          if (incremento > 0.01 && incremento > saldoDispActual + 0.01) {
+            const dispTotal = saldoDispActual + montoAnterior;
+            mostrarErrorPreview(
+              `⛔ Saldo insuficiente: El aumento de monto (${monto}) excede el saldo disponible (${dispTotal.toFixed(2)}) de ${cli.seudonimo || cli.nombre}.`
+            );
+            return;
+          }
+        } else if (monto > saldoDispActual + 0.01) {
+          mostrarErrorPreview(
+            `⛔ Saldo insuficiente: El monto (${monto}) excede el saldo disponible (${saldoDispActual.toFixed(2)}) de ${cli.seudonimo || cli.nombre}.`
+          );
           return;
         }
       }
+      const jugador2Raw = edicionPreview.jugador2.trim().toUpperCase();
+      const cli2 = jugador2Raw && jugador2Raw !== "TAQUILLA" ? buscarCliente(jugador2Raw) : undefined;
       const mCabNum = caballo.match(/\b(\d{1,2})\b/);
+      const numEj = /^[0-9]+$/.test(caballo) ? Number(caballo) : mCabNum ? Number(mCabNum[1]) : undefined;
       campos = {
-        cliente_juega_nombre: jugador1,
-        cliente_consigue_nombre: edicionPreview.jugador2.trim() ? edicionPreview.jugador2.trim().toUpperCase() : null,
+        ...(cli ? { cliente_juega_id: String(cli.id) } : {}),
+        cliente_juega_nombre: cli ? cli.nombre : jugador1,
+        cliente_consigue_id: cli2 ? String(cli2.id) : !jugador2Raw || jugador2Raw === "TAQUILLA" ? null : undefined,
+        cliente_consigue_nombre: cli2 ? cli2.nombre : !jugador2Raw || jugador2Raw === "TAQUILLA" ? null : jugador2Raw,
         carrera: carreraNueva,
         es_adelantada: edicionPreview.esAdelantada,
         nombre_jugada: nombre,
         caballo,
-        ejemplar_numero: /^[0-9]+$/.test(caballo) ? Number(caballo) : mCabNum ? Number(mCabNum[1]) : null,
+        ...(numEj !== undefined ? { ejemplar_numero: numEj } : {}),
         monto_jugado: monto,
       };
     }
 
+    setErrorAccionPreview("");
     setOcupadoPreview(true);
     try {
       if (!esPersistida) {
@@ -1449,6 +1514,7 @@ const hipodromosDelDia = useMemo(() => {
               monto: edicionPreview.monto.trim(),
               cliente1: edicionPreview.jugador1.trim(),
               cliente2: edicionPreview.jugador2.trim(),
+              esAdelantada: edicionPreview.esAdelantada,
             },
             ...f,
           ]);
@@ -1463,7 +1529,7 @@ const hipodromosDelDia = useMemo(() => {
         return;
       }
 
-      const usuario = usuarioVigente();
+      const usuario = usuarioVigente() || "operador";
       const r =
         accion.modo === "editar"
           ? await corregirJugadaYRecalcular({
@@ -1561,6 +1627,11 @@ const hipodromosDelDia = useMemo(() => {
         detalles: [`Motivo registrado: ${motivo}`, `Estado de carrera y saldos actualizados en vivo`],
         variante: "success",
       });
+    } catch (err) {
+      const msgErr = `❌ Error al guardar los cambios: ${err instanceof Error ? err.message : String(err)}`;
+      setErrorAccionPreview(msgErr);
+      setAviso(msgErr);
+      toastPreview(msgErr, "error");
     } finally {
       setOcupadoPreview(false);
     }
@@ -1670,10 +1741,7 @@ const hipodromosDelDia = useMemo(() => {
 
   const carrerasLiquidadasDelDia = useMemo(() => {
     const setNums = new Set<number>();
-    // El estado se deriva SOLO de la data del día (registro central), nunca de
-    // la carrera seleccionada: seleccionar/deseleccionar no puede cambiar el
-    // color de una carrera. ROJO = liquidada (`aplicado_a_tablas` o estado
-    // "Liquidada"); tener ganadores es "Resultados", todavía no rojo.
+    // El estado se deriva de la data del día (registro central) + liquidaciones activas de sesión.
     for (const c of carrerasDelDia) {
       const n = Number(c.carrera);
       if (carrerasReversadas.has(n)) continue;
@@ -1682,8 +1750,11 @@ const hipodromosDelDia = useMemo(() => {
         setNums.add(n);
       }
     }
+    for (const n of carrerasLiquidadasLocal) {
+      if (!carrerasReversadas.has(n)) setNums.add(n);
+    }
     return [...setNums];
-  }, [carrerasDelDia, carrerasReversadas]);
+  }, [carrerasDelDia, carrerasReversadas, carrerasLiquidadasLocal]);
 
   const abrirResultados = useCallback(async () => {
     if (!listoParaCargar) return;
@@ -2627,6 +2698,12 @@ const hipodromosDelDia = useMemo(() => {
    * tener que cargar una jugada nueva.
    */
   const recalcularCompleta = async () => {
+    if (carreraLiquidada) {
+      const msg = "🔒 Carrera liquidada: debe reversar la liquidación antes de recalcular esta carrera.";
+      setAviso(msg);
+      toastPreview(msg, "error");
+      return;
+    }
     if (!listoParaCargar) {
       const msg = "⚠️ Elija hipódromo y carrera para recalcular.";
       setAviso(msg);
@@ -2731,6 +2808,7 @@ const hipodromosDelDia = useMemo(() => {
       });
       setAviso(r.ok ? `🔄 ${r.motivo}` : `❌ ${r.motivo}${r.errores.length ? ` · ${r.errores.join(" | ")}` : ""}`);
       if (r.ok) {
+        guardarCarreraLiquidadaStorage(carrera, false);
         marcarCarreraReversadaLocal(fecha, hipodromo, carrera);
         setCarrerasReversadas((prev) => new Set([...prev, Number(carrera)]));
       }
@@ -2804,6 +2882,13 @@ const hipodromosDelDia = useMemo(() => {
     pizarraConfirmada?: PizarraResultados | null,
     abrirReporte = true
   ): Promise<{ ok: boolean; motivo: string }> => {
+    if (!reapertura && carreraLiquidada) {
+      const motivo = "⛔ La carrera ya está liquidada. Debe reversar la liquidación antes de volver a liquidar.";
+      setAviso(motivo);
+      emitirToast(motivo, "warning");
+      setModalFinalizar(false);
+      return { ok: false, motivo };
+    }
     const piz = pizarraConfirmada ?? ultimaPizarra;
     if (!piz) {
       setModalFinalizar(false);
@@ -2958,6 +3043,7 @@ const hipodromosDelDia = useMemo(() => {
         return { ok: false, motivo: mensaje };
       }
       if (r.ok) {
+        guardarCarreraLiquidadaStorage(carrera, true);
         desmarcarCarreraReversadaLocal(fecha, hipodromo, carrera);
         setCarrerasReversadas((prev) => {
           const next = new Set(prev);
@@ -2983,12 +3069,51 @@ const hipodromosDelDia = useMemo(() => {
         setJugadasPorCarrera((j: number[]) => j.filter((c) => c !== carrera));
         setResumen(r);
         setModalFinalizar(false);
+        setModalCargaRapida(false);
+        setModalControlCruces(false);
+        setModalAgentePizarra(false);
+        setModalEditarJugadas(false);
+        setAccionPreview(null);
+        // Actualizar registro central en memoria de inmediato para bloquear la UI y convertir el botón a Reversar sin demora
+        try {
+          const dia = String(fecha).slice(0, 10);
+          const reg = useRegistroCentral.getState();
+          const lista = reg.porFecha[dia] ?? [];
+          const idx = lista.findIndex(
+            (c: any) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo) && Number(c.carrera) === Number(carrera)
+          );
+          const nuevaLista = [...lista];
+          if (idx >= 0) {
+            nuevaLista[idx] = {
+              ...nuevaLista[idx],
+              estado: "Liquidada",
+              ganadores: puestosReporte.length > 0 ? puestosReporte : nuevaLista[idx].ganadores,
+              aplicado_a_tablas: true,
+            };
+          } else {
+            nuevaLista.push({
+              id: `liq-${dia}-${claveHipodromo(hipodromo)}-${Number(carrera)}`,
+              fecha: dia,
+              hipodromo: nombreHipodromo,
+              carrera: Number(carrera),
+              caballos: [],
+              estado: "Liquidada",
+              ganadores: puestosReporte,
+              aplicado_a_tablas: true,
+              origen: "Liquidación",
+            } as any);
+          }
+          useRegistroCentral.setState({
+            porFecha: { ...reg.porFecha, [dia]: nuevaLista },
+          });
+        } catch {
+          /* best-effort */
+        }
         if (abrirReporte) {
           setModoExclusivoReporte(true);
           setMostrarReporteLiquidacion(true);
         }
-        void recargarClientes();
-        void recargarJugadasGuardadas();
+        await Promise.all([recargarClientes(), recargarJugadasGuardadas()]);
         recargarRegistroCentral();
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("hipico:carreras-actualizadas"));
@@ -3150,6 +3275,12 @@ const hipodromosDelDia = useMemo(() => {
 
   /** Ítem 1: abre la re-apertura de la carrera liquidada (con autorización). */
   const abrirReapertura = () => {
+    if (carreraLiquidada) {
+      const msg = "🔒 Carrera liquidada: debe reversar la liquidación antes de agregar jugadas.";
+      setAviso(msg);
+      emitirToast(msg, "error");
+      return;
+    }
     if (!puedeReabrir) {
       setAviso("No tenés la capacidad para reabrir una carrera liquidada.");
       return;
@@ -3900,9 +4031,9 @@ const hipodromosDelDia = useMemo(() => {
             <button
               type="button"
               onClick={() => setModalAgentePizarra(true)}
-              disabled={bloqueoLiquidacionActivo}
-              title="🤖 Agente de Pizarra Oficial (Cambio de Pizarra · Liquidación · Variación · Saldos)"
-              className="col-span-1 sm:col-auto inline-flex h-9 sm:h-10 items-center justify-center gap-1 rounded-xl border border-indigo-200 bg-white px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-indigo-700 shadow-2xs transition-all hover:bg-indigo-50 hover:border-indigo-300 disabled:opacity-40 shrink-0 truncate"
+              disabled={bloqueoLiquidacionActivo || carreraLiquidada}
+              title={carreraLiquidada ? "🔒 Carrera liquidada: reverse la liquidación primero para cambiar pizarra" : "🤖 Agente de Pizarra Oficial (Cambio de Pizarra · Liquidación · Variación · Saldos)"}
+              className="col-span-1 sm:col-auto inline-flex h-9 sm:h-10 items-center justify-center gap-1 rounded-xl border border-indigo-200 bg-white px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-indigo-700 shadow-2xs transition-all hover:bg-indigo-50 hover:border-indigo-300 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 truncate"
             >
               <span className="text-sm">🔄</span>
               <span>Cambio de Pizarra</span>
@@ -4069,9 +4200,9 @@ const hipodromosDelDia = useMemo(() => {
                       <button
                         type="button"
                         onClick={() => setFilas((fs) => fs.filter((_, j) => j !== i))}
-                        disabled={filas.length <= 1}
+                        disabled={carreraLiquidada || filas.length <= 1}
                         aria-label="Eliminar fila"
-                        className="text-xs text-slate-300 hover:text-red-500"
+                        className="text-xs text-slate-300 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         ✕
                       </button>
@@ -4091,6 +4222,7 @@ const hipodromosDelDia = useMemo(() => {
                   <td className="gj-celda px-1 py-0.5">
                     <input
                       value={f.jugada}
+                      disabled={carreraLiquidada}
                       onChange={(e) => setFila(i, { jugada: e.target.value })}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
@@ -4098,13 +4230,14 @@ const hipodromosDelDia = useMemo(() => {
                           void cargarAtaquilla();
                         }
                       }}
-                      placeholder="10/8 · 1p · 2n"
-                      className="w-full rounded border border-line bg-white px-1 py-0.5 text-[11px] font-bold leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      placeholder={carreraLiquidada ? "🔒 Carrera liquidada" : "10/8 · 1p · 2n"}
+                      className="w-full rounded border border-line bg-white px-1 py-0.5 text-[11px] font-bold leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                     />
                   </td>
                   <td className={`gj-celda px-1 py-0.5 ${caballoInvalido ? "bg-red-50" : ""}`}>
                     <input
                       value={f.caballo}
+                      disabled={carreraLiquidada}
                       onChange={(e) => setFila(i, { caballo: e.target.value })}
                       placeholder="1 · 1,2x3"
                       inputMode="numeric"
@@ -4120,7 +4253,7 @@ const hipodromosDelDia = useMemo(() => {
                               ? `${ejemplar.numero} - ${ejemplar.nombre}`
                               : ""
                       }
-                      className={`w-full rounded border bg-white px-1 py-0.5 text-[11px] font-semibold leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                      className={`w-full rounded border bg-white px-1 py-0.5 text-[11px] font-semibold leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed ${
                         caballoInvalido ? "border-red-400" : "border-line"
                       }`}
                     />
@@ -4144,11 +4277,12 @@ const hipodromosDelDia = useMemo(() => {
                   <td className="gj-celda px-1 py-0.5">
                     <input
                       value={f.monto}
+                      disabled={carreraLiquidada}
                       onChange={(e) => setFila(i, { monto: e.target.value })}
                       placeholder="0"
                       inputMode="decimal"
                       title={recortado ? `Se autoriza ${monedaFmt(v.ok ? v.monto : 0)} por saldo disponible` : undefined}
-                      className={`w-full rounded border bg-white px-1 py-0.5 text-right text-[11px] font-black leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                      className={`w-full rounded border bg-white px-1 py-0.5 text-right text-[11px] font-black leading-tight text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed ${
                         recortado ? "border-amber-400 bg-amber-50" : "border-line"
                       }`}
                     />
@@ -4176,12 +4310,13 @@ const hipodromosDelDia = useMemo(() => {
                       <SearchableSelect
                         options={opcionesClientes}
                         value={f.cliente1}
+                        disabled={carreraLiquidada}
                         onChange={(v) => setFila(i, { cliente1: v })}
                         placeholder="Cliente 1…"
                         allowCustom={false}
                         displayValue={f.cliente1}
                         className=""
-                        inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                        inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                       />
                     </div>
                   </td>
@@ -4198,12 +4333,13 @@ const hipodromosDelDia = useMemo(() => {
                       <SearchableSelect
                         options={opcionesCliente2}
                         value={f.cliente2}
+                        disabled={carreraLiquidada}
                         onChange={(v) => setFila(i, { cliente2: v })}
                         placeholder="Cliente 2 (dador o BANCA)…"
                         allowCustom={false}
                         displayValue={f.cliente2}
                         className=""
-                        inputClassName={`w-full rounded-md border bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                        inputClassName={`w-full rounded-md border bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed ${
                           (f.jugada.trim() || f.monto.trim()) && !f.cliente2.trim()
                             ? "border-red-400 bg-red-50"
                             : "border-line"
@@ -4242,10 +4378,11 @@ const hipodromosDelDia = useMemo(() => {
               }`}>TEXTO</span>
             </Button>
           </Guard>
-          <Button size="sm" onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
+          <Button size="sm" disabled={carreraLiquidada} title={carreraLiquidada ? "🔒 Carrera liquidada: reverse para editar" : undefined} onClick={() => setFilas((f) => [...f, filaVacia()])}>＋ Agregar fila</Button>
           <Button
             size="sm"
             variant="outline"
+            disabled={carreraLiquidada}
             onClick={() => {
               let recortadas = 0;
               let sinSaldo = 0;
@@ -4534,6 +4671,7 @@ const hipodromosDelDia = useMemo(() => {
                           </span>
                           <button
                             type="button"
+                            disabled={carreraLiquidada}
                             onClick={() => {
                               if (carreraLiquidada) {
                                 const msg = "⛔ La carrera está liquidada. Debe reversar la liquidación para poder editar o eliminar jugadas.";
@@ -4551,6 +4689,7 @@ const hipodromosDelDia = useMemo(() => {
                           </button>
                           <button
                             type="button"
+                            disabled={carreraLiquidada}
                             onClick={() => {
                               if (carreraLiquidada) {
                                 const msg = "⛔ La carrera está liquidada. Debe reversar la liquidación para poder editar o eliminar jugadas.";
@@ -5505,9 +5644,9 @@ const hipodromosDelDia = useMemo(() => {
           <button
             type="button"
             onClick={() => setModalControlCruces(true)}
-            disabled={bloqueoLiquidacionActivo}
-            className="inline-flex items-center gap-1 rounded-md border border-amber-400/50 bg-amber-500/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-300 shadow-sm transition hover:bg-amber-500/30 disabled:opacity-40"
-            title="Abrir panel de control de cruces de esta carrera"
+            disabled={bloqueoLiquidacionActivo || carreraLiquidada}
+            className="inline-flex items-center gap-1 rounded-md border border-amber-400/50 bg-amber-500/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-300 shadow-sm transition hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={carreraLiquidada ? "🔒 Carrera liquidada: reverse la liquidación para modificar cruces" : "Abrir panel de control de cruces de esta carrera"}
           >
             <span>⚡</span> Control de Cruces
             {conCruces && (
@@ -5607,10 +5746,10 @@ const hipodromosDelDia = useMemo(() => {
           {listoParaCargar && (carreraLiquidada || pizarraCentral) && !reapertura && (
             <button
               type="button"
-              disabled={bloqueoLiquidacionActivo}
+              disabled={bloqueoLiquidacionActivo || carreraLiquidada}
               onClick={abrirReapertura}
-              title="Reabrir esta carrera liquidada para agregar jugadas nuevas"
-              className={`${BTN_BARRA} bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40`}
+              title={carreraLiquidada ? "🔒 Carrera liquidada: reverse la liquidación antes de agregar jugadas" : "Reabrir esta carrera liquidada para agregar jugadas nuevas"}
+              className={`${BTN_BARRA} ${carreraLiquidada ? "bg-slate-400 opacity-50 cursor-not-allowed" : "bg-amber-600 hover:bg-amber-500"} text-white disabled:opacity-40`}
             >
               ➕ Agregar jugada
             </button>
@@ -5671,9 +5810,15 @@ const hipodromosDelDia = useMemo(() => {
           <button
             type="button"
             onClick={() => void recalcularCompleta()}
-            disabled={!listoParaCargar || bloqueoLiquidacionActivo || recalculando}
-            title={listoParaCargar ? "🔄 Rehace toda la carrera contra el resultado vigente (revertir + re-liquidar tablas fijas, marcas, dupletas, remates y taquilla). Idempotente: no duplica cobros ni premios." : "Elija hipódromo y carrera para recalcular"}
-            className={`${BTN_BARRA} bg-warning-600 text-white hover:bg-warning-500 disabled:opacity-40`}
+            disabled={!listoParaCargar || bloqueoLiquidacionActivo || recalculando || carreraLiquidada}
+            title={
+              carreraLiquidada
+                ? "🔒 Carrera liquidada: reverse la liquidación antes de recalcular"
+                : listoParaCargar
+                ? "🔄 Rehace toda la carrera contra el resultado vigente (revertir + re-liquidar tablas fijas, marcas, dupletas, remates y taquilla). Idempotente: no duplica cobros ni premios."
+                : "Elija hipódromo y carrera para recalcular"
+            }
+            className={`${BTN_BARRA} ${carreraLiquidada ? "bg-slate-400 opacity-50 cursor-not-allowed" : "bg-warning-600 hover:bg-warning-500"} text-white disabled:opacity-40`}
           >
             {recalculando ? "⏳ Recalculando…" : "🔄 Recalcular"}
           </button>
@@ -6098,11 +6243,28 @@ const hipodromosDelDia = useMemo(() => {
                     <div className="flex flex-wrap gap-1.5">
                       {Object.entries(ultimaPizarra.pizarra)
                         .filter(([k, v]) => k !== "empates" && typeof v === "string" && v.trim() !== "")
-                        .map(([k, v]) => (
-                          <span key={k} className="rounded-md bg-slate-800 px-2 py-1 text-[10px] font-black uppercase text-white">
-                            {k}: <b>{v}</b>
-                          </span>
-                        ))}
+                        .map(([k, v]) => {
+                          const posLabel =
+                            k === "primero" ? "1°" :
+                            k === "segundo" ? "2°" :
+                            k === "tercero" ? "3°" :
+                            k === "cuarto" ? "4°" :
+                            k === "quinto" ? "5°" :
+                            k === "sexto" ? "6°" :
+                            k === "septimo" ? "7°" :
+                            k === "octavo" ? "8°" : k;
+                          return (
+                            <span
+                              key={k}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-black uppercase text-white shadow-xs"
+                            >
+                              <span className="text-slate-400 font-bold">{posLabel}:</span>
+                              <span className={`inline-flex h-5.5 min-w-[22px] items-center justify-center rounded px-1.5 text-xs font-black shadow-xs ${colorDiscoNumero(String(v))}`}>
+                                {String(v)}
+                              </span>
+                            </span>
+                          );
+                        })}
                       {ultimaPizarra.empates.length > 0 && (
                         <span className="rounded-md bg-warning-500 px-2 py-1 text-[10px] font-black uppercase text-white">
                           ⚡ Empates: {ultimaPizarra.empates.join(", ")} (cero fraccionamiento)

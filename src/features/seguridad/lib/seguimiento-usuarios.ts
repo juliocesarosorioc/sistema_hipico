@@ -878,6 +878,7 @@ export async function consultarActividadUsuario(usuarioId: string): Promise<{
 // ----------------------------------------------------------------------------
 
 let _heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let _storageListener: ((e: StorageEvent) => void) | null = null;
 
 export interface ParamsHeartbeatSesion {
   sesionId: string;
@@ -894,6 +895,22 @@ export function iniciarHeartbeatSesion(params: ParamsHeartbeatSesion): void {
   if (typeof window === "undefined") return;
   detenerHeartbeatSesion();
 
+  // 1. Coordinación local entre pestañas (1 usuario = 1 conexión inmediata en el mismo navegador)
+  try {
+    const key = `hipico_activa_${params.usuarioId}`;
+    localStorage.setItem(key, params.sesionId);
+
+    _storageListener = (e: StorageEvent) => {
+      if (e.key === key && e.newValue && e.newValue !== params.sesionId) {
+        detenerHeartbeatSesion();
+        params.onSesionInvalida?.();
+      }
+    };
+    window.addEventListener("storage", _storageListener);
+  } catch {
+    /* ignore */
+  }
+
   void registrarLatidoPresencia({
     usuarioId: params.usuarioId,
     nombre: params.nombre,
@@ -904,6 +921,39 @@ export function iniciarHeartbeatSesion(params: ParamsHeartbeatSesion): void {
 
   _heartbeatTimer = setInterval(async () => {
     try {
+      // 2. Comprobar concurrencia en la base de datos (1 usuario = 1 conexión entre diferentes dispositivos)
+      if (supabase && tablaSesionDisponible) {
+        const { data: sesionData, error: errS } = await supabase
+          .from("usuario_sesion")
+          .select("id, activo, ultimo_latido")
+          .eq("usuario_id", params.usuarioId)
+          .eq("activo", true)
+          .order("ultimo_latido", { ascending: false })
+          .limit(1);
+
+        if (!errS && sesionData && sesionData.length > 0) {
+          const sesionMasReciente = sesionData[0];
+          if (sesionMasReciente.id !== params.sesionId) {
+            detenerHeartbeatSesion();
+            params.onSesionInvalida?.();
+            return;
+          }
+        }
+      }
+
+      // 3. Comprobar concurrencia local por si cambió la clave en storage
+      try {
+        const key = `hipico_activa_${params.usuarioId}`;
+        const sesionLocal = localStorage.getItem(key);
+        if (sesionLocal && sesionLocal !== params.sesionId) {
+          detenerHeartbeatSesion();
+          params.onSesionInvalida?.();
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+
       const ipActual = await obtenerIpCliente();
       if (
         ipActual &&
@@ -929,12 +979,20 @@ export function iniciarHeartbeatSesion(params: ParamsHeartbeatSesion): void {
     } catch {
       /* ignore */
     }
-  }, 20000);
+  }, 12000);
 }
 
 export function detenerHeartbeatSesion(): void {
   if (_heartbeatTimer) {
     clearInterval(_heartbeatTimer);
     _heartbeatTimer = null;
+  }
+  if (_storageListener && typeof window !== "undefined") {
+    try {
+      window.removeEventListener("storage", _storageListener);
+    } catch {
+      /* ignore */
+    }
+    _storageListener = null;
   }
 }

@@ -277,7 +277,7 @@ export function mensajePlanoDeCarrera(opts: OpcionesMensajePlano): string {
   const adelantadasTickets: TicketMensaje[] = [];
   for (const t of opts.tickets) {
     const { tipo } = dividirComando(t.comando);
-    const esAdel = Boolean(t.esAdelantada) || esJugadaAdelantadaReporte({ jugo: tipo, esAdelantada: t.esAdelantada });
+    const esAdel = Boolean(t.esAdelantada);
     if (esAdel) {
       adelantadasTickets.push(t);
     } else {

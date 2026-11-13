@@ -57,8 +57,8 @@ si(colorDiscoNumero(7).includes("bg-orange-600"), "color del disco 7 = anaranjad
 si(colorDiscoNumero(3).includes("bg-blue-700"), "color del disco 3 = azul rey (gualdrapa oficial)");
 si(colorDiscoNumero(9).includes("bg-cyan-500"), "color del disco 9 = turquesa (gualdrapa oficial)");
 si(colorDiscoNumero(10).includes("bg-purple-700"), "color del disco 10 = morado (gualdrapa oficial)");
-si(colorDiscoNumero(11).includes("bg-slate-500"), "color del disco 11 = gris (gualdrapa oficial)");
-si(colorDiscoNumero(12).includes("bg-lime-600"), "color del disco 12 = verde lima (gualdrapa oficial)");
+si(colorDiscoNumero(11).includes("bg-slate-400"), "color del disco 11 = gris (gualdrapa oficial)");
+si(colorDiscoNumero(12).includes("bg-lime-500"), "color del disco 12 = verde lima (gualdrapa oficial)");
 si(
   colorDiscoNumero(2).includes("bg-white") && colorDiscoNumero(2).includes("border border-slate-300"),
   "el 2 blanco se pinta con borde para no perderse sobre panel blanco"
