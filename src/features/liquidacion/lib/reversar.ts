@@ -127,6 +127,7 @@ async function revertirEspecialesDeCarrera(opts: {
 
   for (const f of filas) {
     const mod = modalidadDeTicket(f.nombre_jugada ?? f);
+    if (!mod) continue;
     if (mod === "MARCA") {
       const est = String(f.estado ?? "").trim().toUpperCase();
       const monto = NUM(f.monto_jugado);

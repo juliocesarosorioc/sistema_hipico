@@ -713,6 +713,21 @@ export function resultadoConsigueDe(
   return Math.round((perdida - perdida * (ev.tasa / 100)) * 100) / 100;
 }
 
+export function comisionConsigueDe(
+  monto: number,
+  ev: EvaluacionTicketReporte
+): number {
+  const resDa = resultadoConsigueDe(monto, ev);
+  if (resDa === null || resDa <= 0) return 0;
+  if (ev.resultadoDa !== undefined) {
+    const perdida = Math.max(0, monto);
+    return Math.max(0, Math.round((perdida - resDa) * 100) / 100);
+  }
+  const brutoTotalJuega = ev.bruto + ev.comision;
+  const perdida = Math.max(0, monto - brutoTotalJuega);
+  return Math.max(0, Math.round((perdida - resDa) * 100) / 100);
+}
+
 /* ─────────────────────────── consultas ─────────────────────────── */
 
 /** Pizarra oficial de una carrera tal como la cargo la casa. */
@@ -1658,7 +1673,9 @@ export function desglosarTicketEnFilasUnificadas(
     resultado: resultadoJuega,
     comisionCobrada:
       resultadoJuega !== null && resultadoJuega > 0
-        ? comisionCobradaTicket(f, ev.comision)
+        ? ev.resultadoJuega !== undefined
+          ? 0
+          : ev.comision
         : 0,
     estado: estadoJuega,
     anulada,
@@ -1697,7 +1714,7 @@ export function desglosarTicketEnFilasUnificadas(
       resultado: resConsigue,
       comisionCobrada:
         resConsigue !== null && resConsigue > 0
-          ? comisionCobradaTicket(f, ev.comision)
+          ? comisionConsigueDe(monto, ev)
           : 0,
       estado: estadoConsigue,
       anulada,
@@ -1818,7 +1835,9 @@ async function carreraReporte(
       resultado: resultadoJuega,
       comisionCobrada:
         resultadoJuega !== null && resultadoJuega > 0
-          ? comisionCobradaTicket(f, ev.comision)
+          ? ev.resultadoJuega !== undefined
+            ? 0
+            : ev.comision
           : 0,
       esPareo,
       ejemplar: desglose.ejemplar,
@@ -1829,6 +1848,7 @@ async function carreraReporte(
     });
 
     if (clienteConsigueNombre) {
+      const resConsigueFila = resultadoConsigueDe(monto, ev);
       filas.push({
         id: `${fecha}-${hipodromo}-${numero}-c-${i}`,
         rol: "Consigue",
@@ -1839,10 +1859,10 @@ async function carreraReporte(
         monto,
         ...(precioTabla !== undefined ? { precioTabla } : {}),
         riesgo: ev.riesgoDa,
-        resultado: resultadoConsigueDe(monto, ev),
+        resultado: resConsigueFila,
         comisionCobrada:
-          (resultadoConsigueDe(monto, ev) ?? 0) > 0
-            ? comisionCobradaTicket(f, ev.comision)
+          (resConsigueFila ?? 0) > 0
+            ? comisionConsigueDe(monto, ev)
             : 0,
         esPareo,
         ejemplar: desglose.ejemplar,
@@ -1898,7 +1918,12 @@ async function carreraReporte(
 
   // 🔀 ASIENTO CONTABLE INTERNO: "Bono por Cruce de jugadas" por carrera y cliente.
   const lineasCruceCarrera = filas
-    .filter((f) => f.rol === "Juega" && f.resultado !== null && Number.isFinite(f.resultado))
+    .filter(
+      (f) =>
+        (f.rol === "Juega" || f.rol === "Consigue") &&
+        f.resultado !== null &&
+        Number.isFinite(f.resultado)
+    )
     .map((f) => ({
       cliente: f.cliente,
       ...(f.clienteId ? { clienteId: f.clienteId } : {}),

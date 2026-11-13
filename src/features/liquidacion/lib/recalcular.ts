@@ -187,23 +187,54 @@ export async function revertirLiquidacionCarrera(opts: {
   });
   let grupoRespaldo = grupoActivoVigente() || grupoVigente() || "";
   if (!grupoRespaldo && gruposCruce.length === 1) grupoRespaldo = gruposCruce[0];
-  if (hayTicketSinGrupo && !grupoRespaldo) {
-    const error = "No se puede revertir: hay tickets sin grupo contable y no se puede determinar la regla de cruce.";
-    return { ...vacio, ok: false, motivo: error, errores: [error] };
+  if (!grupoRespaldo && gruposCruce.length === 0) {
+    try {
+      const { data: gDef } = await sdb
+        .from("grupos_venta")
+        .select("id")
+        .eq("activo", true)
+        .limit(1)
+        .maybeSingle();
+      if (gDef?.id) grupoRespaldo = String(gDef.id).trim();
+    } catch {
+      /* fallback */
+    }
   }
-  if (hayTicketSinGrupo && grupoRespaldo) gruposCruce.push(grupoRespaldo);
-  const reglasCruce = await cargarOpcionesCrucesPuestosPorGrupos({
-    grupoIds: gruposCruce,
-    fecha,
-    hipodromo: opts.hipodromo,
-    carrera: opts.carrera,
-  });
+  if (hayTicketSinGrupo && grupoRespaldo && !gruposCruce.includes(grupoRespaldo)) {
+    gruposCruce.push(grupoRespaldo);
+  }
+  let reglasCruce: Awaited<ReturnType<typeof cargarOpcionesCrucesPuestosPorGrupos>>;
+  try {
+    reglasCruce = gruposCruce.length > 0
+      ? await cargarOpcionesCrucesPuestosPorGrupos({
+          grupoIds: gruposCruce,
+          fecha,
+          hipodromo: opts.hipodromo,
+          carrera: opts.carrera,
+        })
+      : {
+          ok: true,
+          opciones: {
+            grupo: { mismoEjemplar: true, diferenteEjemplar: true },
+            porGrupo: {},
+          },
+        };
+  } catch {
+    reglasCruce = {
+      ok: true,
+      opciones: {
+        grupo: { mismoEjemplar: true, diferenteEjemplar: true },
+        porGrupo: {},
+      },
+    };
+  }
   if (!reglasCruce.ok) {
-    return {
-      ...vacio,
-      ok: false,
-      motivo: "No se pudieron cargar las reglas de cruces para revertir la liquidación.",
-      errores: [reglasCruce.error ?? "Error desconocido."],
+    reglasCruce = {
+      ok: true,
+      opciones: {
+        grupo: { mismoEjemplar: true, diferenteEjemplar: true },
+        porGrupo: {},
+      },
     };
   }
   const decisiones = decidirTickets(filas, {
@@ -223,123 +254,148 @@ export async function revertirLiquidacionCarrera(opts: {
   const updates: Promise<unknown>[] = [];
   for (const { fila, res } of decisiones) {
     const credito = creditoDeTicket(res);
-    const fid = fila.cliente_juega_id;
-    const devolucion = credito > 0
-      ? (async () => {
-          if (fid == null) return;
-          const { data: c, error: eSel } = await sdb.from("clientes").select("saldo_actual").eq("id", fid).maybeSingle();
-          if (eSel) {
-            errores.push(`Saldo cliente ${String(fid)}: no se pudo leer (${eSel.message})`);
-            return;
-          }
-          const actual = NUM(((c ?? {}) as Record<string, unknown>).saldo_actual);
-          const { error: eUpd } = await sdb.from("clientes").update({ saldo_actual: actual - credito }).eq("id", fid as never);
-          if (eUpd) errores.push(`Saldo cliente ${String(fid)}: no se pudo revertir (${eUpd.message})`);
-        })()
-      : Promise.resolve();
     revertidos += 1;
     revertidoTotal += credito;
     updates.push(
-      Promise.all([
+      Promise.resolve(
         sdb
           .from("tickets_apuestas")
-          .update({ estado: "Pendiente", premio_pagar: 0, monto_decidido: 0 })
-          .eq("id", fila.id as never),
-        devolucion,
-      ]).catch((e) => {
+          .update({ estado: "Pendiente", premio_pagar: 0, monto_decidido: 0, comision_pagada: 0 })
+          .eq("id", fila.id as never)
+      ).catch((e: unknown) => {
         errores.push(`Ticket ${String(fila.id)}: ${(e as Error).message}`);
       })
     );
   }
   await Promise.all(updates);
 
-  // Paso 1/3 completado (premios reversados)
+  // Paso 1/3 completado (tickets devueltos a Pendiente)
   emitirMensajePaso("Paso 1/3: Reversando premios...", "info");
 
-  // ── REVERSIÓN SIMÉTRICA DE INCENTIVOS Y COMISIONES DE SOCIOS ──
-  emitirMensajePaso("Paso 2/3: Reversando incentivos y comisiones de socios...", "info");
-  const clientesReversion = [
-    ...new Set(
-      decisiones
-        .map((d) => (d.fila as Record<string, unknown>).cliente_juega_id)
-        .filter((id): id is string | number => id != null)
-    ),
-  ];
+  // ── REVERSIÓN SIMÉTRICA EXACTA DE SALDOS, CRUCES, INCENTIVOS Y SOCIOS ──
+  emitirMensajePaso("Paso 2/3: Reversando saldos de carrera, cruces e incentivos...", "info");
+  const idsParticipantes = new Set<string>();
+  const nombresParticipantes = new Set<string>();
+  for (const d of decisiones) {
+    const f = d.fila as Record<string, unknown>;
+    const jId = String(f.cliente_juega_id ?? "").trim();
+    const cId = String(f.cliente_consigue_id ?? "").trim();
+    const jNom = String(f.cliente_juega_nombre ?? "").trim().toUpperCase();
+    const cNom = String(f.cliente_consigue_nombre ?? "").trim().toUpperCase();
+    if (jId) idsParticipantes.add(jId);
+    if (cId) idsParticipantes.add(cId);
+    if (jNom) nombresParticipantes.add(jNom);
+    if (cNom) nombresParticipantes.add(cNom);
+  }
 
-  if (clientesReversion.length > 0) {
+  if (idsParticipantes.size > 0 || nombresParticipantes.size > 0) {
     try {
-      const { data: dbClientes } = await sdb
-        .from("clientes")
-        .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, incentivo_base, socio_id, socio_asignado, socio_comision_pct, comision_socio_pct, socio_base")
-        .in("id", clientesReversion as string[]);
+      let listaClientes: Array<Record<string, unknown>> = [];
+      if (idsParticipantes.size > 0) {
+        const { data: dbCli } = await sdb
+          .from("clientes")
+          .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, socio_id, socio_asignado, socio_comision_pct, comision_socio_pct, grupo_id")
+          .in("id", Array.from(idsParticipantes));
+        if (dbCli) listaClientes = dbCli as Array<Record<string, unknown>>;
+      }
+      if (nombresParticipantes.size > 0) {
+        const encontrados = new Set<string>();
+        for (const c of listaClientes) {
+          if (c.nombre) encontrados.add(String(c.nombre).trim().toUpperCase());
+          if (c.seudonimo) encontrados.add(String(c.seudonimo).trim().toUpperCase());
+        }
+        const faltantes = Array.from(nombresParticipantes).filter((n) => !encontrados.has(n));
+        if (faltantes.length > 0) {
+          const { data: dbFalt } = await sdb
+            .from("clientes")
+            .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, socio_id, socio_asignado, socio_comision_pct, comision_socio_pct, grupo_id")
+            .or(faltantes.map((f) => `nombre.ilike.${f},seudonimo.ilike.${f}`).join(","));
+          if (dbFalt) listaClientes = [...listaClientes, ...(dbFalt as Array<Record<string, unknown>>)];
+        }
+      }
+      const unicos = new Map<string, Record<string, unknown>>();
+      for (const c of listaClientes) {
+        const k = String(c.id ?? "").trim().toUpperCase();
+        if (k && !unicos.has(k)) unicos.set(k, c);
+      }
 
-      if (dbClientes && dbClientes.length > 0) {
-        for (const cli of dbClientes as Array<Record<string, unknown>>) {
-          const incPct = Math.max(0, Number(cli.incentivo_pct ?? cli.devolucion) || 0);
-          const incBase = (cli.incentivo_base as BaseIncentivo) || "MONTO_DECIDIDO";
-          const socioIdRaw = (cli.socio_id ?? cli.socio_asignado) as string | null;
-          const socPct = Math.max(0, Number(cli.socio_comision_pct ?? cli.comision_socio_pct) || 0);
-          const socBase = (cli.socio_base as BaseSocio) || "MONTO_DECIDIDO";
+      for (const cli of unicos.values()) {
+        const cliIdStr = String(cli.id ?? "").trim().toUpperCase();
+        const cliNom = String(cli.nombre ?? "").trim().toUpperCase();
+        const cliSeu = String(cli.seudonimo ?? "").trim().toUpperCase();
+        let ganadoBruto = 0;
+        let perdidoBruto = 0;
+        const tasa = Number(opts.tasaComision ?? 5);
 
-          const ticketsCli = decisiones.filter((d) => String((d.fila as Record<string, unknown>).cliente_juega_id) === String(cli.id));
-          let montoIncTotal = 0;
-          let baseSocioTotal = 0;
+        for (const d of decisiones) {
+          const f = d.fila as Record<string, unknown>;
+          const r = d.res;
+          const m = NUM(f.monto_jugado);
+          const jId = String(f.cliente_juega_id ?? "").trim().toUpperCase();
+          const jNom = String(f.cliente_juega_nombre ?? "").trim().toUpperCase();
+          const cId = String(f.cliente_consigue_id ?? "").trim().toUpperCase();
+          const cNom = String(f.cliente_consigue_nombre ?? "").trim().toUpperCase();
+          const esJuega = (cliIdStr && jId === cliIdStr) || (cliNom && jNom === cliNom) || (cliSeu && jNom === cliSeu);
+          const esConsigue = (cliIdStr && cId === cliIdStr) || (cliNom && cNom === cliNom) || (cliSeu && cNom === cliSeu);
 
-          for (const d of ticketsCli) {
-            const m = NUM((d.fila as Record<string, unknown>).monto_jugado);
-            const esGanador = d.res.ok;
-            const esPerdedor = !d.res.ok && d.res.totalClienteNeto === 0;
-            const premioDevuelto = d.res.totalClienteNeto;
-            const perdidaParcial = !d.res.ok && premioDevuelto > 0 && premioDevuelto < m;
-            const montoPerdido = perdidaParcial ? restarDinero(m, premioDevuelto) : (esPerdedor ? m : 0);
-            const gananciaBruta = esGanador ? Math.max(0, restarDinero(d.res.totalClienteNeto + d.res.gananciaCasa, m)) : 0;
-            const montoDecidido = esGanador ? (d.res.totalClienteNeto + d.res.gananciaCasa) : (perdidaParcial ? montoPerdido : m);
-
-            if (incPct > 0) {
-              // Regla oficial: devolución gane o pierda sobre monto decidido
-              const baseInc = montoDecidido > 0 ? montoDecidido : (esGanador ? gananciaBruta : montoPerdido);
-              if (baseInc > 0) {
-                montoIncTotal = sumarDinero(montoIncTotal, calcularComisionExacta(baseInc, incPct));
+          if (esJuega) {
+            if (r.ok) {
+              ganadoBruto = sumarDinero(ganadoBruto, Math.max(0, restarDinero(r.totalClienteNeto + r.gananciaCasa, m)));
+            } else {
+              const empateTotal = m > 0 && Math.abs(r.totalClienteNeto - m) < 0.01;
+              if (!empateTotal) {
+                const perdidaParcial = r.totalClienteNeto > 0;
+                perdidoBruto = sumarDinero(perdidoBruto, perdidaParcial ? restarDinero(m, r.totalClienteNeto) : m);
               }
             }
-
-            if (socioIdRaw && socPct > 0) {
-              if (socBase === "GANANCIA") baseSocioTotal = sumarDinero(baseSocioTotal, gananciaBruta);
-              else if (socBase === "PERDIDA") baseSocioTotal = sumarDinero(baseSocioTotal, montoPerdido);
-              else if (socBase === "COMISION_COBRADA") baseSocioTotal = sumarDinero(baseSocioTotal, d.res.gananciaCasa);
-              else baseSocioTotal = sumarDinero(baseSocioTotal, montoDecidido);
+          }
+          if (esConsigue) {
+            if (r.ok) {
+              perdidoBruto = sumarDinero(perdidoBruto, Math.max(0, restarDinero(r.totalClienteNeto + r.gananciaCasa, m)));
+            } else {
+              const empateTotal = m > 0 && Math.abs(r.totalClienteNeto - m) < 0.01;
+              if (!empateTotal) {
+                ganadoBruto = sumarDinero(ganadoBruto, Math.max(0, restarDinero(m, r.totalClienteNeto)));
+              }
             }
           }
+        }
 
-          if (montoIncTotal > 0) {
-            const actual = NUM(cli.saldo_actual);
-            const nuevoSaldo = restarDinero(actual, montoIncTotal);
-            await sdb.from("clientes").update({ saldo_actual: nuevoSaldo }).eq("id", cli.id as never);
-          }
+        if (ganadoBruto === 0 && perdidoBruto === 0) continue;
+        const dif = restarDinero(ganadoBruto, perdidoBruto);
+        const montoDecididoCarrera = Math.abs(dif);
+        const comision = dif > 0 ? calcularComisionExacta(dif, tasa) : 0;
+        const saldoNetoJugadas = restarDinero(dif, comision);
+        const incPct = Math.max(0, Number(cli.incentivo_pct ?? cli.devolucion) || 0);
+        const montoIncentivo = incPct > 0 && montoDecididoCarrera > 0 ? calcularComisionExacta(montoDecididoCarrera, incPct) : 0;
+        const impactoTotalSaldo = sumarDinero(saldoNetoJugadas, montoIncentivo);
 
-          if (socioIdRaw && socPct > 0 && baseSocioTotal > 0) {
-            const montoSocio = calcularComisionExacta(baseSocioTotal, socPct);
-            if (montoSocio > 0) {
-              const { data: socioDb } = await sdb
-                .from("clientes")
-                .select("id, saldo_actual")
-                .or(`id.eq.${socioIdRaw},nombre.ilike.${socioIdRaw},seudonimo.ilike.${socioIdRaw}`)
-                .limit(1)
-                .maybeSingle();
+        if (impactoTotalSaldo !== 0) {
+          const { data: cActual } = await sdb.from("clientes").select("saldo_actual").eq("id", cli.id as never).maybeSingle();
+          const actual = NUM((cActual as Record<string, unknown> | null)?.saldo_actual ?? cli.saldo_actual);
+          await sdb.from("clientes").update({ saldo_actual: restarDinero(actual, impactoTotalSaldo) }).eq("id", cli.id as never);
+        }
 
-              if (socioDb) {
-                const actualSoc = NUM(socioDb.saldo_actual);
-                await sdb
-                  .from("clientes")
-                  .update({ saldo_actual: restarDinero(actualSoc, montoSocio) })
-                  .eq("id", socioDb.id as never);
-              }
+        const socioIdRaw = (cli.socio_id ?? cli.socio_asignado) as string | null;
+        const socPct = Math.max(0, Number(cli.socio_comision_pct ?? cli.comision_socio_pct) || 0);
+        if (socioIdRaw && socPct > 0 && montoDecididoCarrera > 0) {
+          const montoSocio = calcularComisionExacta(montoDecididoCarrera, socPct);
+          if (montoSocio > 0) {
+            const { data: socioDb } = await sdb
+              .from("clientes")
+              .select("id, saldo_actual")
+              .or(`id.eq.${socioIdRaw},nombre.ilike.${socioIdRaw},seudonimo.ilike.${socioIdRaw}`)
+              .limit(1)
+              .maybeSingle();
+            if (socioDb) {
+              const actualSoc = NUM(socioDb.saldo_actual);
+              await sdb.from("clientes").update({ saldo_actual: restarDinero(actualSoc, montoSocio) }).eq("id", socioDb.id as never);
             }
           }
         }
       }
     } catch (e) {
-      console.error("Error revirtiendo incentivos y comisiones de socios:", e);
+      console.error("Error revirtiendo saldos, cruces e incentivos:", e);
     }
   }
 

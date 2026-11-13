@@ -239,7 +239,7 @@ export function calcularResumenContableCliente(params: {
   const seudonimoNorm = normalizarNombreCliente(params.seudonimo);
   const avalVigente = Math.max(0, redondearCentavos(params.aval ?? 0));
   const comDefault = params.comisionPctDefault ?? 5;
-  const modCruces = params.modalidadCruces ?? false;
+  const modCruces = params.modalidadCruces ?? "con_cruces";
 
   const depositos = redondearCentavos(params.depositos ?? 0);
   const retiros = redondearCentavos(params.retiros ?? 0);
@@ -405,12 +405,14 @@ export function calcularResumenContableCliente(params: {
       // Ganó el lado Juega
       const premioTotal = redondearCentavos(t.premio_pagar ?? t.monto_decidido ?? monto * 2);
       const gananciaBrutaJuega = Math.max(0, restarDinero(premioTotal, monto));
+      const crucesActivos = modCruces === true || modCruces === "con_cruces";
       const comisionRegistrada =
         t.comision_pagada == null || String(t.comision_pagada).trim() === ""
           ? Number.NaN
           : Number(t.comision_pagada);
-      const comisionJuega =
-        Number.isFinite(comisionRegistrada) && comisionRegistrada >= 0
+      const comisionJuega = crucesActivos
+        ? calcularComisionExacta(gananciaBrutaJuega, comPct)
+        : Number.isFinite(comisionRegistrada) && comisionRegistrada >= 0
           ? redondearCentavos(comisionRegistrada)
           : calcularComisionExacta(gananciaBrutaJuega, comPct);
 
@@ -488,7 +490,10 @@ export function calcularResumenContableCliente(params: {
   let reembolsoCruceCentavos = 0;
   for (const [, lineas] of lineasPorCarrera) {
     const resCruce = calcularReembolsosCruce(lineas, modCruces, comDefault);
-    const item = resCruce.porCliente.get(nombreNorm);
+    const item =
+      resCruce.porCliente.get(nombreNorm) ??
+      (seudonimoNorm ? resCruce.porCliente.get(seudonimoNorm) : undefined) ??
+      resCruce.porCliente.values().next().value;
     if (item) {
       reembolsoCruceCentavos += aCentavos(item.reembolsoCruce);
     }
@@ -989,15 +994,18 @@ export async function sincronizarSaldosRealesClientes<
     const devolucionPct = Math.max(0, Number(devolucionRaw) || 0);
     const comisionSocio = comisionesPorCliente.get(String(c.id)) ?? 0;
 
+    const cRec = c as Record<string, unknown>;
     const resumen = calcularResumenContableCliente({
       clienteId: c.id,
       nombre,
+      seudonimo: cRec.seudonimo ? String(cRec.seudonimo) : undefined,
       grupoId: c.grupo_id,
       aval: c.aval,
       saldoEnBase: saldoNum,
       devolucionPct,
       comisionSocioDevengada: comisionSocio,
       tickets,
+      modalidadCruces: cRec.permite_cruces === false ? "sin_cruces" : "con_cruces",
     });
 
     // `saldo_actual` es el libro mayor: se devuelve EXACTAMENTE como está en la

@@ -36,6 +36,7 @@ import {
   parsearNomenclatura,
   type Nomenclatura,
 } from "@/features/motores/lib/puestos";
+import { resolverSeudonimoClienteSync } from "@/features/clientes/lib/clientes";
 
 export {
   normalizarJugadaPremio,
@@ -544,13 +545,24 @@ export function calcularReembolsosCruce(
   const canonicoPorId = new Map<string, string>();
 
   const obtenerClaveCanonica = (cliente: string, clienteId?: string): string => {
-    const nom = normalizarNombreCliente(cliente);
     const id = String(clienteId ?? "").trim().toUpperCase();
-    let clave = (id ? canonicoPorId.get(id) : undefined) || (nom ? canonicoPorNombre.get(nom) : undefined);
+    const aliasPorId = id ? resolverSeudonimoClienteSync(id) : "";
+    const aliasPorNom = cliente ? resolverSeudonimoClienteSync(cliente) : "";
+    const aliasEfectivo =
+      aliasPorId && aliasPorId.toUpperCase() !== id
+        ? aliasPorId
+        : aliasPorNom || cliente;
+    const nom = normalizarNombreCliente(aliasEfectivo || cliente);
+    const nomRaw = normalizarNombreCliente(cliente);
+    let clave =
+      (id ? canonicoPorId.get(id) : undefined) ||
+      (nom ? canonicoPorNombre.get(nom) : undefined) ||
+      (nomRaw ? canonicoPorNombre.get(nomRaw) : undefined);
     if (!clave) {
-      clave = nom || id;
+      clave = nom || nomRaw || id;
     }
     if (nom) canonicoPorNombre.set(nom, clave);
+    if (nomRaw) canonicoPorNombre.set(nomRaw, clave);
     if (id) canonicoPorId.set(id, clave);
     return clave;
   };
@@ -576,8 +588,13 @@ export function calcularReembolsosCruce(
     prev.ganadoCentavos += brutoGanadoCentavos;
     prev.perdidoCentavos += Math.max(0, aCentavos(l.brutoPerdido));
     if (brutoGanadoCentavos > 0) {
-      const comision = (l.comisionCobrada != null && Number(l.comisionCobrada) > 0)
-        ? Math.max(0, aCentavos(l.comisionCobrada))
+      const tieneComisionExplicita =
+        l.comisionCobrada !== undefined &&
+        l.comisionCobrada !== null &&
+        Number.isFinite(Number(l.comisionCobrada)) &&
+        Number(l.comisionCobrada) >= 0;
+      const comision = tieneComisionExplicita
+        ? Math.max(0, aCentavos(Number(l.comisionCobrada)))
         : aCentavos(
             calcularComisionExacta(
               deCentavos(brutoGanadoCentavos),
@@ -652,6 +669,7 @@ export function _reembolsosCruce(
     .map((l) => {
     let brutoGanado = Number(l.brutoGanado ?? 0);
     let brutoPerdido = Number(l.brutoPerdido ?? 0);
+    let comisionCobrada = l.comisionCobrada;
     if (brutoGanado === 0 && brutoPerdido === 0 && typeof l.resultado === "number") {
       if (l.resultado > 0) {
         if (l.comisionCobrada != null && Number(l.comisionCobrada) > 0) {
@@ -663,6 +681,7 @@ export function _reembolsosCruce(
             factorNeto > 0
               ? redondearCentavos(l.resultado / factorNeto)
               : redondearCentavos(l.resultado);
+          comisionCobrada = Math.max(0, redondearCentavos(brutoGanado - l.resultado));
         }
       } else if (l.resultado < 0) {
         brutoPerdido = redondearCentavos(Math.abs(l.resultado));
@@ -673,7 +692,7 @@ export function _reembolsosCruce(
       clienteId: l.clienteId,
       brutoGanado,
       brutoPerdido,
-      comisionCobrada: l.comisionCobrada,
+      comisionCobrada,
       comisionPct: l.comisionPct,
       rol: l.rol,
     };

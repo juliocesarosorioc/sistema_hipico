@@ -371,12 +371,17 @@ export function armarReporteCarrera(
   const registrarNombreCliente = (raw: string, clienteId?: string): string => {
     const alias = resolverAlias(raw, clienteId);
     const nombreNormalizado = normalizarNombreCliente(alias || raw);
+    const rawNormalizado = normalizarNombreCliente(raw);
     const idNormalizado = String(clienteId ?? "").trim();
-    const clave = idNormalizado
-      ? identidadPorId.get(idNormalizado.toUpperCase()) ?? `id:${idNormalizado.toUpperCase()}`
-      : nombreNormalizado
-        ? identidadPorNombre.get(nombreNormalizado) ?? `nombre:${nombreNormalizado}`
-        : "";
+    const clave =
+      (idNormalizado ? identidadPorId.get(idNormalizado.toUpperCase()) : undefined) ??
+      (nombreNormalizado ? identidadPorNombre.get(nombreNormalizado) : undefined) ??
+      (rawNormalizado ? identidadPorNombre.get(rawNormalizado) : undefined) ??
+      (nombreNormalizado
+        ? `nombre:${nombreNormalizado}`
+        : idNormalizado
+          ? `id:${idNormalizado.toUpperCase()}`
+          : "");
     if (!clave) return "";
     const existente = nombreVisiblePorClave.get(clave);
     const nombreElegido = alias || String(raw ?? "").trim();
@@ -393,7 +398,8 @@ export function armarReporteCarrera(
         nombreVisiblePorClave.set(clave, nombreElegido);
       }
     }
-    if (nombreNormalizado && !idNormalizado) identidadPorNombre.set(nombreNormalizado, clave);
+    if (nombreNormalizado) identidadPorNombre.set(nombreNormalizado, clave);
+    if (rawNormalizado) identidadPorNombre.set(rawNormalizado, clave);
     if (idNormalizado) identidadPorId.set(idNormalizado.toUpperCase(), clave);
     return clave;
   };
@@ -527,9 +533,10 @@ export function armarReporteCarrera(
       if (info.reembolsoCruce > 0) {
         // El reembolso reduce la comisión efectiva: se acredita una sola vez al
         // neto consolidado, además de conservarse como asiento auditable.
-        const claveIdentidad = info.clienteId
-          ? identidadPorId.get(info.clienteId.toUpperCase())
-          : identidadPorNombre.get(normalizarNombreCliente(info.cliente));
+        const claveIdentidad =
+          (info.clienteId ? identidadPorId.get(info.clienteId.toUpperCase()) : undefined) ??
+          identidadPorNombre.get(normalizarNombreCliente(info.cliente)) ??
+          identidadPorNombre.get(normalizarNombreCliente(claveCruce));
         const destino = claveIdentidad ?? `nombre:${claveCruce}`;
         netoPorCliente.set(
           destino,

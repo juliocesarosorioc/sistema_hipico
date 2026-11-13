@@ -19,7 +19,7 @@ import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { redondearCentavos } from "@/shared/lib/dinero";
 import { sincronizarContabilidadCarreraEnSegundoPlano } from "@/features/contabilidad/lib/contabilidad-automatica";
-import { limpiarCacheClientes } from "@/features/clientes/lib/clientes";
+import { limpiarCacheClientes, resolverSeudonimoClienteSync } from "@/features/clientes/lib/clientes";
 import { limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
 import { reconciliarIdentidadPersistida } from "@/features/liquidacion/lib/identidad-tickets";
 import {
@@ -471,28 +471,51 @@ export async function liquidarCarreraYCerrarTabla(opts: {
             monto: perdidaEfectiva,
           };
         });
-      // Cruce con rol Consigue: si este jugador también DIO (Consigue) en la carrera y
-      // perdió (ganó el lado Juega), esa pérdida compensa sus ganancias como Juega y la
-      // comisión queda solo sobre la diferencia.
+      // Cruce simétrico con rol Consigue (tanto cuando Consigue pierde como cuando Consigue gana)
       const nombreJugador = String(metadatos[idxs[0]].cliente1 ?? "").trim().toUpperCase();
-      if (nombreJugador) {
+      const aliasJugador = (
+        (clienteId ? resolverSeudonimoClienteSync(clienteId) : "") ||
+        (nombreJugador ? resolverSeudonimoClienteSync(nombreJugador) : "") ||
+        nombreJugador
+      )
+        .trim()
+        .toUpperCase();
+      if (nombreJugador || aliasJugador) {
         for (let i = 0; i < procesados.length; i++) {
           if (idxs.includes(i) || !esJugadaDePuestos(metadatos[i].tipo)) continue;
-          if (String(metadatos[i].cliente2 ?? "").trim().toUpperCase() !== nombreJugador) continue;
-          if (String(metadatos[i].grupoId ?? "").trim() !== grupoId) continue;
+          const c2Raw = String(metadatos[i].cliente2 ?? "").trim().toUpperCase();
+          if (!c2Raw) continue;
+          const c2Alias = (resolverSeudonimoClienteSync(c2Raw) || c2Raw).trim().toUpperCase();
+          if (c2Raw !== nombreJugador && c2Raw !== aliasJugador && c2Alias !== aliasJugador) continue;
+          const g2 = String(metadatos[i].grupoId ?? "").trim();
+          if (g2 && grupoId && g2 !== grupoId) continue;
           const r = procesados[i].resultado;
-          if (!r.ok) continue;
-          const perdidaConsigue = round2(r.totalClienteNeto + r.gananciaCasa - metadatos[i].monto);
-          if (perdidaConsigue <= 0) continue;
-          entradas.push({
-            cliente: String(metadatos[idxs[0]].cliente1 ?? "").trim() || jugador,
-            ...(clienteId ? { clienteId } : {}),
-            grupoId,
-            caballo: metadatos[i].caballo,
-            ok: false,
-            bruto: 0,
-            monto: perdidaConsigue,
-          });
+          const m = metadatos[i].monto;
+          if (r.ok) {
+            const perdidaConsigue = round2(r.totalClienteNeto + r.gananciaCasa - m);
+            if (perdidaConsigue <= 0) continue;
+            entradas.push({
+              cliente: String(metadatos[idxs[0]].cliente1 ?? "").trim() || jugador,
+              ...(clienteId ? { clienteId } : {}),
+              grupoId,
+              caballo: metadatos[i].caballo,
+              ok: false,
+              bruto: 0,
+              monto: perdidaConsigue,
+            });
+          } else {
+            const gananciaConsigue = Math.max(0, round2(m - r.totalClienteNeto));
+            if (gananciaConsigue <= 0) continue;
+            entradas.push({
+              cliente: String(metadatos[idxs[0]].cliente1 ?? "").trim() || jugador,
+              ...(clienteId ? { clienteId } : {}),
+              grupoId,
+              caballo: metadatos[i].caballo,
+              ok: true,
+              bruto: gananciaConsigue,
+              monto: 0,
+            });
+          }
         }
       }
       const liquidaciones = calcularLiquidacionPuestosCarrera(entradas, {

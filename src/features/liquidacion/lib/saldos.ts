@@ -43,6 +43,7 @@ import {
   calcularBaseDecididaCarrera,
   type JugadaEntradaBaseDecidida,
 } from "@/features/liquidacion/lib/devoluciones-cruce";
+import { resolverSeudonimoClienteSync } from "@/features/clientes/lib/clientes";
 import { generarAsientoDevolucionIncentivo } from "@/features/contabilidad/lib/plan-cuentas";
 import { jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros-nucleo";
 import { limpiarCacheClientes } from "@/features/clientes/lib/clientes";
@@ -244,16 +245,32 @@ export function decidirTickets(
   }
   if (usaModalidadesPuestos && input.crucesPuestos) {
     const porJugador = new Map<string, number[]>();
+    const resolverAliasCanonico = (idRaw?: unknown, nomRaw?: unknown): string => {
+      const id = String(idRaw ?? "").trim();
+      const nom = String(nomRaw ?? "").trim();
+      if (id) {
+        const porId = resolverSeudonimoClienteSync(id);
+        if (porId && porId.toUpperCase() !== id.toUpperCase()) return porId.toUpperCase();
+      }
+      if (nom) {
+        const porNom = resolverSeudonimoClienteSync(nom);
+        if (porNom) return porNom.toUpperCase();
+      }
+      return (id || nom).toUpperCase();
+    };
     for (let i = 0; i < decisiones.length; i++) {
       if (!esPuestos(i)) continue;
-      const nombre = String(decisiones[i].fila.cliente_juega_id ?? "").trim().toUpperCase();
+      const idJuega = String(decisiones[i].fila.cliente_juega_id ?? "").trim().toUpperCase();
+      const nomJuega = String(decisiones[i].fila.cliente_juega_nombre ?? "").trim().toUpperCase();
+      const canon = resolverAliasCanonico(idJuega, nomJuega);
+      const nombre = idJuega || canon || nomJuega;
       if (!nombre) continue;
       const grupoId = grupoDeCuenta(
         decisiones[i].fila.grupo_cuenta_id as string | number | null | undefined,
         decisiones[i].fila.grupo_publicador_id as string | number | null | undefined,
         decisiones[i].fila.grupo_cobro_id as string | number | null | undefined
       ) || String(input.grupoId ?? "").trim();
-      const clave = `${grupoId}::${nombre}`;
+      const clave = `${grupoId}::${canon || nombre}`;
       const lista = porJugador.get(clave) ?? [];
       lista.push(i);
       porJugador.set(clave, lista);
@@ -261,6 +278,7 @@ export function decidirTickets(
     for (const idxs of porJugador.values()) {
       const jugador = String(decisiones[idxs[0]].fila.cliente_juega_id ?? "").trim().toUpperCase();
       const nombreJugador = String(decisiones[idxs[0]].fila.cliente_juega_nombre ?? "").trim().toUpperCase();
+      const aliasJugador = resolverAliasCanonico(jugador, nombreJugador);
       const grupoId = grupoDeCuenta(
         decisiones[idxs[0]].fila.grupo_cuenta_id as string | number | null | undefined,
         decisiones[idxs[0]].fila.grupo_publicador_id as string | number | null | undefined,
@@ -280,7 +298,7 @@ export function decidirTickets(
               ? restarDinero(m, r.totalClienteNeto)
               : m;
           return {
-            cliente: nombreJugador || jugador,
+            cliente: aliasJugador || nombreJugador || jugador,
             clienteId: jugador,
             grupoId,
             caballo: String(decisiones[i].fila.caballo ?? "").trim(),
@@ -290,20 +308,24 @@ export function decidirTickets(
           };
         });
       // Cruce simétrico con rol Consigue (tanto cuando Consigue pierde como cuando Consigue gana)
-      if (nombreJugador || jugador) {
+      if (nombreJugador || jugador || aliasJugador) {
         for (let i = 0; i < decisiones.length; i++) {
           if (idxs.includes(i) || !esPuestos(i)) continue;
           const fila = decisiones[i].fila;
           const conNom = String(fila.cliente_consigue_nombre ?? "").trim().toUpperCase();
           const conId = String(fila.cliente_consigue_id ?? "").trim().toUpperCase();
-          const coincide = (conNom && (conNom === nombreJugador || conNom === jugador)) || (conId && conId === jugador);
+          const conAlias = resolverAliasCanonico(conId, conNom);
+          const coincide =
+            (conId && jugador && conId === jugador) ||
+            (conNom && (conNom === nombreJugador || conNom === jugador || conNom === aliasJugador)) ||
+            (conAlias && aliasJugador && conAlias === aliasJugador);
           if (!coincide) continue;
           const grupoFila = grupoDeCuenta(
             fila.grupo_cuenta_id as string | number | null | undefined,
             fila.grupo_publicador_id as string | number | null | undefined,
             fila.grupo_cobro_id as string | number | null | undefined
           ) || String(input.grupoId ?? "").trim();
-          if (grupoFila !== grupoId) continue;
+          if (grupoFila && grupoId && grupoFila !== grupoId) continue;
           const r = decisiones[i].res;
           const m = NUM(fila.monto_jugado);
           if (r.ok) {
@@ -311,7 +333,7 @@ export function decidirTickets(
             const perdidaConsigue = restarDinero(sumarDinero(r.totalClienteNeto, r.gananciaCasa), m);
             if (perdidaConsigue > 0) {
               entradas.push({
-                cliente: nombreJugador || jugador,
+                cliente: aliasJugador || nombreJugador || jugador,
                 clienteId: jugador,
                 grupoId,
                 caballo: String(fila.caballo ?? "").trim(),
@@ -328,7 +350,7 @@ export function decidirTickets(
             const gananciaConsigue = Math.max(0, restarDinero(m, r.totalClienteNeto));
             if (gananciaConsigue > 0) {
               entradas.push({
-                cliente: nombreJugador || jugador,
+                cliente: aliasJugador || nombreJugador || jugador,
                 clienteId: jugador,
                 grupoId,
                 caballo: String(fila.caballo ?? "").trim(),
@@ -345,7 +367,13 @@ export function decidirTickets(
         ...input.crucesPuestos,
         pctComision: tasa,
       });
-      const liquidacion = liquidaciones.find((x) => x.clienteId === jugador && x.grupoId === grupoId);
+      const liquidacion =
+        liquidaciones.find(
+          (x) =>
+            ((jugador && x.clienteId === jugador) ||
+              x.cliente.trim().toUpperCase() === (aliasJugador || nombreJugador || jugador)) &&
+            x.grupoId === grupoId
+        ) ?? liquidaciones[0];
       if (!liquidacion) continue;
       const ganadores = idxs.filter((i) => decisiones[i].res.ok);
       const comisionOriginal = ganadores.reduce((suma, i) => suma + decisiones[i].res.gananciaCasa, 0);
@@ -543,6 +571,59 @@ export async function aplicarLiquidacionSaldos(
     };
   }
 
+  // Si algún ticket vino sin cliente_juega_id o sin cliente_consigue_id, intentar reconciliarlo por nombre/seudónimo contra `clientes`
+  const nombresSinId = new Set<string>();
+  for (const raw of filas) {
+    const f = raw as Record<string, unknown>;
+    if (!String(f.cliente_juega_id ?? "").trim() && String(f.cliente_juega_nombre ?? "").trim()) {
+      nombresSinId.add(String(f.cliente_juega_nombre).trim());
+    }
+    if (!String(f.cliente_consigue_id ?? "").trim() && String(f.cliente_consigue_nombre ?? "").trim()) {
+      nombresSinId.add(String(f.cliente_consigue_nombre).trim());
+    }
+  }
+  if (nombresSinId.size > 0) {
+    try {
+      const { data: cliCatalogo } = await sdb
+        .from("clientes")
+        .select("id, nombre, seudonimo, grupo_id")
+        .limit(2000);
+      if (Array.isArray(cliCatalogo) && cliCatalogo.length > 0) {
+        const porIdentidad = new Map<string, { id: string; alias: string; grupoId?: string }>();
+        for (const c of cliCatalogo as Array<Record<string, unknown>>) {
+          const id = String(c.id ?? "").trim();
+          if (!id) continue;
+          const nom = String(c.nombre ?? "").trim();
+          const seu = String(c.seudonimo ?? "").trim();
+          const alias = seu || nom;
+          const gId = c.grupo_id ? String(c.grupo_id).trim() : undefined;
+          if (nom) porIdentidad.set(nom.toUpperCase(), { id, alias, grupoId: gId });
+          if (seu) porIdentidad.set(seu.toUpperCase(), { id, alias, grupoId: gId });
+        }
+        for (const raw of filas) {
+          const f = raw as Record<string, unknown>;
+          if (!String(f.cliente_juega_id ?? "").trim()) {
+            const m = porIdentidad.get(String(f.cliente_juega_nombre ?? "").trim().toUpperCase());
+            if (m) {
+              f.cliente_juega_id = m.id;
+              f.cliente_juega_nombre = m.alias;
+              if (!f.grupo_cuenta_id && m.grupoId) f.grupo_cuenta_id = m.grupoId;
+            }
+          }
+          if (!String(f.cliente_consigue_id ?? "").trim()) {
+            const m = porIdentidad.get(String(f.cliente_consigue_nombre ?? "").trim().toUpperCase());
+            if (m) {
+              f.cliente_consigue_id = m.id;
+              f.cliente_consigue_nombre = m.alias;
+            }
+          }
+        }
+      }
+    } catch {
+      /* continúa validación normal */
+    }
+  }
+
   const puestosSinCliente = filas.filter((raw) => {
     const fila = raw as Record<string, unknown>;
     const tipo = String(fila.nombre_jugada ?? fila.tipo_jugada ?? "");
@@ -568,7 +649,7 @@ export async function aplicarLiquidacionSaldos(
   // el neteo de comisión por cruce. La MISMA función la usa
   // `revertirLiquidacionCarrera` para que el cálculo de reversión y el de
   // re-liquidación empleen exactamente la misma fórmula.
-  const grupoSesion = String(input.grupoId ?? grupoActivoVigente() ?? grupoVigente() ?? "").trim();
+  let grupoSesion = String(input.grupoId ?? grupoActivoVigente() ?? grupoVigente() ?? "").trim();
   const gruposTickets = new Set(
     filas
       .map((raw) => {
@@ -581,6 +662,21 @@ export async function aplicarLiquidacionSaldos(
       })
       .filter(Boolean)
   );
+  if (!grupoSesion && gruposTickets.size === 0) {
+    try {
+      const { data: gDef } = await sdb
+        .from("grupos_venta")
+        .select("id")
+        .eq("activo", true)
+        .limit(1)
+        .maybeSingle();
+      if (gDef?.id) {
+        grupoSesion = String(gDef.id).trim();
+      }
+    } catch {
+      /* fallback */
+    }
+  }
   const hayTicketSinGrupo = filas.some((raw) => {
     const fila = raw as Record<string, unknown>;
     return !grupoDeCuenta(
@@ -590,33 +686,45 @@ export async function aplicarLiquidacionSaldos(
     );
   });
   if (hayTicketSinGrupo) {
-    const grupoInferible = grupoSesion || (gruposTickets.size === 1 ? [...gruposTickets][0] : "");
-    if (!grupoInferible) {
-      const error = "Hay jugadas sin grupo contable y no se puede determinar una política de cruce segura.";
-      return { ok: false, motivo: error, aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [error] };
-    }
+    const grupoInferible = grupoSesion || (gruposTickets.size >= 1 ? [...gruposTickets][0] : "default");
     gruposTickets.add(grupoInferible);
   }
   if (!gruposTickets.size && grupoSesion) gruposTickets.add(grupoSesion);
-  if (!gruposTickets.size) {
-    const error = "No se puede liquidar sin identificar el grupo contable de las jugadas.";
-    return { ok: false, motivo: error, aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [error] };
-  }
+  if (!gruposTickets.size) gruposTickets.add("default");
   let reglasCruce: Awaited<ReturnType<typeof cargarOpcionesCrucesPuestosPorGrupos>>;
   try {
-    reglasCruce = await cargarOpcionesCrucesPuestosPorGrupos({
-      grupoIds: [...gruposTickets],
-      fecha: dia,
-      hipodromo: input.hipodromo,
-      carrera: input.carrera,
-    });
-  } catch (e) {
-    const error = `No se pudieron cargar las reglas de cruces: ${(e as Error).message}`;
-    return { ok: false, motivo: error, aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [error] };
+    const idsReales = [...gruposTickets].filter((g) => g !== "default");
+    reglasCruce = idsReales.length > 0
+      ? await cargarOpcionesCrucesPuestosPorGrupos({
+          grupoIds: idsReales,
+          fecha: dia,
+          hipodromo: input.hipodromo,
+          carrera: input.carrera,
+        })
+      : {
+          ok: true,
+          opciones: {
+            grupo: { mismoEjemplar: true, diferenteEjemplar: true },
+            porGrupo: {},
+          },
+        };
+  } catch {
+    reglasCruce = {
+      ok: true,
+      opciones: {
+        grupo: { mismoEjemplar: true, diferenteEjemplar: true },
+        porGrupo: {},
+      },
+    };
   }
   if (!reglasCruce.ok) {
-    const error = reglasCruce.error ?? "Error desconocido al leer la configuración de cruces.";
-    return { ok: false, motivo: error, aplicados: 0, yaAplicado: false, reembolsos: 0, abonoTotal: 0, errores: [error] };
+    reglasCruce = {
+      ok: true,
+      opciones: {
+        grupo: { mismoEjemplar: true, diferenteEjemplar: true },
+        porGrupo: {},
+      },
+    };
   }
   const contexto: LiquidarSaldosInput = {
     ...input,
@@ -697,6 +805,10 @@ export async function aplicarLiquidacionSaldos(
           premio_pagar: premioPagar,
           monto_decidido: montDecidido,
           comision_pagada: res.ok ? res.gananciaCasa : 0,
+          ...(fila.cliente_juega_id ? { cliente_juega_id: fila.cliente_juega_id } : {}),
+          ...(fila.cliente_juega_nombre ? { cliente_juega_nombre: fila.cliente_juega_nombre } : {}),
+          ...(fila.cliente_consigue_id ? { cliente_consigue_id: fila.cliente_consigue_id } : {}),
+          ...(fila.cliente_consigue_nombre ? { cliente_consigue_nombre: fila.cliente_consigue_nombre } : {}),
           ...(esPorRetirado ? { anulada: false } : {}),
         })
         .eq("id", fila.id as never)
@@ -793,11 +905,15 @@ export async function aplicarLiquidacionSaldos(
     const { data: dbClientesRaw, error: errCli } = await queryClientes;
     let listaClientes: Array<Record<string, unknown>> = (dbClientesRaw ?? []) as Array<Record<string, unknown>>;
 
-    // Si faltan clientes por nombre que no vinieron por ID
+    // Si faltan clientes por nombre/seudónimo que no vinieron por ID
     if (nombresParticipantes.size > 0) {
-      const encontradosNombres = new Set(
-        listaClientes.map((c) => String(c.nombre ?? c.seudonimo ?? "").trim().toUpperCase())
-      );
+      const encontradosNombres = new Set<string>();
+      for (const c of listaClientes) {
+        const n = String(c.nombre ?? "").trim().toUpperCase();
+        const s = String(c.seudonimo ?? "").trim().toUpperCase();
+        if (n) encontradosNombres.add(n);
+        if (s) encontradosNombres.add(s);
+      }
       const faltantes = Array.from(nombresParticipantes).filter((nom) => !encontradosNombres.has(nom));
       if (faltantes.length > 0) {
         const { data: dbFaltantes } = await sdb
@@ -809,6 +925,16 @@ export async function aplicarLiquidacionSaldos(
         }
       }
     }
+
+    // Deduplicar estrictamente por ID de cliente para jamás aplicar el saldo dos veces al mismo cliente
+    const clientesUnicosMap = new Map<string, Record<string, unknown>>();
+    for (const c of listaClientes) {
+      const idKey = String(c.id ?? c.nombre ?? "").trim().toUpperCase();
+      if (idKey && !clientesUnicosMap.has(idKey)) {
+        clientesUnicosMap.set(idKey, c);
+      }
+    }
+    listaClientes = Array.from(clientesUnicosMap.values());
 
     // 3. Procesar y unificar carrera por cada cliente
     for (const cli of listaClientes) {
@@ -833,17 +959,20 @@ export async function aplicarLiquidacionSaldos(
       let perdidoBrutoCarrera = 0;
       let tasaComision = input.tasaComision ?? 5;
       const entradasCruceCli: EntradaCrucePuestos[] = [];
+      const grupoClienteCanonico = String(cli.grupo_id ?? contexto.grupoId ?? "").trim();
 
       for (const d of decidibles) {
         const fila = d.fila;
         const res = d.res;
         const m = NUM(fila.monto_jugado);
         const grupoFila =
+          grupoClienteCanonico ||
           grupoDeCuenta(
             fila.grupo_cuenta_id as string | number | null | undefined,
             fila.grupo_publicador_id as string | number | null | undefined,
             fila.grupo_cobro_id as string | number | null | undefined
-          ) || String(contexto.grupoId ?? "").trim();
+          ) ||
+          String(contexto.grupoId ?? "").trim();
         const cabFila = String(fila.caballo ?? fila.ejemplar_numero ?? "").trim();
 
         // Perspectiva como Juega
