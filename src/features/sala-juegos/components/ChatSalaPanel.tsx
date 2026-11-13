@@ -8,9 +8,31 @@ import {
   esGrupoBolivares,
   prefijoMonedaGrupo,
 } from "@/shared/lib/dinero";
+import { extraerMontoNumerico } from "../lib/parser-pedagogico";
 
 export type ClaveFuenteSala = "whatsapp" | "inter" | "roboto" | "sf" | "tabular";
 export type TemaSala = "claro" | "oscuro";
+
+export const MONTOS_BOTONES_USD = [
+  { val: "1", label: "$1" },
+  { val: "5", label: "$5" },
+  { val: "10", label: "$10" },
+  { val: "20", label: "$20" },
+  { val: "50", label: "$50" },
+  { val: "100", label: "$100" },
+  { val: "300", label: "$300" },
+  { val: "400", label: "$400" },
+  { val: "500", label: "$500" },
+];
+
+export const MONTOS_BOTONES_VES = [
+  { val: "5000", label: "5.000" },
+  { val: "10000", label: "10.000" },
+  { val: "20000", label: "20.000" },
+  { val: "50000", label: "50.000" },
+  { val: "100000", label: "100.000" },
+  { val: "200000", label: "200.000" },
+];
 
 export const FAMILIAS_FUENTE_SALA: Record<ClaveFuenteSala, { nombre: string; css: string }> = {
   whatsapp: {
@@ -77,7 +99,8 @@ interface PropsChatSalaPanel {
   tema?: TemaSala;
   moneda?: string;
   onActualizarSaldo?: () => void;
-  onAbrirOperador?: () => void;
+  onAbrirOperador?: (tab?: "carrera" | "retirados" | "liquidacion" | "publicidad") => void;
+  onAbrirPrejugadas?: () => void;
   onSalirPlataforma?: () => void;
 }
 
@@ -92,6 +115,7 @@ export function ChatSalaPanel({
   moneda = "USD",
   onActualizarSaldo,
   onAbrirOperador,
+  onAbrirPrejugadas,
   onSalirPlataforma,
 }: PropsChatSalaPanel) {
   const esBs = esGrupoBolivares(moneda);
@@ -105,17 +129,19 @@ export function ChatSalaPanel({
   const [montoParcialInput, setMontoParcialInput] = useState<string>("");
   const [filtroFeed, setFiltroFeed] = useState<"todos" | "abiertas" | "jugaron" | "mias">("todos");
   const [tecladoRapidoAbierto, setTecladoRapidoAbierto] = useState<boolean>(false);
-  const [accionRapida, setAccionRapida] = useState<"Juego" | "Consigo" | "Doy">("Juego");
+  const [accionRapida, setAccionRapida] = useState<"Juego" | "Consigo">("Juego");
   const [puestoRapido, setPuestoRapido] = useState<string>("1P");
   const [ejemplarRapido, setEjemplarRapido] = useState<string>("1");
-  const [montoRapido, setMontoRapido] = useState<string>(esBs ? "5k" : "20");
+  const [montoRapido, setMontoRapido] = useState<string>(esBs ? "5000" : "20");
+  const [montoManual, setMontoManual] = useState<string>("");
 
   useEffect(() => {
     if (esBs) {
-      setMontoRapido("5k");
+      setMontoRapido("5000");
     } else {
       setMontoRapido("20");
     }
+    setMontoManual("");
   }, [esBs]);
 
   const [sugerenciaPedagogica, setSugerenciaPedagogica] = useState<{
@@ -490,7 +516,7 @@ export function ChatSalaPanel({
 
           {identidad?.esOperador && (
             <button
-              onClick={onAbrirOperador}
+              onClick={() => onAbrirOperador?.("carrera")}
               className="bg-[#008069] hover:bg-[#017561] text-white font-bold text-[10px] px-2 py-0.5 rounded-full transition flex items-center gap-0.5 shrink-0"
             >
               <span>🛠️</span>
@@ -1073,16 +1099,17 @@ export function ChatSalaPanel({
           </div>
         )}
 
-        {/* Teclado Rápido 1-Toque desplegable */}
-        {tecladoRapidoAbierto && !replyToPropuesta && (
+        {/* Teclado Rápido 1-Toque desplegable para Jugadores */}
+        {tecladoRapidoAbierto && !replyToPropuesta && !identidad?.esOperador && (
           <div
-            className={`p-2 rounded-lg border space-y-1.5 text-xs ${
+            className={`p-2.5 rounded-xl border space-y-2 text-xs shadow-md ${
               esClaro ? "bg-white border-[#d1d7db]" : "bg-[#111b21] border-gray-700"
             }`}
           >
-            <div className="flex items-center justify-between">
-              <span className="font-black text-[10px] uppercase tracking-wider text-[#008069]">
-                ⚡ Compositor Rápido 1-Toque
+            <div className="flex items-center justify-between border-b pb-1 border-current/10">
+              <span className="font-black text-[11px] uppercase tracking-wider text-[#008069] flex items-center gap-1">
+                <span>⚡</span>
+                <span>Compositor Rápido de Jugadas</span>
               </span>
               <button
                 type="button"
@@ -1092,24 +1119,28 @@ export function ChatSalaPanel({
                 ✕ Cerrar
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-1">
-              {(["Juego", "Consigo", "Doy"] as const).map((acc) => (
+
+            {/* Condición: Solo "Juego" y "Consigo" (sin botón "Doy") */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-bold shrink-0 opacity-80">Condición:</span>
+              {(["Juego", "Consigo"] as const).map((acc) => (
                 <button
                   key={acc}
                   type="button"
                   onClick={() => setAccionRapida(acc)}
-                  className={`px-2 py-0.5 rounded font-bold text-[11px] ${
+                  className={`px-3 py-1 rounded-lg font-black text-xs transition ${
                     accionRapida === acc
-                      ? "bg-[#008069] text-white"
+                      ? "bg-[#008069] text-white shadow-xs"
                       : esClaro
-                        ? "bg-gray-100 text-gray-700"
-                        : "bg-[#202c33] text-gray-300"
+                        ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        : "bg-[#202c33] text-gray-300 hover:bg-gray-700"
                   }`}
                 >
                   {acc}
                 </button>
               ))}
-              <span className="opacity-40">|</span>
+              <span className="opacity-30 mx-0.5">|</span>
+              <span className="text-[10px] font-bold shrink-0 opacity-80">Puesto:</span>
               <div className="flex flex-wrap items-center gap-1 max-h-24 overflow-y-auto">
                 {[
                   "1P",
@@ -1152,10 +1183,10 @@ export function ChatSalaPanel({
                     onClick={() => setPuestoRapido(p)}
                     className={`px-1.5 py-0.5 rounded font-mono font-bold text-[11px] whitespace-nowrap ${
                       puestoRapido === p
-                        ? "bg-[#008069] text-white"
+                        ? "bg-[#008069] text-white shadow-xs"
                         : esClaro
-                          ? "bg-gray-100 text-gray-700"
-                          : "bg-[#202c33] text-gray-300"
+                          ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          : "bg-[#202c33] text-gray-300 hover:bg-gray-700"
                     }`}
                   >
                     {p}
@@ -1163,78 +1194,123 @@ export function ChatSalaPanel({
                 ))}
               </div>
             </div>
+
+            {/* Selector de Ejemplar */}
             <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-              <span className="text-[10px] font-bold shrink-0">Ejemplar #:</span>
+              <span className="text-[10px] font-bold shrink-0 opacity-80">Ejemplar #:</span>
               {Array.from({ length: 14 }, (_, i) => String(i + 1)).map((num) => (
                 <button
                   key={num}
                   type="button"
                   onClick={() => setEjemplarRapido(num)}
-                  className={`w-6 h-6 rounded-full font-mono font-bold text-[11px] shrink-0 ${
+                  className={`w-6 h-6 rounded-full font-mono font-bold text-[11px] shrink-0 transition ${
                     ejemplarRapido === num
-                      ? "bg-[#008069] text-white"
+                      ? "bg-[#008069] text-white shadow-xs scale-105"
                       : esClaro
-                        ? "bg-gray-100 text-gray-800"
-                        : "bg-[#202c33] text-gray-300"
+                        ? "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                        : "bg-[#202c33] text-gray-300 hover:bg-gray-700"
                   }`}
                 >
                   {num}
                 </button>
               ))}
             </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 pt-0.5">
-              <div className="flex items-center gap-1 flex-wrap">
-                <span className="text-[10px] font-bold">{esBs ? "Monto Bs:" : "Monto $:"}</span>
-                {esBs ? (
-                  [
-                    { val: "5k", label: "5k (5.000)" },
-                    { val: "10.000", label: "10.000" },
-                    { val: "20.000", label: "20.000" },
-                    { val: "50.000", label: "50.000" },
-                    { val: "100.000", label: "100.000" },
-                  ].map((item) => (
+
+            {/* Montos Inteligentes (Dólares vs Bolívares) + Entrada Manual */}
+            <div className="space-y-1.5 pt-1 border-t border-current/10">
+              <div className="flex items-center justify-between gap-1 flex-wrap">
+                <span className="text-[10px] font-bold shrink-0">
+                  {esBs ? "Montos Bolívares (Bs):" : "Montos Dólares ($ USD):"}
+                </span>
+                {/* Entrada Manual de Monto */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-[10px] opacity-70 font-semibold">Manual:</span>
+                  <input
+                    type="text"
+                    inputMode="text"
+                    value={montoManual}
+                    onChange={(e) => {
+                      setMontoManual(e.target.value);
+                      setMontoRapido("");
+                    }}
+                    placeholder={esBs ? "Ej. 15000 o 15k" : "Ej. 25 o 75"}
+                    className={`w-28 text-[11px] font-mono font-bold rounded-lg px-2 py-0.5 border outline-none transition ${
+                      montoManual.trim()
+                        ? "border-[#008069] ring-1 ring-[#008069] bg-white text-black dark:bg-[#111b21] dark:text-emerald-400"
+                        : esClaro
+                          ? "bg-gray-50 border-gray-300 text-gray-700 placeholder-gray-400 focus:border-[#008069]"
+                          : "bg-[#202c33] border-gray-700 text-gray-200 placeholder-gray-500 focus:border-emerald-500"
+                    }`}
+                  />
+                  {montoManual && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMontoManual("");
+                        setMontoRapido(esBs ? "5000" : "20");
+                      }}
+                      className="text-[10px] opacity-60 hover:opacity-100 font-bold px-1"
+                      title="Restablecer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Botones de Montos Rápidos en scroll horizontal ordenado */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-thin">
+                {(esBs ? MONTOS_BOTONES_VES : MONTOS_BOTONES_USD).map((item) => {
+                  const seleccionado = !montoManual.trim() && montoRapido === item.val;
+                  return (
                     <button
                       key={item.val}
                       type="button"
-                      onClick={() => setMontoRapido(item.val)}
-                      className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] ${
-                        montoRapido === item.val
-                          ? "bg-[#008069] text-white"
+                      onClick={() => {
+                        setMontoRapido(item.val);
+                        setMontoManual("");
+                      }}
+                      className={`px-2.5 py-1 rounded-lg font-mono font-bold text-[11px] whitespace-nowrap transition shrink-0 ${
+                        seleccionado
+                          ? "bg-[#008069] text-white shadow-xs scale-[1.02]"
                           : esClaro
-                            ? "bg-gray-100 text-gray-800"
-                            : "bg-[#202c33] text-gray-300"
+                            ? "bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200"
+                            : "bg-[#202c33] text-gray-300 hover:bg-gray-700 border border-gray-700/60"
                       }`}
                     >
                       {item.label}
                     </button>
-                  ))
-                ) : (
-                  ["10", "20", "50", "100", "200"].map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setMontoRapido(m)}
-                      className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] ${
-                        montoRapido === m
-                          ? "bg-[#008069] text-white"
-                          : esClaro
-                            ? "bg-gray-100 text-gray-800"
-                            : "bg-[#202c33] text-gray-300"
-                      }`}
-                    >
-                      ${m}
-                    </button>
-                  ))
-                )}
+                  );
+                })}
               </div>
-              <button
-                type="button"
-                disabled={enviando}
-                onClick={() => enviarMensaje(`${accionRapida} ${puestoRapido} del ${ejemplarRapido} con ${montoRapido}`)}
-                className="bg-[#008069] hover:bg-[#017561] text-white font-black px-3 py-1.5 rounded-lg text-xs shadow-xs shrink-0 text-center transition active:scale-[0.98]"
-              >
-                ➤ Publicar: {accionRapida} {puestoRapido} #{ejemplarRapido} {esBs ? `Bs. ${montoRapido}` : `$${montoRapido}`}
-              </button>
+
+              {/* Botón de Publicación con Estructura Limpia (ej: "Juego 1p 5 5000") */}
+              {(() => {
+                const rawSeleccionado = (montoManual.trim() || montoRapido || (esBs ? "5000" : "20")).trim();
+                const extraido = extraerMontoNumerico(rawSeleccionado);
+                const montoLimpio = extraido.monto > 0 ? String(extraido.monto) : rawSeleccionado;
+                const cadenaJugada = `${accionRapida} ${puestoRapido} ${ejemplarRapido} ${montoLimpio}`;
+                const montoVisual = extraido.monto > 0 ? formatearMontoRegional(extraido.monto) : rawSeleccionado;
+
+                return (
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      disabled={enviando || (!montoManual.trim() && !montoRapido)}
+                      onClick={() => enviarMensaje(cadenaJugada)}
+                      className="w-full sm:w-auto bg-[#008069] hover:bg-[#017561] disabled:opacity-40 text-white font-black px-4 py-2 rounded-xl text-xs shadow-md text-center transition active:scale-[0.98] flex items-center justify-center gap-2"
+                    >
+                      <span>➤ Publicar:</span>
+                      <span className="font-mono bg-black/25 px-2 py-0.5 rounded text-[11px]">
+                        {cadenaJugada}
+                      </span>
+                      <span className="text-[10px] opacity-80">
+                        ({esBs ? `Bs. ${montoVisual}` : `$${montoVisual}`})
+                      </span>
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -1285,7 +1361,7 @@ export function ChatSalaPanel({
                         + Consigo {opt.label}
                       </button>
                     ))}
-                    {["Doy", "J", "Ponte", "Jugaste"].map((v) => (
+                    {["Consigo", "J", "Ponte", "Jugaste"].map((v) => (
                       <button
                         key={v}
                         onClick={() => enviarMensaje(v)}
@@ -1341,8 +1417,72 @@ export function ChatSalaPanel({
               }
             })()}
           </div>
+        ) : identidad?.esOperador ? (
+          /* Barra Dinámica y Ágil de Control y Gestión de Operador de Grupo (PASO 4) */
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px] scrollbar-thin">
+            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-500/40 shrink-0 flex items-center gap-1 shadow-2xs">
+              <span>🛠️</span> Operador
+            </span>
+            <button
+              type="button"
+              onClick={() => onAbrirOperador?.("carrera")}
+              className={`px-2.5 py-1 rounded-lg font-bold text-white transition whitespace-nowrap shadow-xs flex items-center gap-1 shrink-0 active:scale-95 ${
+                esCarreraAbierta
+                  ? "bg-amber-600 hover:bg-amber-500"
+                  : "bg-emerald-600 hover:bg-emerald-500"
+              }`}
+              title="Abrir o cerrar la carrera activa rápidamente"
+            >
+              <span>🏁</span>
+              <span>{esCarreraAbierta ? "Cerrar Carrera" : "Abrir Carrera"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onAbrirOperador?.("retirados")}
+              className="px-2.5 py-1 rounded-lg font-bold text-white bg-red-600 hover:bg-red-500 transition whitespace-nowrap shadow-xs flex items-center gap-1 shrink-0 active:scale-95"
+              title="Marcar ejemplares retirados y cancelar apuestas"
+            >
+              <span>🚫</span>
+              <span>Retirados</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onAbrirOperador?.("liquidacion")}
+              className="px-2.5 py-1 rounded-lg font-bold text-white bg-[#008069] hover:bg-[#017561] transition whitespace-nowrap shadow-xs flex items-center gap-1 shrink-0 active:scale-95"
+              title="Cargar pizarra oficial y liquidar carrera"
+            >
+              <span>🏆</span>
+              <span>Liquidar</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onAbrirPrejugadas?.()}
+              className="px-2.5 py-1 rounded-lg font-bold text-amber-950 bg-amber-100 hover:bg-amber-200 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-600/40 transition whitespace-nowrap shadow-xs flex items-center gap-1 shrink-0 active:scale-95"
+              title="Auditar reporte preliminar de jugadas pactadas"
+            >
+              <span>📋</span>
+              <span>Prejugadas</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onAbrirOperador?.("publicidad")}
+              className="px-2.5 py-1 rounded-lg font-bold text-slate-700 bg-gray-100 hover:bg-gray-200 border border-gray-300 dark:bg-slate-800 dark:text-gray-200 dark:border-gray-700 transition whitespace-nowrap shadow-xs flex items-center gap-1 shrink-0 active:scale-95"
+              title="Crear o fijar aviso en el chat"
+            >
+              <span>📢</span>
+              <span>Aviso</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTextoInput("📢 ATENCIÓN SALA: ")}
+              className="px-2 py-0.5 rounded border border-dashed border-gray-400/60 font-mono text-gray-500 hover:text-gray-900 dark:hover:text-white whitespace-nowrap shrink-0"
+              title="Insertar prefijo de aviso en chat"
+            >
+              + Mensaje Sala
+            </button>
+          </div>
         ) : (
-          /* Atajos rápidos generales para proponer */
+          /* Atajos rápidos generales para proponer (JUGADORES) */
           <div className="flex gap-1 overflow-x-auto pb-0.5 text-[11px]">
             <button
               type="button"
@@ -1409,11 +1549,13 @@ export function ChatSalaPanel({
             value={textoInput}
             onChange={(e) => setTextoInput(e.target.value)}
             placeholder={
-              replyToPropuesta
-                ? `Responder a ${replyToPropuesta.remitente_nombre || "propuesta"} (ej. Consigo 20, Ponte, J)...`
-                : esCarreraAbierta
-                  ? "Escribe un mensaje o jugada (ej. Juego 1p del 5 con 100)..."
-                  : "Carrera cerrada (solo mensajes de consulta)..."
+              identidad?.esOperador
+                ? "Escribe mensaje como Operador oficial de la sala (ej. Carrera abierta, aviso)..."
+                : replyToPropuesta
+                  ? `Responder a ${replyToPropuesta.remitente_nombre || "propuesta"} (ej. Consigo 20, Ponte, J)...`
+                  : esCarreraAbierta
+                    ? "Escribe un mensaje o jugada (ej. Juego 1p 5 5000)..."
+                    : "Carrera cerrada (solo mensajes de consulta)..."
             }
             className={`flex-1 text-xs rounded-full px-3.5 py-2 outline-none font-medium border ${
               esClaro

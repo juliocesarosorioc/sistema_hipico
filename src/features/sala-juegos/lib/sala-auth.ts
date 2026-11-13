@@ -375,21 +375,18 @@ export function puedeRetirarEjemplar(identidad: IdentidadSala, grupoId: string):
  * Valida si el grupo solicitado está permitido para esta identidad
  */
 export function grupoPermitido(identidad: IdentidadSala, grupoId: string): boolean {
-  if (identidad.tipo === "JUGADOR") {
-    return identidad.grupoId === grupoId;
-  }
   if (identidad.esAdmin) return true;
   return Boolean(identidad.grupoId) && identidad.grupoId === grupoId;
 }
 
 /**
- * Resuelve el grupo efectivo aislando jugadores a su propio grupo
+ * Resuelve el grupo efectivo aislando usuarios (jugadores u operadores) estrictamente a su grupo asignado
  */
 export function resolverGrupoEfectivo(
   identidad: IdentidadSala,
   grupoIdSolicitado?: string | null
 ): string | null {
-  if (identidad.tipo === "JUGADOR") {
+  if (identidad.tipo === "JUGADOR" || (!identidad.esAdmin && Boolean(identidad.grupoId))) {
     return identidad.grupoId;
   }
   return grupoIdSolicitado || identidad.grupoId || null;

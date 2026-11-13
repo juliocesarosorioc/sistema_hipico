@@ -13,6 +13,7 @@ interface PropsModalOperador {
   onCerrar: () => void;
   onActualizado: () => void;
   onAbrirPrejugadas: () => void;
+  tabInicial?: "carrera" | "retirados" | "liquidacion" | "publicidad";
 }
 
 const HIPODROMOS_AMERICANOS_COMUNES = [
@@ -48,8 +49,15 @@ export function ModalOperadorSala({
   onCerrar,
   onActualizado,
   onAbrirPrejugadas,
+  tabInicial = "carrera",
 }: PropsModalOperador) {
-  const [tab, setTab] = useState<"carrera" | "retirados" | "liquidacion" | "publicidad">("carrera");
+  const [tab, setTab] = useState<"carrera" | "retirados" | "liquidacion" | "publicidad">(tabInicial);
+
+  useEffect(() => {
+    if (tabInicial) {
+      setTab(tabInicial);
+    }
+  }, [tabInicial]);
   const [cargando, setCargando] = useState(false);
   const [msgFeedback, setMsgFeedback] = useState<string | null>(null);
 

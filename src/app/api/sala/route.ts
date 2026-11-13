@@ -175,7 +175,8 @@ export async function GET(req: Request) {
     // 1. BOOTSTRAP
     if (accion === "bootstrap") {
       let gruposDisponibles: any[] = [];
-      if (identidad.tipo === "STAFF" || identidad.usuarioId === "espectador") {
+      if (identidad.esAdmin) {
+        // Solo administradores globales pueden ver y listar todos los grupos
         const { data: gList } = await supabaseAdmin
           .from("grupos_venta")
           .select("id, nombre, permite_cruces, comision_default, activo, moneda")
@@ -183,21 +184,31 @@ export async function GET(req: Request) {
           .order("nombre");
         gruposDisponibles = gList || [];
       } else if (identidad.grupoId) {
+        // Aislamiento estricto: jugadores u operadores solo reciben su grupo asignado
         const { data: g } = await supabaseAdmin
           .from("grupos_venta")
           .select("id, nombre, permite_cruces, comision_default, activo, moneda")
           .eq("id", identidad.grupoId)
           .maybeSingle();
         if (g) gruposDisponibles = [g];
-      }
-
-      if (!gruposDisponibles || gruposDisponibles.length === 0) {
+      } else if (identidad.usuarioId === "espectador") {
         const { data: fallbackG } = await supabaseAdmin
           .from("grupos_venta")
           .select("id, nombre, permite_cruces, comision_default, activo, moneda")
           .eq("activo", true)
           .order("nombre");
         gruposDisponibles = fallbackG || [];
+      }
+
+      if (!gruposDisponibles || gruposDisponibles.length === 0) {
+        if (identidad.esAdmin || identidad.usuarioId === "espectador") {
+          const { data: fallbackG } = await supabaseAdmin
+            .from("grupos_venta")
+            .select("id, nombre, permite_cruces, comision_default, activo, moneda")
+            .eq("activo", true)
+            .order("nombre");
+          gruposDisponibles = fallbackG || [];
+        }
       }
 
       let grupoEfectivoId = grupoId || gruposDisponibles[0]?.id;

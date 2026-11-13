@@ -401,7 +401,7 @@ export default function SalaJuegosWhatsApp({
       if (!evalConc.valido) {
         setSugerenciaPedagogica({
           mensaje: evalConc.motivoRechazo || 'Respuesta no válida para concretar.',
-          opciones: accionPropuesta === 'JUEGA' ? ['Consigo', 'Doy', 'Jugaste'] : ['Juego', 'Voy', 'Ponte'],
+          opciones: accionPropuesta === 'JUEGA' ? ['Consigo', 'Jugaste', 'Ponte'] : ['Juego', 'Voy', 'Ponte'],
         });
         return;
       }
@@ -1064,7 +1064,7 @@ export default function SalaJuegosWhatsApp({
         {replyToPropuesta ? (
           <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px]">
             {((replyToPropuesta.accionProponente || (replyToPropuesta.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA'
-              ? ['Consigo', 'Doy', 'J', 'Jugaste', 'Jugamos', 'Ponte']
+              ? ['Consigo', 'J', 'Jugaste', 'Jugamos', 'Ponte']
               : ['Juego', 'Jugue', 'Jugué', 'Voy', 'Ponte']
             ).map((verbo) => (
               <button

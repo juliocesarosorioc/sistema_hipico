@@ -521,13 +521,6 @@ export function TabSalaJugadasIa({
                 <>
                   <button
                     type="button"
-                    onClick={() => setTextoInput("te doy")}
-                    className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-amber-300 hover:bg-slate-700"
-                  >
-                    te doy
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setTextoInput("consigo")}
                     className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-amber-300 hover:bg-slate-700"
                   >
@@ -558,13 +551,6 @@ export function TabSalaJugadasIa({
                 className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-300 hover:bg-slate-700"
               >
                 juego 1p del 2 con 40
-              </button>
-              <button
-                type="button"
-                onClick={() => setTextoInput("doy 2p del 3 con 100")}
-                className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-300 hover:bg-slate-700"
-              >
-                doy 2p del 3 con 100
               </button>
             </>
           )}

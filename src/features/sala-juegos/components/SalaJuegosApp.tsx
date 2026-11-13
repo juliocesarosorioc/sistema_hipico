@@ -50,9 +50,15 @@ export function SalaJuegosApp({
   // Modales
   const [modalRecargaAbierto, setModalRecargaAbierto] = useState(false);
   const [modalOperadorAbierto, setModalOperadorAbierto] = useState(false);
+  const [tabOperadorInicial, setTabOperadorInicial] = useState<"carrera" | "retirados" | "liquidacion" | "publicidad">("carrera");
   const [modalPrejugadasAbierto, setModalPrejugadasAbierto] = useState(false);
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
   const [modalLoginEspectadorAbierto, setModalLoginEspectadorAbierto] = useState(false);
+
+  const abrirOperadorConTab = useCallback((tab: "carrera" | "retirados" | "liquidacion" | "publicidad" = "carrera") => {
+    setTabOperadorInicial(tab);
+    setModalOperadorAbierto(true);
+  }, []);
 
   // Cargar preferencias de tipografía y tema (predeterminado: WhatsApp + Tema Claro Hípico)
   useEffect(() => {
@@ -379,16 +385,28 @@ export function SalaJuegosApp({
           </div>
         </div>
 
-        {/* Lado derecho Móvil: Saldo + Botón Acción + Menú Tres Puntos ⋮ */}
+        {/* Lado derecho Móvil: Saldo / Rol Operador + Botón Acción + Menú Tres Puntos ⋮ */}
         <div className="flex items-center gap-1 shrink-0">
-          {/* Badge Saldo */}
+          {/* Badge Saldo o Rol */}
           <div
-            onClick={() => setOcultarSaldo(!ocultarSaldo)}
-            className={`px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums font-black cursor-pointer ${
-              esClaro ? "bg-[#016b58] text-white border border-white/20" : "bg-[#111b21] text-emerald-400 border border-gray-700"
+            onClick={() => {
+              if (identidad?.esOperador) {
+                abrirOperadorConTab("carrera");
+              } else {
+                setOcultarSaldo(!ocultarSaldo);
+              }
+            }}
+            className={`px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums font-black cursor-pointer transition ${
+              identidad?.esOperador
+                ? "bg-amber-400 text-slate-950 border border-amber-300 shadow-2xs font-sans"
+                : esClaro
+                  ? "bg-[#016b58] text-white border border-white/20"
+                  : "bg-[#111b21] text-emerald-400 border border-gray-700"
             }`}
           >
-            {ocultarSaldo
+            {identidad?.esOperador
+              ? "🛠️ OPERADOR"
+              : ocultarSaldo
               ? "•••"
               : esEspectador
               ? "ESPECTADOR"
@@ -397,8 +415,17 @@ export function SalaJuegosApp({
               : `${prefijoMonedaGrupo(grupoActivo?.moneda)}${formatearMontoRegional(saldoDisp)}`}
           </div>
 
-          {/* Botón Acción Rápida (Recargar / Entrar) */}
-          {esEspectador ? (
+          {/* Botón Acción Rápida (Operador: Gestionar / Jugador: Recargar / Espectador: Entrar) */}
+          {identidad?.esOperador ? (
+            <button
+              type="button"
+              onClick={() => abrirOperadorConTab("carrera")}
+              className="bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] px-2 py-1 rounded-lg shadow-xs transition active:scale-95 flex items-center gap-0.5"
+              title="Panel de Control de Operador"
+            >
+              <span>⚙️</span>
+            </button>
+          ) : esEspectador ? (
             <button
               type="button"
               onClick={() => setModalLoginEspectadorAbierto(true)}
@@ -512,37 +539,57 @@ export function SalaJuegosApp({
           )}
         </div>
 
-        {/* Lado derecho: Billetera, Recarga, Prejugadas, Configurador de Fuente y Tema */}
+        {/* Lado derecho: Billetera/Operador, Acción rápida, Prejugadas, Aa y Tema */}
         <div className="flex items-center gap-1.5">
-          {/* Billetera compacta */}
+          {/* Billetera compacta / Identificación Operador */}
           <div
             className={`flex items-center px-2.5 py-1 rounded-lg text-xs font-mono tabular-nums ${
-              esClaro
-                ? "bg-[#016b58] text-white border border-white/20"
-                : "bg-[#111b21] text-emerald-400 border border-gray-700"
+              identidad?.esOperador
+                ? "bg-amber-400 text-slate-950 border border-amber-300 font-sans shadow-2xs"
+                : esClaro
+                  ? "bg-[#016b58] text-white border border-white/20"
+                  : "bg-[#111b21] text-emerald-400 border border-gray-700"
             }`}
           >
-            <span className="opacity-80 mr-1">Disp:</span>
-            <span className="font-black">
-              {ocultarSaldo
-                ? "•••"
-                : esEspectador
-                ? "ESPECTADOR"
-                : esLibre
-                ? "LIBRE"
-                : `${prefijoMonedaGrupo(grupoActivo?.moneda)}${formatearMontoRegional(saldoDisp)}`}
-            </span>
-            <button
-              onClick={() => setOcultarSaldo(!ocultarSaldo)}
-              title="Ocultar/Mostrar saldo"
-              className="ml-1 opacity-80 hover:opacity-100 text-[11px]"
-            >
-              {ocultarSaldo ? "🙈" : "👁️"}
-            </button>
+            {identidad?.esOperador ? (
+              <span className="font-black flex items-center gap-1">
+                <span>🛠️</span>
+                <span>OPERADOR</span>
+              </span>
+            ) : (
+              <>
+                <span className="opacity-80 mr-1">Disp:</span>
+                <span className="font-black">
+                  {ocultarSaldo
+                    ? "•••"
+                    : esEspectador
+                    ? "ESPECTADOR"
+                    : esLibre
+                    ? "LIBRE"
+                    : `${prefijoMonedaGrupo(grupoActivo?.moneda)}${formatearMontoRegional(saldoDisp)}`}
+                </span>
+                <button
+                  onClick={() => setOcultarSaldo(!ocultarSaldo)}
+                  title="Ocultar/Mostrar saldo"
+                  className="ml-1 opacity-80 hover:opacity-100 text-[11px]"
+                >
+                  {ocultarSaldo ? "🙈" : "👁️"}
+                </button>
+              </>
+            )}
           </div>
 
-          {/* Botón Recarga Blindada o Identificarse */}
-          {esEspectador ? (
+          {/* Botones de Acción: Operador -> Control Operador; Jugador -> Recargar; Espectador -> Iniciar Sesión */}
+          {identidad?.esOperador ? (
+            <button
+              onClick={() => abrirOperadorConTab("carrera")}
+              className="bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs px-3 py-1 rounded-lg transition shadow-xs flex items-center gap-1 active:scale-95"
+              title="Panel de Control de Operador"
+            >
+              <span>⚙️</span>
+              <span>Control Operador</span>
+            </button>
+          ) : esEspectador ? (
             <button
               onClick={() => setModalLoginEspectadorAbierto(true)}
               className="bg-[#25d366] hover:bg-[#20bd5a] text-[#111b21] font-black text-xs px-3 py-1 rounded-lg transition shadow-xs"
@@ -709,9 +756,13 @@ export function SalaJuegosApp({
               moneda={grupoActivo?.moneda || "USD"}
               onActualizarSaldo={refrescarSaldo}
               onSalirPlataforma={salirALaPlataforma}
-              onAbrirOperador={() => {
+              onAbrirOperador={(tab = "carrera") => {
                 setSalaSeleccionadaId(salas[0].id);
-                setModalOperadorAbierto(true);
+                abrirOperadorConTab(tab);
+              }}
+              onAbrirPrejugadas={() => {
+                setSalaSeleccionadaId(salas[0].id);
+                setModalPrejugadasAbierto(true);
               }}
             />
             <ChatSalaPanel
@@ -725,9 +776,13 @@ export function SalaJuegosApp({
               moneda={grupoActivo?.moneda || "USD"}
               onActualizarSaldo={refrescarSaldo}
               onSalirPlataforma={salirALaPlataforma}
-              onAbrirOperador={() => {
+              onAbrirOperador={(tab = "carrera") => {
                 setSalaSeleccionadaId(salas[1].id);
-                setModalOperadorAbierto(true);
+                abrirOperadorConTab(tab);
+              }}
+              onAbrirPrejugadas={() => {
+                setSalaSeleccionadaId(salas[1].id);
+                setModalPrejugadasAbierto(true);
               }}
             />
           </div>
@@ -743,7 +798,8 @@ export function SalaJuegosApp({
             moneda={grupoActivo?.moneda || "USD"}
             onActualizarSaldo={refrescarSaldo}
             onSalirPlataforma={salirALaPlataforma}
-            onAbrirOperador={() => setModalOperadorAbierto(true)}
+            onAbrirOperador={abrirOperadorConTab}
+            onAbrirPrejugadas={() => setModalPrejugadasAbierto(true)}
           />
         ) : (
           <div className="flex-1 h-full flex flex-col items-center justify-center p-6 text-center space-y-3">
@@ -785,6 +841,7 @@ export function SalaJuegosApp({
           sala={salaActiva}
           grupoId={grupoActivo?.id}
           grupoNombre={grupoActivo?.nombre || ""}
+          tabInicial={tabOperadorInicial}
           onCerrar={() => setModalOperadorAbierto(false)}
           onActualizado={() => cargarBootstrap(grupoActivo?.id)}
           onAbrirPrejugadas={() => {
@@ -874,37 +931,87 @@ export function SalaJuegosApp({
               </div>
             )}
 
-            {/* Accesos Rápidos: Prejugadas y Operador */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuMovilAbierto(false);
-                  setModalPrejugadasAbierto(true);
-                }}
-                className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border shadow-xs transition active:scale-95 ${
-                  esClaro
-                    ? "bg-amber-50 text-amber-900 border-amber-300"
-                    : "bg-amber-950/60 text-amber-300 border-amber-600/40"
-                }`}
-              >
-                <span>📋</span>
-                <span>Prejugadas</span>
-              </button>
-
-              {identidad?.esOperador ? (
+            {/* Accesos Rápidos: Operador dinámico vs Jugador */}
+            {identidad?.esOperador ? (
+              <div className="space-y-1.5 border-t pt-2 border-current/10">
+                <span className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-wider flex items-center gap-1">
+                  <span>🛠️</span> Opciones Rápidas de Operador
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuMovilAbierto(false);
+                      abrirOperadorConTab("carrera");
+                    }}
+                    className="py-2.5 px-3 rounded-xl font-black text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
+                  >
+                    <span>🏁</span>
+                    <span>Carrera (Abrir/Cerrar)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuMovilAbierto(false);
+                      abrirOperadorConTab("retirados");
+                    }}
+                    className="py-2.5 px-3 rounded-xl font-black text-xs bg-red-600 hover:bg-red-500 text-white flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
+                  >
+                    <span>🚫</span>
+                    <span>Retirar Ejemplar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuMovilAbierto(false);
+                      abrirOperadorConTab("liquidacion");
+                    }}
+                    className="py-2.5 px-3 rounded-xl font-black text-xs bg-[#008069] hover:bg-[#017561] text-white flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
+                  >
+                    <span>🏆</span>
+                    <span>Liquidar Pizarra</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuMovilAbierto(false);
+                      setModalPrejugadasAbierto(true);
+                    }}
+                    className="py-2.5 px-3 rounded-xl font-black text-xs bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-600/40 flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
+                  >
+                    <span>📋</span>
+                    <span>Ver Prejugadas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuMovilAbierto(false);
+                      abrirOperadorConTab("publicidad");
+                    }}
+                    className="col-span-2 py-2 px-3 rounded-xl font-bold text-xs bg-slate-800 text-white flex items-center justify-center gap-1.5 shadow-xs transition active:scale-95"
+                  >
+                    <span>📢</span>
+                    <span>Publicar / Fijar Aviso en la Sala</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setMenuMovilAbierto(false);
-                    setModalOperadorAbierto(true);
+                    setModalPrejugadasAbierto(true);
                   }}
-                  className="py-2 px-3 rounded-xl font-black text-xs bg-emerald-600 text-white flex items-center justify-center gap-2 shadow-sm transition active:scale-95"
+                  className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border shadow-xs transition active:scale-95 ${
+                    esClaro
+                      ? "bg-amber-50 text-amber-900 border-amber-300"
+                      : "bg-amber-950/60 text-amber-300 border-amber-600/40"
+                  }`}
                 >
-                  <span>⚙️</span>
-                  <span>Control Operador</span>
+                  <span>📋</span>
+                  <span>Prejugadas</span>
                 </button>
-              ) : (
                 <button
                   type="button"
                   onClick={() => {
@@ -916,8 +1023,8 @@ export function SalaJuegosApp({
                   <span>💳</span>
                   <span>Recargar Saldo</span>
                 </button>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Ajustes de Tema y Fuente */}
             <div className="space-y-2 border-t pt-2.5 border-current/10">

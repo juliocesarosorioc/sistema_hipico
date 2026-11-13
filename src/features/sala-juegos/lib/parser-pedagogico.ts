@@ -39,6 +39,52 @@ export interface ResultadoConcrecionEstricta {
 }
 
 /**
+ * Extrae y normaliza el monto desde una cadena, soportando sufijo k/K (miles):
+ * - "5k" o "5K" -> 5000 (monto: 5000, montoTexto: "5000")
+ * - "5.5k" o "5,5K" -> 5500 (monto: 5500, montoTexto: "5500")
+ * - "10.000" -> 10000 (monto: 10000, montoTexto: "10000")
+ * - "100" -> 100 (monto: 100, montoTexto: "100")
+ */
+export function extraerMontoNumerico(rawInput: string): { monto: number; montoTexto: string; esKilo: boolean } {
+  if (!rawInput) return { monto: 0, montoTexto: "0", esKilo: false };
+  const limpio = rawInput.trim().replace(/^[\$Bs\.\s]+/i, "").trim();
+  if (!limpio) return { monto: 0, montoTexto: "0", esKilo: false };
+
+  // 1. Detectar explícitamente sufijo k / K (enteros o decimales: 5k, 5.5k, 5,5k, 10k, 20k)
+  const matchK = /^(\d+(?:[\.,]\d+)?)\s*k$/i.exec(limpio);
+  if (matchK) {
+    const base = parseFloat(matchK[1].replace(",", "."));
+    if (Number.isFinite(base) && base > 0) {
+      const monto = Math.round(base * 1000 * 100) / 100;
+      return {
+        monto,
+        montoTexto: String(monto),
+        esKilo: true,
+      };
+    }
+  }
+
+  // 2. Usar parsearMontoConK para formatos de miles con puntos y comas
+  const parsed = parsearMontoConK(limpio);
+  if (parsed && parsed.monto > 0) {
+    return {
+      monto: parsed.monto,
+      montoTexto: String(parsed.monto),
+      esKilo: parsed.esKilo,
+    };
+  }
+
+  // 3. Fallback numérico estándar
+  const f = parseFloat(limpio.replace(",", "."));
+  const m = Number.isFinite(f) && f > 0 ? Math.round(f * 100) / 100 : 0;
+  return {
+    monto: m,
+    montoTexto: String(m),
+    esKilo: false,
+  };
+}
+
+/**
  * Valida de forma estricta las palabras autorizadas para responder y concretar una propuesta
  */
 export function evaluarConcrecionEstricta(
@@ -78,12 +124,9 @@ export function evaluarConcrecionEstricta(
   // Extraer monto especificado mediante el parser inteligente con K, o tomar el remanente disponible
   let montoSolicitado = montoDisponiblePropuesta;
   if (match[2]) {
-    const parsedK = parsearMontoConK(match[2]);
-    if (parsedK && parsedK.monto > 0) {
-      montoSolicitado = parsedK.monto;
-    } else {
-      const f = parseFloat(match[2].replace(',', '.'));
-      if (Number.isFinite(f) && f > 0) montoSolicitado = f;
+    const extraido = extraerMontoNumerico(match[2]);
+    if (extraido.monto > 0) {
+      montoSolicitado = extraido.monto;
     }
   }
 
@@ -201,9 +244,7 @@ export function analizarYEstandarizarJugada(
     const bandoA = normalizarBandoCaballos(matchVs[2], maxEjemplarCarrera, esDuplaA);
     const bandoB = normalizarBandoCaballos(matchVs[3], maxEjemplarCarrera, esDuplaB);
 
-    const parsedMonto = parsearMontoConK(matchVs[4]);
-    const monto = parsedMonto ? parsedMonto.monto : parseFloat(matchVs[4].replace(',', '.'));
-    const montoTexto = parsedMonto ? parsedMonto.textoPublicacion : matchVs[4];
+    const { monto, montoTexto } = extraerMontoNumerico(matchVs[4]);
 
     if (bandoA.length > 0 && bandoB.length > 0 && monto > 0) {
       // Verificar retirados en cualquiera de los dos bandos
@@ -295,9 +336,7 @@ export function analizarYEstandarizarJugada(
     modLimpia = modLimpia.replace(/^([1-5]\/[1-5])(?=-)/, '$1N');
     const caballos = normalizarBandoCaballos(matchPuesto[3], maxEjemplarCarrera);
 
-    const parsedMonto = parsearMontoConK(matchPuesto[4]);
-    const monto = parsedMonto ? parsedMonto.monto : parseFloat(matchPuesto[4].replace(',', '.'));
-    const montoTexto = parsedMonto ? parsedMonto.textoPublicacion : matchPuesto[4];
+    const { monto, montoTexto } = extraerMontoNumerico(matchPuesto[4]);
 
     if (caballos.length > 0 && monto > 0) {
       const retiradoDetectado = caballos.find((c) =>
@@ -383,9 +422,7 @@ export function analizarYEstandarizarJugada(
 
   if (matchSimple) {
     const caballos = [matchSimple[2]];
-    const parsedMonto = parsearMontoConK(matchSimple[3]);
-    const monto = parsedMonto ? parsedMonto.monto : parseFloat(matchSimple[3].replace(',', '.'));
-    const montoTexto = parsedMonto ? parsedMonto.textoPublicacion : matchSimple[3];
+    const { monto, montoTexto } = extraerMontoNumerico(matchSimple[3]);
 
     if (monto > 0) {
       const retiradoDetectado = caballos.find((c) =>
@@ -471,9 +508,7 @@ export function analizarYEstandarizarJugada(
 
   if (matchInvertido) {
     const caballos = [matchInvertido[2]];
-    const parsedMonto = parsearMontoConK(matchInvertido[1]);
-    const monto = parsedMonto ? parsedMonto.monto : parseFloat(matchInvertido[1].replace(',', '.'));
-    const montoTexto = parsedMonto ? parsedMonto.textoPublicacion : matchInvertido[1];
+    const { monto, montoTexto } = extraerMontoNumerico(matchInvertido[1]);
 
     if (monto > 0) {
       const retiradoDetectado = caballos.find((c) =>
