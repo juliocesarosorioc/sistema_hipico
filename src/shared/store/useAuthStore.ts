@@ -135,18 +135,19 @@ let carreraCarga: Promise<void> | null = null;
  */
 async function postLoginSesionUnica(id: string, nombre?: string, rol?: string, grupoId?: string) {
   try {
-    const ip = await obtenerIpCliente();
     const sesionId = generarSesionIdSeguro();
-    await invalidarSesionesPrevias(id);
-    notificarInicioSesionUnica(id, sesionId);
-
     if (typeof window !== "undefined") {
       try {
         sessionStorage.setItem("hipico_sesion_activa", sesionId);
+        localStorage.setItem(`hipico_activa_${id}`, sesionId);
       } catch {
         /* ignore */
       }
     }
+
+    // Invalidar sesiones remotas en background sin bloquear
+    void invalidarSesionesPrevias(id);
+    void notificarInicioSesionUnica(id, sesionId);
 
     activarProteccionAntiClonacion({
       usuarioId: id,
@@ -158,6 +159,8 @@ async function postLoginSesionUnica(id: string, nombre?: string, rol?: string, g
         });
       },
     });
+
+    const ip = await obtenerIpCliente().catch(() => "127.0.0.1");
 
     iniciarHeartbeatSesion({
       sesionId,
@@ -496,14 +499,15 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
   if (typeof window !== "undefined") {
     let sesionActiva = sessionStorage.getItem("hipico_sesion_activa");
     if (!sesionActiva) {
-      const hayOtraPestana = await verificarOtraPestanaActiva();
-      if (hayOtraPestana) {
-        sessionStorage.setItem("hipico_sesion_activa", "1");
+      // Si la cookie del usuario está presente, verificar si hay otra pestaña o si es una navegación directa
+      const hayCookie = document.cookie.includes("hipico_usuario=");
+      if (hayCookie) {
+        // En una nueva pestaña o al navegar, inicializamos la clave de sesión en sessionStorage para esta ventana
         sesionActiva = "1";
+        sessionStorage.setItem("hipico_sesion_activa", "1");
       }
     }
     if (!sesionActiva) {
-      // El navegador fue cerrado: la sesión ha finalizado y se requiere nuevo inicio de sesión
       guardarSesionAdminLocal(null);
       try {
         localStorage.removeItem(CLAVE_MODO_OPERADOR);

@@ -921,7 +921,20 @@ export function iniciarHeartbeatSesion(params: ParamsHeartbeatSesion): void {
 
   _heartbeatTimer = setInterval(async () => {
     try {
-      // 2. Comprobar concurrencia en la base de datos (1 usuario = 1 conexión entre diferentes dispositivos)
+      // 2. Comprobar concurrencia local por si cambió la clave en storage (otra ventana/pestaña diferente se conectó)
+      try {
+        const key = `hipico_activa_${params.usuarioId}`;
+        const sesionLocal = localStorage.getItem(key);
+        if (sesionLocal && sesionLocal !== params.sesionId) {
+          detenerHeartbeatSesion();
+          params.onSesionInvalida?.();
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+
+      // 3. Comprobar concurrencia en la base de datos (1 usuario = 1 conexión entre diferentes dispositivos)
       if (supabase && tablaSesionDisponible) {
         const { data: sesionData, error: errS } = await supabase
           .from("usuario_sesion")
@@ -933,25 +946,14 @@ export function iniciarHeartbeatSesion(params: ParamsHeartbeatSesion): void {
 
         if (!errS && sesionData && sesionData.length > 0) {
           const sesionMasReciente = sesionData[0];
-          if (sesionMasReciente.id !== params.sesionId) {
+          // Solo si hay una sesión activa distinta con latido fresco reciente (menos de 60s)
+          const edadLatido = (Date.now() - new Date(sesionMasReciente.ultimo_latido as string).getTime()) / 1000;
+          if (sesionMasReciente.id !== params.sesionId && edadLatido < 60) {
             detenerHeartbeatSesion();
             params.onSesionInvalida?.();
             return;
           }
         }
-      }
-
-      // 3. Comprobar concurrencia local por si cambió la clave en storage
-      try {
-        const key = `hipico_activa_${params.usuarioId}`;
-        const sesionLocal = localStorage.getItem(key);
-        if (sesionLocal && sesionLocal !== params.sesionId) {
-          detenerHeartbeatSesion();
-          params.onSesionInvalida?.();
-          return;
-        }
-      } catch {
-        /* ignore */
       }
 
       const ipActual = await obtenerIpCliente();

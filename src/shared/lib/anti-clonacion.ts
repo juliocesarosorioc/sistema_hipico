@@ -47,22 +47,16 @@ export function activarProteccionAntiClonacion(opts?: {
 
     try {
       canalSesionUnica = new BroadcastChannel(`sesion_unica_${opts.usuarioId}`);
+      // No hacer broadcast a uno mismo en la misma ventana, solo escuchar eventos de otras
       canalSesionUnica.onmessage = (event) => {
         const data = event.data;
-        if (data && data.tipo === "NUEVA_SESION_INICIADA" && data.sesionId !== opts.sesionId) {
+        if (data && data.tipo === "NUEVA_SESION_INICIADA" && data.sesionId && data.sesionId !== opts.sesionId) {
           // Otra pestaña o ventana del mismo navegador inició sesión con este usuario
           if (opts.onSesionDuplicada) {
             opts.onSesionDuplicada();
           }
         }
       };
-
-      // Anunciar nuestra sesión activa
-      canalSesionUnica.postMessage({
-        tipo: "NUEVA_SESION_INICIADA",
-        sesionId: opts.sesionId,
-        timestamp: Date.now(),
-      });
     } catch {
       /* BroadcastChannel no disponible o restringido */
     }

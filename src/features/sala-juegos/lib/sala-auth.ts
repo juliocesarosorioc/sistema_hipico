@@ -47,6 +47,14 @@ export function generarTokenStaff(payload: {
   return `sala_staff_${dataB64}.${firma}`;
 }
 
+function compararSeguro(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const bufA = Buffer.from(a, "utf8");
+  const bufB = Buffer.from(b, "utf8");
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 /**
  * Valida un token HMAC-SHA256 generado por el servidor
  */
@@ -61,13 +69,13 @@ export function verificarTokenStaff(token: string): {
     exp: number;
   };
 } {
-  if (!token.startsWith("sala_staff_")) return { valido: false };
+  if (!token || typeof token !== "string" || !token.startsWith("sala_staff_")) return { valido: false };
   const sinPrefijo = token.slice("sala_staff_".length);
   const [dataB64, firma] = sinPrefijo.split(".");
   if (!dataB64 || !firma) return { valido: false };
 
   const firmaEsperada = crypto.createHmac("sha256", SERVICE_SECRET).update(dataB64).digest("hex");
-  if (firma !== firmaEsperada) return { valido: false };
+  if (!compararSeguro(firma, firmaEsperada)) return { valido: false };
 
   try {
     const raw = Buffer.from(dataB64, "base64url").toString("utf8");
@@ -134,8 +142,12 @@ export async function autenticarPeticionSala(
         const idClean = String(cl.id ?? "").replace(/[^a-zA-Z0-9]/g, "");
         const tokenBd = String(cl.portal_token ?? "").trim().toUpperCase();
         const tokenDefecto = idClean ? `TK${idClean}`.toUpperCase() : "";
-        const tokenReq = portalToken.trim().toUpperCase();
-        const tokenCoincide = Boolean(tokenReq && (tokenReq === tokenBd || (!tokenBd && tokenReq === tokenDefecto)));
+        const tokenReq = portalToken.trim().slice(0, 128).toUpperCase();
+        const tokenCoincide = Boolean(
+          tokenReq &&
+            ((tokenBd && compararSeguro(tokenReq, tokenBd)) ||
+              (!tokenBd && tokenDefecto && compararSeguro(tokenReq, tokenDefecto)))
+        );
 
         if (activoOk && tokenCoincide) {
           const saldoActual = Number(cl.saldo_actual ?? 0) || 0;
@@ -274,23 +286,54 @@ export async function autenticarPeticionSala(
   const permisosRaw = headerPermisos || cookies["hipico_permisos"] || "";
   const grupoCookie = headerGrupo || cookies["hipico_grupo_activo"] || null;
 
-  if (usuario || perfil === "admin" || cookies["hipico_usuario"] === "josorioc") {
-    const usuarioEfectivo = usuario || "josorioc";
-    const esAdmin =
-      esUsuarioPrincipal(usuarioEfectivo) ||
-      perfil === "admin" ||
-      cookies["hipico_perfil"] === "admin" ||
-      cookies["hipico_usuario"] === "josorioc";
-    const esOperador =
+  if (usuario || cookies["hipico_usuario"] === "josorioc") {
+    const usuarioEfectivo = (usuario || "josorioc").replace(/[\u0000-\u001F<>"]/g, "").trim().slice(0, 64);
+    if (!usuarioEfectivo) {
+      return {
+        ok: false,
+        error: "Identificador de usuario inválido.",
+        status: 401,
+      };
+    }
+
+    let esAdmin = esUsuarioPrincipal(usuarioEfectivo);
+    let esOperador =
       esAdmin ||
+      usuarioEfectivo.toLowerCase() === "operador" ||
       perfil === "operador" ||
       cookies["hipico_perfil"] === "operador" ||
       permisosRaw.includes("operar_sala") ||
-      permisosRaw.includes("jugar") ||
       Boolean(cookies["hipico_modo_operador"]);
 
+    let grupoId: string | null =
+      grupoCookie && grupoCookie !== "null" && grupoCookie !== "undefined" ? grupoCookie : null;
+
+    if (!esAdmin) {
+      try {
+        const { data: uRow } = await supabaseAdmin
+          .from("usuario_sistema")
+          .select("id, tipo_id, activo, grupo_id")
+          .ilike("id", usuarioEfectivo)
+          .maybeSingle();
+
+        if (uRow) {
+          if (uRow.activo === false) {
+            return { ok: false, error: "Cuenta de operador inactiva.", status: 403 };
+          }
+          if (Number(uRow.tipo_id) === 1 && (perfil === "admin" || cookies["hipico_perfil"] === "admin")) {
+            esAdmin = true;
+          }
+          esOperador = true;
+          if (!grupoId && uRow.grupo_id) {
+            grupoId = String(uRow.grupo_id);
+          }
+        }
+      } catch {
+        // Continúa con validación de grupo si la tabla no existe en el entorno
+      }
+    }
+
     if (esAdmin || esOperador) {
-      let grupoId: string | null = (grupoCookie && grupoCookie !== "null" && grupoCookie !== "undefined") ? grupoCookie : null;
       if (!esAdmin && !grupoId) {
         try {
           const { data: grupo } = await supabaseAdmin
