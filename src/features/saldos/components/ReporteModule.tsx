@@ -1298,11 +1298,18 @@ export function ReporteModule() {
                     Vista previa semanal: inicia en cero, suma resultados, incentivos y caja del ciclo; no actualiza el libro persistido.
                   </p>
                 )}
-                <div className="text-base sm:text-lg font-black flex items-center gap-2 mt-0.5">
-                  <span>💰 Comisión de la Semana:</span>
-                  <span className="rounded-lg bg-amber-400 px-2.5 py-0.5 text-slate-950 font-mono">
-                    ${fmtMonto(resumenCuatroColumnas.comisionSemana)} USD
-                  </span>
+                <div className="text-base sm:text-lg font-black flex flex-wrap items-center gap-3 mt-0.5">
+                  <div className="flex items-center gap-2">
+                    <span>💰 Total General:</span>
+                    <span className={`rounded-lg px-2.5 py-0.5 font-mono ${
+                      (resumenCuatroColumnas.totalCobrar - resumenCuatroColumnas.totalPagar) >= 0
+                        ? "bg-emerald-400 text-slate-950"
+                        : "bg-rose-400 text-slate-950"
+                    }`}>
+                      {(resumenCuatroColumnas.totalCobrar - resumenCuatroColumnas.totalPagar) >= 0 ? "+$" : "-$"}
+                      {fmtMonto(Math.abs(resumenCuatroColumnas.totalCobrar - resumenCuatroColumnas.totalPagar))} USD
+                    </span>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-1.5 text-xs">
@@ -1494,21 +1501,7 @@ export function ReporteModule() {
                           ) : "—"}
                         </td>
                         <td className="py-1.5 px-3 text-right font-mono font-black text-emerald-700 border-r-2 border-slate-300">
-                          {par.pos ? (
-                            <div>
-                              <div>+${fmtMonto(par.pos.saldo)}</div>
-                              {par.pos.totalDevolucion > 0 && (
-                                <div className="text-[10px] text-emerald-800 font-semibold">
-                                  🏇 ${fmtMonto(par.pos.netoCarreras)} | 🎁 +${fmtMonto(par.pos.totalDevolucion)}
-                                </div>
-                              )}
-                              {par.pos.movimientosCaja !== 0 && (
-                                <div className="text-[10px] text-slate-500 font-semibold">
-                                  💵 Caja {par.pos.movimientosCaja > 0 ? "+" : ""}${fmtMonto(par.pos.movimientosCaja)}
-                                </div>
-                              )}
-                            </div>
-                          ) : "—"}
+                          {par.pos ? `+$${fmtMonto(par.pos.saldo)}` : "—"}
                         </td>
                         <td className="py-1.5 px-3 font-bold text-slate-800 border-r border-slate-200">
                           {par.neg ? (
@@ -1545,21 +1538,7 @@ export function ReporteModule() {
                           ) : "—"}
                         </td>
                         <td className="py-1.5 px-3 text-right font-mono font-black text-rose-600">
-                          {par.neg ? (
-                            <div>
-                              <div>${fmtMonto(par.neg.saldo)}</div>
-                              {par.neg.totalDevolucion > 0 && (
-                                <div className="text-[10px] text-slate-500 font-semibold">
-                                  🏇 ${fmtMonto(par.neg.netoCarreras)} | 🎁 +${fmtMonto(par.neg.totalDevolucion)}
-                                </div>
-                              )}
-                              {par.neg.movimientosCaja !== 0 && (
-                                <div className="text-[10px] text-slate-500 font-semibold">
-                                  💵 Caja {par.neg.movimientosCaja > 0 ? "+" : ""}${fmtMonto(par.neg.movimientosCaja)}
-                                </div>
-                              )}
-                            </div>
-                          ) : "—"}
+                          {par.neg ? `-$${fmtMonto(Math.abs(par.neg.saldo))}` : "—"}
                         </td>
                       </tr>
                     ))
@@ -1578,6 +1557,17 @@ export function ReporteModule() {
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-rose-300">
                       -${fmtMonto(resumenCuatroColumnas.totalCobrar)}
+                    </td>
+                  </tr>
+                  <tr className="border-t border-slate-700 bg-slate-950 text-white font-black text-xs sm:text-sm">
+                    <td colSpan={2} className="py-2.5 px-3 uppercase tracking-wide text-amber-300 border-r border-slate-700">
+                      Total General ({(resumenCuatroColumnas.totalCobrar - resumenCuatroColumnas.totalPagar) >= 0 ? "A favor de la Casa" : "En contra de la Casa"})
+                    </td>
+                    <td colSpan={2} className={`py-2.5 px-3 text-right font-mono text-sm sm:text-base ${
+                      (resumenCuatroColumnas.totalCobrar - resumenCuatroColumnas.totalPagar) >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}>
+                      {(resumenCuatroColumnas.totalCobrar - resumenCuatroColumnas.totalPagar) >= 0 ? "+$" : "-$"}
+                      {fmtMonto(Math.abs(resumenCuatroColumnas.totalCobrar - resumenCuatroColumnas.totalPagar))}
                     </td>
                   </tr>
                 </tfoot>
