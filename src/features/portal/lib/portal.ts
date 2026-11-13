@@ -395,23 +395,15 @@ export async function verificarSesionActiva(
     if (error || !data) return { valida: true };
 
     // Control de IP sin falsos bloqueos:
-    //  - Si la IP registrada en BD es OTRA distinta a la de esta sesión, otro
-    //    dispositivo inició sesión después → se cierra esta (una sola conexión).
-    //  - Si solo cambió la IP de ESTE dispositivo (datos móviles, router), la BD
-    //    aún tiene la IP de esta sesión → se re-vincula en silencio, sin expulsar.
-    //    Antes se expulsaba y, al volver a entrar, el login también lo rechazaba.
+    // Las redes móviles y routers residenciales cambian de IP dinámicamente,
+    // así que re-vinculamos en silencio la IP actual sin expulsar al cliente.
     const ipBd = String((data as Record<string, unknown>).portal_ip_autorizada ?? "").trim();
-    if (ipSesion && ipSesion !== "IP_LOCAL" && ipBd && ipBd !== "IP_LOCAL" && ipBd !== ipSesion) {
-      return {
-        valida: false,
-        motivo: "Tu sesión se cerró porque se inició sesión con tu cuenta desde otro dispositivo o red. Solo se permite una conexión activa por usuario.",
-      };
-    }
     try {
       const ipActual = await obtenerIpCliente();
-      if (ipActual && ipActual !== "IP_LOCAL" && ipSesion && ipActual !== ipSesion && (!ipBd || ipBd === ipSesion)) {
-        await supabase.from("clientes").update({ portal_ip_autorizada: ipActual } as Record<string, unknown>).eq("id", idStr);
-        actualizarIpCache(ipActual);
+      const ipNueva = ipActual && ipActual !== "IP_LOCAL" ? ipActual : ipSesion;
+      if (ipNueva && ipNueva !== "IP_LOCAL" && ipNueva !== ipBd) {
+        await supabase.from("clientes").update({ portal_ip_autorizada: ipNueva } as Record<string, unknown>).eq("id", idStr);
+        actualizarIpCache(ipNueva);
       }
     } catch {
       /* best-effort */

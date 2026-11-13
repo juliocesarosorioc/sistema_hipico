@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { esPantallaDeAcceso, esRutaPublica } from "@/features/seguridad/lib/capacidades";
 import { sesionActual } from "@/features/auth/lib/sesion";
 import {
+  obtenerIdSesionActual,
   registrarLatidoPresencia,
   registrarVisitaPagina,
   registrarAccionUsuario,
@@ -40,6 +41,8 @@ export function AuthBootstrap() {
   const miGrupoId = useAuthStore((s) => s.grupoId);
   const router = useRouter();
   const ruta = usePathname();
+  const rutaRef = useRef(ruta);
+  rutaRef.current = ruta;
 
   useEffect(() => {
     try {
@@ -63,11 +66,14 @@ export function AuthBootstrap() {
     // Registrar visita a la página actual
     registrarVisitaPagina(miUsuario, ruta);
 
+    const sesionId = obtenerIdSesionActual(miUsuario);
+
     // Enviar latido de presencia inicial
     void registrarLatidoPresencia({
+      sesionId,
       usuarioId: miUsuario,
       nombre: miUsuario,
-        rol: tipoUsuario?.nombre || perfiles[0] || "Operador",
+      rol: tipoUsuario?.nombre || perfiles[0] || "Operador",
       grupoId: miGrupoId ? String(miGrupoId) : null,
       paginaActual: ruta,
     });
@@ -78,6 +84,7 @@ export function AuthBootstrap() {
     // Heartbeat periódico cada 45 segundos
     const timer = setInterval(() => {
       void registrarLatidoPresencia({
+        sesionId,
         usuarioId: miUsuario,
         nombre: miUsuario,
         rol: tipoUsuario?.nombre || perfiles[0] || "Operador",
@@ -105,6 +112,29 @@ export function AuthBootstrap() {
   useEffect(() => {
     let vivo = true;
 
+    void (async () => {
+      if (esRutaPublica(ruta)) return;
+      const st = useAuthStore.getState();
+      const sesionAdminLocal =
+        st.esPrincipal ||
+        (typeof window !== "undefined" && Boolean(localStorage.getItem("hipico_sesion_admin_local")));
+      const sesionOpLocal =
+        st.modoOperador ||
+        (typeof window !== "undefined" && localStorage.getItem("hipico_sesion_operador_local") === "1");
+      if (sesionOpLocal || sesionAdminLocal || (st.inicializada && st.sembrada && st.usuario)) return;
+      const s = await sesionActual();
+      if (!vivo) return;
+      if (!s) router.replace("/login");
+    })();
+
+    return () => {
+      vivo = false;
+    };
+  }, [ruta, router]);
+
+  useEffect(() => {
+    let vivo = true;
+
     // El acceso va ANTES de cualquier visualización: si no hay sesión de
     // Supabase, se expulsa a /login sin dejar pintar el contenido. Además se
     // escuchan los cambios de sesión (expiración, cierre en otra pestaña) para
@@ -126,30 +156,34 @@ export function AuthBootstrap() {
         void salir(false).then(() => router.replace("/login"));
         return;
       }
-      // Un token renovado puede ser el alta de un usuario nuevo: se re-resuelve
-      // su tipo de usuario para que sus accesos no queden viejos.
+
+      const stActual = useAuthStore.getState();
+      const rutaActual = rutaRef.current;
+      // Si la sesión ya está inicializada y sembrada, no re-ejecutar `inicializar()`
+      // en eventos pasivos (TOKEN_REFRESHED / INITIAL_SESSION) para evitar sobrescribir la sesión activa.
+      if (
+        stActual.inicializada &&
+        stActual.sembrada &&
+        stActual.usuario &&
+        (evento === "TOKEN_REFRESHED" || evento === "INITIAL_SESSION")
+      ) {
+        if (esPantallaDeAcceso(rutaActual)) {
+          router.replace(stActual.modoOperador ? "/apuestas" : "/inicio");
+        }
+        return;
+      }
+
+      // Un token nuevo puede corresponder al alta o cambio de usuario: se re-resuelve su tipo.
       void inicializar().then(() => {
         // SOLO desde una pantalla de INGRESO. Si el operador está a mitad de una
         // recuperación de contraseña, esa ruta es pública pero no de acceso:
         // mandarlo al dashboard lo deja sin poder guardar la clave nueva.
         const s = useAuthStore.getState();
         if (!s.inicializada || !s.sembrada) return;
-        if (esPantallaDeAcceso(ruta)) router.replace(s.modoOperador ? "/apuestas" : "/inicio");
+        const rActual = rutaRef.current;
+        if (esPantallaDeAcceso(rActual)) router.replace(s.modoOperador ? "/apuestas" : "/inicio");
       });
     };
-
-    void (async () => {
-      const s = await sesionActual();
-      if (!vivo) return;
-      const st = useAuthStore.getState();
-      const sesionAdminLocal =
-        st.esPrincipal ||
-        (typeof window !== "undefined" && Boolean(localStorage.getItem("hipico_sesion_admin_local")));
-      const sesionOpLocal =
-        st.modoOperador ||
-        (typeof window !== "undefined" && localStorage.getItem("hipico_sesion_operador_local") === "1");
-      if (!s && !sesionOpLocal && !sesionAdminLocal && !esRutaPublica(ruta)) router.replace("/login");
-    })();
 
     let canal: { unsubscribe: () => void } | null = null;
     let desarmado = false;
@@ -164,7 +198,7 @@ export function AuthBootstrap() {
     })();
 
     const onStorage = (ev: StorageEvent) => {
-      if (ev.key?.startsWith("sb-")) alCambiar("SIGNED_OUT");
+      if (ev.key?.startsWith("sb-") && ev.newValue === null) alCambiar("SIGNED_OUT");
     };
     window.addEventListener("storage", onStorage);
 
@@ -174,7 +208,7 @@ export function AuthBootstrap() {
       canal?.unsubscribe();
       window.removeEventListener("storage", onStorage);
     };
-  }, [ruta, router, salir, inicializar]);
+  }, [router, salir, inicializar]);
 
   return null;
 }

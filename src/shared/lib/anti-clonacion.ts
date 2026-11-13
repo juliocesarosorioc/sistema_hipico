@@ -6,6 +6,21 @@
  */
 
 let canalSesionUnica: BroadcastChannel | null = null;
+const TAB_RUNTIME_ID =
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `tab_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+export function desactivarProteccionAntiClonacion(): void {
+  if (canalSesionUnica) {
+    try {
+      canalSesionUnica.close();
+    } catch {
+      /* ignore */
+    }
+    canalSesionUnica = null;
+  }
+}
 
 export function activarProteccionAntiClonacion(opts?: {
   usuarioId?: string;
@@ -50,7 +65,13 @@ export function activarProteccionAntiClonacion(opts?: {
       // No hacer broadcast a uno mismo en la misma ventana, solo escuchar eventos de otras
       canalSesionUnica.onmessage = (event) => {
         const data = event.data;
-        if (data && data.tipo === "NUEVA_SESION_INICIADA" && data.sesionId && data.sesionId !== opts.sesionId) {
+        if (
+          data &&
+          data.tipo === "NUEVA_SESION_INICIADA" &&
+          data.tabId !== TAB_RUNTIME_ID &&
+          data.sesionId &&
+          data.sesionId !== opts.sesionId
+        ) {
           // Otra pestaña o ventana del mismo navegador inició sesión con este usuario
           if (opts.onSesionDuplicada) {
             opts.onSesionDuplicada();
@@ -73,6 +94,7 @@ export function notificarInicioSesionUnica(usuarioId: string, sesionId: string):
     canal.postMessage({
       tipo: "NUEVA_SESION_INICIADA",
       sesionId,
+      tabId: TAB_RUNTIME_ID,
       timestamp: Date.now(),
     });
     setTimeout(() => {

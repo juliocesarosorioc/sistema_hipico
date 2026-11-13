@@ -138,17 +138,24 @@ export async function verificarSesionActivaExistente(usuarioId: string): Promise
 }
 
 /**
- * Invalida TODAS las sesiones activas previas del usuario.
- * Se llama antes de crear la nueva sesión (garantía de Sesión Única).
+ * Invalida las sesiones activas previas del usuario en la base de datos.
+ * Se llama antes de registrar la nueva sesión, excluyendo `excluirSesionId`.
  */
-export async function invalidarSesionesPrevias(usuarioId: string): Promise<void> {
-  if (!supabase || !usuarioId) return;
+export async function invalidarSesionesPrevias(
+  usuarioId: string,
+  excluirSesionId?: string
+): Promise<void> {
+  if (!supabase || !usuarioId || !tablaSesionDisponible) return;
   try {
-    await supabase
+    let q = supabase
       .from("usuario_sesion")
       .update({ activo: false })
       .eq("usuario_id", usuarioId)
       .eq("activo", true);
+    if (excluirSesionId) {
+      q = q.neq("id", excluirSesionId);
+    }
+    await q;
   } catch {
     /* no bloquear el flujo de login */
   }
@@ -309,8 +316,7 @@ async function registrarEventoSeguridadDB(opts: {
 }
 
 /**
- * Registra un evento de cambio de IP durante sesión activa.
- * Usado para auditoría y para disparar el cierre de sesión.
+ * Registra un evento de cambio de IP durante sesión activa solo para auditoría.
  */
 export async function registrarCambioIpSesion(opts: {
   sesionId: string;
@@ -322,7 +328,7 @@ export async function registrarCambioIpSesion(opts: {
     usuarioId: opts.usuarioId,
     ip: opts.ipNueva,
     tipo: "CAMBIO_IP_DURANTE_SESION",
-    detalle: `Sesión ${opts.sesionId}: IP original ${opts.ipOriginal} → IP nueva ${opts.ipNueva}. Sesión cerrada por seguridad.`,
+    detalle: `Sesión ${opts.sesionId}: IP original ${opts.ipOriginal} → IP nueva ${opts.ipNueva}. Registro informativo.`,
   });
 }
 
@@ -331,7 +337,26 @@ export async function registrarCambioIpSesion(opts: {
 // ----------------------------------------------------------------------------
 
 /**
- * Obtiene o inicializa el ID de sesión del cliente actual.
+ * Sincroniza el mismo ID de sesión entre localStorage y sessionStorage
+ * para evitar desfases entre módulos.
+ */
+export function establecerIdSesionActual(usuarioId: string, sesionId: string): void {
+  if (typeof window === "undefined" || !sesionId) return;
+  try {
+    if (usuarioId) {
+      localStorage.setItem(`${STORAGE_KEY_SESION_ACTUAL}_${usuarioId}`, sesionId);
+      localStorage.setItem(`hipico_activa_${usuarioId}`, sesionId);
+    } else {
+      localStorage.setItem(STORAGE_KEY_SESION_ACTUAL, sesionId);
+    }
+    sessionStorage.setItem("hipico_sesion_activa", sesionId);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Obtiene o inicializa el ID de sesión unificado del cliente actual.
  */
 export function obtenerIdSesionActual(usuarioId?: string): string {
   if (typeof window === "undefined") return "ses_servidor";
@@ -339,10 +364,25 @@ export function obtenerIdSesionActual(usuarioId?: string): string {
     const clave = usuarioId
       ? `${STORAGE_KEY_SESION_ACTUAL}_${usuarioId}`
       : STORAGE_KEY_SESION_ACTUAL;
-    let id = localStorage.getItem(clave);
+    const sesionTab = sessionStorage.getItem("hipico_sesion_activa");
+    const sesionActivaUser = usuarioId
+      ? localStorage.getItem(`hipico_activa_${usuarioId}`)
+      : null;
+
+    let id =
+      localStorage.getItem(clave) ||
+      sesionActivaUser ||
+      (sesionTab && sesionTab.length > 8 ? sesionTab : null);
+
     if (!id) {
       id = generarSesionIdSeguro();
+    }
+
+    if (usuarioId) {
+      establecerIdSesionActual(usuarioId, id);
+    } else {
       localStorage.setItem(clave, id);
+      sessionStorage.setItem("hipico_sesion_activa", id);
     }
     return id;
   } catch {
@@ -484,17 +524,21 @@ export async function purgarActividadAntigua10Dias(): Promise<number> {
 // ----------------------------------------------------------------------------
 // REGISTRO DE LATIDO / PRESENCIA EN VIVO
 // ----------------------------------------------------------------------------
-export async function registrarLatidoPresencia(params: {
+export interface ParamsLatidoPresencia {
   usuarioId: string;
+  sesionId?: string;
   nombre?: string;
   rol?: string;
   grupoId?: string | null;
   paginaActual?: string;
   ip?: string;
-}): Promise<void> {
+}
+
+export async function registrarLatidoPresencia(params: ParamsLatidoPresencia): Promise<void> {
   if (!params.usuarioId || typeof window === "undefined") return;
 
-  const sesionId = obtenerIdSesionActual(params.usuarioId);
+  const sesionId = params.sesionId || obtenerIdSesionActual(params.usuarioId);
+  establecerIdSesionActual(params.usuarioId, sesionId);
   const ahoraIso = new Date().toISOString();
   const { navegador, dispositivo } = obtenerInfoCliente();
 
@@ -895,23 +939,20 @@ export function iniciarHeartbeatSesion(params: ParamsHeartbeatSesion): void {
   if (typeof window === "undefined") return;
   detenerHeartbeatSesion();
 
-  // 1. Coordinación local entre pestañas (1 usuario = 1 conexión inmediata en el mismo navegador)
-  try {
-    const key = `hipico_activa_${params.usuarioId}`;
-    localStorage.setItem(key, params.sesionId);
+  // 1. Sincronizar el mismo sesionId en todas las claves locales para evitar auto-expulsiones
+  establecerIdSesionActual(params.usuarioId, params.sesionId);
 
-    _storageListener = (e: StorageEvent) => {
-      if (e.key === key && e.newValue && e.newValue !== params.sesionId) {
-        detenerHeartbeatSesion();
-        params.onSesionInvalida?.();
-      }
-    };
-    window.addEventListener("storage", _storageListener);
-  } catch {
-    /* ignore */
-  }
+  const esIpPublicaValida = (ip?: string | null) =>
+    Boolean(
+      ip &&
+        ip !== "127.0.0.1" &&
+        ip !== "::1" &&
+        ip !== "0.0.0.0" &&
+        ip !== "IP_LOCAL"
+    );
 
   void registrarLatidoPresencia({
+    sesionId: params.sesionId,
     usuarioId: params.usuarioId,
     nombre: params.nombre,
     rol: params.rol,
@@ -921,57 +962,24 @@ export function iniciarHeartbeatSesion(params: ParamsHeartbeatSesion): void {
 
   _heartbeatTimer = setInterval(async () => {
     try {
-      // 2. Comprobar concurrencia local por si cambió la clave en storage (otra ventana/pestaña diferente se conectó)
-      try {
-        const key = `hipico_activa_${params.usuarioId}`;
-        const sesionLocal = localStorage.getItem(key);
-        if (sesionLocal && sesionLocal !== params.sesionId) {
-          detenerHeartbeatSesion();
-          params.onSesionInvalida?.();
-          return;
-        }
-      } catch {
-        /* ignore */
-      }
-
-      // 3. Comprobar concurrencia en la base de datos (1 usuario = 1 conexión entre diferentes dispositivos)
-      if (supabase && tablaSesionDisponible) {
-        const { data: sesionData, error: errS } = await supabase
-          .from("usuario_sesion")
-          .select("id, activo, ultimo_latido")
-          .eq("usuario_id", params.usuarioId)
-          .eq("activo", true)
-          .order("ultimo_latido", { ascending: false })
-          .limit(1);
-
-        if (!errS && sesionData && sesionData.length > 0) {
-          const sesionMasReciente = sesionData[0];
-          // Solo si hay una sesión activa distinta con latido fresco reciente (menos de 60s)
-          const edadLatido = (Date.now() - new Date(sesionMasReciente.ultimo_latido as string).getTime()) / 1000;
-          if (sesionMasReciente.id !== params.sesionId && edadLatido < 60) {
-            detenerHeartbeatSesion();
-            params.onSesionInvalida?.();
-            return;
-          }
-        }
-      }
-
-      const ipActual = await obtenerIpCliente();
+      const ipActual = await obtenerIpCliente().catch(() => "");
       if (
-        ipActual &&
-        params.ipInicial &&
-        ipActual !== params.ipInicial &&
-        ipActual !== "127.0.0.1" &&
-        params.ipInicial !== "127.0.0.1" &&
-        ipActual !== "0.0.0.0" &&
-        params.ipInicial !== "0.0.0.0"
+        esIpPublicaValida(ipActual) &&
+        esIpPublicaValida(params.ipInicial) &&
+        ipActual !== params.ipInicial
       ) {
-        detenerHeartbeatSesion();
-        params.onCambioIp?.(ipActual);
-        return;
+        const ipAnterior = params.ipInicial;
+        params.ipInicial = ipActual;
+        void registrarCambioIpSesion({
+          sesionId: params.sesionId,
+          usuarioId: params.usuarioId,
+          ipOriginal: ipAnterior,
+          ipNueva: ipActual,
+        });
       }
 
       await registrarLatidoPresencia({
+        sesionId: params.sesionId,
         usuarioId: params.usuarioId,
         nombre: params.nombre,
         rol: params.rol,

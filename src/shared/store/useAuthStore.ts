@@ -34,8 +34,14 @@ import {
   iniciarHeartbeatSesion,
   detenerHeartbeatSesion,
   registrarCambioIpSesion,
+  obtenerIdSesionActual,
+  establecerIdSesionActual,
 } from "@/features/seguridad/lib/seguimiento-usuarios";
-import { activarProteccionAntiClonacion, notificarInicioSesionUnica } from "@/shared/lib/anti-clonacion";
+import {
+  activarProteccionAntiClonacion,
+  desactivarProteccionAntiClonacion,
+  notificarInicioSesionUnica,
+} from "@/shared/lib/anti-clonacion";
 
 const CLAVE_PERFIL = "hipico_perfil";
 const CLAVE_PERMISOS = "hipico_permisos";
@@ -133,26 +139,35 @@ const MS_CARGA_INICIAL = TIMEOUT_SESION_MS;
 /** Un arranque a la vez: las llamadas superpuestas se pegan al que ya corre. */
 let carreraCarga: Promise<void> | null = null;
 
+let _sesionHeartbeatRegistrada: { usuarioId: string; sesionId: string } | null = null;
+
 /**
  * [Módulo 1] Activa la protección de sesión única, vinculación por IP
  * y el latido continuo contra la tabla de presencia y eventos de auditoría.
  */
-async function postLoginSesionUnica(id: string, nombre?: string, rol?: string, grupoId?: string) {
+async function postLoginSesionUnica(
+  id: string,
+  nombre?: string,
+  rol?: string,
+  grupoId?: string,
+  esRestauracion = false
+) {
   try {
-    const sesionId = generarSesionIdSeguro();
-    if (typeof window !== "undefined") {
-      try {
-        sessionStorage.setItem("hipico_sesion_activa", sesionId);
-        localStorage.setItem(`hipico_activa_${id}`, sesionId);
-      } catch {
-        /* ignore */
-      }
+    const sesionId = esRestauracion
+      ? obtenerIdSesionActual(id)
+      : generarSesionIdSeguro();
+    establecerIdSesionActual(id, sesionId);
+
+    if (
+      esRestauracion &&
+      _sesionHeartbeatRegistrada?.usuarioId === id &&
+      _sesionHeartbeatRegistrada?.sesionId === sesionId
+    ) {
+      return;
     }
+    _sesionHeartbeatRegistrada = { usuarioId: id, sesionId };
 
-    // Invalidar sesiones remotas en background sin bloquear
-    void invalidarSesionesPrevias(id);
-    void notificarInicioSesionUnica(id, sesionId);
-
+    desactivarProteccionAntiClonacion();
     activarProteccionAntiClonacion({
       usuarioId: id,
       sesionId,
@@ -163,6 +178,11 @@ async function postLoginSesionUnica(id: string, nombre?: string, rol?: string, g
         });
       },
     });
+
+    if (!esRestauracion) {
+      await invalidarSesionesPrevias(id, sesionId);
+      notificarInicioSesionUnica(id, sesionId);
+    }
 
     const ip = await obtenerIpCliente().catch(() => "127.0.0.1");
 
@@ -179,16 +199,12 @@ async function postLoginSesionUnica(id: string, nombre?: string, rol?: string, g
           errorLogin: "⚠️ Sesión cerrada: Esta cuenta tiene una sesión abierta en otro dispositivo o ventana. Solo se permite 1 conexión por usuario.",
         });
       },
-      onCambioIp: () => {
+      onCambioIp: (nuevaIp) => {
         void registrarCambioIpSesion({
           sesionId,
           usuarioId: id,
           ipOriginal: ip,
-          ipNueva: "IP_ALTERADA",
-        });
-        void useAuthStore.getState().salir(true);
-        useAuthStore.setState({
-          errorLogin: "⚠️ Sesión terminada por seguridad: Se detectó un cambio en tu dirección IP de conexión.",
+          ipNueva: nuevaIp || "IP_ALTERADA",
         });
       },
     });
@@ -294,9 +310,12 @@ export type EstadoAuth = {
   /** Alterna o fija la vista en Modo Operador (`rol === 'OPERADOR'`). */
   setModoOperador: (activo: boolean) => void;
   /** Inicia sesión directa con perfil de Operador (`operador` / `operador2026`). */
-  entrarComoOperador: () => void;
+  entrarComoOperador: (esRestauracion?: boolean) => void;
   /** Inicia sesión directa de un operador de grupo asignado. */
-  entrarComoOperadorGrupo: (op: { id: string; nombre: string; grupoId: string; grupoNombre?: string }) => void;
+  entrarComoOperadorGrupo: (
+    op: { id: string; nombre: string; grupoId: string; grupoNombre?: string },
+    esRestauracion?: boolean
+  ) => void;
   /** Inicia sesión contra Supabase Auth y siembra los permisos del perfil. */
   iniciarSesion: (identificador: string, clave: string) => Promise<boolean>;
   inicializar: () => Promise<void>;
@@ -503,12 +522,40 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
   if (typeof window !== "undefined") {
     let sesionActiva = sessionStorage.getItem("hipico_sesion_activa");
     if (!sesionActiva) {
-      // Si la cookie del usuario está presente, verificar si hay otra pestaña o si es una navegación directa
       const hayCookie = document.cookie.includes("hipico_usuario=");
-      if (hayCookie) {
-        // En una nueva pestaña o al navegar, inicializamos la clave de sesión en sessionStorage para esta ventana
-        sesionActiva = "1";
-        sessionStorage.setItem("hipico_sesion_activa", "1");
+      const tieneSupabaseStorage = (() => {
+        try {
+          return Object.keys(localStorage).some(
+            (k) => k.startsWith("sb-") && k.endsWith("-auth-token") && Boolean(localStorage.getItem(k))
+          );
+        } catch {
+          return false;
+        }
+      })();
+      const tieneSesionLocal =
+        hayCookie ||
+        leerSesionOperadorLocal() ||
+        Boolean(leerSesionAdminLocal()) ||
+        tieneSupabaseStorage;
+
+      if (tieneSesionLocal) {
+        const uidHint =
+          leerSesionAdminLocal() ||
+          (() => {
+            try {
+              const rawOp = localStorage.getItem(CLAVE_OPERADOR_ACTUAL);
+              if (rawOp) return (JSON.parse(rawOp) as { id?: string })?.id;
+            } catch {
+              /* sinop */
+            }
+            return leerSesionOperadorLocal() ? "operador" : undefined;
+          })();
+        sesionActiva = uidHint ? obtenerIdSesionActual(uidHint) : "1";
+        try {
+          sessionStorage.setItem("hipico_sesion_activa", sesionActiva);
+        } catch {
+          /* sinop */
+        }
       }
     }
     if (!sesionActiva) {
@@ -584,6 +631,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
         grupoNombre: "Todos los grupos",
         grupoActivo: leerGrupoActivoGuardado(),
       });
+      void postLoginSesionUnica(uidPrincipal, "Julio Osorio", "admin", "", true);
       return;
     }
     if (leerSesionOperadorLocal()) {
@@ -592,14 +640,14 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
         if (rawOp) {
           const op = JSON.parse(rawOp);
           if (op && op.id) {
-            useAuthStore.getState().entrarComoOperadorGrupo(op);
+            useAuthStore.getState().entrarComoOperadorGrupo(op, true);
             return;
           }
         }
       } catch {
         /* fallback al operador genérico */
       }
-      useAuthStore.getState().entrarComoOperador();
+      useAuthStore.getState().entrarComoOperador(true);
       return;
     }
 
@@ -694,6 +742,13 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
     veTodosLosGrupos: a.veTodosLosGrupos,
     grupoActivo: a.grupoActivo,
   });
+  void postLoginSesionUnica(
+    id,
+    a.tipoUsuario?.nombre || id,
+    a.tipoUsuario?.nombre || "Usuario",
+    a.grupoId,
+    true
+  );
 }
 
 /**
@@ -763,7 +818,7 @@ export const useAuthStore = create<EstadoAuth>()(
         set({ modoOperador: activo });
       },
 
-      entrarComoOperador: () => {
+      entrarComoOperador: (esRestauracion = false) => {
         const capsOperador = baseDeTipo("operador");
         const tipoOp: TipoUsuario = {
           id: 2,
@@ -811,10 +866,16 @@ export const useAuthStore = create<EstadoAuth>()(
           grupoNombre: "Mi Grupo",
           grupoActivo,
         });
-        void postLoginSesionUnica("operador", "Operador", "OPERADOR", grupoActivo ?? "");
+        void postLoginSesionUnica(
+          "operador",
+          "Operador",
+          "OPERADOR",
+          grupoActivo ?? "",
+          Boolean(esRestauracion)
+        );
       },
 
-      entrarComoOperadorGrupo: (op) => {
+      entrarComoOperadorGrupo: (op, esRestauracion = false) => {
         const capsOperador = baseDeTipo("operador");
         const tipoOp: TipoUsuario = {
           id: 2,
@@ -869,7 +930,13 @@ export const useAuthStore = create<EstadoAuth>()(
           grupoNombre: op.grupoNombre || "",
           grupoActivo: grupoEfectivo,
         });
-        void postLoginSesionUnica(op.id, op.nombre, "OPERADOR", grupoEfectivo || "");
+        void postLoginSesionUnica(
+          op.id,
+          op.nombre,
+          "OPERADOR",
+          grupoEfectivo || "",
+          Boolean(esRestauracion)
+        );
       },
 
       iniciarSesion: async (identificador, clave) => {
@@ -1238,7 +1305,9 @@ export const useAuthStore = create<EstadoAuth>()(
       },
 
       salir: async (cerrarSesionRemota = true) => {
+        _sesionHeartbeatRegistrada = null;
         detenerHeartbeatSesion();
+        desactivarProteccionAntiClonacion();
         borrarCookiesDeAcceso();
         limpiarSesionStaffSala();
         limpiarAccesosVigentes();
@@ -1248,7 +1317,10 @@ export const useAuthStore = create<EstadoAuth>()(
           if (typeof window !== "undefined") {
             sessionStorage.removeItem("hipico_sesion_activa");
             const uActual = useAuthStore.getState().usuario;
-            if (uActual) localStorage.removeItem(`hipico_activa_${uActual}`);
+            if (uActual) {
+              localStorage.removeItem(`hipico_activa_${uActual}`);
+              localStorage.removeItem(`hipico_track_sesion_id_${uActual}`);
+            }
             localStorage.removeItem(CLAVE_MODO_OPERADOR);
             localStorage.removeItem(CLAVE_SESION_OPERADOR_LOCAL);
             localStorage.removeItem(CLAVE_OPERADOR_ACTUAL);
