@@ -781,7 +781,7 @@ export function ClientesModule() {
                           onClick={() => setPortalDe(c)}
                           className="flex h-6 w-6 items-center justify-center rounded text-[13px] leading-none transition hover:bg-cyan-100"
                         >
-                          📛
+                          🌐
                         </button>
                         <button
                           type="button"
