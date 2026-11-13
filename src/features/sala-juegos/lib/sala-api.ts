@@ -20,9 +20,14 @@ let _credenciales: CredencialesSala = {
 export function configurarCredencialesSala(creds: Partial<CredencialesSala>) {
   _credenciales = { ..._credenciales, ...creds };
   if (typeof window !== "undefined") {
-    if (creds.portalToken) sessionStorage.setItem("sala_portal_token", creds.portalToken);
-    if (creds.clienteId) sessionStorage.setItem("sala_cliente_id", creds.clienteId);
-    if (creds.staffToken) sessionStorage.setItem("sala_staff_token", creds.staffToken);
+    // `null` significa "este canal no aplica": se borra para que una sesión
+    // de portal no se cuele en la Sala de staff (ni al revés).
+    if (creds.portalToken === null) sessionStorage.removeItem("sala_portal_token");
+    else if (creds.portalToken) sessionStorage.setItem("sala_portal_token", creds.portalToken);
+    if (creds.clienteId === null) sessionStorage.removeItem("sala_cliente_id");
+    else if (creds.clienteId) sessionStorage.setItem("sala_cliente_id", creds.clienteId);
+    if (creds.staffToken === null) sessionStorage.removeItem("sala_staff_token");
+    else if (creds.staffToken) sessionStorage.setItem("sala_staff_token", creds.staffToken);
   }
 }
 
@@ -51,8 +56,14 @@ export function obtenerCredencialesGuardadas(): CredencialesSala {
       // Ignorar fallos de URL
     }
 
-    let pToken = _credenciales.portalToken || sessionStorage.getItem("sala_portal_token") || localStorage.getItem("portal_token");
-    let cId = _credenciales.clienteId || sessionStorage.getItem("sala_cliente_id") || localStorage.getItem("portal_cliente_id");
+    let pToken =
+      _credenciales.portalToken === null
+        ? null
+        : _credenciales.portalToken || sessionStorage.getItem("sala_portal_token") || localStorage.getItem("portal_token");
+    let cId =
+      _credenciales.clienteId === null
+        ? null
+        : _credenciales.clienteId || sessionStorage.getItem("sala_cliente_id") || localStorage.getItem("portal_cliente_id");
 
     // Respaldo desde portal.cliente (usado por el Portal del Cliente)
     if (!pToken || !cId) {
@@ -72,8 +83,7 @@ export function obtenerCredencialesGuardadas(): CredencialesSala {
 
     const sToken =
       _credenciales.staffToken ||
-      sessionStorage.getItem("sala_staff_token") ||
-      localStorage.getItem("supabase_auth_token");
+      sessionStorage.getItem("sala_staff_token");
 
     return {
       portalToken: pToken || null,
@@ -106,83 +116,55 @@ async function headersAuth(): Promise<HeadersInit> {
     }
   }
 
-  let tieneStaffLocal = Boolean(tokenStaff);
-  if (typeof window !== "undefined" && !tieneStaffLocal) {
-    try {
-      tieneStaffLocal = Boolean(
-        localStorage.getItem("hipico_usuario") ||
-          localStorage.getItem("hipico_sesion_admin_local") ||
-          localStorage.getItem("hipico_operador_actual") ||
-          document.cookie.includes("hipico_usuario=")
-      );
-    } catch {
-      /* noop */
-    }
-  }
-
-  const portalExplicito = Boolean(_credenciales.portalToken && _credenciales.clienteId);
-  if (creds.portalToken && creds.clienteId && (portalExplicito || !tieneStaffLocal)) {
+  // La credencial viaja en UN solo canal: portal explícito o staff (JWT/token
+  // HMAC). No se envían cookies ni cabeceras de identidad que el navegador
+  // pueda falsificar; el servidor ya no las acepta.
+  if (creds.portalToken && creds.clienteId) {
     headers["X-Sala-Portal-Token"] = creds.portalToken;
     headers["X-Sala-Cliente-Id"] = creds.clienteId;
-  }
-
-  if (tokenStaff) {
+  } else if (tokenStaff) {
     headers["Authorization"] = `Bearer ${tokenStaff}`;
   }
 
-  // Enviar respaldo de identidad de sesión de la aplicación (Staff / Operador)
-  if (typeof window !== "undefined") {
-    try {
-      let u =
-        localStorage.getItem("hipico_usuario") ||
-        localStorage.getItem("hipico_sesion_admin_local");
-      let p = localStorage.getItem("hipico_perfil");
-      let perm = localStorage.getItem("hipico_permisos");
-      let g = localStorage.getItem("hipico_grupo_activo");
-
-      if (!u) {
-        const rawOp = localStorage.getItem("hipico_operador_actual");
-        if (rawOp) {
-          try {
-            const parsedOp = JSON.parse(rawOp);
-            u = parsedOp.nombre || parsedOp.usuario || parsedOp.id || "";
-            if (!g && parsedOp.grupo_id) g = String(parsedOp.grupo_id);
-          } catch {
-            u = rawOp;
-          }
-        }
-      }
-
-      // Si localStorage no tiene alguno de los campos, extraer de document.cookie
-      if (document.cookie) {
-        const cookies: Record<string, string> = {};
-        document.cookie.split(";").forEach((pair) => {
-          const [k, ...v] = pair.trim().split("=");
-          if (k) cookies[k] = decodeURIComponent(v.join("="));
-        });
-        if (!u && cookies["hipico_usuario"]) u = cookies["hipico_usuario"];
-        if (!p && cookies["hipico_perfil"]) p = cookies["hipico_perfil"];
-        if (!perm && cookies["hipico_permisos"]) perm = cookies["hipico_permisos"];
-        if (!g && cookies["hipico_grupo_activo"]) g = cookies["hipico_grupo_activo"];
-      }
-
-      // Si es admin principal o sesión admin activa
-      if (u === "josorioc" || localStorage.getItem("hipico_sesion_admin_local")) {
-        u = "josorioc";
-        p = "admin";
-        perm = "*";
-      }
-
-      if (u) headers["X-Sala-Usuario"] = u;
-      if (p) headers["X-Sala-Perfil"] = p;
-      if (perm) headers["X-Sala-Permisos"] = perm;
-      if (g) headers["X-Sala-Grupo"] = g;
-    } catch {
-      // noop
-    }
-  }
-
   return headers;
+}
+
+/**
+ * Canjea credenciales de operador por un token HMAC de sala.
+ *
+ * El token lo firma el servidor tras validar `usuario_sistema.clave_acceso` con
+ * la RPC oficial. Es la única sesión de staff que no depende de Supabase Auth.
+ */
+export async function iniciarSesionStaffSala(
+  identificador: string,
+  clave: string
+): Promise<{ ok: boolean; token?: string; error?: string }> {
+  try {
+    const res = await fetch("/api/sala", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accion: "sesion-staff", identificador, clave }),
+      cache: "no-store",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok || !data?.token) {
+      return { ok: false, error: data?.error || `Error ${res.status}` };
+    }
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("sala_staff_token", String(data.token));
+      _credenciales.staffToken = String(data.token);
+    }
+    return { ok: true, token: String(data.token) };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || "No se pudo iniciar la sesión de sala." };
+  }
+}
+
+export function limpiarSesionStaffSala(): void {
+  if (typeof window !== "undefined") {
+    sessionStorage.removeItem("sala_staff_token");
+  }
+  _credenciales.staffToken = null;
 }
 
 async function requestApi<T = any>(

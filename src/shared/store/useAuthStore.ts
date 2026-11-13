@@ -21,6 +21,10 @@ import {
 import { atributosDeUsuario, claveDeUsuario, leerTipoDeUsuario, permisosIndividuales } from "@/features/seguridad/lib/accesos";
 import { leerMiGrupo } from "@/features/seguridad/lib/grupo-usuario";
 import { CAPACIDADES, CAPACIDADES_POR_CLAVE, esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
+import {
+  iniciarSesionStaffSala,
+  limpiarSesionStaffSala,
+} from "@/features/sala-juegos/lib/sala-api";
 import { limpiarAccesosVigentes, setAccesosVigentes, setGrupoActivoVigente } from "@/features/seguridad/lib/vigente";
 import type { ExcepcionUsuario, TipoUsuario } from "@/features/seguridad/lib/tipos";
 import { obtenerIpCliente } from "@/shared/lib/ip-detector";
@@ -880,7 +884,10 @@ export const useAuthStore = create<EstadoAuth>()(
             const correoAdmin = resolverCorreo(uidPrincipal);
             const todasCaps = CAPACIDADES.map((c) => c.clave);
             guardarSesionAdminLocal(uidPrincipal);
-            void login(uidPrincipal, clave).catch(() => {});
+            // La API de la Sala autoriza con el JWT real de Supabase. Se espera
+            // el login para que la sesión exista antes de la primera petición;
+            // el acceso local sigue garantizado aunque la red falle.
+            await login(uidPrincipal, clave);
             publicarPermisosEnCookies(["admin"], todasCaps, uidPrincipal);
             setAccesosVigentes({
               permisos: todasCaps,
@@ -940,6 +947,9 @@ export const useAuthStore = create<EstadoAuth>()(
               /* fallback */
             }
           }
+          // El operador no tiene cuenta en Supabase Auth: la Sala se autoriza
+          // con el token HMAC que emite el servidor tras validar la clave.
+          await iniciarSesionStaffSala(idLimpio, clave);
           get().entrarComoOperadorGrupo({
             id: "ricardogunbold",
             nombre: "Ricardo Gun Bold",
@@ -973,6 +983,9 @@ export const useAuthStore = create<EstadoAuth>()(
                 const gId = String(r.grupoId || opCache?.grupoId || "");
                 const gNom = String(r.grupoNombre || opCache?.grupoNombre || "Grupo Asignado");
 
+                // La RPC valida la clave; el endpoint firma además el token
+                // HMAC que la API de la Sala exige como credencial de staff.
+                await iniciarSesionStaffSala(identificador, clave);
                 get().entrarComoOperadorGrupo({
                   id: String(r.id),
                   nombre: String(r.nombre || opCache?.nombre || r.id),
@@ -1227,6 +1240,7 @@ export const useAuthStore = create<EstadoAuth>()(
       salir: async (cerrarSesionRemota = true) => {
         detenerHeartbeatSesion();
         borrarCookiesDeAcceso();
+        limpiarSesionStaffSala();
         limpiarAccesosVigentes();
         guardarGrupoActivo(null);
         guardarSesionAdminLocal(null);

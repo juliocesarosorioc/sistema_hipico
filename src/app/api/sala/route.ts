@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { supabaseAdmin } from "@/core/supabase-admin";
 import {
   autenticarPeticionSala,
+  iniciarSesionOperadorSala,
   puedeOperarSala,
   puedeLiquidarSala,
   puedeRetirarEjemplar,
@@ -1131,14 +1132,36 @@ async function anularCarrera(grupoId: string, salaId: string, operadorNombre: st
 // POST: Mensaje, Revisión LLM, Recarga Blindada, Operador, Sala
 // ============================================================================
 export async function POST(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  const accion = body.accion || body.action;
+
+  // Emisión de sesión de staff: es el único endpoint público de escritura.
+  // Valida las credenciales reales contra `club_login_operador` y devuelve un
+  // token HMAC que el navegador no puede fabricar.
+  if (accion === "sesion-staff") {
+    const reenviada = req.headers.get("x-forwarded-for") || "";
+    const ip = reenviada.split(",")[0].trim() || req.headers.get("x-real-ip") || "127.0.0.1";
+    const sesion = await iniciarSesionOperadorSala(
+      String(body.identificador || body.usuario || ""),
+      String(body.clave || body.password || ""),
+      ip
+    );
+    if (!sesion.ok) {
+      return NextResponse.json({ ok: false, error: sesion.error }, { status: sesion.status });
+    }
+    return NextResponse.json({
+      ok: true,
+      token: sesion.token,
+      usuario: sesion.usuario,
+    });
+  }
+
   const auth = await autenticarPeticionSala(req);
   if (!auth.ok || !auth.identidad) {
     return NextResponse.json({ ok: false, error: auth.error || "No autorizado" }, { status: auth.status || 401 });
   }
 
   const identidad = auth.identidad;
-  const body = await req.json().catch(() => ({}));
-  const accion = body.accion;
 
   try {
     // ------------------------------------------------------------------------

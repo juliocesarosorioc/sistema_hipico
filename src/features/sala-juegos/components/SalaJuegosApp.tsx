@@ -110,12 +110,15 @@ export function SalaJuegosApp({
     }
   };
 
-  // Inicializar credenciales
+  // Inicializar credenciales. Si hay portal explícito, la Sala juega como ese
+  // cliente; si no, se usa la sesión staff y se descarta cualquier credencial
+  // de portal que hubiera quedado en el navegador.
   useEffect(() => {
+    const esPortal = Boolean(portalTokenInicial && clienteIdInicial);
     configurarCredencialesSala({
-      portalToken: portalTokenInicial,
-      clienteId: clienteIdInicial,
-      staffToken: staffTokenInicial,
+      portalToken: esPortal ? portalTokenInicial : null,
+      clienteId: esPortal ? clienteIdInicial : null,
+      staffToken: esPortal ? null : staffTokenInicial || undefined,
     });
   }, [portalTokenInicial, clienteIdInicial, staffTokenInicial]);
 

@@ -80,7 +80,8 @@ export function verificarTokenStaff(token: string): {
   try {
     const raw = Buffer.from(dataB64, "base64url").toString("utf8");
     const payload = JSON.parse(raw);
-    if (payload.exp && Date.now() > payload.exp) return { valido: false };
+    if (!payload || !payload.usuarioId) return { valido: false };
+    if (!Number.isFinite(payload.exp) || Date.now() > payload.exp) return { valido: false };
     return { valido: true, payload };
   } catch {
     return { valido: false };
@@ -88,29 +89,101 @@ export function verificarTokenStaff(token: string): {
 }
 
 /**
- * Extrae y decodifica pares clave-valor de cookies
+ * Valida credenciales de operador contra `usuario_sistema` mediante la RPC
+ * oficial `club_login_operador` (incluye bloqueo por intentos fallidos) y emite
+ * un token HMAC de sala. El token es lo único que la API acepta después: no se
+ * confía en cookies ni en cabeceras de identidad del navegador.
  */
-function parseCookies(header: string | null): Record<string, string> {
-  if (!header) return {};
-  const res: Record<string, string> = {};
-  for (const part of header.split(";")) {
-    const [k, v] = part.trim().split("=");
-    if (k && v) {
-      try {
-        res[decodeURIComponent(k)] = decodeURIComponent(v);
-      } catch {
-        res[k] = v;
-      }
-    }
+export async function iniciarSesionOperadorSala(
+  identificador: string,
+  clave: string,
+  ip: string
+): Promise<
+  | { ok: true; token: string; usuario: { id: string; nombre: string; grupoId: string | null; grupoNombre: string; esAdmin: boolean } }
+  | { ok: false; status: number; error: string }
+> {
+  const id = String(identificador ?? "").trim();
+  if (!id || !clave) {
+    return { ok: false, status: 400, error: "Usuario y contraseña son obligatorios." };
   }
-  return res;
+
+  const { data, error } = await supabaseAdmin.rpc("club_login_operador", {
+    p_identificador: id,
+    p_clave: clave,
+    p_ip: ip || "127.0.0.1",
+  });
+  if (error) {
+    return { ok: false, status: 500, error: "No se pudo validar el operador." };
+  }
+
+  const r = (data ?? {}) as Record<string, unknown>;
+  if (r.bloqueado === true) {
+    return {
+      ok: false,
+      status: 429,
+      error: String(r.error || "Acceso bloqueado temporalmente por intentos fallidos."),
+    };
+  }
+  if (r.ok !== true || !r.id) {
+    return {
+      ok: false,
+      status: 401,
+      error: String(r.error || "Usuario o contraseña incorrectos."),
+    };
+  }
+
+  const usuarioId = String(r.id);
+  const { data: alta } = await supabaseAdmin
+    .from("usuario_sistema")
+    .select("id, nombre, grupo_id, activo, es_principal, tipo_usuario_id")
+    .eq("id", usuarioId)
+    .maybeSingle();
+
+  if (alta && (alta as any).activo === false) {
+    return { ok: false, status: 403, error: "El usuario está dado de baja." };
+  }
+
+  const esPrincipal = esUsuarioPrincipal(usuarioId) || Boolean((alta as any)?.es_principal);
+  let tipoNombre = "";
+  if ((alta as any)?.tipo_usuario_id != null) {
+    const { data: tipo } = await supabaseAdmin
+      .from("tipo_usuario")
+      .select("nombre")
+      .eq("id", (alta as any).tipo_usuario_id)
+      .maybeSingle();
+    tipoNombre = String((tipo as any)?.nombre || "");
+  }
+  const esAdmin = esPrincipal || /admin|dueño|dueno|banquero/i.test(tipoNombre);
+
+  const nombre = String(r.nombre || (alta as any)?.nombre || usuarioId);
+  const grupoId = String(r.grupoId || (alta as any)?.grupo_id || "").trim() || null;
+  const grupoNombre = String(r.grupoNombre || "");
+
+  const token = generarTokenStaff({
+    usuarioId,
+    nombre,
+    grupoId,
+    esAdmin,
+    esOperador: true,
+  });
+
+  return {
+    ok: true,
+    token,
+    usuario: { id: usuarioId, nombre, grupoId, grupoNombre, esAdmin },
+  };
 }
 
 /**
- * Autentica la petición a la Sala de Juegos sin confiar en datos enviados en el body
- * 1. Jugador: Headers X-Sala-Cliente-Id y X-Sala-Portal-Token validados contra clientes
- * 2. Staff: Header Authorization: Bearer <JWT_Supabase | Token_HMAC_Staff>
- * 3. Staff / Admin de Aplicación: Cookies de sesión o cabeceras X-Sala-Usuario / X-Sala-Perfil
+ * Autentica la petición a la Sala de Juegos sin confiar en datos enviados en el body.
+ *
+ * Solo hay dos credenciales aceptadas:
+ *  1. Jugador: `X-Sala-Cliente-Id` + `X-Sala-Portal-Token`, validados contra `clientes`.
+ *  2. Staff: `Authorization: Bearer <JWT_Supabase | Token_HMAC_Staff>`.
+ *
+ * Las cookies `hipico_usuario` / `hipico_perfil` / `hipico_permisos` y las
+ * cabeceras `X-Sala-Usuario` las escribe el navegador: NO son credenciales y no
+ * se usan para autorizar.
  */
 export async function autenticarPeticionSala(
   req: Request
@@ -119,10 +192,7 @@ export async function autenticarPeticionSala(
   const clienteId = req.headers.get("x-sala-cliente-id");
   const portalToken = req.headers.get("x-sala-portal-token");
   const tieneAuthStaff = Boolean(
-    req.headers.get("authorization") ||
-      req.headers.get("Authorization") ||
-      req.headers.get("x-sala-usuario") ||
-      req.headers.get("x-usuario")
+    req.headers.get("authorization") || req.headers.get("Authorization")
   );
 
   if (clienteId && portalToken) {
@@ -268,100 +338,6 @@ export async function autenticarPeticionSala(
     }
   }
 
-  // 3. Chequeo de Staff vía Cookies de sesión o cabeceras de aplicación (X-Sala-Usuario, etc.)
-  const cookies = parseCookies(req.headers.get("cookie"));
-  const headerUsuario = req.headers.get("x-sala-usuario") || req.headers.get("x-usuario");
-  const headerPerfil = req.headers.get("x-sala-perfil") || req.headers.get("x-perfil");
-  const headerPermisos = req.headers.get("x-sala-permisos");
-  const headerGrupo = req.headers.get("x-sala-grupo");
-
-  let usuario = (headerUsuario || cookies["hipico_usuario"] || "").trim();
-  if (usuario.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(usuario);
-      usuario = (parsed.nombre || parsed.usuario || parsed.id || "").trim();
-    } catch {}
-  }
-  const perfil = (headerPerfil || cookies["hipico_perfil"] || "").trim().toLowerCase();
-  const permisosRaw = headerPermisos || cookies["hipico_permisos"] || "";
-  const grupoCookie = headerGrupo || cookies["hipico_grupo_activo"] || null;
-
-  if (usuario || cookies["hipico_usuario"] === "josorioc") {
-    const usuarioEfectivo = (usuario || "josorioc").replace(/[\u0000-\u001F<>"]/g, "").trim().slice(0, 64);
-    if (!usuarioEfectivo) {
-      return {
-        ok: false,
-        error: "Identificador de usuario inválido.",
-        status: 401,
-      };
-    }
-
-    let esAdmin = esUsuarioPrincipal(usuarioEfectivo);
-    let esOperador =
-      esAdmin ||
-      usuarioEfectivo.toLowerCase() === "operador" ||
-      perfil === "operador" ||
-      cookies["hipico_perfil"] === "operador" ||
-      permisosRaw.includes("operar_sala") ||
-      Boolean(cookies["hipico_modo_operador"]);
-
-    let grupoId: string | null =
-      grupoCookie && grupoCookie !== "null" && grupoCookie !== "undefined" ? grupoCookie : null;
-
-    if (!esAdmin) {
-      try {
-        const { data: uRow } = await supabaseAdmin
-          .from("usuario_sistema")
-          .select("id, tipo_id, activo, grupo_id")
-          .ilike("id", usuarioEfectivo)
-          .maybeSingle();
-
-        if (uRow) {
-          if (uRow.activo === false) {
-            return { ok: false, error: "Cuenta de operador inactiva.", status: 403 };
-          }
-          if (Number(uRow.tipo_id) === 1 && (perfil === "admin" || cookies["hipico_perfil"] === "admin")) {
-            esAdmin = true;
-          }
-          esOperador = true;
-          if (!grupoId && uRow.grupo_id) {
-            grupoId = String(uRow.grupo_id);
-          }
-        }
-      } catch {
-        // Continúa con validación de grupo si la tabla no existe en el entorno
-      }
-    }
-
-    if (esAdmin || esOperador) {
-      if (!esAdmin && !grupoId) {
-        try {
-          const { data: grupo } = await supabaseAdmin
-            .from("grupos_venta")
-            .select("id")
-            .ilike("slug", usuarioEfectivo)
-            .maybeSingle();
-          if (grupo) grupoId = grupo.id;
-        } catch {
-          // Fallback silencioso
-        }
-      }
-
-      return {
-        ok: true,
-        identidad: {
-          tipo: "STAFF",
-          usuarioId: usuarioEfectivo,
-          nombre: esUsuarioPrincipal(usuarioEfectivo) ? "Julio Osorio" : usuarioEfectivo,
-          grupoId,
-          esAdmin,
-          esOperador: true,
-          permisos: esAdmin ? ["*"] : ["operar_sala", "liquidar_sala", "retirar_ejemplar"],
-        },
-      };
-    }
-  }
-
   return {
     ok: false,
     error: "No autorizado. Se requiere token de portal (X-Sala-Portal-Token) o sesión de staff válida.",
@@ -376,7 +352,9 @@ export function puedeOperarSala(identidad: IdentidadSala, grupoId: string): bool
   if (identidad.tipo !== "STAFF") return false;
   if (identidad.esAdmin) return true;
   if (!identidad.esOperador) return false;
-  return !identidad.grupoId || identidad.grupoId === grupoId;
+  // Sin grupo asignado no se puede operar: permitirlo abriría las salas de
+  // todos los grupos a cualquier operador mal configurado.
+  return Boolean(identidad.grupoId) && identidad.grupoId === grupoId;
 }
 
 /**
@@ -401,7 +379,7 @@ export function grupoPermitido(identidad: IdentidadSala, grupoId: string): boole
     return identidad.grupoId === grupoId;
   }
   if (identidad.esAdmin) return true;
-  return !identidad.grupoId || identidad.grupoId === grupoId;
+  return Boolean(identidad.grupoId) && identidad.grupoId === grupoId;
 }
 
 /**

@@ -1507,11 +1507,6 @@ export function ReporteModule() {
                                   💵 Caja {par.pos.movimientosCaja > 0 ? "+" : ""}${fmtMonto(par.pos.movimientosCaja)}
                                 </div>
                               )}
-                              {!resumenCuatroColumnas.usandoCartera && (
-                                <div className="text-[10px] text-amber-700 font-semibold">
-                                  Persistido: ${fmtMonto(par.pos.saldoPersistido)} · Diferencia: ${fmtMonto(par.pos.saldo - par.pos.saldoPersistido)}
-                                </div>
-                              )}
                             </div>
                           ) : "—"}
                         </td>
@@ -1561,11 +1556,6 @@ export function ReporteModule() {
                               {par.neg.movimientosCaja !== 0 && (
                                 <div className="text-[10px] text-slate-500 font-semibold">
                                   💵 Caja {par.neg.movimientosCaja > 0 ? "+" : ""}${fmtMonto(par.neg.movimientosCaja)}
-                                </div>
-                              )}
-                              {!resumenCuatroColumnas.usandoCartera && (
-                                <div className="text-[10px] text-amber-700 font-semibold">
-                                  Persistido: ${fmtMonto(par.neg.saldoPersistido)} · Diferencia: ${fmtMonto(par.neg.saldo - par.neg.saldoPersistido)}
                                 </div>
                               )}
                             </div>
