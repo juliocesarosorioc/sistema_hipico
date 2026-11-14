@@ -781,10 +781,8 @@ async function manejarMensajeEntrante(msg) {
 
     console.log(`[Bot WhatsApp] 🎯 Sala encontrada: "${sala.nombre_sala}" (${sala.id}) | Carrera: ${sala.estado_carrera} (${sala.hipodromo_activo || 'S/H'} #${sala.numero_carrera_activa || 1})`);
 
-    const whatsappMsgId = msg.key.id || null;
     const quotedMsgId =
       msg.message?.extendedTextMessage?.contextInfo?.stanzaId || null;
-    const telNormalizado = normalizarTelefono(participantJid);
 
     // 1. Comandos de Operador desde WhatsApp:
     // - !abrir [hipodromo] [carrera] (o "abrir la rinconada 1")
