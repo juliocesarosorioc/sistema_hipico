@@ -35,6 +35,12 @@ import {
 import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
 import { cargarMovimientosSaldoSemanal } from "@/features/saldos/lib/movimientos-saldo-semanal";
 import { calcularSaldoSemana } from "@/features/saldos/lib/saldo-semanal";
+import {
+  calcularComisionesSocioPorClientes,
+  cargarTodosTicketsParaComisiones,
+  esClienteAfiliadoAlSocio,
+  type ClienteSocioLike,
+} from "@/features/clientes/lib/comisiones-socios";
 
 const fmtMonto = (n: number) =>
   n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -69,7 +75,7 @@ export type VistaTablaDinamica =
   | "JERARQUIA"
   | "PIVOT_CARRERAS"
   | "RESUMEN_4_COLUMNAS"
-  | "COMISIONES_TERCIOS";
+  | "COMISIONES_ASIGNADAS";
 export type FiltroModalidadPivot =
   | "TODAS"
   | "EN_VIVO"
@@ -147,24 +153,6 @@ function cumpleResultadoPivot(f: FilaReporte, filtro: FiltroResultadoPivot): boo
   return true;
 }
 
-/**
- * ¿La fila es una jugada ENTRE TERCIOS (puestos/taquilla)?
- *
- * El reporte de comisiones por tercios NO debe mezclar los productos que tienen
- * su propio convenio (Marcas, Tablas Fijas, Remates, Dupletas, WPS y Polla).
- * `tipoJugada` ya separa Marcas/Tablas; el resto se reconoce por el rótulo de
- * la jugada, que es el que deja la liquidación.
- */
-function esJugadaEntreTercios(f: FilaReporte): boolean {
-  if (f.rol !== "Juega" && f.rol !== "Consigue") return false;
-  if (f.tipoJugada === "TABLA" || f.tipoJugada === "MARCA") return false;
-  const jugada = String(f.jugada ?? "").trim().toUpperCase();
-  if (!jugada) return false;
-  return !/^(TABLA|TF|MARCA|MARCAS|REMATE|REMATES|DUPLETA|DUPLETAS|POLLA|POLLAS|WPS|GANADOR|PLACE|SHOW)\b/.test(
-    jugada
-  );
-}
-
 export function ReporteModule() {
   const [grupos, setGrupos] = useState<GrupoRow[]>([]);
   const [grupoId, setGrupoId] = useState<string>("");
@@ -188,6 +176,12 @@ export function ReporteModule() {
   const [pestanaModalPagos, setPestanaModalPagos] = useState<"PAGAR_GANADORES" | "CONCILIAR_PAGOS">("PAGAR_GANADORES");
   const [modalCobroAbierto, setModalCobroAbierto] = useState(false);
   const [clienteCobroSeleccionado, setClienteCobroSeleccionado] = useState<{ id?: string | number | null; nombre?: string | null; saldo?: number | null } | null>(null);
+  // Tickets del grupo para calcular las comisiones ganadas por clientes asignados
+  // (socios). Se cargan solo cuando se abre la vista para no penalizar la carga
+  // normal del reporte.
+  const [ticketsComisiones, setTicketsComisiones] = useState<unknown[]>([]);
+  const [cargandoComisionesAsignadas, setCargandoComisionesAsignadas] = useState(false);
+  const [errorComisionesAsignadas, setErrorComisionesAsignadas] = useState<string | null>(null);
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
   // Id de la última consulta: descarta respuestas viejas que llegan tarde
   const solicitud = useRef(0);
@@ -317,6 +311,35 @@ export function ReporteModule() {
       vigente = false;
     };
   }, [clientesGrupo, desde, hasta]);
+
+  // Carga perezosa de los tickets del grupo: la vista de comisiones asignadas
+  // necesita el detalle crudo (no el reporte ya agrupado) para reproducir el
+  // cálculo oficial de comisiones de socio por clientes afiliados.
+  useEffect(() => {
+    if (vistaPivot !== "COMISIONES_ASIGNADAS" || !grupoId) return;
+    let vigente = true;
+    setCargandoComisionesAsignadas(true);
+    setErrorComisionesAsignadas(null);
+    cargarTodosTicketsParaComisiones(grupoId)
+      .then((tickets) => {
+        if (vigente) setTicketsComisiones(tickets);
+      })
+      .catch((error: unknown) => {
+        if (!vigente) return;
+        setTicketsComisiones([]);
+        setErrorComisionesAsignadas(
+          error instanceof Error
+            ? error.message
+            : "No se pudieron cargar los tickets para las comisiones de socios."
+        );
+      })
+      .finally(() => {
+        if (vigente) setCargandoComisionesAsignadas(false);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [vistaPivot, grupoId]);
 
   const cargar = useCallback(async () => {
     const g = grupos.find((x) => String(x.id) === grupoId);
@@ -493,36 +516,57 @@ export function ReporteModule() {
     );
   }, [rptOriginal, mapaInfoClientes, clientesGrupo, movimientosCaja]);
 
-  // ── REPORTE: COMISIONES POR TERCIOS + SALDO DE LA SEMANA ─────────────────
-  // Por cliente:
-  //   · comisiones por tercios = comisión cobrada en sus jugadas entre tercios
-  //     (filas Juega + Consigue), sin productos con convenio propio;
-  //   · saldo de la semana = mismo saldo reconstruido del resumen semanal
+  // ── REPORTE: COMISIONES GANADAS POR CLIENTES ASIGNADOS + SALDO SEMANAL ────
+  // Por cliente (socio):
+  //   · comisiones ganadas por clientes asignados = comisión devengada como
+  //     socio por las jugadas de sus afiliados (`comision_socio_pct` sobre la
+  //     base decidida de la semana), con el mismo motor que el estado de cuenta;
+  //   · saldo de la semana = saldo reconstruido del resumen semanal
   //     (resultado neto + devolución/incentivo + movimientos de caja);
-  //   · total = comisiones + saldo de la semana.
-  const reporteComisionesTercios = useMemo(() => {
-    const comisionesPorClienteId = new Map<string, number>();
+  //   · total = comisiones asignadas + saldo de la semana.
+  const comisionesAsignadasPorCliente = useMemo(() => {
+    const porCliente = new Map<string, number>();
+    if (ticketsComisiones.length === 0 || clientesGrupo.length === 0) return porCliente;
 
-    for (const dia of rptOriginal?.dias ?? []) {
-      for (const hipodromo of dia.hipodromos) {
-        for (const carrera of hipodromo.carreras) {
-          for (const fila of carrera.filas) {
-            if (!esJugadaEntreTercios(fila)) continue;
-            const comision = redondearCentavos(fila.comisionCobrada ?? 0);
-            if (comision <= 0) continue;
-            const info = mapaInfoClientes.get(
-              String(fila.cliente ?? "").trim().toUpperCase()
-            );
-            if (!info) continue;
-            comisionesPorClienteId.set(
-              info.id,
-              redondearCentavos((comisionesPorClienteId.get(info.id) ?? 0) + comision)
-            );
-          }
+    const clientesSocio = clientesGrupo as unknown as ClienteSocioLike[];
+    for (const c of clientesSocio) {
+      if (c.id == null) continue;
+      const id = String(c.id);
+      const nombre = String(c.nombre ?? c.seudonimo ?? "").trim();
+      if (!nombre) continue;
+
+      const esSocio = Boolean(c.es_socio);
+      const tieneAfiliados = clientesSocio.some(
+        (x) =>
+          String(x.id ?? "") !== id &&
+          esClienteAfiliadoAlSocio(
+            { id: x.id, socio_asignado: x.socio_asignado, grupo_id: x.grupo_id },
+            { id: c.id, nombre: c.nombre, seudonimo: c.seudonimo, grupo_id: c.grupo_id },
+            clientesSocio
+          )
+      );
+      if (!esSocio && !tieneAfiliados) continue;
+
+      try {
+        const res = calcularComisionesSocioPorClientes({
+          socioNombre: nombre,
+          socioId: c.id,
+          fechaDesde: desde || undefined,
+          fechaHasta: hasta || undefined,
+          tickets: ticketsComisiones as any[],
+          clientes: clientesSocio,
+        });
+        if (res.totalComisionesClientes > 0.004) {
+          porCliente.set(id, redondearCentavos(res.totalComisionesClientes));
         }
+      } catch {
+        /* cálculo best-effort: una fila no debe romper el reporte */
       }
     }
+    return porCliente;
+  }, [ticketsComisiones, clientesGrupo, desde, hasta]);
 
+  const reporteComisionesAsignadas = useMemo(() => {
     const q = filtroCliente.trim().toUpperCase();
     const filas = clientesGrupo
       .map((cliente) => {
@@ -530,7 +574,7 @@ export function ReporteModule() {
         const tipo = obtenerTipoJugador(cliente);
         const meta = infoTipoJugador(tipo);
         const saldo = redondearCentavos(saldoSemanalPorCliente.get(id)?.saldo ?? 0);
-        const comisiones = redondearCentavos(comisionesPorClienteId.get(id) ?? 0);
+        const comisiones = redondearCentavos(comisionesAsignadasPorCliente.get(id) ?? 0);
         const total = redondearCentavos(comisiones + saldo);
         return {
           id,
@@ -575,8 +619,7 @@ export function ReporteModule() {
       totalGeneral: redondearCentavos(totalComisiones + totalSaldo),
     };
   }, [
-    rptOriginal,
-    mapaInfoClientes,
+    comisionesAsignadasPorCliente,
     clientesGrupo,
     saldoSemanalPorCliente,
     filtroCliente,
@@ -1165,14 +1208,14 @@ export function ReporteModule() {
             </button>
             <button
               type="button"
-              onClick={() => setVistaPivot("COMISIONES_TERCIOS")}
+              onClick={() => setVistaPivot("COMISIONES_ASIGNADAS")}
               className={`px-2.5 py-1 font-bold transition ${
-                vistaPivot === "COMISIONES_TERCIOS"
+                vistaPivot === "COMISIONES_ASIGNADAS"
                   ? "bg-amber-400 text-slate-950"
                   : "text-slate-300 hover:bg-slate-700"
               }`}
             >
-              🎯 Comisiones Tercios + Saldo
+              💼 Comisiones Asignadas + Saldo
             </button>
           </div>
 
@@ -1691,20 +1734,20 @@ export function ReporteModule() {
           </div>
         )}
 
-        {/* REPORTE: COMISIONES POR TERCIOS + SALDO DE LA SEMANA + TOTAL */}
-        {vistaPivot === "COMISIONES_TERCIOS" && (
+        {/* REPORTE: COMISIONES GANADAS POR CLIENTES ASIGNADOS + SALDO SEMANAL */}
+        {vistaPivot === "COMISIONES_ASIGNADAS" && (
           <div className="m-3 rounded-xl border border-slate-300 bg-white shadow-sm overflow-hidden">
             <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 px-4 py-3 text-white">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
-                    🎯 Comisiones por Tercios + Saldo de la Semana
+                    💼 Comisiones Ganadas por Clientes Asignados + Saldo de la Semana
                   </div>
                   <p className="mt-1 max-w-3xl text-[10px] font-semibold text-amber-100">
-                    Por cliente: comisión cobrada en sus jugadas entre tercios
-                    (Juega + Consigue, sin Marcas, Tablas, Remates, Dupletas, WPS
-                    ni Polla) + saldo semanal reconstruido. Total = comisiones +
-                    saldo de la semana.
+                    Por cliente socio: sumatoria de las comisiones ganadas por
+                    sus clientes asignados en la semana (comisión de socio sobre
+                    la base decidida de cada jugada) + saldo semanal reconstruido.
+                    Total = comisiones asignadas + saldo de la semana.
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs">
@@ -1735,10 +1778,10 @@ export function ReporteModule() {
               <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
                 <div className="rounded-lg border border-amber-300/30 bg-white/10 p-2.5">
                   <div className="text-[9px] font-black uppercase tracking-wider text-amber-200">
-                    Comisiones por tercios
+                    Comisiones ganadas (asignados)
                   </div>
                   <div className="mt-0.5 font-mono text-lg font-black">
-                    {fmtMontoMoneda(reporteComisionesTercios.totalComisiones)}
+                    {fmtMontoMoneda(reporteComisionesAsignadas.totalComisiones)}
                     <span className="ml-1 text-[10px] font-bold text-amber-200">
                       {codigoMoneda}
                     </span>
@@ -1749,8 +1792,8 @@ export function ReporteModule() {
                     Saldo de la semana
                   </div>
                   <div className="mt-0.5 font-mono text-lg font-black">
-                    {reporteComisionesTercios.totalSaldo < 0 ? "-" : ""}
-                    {fmtMontoMoneda(reporteComisionesTercios.totalSaldo)}
+                    {reporteComisionesAsignadas.totalSaldo < 0 ? "-" : ""}
+                    {fmtMontoMoneda(reporteComisionesAsignadas.totalSaldo)}
                     <span className="ml-1 text-[10px] font-bold text-emerald-200">
                       {codigoMoneda}
                     </span>
@@ -1761,8 +1804,8 @@ export function ReporteModule() {
                     Total (comisiones + saldo)
                   </div>
                   <div className="mt-0.5 font-mono text-lg font-black">
-                    {reporteComisionesTercios.totalGeneral < 0 ? "-" : ""}
-                    {fmtMontoMoneda(reporteComisionesTercios.totalGeneral)}
+                    {reporteComisionesAsignadas.totalGeneral < 0 ? "-" : ""}
+                    {fmtMontoMoneda(reporteComisionesAsignadas.totalGeneral)}
                     <span className="ml-1 text-[10px] font-bold text-sky-200">
                       {codigoMoneda}
                     </span>
@@ -1771,6 +1814,20 @@ export function ReporteModule() {
               </div>
             </div>
 
+            {(cargandoComisionesAsignadas || errorComisionesAsignadas) && (
+              <div
+                className={`border-b px-4 py-2 text-[10px] font-semibold ${
+                  errorComisionesAsignadas
+                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                    : "border-amber-200 bg-amber-50 text-amber-800"
+                }`}
+              >
+                {cargandoComisionesAsignadas
+                  ? "Calculando comisiones ganadas por clientes asignados…"
+                  : `No se pudieron calcular las comisiones asignadas: ${errorComisionesAsignadas}`}
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-xs">
                 <thead>
@@ -1778,8 +1835,8 @@ export function ReporteModule() {
                     <th className="py-2.5 px-3 text-left text-slate-800">
                       Cliente
                     </th>
-                    <th className="w-40 py-2.5 px-3 text-right text-amber-900 bg-amber-50/70">
-                      Comisiones por tercios
+                    <th className="w-52 py-2.5 px-3 text-right text-amber-900 bg-amber-50/70">
+                      Comisiones ganadas por clientes asignados
                     </th>
                     <th className="w-40 py-2.5 px-3 text-right text-emerald-900 bg-emerald-50/70">
                       Saldo de la semana
@@ -1793,18 +1850,18 @@ export function ReporteModule() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {reporteComisionesTercios.filas.length === 0 ? (
+                  {reporteComisionesAsignadas.filas.length === 0 ? (
                     <tr>
                       <td
                         colSpan={5}
                         className="py-6 text-center font-semibold text-slate-400"
                       >
-                        Sin comisiones entre tercios ni saldos en la semana
-                        seleccionada.
+                        Sin comisiones ganadas por clientes asignados ni saldos en
+                        la semana seleccionada.
                       </td>
                     </tr>
                   ) : (
-                    reporteComisionesTercios.filas.map((fila) => {
+                    reporteComisionesAsignadas.filas.map((fila) => {
                       const puedePagar = fila.saldoPersistido > 0.004;
                       const puedeCobrar = fila.saldoPersistido < -0.004;
                       return (
@@ -1903,30 +1960,30 @@ export function ReporteModule() {
                 <tfoot>
                   <tr className="border-t-2 border-slate-400 bg-slate-900 text-xs font-black text-white sm:text-sm">
                     <td className="py-2.5 px-3 uppercase tracking-wide text-amber-300">
-                      Totales ({reporteComisionesTercios.filas.length} clientes)
+                      Totales ({reporteComisionesAsignadas.filas.length} clientes)
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-amber-300">
-                      +{fmtMontoMoneda(reporteComisionesTercios.totalComisiones)}
+                      +{fmtMontoMoneda(reporteComisionesAsignadas.totalComisiones)}
                     </td>
                     <td
                       className={`py-2.5 px-3 text-right font-mono ${
-                        reporteComisionesTercios.totalSaldo < 0
+                        reporteComisionesAsignadas.totalSaldo < 0
                           ? "text-rose-300"
                           : "text-emerald-300"
                       }`}
                     >
-                      {reporteComisionesTercios.totalSaldo < 0 ? "-" : "+"}
-                      {fmtMontoMoneda(reporteComisionesTercios.totalSaldo)}
+                      {reporteComisionesAsignadas.totalSaldo < 0 ? "-" : "+"}
+                      {fmtMontoMoneda(reporteComisionesAsignadas.totalSaldo)}
                     </td>
                     <td
                       className={`py-2.5 px-3 text-right font-mono ${
-                        reporteComisionesTercios.totalGeneral < 0
+                        reporteComisionesAsignadas.totalGeneral < 0
                           ? "text-rose-300"
                           : "text-emerald-300"
                       }`}
                     >
-                      {reporteComisionesTercios.totalGeneral < 0 ? "-" : "+"}
-                      {fmtMontoMoneda(reporteComisionesTercios.totalGeneral)}
+                      {reporteComisionesAsignadas.totalGeneral < 0 ? "-" : "+"}
+                      {fmtMontoMoneda(reporteComisionesAsignadas.totalGeneral)}
                     </td>
                     <td className="py-2.5 px-3 text-center text-[10px] font-bold text-slate-300">
                       {codigoMoneda}
@@ -1948,7 +2005,7 @@ export function ReporteModule() {
         {(!rpt || rpt.dias.length === 0) &&
           !planilla?.error &&
           vistaPivot !== "RESUMEN_4_COLUMNAS" &&
-          vistaPivot !== "COMISIONES_TERCIOS" && (
+          vistaPivot !== "COMISIONES_ASIGNADAS" && (
             <div className="p-8 text-center text-gray-400 text-sm">
               {cargando
                 ? "Consultando saldos consolidados…"
