@@ -184,8 +184,62 @@ async function enviarMensajePrivado(telefonoOjid, texto) {
 }
 
 // ============================================================================
-// GENERADORES DE PLANO DE JUGADAS Y SENTENCIA / PIZARRA OFICIAL
+// GENERADORES DE APERTURA, CIERRE, PLANO Y LLEGADA / SENTENCIA
 // ============================================================================
+
+export async function ejecutarAperturaCarrera(sala, groupJid, hipodromoArg, carreraArg) {
+  if (!supabase) throw new Error("Supabase no configurado");
+
+  const hipoLimpio = String(hipodromoArg || sala.hipodromo_activo || "LA RINCONADA").toUpperCase().trim();
+  const numCarrera = parseInt(carreraArg, 10) || 1;
+
+  // Actualizar sala en Supabase
+  await supabase
+    .from("salas_juego")
+    .update({
+      hipodromo_activo: hipoLimpio,
+      numero_carrera_activa: numCarrera,
+      estado_carrera: "abierta",
+      retirados: [],
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sala.id);
+
+  // Formatear ordinal y mensaje oficial
+  const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
+  const textoApertura = `🏆🏇${hipoLimpio}, ${ord} Carrera🏆🏇\nCARRERA ABIERTA Y EN JUEGO\nMucha suerte a todos.`;
+
+  if (groupJid && conectado) {
+    await enviarMensajeGrupo(groupJid, textoApertura);
+  }
+
+  return { ok: true, hipodromo: hipoLimpio, carrera: numCarrera, textoApertura };
+}
+
+export async function ejecutarCierreCarrera(sala, groupJid) {
+  if (!supabase) throw new Error("Supabase no configurado");
+
+  await supabase
+    .from("salas_juego")
+    .update({
+      estado_carrera: "cerrada",
+      carrera_recien_cerrada_id: sala.carrera_activa_id || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sala.id);
+
+  const hipo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
+  const numCarrera = sala.numero_carrera_activa || 1;
+  const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
+
+  const textoCierre = `${hipo}, ${ord} Carrera\nCARRERA CERRADA\n\nPUEDE ESCRIBIR LA PIZARRA: LLEGADA: 1RO.2DO.3RO.4TO.5TO`;
+
+  if (groupJid && conectado) {
+    await enviarMensajeGrupo(groupJid, textoCierre);
+  }
+
+  return { ok: true, textoCierre };
+}
 
 export async function construirYPublicarPlano(sala, groupJid) {
   if (!supabase) throw new Error("Supabase no configurado en bot-whatsapp-server");
@@ -552,8 +606,8 @@ export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw) {
 
   const pizarraFormateada = numeros.map((n, i) => `${i + 1}º: #${n}`).join(" · ");
   const textoResultado =
-    `🏁 *SENTENCIA OFICIAL — ${hipodromo} C${numCarrera}*\n` +
-    `📊 *Pizarra Oficial:* ${pizarraFormateada}\n` +
+    `🏁 *LLEGADA OFICIAL — ${hipodromo} C${numCarrera}*\n` +
+    `📊 *Pizarra:* ${pizarraFormateada}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
     `📈 *POSITIVOS (+):*\n` +
     `${positivos.length > 0 ? positivos.join("\n") : "_Sin saldos positivos en esta carrera_"}\n\n` +
@@ -615,7 +669,35 @@ async function manejarMensajeEntrante(msg) {
     const quotedMsgId =
       msg.message?.extendedTextMessage?.contextInfo?.stanzaId || null;
 
-    // 1. Comandos de Operador desde WhatsApp (!plano, !prejugadas, !anular, !retirar, !sentenciar, !pizarra)
+    // 1. Comandos de Operador desde WhatsApp:
+    // - !abrir [hipodromo] [carrera] (o "abrir la rinconada 1")
+    // - !cerrar
+    // - LLEGADA: A.B.C.D.E (o !llegada, !sentenciar, !pizarra)
+    // - !plano o !prejugadas
+    // - !anular o !retirar
+
+    // Detección de LLEGADA: A.B.C.D.E (con o sin '!')
+    const matchLlegada = textoLimpio.match(/^(?:!)?(?:llegada|sentenciar|pizarra)\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
+    if (matchLlegada) {
+      await ejecutarSentenciaPizarra(sala, remoteJid, matchLlegada[1]);
+      return;
+    }
+
+    // Detección de Apertura: !abrir [hipodromo] [carrera] o "abierta [hipodromo] [carrera]"
+    const matchAbrir = textoLimpio.match(/^(?:!)?(?:abrir|abierta)\s+(.+?)(?:\s+(?:c(?:arrera)?\s*)?(\d{1,2}))?$/i);
+    if (matchAbrir) {
+      const posibleHipo = matchAbrir[1].trim();
+      const posibleCarrera = matchAbrir[2] || "1";
+      await ejecutarAperturaCarrera(sala, remoteJid, posibleHipo, posibleCarrera);
+      return;
+    }
+
+    // Detección de Cierre: !cerrar o "cerrada"
+    if (/^(?:!)?(?:cerrar|cerrada|no va mas|no va más)$/i.test(textoLimpio)) {
+      await ejecutarCierreCarrera(sala, remoteJid);
+      return;
+    }
+
     if (textoLimpio.startsWith("!")) {
       const partes = textoLimpio.slice(1).trim().split(/\s+/);
       const cmd = (partes[0] || "").toLowerCase();
@@ -628,11 +710,6 @@ async function manejarMensajeEntrante(msg) {
 
       if (cmd === "anular" || cmd === "retirar") {
         await ejecutarAnulacionORetiro(sala, remoteJid, cmd, resto);
-        return;
-      }
-
-      if (cmd === "sentenciar" || cmd === "pizarra") {
-        await ejecutarSentenciaPizarra(sala, remoteJid, resto);
         return;
       }
     }

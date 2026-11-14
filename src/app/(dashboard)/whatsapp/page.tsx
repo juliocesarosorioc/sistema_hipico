@@ -416,7 +416,7 @@ export default function WhatsappPage() {
                     </button>
                   </div>
 
-                  {/* Botón 2: Publicar Sentencia / Pizarra */}
+                  {/* Botón 2: Publicar Sentencia / LLEGADA */}
                   <div className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/70 p-3 space-y-2">
                     <div className="flex items-center gap-2">
                       <input
@@ -425,7 +425,7 @@ export default function WhatsappPage() {
                         onChange={(e) =>
                           setPizarraPorSala((prev) => ({ ...prev, [sala.id]: e.target.value }))
                         }
-                        placeholder="Orden llegada ej: 10.5.1.2.7"
+                        placeholder="LLEGADA ej: 10.5.1.2.7"
                         className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs font-mono font-bold text-emerald-300 placeholder-slate-500 outline-none focus:border-emerald-500"
                       />
                     </div>
@@ -435,7 +435,7 @@ export default function WhatsappPage() {
                       disabled={procesandoAccion === `sentencia-${sala.id}`}
                       className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2.5 text-xs font-black text-white transition shadow flex items-center justify-center gap-2"
                     >
-                      <span>🏁 Publicar Sentencia / Pizarra</span>
+                      <span>🏁 Publicar LLEGADA / Pizarra</span>
                     </button>
                   </div>
                 </div>
@@ -470,25 +470,29 @@ export default function WhatsappPage() {
         <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 mb-3">
           ⚡ Comandos Directos del Operador dentro del Grupo de WhatsApp
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
-            <code className="font-mono font-black text-emerald-300">!plano</code> o{" "}
-            <code className="font-mono font-black text-emerald-300">!prejugadas</code>
+            <code className="font-mono font-black text-emerald-300">!abrir [hipodromo] [carrera]</code>
             <p className="mt-1 text-[11px] text-slate-400">
-              Publica en el grupo el 📋 PLANO DE JUGADAS / PREJUGADAS numerado de la carrera activa.
+              Abre la carrera directamente en el grupo. Ej: <code className="text-white">!abrir La Rinconada 1</code> o <code className="text-white">!abrir Gulfstream 4</code>.
             </p>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
-            <code className="font-mono font-black text-amber-300">!anular [ticket]</code> o{" "}
-            <code className="font-mono font-black text-amber-300">!retirar [ejemplar]</code>
+            <code className="font-mono font-black text-rose-300">!cerrar</code>
             <p className="mt-1 text-[11px] text-slate-400">
-              Anula el ticket o procesa el ejemplar retirado, libera saldos retenidos y confirma en el grupo.
+              Cierra la carrera para bloquear nuevas jugadas. También responde a <code className="text-white">cerrada</code>.
             </p>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
-            <code className="font-mono font-black text-indigo-300">!sentenciar 10.5.1.2.7</code>
+            <code className="font-mono font-black text-indigo-300">LLEGADA: 10.5.1.2.7</code>
             <p className="mt-1 text-[11px] text-slate-400">
-              Liquida la carrera con el RPC oficial, actualiza saldos y publica POSITIVOS (+) y NEGATIVOS (-).
+              Liquida oficialmente la carrera, actualiza saldos y publica POSITIVOS (+) y NEGATIVOS (-).
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+            <code className="font-mono font-black text-amber-300">!plano</code> / <code className="font-mono font-black text-amber-300">!anular</code>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Publica el plano numerado de jugadas activas o anula tickets/retirados en vivo.
             </p>
           </div>
         </div>
