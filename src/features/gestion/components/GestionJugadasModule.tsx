@@ -1139,6 +1139,31 @@ const hipodromosDelDia = useMemo(() => {
     [textoCargaRapida]
   );
 
+  /** Jugadores en Carga Rápida que no están registrados en el grupo activo. */
+  const noRegistradosCargaRapida = useMemo(() => {
+    if (clientesDelGrupo.length === 0) return [] as Array<{ linea: string; nombres: string[] }>;
+    const out: Array<{ linea: string; nombres: string[] }> = [];
+    for (const { linea, normalizada: p } of previewCargaRapida) {
+      if (!p || !p.ok) continue;
+      const faltantes: string[] = [];
+      const c1Trim = p.cliente1.trim();
+      if (!c1Trim || !saldoCliente(c1Trim)) {
+        faltantes.push(c1Trim || "Cliente 1 vacío");
+      }
+      const c2Trim = p.cliente2.trim();
+      const esWps = /^(?:WIN|PLACE|SHOW)$/i.test(p.jugada);
+      if (c2Trim && !/^(?:banca|casa)$/i.test(c2Trim) && !saldoCliente(c2Trim)) {
+        faltantes.push(c2Trim);
+      } else if (!c2Trim && !esWps) {
+        // Cliente 2 vacío en jugada no-WPS no es no-registrado per se, pero si se requiere se revisa aparte.
+      }
+      if (faltantes.length > 0) {
+        out.push({ linea: linea.trim(), nombres: faltantes });
+      }
+    }
+    return out;
+  }, [previewCargaRapida, clientesDelGrupo]);
+
   /**
    * Revision de la columna CABALLO contra los caballos de la carrera en
    * pantalla. Se recalcula una vez por carrera (no por fila): el topete de
@@ -2418,6 +2443,13 @@ const hipodromosDelDia = useMemo(() => {
         indicesError.push(idxFila);
         continue;
       }
+      const c2TrimVal = f.cliente2.trim();
+      const c2EsBanca = /^(?:banca|casa)$/i.test(c2TrimVal);
+      if (c2TrimVal && !c2EsBanca && !c2) {
+        errores.push(`Fila ${idxFila + 1}: el CLIENTE 2 «${f.cliente2}» no está registrado en este grupo.`);
+        indicesError.push(idxFila);
+        continue;
+      }
       if (c2 && !clientePerteneceAGrupo(c2, grupoSesion, gruposVenta)) {
         errores.push(`Fila ${idxFila + 1}: el CLIENTE 2 «${c2.nombre}» no pertenece al grupo ${grupoCabecera}. No se permite interacción entre jugadores de distintos grupos.`);
         indicesError.push(idxFila);
@@ -2427,6 +2459,20 @@ const hipodromosDelDia = useMemo(() => {
         errores.push(`Fila ${idxFila + 1}: los jugadores pertenecen a grupos distintos. No se permite que los jugadores de un grupo interactúen en otro para nada.`);
         indicesError.push(idxFila);
         continue;
+      }
+      const dispC1Actual = pFila?.cliente1 ? limiteDeJugar(pFila.cliente1) : limiteDeJugar(c1);
+      if (dispC1Actual <= 0) {
+        errores.push(`Fila ${idxFila + 1}: ${c1.nombre} no posee saldo libre ni monto de saldo disponible ($0,00). No puede pasar a taquilla.`);
+        indicesError.push(idxFila);
+        continue;
+      }
+      if (c2) {
+        const dispC2Actual = pFila?.cliente2 ? limiteDeJugar(pFila.cliente2) : limiteDeJugar(c2);
+        if (dispC2Actual <= 0) {
+          errores.push(`Fila ${idxFila + 1}: ${c2.nombre} no posee saldo libre ni monto de saldo disponible ($0,00). No puede pasar a taquilla.`);
+          indicesError.push(idxFila);
+          continue;
+        }
       }
       const grupoId = grupoSesion;
       if (v.reparto?.recortado) {
@@ -2666,6 +2712,11 @@ const hipodromosDelDia = useMemo(() => {
   const poblarCargaRapida = () => {
     if (carreraLiquidada) {
       emitirToast("⛔ No se puede poblar la tabla si la carrera está liquidada. Reverse la liquidación para habilitar la carga.", "error");
+      return;
+    }
+    if (noRegistradosCargaRapida.length > 0) {
+      const lista = Array.from(new Set(noRegistradosCargaRapida.flatMap((x) => x.nombres))).join(", ");
+      emitirToast(`🚫 No se puede poblar la tabla: jugador(es) no registrado(s) en este grupo (${lista}).`, "error");
       return;
     }
     const filasNuevas: FilaCarga[] = [];
@@ -4236,8 +4287,20 @@ const hipodromosDelDia = useMemo(() => {
               const rep = v.ok ? v.reparto : null;
               const recortado = !!rep?.recortado;
               const aviso = avisoSaldo(f, enCurso?.cliente1 ?? null, enCurso?.cliente2 ?? null);
+              const c1TrimFila = f.cliente1.trim();
+              const c1NoRegistrado = Boolean(c1TrimFila && clientesDelGrupo.length > 0 && !saldoCliente(c1TrimFila));
+              const c1SinSaldo = Boolean(enCurso?.cliente1 && limiteDeJugar(enCurso.cliente1) <= 0);
+              const c2TrimFila = f.cliente2.trim();
+              const c2NoRegistrado = Boolean(
+                c2TrimFila &&
+                  !/^(?:banca|casa)$/i.test(c2TrimFila) &&
+                  clientesDelGrupo.length > 0 &&
+                  !saldoCliente(c2TrimFila)
+              );
+              const c2SinSaldo = Boolean(enCurso?.cliente2 && limiteDeJugar(enCurso.cliente2) <= 0);
+              const filaConError = Boolean(f.error || c1NoRegistrado || c2NoRegistrado);
               return (
-                <tr key={i} className={`align-middle ${f.error ? "bg-red-50" : ""}`} title={f.error ?? undefined}>
+                <tr key={i} className={`align-middle ${filaConError ? "bg-red-50" : ""}`} title={f.error ?? (c1NoRegistrado || c2NoRegistrado ? "Jugador no registrado en este grupo" : undefined)}>
                   <td className="gj-celda px-1 py-0.5 text-xs text-slate-400">
                     <span className="block truncate">
                       {f.error ? (
@@ -4370,8 +4433,15 @@ const hipodromosDelDia = useMemo(() => {
                         allowCustom={false}
                         displayValue={f.cliente1}
                         className=""
-                        inputClassName="w-full rounded-md border border-line bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        inputClassName={`w-full rounded-md border px-1 py-0.5 text-xs placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed ${
+                          c1NoRegistrado || c1SinSaldo
+                            ? "border-red-500 bg-red-50 font-bold text-red-700"
+                            : "border-line bg-white text-slate-700"
+                        }`}
                       />
+                      {c1NoRegistrado && (
+                        <span className="text-[9px] font-black text-red-600">🚫 No registrado en este grupo</span>
+                      )}
                     </div>
                   </td>
                   <td className="gj-celda px-1 py-0.5 align-middle">
@@ -4393,12 +4463,15 @@ const hipodromosDelDia = useMemo(() => {
                         allowCustom={false}
                         displayValue={f.cliente2}
                         className=""
-                        inputClassName={`w-full rounded-md border bg-white px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed ${
-                          (f.jugada.trim() || f.monto.trim()) && !f.cliente2.trim()
-                            ? "border-red-400 bg-red-50"
-                            : "border-line"
+                        inputClassName={`w-full rounded-md border px-1 py-0.5 text-xs placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed ${
+                          c2NoRegistrado || c2SinSaldo || ((f.jugada.trim() || f.monto.trim()) && !f.cliente2.trim())
+                            ? "border-red-500 bg-red-50 font-bold text-red-700"
+                            : "border-line bg-white text-slate-700"
                         }`}
                       />
+                      {c2NoRegistrado && (
+                        <span className="text-[9px] font-black text-red-600">🚫 No registrado en este grupo</span>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -6559,6 +6632,24 @@ const hipodromosDelDia = useMemo(() => {
                   </div>
                 </div>
               )}
+              {noRegistradosCargaRapida.length > 0 && (
+                <div className="rounded-xl border border-red-300 bg-red-50 p-2">
+                  <p className="pb-1 text-[9px] font-black uppercase tracking-wide text-red-600">
+                    🚫 Jugadores no registrados en este grupo → no pueden pasar a la tabla
+                  </p>
+                  <div className="space-y-1">
+                    {noRegistradosCargaRapida.map(({ linea, nombres }, i) => (
+                      <div key={i} className="flex items-start gap-1.5 text-[10px] leading-tight text-red-700">
+                        <span className="mt-px font-black">🚫</span>
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold">{linea}</p>
+                          <p className="text-red-500">No registrado(s): {nombres.join(", ")}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {previewCargaRapida.length > 0 && (
                 <div className="max-h-40 overflow-y-auto rounded-xl border border-line bg-slate-50 p-2">
                   <p className="pb-1 text-[9px] font-black uppercase tracking-wide text-slate-400">
@@ -6579,17 +6670,25 @@ const hipodromosDelDia = useMemo(() => {
                           </div>
                         );
                       }
+                      const c1NoRegPrev = clientesDelGrupo.length > 0 && (!p.cliente1.trim() || !saldoCliente(p.cliente1));
+                      const c2NoRegPrev =
+                        clientesDelGrupo.length > 0 &&
+                        Boolean(p.cliente2.trim()) &&
+                        !/^(?:banca|casa)$/i.test(p.cliente2.trim()) &&
+                        !saldoCliente(p.cliente2);
                       const celdas: Array<[string, string, ConfianzaCampo]> = [
                         ["Jugada", p.jugada, p.confianza.jugada],
                         ["Caballo", p.caballo, p.confianza.caballo],
                         ["Monto", p.monto, p.confianza.monto],
-                        ["Cliente 1", p.cliente1, p.confianza.cliente1],
-                        ["Cliente 2", p.cliente2 || "—", p.confianza.cliente2],
+                        ["Cliente 1", p.cliente1, c1NoRegPrev ? "sin" : p.confianza.cliente1],
+                        ["Cliente 2", p.cliente2 || "—", c2NoRegPrev ? "sin" : p.confianza.cliente2],
                       ];
                       return (
                         <div
                           key={i}
-                          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md bg-white px-2 py-1 text-[10px] leading-tight text-slate-600"
+                          className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-2 py-1 text-[10px] leading-tight ${
+                            c1NoRegPrev || c2NoRegPrev ? "bg-red-50 text-red-700" : "bg-white text-slate-600"
+                          }`}
                         >
                           {rotuloPareo(p.jugada, p.caballo) && (
                             <span
@@ -6642,8 +6741,14 @@ const hipodromosDelDia = useMemo(() => {
                 variant="success"
                 size="md"
                 onClick={poblarCargaRapida}
-                disabled={carreraLiquidada}
-                title={carreraLiquidada ? "Carrera liquidada: reverse la liquidación para habilitar la carga." : undefined}
+                disabled={carreraLiquidada || noRegistradosCargaRapida.length > 0}
+                title={
+                  carreraLiquidada
+                    ? "Carrera liquidada: reverse la liquidación para habilitar la carga."
+                    : noRegistradosCargaRapida.length > 0
+                      ? "Hay jugadores no registrados en este grupo: corrígelos antes de poblar la tabla."
+                      : undefined
+                }
               >
                 📥 Poblar tabla
               </Button>
