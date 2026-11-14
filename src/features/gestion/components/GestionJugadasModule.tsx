@@ -1139,31 +1139,6 @@ const hipodromosDelDia = useMemo(() => {
     [textoCargaRapida]
   );
 
-  /** Jugadores en Carga Rápida que no están registrados en el grupo activo. */
-  const noRegistradosCargaRapida = useMemo(() => {
-    if (clientesDelGrupo.length === 0) return [] as Array<{ linea: string; nombres: string[] }>;
-    const out: Array<{ linea: string; nombres: string[] }> = [];
-    for (const { linea, normalizada: p } of previewCargaRapida) {
-      if (!p || !p.ok) continue;
-      const faltantes: string[] = [];
-      const c1Trim = p.cliente1.trim();
-      if (!c1Trim || !saldoCliente(c1Trim)) {
-        faltantes.push(c1Trim || "Cliente 1 vacío");
-      }
-      const c2Trim = p.cliente2.trim();
-      const esWps = /^(?:WIN|PLACE|SHOW)$/i.test(p.jugada);
-      if (c2Trim && !/^(?:banca|casa)$/i.test(c2Trim) && !saldoCliente(c2Trim)) {
-        faltantes.push(c2Trim);
-      } else if (!c2Trim && !esWps) {
-        // Cliente 2 vacío en jugada no-WPS no es no-registrado per se, pero si se requiere se revisa aparte.
-      }
-      if (faltantes.length > 0) {
-        out.push({ linea: linea.trim(), nombres: faltantes });
-      }
-    }
-    return out;
-  }, [previewCargaRapida, clientesDelGrupo]);
-
   /**
    * Revision de la columna CABALLO contra los caballos de la carrera en
    * pantalla. Se recalcula una vez por carrera (no por fila): el topete de
@@ -1216,6 +1191,28 @@ const hipodromosDelDia = useMemo(() => {
     }
     return null;
   };
+
+  /** Jugadores en Carga Rápida que no están registrados en el grupo activo. */
+  const noRegistradosCargaRapida = useMemo(() => {
+    if (clientesDelGrupo.length === 0) return [] as Array<{ linea: string; nombres: string[] }>;
+    const out: Array<{ linea: string; nombres: string[] }> = [];
+    for (const { linea, normalizada: p } of previewCargaRapida) {
+      if (!p || !p.ok) continue;
+      const faltantes: string[] = [];
+      const c1Trim = String(p.cliente1 ?? "").trim();
+      if (!c1Trim || !saldoCliente(c1Trim)) {
+        faltantes.push(c1Trim || "Cliente 1 vacío");
+      }
+      const c2Trim = String(p.cliente2 ?? "").trim();
+      if (c2Trim && !/^(?:banca|casa)$/i.test(c2Trim) && !saldoCliente(c2Trim)) {
+        faltantes.push(c2Trim);
+      }
+      if (faltantes.length > 0) {
+        out.push({ linea: linea.trim(), nombres: faltantes });
+      }
+    }
+    return out;
+  }, [previewCargaRapida, clientesDelGrupo]);
 
   const permiteCrucesEfectivo = useMemo(
     () =>
@@ -6670,12 +6667,14 @@ const hipodromosDelDia = useMemo(() => {
                           </div>
                         );
                       }
-                      const c1NoRegPrev = clientesDelGrupo.length > 0 && (!p.cliente1.trim() || !saldoCliente(p.cliente1));
+                      const c1Prev = String(p.cliente1 ?? "").trim();
+                      const c2Prev = String(p.cliente2 ?? "").trim();
+                      const c1NoRegPrev = clientesDelGrupo.length > 0 && (!c1Prev || !saldoCliente(c1Prev));
                       const c2NoRegPrev =
                         clientesDelGrupo.length > 0 &&
-                        Boolean(p.cliente2.trim()) &&
-                        !/^(?:banca|casa)$/i.test(p.cliente2.trim()) &&
-                        !saldoCliente(p.cliente2);
+                        Boolean(c2Prev) &&
+                        !/^(?:banca|casa)$/i.test(c2Prev) &&
+                        !saldoCliente(c2Prev);
                       const celdas: Array<[string, string, ConfianzaCampo]> = [
                         ["Jugada", p.jugada, p.confianza.jugada],
                         ["Caballo", p.caballo, p.confianza.caballo],
