@@ -997,12 +997,9 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// Solo iniciar escucha cuando se ejecuta directamente como proceso principal
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename)) {
-  server.listen(PORT, "127.0.0.1", () => {
-    console.log(
-      `[Bot WhatsApp] 🚀 Demonio HTTP escuchando en http://127.0.0.1:${PORT} (Sesión: ${AUTH_DIR})`
-    );
-    iniciarConexionBaileys();
-  });
-}
+server.listen(PORT, "127.0.0.1", () => {
+  console.log(
+    `[Bot WhatsApp] 🚀 Demonio HTTP escuchando en http://127.0.0.1:${PORT} (Sesión: ${AUTH_DIR})`
+  );
+  iniciarConexionBaileys();
+});
