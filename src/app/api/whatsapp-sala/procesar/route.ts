@@ -7,6 +7,7 @@ import {
   analizarYEstandarizarJugada,
   evaluarConcrecionEstricta,
   analizarComandoRetiro,
+  evaluarAmpliacionPropuesta,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
 import { formatearMontoRegional } from "@/shared/lib/dinero";
 import { sincronizarTicketsPropuestaATaquilla } from "@/features/whatsapp-sala/lib/sincronizar-tickets-sala";
@@ -1244,6 +1245,88 @@ export async function POST(req: Request) {
 
     const saldoDisponible = calcularSaldoDisponible(cliente);
 
+    const ejecutarAmpliacionCupo = async (
+      quotedPropuestaId: string | null,
+      nuevoTope: number | null
+    ) => {
+      const { data: dataAmp, error: errAmp } = await supabaseAdmin.rpc(
+        "ampliar_cupo_propuesta_fifo_atomica",
+        {
+          p_grupo_id: grupoId,
+          p_sala_id: salaId,
+          p_proponente_id: cliente.id,
+          p_propuesta_msg_id: quotedPropuestaId || null,
+          p_nuevo_tope_total: nuevoTope,
+        }
+      );
+
+      if (errAmp || !dataAmp || (dataAmp as any).ok === false) {
+        return NextResponse.json({
+          ok: false,
+          tipo: "AMPLIACION_ERROR",
+          respuestaGrupo: null,
+          mensajePrivadoAutor:
+            (dataAmp as any)?.error ||
+            (dataAmp as any)?.motivo ||
+            errAmp?.message ||
+            "No se pudo ampliar el cupo de la propuesta.",
+        });
+      }
+
+      const msgPublico: string | null = (dataAmp as any).msg_publico || null;
+      if (msgPublico) {
+        await supabaseAdmin.from("chat_mensajes").insert({
+          grupo_id: grupoId,
+          sala_id: salaId,
+          remitente_nombre: "🤖 ASISTENTE DE SALA",
+          es_operador: true,
+          tipo_mensaje: "concrecion_fifo",
+          contenido: msgPublico,
+        });
+        await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+      }
+
+      const notificaciones: any[] = Array.isArray((dataAmp as any).notificaciones_privadas)
+        ? (dataAmp as any).notificaciones_privadas
+        : [];
+      for (const notif of notificaciones) {
+        const msgPriv = notif?.mensaje || notif?.msg || notif?.texto;
+        if (!msgPriv) continue;
+        let destinoJid = notif?.whatsapp_jid || notif?.jid || notif?.telefono || null;
+        if (!destinoJid && (notif?.cliente_id || notif?.jugador_id)) {
+          const { data: clDest } = await supabaseAdmin
+            .from("clientes")
+            .select("whatsapp_jid, telefono")
+            .eq("id", notif.cliente_id || notif.jugador_id)
+            .maybeSingle();
+          destinoJid = clDest?.whatsapp_jid || clDest?.telefono || null;
+        }
+        if (destinoJid) {
+          try {
+            await fetch(`${BOT_DAEMON_URL}/enviar`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+              },
+              body: JSON.stringify({ jid: destinoJid, mensaje: msgPriv }),
+            });
+          } catch {
+            // No bloqueante si el bot daemon está offline
+          }
+        }
+      }
+
+      return NextResponse.json({
+        ok: true,
+        tipo: "AMPLIACION_CUPO",
+        respuestaGrupo: msgPublico,
+        mensajePrivadoAutor: (dataAmp as any).msg_privado_proponente || null,
+        notificacionesPrivadas: notificaciones,
+        data: dataAmp,
+      });
+    };
+
     // ========================================================================
     // FLUJO A: CONCRECIÓN SECUENCIAL POR RESPUESTA CITADA (quotedMsgId)
     // ========================================================================
@@ -1284,6 +1367,10 @@ export async function POST(req: Request) {
       }
 
       if (propMsg.remitente_id === cliente.id) {
+        const amp = evaluarAmpliacionPropuesta(texto);
+        if (amp.esAmpliacion) {
+          return await ejecutarAmpliacionCupo(propMsg.id, amp.nuevoTope);
+        }
         return NextResponse.json({
           ok: false,
           tipo: "AUTO_CONCRECION",
@@ -1391,6 +1478,25 @@ export async function POST(req: Request) {
               p_monto_pedido: montoEfectivo,
             }
           );
+          if (!errRpc && resRpc && (resRpc as any).nada_aqui === true) {
+            const msgPublicoNadaAqui = (resRpc as any).msg_publico || "*Nada Aquí*";
+            await supabaseAdmin.from("chat_mensajes").insert({
+              grupo_id: grupoId,
+              sala_id: salaId,
+              remitente_nombre: "🤖 ASISTENTE DE SALA",
+              es_operador: true,
+              tipo_mensaje: "concrecion_fifo",
+              contenido: msgPublicoNadaAqui,
+            });
+            await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+            return NextResponse.json({
+              ok: false,
+              tipo: "NADA_AQUI",
+              nada_aqui: true,
+              respuestaGrupo: msgPublicoNadaAqui,
+              mensajePrivadoAutor: (resRpc as any).msg_privado_aceptante || null,
+            });
+          }
           if (!errRpc && resRpc && (resRpc as any).ok !== false) {
             rpcExitoso = true;
           }
@@ -1547,7 +1653,15 @@ export async function POST(req: Request) {
 
     // ========================================================================
     // FLUJO B: MENSAJE SIN CITAR -> RETIRO DE PARADA ("Se fue") O PROPUESTA NUEVA
+    // FLUJO B: PROPUESTAS / CONTRAMARCHA / RETIRO DE JUGADAS
     // ========================================================================
+    if (carreraAbierta) {
+      const ampSinCita = evaluarAmpliacionPropuesta(texto);
+      if (ampSinCita.esAmpliacion) {
+        return await ejecutarAmpliacionCupo(null, ampSinCita.nuevoTope);
+      }
+    }
+
     const comandoRetiro = analizarComandoRetiro(texto);
     if (comandoRetiro.esComandoRetiro) {
       if (!comandoRetiro.esValido) {

@@ -139,38 +139,39 @@ export function SemaforoCarreras({
           qTickets = qTickets.eq("grupo_cobro_id", grupoEfectivo);
         }
 
+        let qTablas = sb
+          .from("tablas_fijas")
+          .select("carrera, hipodromo, estado, grupo_id")
+          .eq("fecha", dia)
+          .ilike("hipodromo", `%${hipoLimpio}%`);
+        if (grupoEfectivo) {
+          qTablas = qTablas.eq("grupo_id", grupoEfectivo);
+        }
+
         const [ticketsRes, resultadosRes, tablasRes] = await Promise.all([
           qTickets,
-          grupoEfectivo
-            ? Promise.resolve({ data: null })
-            : sb
-                .from("resultados_carreras")
-                .select("carrera, hipodromo, ganadores, orden_llegada, aplicado_a_tablas")
-                .eq("fecha", dia),
-          grupoEfectivo
-            ? Promise.resolve({ data: null })
-            : sb
-                .from("tablas_fijas")
-                .select("carrera, hipodromo, estado")
-                .eq("fecha", dia)
-                .ilike("hipodromo", `%${hipoLimpio}%`),
+          sb
+            .from("resultados_carreras")
+            .select("carrera, hipodromo, ganadores, orden_llegada, aplicado_a_tablas")
+            .eq("fecha", dia),
+          qTablas,
         ]);
 
         if (!vivo) return;
 
         const setLiq = new Set<number>();
-        if (!grupoEfectivo && resultadosRes.data && Array.isArray(resultadosRes.data)) {
+        if (resultadosRes.data && Array.isArray(resultadosRes.data)) {
           for (const r of resultadosRes.data as Array<Record<string, unknown>>) {
             if (claveHipodromo(String(r.hipodromo ?? "")) !== claveHipo) continue;
             const tieneTab = r.aplicado_a_tablas === true;
             const conGan = Array.isArray(r.ganadores) && r.ganadores.length > 0;
-            if (tieneTab || conGan) {
+            if (tieneTab || (!grupoEfectivo && conGan)) {
               const num = Number(r.carrera);
               if (Number.isFinite(num) && num > 0) setLiq.add(num);
             }
           }
         }
-        if (!grupoEfectivo && tablasRes.data && Array.isArray(tablasRes.data)) {
+        if (tablasRes.data && Array.isArray(tablasRes.data)) {
           for (const t of tablasRes.data as Array<Record<string, unknown>>) {
             if (claveHipodromo(String(t.hipodromo ?? "")) !== claveHipo) continue;
             const est = String(t.estado ?? "").trim().toLowerCase();
@@ -317,12 +318,10 @@ export function SemaforoCarreras({
       Boolean(carrerasConJugadas?.includes(n)) ||
       carrerasBdConJugadas.includes(n);
 
-    // Con grupo activo, no heredar estado "liquidada" / "aplicado_a_tablas" del registro
-    // central global ni de `registro` local sin ámbito de grupo; conservar solo programa/caballos.
-    const centralAislado =
-      grupoEfectivo && central
-        ? { ...central, estado: "Programada", aplicado_a_tablas: false, ganadores: [] }
-        : central;
+    // Con grupo activo, no usar el registro central global para `centralReabierta`
+    // ni para liquidación global; así no bloquea `carrerasLiquidadas` ni `carrerasBdLiquidadas`
+    // del grupo (el programa/caballos ya se extrajo arriba en `tieneCaballos`).
+    const centralAislado = grupoEfectivo ? null : central;
     const reversadaLocal = grupoEfectivo
       ? esCarreraReversadaLocal(fecha, hipoLimpio, n, grupoEfectivo)
       : esCarreraReversadaLocal(fecha, hipoLimpio, n);

@@ -624,3 +624,40 @@ export function analizarComandoRetiro(textoInput: string): ResultadoComandoRetir
     esValido: false,
   };
 }
+
+export interface ResultadoAmpliacionPropuesta {
+  esAmpliacion: boolean;
+  modo: 'TODOS' | 'HASTA_MONTO' | null;
+  nuevoTope: number | null;
+}
+
+/**
+ * Detecta frases de ampliación/contramarcha de una propuesta FIFO por parte del proponente
+ * (ej. "todos", "jugaron todos", "van todos", "hasta 8k", "jugaron hasta 8.000").
+ */
+export function evaluarAmpliacionPropuesta(textoInput: string): ResultadoAmpliacionPropuesta {
+  const textoLimpio = (textoInput || '')
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+
+  if (!textoLimpio || textoLimpio.length > 180) {
+    return { esAmpliacion: false, modo: null, nuevoTope: null };
+  }
+
+  if (/^(todos|jugaron\s+todos|juegan\s+todos|van\s+todos|entran\s+todos)$/i.test(textoLimpio)) {
+    return { esAmpliacion: true, modo: 'TODOS', nuevoTope: null };
+  }
+
+  const matchMonto = textoLimpio.match(
+    /^(?:jugaron|juegan|van|entran|hasta|tope)\s*(?:hasta)?\s*\$?\s*(\d+(?:[.,]\d+)?k?)$/i
+  );
+  if (matchMonto) {
+    const { monto } = extraerMontoNumerico(matchMonto[1]);
+    if (monto > 0) {
+      return { esAmpliacion: true, modo: 'HASTA_MONTO', nuevoTope: monto };
+    }
+  }
+
+  return { esAmpliacion: false, modo: null, nuevoTope: null };
+}

@@ -6,6 +6,7 @@ import {
   analizarYEstandarizarJugada,
   evaluarConcrecionEstricta,
   analizarComandoRetiro,
+  evaluarAmpliacionPropuesta,
 } from '../lib/parser-pedagogico';
 import { generarHashArchivoSHA256, generarHashTextoSHA256, cifrarMensajeSala } from '../lib/seguridad-crypto';
 import { salaApi } from '../lib/sala-api';
@@ -433,6 +434,73 @@ export default function SalaJuegosWhatsApp({
       return;
     }
 
+    // 2.0 CASO CONTRAMARCHA / AMPLIACIÓN DE CUPO (antes de cerrar la carrera)
+    const ampCupo = salaActiva.estadoCarrera !== 'cerrada' && salaActiva.estadoCarrera !== 'liquidada'
+      ? evaluarAmpliacionPropuesta(texto)
+      : { esAmpliacion: false, modo: null, nuevoTope: null };
+
+    if (ampCupo.esAmpliacion) {
+      setTextoInput('');
+      setSugerenciaPedagogica(null);
+      try {
+        let dataAmp: any = null;
+        if (onEjecutarRpc) {
+          dataAmp = await onEjecutarRpc('ampliar_cupo_propuesta_fifo_atomica', {
+            p_grupo_id: grupoId,
+            p_sala_id: salaActiva.id,
+            p_proponente_id: usuarioActual.id,
+            p_propuesta_msg_id: replyToPropuesta?.id || null,
+            p_nuevo_tope_total: ampCupo.nuevoTope,
+          });
+        } else if (supabase) {
+          const { data: rpcData, error: rpcErr } = await supabase.rpc('ampliar_cupo_propuesta_fifo_atomica', {
+            p_grupo_id: grupoId,
+            p_sala_id: salaActiva.id,
+            p_proponente_id: usuarioActual.id,
+            p_propuesta_msg_id: replyToPropuesta?.id || null,
+            p_nuevo_tope_total: ampCupo.nuevoTope,
+          });
+          if (rpcErr) throw rpcErr;
+          dataAmp = rpcData;
+        }
+
+        if (dataAmp?.msg_publico) {
+          agregarMensajeLocal(salaActiva.id, {
+            remitente: '🤖 ASISTENTE DE SALA',
+            esBot: true,
+            tipo: 'concrecion_fifo',
+            contenido: dataAmp.msg_publico,
+          });
+        }
+
+        const notificaciones: any[] = Array.isArray(dataAmp?.notificaciones_privadas)
+          ? dataAmp.notificaciones_privadas
+          : [];
+        for (const notif of notificaciones) {
+          const msgPriv = notif?.mensaje || notif?.msg || notif?.texto;
+          if (!msgPriv) continue;
+          const esParaMi =
+            !notif?.cliente_id ||
+            notif.cliente_id === usuarioActual.id ||
+            notif.jugador_id === usuarioActual.id;
+          if (esParaMi) {
+            setSugerenciaPedagogica({
+              mensaje: msgPriv,
+              opciones: [],
+            });
+          }
+        }
+
+        setReplyToPropuesta(null);
+      } catch (err: any) {
+        setSugerenciaPedagogica({
+          mensaje: err?.message || 'No se pudo ampliar el cupo de la propuesta.',
+          opciones: [],
+        });
+      }
+      return;
+    }
+
     // 2.A CASO CONCRECIÓN: Si hay una propuesta citada en replyToPropuesta
     if (replyToPropuesta) {
       const accionPropuesta = replyToPropuesta.accionProponente || (replyToPropuesta.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE');
@@ -467,6 +535,24 @@ export default function SalaJuegosWhatsApp({
             p_aceptante_id: usuarioActual.id,
             p_monto_pedido: evalConc.montoEfectivo,
           });
+
+          if (respConc?.nada_aqui === true) {
+            if (respConc.msg_publico) {
+              agregarMensajeLocal(salaActiva.id, {
+                remitente: '🤖 ASISTENTE DE SALA',
+                esBot: true,
+                tipo: 'concrecion_fifo',
+                contenido: respConc.msg_publico,
+              });
+            }
+            if (respConc.msg_privado_aceptante) {
+              setSugerenciaPedagogica({
+                mensaje: respConc.msg_privado_aceptante,
+                opciones: [],
+              });
+            }
+            return;
+          }
 
           if (respConc?.ok) {
             const montoConcretadoReal = Number(respConc.monto_concretado ?? evalConc.montoEfectivo);

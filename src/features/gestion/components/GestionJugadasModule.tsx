@@ -3385,46 +3385,15 @@ const hipodromosDelDia = useMemo(() => {
    * - Si la carrera seleccionada no ha sido abierta: "¿ABRIR CARRERA X ?"
    * - Si ya estás en una carrera y vas a otra: "¿IR A CARRERA X ?"
    */
+  /**
+   * Al presionar un número de carrera en el semáforo, ingresa directamente sin
+   * mostrar ventanas/mensajes de confirmación.
+   */
   const seleccionarCarreraConConfirmacion = async (
     n: number,
-    info?: { abierta: boolean; estado?: string }
+    _info?: { abierta: boolean; estado?: string }
   ) => {
     if (carreraConfirmada && n === carrera) return;
-    const estaAbierta =
-      modoManual ||
-      (info?.abierta !== undefined
-        ? info.abierta
-        : carrerasPorDia.includes(n) || jugadasPorCarrera.includes(n));
-
-    if (!estaAbierta) {
-      const ok = await confirmar({
-        titulo: `¿ABRIR CARRERA ${n} ?`,
-        mensaje: `La Carrera ${n} (${nombreHipodromo}) aún no ha sido abierta. ¿Confirmas abrir la Carrera ${n}?`,
-        tipo: "info",
-        textoConfirmar: "Confirmar",
-        textoCancelar: "No",
-      });
-      if (!ok) return;
-    } else if (carreraConfirmada && n !== carrera) {
-      const ok = await confirmar({
-        titulo: `¿IR A CARRERA ${n} ?`,
-        mensaje: `Estás en la Carrera ${carrera}. ¿Confirmas ir a la Carrera ${n} (${nombreHipodromo})?`,
-        tipo: "info",
-        textoConfirmar: "Confirmar",
-        textoCancelar: "No",
-      });
-      if (!ok) return;
-    } else if (!carreraConfirmada && !modoManual) {
-      const ok = await confirmar({
-        titulo: `¿ABRIR CARRERA ${n} ?`,
-        mensaje: `¿Confirmas abrir la Carrera ${n} (${nombreHipodromo})?`,
-        tipo: "info",
-        textoConfirmar: "Confirmar",
-        textoCancelar: "No",
-      });
-      if (!ok) return;
-    }
-
     setCarrera(n);
     setCarreraConfirmada(true);
     // NO se agrega la carrera a `carrerasPorDia`: esa lista es el CATÁLOGO real
