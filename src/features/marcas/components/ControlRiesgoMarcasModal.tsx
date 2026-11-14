@@ -60,6 +60,7 @@ export function ControlRiesgoMarcasModal({
   // Estado para editar límites de la plataforma y grupo (120 para 100 USD / 120.000 para 100.000 VES)
   const [limiteGeneralInput, setLimiteGeneralInput] = useState("120");
   const [limiteGrupoInput, setLimiteGrupoInput] = useState("120");
+  const [limitesPorParInput, setLimitesPorParInput] = useState<Record<string, string>>({});
   const [guardandoLimites, setGuardandoLimites] = useState(false);
 
   const cargarDatos = useCallback(async () => {
@@ -76,6 +77,11 @@ export function ControlRiesgoMarcasModal({
         const defGrp = esBs ? 120000 : 120;
         setLimiteGeneralInput(String(data.limites.limite_general_plataforma ?? defGen));
         setLimiteGrupoInput(String(data.limites.limite_por_grupo ?? defGrp));
+        const porPar: Record<string, string> = {};
+        for (const item of data.marcas) {
+          porPar[item.jugadaKey] = item.limitePersonalizado ? String(item.limitePersonalizado) : "";
+        }
+        setLimitesPorParInput(porPar);
       }
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "Error al cargar análisis de riesgo.");
@@ -111,8 +117,11 @@ export function ControlRiesgoMarcasModal({
       carrera,
       fecha,
       caballoNumero: ampliandoMarca.caballoNumero,
+      rivalNumero: ampliandoMarca.rivalNumero,
+      jugadaKey: ampliandoMarca.jugadaKey,
       montoAdicional: monto,
       motivo: motivoAmpliacion,
+      moneda: analisis?.moneda,
     });
 
     setProcesandoAmpliacion(false);
@@ -121,8 +130,9 @@ export function ControlRiesgoMarcasModal({
       return;
     }
 
+    const simb = esMonedaBolivares(analisis?.moneda) ? "Bs. " : "$";
     setAviso(
-      `🔓 Cupo ampliado exitosamente para la Marca #${ampliandoMarca.caballoNumero} (+ $${monto}). Nuevo límite: $${r.nuevoLimite}.`
+      `🔓 Cupo ampliado exitosamente para la jugada ${ampliandoMarca.etiquetaJugada} (+${simb}${monto}). Nuevo límite: ${simb}${r.nuevoLimite}.`
     );
     setAmpliandoMarca(null);
     void cargarDatos();
@@ -177,6 +187,31 @@ export function ControlRiesgoMarcasModal({
       return;
     }
 
+    const cuposActuales = { ...(analisis?.limites.cupos_por_marca ?? {}) };
+    for (const item of analisis?.marcas ?? []) {
+      const rawVal = (limitesPorParInput[item.jugadaKey] ?? "").trim();
+      const prev = cuposActuales[item.jugadaKey] ?? {};
+      if (!rawVal) {
+        if (prev.ampliacion_autorizada || prev.motivo_ampliacion) {
+          const { max_monto: _omit, ...rest } = prev;
+          void _omit;
+          cuposActuales[item.jugadaKey] = rest;
+        } else {
+          delete cuposActuales[item.jugadaKey];
+        }
+      } else {
+        const numVal = parseFloat(rawVal);
+        if (!(numVal > 0)) {
+          setErrorMsg(`Indique un límite válido mayor a cero para ${item.etiquetaJugada}.`);
+          return;
+        }
+        cuposActuales[item.jugadaKey] = {
+          ...prev,
+          max_monto: numVal,
+        };
+      }
+    }
+
     setGuardandoLimites(true);
     setErrorMsg("");
     setAviso("");
@@ -185,6 +220,7 @@ export function ControlRiesgoMarcasModal({
       ...(analisis?.limites ?? {}),
       limite_general_plataforma: limGen,
       limite_por_grupo: limGrp,
+      cupos_por_marca: cuposActuales,
     };
 
     const r = await guardarLimitesMarcas(hipodromo, carrera, fecha, nuevos);
@@ -194,7 +230,7 @@ export function ControlRiesgoMarcasModal({
       return;
     }
 
-    setAviso("✅ Límites de la plataforma y por grupo guardados con éxito.");
+    setAviso("✅ Límites por jugada de marcas guardados con éxito.");
     void cargarDatos();
     onActualizado?.();
   };
@@ -266,7 +302,7 @@ export function ControlRiesgoMarcasModal({
               ${(analisis?.peorEscenario.balanceNeto ?? 0).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
             </div>
             <div className="text-[10px] text-slate-400">
-              Caballo #{analisis?.peorEscenario.caballoNumero || "—"}
+              Jugada {analisis?.peorEscenario.caballoNumero || "—"}
             </div>
           </div>
 
@@ -279,7 +315,7 @@ export function ControlRiesgoMarcasModal({
                 (esMonedaBolivares(analisis?.moneda) ? 120000 : 120)
               ).toLocaleString("es-VE")}
             </div>
-            <div className="text-[10px] text-slate-400">Por marca individual</div>
+            <div className="text-[10px] text-slate-400">Por cruce / jugada por defecto</div>
           </div>
 
           <div className="rounded-xl bg-white/5 p-2.5 border border-white/10">
@@ -291,7 +327,7 @@ export function ControlRiesgoMarcasModal({
                 (esMonedaBolivares(analisis?.moneda) ? 120000 : 120)
               ).toLocaleString("es-VE")}
             </div>
-            <div className="text-[10px] text-slate-400">Por marca / grupo ({esMonedaBolivares(analisis?.moneda) ? "120.000 para 100.000" : "120 para 100"})</div>
+            <div className="text-[10px] text-slate-400">Por cruce / grupo ({esMonedaBolivares(analisis?.moneda) ? "120.000 para 100.000" : "120 para 100"})</div>
           </div>
         </div>
 
@@ -387,8 +423,8 @@ export function ControlRiesgoMarcasModal({
                     <table className="w-full border-collapse text-left text-xs">
                       <thead>
                         <tr className="bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200">
-                          <th className="px-3 py-2.5">Jerarquía</th>
-                          <th className="px-3 py-2.5">Ejemplar</th>
+                          <th className="px-3 py-2.5">Orden</th>
+                          <th className="px-3 py-2.5">Enfrentamiento (Jugada)</th>
                           <th className="px-3 py-2.5 text-right">Monto Jugado</th>
                           <th className="px-3 py-2.5 text-right">Pago Potencial</th>
                           <th className="px-3 py-2.5 text-right">Balance Neto Banca</th>
@@ -399,51 +435,62 @@ export function ControlRiesgoMarcasModal({
                       <tbody className="divide-y divide-slate-100">
                         {analisis.marcas.map((m) => {
                           const col = getHorseColor(m.caballoNumero);
+                          const colRiv = m.rivalNumero ? getHorseColor(m.rivalNumero) : null;
+                          const simb = esMonedaBolivares(analisis.moneda) ? "Bs. " : "$";
                           const esNegativo = m.balanceNetoBanca < 0;
                           return (
                             <tr
-                              key={m.caballoNumero}
+                              key={m.jugadaKey}
                               className={`hover:bg-slate-50/80 transition-colors ${
                                 m.cupoAgotado ? "bg-rose-50/40" : ""
                               }`}
                             >
                               <td className="px-3 py-2 font-black text-slate-500">
-                                {m.esPrimeraMarca ? (
-                                  <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-black text-indigo-900">
-                                    1ª Marca (Bloqueada)
-                                  </span>
-                                ) : (
-                                  <span className="text-[11px] font-bold text-slate-700">
-                                    {m.ordenJerarquia}ª Marca
-                                  </span>
-                                )}
+                                <span className="text-[11px] font-bold text-slate-700">
+                                  {m.ordenJerarquia}ª Jugada
+                                </span>
                               </td>
                               <td className="px-3 py-2">
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {m.rivalNumero && colRiv ? (
+                                    <>
+                                      <span
+                                        className={`inline-flex h-6 w-6 items-center justify-center rounded font-mono font-black text-xs ${colRiv.bg} ${colRiv.text} ${colRiv.border} border`}
+                                      >
+                                        {m.rivalNumero}
+                                      </span>
+                                      <span className="text-[11px] font-black text-slate-400">por</span>
+                                    </>
+                                  ) : null}
                                   <span
                                     className={`inline-flex h-6 w-6 items-center justify-center rounded font-mono font-black text-xs ${col.bg} ${col.text} ${col.border} border`}
                                   >
                                     {m.caballoNumero}
                                   </span>
+                                  {m.limitePersonalizado != null && (
+                                    <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-black text-indigo-800">
+                                      Límite propio
+                                    </span>
+                                  )}
                                   {m.ampliacionAutorizada > 0 && (
                                     <span className="rounded bg-cyan-100 px-1.5 py-0.5 text-[9px] font-black text-cyan-800">
-                                      +${m.ampliacionAutorizada} extra
+                                      +{simb}{m.ampliacionAutorizada} extra
                                     </span>
                                   )}
                                 </div>
                               </td>
                               <td className="px-3 py-2 text-right font-black text-slate-900">
-                                ${m.montoJugadoTotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                {simb}{m.montoJugadoTotal.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
                               </td>
                               <td className="px-3 py-2 text-right font-bold text-slate-600">
-                                ${m.pagoPotencialBanca.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                                {simb}{m.pagoPotencialBanca.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
                               </td>
                               <td
                                 className={`px-3 py-2 text-right font-black ${
                                   esNegativo ? "text-rose-600" : "text-emerald-700"
                                 }`}
                               >
-                                {esNegativo ? "-" : "+"}$
+                                {esNegativo ? "-" : "+"}{simb}
                                 {Math.abs(m.balanceNetoBanca).toLocaleString("es-VE", {
                                   minimumFractionDigits: 2,
                                 })}
@@ -451,11 +498,11 @@ export function ControlRiesgoMarcasModal({
                               <td className="px-3 py-2 text-center">
                                 {m.cupoAgotado ? (
                                   <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-black text-rose-800">
-                                    🚫 Cupo Agotado (${m.limitePlataforma})
+                                    🚫 Al Límite ({simb}{m.limitePlataforma})
                                   </span>
                                 ) : (
                                   <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                                    Disp: ${m.disponiblePlataforma} / ${m.limitePlataforma}
+                                    Disp: {simb}{m.disponiblePlataforma} / {simb}{m.limitePlataforma}
                                   </span>
                                 )}
                               </td>
@@ -464,7 +511,7 @@ export function ControlRiesgoMarcasModal({
                                   <button
                                     type="button"
                                     onClick={() => setAmpliandoMarca(m)}
-                                    title="Ampliar cupo para esta marca"
+                                    title={`Ampliar cupo para ${m.etiquetaJugada}`}
                                     className="rounded bg-cyan-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-cyan-500 shadow-sm"
                                   >
                                     🔓 Ampliar
@@ -472,7 +519,7 @@ export function ControlRiesgoMarcasModal({
                                   <button
                                     type="button"
                                     onClick={() => setViendoCompradores(m)}
-                                    title="Ver jugadores que apostaron a este caballo"
+                                    title="Ver jugadores que apostaron a este cruce"
                                     className="rounded bg-slate-200 px-2 py-1 text-[11px] font-bold text-slate-800 hover:bg-slate-300"
                                   >
                                     👥 ({m.compradores.length})
@@ -593,11 +640,11 @@ export function ControlRiesgoMarcasModal({
 
               {/* TAB 3: LIMITES DE PLATAFORMA Y GRUPOS */}
               {tabActiva === "limites" && (
-                <div className="space-y-4 max-w-xl mx-auto">
+                <div className="space-y-4 max-w-2xl mx-auto">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h3 className="text-sm font-black text-slate-900">
-                        Configuración de Límites por Marca en la Carrera
+                        Configuración de Límites por Jugada de Marca (Cruce)
                       </h3>
                       <div className="flex gap-1.5">
                         <button
@@ -625,37 +672,117 @@ export function ControlRiesgoMarcasModal({
                       </div>
                     </div>
 
-                    <div>
-                      <label className="text-xs font-black text-slate-800 block mb-1">
-                        Límite General de la Plataforma por Marca
-                      </label>
-                      <p className="text-[11px] text-slate-500 mb-1.5">
-                        Monto máximo acumulado que la casa aceptará en total para cada caballo en esta carrera ($120 USD / Bs. 120.000 VES).
-                      </p>
-                      <input
-                        type="number"
-                        min="1"
-                        value={limiteGeneralInput}
-                        onChange={(e) => setLimiteGeneralInput(e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-black text-slate-900"
-                      />
+                    <div className="rounded-lg border border-cyan-200 bg-cyan-50/70 p-2.5 text-[11px] text-cyan-900">
+                      Los límites funcionan de manera independiente por combinación (<b>A por B</b> límite, <b>B por C</b> límite, <b>C por D</b> límite, <b>D por E</b> límite). Si el monto acumulado en <b>A por B</b> supera su límite, el sistema solicita autorización de Administrador.
                     </div>
 
-                    <div>
-                      <label className="text-xs font-black text-slate-800 block mb-1">
-                        Límite por Grupo por Marca (120 para 100 USD / 120.000 para 100.000 VES)
-                      </label>
-                      <p className="text-[11px] text-slate-500 mb-1.5">
-                        Monto máximo que un grupo individual puede jugar en cada marca antes de bloquear la venta ($120 en USD o Bs. 120.000 en Bolívares).
-                      </p>
-                      <input
-                        type="number"
-                        min="1"
-                        value={limiteGrupoInput}
-                        onChange={(e) => setLimiteGrupoInput(e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-black text-slate-900"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-black text-slate-800 block mb-1">
+                          Límite General por Defecto (Plataforma)
+                        </label>
+                        <p className="text-[11px] text-slate-500 mb-1.5">
+                          Tope por defecto para cada enfrentamiento ($120 USD / Bs. 120.000 VES).
+                        </p>
+                        <input
+                          type="number"
+                          min="1"
+                          value={limiteGeneralInput}
+                          onChange={(e) => setLimiteGeneralInput(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-black text-slate-900 bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-black text-slate-800 block mb-1">
+                          Límite por Defecto por Grupo
+                        </label>
+                        <p className="text-[11px] text-slate-500 mb-1.5">
+                          Tope por defecto que un grupo puede acumular en cada cruce antes de pedir autorización.
+                        </p>
+                        <input
+                          type="number"
+                          min="1"
+                          value={limiteGrupoInput}
+                          onChange={(e) => setLimiteGrupoInput(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-black text-slate-900 bg-white"
+                        />
+                      </div>
                     </div>
+
+                    {analisis.marcas.length > 0 && (
+                      <div className="border-t border-slate-200 pt-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-black text-slate-800">
+                            Límites Individuales por Cruce (A por B, B por C, C por D, D por E)
+                          </label>
+                          <span className="text-[10px] font-semibold text-slate-500">
+                            Dejar vacío para usar el límite por defecto
+                          </span>
+                        </div>
+
+                        <div className="space-y-2">
+                          {analisis.marcas.map((m) => {
+                            const col = getHorseColor(m.caballoNumero);
+                            const colRiv = m.rivalNumero ? getHorseColor(m.rivalNumero) : null;
+                            const simb = esMonedaBolivares(analisis.moneda) ? "Bs. " : "$";
+                            return (
+                              <div
+                                key={m.jugadaKey}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-black uppercase text-slate-400 w-16">
+                                    {m.ordenJerarquia}ª Jugada
+                                  </span>
+                                  {m.rivalNumero && colRiv ? (
+                                    <div className="flex items-center gap-1">
+                                      <span
+                                        className={`inline-flex h-6 w-6 items-center justify-center rounded font-mono font-black text-xs ${colRiv.bg} ${colRiv.text} ${colRiv.border} border`}
+                                      >
+                                        {m.rivalNumero}
+                                      </span>
+                                      <span className="text-[11px] font-black text-slate-500">por</span>
+                                      <span
+                                        className={`inline-flex h-6 w-6 items-center justify-center rounded font-mono font-black text-xs ${col.bg} ${col.text} ${col.border} border`}
+                                      >
+                                        {m.caballoNumero}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span
+                                      className={`inline-flex h-6 w-6 items-center justify-center rounded font-mono font-black text-xs ${col.bg} ${col.text} ${col.border} border`}
+                                    >
+                                      {m.caballoNumero}
+                                    </span>
+                                  )}
+                                  <span className="text-[11px] text-slate-500">
+                                    (Jugado: <b className="text-slate-800">{simb}{m.montoJugadoTotal.toLocaleString("es-VE")}</b>)
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-bold text-slate-500">{simb}</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={limitesPorParInput[m.jugadaKey] ?? ""}
+                                    onChange={(e) =>
+                                      setLimitesPorParInput((prev) => ({
+                                        ...prev,
+                                        [m.jugadaKey]: e.target.value,
+                                      }))
+                                    }
+                                    placeholder={`Def. ${limiteGrupoInput || (esMonedaBolivares(analisis.moneda) ? "120000" : "120")}`}
+                                    className="w-36 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-black text-slate-900"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="pt-2 flex justify-end">
                       <Button
@@ -663,7 +790,7 @@ export function ControlRiesgoMarcasModal({
                         disabled={guardandoLimites}
                         onClick={() => void ejecutarGuardarLimites()}
                       >
-                        {guardandoLimites ? "Guardando…" : "💾 Guardar Límites de la Carrera"}
+                        {guardandoLimites ? "Guardando…" : "💾 Guardar Límites por Jugada"}
                       </Button>
                     </div>
                   </div>
@@ -735,7 +862,7 @@ export function ControlRiesgoMarcasModal({
                 <div className="flex items-center gap-2">
                   <span className="text-xl">🔓</span>
                   <h4 className="text-sm font-black text-slate-900">
-                    Ampliar Cupo: Marca #{ampliandoMarca.caballoNumero}
+                    Ampliar Cupo: Jugada {ampliandoMarca.etiquetaJugada}
                   </h4>
                 </div>
                 <button
@@ -821,7 +948,7 @@ export function ControlRiesgoMarcasModal({
                 <div className="flex items-center gap-2">
                   <span className="text-xl">👥</span>
                   <h4 className="text-sm font-black text-slate-900">
-                    Compradores: Marca #{viendoCompradores.caballoNumero} ({viendoCompradores.compradores.length})
+                    Compradores: Jugada {viendoCompradores.etiquetaJugada} ({viendoCompradores.compradores.length})
                   </h4>
                 </div>
                 <button

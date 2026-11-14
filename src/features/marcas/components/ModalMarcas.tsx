@@ -22,7 +22,10 @@ import {
 } from "@/features/marcas/lib/marcas";
 import { ReporteMarcasJugadasModal } from "@/features/marcas/components/ReporteMarcasJugadasModal";
 import { ModalAutorizacionAdmin } from "@/features/seguridad/components/ModalAutorizacionAdmin";
-import { verificarCupoMarcaDisponible } from "@/features/marcas/lib/control-riesgo-marcas";
+import {
+  esMonedaBolivares,
+  verificarCupoMarcaDisponible,
+} from "@/features/marcas/lib/control-riesgo-marcas";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { ToggleModalidadTiempo } from "@/features/jugadas/components/ToggleModalidadTiempo";
 import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
@@ -102,6 +105,14 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
     jugadorNombre: string;
     monto: number;
     onAutorizar: (adminUser: string) => Promise<void> | void;
+  } | null>(null);
+  const [estadoCupo, setEstadoCupo] = useState<{
+    permitido: boolean;
+    acumulado: number;
+    limite: number;
+    disponible: number;
+    motivo?: string;
+    moneda?: string;
   } | null>(null);
   /**
    * Clave de idempotencia de la jugada en curso. Se genera una sola vez y
@@ -266,6 +277,62 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
    */
   const jugandoConAval = !esClienteLibre(cliente) && aval > 0 && saldo < Number(monto) && disponible >= Number(monto);
 
+  const grupoSeleccionado = useMemo(
+    () => grupos.find((x) => String(x.id) === String(grupoId)) ?? null,
+    [grupos, grupoId]
+  );
+
+  // Verificación en vivo del límite independiente para el cruce (#rival por #caballo)
+  useEffect(() => {
+    const cabLimpio = caballo.trim();
+    const rivLimpio = analisis.rival?.trim() ?? "";
+    if (!grupoId || !analisis.valido || !cabLimpio || !rivLimpio) {
+      setEstadoCupo(null);
+      return;
+    }
+    let cancelado = false;
+    void verificarCupoMarcaDisponible({
+      hipodromo: carrera.hipodromo,
+      carrera: carrera.carrera,
+      fecha,
+      caballoNumero: cabLimpio,
+      rivalNumero: rivLimpio,
+      grupoId,
+      grupoNombre: grupoSeleccionado?.nombre,
+      jugadorNombre: cliente?.nombre,
+      montoAComprar: Number(monto) || 0,
+      moneda: grupoSeleccionado?.moneda ?? undefined,
+      notificarAdmin: false,
+    }).then((res) => {
+      if (cancelado) return;
+      const lim = res.limiteGrupo ?? res.limitePlataforma ?? 0;
+      const disp = res.disponibleGrupo ?? res.disponiblePlataforma ?? lim;
+      setEstadoCupo({
+        permitido: res.permitido,
+        acumulado: res.acumuladoPar ?? 0,
+        limite: lim,
+        disponible: disp,
+        motivo: res.motivo,
+        moneda: grupoSeleccionado?.moneda ?? undefined,
+      });
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [
+    grupoId,
+    grupoSeleccionado?.nombre,
+    grupoSeleccionado?.moneda,
+    cliente?.nombre,
+    analisis.valido,
+    analisis.rival,
+    caballo,
+    monto,
+    carrera.hipodromo,
+    carrera.carrera,
+    fecha,
+  ]);
+
   // =========================================================================
   // VENTA
   // =========================================================================
@@ -286,7 +353,7 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
         : `tiene ${saldo} de saldo y ${aval} de aval (disponible ${disponible})`;
       return onToast(`Saldo insuficiente: ${cliente?.nombre} ${detalle}.`, "warning");
     }
-    const g = grupos.find((x) => String(x.id) === String(grupoId));
+    const g = grupoSeleccionado;
     const m = Number(monto);
     const bq = (await listarBanquerosGrupo(grupoId)).find(
       (b) => b.modalidad === "MARCAS" && b.activo !== false && b.banquero_cliente_id
@@ -302,7 +369,7 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
       jugador: cliente?.nombre ?? "",
       grupo: g?.nombre ?? null,
       monto: m,
-      moneda: "USD",
+      moneda: g?.moneda ?? "USD",
       pago: numeros.pagoBruto,
       saldoAntes: saldo,
       saldoDespues: saldo - m,
@@ -315,7 +382,7 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
 
   const confirmarVenta = async (autorizadoPorAdmin?: boolean) => {
     if (!analisis.valido || !analisis.rival) return;
-    const g = grupos.find((x) => String(x.id) === String(grupoId));
+    const g = grupoSeleccionado;
 
     if (!autorizadoPorAdmin) {
       const cupoCheck = await verificarCupoMarcaDisponible({
@@ -323,16 +390,23 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
         carrera: carrera.carrera,
         fecha,
         caballoNumero: caballo.trim(),
+        rivalNumero: analisis.rival,
         grupoId,
         grupoNombre: g?.nombre,
         jugadorNombre: cliente?.nombre,
         montoAComprar: Number(monto),
+        moneda: g?.moneda ?? undefined,
+        notificarAdmin: true,
       });
 
       if (!cupoCheck.permitido) {
         setModalAdminReq({
-          motivo: cupoCheck.motivo ?? "La jugada supera el límite establecido para este grupo o la plataforma.",
-          limiteEstablecido: cupoCheck.limiteGrupo ? `${cupoCheck.limiteGrupo}` : undefined,
+          motivo:
+            cupoCheck.motivo ??
+            `La jugada #${analisis.rival} por #${caballo.trim()} supera el límite establecido para este grupo o la plataforma.`,
+          limiteEstablecido: cupoCheck.limiteGrupo
+            ? `#${analisis.rival} por #${caballo.trim()} · Máx. ${cupoCheck.limiteGrupo}`
+            : undefined,
           grupoNombre: g?.nombre ?? `Grupo ${grupoId}`,
           jugadorNombre: cliente?.nombre ?? "Jugador",
           monto: Number(monto),
@@ -603,6 +677,24 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
                         {analisis.valido && analisis.candidatos.length > 1 && (
                           <div className="mt-1 text-[11px] font-semibold text-emerald-700">
                             Rivales legales: <b>{analisis.candidatos.join(" · ")}</b>
+                          </div>
+                        )}
+                        {analisis.valido && analisis.rival && estadoCupo && (
+                          <div className="mt-1.5 space-y-1">
+                            <div className="text-[11px] font-semibold text-slate-700">
+                              {(() => {
+                                const simb = esMonedaBolivares(estadoCupo.moneda) ? "Bs. " : "$";
+                                return `Cupo #${analisis.rival} por #${caballo.trim()}: Acumulado ${simb}${estadoCupo.acumulado.toLocaleString("es-VE")} / Límite ${simb}${estadoCupo.limite.toLocaleString("es-VE")} · Disponible ${simb}${estadoCupo.disponible.toLocaleString("es-VE")}`;
+                              })()}
+                            </div>
+                            {Number(monto) > 0 && !estadoCupo.permitido && (
+                              <div className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] font-bold text-amber-900">
+                                {(() => {
+                                  const simb = esMonedaBolivares(estadoCupo.moneda) ? "Bs. " : "$";
+                                  return `⚠️ La jugada #${analisis.rival} por #${caballo.trim()} supera el límite (${simb}${estadoCupo.limite.toLocaleString("es-VE")}): al confirmar solicitará autorización de Administrador.`;
+                                })()}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

@@ -1137,9 +1137,13 @@ export function resumenNotificacion(n: NotificacionRow): string {
   if (n.tipo === "alerta_cupo_marca_agotado") {
     const hipo = d.hipodromo ? String(d.hipodromo) : "";
     const carr = d.carrera ? String(d.carrera) : "";
-    const cab = `#${d.caballo_numero}`;
+    const jugadaLabel = d.etiqueta_jugada
+      ? String(d.etiqueta_jugada)
+      : d.rival_numero
+        ? `#${d.rival_numero} por #${d.caballo_numero}`
+        : `#${d.caballo_numero}`;
     const limDesc = d.tipo_limite === "GRUPO" ? "Límite de Grupo" : "Tope General de Plataforma";
-    let res = `<span class="font-bold text-red-600">🚨 MARCA AL TOPE (${limDesc}):</span> Marca ${cab} en ${hipo} C${carr}`;
+    let res = `<span class="font-bold text-red-600">🚨 LÍMITE DE MARCA SUPERADO (${limDesc}):</span> Jugada ${jugadaLabel} en ${hipo} C${carr}`;
     if (d.total_acumulado) {
       res += ` (Acumulado: $${d.total_acumulado})`;
     }

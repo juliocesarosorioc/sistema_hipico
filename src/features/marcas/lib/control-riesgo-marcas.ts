@@ -2,7 +2,12 @@
 
 import { supabase } from "@/core/supabase";
 import { registrarAuditoria } from "@/features/grupos/lib/grupos";
-import { separarNumeros, type ConfigMarcas } from "@/features/marcas/lib/marcas";
+import {
+  numeroCaballoMarca,
+  separarNumeros,
+  type ConfigMarcas,
+} from "@/features/marcas/lib/marcas";
+import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
 import {
   grupoActivoVigente,
   grupoVigente,
@@ -40,10 +45,14 @@ export type CompradorMarca = {
 };
 
 export type AnalisisMarcaItem = {
+  jugadaKey: string;
   caballoNumero: string;
+  rivalNumero: string;
+  etiquetaJugada: string;
+  limitePersonalizado?: number | null;
   esPrimeraMarca: boolean;
   esNV: boolean;
-  ordenJerarquia: number; // 1 = 1ra marca, 2 = 2da marca, etc.
+  ordenJerarquia: number; // 1 = 1ra jugada (a por b), 2 = 2da jugada (b por c), etc.
   montoJugadoTotal: number;
   pagoPotencialBanca: number;
   balanceNetoBanca: number;
@@ -126,8 +135,140 @@ export function normalizarLimitesMarcas(raw: unknown, moneda?: string): LimitesM
   };
 }
 
+export function normalizarNumeroMarca(valor: unknown, ejemplarNumero?: unknown): string {
+  const n = numeroCaballoMarca(valor, ejemplarNumero).trim();
+  if (!n || !/\d/.test(n)) return "";
+  return n;
+}
+
+/** Clave única para un enfrentamiento de marcas: `${rival}_x_${caballo}`. */
+export function claveJugadaMarca(
+  rival: string | number | null | undefined,
+  caballo: string | number | null | undefined
+): string {
+  const riv = normalizarNumeroMarca(rival);
+  const cab = normalizarNumeroMarca(caballo);
+  if (riv && cab && riv !== cab) return `${riv}_x_${cab}`;
+  return cab || riv;
+}
+
+/** Etiqueta legible para un enfrentamiento de marcas: `#A por #B`. */
+export function etiquetaJugadaMarca(
+  rival?: string | number | null,
+  caballo?: string | number | null
+): string {
+  const riv = normalizarNumeroMarca(rival);
+  const cab = normalizarNumeroMarca(caballo);
+  if (riv && cab && riv !== cab) return `#${riv} por #${cab}`;
+  if (cab) return `#${cab}`;
+  if (riv) return `#${riv}`;
+  return "—";
+}
+
 /**
- * Realiza el análisis completo de riesgo financiero para una carrera de Marcas.
+ * Comprueba si dos jugadas corresponden al mismo cruce `{A, B}`.
+ * Como la jerarquía solo habilita una dirección entre dos caballos, el par es unívoco.
+ */
+export function coincideParMarca(
+  cabA: string,
+  rivA: string,
+  cabB: string,
+  rivB: string
+): boolean {
+  const cA = normalizarNumeroMarca(cabA);
+  const rA = normalizarNumeroMarca(rivA);
+  const cB = normalizarNumeroMarca(cabB);
+  const rB = normalizarNumeroMarca(rivB);
+  if (cA && rA && cB && rB) {
+    return (cA === cB && rA === rB) || (cA === rB && rA === cB);
+  }
+  if (!rA && !rB && cA && cB) return cA === cB;
+  return false;
+}
+
+/**
+ * Extrae el caballo jugado y su rival desde un ticket de `tickets_apuestas`.
+ * Respalda tickets antiguos sin `rivales_snapshot` usando la jerarquía configurada.
+ */
+export function extraerParTicketMarca(
+  t: Record<string, unknown>,
+  marcasConfiguradas?: string[]
+): { caballo: string; rival: string } {
+  const cabStr = normalizarNumeroMarca(t.caballo, t.ejemplar_numero);
+  let nota: unknown = t.nota_auditoria;
+  if (typeof nota === "string") {
+    try {
+      nota = JSON.parse(nota);
+    } catch {
+      nota = null;
+    }
+  }
+
+  let rivStr = "";
+  if (nota && typeof nota === "object") {
+    const snap = (nota as Record<string, unknown>).rivales_snapshot;
+    if (Array.isArray(snap)) {
+      const encontrado = snap
+        .map((x) => normalizarNumeroMarca(x))
+        .find((n) => Boolean(n && n !== cabStr));
+      if (encontrado) rivStr = encontrado;
+    }
+  }
+
+  if (!rivStr) {
+    const numsCab = (String(t.caballo ?? "").match(/\d+/g) ?? []).map((x) => x.trim());
+    const enCab = numsCab.find((n, idx) => idx > 0 && n !== cabStr);
+    if (enCab) rivStr = enCab;
+  }
+
+  if (!rivStr) {
+    const numsJug = (String(t.nombre_jugada ?? "").match(/\d+/g) ?? []).map((x) => x.trim());
+    const enJug = numsJug.find((n) => n !== cabStr);
+    if (enJug) rivStr = enJug;
+  }
+
+  if (!rivStr && cabStr && Array.isArray(marcasConfiguradas) && marcasConfiguradas.length > 1) {
+    const normMarcas = marcasConfiguradas.map((m) => normalizarNumeroMarca(m)).filter(Boolean);
+    const idx = normMarcas.indexOf(cabStr);
+    if (idx > 0) rivStr = normMarcas[idx - 1];
+  }
+
+  return { caballo: cabStr, rival: rivStr };
+}
+
+type CupoMarcaConfig = NonNullable<LimitesMarcas["cupos_por_marca"]>[string];
+
+function obtenerCupoConfiguradoPar(
+  cuposPorMarca: LimitesMarcas["cupos_por_marca"],
+  rival: string,
+  caballo: string
+): CupoMarcaConfig | undefined {
+  if (!cuposPorMarca) return undefined;
+  const riv = normalizarNumeroMarca(rival);
+  const cab = normalizarNumeroMarca(caballo);
+  const claves = [
+    riv && cab ? `${riv}_x_${cab}` : "",
+    riv && cab ? `${cab}_x_${riv}` : "",
+    riv && cab ? `${riv}_${cab}` : "",
+    riv && cab ? `${cab}_${riv}` : "",
+    cab,
+  ].filter(Boolean);
+  for (const k of claves) {
+    if (cuposPorMarca[k]) return cuposPorMarca[k];
+  }
+  return undefined;
+}
+
+function esTicketMarcaActivo(t: Record<string, unknown>): boolean {
+  if (t.monto_jugado == null || !(Number(t.monto_jugado) > 0)) return false;
+  const st = String(t.estado ?? "").trim().toLowerCase();
+  if (!st) return true;
+  return !["anulado", "anulada", "cancelado", "cancelada", "eliminado", "eliminada", "retirado", "retirada"].includes(st);
+}
+
+/**
+ * Realiza el análisis completo de riesgo financiero para una carrera de Marcas
+ * evaluando cada enfrentamiento (`A por B`, `B por C`, `C por D`, `D por E`, etc.).
  */
 export async function obtenerAnalisisRiesgoMarcas(
   hipodromo: string,
@@ -149,21 +290,39 @@ export async function obtenerAnalisisRiesgoMarcas(
     .maybeSingle();
 
   const cfg = (cfgRow ?? {}) as ConfigMarcas & { limites?: unknown };
-  const marcasLista = separarNumeros(cfg.marcas ?? "");
-  const nvLista = separarNumeros(cfg.nv ?? "");
+  const marcasLista = separarNumeros(cfg.marcas ?? "").map((m) => normalizarNumeroMarca(m) || m);
+  const nvLista = separarNumeros(cfg.nv ?? "").map((m) => normalizarNumeroMarca(m) || m);
   const activo = veTodosLosGruposVigente()
     ? grupoActivoVigente() || grupoVigente() || null
     : grupoVigente() || grupoActivoVigente() || null;
 
-  // 2. Obtener tickets jugados de Marcas en esta carrera (aislados al grupo activo)
+  // Moneda del grupo activo (por si aún no existen tickets en la carrera)
+  let monedaGrupoActivo = "";
+  if (activo) {
+    try {
+      const { data: grpRow } = await supabase
+        .from("grupos_venta")
+        .select("moneda")
+        .eq("id", activo)
+        .maybeSingle();
+      if (grpRow?.moneda) monedaGrupoActivo = String(grpRow.moneda);
+    } catch {
+      /* fallback */
+    }
+  }
+
+  // 2. Obtener tickets jugados de Marcas en esta carrera y fecha (aislados al grupo activo)
   let tickets: Array<Record<string, unknown>> | null = [];
   if (activo || veTodosLosGruposVigente()) {
     let qTickets = supabase
       .from("tickets_apuestas")
-      .select("id, cliente_juega_nombre, grupo_cobro_nombre, caballo, monto_jugado, premio_pagar, fecha_registro, nota_auditoria, moneda")
+      .select(
+        "id, cliente_juega_nombre, grupo_cobro_id, grupo_cobro_nombre, caballo, ejemplar_numero, nombre_jugada, monto_jugado, premio_pagar, fecha_registro, fecha_carrera, estado, nota_auditoria, moneda"
+      )
       .eq("hipodromo", hipo)
       .eq("carrera", carr)
-      .ilike("nombre_jugada", "MARCA%")
+      .or(filtroDiaJornada(fecha))
+      .ilike("nombre_jugada", "%MARCA%")
       .order("fecha_registro", { ascending: false });
     if (activo) {
       qTickets = qTickets.eq("grupo_cobro_id", String(activo));
@@ -172,74 +331,82 @@ export async function obtenerAnalisisRiesgoMarcas(
     tickets = (resT.data ?? []) as Array<Record<string, unknown>>;
   }
 
-  const ticketsValidos = (tickets ?? []).filter((t) => {
-    // Excluir cancelados o anulados si aplica
-    return t.monto_jugado != null && Number(t.monto_jugado) > 0;
-  });
+  const ticketsValidos = (tickets ?? []).filter(
+    (t) => perteneceADiaJornada(t, fecha) && esTicketMarcaActivo(t)
+  );
 
-  const esBs = ticketsValidos.some((t) => esMonedaBolivares(t.moneda as string));
+  const esBs =
+    ticketsValidos.length > 0
+      ? ticketsValidos.some((t) => esMonedaBolivares(t.moneda as string))
+      : esMonedaBolivares(monedaGrupoActivo);
   const moneda = esBs ? "VES" : "USD";
   const limites = normalizarLimitesMarcas(cfg.limites, moneda);
 
   const totalRecaudado = ticketsValidos.reduce((acc, t) => acc + Number(t.monto_jugado || 0), 0);
   const totalJugadas = ticketsValidos.length;
 
-  // 3. Procesar compradores por caballo
-  const compradoresPorCaballo: Record<string, CompradorMarca[]> = {};
-  const montoPorCaballo: Record<string, number> = {};
-  const pagoPorCaballo: Record<string, number> = {};
-
-  for (const t of ticketsValidos) {
-    const cabStr = String(t.caballo ?? "").replace(/\D/g, "");
-    if (!cabStr) continue;
-
-    const monto = Number(t.monto_jugado || 0);
-    const premio = Number(t.premio_pagar) > 0 ? Number(t.premio_pagar) : calcularPagoBrutoMarca(monto);
-
-    // Extraer rival si está en la nota de auditoría o texto
-    let rivalStr = "";
-    if (t.nota_auditoria && typeof t.nota_auditoria === "object") {
-      const snap = (t.nota_auditoria as Record<string, unknown>).rivales_snapshot;
-      if (Array.isArray(snap) && snap.length > 0) {
-        rivalStr = String(snap[0]);
-      }
+  // 3. Construir lista de enfrentamientos: consecutivos (a por b, b por c, c por d, d por e) + cualquier otro cruce apostado
+  const paresAnalizar: Array<{ rival: string; caballo: string; orden: number }> = [];
+  for (let idx = 1; idx < marcasLista.length; idx++) {
+    const rival = marcasLista[idx - 1];
+    const caballo = marcasLista[idx];
+    if (rival && caballo && rival !== caballo) {
+      paresAnalizar.push({ rival, caballo, orden: paresAnalizar.length + 1 });
     }
-
-    if (!compradoresPorCaballo[cabStr]) {
-      compradoresPorCaballo[cabStr] = [];
-      montoPorCaballo[cabStr] = 0;
-      pagoPorCaballo[cabStr] = 0;
-    }
-
-    compradoresPorCaballo[cabStr].push({
-      ticketId: typeof t.id === "number" ? t.id : String(t.id ?? ""),
-      jugadorNombre: String(t.cliente_juega_nombre ?? "Cliente"),
-      grupoNombre: String(t.grupo_cobro_nombre ?? "General"),
-      caballo: cabStr,
-      rival: rivalStr,
-      monto,
-      premioPotencial: premio,
-      fecha: t.fecha_registro ? new Date(String(t.fecha_registro)).toLocaleTimeString("es-VE") : "",
-    });
-
-    montoPorCaballo[cabStr] += monto;
-    pagoPorCaballo[cabStr] += premio;
   }
 
-  // 4. Analizar cada marca y su balance neto
-  const marcasAnalizadas: AnalisisMarcaItem[] = marcasLista.map((num, idx) => {
-    const esPrimera = idx === 0;
-    const esNv = nvLista.includes(num);
-    const monto = montoPorCaballo[num] || 0;
-    const pago = pagoPorCaballo[num] || 0;
-    const balanceNeto = totalRecaudado - pago;
+  for (const t of ticketsValidos) {
+    const { caballo, rival } = extraerParTicketMarca(t, marcasLista);
+    if (!caballo) continue;
+    const yaExiste = paresAnalizar.some((p) => coincideParMarca(p.caballo, p.rival, caballo, rival));
+    if (!yaExiste) {
+      paresAnalizar.push({
+        rival,
+        caballo,
+        orden: paresAnalizar.length + 1,
+      });
+    }
+  }
 
-    // Calcular límites para esta marca
-    const cupoEspecifico = limites.cupos_por_marca?.[num];
-    const limiteBase =
-      typeof cupoEspecifico?.max_monto === "number"
+  // 4. Analizar cada enfrentamiento de forma independiente
+  const marcasAnalizadas: AnalisisMarcaItem[] = paresAnalizar.map((par) => {
+    const ticketsPar = ticketsValidos.filter((t) => {
+      const pTicket = extraerParTicketMarca(t, marcasLista);
+      return coincideParMarca(pTicket.caballo, pTicket.rival, par.caballo, par.rival);
+    });
+
+    const compradores: CompradorMarca[] = [];
+    let monto = 0;
+    let pago = 0;
+
+    for (const t of ticketsPar) {
+      const m = Number(t.monto_jugado || 0);
+      const premio = Number(t.premio_pagar) > 0 ? Number(t.premio_pagar) : calcularPagoBrutoMarca(m);
+      monto += m;
+      pago += premio;
+      compradores.push({
+        ticketId: typeof t.id === "number" ? t.id : String(t.id ?? ""),
+        jugadorNombre: String(t.cliente_juega_nombre ?? "Cliente"),
+        grupoNombre: String(t.grupo_cobro_nombre ?? "General"),
+        caballo: par.caballo,
+        rival: par.rival,
+        monto: m,
+        premioPotencial: premio,
+        fecha: t.fecha_registro ? new Date(String(t.fecha_registro)).toLocaleTimeString("es-VE") : "",
+      });
+    }
+
+    const balanceNeto = totalRecaudado - pago;
+    const jugadaKey = claveJugadaMarca(par.rival, par.caballo);
+    const etiquetaJugada = etiquetaJugadaMarca(par.rival, par.caballo);
+    const cupoEspecifico = obtenerCupoConfiguradoPar(limites.cupos_por_marca, par.rival, par.caballo);
+    const limitePersonalizado =
+      typeof cupoEspecifico?.max_monto === "number" && cupoEspecifico.max_monto > 0
         ? cupoEspecifico.max_monto
-        : (limites.limite_general_plataforma ?? 120);
+        : null;
+    const limiteDefaultCarrera =
+      limites.limite_por_grupo ?? limites.limite_general_plataforma ?? (esBs ? 120000 : 120);
+    const limiteBase = limitePersonalizado ?? limiteDefaultCarrera;
     const extraAutorizado = Number(cupoEspecifico?.ampliacion_autorizada) || 0;
     const limiteEfectivo = limiteBase + extraAutorizado;
     const disponible = Math.max(0, limiteEfectivo - monto);
@@ -255,32 +422,36 @@ export async function obtenerAnalisisRiesgoMarcas(
     }
 
     return {
-      caballoNumero: num,
-      esPrimeraMarca: esPrimera,
-      esNV: esNv,
-      ordenJerarquia: idx + 1,
+      jugadaKey,
+      caballoNumero: par.caballo,
+      rivalNumero: par.rival,
+      etiquetaJugada,
+      limitePersonalizado,
+      esPrimeraMarca: false,
+      esNV: nvLista.includes(par.caballo),
+      ordenJerarquia: par.orden,
       montoJugadoTotal: monto,
       pagoPotencialBanca: pago,
       balanceNetoBanca: balanceNeto,
       semaforo,
       limitePlataforma: limiteEfectivo,
       disponiblePlataforma: disponible,
-      limiteGrupoDefault: limites.limite_por_grupo ?? 60,
+      limiteGrupoDefault: limites.limite_por_grupo ?? (esBs ? 120000 : 120),
       cupoAgotado,
       ampliacionAutorizada: extraAutorizado,
-      compradores: compradoresPorCaballo[num] || [],
+      compradores,
     };
   });
 
   // Identificar peor escenario
   let peorBalance = Infinity;
-  let peorCaballo = marcasLista[0] || "";
+  let peorCaballo = marcasAnalizadas[0]?.etiquetaJugada || marcasLista[0] || "";
   let peorSemaforo: "SEGURO" | "MODERADO" | "CRITICO" = "SEGURO";
 
   for (const m of marcasAnalizadas) {
     if (m.balanceNetoBanca < peorBalance) {
       peorBalance = m.balanceNetoBanca;
-      peorCaballo = m.caballoNumero;
+      peorCaballo = m.etiquetaJugada;
       peorSemaforo = m.semaforo;
     }
   }
@@ -350,22 +521,30 @@ export async function guardarLimitesMarcas(
 }
 
 /**
- * Amplía el cupo permitido para una marca específica (autorización del administrador).
+ * Amplía el cupo permitido para un enfrentamiento o marca específica (autorización del administrador).
  */
 export async function ampliarCupoMarca(opts: {
   hipodromo: string;
   carrera: number;
   fecha: string;
   caballoNumero: string | number;
+  rivalNumero?: string | number;
+  jugadaKey?: string;
   montoAdicional: number;
   motivo?: string;
+  moneda?: string;
 }): Promise<{ ok: boolean; nuevoLimite?: number; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
 
   try {
     const hipo = String(opts.hipodromo).trim().toUpperCase();
     const carr = Number(opts.carrera);
-    const cabStr = String(opts.caballoNumero);
+    const cabStr = normalizarNumeroMarca(opts.caballoNumero) || String(opts.caballoNumero).trim();
+    const rivStr = opts.rivalNumero != null ? normalizarNumeroMarca(opts.rivalNumero) : "";
+    const clave =
+      String(opts.jugadaKey ?? "").trim() ||
+      (rivStr ? claveJugadaMarca(rivStr, cabStr) : cabStr);
+    const etiqueta = etiquetaJugadaMarca(rivStr, cabStr);
 
     const { data: row, error: fetchErr } = await supabase
       .from("marcas_carrera")
@@ -379,16 +558,17 @@ export async function ampliarCupoMarca(opts: {
       return { ok: false, error: fetchErr?.message ?? "Carrera de marcas no encontrada." };
     }
 
-    const limites = normalizarLimitesMarcas(row.limites);
+    const limites = normalizarLimitesMarcas(row.limites, opts.moneda);
     const cuposMarca = limites.cupos_por_marca ?? {};
-    const marcaActual = cuposMarca[cabStr] ?? {};
+    const marcaActual =
+      cuposMarca[clave] ?? obtenerCupoConfiguradoPar(cuposMarca, rivStr, cabStr) ?? {};
 
     const ampliacionPrevia = Number(marcaActual.ampliacion_autorizada) || 0;
     const nuevaAmpliacion = ampliacionPrevia + Math.max(1, opts.montoAdicional);
 
     limites.cupos_por_marca = {
       ...cuposMarca,
-      [cabStr]: {
+      [clave]: {
         ...marcaActual,
         ampliacion_autorizada: nuevaAmpliacion,
         motivo_ampliacion: opts.motivo || "Autorización manual del administrador",
@@ -405,32 +585,40 @@ export async function ampliarCupoMarca(opts: {
 
     if (updErr) return { ok: false, error: updErr.message };
 
-    // Cerrar alertas pendientes de cupo agotado para este caballo
-    await supabase
+    // Cerrar alertas pendientes de cupo agotado para esta jugada específica
+    let qNotif = supabase
       .from("notificaciones")
       .update({
         estado: "Aplicada",
         atendida_por: "ADMIN_AMPLIACION_MARCA",
         atendida_at: new Date().toISOString(),
       })
-      .eq("tipo", "alerta_cupo_marca_agotado")
-      .ilike("titulo", `%#${cabStr}%`);
+      .eq("tipo", "alerta_cupo_marca_agotado");
+    if (rivStr) {
+      qNotif = qNotif.ilike("titulo", `%#${rivStr} por #${cabStr}%`);
+    } else {
+      qNotif = qNotif.ilike("titulo", `%#${cabStr}%`);
+    }
+    await qNotif;
 
     void registrarAuditoria(
       "MARCAS",
       "AMPLIACION_CUPO",
-      `Marca #${cabStr} en ${hipo} C${carr}: Cupo ampliado en +$${opts.montoAdicional}. Motivo: ${opts.motivo || "Demanda de jugadores"}`
+      `Jugada ${etiqueta} en ${hipo} C${carr}: Cupo ampliado en +$${opts.montoAdicional}. Motivo: ${opts.motivo || "Demanda de jugadores"}`
     );
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("cupo_marca_ampliado", {
-          detail: { hipodromo: hipo, carrera: carr, caballo: cabStr, nuevaAmpliacion },
+          detail: { hipodromo: hipo, carrera: carr, caballo: cabStr, rival: rivStr, jugadaKey: clave, nuevaAmpliacion },
         })
       );
     }
 
-    const limiteBase = typeof marcaActual.max_monto === "number" ? marcaActual.max_monto : (limites.limite_general_plataforma ?? 120);
+    const limiteBase =
+      typeof marcaActual.max_monto === "number" && marcaActual.max_monto > 0
+        ? marcaActual.max_monto
+        : (limites.limite_por_grupo ?? limites.limite_general_plataforma ?? (esMonedaBolivares(opts.moneda) ? 120000 : 120));
     return { ok: true, nuevoLimite: limiteBase + nuevaAmpliacion };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -490,8 +678,8 @@ export async function modificarOrdenMarcas(opts: {
 }
 
 /**
- * Comunica al Administrador Principal que una marca ha llegado al tope de cupo o límite,
- * detallando exactamente qué jugadores han comprado y qué montos se han registrado.
+ * Comunica al Administrador Principal que un enfrentamiento de marcas ha superado su límite,
+ * detallando exactamente qué jugadores han comprado en ese cruce y qué montos se han registrado.
  */
 export async function comunicarCupoMarcaAgotadoAdmin(opts: {
   hipodromo: string;
@@ -510,7 +698,9 @@ export async function comunicarCupoMarcaAgotadoAdmin(opts: {
   try {
     const hipo = String(opts.hipodromo).trim().toUpperCase();
     const carr = Number(opts.carrera);
-    const cabStr = String(opts.caballoNumero);
+    const cabStr = normalizarNumeroMarca(opts.caballoNumero) || String(opts.caballoNumero).trim();
+    const rivStr = normalizarNumeroMarca(opts.rival);
+    const etiquetaPar = etiquetaJugadaMarca(rivStr, cabStr);
     const grupoEfectivo =
       opts.grupoId ??
       (veTodosLosGruposVigente()
@@ -518,13 +708,25 @@ export async function comunicarCupoMarcaAgotadoAdmin(opts: {
         : grupoVigente() || grupoActivoVigente() || null);
     if (!grupoEfectivo && !veTodosLosGruposVigente()) return;
 
-    // 1. Obtener historial de compradores de esta marca en la carrera (estríctamente aislado al grupo)
+    const { data: cfgRow } = await supabase
+      .from("marcas_carrera")
+      .select("marcas")
+      .ilike("hipodromo", hipo)
+      .eq("fecha", opts.fecha)
+      .eq("carrera", carr)
+      .maybeSingle();
+    const marcasLista = separarNumeros(cfgRow?.marcas ?? "").map((m) => normalizarNumeroMarca(m) || m);
+
+    // 1. Obtener historial de compradores de este cruce en la carrera y fecha (aislado al grupo)
     let qTickets = supabase
       .from("tickets_apuestas")
-      .select("id, cliente_juega_nombre, grupo_cobro_nombre, monto_jugado, premio_pagar, fecha_registro, caballo")
+      .select(
+        "id, cliente_juega_nombre, grupo_cobro_nombre, monto_jugado, premio_pagar, fecha_registro, fecha_carrera, estado, caballo, ejemplar_numero, nombre_jugada, nota_auditoria"
+      )
       .eq("hipodromo", hipo)
       .eq("carrera", carr)
-      .ilike("nombre_jugada", "MARCA%")
+      .or(filtroDiaJornada(opts.fecha))
+      .ilike("nombre_jugada", "%MARCA%")
       .order("fecha_registro", { ascending: false });
     if (grupoEfectivo) {
       qTickets = qTickets.eq("grupo_cobro_id", String(grupoEfectivo));
@@ -532,8 +734,10 @@ export async function comunicarCupoMarcaAgotadoAdmin(opts: {
     const { data: tickets } = await qTickets;
 
     const filtrados = (tickets ?? []).filter((t) => {
-      const num = String(t.caballo ?? "").replace(/\D/g, "");
-      return num === cabStr;
+      if (!perteneceADiaJornada(t as Record<string, unknown>, opts.fecha)) return false;
+      if (!esTicketMarcaActivo(t as Record<string, unknown>)) return false;
+      const pTicket = extraerParTicketMarca(t as Record<string, unknown>, marcasLista);
+      return coincideParMarca(pTicket.caballo, pTicket.rival, cabStr, rivStr);
     });
 
     const compradoresResumen = filtrados.map((t) => ({
@@ -551,8 +755,8 @@ export async function comunicarCupoMarcaAgotadoAdmin(opts: {
       .join(", ");
 
     const tipoDesc = opts.tipoLimite === "GRUPO" ? "Límite del Grupo" : "Límite General de Plataforma";
-    const titulo = `🚨 Cupo de Marca Agotado: #${cabStr} en ${hipo} C${carr}`;
-    const mensaje = `El caballo #${cabStr} ha llegado al tope (${tipoDesc}) en ${hipo} C${carr}. Total acumulado: $${totalJugado}. Últimos jugadores: ${listaCompradoresStr || "Sin apuestas registradas"}. El jugador ${opts.jugadorNombre || "Jugador"} (${opts.grupoNombre || "Grupo"}) intentó apostar $${opts.montoIntentado || 0}. El Administrador puede ampliar cupo o modificar el orden de marcas.`;
+    const titulo = `🚨 Límite de Marca Superado: ${etiquetaPar} en ${hipo} C${carr}`;
+    const mensaje = `La jugada ${etiquetaPar} superó el tope (${tipoDesc}) en ${hipo} C${carr}. Acumulado en el cruce: $${totalJugado}. Últimos jugadores: ${listaCompradoresStr || "Sin apuestas registradas"}. El jugador ${opts.jugadorNombre || "Jugador"} (${opts.grupoNombre || "Grupo"}) intentó apostar $${opts.montoIntentado || 0}. El Administrador puede autorizar o ampliar el cupo de esta jugada.`;
 
     await supabase.from("notificaciones").insert({
       tipo: "alerta_cupo_marca_agotado",
@@ -563,6 +767,8 @@ export async function comunicarCupoMarcaAgotadoAdmin(opts: {
         carrera: carr,
         fecha: opts.fecha,
         caballo_numero: cabStr,
+        rival_numero: rivStr || null,
+        etiqueta_jugada: etiquetaPar,
         tipo_limite: opts.tipoLimite || "PLATAFORMA",
         total_acumulado: totalJugado,
         monto_intentado: opts.montoIntentado,
@@ -578,30 +784,35 @@ export async function comunicarCupoMarcaAgotadoAdmin(opts: {
     void registrarAuditoria(
       "MARCAS",
       "ALERTA_CUPO_AGOTADO",
-      `Alerta de cupo enviada al Admin: Marca #${cabStr} en ${hipo} C${carr}. ${tipoDesc} alcanzado.`
+      `Alerta de límite enviada al Admin: Jugada ${etiquetaPar} en ${hipo} C${carr}. ${tipoDesc} superado.`
     );
   } catch (e) {
-    console.error("Error al comunicar cupo agotado de marca:", e);
+    console.error("Error al comunicar límite superado de marca:", e);
   }
 }
 
 /**
- * Verifica si un jugador puede comprar una marca según los límites de su grupo
- * y el límite general de la plataforma.
+ * Verifica si una jugada de marcas (`A por B`) cumple con su límite independiente.
+ * Solo cuando `(acumulado en el cruce A por B + monto) > límite` retorna `permitido: false`
+ * para solicitar autorización del Administrador.
  */
 export async function verificarCupoMarcaDisponible(opts: {
   hipodromo: string;
   carrera: number;
   fecha: string;
   caballoNumero: string | number;
+  rivalNumero?: string | number | null;
   grupoId?: string | number | null;
   grupoNombre?: string;
   jugadorNombre?: string;
   montoAComprar: number;
   moneda?: string;
+  notificarAdmin?: boolean;
 }): Promise<{
   permitido: boolean;
   motivo?: string;
+  etiquetaJugada?: string;
+  acumuladoPar?: number;
   limitePlataforma?: number;
   limiteGrupo?: number;
   disponiblePlataforma?: number;
@@ -612,17 +823,21 @@ export async function verificarCupoMarcaDisponible(opts: {
   try {
     const hipo = String(opts.hipodromo).trim().toUpperCase();
     const carr = Number(opts.carrera);
-    const cabStr = String(opts.caballoNumero);
     const monto = Number(opts.montoAComprar) || 0;
+    const grupoEfectivo =
+      opts.grupoId ??
+      (veTodosLosGruposVigente()
+        ? grupoActivoVigente() || grupoVigente() || null
+        : grupoVigente() || grupoActivoVigente() || null);
 
     // Determinar moneda del grupo / apuesta
     let moneda = opts.moneda;
-    if (!moneda && opts.grupoId) {
+    if (!moneda && grupoEfectivo) {
       try {
         const { data: grpRow } = await supabase
           .from("grupos_venta")
           .select("moneda")
-          .eq("id", opts.grupoId)
+          .eq("id", grupoEfectivo)
           .maybeSingle();
         if (grpRow?.moneda) moneda = grpRow.moneda;
       } catch {
@@ -634,74 +849,98 @@ export async function verificarCupoMarcaDisponible(opts: {
     const defaultGrp = esBs ? 120000 : 120;
     const simbolo = esBs ? "Bs. " : "$";
 
-    // 1. Obtener la configuración de la carrera y sus límites
+    // 1. Obtener la configuración de marcas y límites de la carrera
     const { data: cfgRow } = await supabase
       .from("marcas_carrera")
-      .select("limites")
+      .select("marcas, limites")
       .ilike("hipodromo", hipo)
       .eq("fecha", opts.fecha)
       .eq("carrera", carr)
       .maybeSingle();
 
-    const limites = normalizarLimitesMarcas(cfgRow?.limites, esBs ? "VES" : "USD");
-    const cupoEspecifico = limites.cupos_por_marca?.[cabStr];
+    const marcasLista = separarNumeros(cfgRow?.marcas ?? "").map((m) => normalizarNumeroMarca(m) || m);
+    const cabStr = normalizarNumeroMarca(opts.caballoNumero) || String(opts.caballoNumero).trim();
+    let rivStr = normalizarNumeroMarca(opts.rivalNumero);
+    if (!rivStr && cabStr && marcasLista.length > 1) {
+      const idx = marcasLista.indexOf(cabStr);
+      if (idx > 0) rivStr = marcasLista[idx - 1];
+    }
+    const etiquetaPar = etiquetaJugadaMarca(rivStr, cabStr);
 
-    const limitePlatBase =
-      typeof cupoEspecifico?.max_monto === "number"
-        ? cupoEspecifico.max_monto
-        : (limites.limite_general_plataforma ?? defaultGen);
+    const limites = normalizarLimitesMarcas(cfgRow?.limites, esBs ? "VES" : "USD");
+    const cupoEspecifico = obtenerCupoConfiguradoPar(limites.cupos_por_marca, rivStr, cabStr);
     const extraAutorizado = Number(cupoEspecifico?.ampliacion_autorizada) || 0;
+    const tieneLimitePar = typeof cupoEspecifico?.max_monto === "number" && cupoEspecifico.max_monto > 0;
+
+    const limitePlatBase = tieneLimitePar
+      ? Number(cupoEspecifico!.max_monto)
+      : (limites.limite_general_plataforma ?? defaultGen);
     const limitePlataformaEfectivo = limitePlatBase + extraAutorizado;
 
-    // Límite por grupo
-    const cupoGrupoEspecifico = opts.grupoId ? limites.cupos_por_grupo?.[String(opts.grupoId)] : null;
-    const limiteGrupoEfectivo =
-      typeof cupoGrupoEspecifico?.max_monto === "number"
+    const cupoGrupoEspecifico = grupoEfectivo ? limites.cupos_por_grupo?.[String(grupoEfectivo)] : null;
+    const limiteGrupoBase = tieneLimitePar
+      ? Number(cupoEspecifico!.max_monto)
+      : typeof cupoGrupoEspecifico?.max_monto === "number" && cupoGrupoEspecifico.max_monto > 0
         ? cupoGrupoEspecifico.max_monto
         : (limites.limite_por_grupo ?? defaultGrp);
+    const limiteGrupoEfectivo = limiteGrupoBase + extraAutorizado;
 
-    // 2. Consultar acumulado ya jugado en esta marca
-    const { data: tickets } = await supabase
+    // 2. Consultar acumulado ya jugado SOLO en este enfrentamiento y grupo en la fecha
+    let qTickets = supabase
       .from("tickets_apuestas")
-      .select("monto_jugado, caballo, grupo_cobro_id, grupo_cobro_nombre")
+      .select(
+        "id, monto_jugado, caballo, ejemplar_numero, nombre_jugada, grupo_cobro_id, grupo_cobro_nombre, fecha_registro, fecha_carrera, estado, nota_auditoria"
+      )
       .eq("hipodromo", hipo)
       .eq("carrera", carr)
-      .ilike("nombre_jugada", "MARCA%");
+      .or(filtroDiaJornada(opts.fecha))
+      .ilike("nombre_jugada", "%MARCA%");
+    if (grupoEfectivo) {
+      qTickets = qTickets.eq("grupo_cobro_id", String(grupoEfectivo));
+    }
+    const { data: tickets } = await qTickets;
 
-    let totalPlataforma = 0;
-    let totalGrupo = 0;
+    let totalParPlataforma = 0;
+    let totalParGrupo = 0;
 
-    for (const t of tickets ?? []) {
-      const num = String(t.caballo ?? "").replace(/\D/g, "");
-      if (num === cabStr) {
-        const m = Number(t.monto_jugado || 0);
-        totalPlataforma += m;
-        if (opts.grupoId && String(t.grupo_cobro_id) === String(opts.grupoId)) {
-          totalGrupo += m;
-        }
+    for (const rawT of tickets ?? []) {
+      const t = rawT as Record<string, unknown>;
+      if (!perteneceADiaJornada(t, opts.fecha) || !esTicketMarcaActivo(t)) continue;
+      const pTicket = extraerParTicketMarca(t, marcasLista);
+      if (!coincideParMarca(pTicket.caballo, pTicket.rival, cabStr, rivStr)) continue;
+
+      const m = Number(t.monto_jugado || 0);
+      totalParPlataforma += m;
+      if (!grupoEfectivo || String(t.grupo_cobro_id) === String(grupoEfectivo)) {
+        totalParGrupo += m;
       }
     }
 
-    const disponiblePlat = Math.max(0, limitePlataformaEfectivo - totalPlataforma);
-    const disponibleGrp = Math.max(0, limiteGrupoEfectivo - totalGrupo);
+    const disponiblePlat = Math.max(0, limitePlataformaEfectivo - totalParPlataforma);
+    const disponibleGrp = Math.max(0, limiteGrupoEfectivo - totalParGrupo);
 
-    // Verificar límite de grupo
-    if (totalGrupo + monto > limiteGrupoEfectivo) {
-      void comunicarCupoMarcaAgotadoAdmin({
-        hipodromo: hipo,
-        carrera: carr,
-        fecha: opts.fecha,
-        caballoNumero: cabStr,
-        grupoId: opts.grupoId,
-        grupoNombre: opts.grupoNombre,
-        jugadorNombre: opts.jugadorNombre,
-        montoIntentado: monto,
-        tipoLimite: "GRUPO",
-      });
+    // Verificar límite estricto por jugada (solo exige autorización si acumulado + monto > límite)
+    if (totalParGrupo + monto > limiteGrupoEfectivo) {
+      if (opts.notificarAdmin !== false) {
+        void comunicarCupoMarcaAgotadoAdmin({
+          hipodromo: hipo,
+          carrera: carr,
+          fecha: opts.fecha,
+          caballoNumero: cabStr,
+          rival: rivStr || undefined,
+          grupoId: grupoEfectivo,
+          grupoNombre: opts.grupoNombre,
+          jugadorNombre: opts.jugadorNombre,
+          montoIntentado: monto,
+          tipoLimite: "GRUPO",
+        });
+      }
 
       return {
         permitido: false,
-        motivo: `Límite de grupo alcanzado para la Marca #${cabStr}. Disponible para tu grupo: ${simbolo}${disponibleGrp.toLocaleString("es-VE")}.`,
+        motivo: `La jugada ${etiquetaPar} supera el límite de grupo (${simbolo}${limiteGrupoEfectivo.toLocaleString("es-VE")}). Acumulado: ${simbolo}${totalParGrupo.toLocaleString("es-VE")} + ${simbolo}${monto.toLocaleString("es-VE")}. Disponible: ${simbolo}${disponibleGrp.toLocaleString("es-VE")}.`,
+        etiquetaJugada: etiquetaPar,
+        acumuladoPar: totalParGrupo,
         limitePlataforma: limitePlataformaEfectivo,
         limiteGrupo: limiteGrupoEfectivo,
         disponiblePlataforma: disponiblePlat,
@@ -709,23 +948,27 @@ export async function verificarCupoMarcaDisponible(opts: {
       };
     }
 
-    // Verificar límite general de plataforma
-    if (totalPlataforma + monto > limitePlataformaEfectivo) {
-      void comunicarCupoMarcaAgotadoAdmin({
-        hipodromo: hipo,
-        carrera: carr,
-        fecha: opts.fecha,
-        caballoNumero: cabStr,
-        grupoId: opts.grupoId,
-        grupoNombre: opts.grupoNombre,
-        jugadorNombre: opts.jugadorNombre,
-        montoIntentado: monto,
-        tipoLimite: "PLATAFORMA",
-      });
+    if (totalParPlataforma + monto > limitePlataformaEfectivo) {
+      if (opts.notificarAdmin !== false) {
+        void comunicarCupoMarcaAgotadoAdmin({
+          hipodromo: hipo,
+          carrera: carr,
+          fecha: opts.fecha,
+          caballoNumero: cabStr,
+          rival: rivStr || undefined,
+          grupoId: grupoEfectivo,
+          grupoNombre: opts.grupoNombre,
+          jugadorNombre: opts.jugadorNombre,
+          montoIntentado: monto,
+          tipoLimite: "PLATAFORMA",
+        });
+      }
 
       return {
         permitido: false,
-        motivo: `Cupo de la plataforma agotado para la Marca #${cabStr}. Disponible: ${simbolo}${disponiblePlat.toLocaleString("es-VE")}.`,
+        motivo: `La jugada ${etiquetaPar} supera el límite de plataforma (${simbolo}${limitePlataformaEfectivo.toLocaleString("es-VE")}). Acumulado: ${simbolo}${totalParPlataforma.toLocaleString("es-VE")} + ${simbolo}${monto.toLocaleString("es-VE")}. Disponible: ${simbolo}${disponiblePlat.toLocaleString("es-VE")}.`,
+        etiquetaJugada: etiquetaPar,
+        acumuladoPar: totalParPlataforma,
         limitePlataforma: limitePlataformaEfectivo,
         limiteGrupo: limiteGrupoEfectivo,
         disponiblePlataforma: disponiblePlat,
@@ -735,6 +978,8 @@ export async function verificarCupoMarcaDisponible(opts: {
 
     return {
       permitido: true,
+      etiquetaJugada: etiquetaPar,
+      acumuladoPar: totalParGrupo,
       limitePlataforma: limitePlataformaEfectivo,
       limiteGrupo: limiteGrupoEfectivo,
       disponiblePlataforma: disponiblePlat,

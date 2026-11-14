@@ -126,10 +126,10 @@ export function ModalCompraMarcasCliente({
     setSaldoJugador(disp);
   }, [abierto, sesion.resumen]);
 
-  // Verificar cupo cada vez que cambia el caballo o monto
+  // Verificar cupo cada vez que cambia el caballo, rival o monto (por cruce #rival por #caballo)
   useEffect(() => {
-    if (!abierto || !caballo || !hipo || !fecha) return;
-    const m = parseFloat(monto) || 6;
+    if (!abierto || !caballo || !rival || !hipo || !fecha) return;
+    const m = parseFloat(monto) || 0;
     let cancel = false;
     setVerificandoCupo(true);
 
@@ -138,23 +138,25 @@ export function ModalCompraMarcasCliente({
       carrera: carr,
       fecha,
       caballoNumero: caballo,
+      rivalNumero: rival,
       grupoId,
       grupoNombre: nombreGrupo,
       jugadorNombre: nombreJugador,
       montoAComprar: m,
       moneda: monedaGrupo,
+      notificarAdmin: false,
     }).then((res) => {
       if (cancel) return;
       setCupoPermitido(res.permitido);
       setCupoMotivo(res.motivo ?? "");
-      setCupoDisponible(res.disponiblePlataforma ?? null);
+      setCupoDisponible(res.disponibleGrupo ?? res.disponiblePlataforma ?? null);
       setVerificandoCupo(false);
     });
 
     return () => {
       cancel = true;
     };
-  }, [abierto, caballo, monto, hipo, carr, fecha, grupoId, nombreGrupo, nombreJugador]);
+  }, [abierto, caballo, rival, monto, hipo, carr, fecha, grupoId, nombreGrupo, nombreJugador, monedaGrupo]);
 
   if (!abierto || !carreraData) return null;
 
@@ -435,16 +437,16 @@ export function ModalCompraMarcasCliente({
                   <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-xs text-rose-800 space-y-1">
                     <div className="font-black flex items-center gap-1.5">
                       <span>🚫</span>
-                      <span>CUPO AGOTADO PARA ESTA MARCA</span>
+                      <span>LÍMITE SUPERADO PARA #{rival} por #{caballo}</span>
                     </div>
                     <p>{cupoMotivo}</p>
                     <p className="text-[10px] text-rose-700">
-                      Se ha notificado al Administrador Principal para que evalúe ampliar el cupo o ajustar la jerarquía.
+                      El cruce #{rival} por #{caballo} alcanzó su límite. Puedes solicitar al Administrador autorización o ampliación de cupo.
                     </p>
                   </div>
                 ) : cupoDisponible !== null ? (
                   <div className="text-[11px] font-bold text-emerald-700">
-                    ✓ Cupo disponible para jugar (${cupoDisponible} restante en plataforma).
+                    ✓ Cupo disponible para #{rival} por #{caballo}: {simboloMoneda}{cupoDisponible.toLocaleString("es-VE")} restante.
                   </div>
                 ) : null}
               </div>

@@ -34,6 +34,7 @@ import {
 } from "@/features/dupletas/lib/dupletas";
 import { listarConfigMarcas, type ConfigMarcas } from "@/features/marcas/lib/marcas";
 import { calcularRivales, separarNumeros } from "@/features/marcas/lib/jerarquia";
+import { verificarCupoMarcaDisponible } from "@/features/marcas/lib/control-riesgo-marcas";
 import {
   realizarJugada,
   solicitarCompraTabla,
@@ -1000,10 +1001,29 @@ function ModalidadMarcasMultiplo6({
     const recortado = montoAutorizado < ajustado;
     setMontoInput(String(montoAutorizado));
     setEnviando(true);
+    const fechaMarca = configActual?.fecha || hoyIso();
+    const cupoCheck = await verificarCupoMarcaDisponible({
+      hipodromo: hipoFinal,
+      carrera,
+      fecha: fechaMarca,
+      caballoNumero: caballo,
+      rivalNumero: rival,
+      grupoId: sesion.cliente.grupo_id,
+      jugadorNombre: sesion.cliente.nombre || sesion.cliente.seudonimo || "Cliente",
+      montoAComprar: montoAutorizado,
+      notificarAdmin: true,
+    });
+    if (!cupoCheck.permitido) {
+      setEnviando(false);
+      return toast(
+        cupoCheck.motivo ?? `La jugada #${rival} por #${caballo} supera el límite establecido.`,
+        "warning"
+      );
+    }
     const r = await realizarJugada({
       tipo: "MARCA",
       hipodromo: hipoFinal,
-      fecha: hoyIso(),
+      fecha: fechaMarca,
       carrera,
       caballo,
       rival,
