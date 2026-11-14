@@ -13,6 +13,8 @@ interface GrupoWhatsApp {
 
 interface SalaJuego {
   id: string;
+  grupo_id?: string;
+  grupo_nombre?: string | null;
   nombre_sala: string;
   orden_sala?: number;
   hipodromo_activo?: string;
@@ -882,12 +884,22 @@ export default function WhatsappPage() {
                         </h3>
                       </div>
                       <p className="mt-1 text-[11px] text-slate-400">
+                        {sala.grupo_nombre ? (
+                          <span className="font-bold text-sky-300">Grupo: {sala.grupo_nombre} · </span>
+                        ) : null}
                         {sala.hipodromo_activo || "Sin hipódromo"} · Carrera #
                         {sala.numero_carrera_activa || 1}
                       </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-1.5">
+                      <a
+                        href={sala.grupo_id ? `/sala?grupoId=${sala.grupo_id}` : "/sala"}
+                        className="rounded-full border border-indigo-500/40 bg-indigo-950/60 px-2.5 py-0.5 text-[10px] font-black text-indigo-200 transition hover:bg-indigo-900"
+                        title="Abrir la Sala de Juegos en vivo de este grupo"
+                      >
+                        🎮 Ver Sala de Juegos
+                      </a>
                       <span
                         className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${
                           abierta

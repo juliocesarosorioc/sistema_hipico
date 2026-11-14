@@ -130,12 +130,15 @@ async function emitirBroadcastSala(salaId: string, evento: string, payload: any)
 async function asegurarDosSalasPrincipales() {
   const { data: salasExistentes } = await supabaseAdmin
     .from("salas_juego")
-    .select("*")
+    .select("*, grupos_venta(nombre)")
     .eq("activa", true)
     .order("orden_sala", { ascending: true });
 
   if (salasExistentes && salasExistentes.length > 0) {
-    return salasExistentes;
+    return salasExistentes.map((s: any) => ({
+      ...s,
+      grupo_nombre: s.grupos_venta?.nombre || null,
+    }));
   }
 
   let { data: grupoPrincipal } = await supabaseAdmin
@@ -1072,6 +1075,18 @@ export async function POST(req: Request) {
     if (!quotedMsgId) {
       const preAnalisis = analizarYEstandarizarJugada(textoUsuarioLimpio, 999999);
       if (!preAnalisis.esIntencionDeJugada) {
+        if (body.esMensajePropioTelefono && textoUsuarioLimpio) {
+          await supabaseAdmin.from("chat_mensajes").insert({
+            grupo_id: grupoId,
+            sala_id: salaId,
+            remitente_nombre: String(body.senderNombre || "Operador (WhatsApp)").trim(),
+            es_operador: true,
+            tipo_mensaje: "TEXTO",
+            contenido: textoUsuarioLimpio,
+            whatsapp_msg_id: body.whatsappMsgId || null,
+          });
+          await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+        }
         return NextResponse.json({
           ok: true,
           tipo: "CHARLA",

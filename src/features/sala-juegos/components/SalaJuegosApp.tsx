@@ -609,6 +609,30 @@ export function SalaJuegosApp({
             </button>
           )}
 
+          {/* Indicador de vinculación WhatsApp Baileys 24/7 */}
+          {(identidad?.esOperador || identidad?.esAdmin) && (
+            <a
+              href="/whatsapp"
+              title={
+                salaActiva?.whatsapp_group_jid
+                  ? `Vinculado en vivo a WhatsApp: ${salaActiva.whatsapp_group_nombre || salaActiva.whatsapp_group_jid}`
+                  : "Sala sin vincular a grupo de WhatsApp (clic para vincular en Motor Bot Baileys 24/7)"
+              }
+              className={`font-bold text-xs px-2.5 py-1 rounded-lg transition flex items-center gap-1.5 ${
+                salaActiva?.whatsapp_group_jid
+                  ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40"
+                  : "bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40"
+              }`}
+            >
+              <span>{salaActiva?.whatsapp_group_jid ? "🟢" : "⚪"}</span>
+              <span className="max-w-[160px] truncate">
+                {salaActiva?.whatsapp_group_jid
+                  ? `WA: ${salaActiva.whatsapp_group_nombre || "Vinculado"}`
+                  : "WA: Sin vincular"}
+              </span>
+            </a>
+          )}
+
           {/* Botón Prejugadas */}
           <button
             onClick={() => setModalPrejugadasAbierto(true)}

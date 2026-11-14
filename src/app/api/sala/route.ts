@@ -35,6 +35,40 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const BOT_DAEMON_URL = process.env.BOT_WHATSAPP_DAEMON_URL || "http://127.0.0.1:3005";
+const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
+
+/**
+ * Reenvía un mensaje publicado en la plataforma al grupo de WhatsApp vinculado a la sala (si existe)
+ */
+async function publicarEnWhatsAppSala(salaId: string, texto: string) {
+  if (!salaId || !texto) return;
+  try {
+    const { data: sala } = await supabaseAdmin
+      .from("salas_juego")
+      .select("whatsapp_group_jid")
+      .eq("id", salaId)
+      .maybeSingle();
+
+    if (!sala?.whatsapp_group_jid) return;
+
+    await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+      },
+      body: JSON.stringify({
+        groupJid: sala.whatsapp_group_jid,
+        texto,
+      }),
+      signal: AbortSignal.timeout(4000),
+    });
+  } catch {
+    // No bloqueante si el daemon está offline
+  }
+}
+
 /**
  * Notifica a los clientes vía Supabase Broadcast si está configurado
  */
@@ -1796,6 +1830,7 @@ export async function POST(req: Request) {
           }
 
           await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+          void publicarEnWhatsAppSala(salaId, `🎲 *${identidad.nombre}*: ${analisis.jugadaEstandarizada}`);
           return NextResponse.json({ ok: true, propuestaId: propId, jugadaEstandarizada: analisis.jugadaEstandarizada });
         }
       }
@@ -1838,6 +1873,10 @@ export async function POST(req: Request) {
       }
 
       await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+      if (!destPrivadoUuid && texto) {
+        const prefijoRem = esOperador ? "" : `*${identidad.nombre}*: `;
+        void publicarEnWhatsAppSala(salaId, `${prefijoRem}${texto}`);
+      }
       return NextResponse.json({ ok: true, mensaje: msgInsertado });
     }
 

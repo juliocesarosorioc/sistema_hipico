@@ -299,6 +299,17 @@ async function refrescarGruposParticipantes() {
   return gruposCache;
 }
 
+const mensajesEnviadosPorBot = new Set();
+function registrarMensajeEnviadoPorBot(res) {
+  const id = res?.key?.id;
+  if (!id) return;
+  mensajesEnviadosPorBot.add(id);
+  if (mensajesEnviadosPorBot.size > 1000) {
+    const first = mensajesEnviadosPorBot.values().next().value;
+    if (first) mensajesEnviadosPorBot.delete(first);
+  }
+}
+
 async function enviarMensajeGrupo(groupJid, texto, quotedMsgId = null) {
   if (!sock || !conectado) {
     throw new Error("El Bot de WhatsApp no está conectado actualmente.");
@@ -322,7 +333,9 @@ async function enviarMensajeGrupo(groupJid, texto, quotedMsgId = null) {
     }
   }
 
-  return await sock.sendMessage(groupJid, { text: texto }, opciones);
+  const res = await sock.sendMessage(groupJid, { text: texto }, opciones);
+  registrarMensajeEnviadoPorBot(res);
+  return res;
 }
 
 async function enviarMensajePrivado(telefonoOjid, texto) {
@@ -331,7 +344,9 @@ async function enviarMensajePrivado(telefonoOjid, texto) {
   }
   const jid = aJidPrivado(telefonoOjid);
   if (!jid || !texto) return null;
-  return await sock.sendMessage(jid, { text: texto });
+  const res = await sock.sendMessage(jid, { text: texto });
+  registrarMensajeEnviadoPorBot(res);
+  return res;
 }
 
 // ============================================================================
@@ -783,9 +798,16 @@ export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw) {
 
 async function manejarMensajeEntrante(msg) {
   try {
-    if (!msg?.key || msg.key.fromMe) return;
+    if (!msg?.key) return;
 
     const whatsappMsgId = msg.key.id || null;
+    const esFromMe = Boolean(msg.key.fromMe);
+
+    // Si el mensaje fue enviado automáticamente por este mismo servidor/bot, ignorarlo para evitar bucles.
+    // Si NO está en mensajesEnviadosPorBot, fue escrito por el usuario manualmente desde su teléfono/WhatsApp Web.
+    if (esFromMe && whatsappMsgId && mensajesEnviadosPorBot.has(whatsappMsgId)) {
+      return;
+    }
 
     // Cierre VULN-15: Descartar mensajes duplicados / reintentos en < 1ms
     if (whatsappMsgId && esMensajeDuplicado(whatsappMsgId)) {
@@ -808,16 +830,19 @@ async function manejarMensajeEntrante(msg) {
     const textoLimpio = String(texto || "").trim();
     if (!textoLimpio) return;
 
-    // Cierre VULN-14: Soporte para JIDs @lid y participantAlt
-    const participantJid = msg.key.participant || msg.participant || "";
+    // Cierre VULN-14: Soporte para JIDs @lid, participantAlt y cuenta propia del teléfono
+    const participantJid =
+      msg.key.participant ||
+      msg.participant ||
+      (esFromMe ? (sock?.user?.id ? `${normalizarTelefono(sock.user.id)}@s.whatsapp.net` : "") : "");
     const participantAlt = msg.key.participantAlt || msg.participantAlt || "";
-    const senderNombre = msg.pushName || "Jugador";
+    const senderNombre = msg.pushName || (esFromMe ? "Operador (Teléfono)" : "Jugador");
 
     const telPrincipal = normalizarTelefono(participantJid);
     const telAlt = normalizarTelefono(participantAlt);
     const telNormalizado = telPrincipal || telAlt;
 
-    console.log(`[Bot WhatsApp] 📩 [${remoteJid}] (${senderNombre} / ${participantJid}${participantAlt ? ` / alt:${participantAlt}` : ""}): "${textoLimpio}"`);
+    console.log(`[Bot WhatsApp] 📩 [${remoteJid}] (${senderNombre}${esFromMe ? " [PROPIO]" : ""} / ${participantJid}${participantAlt ? ` / alt:${participantAlt}` : ""}): "${textoLimpio}"`);
 
     // Obtener Sala vinculada usando caché ultra-rápido en memoria (0ms)
     const sala = await obtenerSalaPorGroupJid(remoteJid);
@@ -838,7 +863,7 @@ async function manejarMensajeEntrante(msg) {
     // Detección de LLEGADA: A.B.C.D.E (con o sin '!')
     const matchLlegada = textoLimpio.match(/^(?:!)?(?:llegada|sentenciar|pizarra)\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
     if (matchLlegada) {
-      const esOp = await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado);
+      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
       if (!esOp) {
         console.warn(`[Bot WhatsApp] ⛔ Comando sentenciar rechazado: ${participantJid} no es operador.`);
         await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para sentenciar o publicar resultados oficiales.");
@@ -852,7 +877,7 @@ async function manejarMensajeEntrante(msg) {
     // Detección de Apertura: !abrir [hipodromo] [carrera] o "abrir [hipodromo] [carrera]"
     const matchAbrir = textoLimpio.match(/^(?:!)?(?:abrir|abierta|abrir\s+carrera)\s*(.+?)?(?:\s+(?:c(?:arrera)?\s*)?(\d{1,2}))?$/i);
     if (matchAbrir && (/^(?:!)?abrir/i.test(textoLimpio) || /^(?:!)?abierta/i.test(textoLimpio))) {
-      const esOp = await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado);
+      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
       if (!esOp) {
         console.warn(`[Bot WhatsApp] ⛔ Comando abrir rechazado: ${participantJid} no es operador.`);
         await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para abrir carreras en la sala.");
@@ -867,7 +892,7 @@ async function manejarMensajeEntrante(msg) {
 
     // Detección de Cierre: !cerrar o "cerrada"
     if (/^(?:!)?(?:cerrar|cerrada|no va mas|no va más|carrera cerrada)$/i.test(textoLimpio)) {
-      const esOp = await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado);
+      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
       if (!esOp) {
         console.warn(`[Bot WhatsApp] ⛔ Comando cerrar rechazado: ${participantJid} no es operador.`);
         await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para cerrar carreras en la sala.");
@@ -891,7 +916,7 @@ async function manejarMensajeEntrante(msg) {
       const resto = partes.slice(1).join(" ").trim();
 
       if (cmd === "anular" || cmd === "retirar") {
-        const esOp = await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado);
+        const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
         if (!esOp) {
           console.warn(`[Bot WhatsApp] ⛔ Comando ${cmd} rechazado: ${participantJid} no es operador.`);
           await enviarMensajePrivado(participantJid, `⚠️ No está autorizado para ejecutar el comando !${cmd}.`);
@@ -1005,6 +1030,7 @@ async function manejarMensajeEntrante(msg) {
         participantJid,
         senderNombre: senderNombre || cliente?.seudonimo || cliente?.nombre || "Jugador",
         clientePreviamenteIdentificado: cliente || null,
+        esMensajePropioTelefono: esFromMe,
         texto: textoLimpio,
         whatsappMsgId,
         quotedMsgId: quotedMsgId || null,
@@ -1022,7 +1048,7 @@ async function manejarMensajeEntrante(msg) {
       envios.push(
         sock.sendMessage(remoteJid, {
           react: { text: data.reaccionEmoji, key: msg.key },
-        }).catch((errReact) => console.warn("[Bot WhatsApp] Aviso enviando reacción:", errReact?.message || errReact))
+        }).then(registrarMensajeEnviadoPorBot).catch((errReact) => console.warn("[Bot WhatsApp] Aviso enviando reacción:", errReact?.message || errReact))
       );
     }
 
