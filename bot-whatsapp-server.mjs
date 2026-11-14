@@ -5,6 +5,11 @@
 // ============================================================================
 
 import http from "node:http";
+import WebSocket from "ws";
+
+if (typeof globalThis.WebSocket === "undefined") {
+  globalThis.WebSocket = WebSocket;
+}
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
