@@ -691,6 +691,8 @@ async function liquidarCarreraFallback(
     }
   };
 
+  const listaJugadas: string[] = [];
+
   // 3. Evaluar cada ticket con evaluar_jugada_universal
   for (const t of tickets || []) {
     registrarJugador(t.proponente_id, t.proponente_nombre);
@@ -736,6 +738,19 @@ async function liquidarCarreraFallback(
       .from("chat_tickets_fifo")
       .update({ estado: nuevoEstadoTicket })
       .eq("id", t.id);
+
+    const descJugada = t.es_match
+      ? `Match ${(t.caballos_bando_a || []).join(",")} vs ${(t.caballos_bando_b || []).join(",")}`
+      : `${t.accion_proponente || "JUEGA"} #${t.ejemplar_numero || (t.caballos_bando_a || [])[0] || "?"} (${t.modalidad || "1P"})`;
+    const ganadorTag =
+      nuevoEstadoTicket === "GANADOR_PROPONENTE"
+        ? ` 🏆 ${t.proponente_nombre}`
+        : nuevoEstadoTicket === "GANADOR_ACEPTANTE"
+          ? ` 🏆 ${t.aceptante_nombre}`
+          : " 🤝 Empate";
+    listaJugadas.push(
+      `• ${t.proponente_nombre} vs ${t.aceptante_nombre} | ${descJugada} | ${prefijoReporte}${formatearMontoRegional(monto)}${ganadorTag}`
+    );
 
     await actualizarTicketEspejoLiquidado(supabaseAdmin, {
       codigoTicket: t.codigo_ticket,
@@ -846,9 +861,11 @@ async function liquidarCarreraFallback(
   const mensajeReporte =
     `🏁 *RESULTADOS OFICIALES ${hipodromo.toUpperCase()} - C${numCarrera}*\n` +
     `Pizarra: ${pizarraTexto}\n\n` +
+    `📋 *TODAS LAS JUGADAS (${listaJugadas.length}):*\n` +
+    (listaJugadas.length > 0 ? `${listaJugadas.join("\n")}\n\n` : "Sin jugadas casadas en esta carrera.\n\n") +
     `💬 *Relación de resultados — ${hipodromo.toUpperCase()} C${numCarrera}*\n` +
-    (reportePositivos.length > 0 ? `${reportePositivos.join("\n")}\n` : "") +
-    (reporteNegativos.length > 0 ? `${reporteNegativos.join("\n")}\n` : "") +
+    (reportePositivos.length > 0 ? `📈 *POSITIVOS (+):*\n${reportePositivos.join("\n")}\n\n` : "") +
+    (reporteNegativos.length > 0 ? `📉 *NEGATIVOS (-):*\n${reporteNegativos.join("\n")}\n` : "") +
     (reportePositivos.length === 0 && reporteNegativos.length === 0 ? "Sin movimientos en esta carrera.\n" : "") +
     `\n👉 ¿Cuál es la próxima carrera a abrir?`;
 
@@ -861,6 +878,8 @@ async function liquidarCarreraFallback(
     contenido: mensajeReporte,
     solo_borrable_operador: true,
   });
+
+  void publicarEnWhatsAppSala(salaId, mensajeReporte);
 
   await emitirBroadcast(salaId, "carrera_liquidada", { salaId, mensajeReporte });
 

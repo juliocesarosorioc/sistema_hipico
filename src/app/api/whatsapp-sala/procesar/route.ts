@@ -1003,10 +1003,45 @@ export async function POST(req: Request) {
           .eq("id", sala.id);
       }
 
+      let qJugadas = supabaseAdmin
+        .from("chat_tickets_fifo")
+        .select("*")
+        .eq("sala_id", sala.id)
+        .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO", "GANADOR_PROPONENTE", "GANADOR_ACEPTANTE", "EMPATE"])
+        .order("created_at", { ascending: true });
+      if (carreraId) {
+        qJugadas = qJugadas.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+      }
+      const { data: jugadasCarrera } = await qJugadas;
+      const listaJugadas = jugadasCarrera || [];
+      const bloqueJugadas =
+        listaJugadas.length > 0
+          ? listaJugadas
+              .map((t: any, idx: number) => {
+                const detalle = t.es_match
+                  ? `Match ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`
+                  : `${t.modalidad || "1P"} #${t.ejemplar_numero || (t.caballos_bando_a || []).join("-")}`;
+                const montoStr = `$${formatearMontoRegional(Number(t.monto_concretado || 0))}`;
+                const estadoEmoji =
+                  t.estado === "GANADOR_PROPONENTE"
+                    ? `✅ Gana ${t.proponente_nombre}`
+                    : t.estado === "GANADOR_ACEPTANTE"
+                    ? `✅ Gana ${t.aceptante_nombre}`
+                    : t.estado === "EMPATE"
+                    ? "🤝 Empate"
+                    : "";
+                return `${idx + 1}) *${t.proponente_nombre}* vs *${t.aceptante_nombre}* · ${detalle} · *${montoStr}*${estadoEmoji ? ` (${estadoEmoji})` : ""}`;
+              })
+              .join("\n")
+          : "_Sin jugadas concretadas en esta carrera._";
+
       const pizarraFormateada = numeros.map((n, i) => `${i + 1}º: #${n}`).join(" · ");
       const textoResultado =
         `🏁 *SENTENCIA OFICIAL — ${hipodromo} C${numCarrera}*\n` +
         `📊 *Pizarra Oficial:* ${pizarraFormateada}\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📋 *TODAS LAS JUGADAS (${listaJugadas.length}):*\n` +
+        `${bloqueJugadas}\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
         `📈 *POSITIVOS (+):*\n` +
         `${positivos.length > 0 ? positivos.join("\n") : "_Sin saldos positivos en esta carrera_"}\n\n` +
