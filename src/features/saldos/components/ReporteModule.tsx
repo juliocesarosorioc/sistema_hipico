@@ -21,7 +21,7 @@ import {
 } from "@/features/liquidacion/lib/reporte-carrera";
 import { cicloSemanalDe, etiquetaDia, rangoSemanaDeGrupo } from "@/features/liquidacion/lib/semana";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
-import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
+import { grupoActivoVigente, grupoVigente, veTodosLosGruposVigente } from "@/features/seguridad/lib/vigente";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/components/ModalPagoAGanadorYConciliacion";
 import { ModalCobroYValidacionCliente } from "@/features/contabilidad/components/ModalCobroYValidacionCliente";
@@ -239,10 +239,18 @@ export function ReporteModule() {
     listarGruposAdmin(true)
       .then((gs) => {
         setGrupos(gs);
-        const activo = grupoActivoVigente();
-        const elegido = (activo && gs.find((g) => String(g.id) === String(activo))) || null;
-        const principal = elegido ?? gs.find((g) => g.es_principal) ?? gs[0];
+        const idEfectivo = veTodosLosGruposVigente()
+          ? grupoActivoVigente() || grupoVigente()
+          : grupoVigente() || grupoActivoVigente();
+        const elegido =
+          (idEfectivo ? gs.find((g) => String(g.id) === String(idEfectivo)) : null) ??
+          (idEfectivo ? null : null);
+        const principal =
+          elegido ??
+          gs.find((g) => g.es_principal) ??
+          gs[0];
         if (principal?.id != null) setGrupoId(String(principal.id));
+        else if (idEfectivo) setGrupoId(String(idEfectivo));
       })
       .catch(() => setGrupos([]));
   }, []);
@@ -1058,17 +1066,9 @@ export function ReporteModule() {
             <span className="text-blue-200 text-xs animate-pulse">cargando…</span>
           )}
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <select
-              value={grupoId}
-              onChange={(e) => setGrupoId(e.target.value)}
-              className="rounded border border-blue-700 bg-blue-900 px-2 py-1 text-sm text-white"
-            >
-              {grupos.map((g) => (
-                <option key={String(g.id)} value={String(g.id)}>
-                  {g.nombre ?? "Grupo"}
-                </option>
-              ))}
-            </select>
+            <span className="rounded border border-blue-700 bg-blue-900 px-2 py-1 text-sm text-white">
+              {grupos.find((g) => String(g.id) === String(grupoId))?.nombre ?? "Grupo activo"}
+            </span>
             <DateInput
               value={desde}
               onFechaChange={(val) => setDesde(val)}
