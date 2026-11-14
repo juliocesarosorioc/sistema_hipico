@@ -202,6 +202,26 @@ export default function SalaJuegosWhatsApp({
 
   const salaActiva = salas.find((s) => s.id === salaSeleccionadaId) || salas[0];
   const mensajesSala = mensajesPorSala[salaActiva?.id] || [];
+  const [gruposWaPorSala, setGruposWaPorSala] = useState<Record<string, Array<{ id?: string; whatsapp_group_jid: string; whatsapp_group_nombre?: string | null }>>>({});
+
+  useEffect(() => {
+    if (!salaActiva?.id) return;
+    let vivo = true;
+    fetch(`/api/whatsapp-sala/salas-grupos?salaId=${encodeURIComponent(salaActiva.id)}`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (!vivo || !json?.ok || !Array.isArray(json.salas)) return;
+        const found = json.salas.find((s: any) => s.id === salaActiva.id);
+        if (found) {
+          setGruposWaPorSala((prev) => ({
+            ...prev,
+            [salaActiva.id]: Array.isArray(found.grupos_whatsapp) ? found.grupos_whatsapp : [],
+          }));
+        }
+      })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, [salaActiva?.id]);
 
   const agregarMensajeLocal = (salaId: string, nuevoMsg: any) => {
     setMensajesPorSala((prev) => ({
@@ -233,6 +253,7 @@ export default function SalaJuegosWhatsApp({
       accionProponente: m?.accion_proponente,
       estadoPropuesta: m?.estado_propuesta,
       whatsapp_msg_id: m?.whatsapp_msg_id,
+      whatsapp_group_nombre: m?.whatsapp_group_nombre,
       firmaSha256: m?.firma_sha256 ? String(m.firma_sha256).slice(0, 12) : undefined,
       propuestaCitada: m?.reply_to_msg_id
         ? { remitente: 'Mensaje citado', contenido: String(m.reply_to_msg_id).slice(0, 8) }
@@ -319,6 +340,7 @@ export default function SalaJuegosWhatsApp({
             ...payload.new,
             ...mapearMensajeServidor(payload.new),
             whatsapp_msg_id: payload.new.whatsapp_msg_id,
+            whatsapp_group_nombre: payload.new.whatsapp_group_nombre,
           };
           setMensajesPorSala((prev) => {
             const actuales = prev[salaActiva.id] || [];
@@ -503,6 +525,28 @@ export default function SalaJuegosWhatsApp({
 
     // 2.A CASO CONCRECIÓN: Si hay una propuesta citada en replyToPropuesta
     if (replyToPropuesta) {
+      if (!usuarioActual?.id || !usuarioActual.id.trim()) {
+        setSugerenciaPedagogica({
+          mensaje: '🚫 Jugador no registrado en este grupo',
+          opciones: [],
+        });
+        return;
+      }
+
+      if (Number(usuarioActual.saldoDisponible) <= 0) {
+        agregarMensajeLocal(salaActiva.id, {
+          remitente: '🤖 ASISTENTE DE SALA',
+          esBot: true,
+          tipo: 'alerta_saldo',
+          contenido: `*Nada Aquí* — ${usuarioActual.nombre} no posee saldo disponible ($0,00)`,
+        });
+        setSugerenciaPedagogica({
+          mensaje: '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo',
+          opciones: [],
+        });
+        return;
+      }
+
       const accionPropuesta = replyToPropuesta.accionProponente || (replyToPropuesta.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE');
       const remanenteDisponible = Number(replyToPropuesta.montoDisponible ?? replyToPropuesta.monto ?? 0);
 
@@ -702,6 +746,28 @@ export default function SalaJuegosWhatsApp({
     const cifrado = await cifrarMensajeSala(textoFinalAPublicar, grupoId);
 
     if (analisis.esIntencionDeJugada) {
+      if (!usuarioActual?.id || !usuarioActual.id.trim()) {
+        setSugerenciaPedagogica({
+          mensaje: '🚫 Jugador no registrado en este grupo',
+          opciones: [],
+        });
+        return;
+      }
+
+      if (Number(usuarioActual.saldoDisponible) <= 0) {
+        agregarMensajeLocal(salaActiva.id, {
+          remitente: '🤖 ASISTENTE DE SALA',
+          esBot: true,
+          tipo: 'alerta_saldo',
+          contenido: `*Nada Aquí* — ${usuarioActual.nombre} no posee saldo disponible ($0,00)`,
+        });
+        setSugerenciaPedagogica({
+          mensaje: '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo',
+          opciones: [],
+        });
+        return;
+      }
+
       let propId = crypto.randomUUID();
       let montoPublicado = analisis.monto;
       let excedio = Boolean(analisis.excedioSaldo);
@@ -876,7 +942,9 @@ export default function SalaJuegosWhatsApp({
                   <span className={`font-semibold ${esMio ? 'text-emerald-200' : 'text-emerald-400'}`}>
                     {esMio ? 'Tú' : m.remitente}
                     {m.whatsapp_msg_id && (
-                      <span className="ml-1 text-[10px] text-emerald-400 font-semibold">🟩 WA</span>
+                      <span className="ml-1 text-[10px] text-emerald-400 font-semibold">
+                        🟩 WA{m.whatsapp_group_nombre ? ` · ${m.whatsapp_group_nombre}` : ''}
+                      </span>
                     )}
                   </span>
                   <span className="text-[10px] text-gray-400">
@@ -1078,6 +1146,14 @@ export default function SalaJuegosWhatsApp({
             ← Salir a la Plataforma
           </button>
           <span className="font-bold text-white text-sm">{grupoNombre}</span>
+          {(gruposWaPorSala[salaActiva?.id || ''] || []).map((gw) => (
+            <span
+              key={gw.id || gw.whatsapp_group_jid}
+              className="rounded-full bg-emerald-950/70 border border-emerald-400/50 px-2 py-0.5 text-[10px] font-bold text-emerald-200"
+            >
+              🟢 {gw.whatsapp_group_nombre || gw.whatsapp_group_jid}
+            </span>
+          ))}
           <div className="flex bg-[#016b58] rounded-lg p-0.5">
             {salas.map((s) => (
               <button

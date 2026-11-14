@@ -252,6 +252,8 @@ export interface AsientoContableRegistrado {
 
 /** Memoria volátil para ejecución sin conexión o pruebas */
 const ASIENTOS_MEMORIA: AsientoContableRegistrado[] = [];
+const CLAVES_NIIF_INTENTADAS = new Set<string>();
+let niifRpcBloqueadaPorPermiso = false;
 
 // ============================================================================
 // MOTOR CENTRAL DE PARTIDA DOBLE
@@ -327,33 +329,49 @@ export async function generarAsientoPartidaDoble(
   let asientoId = `mem-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   let numeroAsiento = ASIENTOS_MEMORIA.length + 1;
 
-  if (supabase) {
+  if (supabase && !niifRpcBloqueadaPorPermiso) {
     try {
       const claveNiif =
         param.clave_idempotencia ||
         param.referencia_id ||
         `AS:${param.tipo_evento}:${fecha}:${asientoId}`;
-      const { data: dNiif, error: errNiif } = await supabase.rpc("rpc_registrar_asiento_niif", {
-        p_clave: claveNiif,
-        p_fecha: fecha,
-        p_concepto: param.descripcion,
-        p_moneda_operacion: "USD",
-        p_moneda_presentacion: "USD",
-        p_tasa_cambio: 1,
-        p_lineas: lineasNormalizadas
-          .filter((l) => l.debe > 0 || l.haber > 0)
-          .map((l) => ({
-            cuenta: l.cuenta_codigo,
-            nombre_cuenta: l.cuenta_nombre || obtenerCuentaPorCodigo(l.cuenta_codigo)?.nombre || "",
-            debe: l.debe,
-            haber: l.haber,
-          })),
-        p_es_contra_asiento: param.tipo_evento === "REVERSION_LIQUIDACION",
-        p_asiento_origen: null,
-        p_usuario: param.creado_por || "sistema",
-      });
-      if (!errNiif && dNiif && dNiif.id) {
-        asientoId = String(dNiif.id);
+      if (!CLAVES_NIIF_INTENTADAS.has(claveNiif)) {
+        CLAVES_NIIF_INTENTADAS.add(claveNiif);
+        const { data: dNiif, error: errNiif } = await supabase.rpc("rpc_registrar_asiento_niif", {
+          p_clave: claveNiif,
+          p_fecha: fecha,
+          p_concepto: param.descripcion,
+          p_moneda_operacion: "USD",
+          p_moneda_presentacion: "USD",
+          p_tasa_cambio: 1,
+          p_lineas: lineasNormalizadas
+            .filter((l) => l.debe > 0 || l.haber > 0)
+            .map((l) => ({
+              cuenta: l.cuenta_codigo,
+              nombre_cuenta: l.cuenta_nombre || obtenerCuentaPorCodigo(l.cuenta_codigo)?.nombre || "",
+              debe: l.debe,
+              haber: l.haber,
+            })),
+          p_es_contra_asiento: param.tipo_evento === "REVERSION_LIQUIDACION",
+          p_asiento_origen: null,
+          p_usuario: param.creado_por || "sistema",
+        });
+        if (errNiif) {
+          const msgErr = String(errNiif.message || "").toLowerCase();
+          const codeErr = String((errNiif as any).code || "");
+          if (
+            codeErr === "42501" ||
+            msgErr.includes("403") ||
+            msgErr.includes("permission") ||
+            msgErr.includes("forbidden") ||
+            msgErr.includes("not allowed") ||
+            msgErr.includes("unauthorized")
+          ) {
+            niifRpcBloqueadaPorPermiso = true;
+          }
+        } else if (dNiif && dNiif.id) {
+          asientoId = String(dNiif.id);
+        }
       }
     } catch {
       // Fallback a almacenamiento en memoria si Supabase no tiene la RPC NIIF

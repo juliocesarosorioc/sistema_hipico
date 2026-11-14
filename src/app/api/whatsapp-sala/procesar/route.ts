@@ -1087,14 +1087,41 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1. Buscar la Sala vinculada a este groupJid
-    const { data: sala } = await supabaseAdmin
-      .from("salas_juego")
-      .select("*")
-      .eq("whatsapp_group_jid", groupJid)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // 1. Buscar la Sala vinculada (por salaId explícito de multi-grupo, por salas_whatsapp_grupos, o por salas_juego.whatsapp_group_jid)
+    const salaIdBody = body.salaId ? String(body.salaId) : null;
+    const whatsappGroupNombre = body.whatsappGroupNombre ? String(body.whatsappGroupNombre) : null;
+    let sala: any = null;
+
+    if (salaIdBody) {
+      const { data: sPorId } = await supabaseAdmin
+        .from("salas_juego")
+        .select("*")
+        .eq("id", salaIdBody)
+        .maybeSingle();
+      sala = sPorId || null;
+    }
+    if (!sala) {
+      const { data: vinculo } = await supabaseAdmin
+        .from("salas_whatsapp_grupos")
+        .select("salas_juego(*)")
+        .eq("whatsapp_group_jid", groupJid)
+        .eq("activo", true)
+        .limit(1)
+        .maybeSingle();
+      if ((vinculo as any)?.salas_juego) {
+        sala = (vinculo as any).salas_juego;
+      }
+    }
+    if (!sala) {
+      const { data: sLegacy } = await supabaseAdmin
+        .from("salas_juego")
+        .select("*")
+        .eq("whatsapp_group_jid", groupJid)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      sala = sLegacy || null;
+    }
 
     if (!sala) {
       return NextResponse.json({
@@ -1126,6 +1153,8 @@ export async function POST(req: Request) {
             tipo_mensaje: "TEXTO",
             contenido: textoUsuarioLimpio,
             whatsapp_msg_id: body.whatsappMsgId || null,
+            whatsapp_group_jid: groupJid,
+            whatsapp_group_nombre: whatsappGroupNombre,
           });
           await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
         }
@@ -1138,18 +1167,26 @@ export async function POST(req: Request) {
       }
     }
 
-    // 2. Identificar al jugador en `public.clientes` (por caché, JID, teléfono o alias inteligente)
+    // 2. Identificar al jugador estrictamente en `public.clientes` del `grupo_id` de la sala (SIN pushName ni auto-creación)
     const telNormalizado = normalizarTelefono(participantJid);
-    let cliente: any = body.clientePreviamenteIdentificado || null;
+    let cliente: any =
+      body.clientePreviamenteIdentificado?.id &&
+      body.clientePreviamenteIdentificado?.grupo_id === grupoId
+        ? body.clientePreviamenteIdentificado
+        : null;
 
-    // A. Búsqueda exacta por JID o teléfono normalizado (priorizando cuentas activas con saldo)
+    // A. Búsqueda exacta por JID o teléfono normalizado dentro del grupo_id
     if (!cliente && (participantJid || telNormalizado)) {
+      const orConds = [];
+      if (participantJid) orConds.push(`whatsapp_jid.eq.${participantJid}`);
+      if (telNormalizado) orConds.push(`telefono_normalizado.eq.${telNormalizado}`);
       const { data: clPorJidOTel } = await supabaseAdmin
         .from("clientes")
         .select(
-          "id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
+          "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
         )
-        .or(`whatsapp_jid.eq.${participantJid},telefono_normalizado.eq.${telNormalizado}`)
+        .eq("grupo_id", grupoId)
+        .or(orConds.join(","))
         .order("saldo_actual", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -1159,14 +1196,15 @@ export async function POST(req: Request) {
       }
     }
 
-    // B. Búsqueda por sufijo numérico (últimos 8 y 7 dígitos de teléfono real, evitando LIDs)
+    // B. Búsqueda por sufijo numérico (últimos 8 dígitos de teléfono real, evitando LIDs) dentro del grupo_id
     if (!cliente && telNormalizado.length >= 7 && !participantJid.endsWith("@lid")) {
       const sufijo8 = telNormalizado.slice(-8);
       const { data: clPorSufijo } = await supabaseAdmin
         .from("clientes")
         .select(
-          "id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
+          "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
         )
+        .eq("grupo_id", grupoId)
         .ilike("telefono", `%${sufijo8}%`)
         .order("saldo_actual", { ascending: false })
         .limit(1)
@@ -1177,56 +1215,17 @@ export async function POST(req: Request) {
       }
     }
 
-    // C. Búsqueda flexible por Nombre / PushName / Seudónimo
-    const senderNombreLimpio = String(body.senderNombre || "").trim().replace(/[~_+*#]/g, "").trim();
-    if (!cliente && senderNombreLimpio && senderNombreLimpio.toLowerCase() !== "jugador") {
-      // 1. Probar nombre completo
-      const { data: clPorNombreCompleto } = await supabaseAdmin
-        .from("clientes")
-        .select(
-          "id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
-        )
-        .or(`nombre.ilike.%${senderNombreLimpio}%,seudonimo.ilike.%${senderNombreLimpio}%`)
-        .order("saldo_actual", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (clPorNombreCompleto) {
-        cliente = clPorNombreCompleto;
-      } else {
-        // 2. Probar tokens individuales (ej. "Every", "Alfonso", "Eddie")
-        const tokens = senderNombreLimpio.split(/\s+/).filter((t) => t.length >= 3);
-        for (const token of tokens) {
-          const { data: clPorToken } = await supabaseAdmin
-            .from("clientes")
-            .select(
-              "id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
-            )
-            .or(`nombre.ilike.%${token}%,seudonimo.ilike.%${token}%`)
-            .order("saldo_actual", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (clPorToken) {
-            cliente = clPorToken;
-            break;
-          }
-        }
-      }
-    }
-
-    const nombreJugador =
-      cliente?.seudonimo || cliente?.nombre || senderNombreLimpio || "Jugador";
-
-    // Si aún así no se encuentra y el usuario intentó enviar una jugada o concreción:
+    // Si no existe en public.clientes para ese grupo_id, rechazar de inmediato sin tocar la BD
     if (!cliente) {
       return NextResponse.json({
         ok: false,
         tipo: "SIN_REGISTRO",
-        respuestaGrupo: null,
-        mensajePrivadoAutor: `Hola ${nombreJugador}, para procesar tu jugada tu número de WhatsApp debe estar vinculado en el sistema. Contacta al administrador indicando tu nombre o seudónimo para activarte.`,
+        respuestaGrupo: "🚫 *Nada Aquí* — El usuario no está registrado en la nómina oficial del grupo.",
+        mensajePrivadoAutor: null,
       });
     }
+
+    const nombreJugador = cliente.seudonimo || cliente.nombre;
 
     // Vincular automáticamente el whatsapp_jid en la ficha del cliente para consultas instantáneas futuras
     const updatesCl: Record<string, any> = {};
@@ -1414,6 +1413,14 @@ export async function POST(req: Request) {
           .single();
 
         const saldoDispAceptante = calcularSaldoDisponible(aceptanteFresco || cliente);
+        if (Number(saldoDispAceptante) <= 0) {
+          return NextResponse.json({
+            ok: false,
+            tipo: "SIN_SALDO",
+            respuestaGrupo: `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`,
+            mensajePrivadoAutor: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
+          });
+        }
 
         const accionProp: "JUEGA" | "CONSIGUE" =
           String(propFresca.accion_proponente || "").toUpperCase() === "CONSIGUE" ||
@@ -1736,12 +1743,22 @@ export async function POST(req: Request) {
       });
     }
 
+    // Bloqueo estricto de jugadas sin saldo (saldo_disponible <= 0)
+    if (Number(saldoDisponible) <= 0) {
+      return NextResponse.json({
+        ok: false,
+        tipo: "EXCESO_SALDO",
+        respuestaGrupo: `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`,
+        mensajePrivadoAutor: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
+      });
+    }
+
     // Caso: Publicó jugada por encima de su saldo y tiene $0 disponible
     if (!analisis.valido && analisis.excedioSaldo) {
       return NextResponse.json({
         ok: false,
         tipo: "EXCESO_SALDO",
-        respuestaGrupo: `${nombreJugador} solo dispone de $${formatearMontoRegional(saldoDisponible)} para esta jugada.`,
+        respuestaGrupo: `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`,
         mensajePrivadoAutor: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
       });
     }
@@ -1839,6 +1856,8 @@ export async function POST(req: Request) {
         .from("chat_mensajes")
         .update({
           whatsapp_msg_id: whatsappMsgId,
+          whatsapp_group_jid: groupJid,
+          whatsapp_group_nombre: whatsappGroupNombre,
           origen_canal: "whatsapp",
         })
         .eq("id", propId);

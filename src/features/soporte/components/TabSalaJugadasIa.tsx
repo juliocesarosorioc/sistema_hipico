@@ -79,6 +79,7 @@ export function TabSalaJugadasIa({
 
   const [textoInput, setTextoInput] = useState("");
   const [mensajeRespondiendo, setMensajeRespondiendo] = useState<MensajeSalaWhatsApp | null>(null);
+  const [errorSeguridad, setErrorSeguridad] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -219,6 +220,20 @@ export function TabSalaJugadasIa({
     const texto = textoInput.trim();
     if (!texto) return;
 
+    if (!nombresReales.includes(jugadorActivo.trim().toUpperCase())) {
+      setErrorSeguridad("🚫 Jugador no registrado en este grupo");
+      return;
+    }
+
+    if (Number(saldoActual.disponible) <= 0) {
+      setErrorSeguridad(
+        `*Nada Aquí* — ${jugadorActivo} no posee saldo disponible ($0,00) — "Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
+      );
+      return;
+    }
+
+    setErrorSeguridad(null);
+
     let ref: ReferenciaRespuesta | null = null;
     if (mensajeRespondiendo) {
       ref = {
@@ -243,10 +258,14 @@ export function TabSalaJugadasIa({
   const handleAgregarJugador = () => {
     const n = nuevoJugadorNombre.trim().toUpperCase();
     if (!n) return;
+    if (!nombresReales.includes(n)) {
+      setErrorSeguridad("🚫 Jugador no registrado en este grupo");
+      return;
+    }
+    setErrorSeguridad(null);
     if (!listaJugadores.includes(n)) {
       setListaJugadores((prev) => [...prev, n]);
     }
-    asegurarSaldoJugador(estadoSala.saldos, n, 200);
     setJugadorActivo(n);
     setNuevoJugadorNombre("");
   };
@@ -357,6 +376,11 @@ export function TabSalaJugadasIa({
             </span>
           </div>
         </div>
+        {errorSeguridad && (
+          <div className="mt-1.5 rounded border border-rose-500/60 bg-rose-950/80 px-2.5 py-1 text-[11px] font-bold text-rose-200">
+            {errorSeguridad}
+          </div>
+        )}
       </div>
 
       {/* FEED DEL CHAT TIPO WHATSAPP */}

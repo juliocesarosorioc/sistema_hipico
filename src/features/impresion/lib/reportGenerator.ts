@@ -792,10 +792,10 @@ export function relacionResultados(
     .map((x) => [x.nombre, x.neto] as [string, number])
     .sort((a, b) => a[1] - b[1]);
 
-  const cierre: string[] = ["🟢 POSITIVOS (+)"];
+  const cierre: string[] = ["*RESULTADO*", "🟢 *POSITIVOS (+)*"];
   if (positivos.length === 0) cierre.push("—");
   else positivos.forEach(([nombre, valor], i) => cierre.push(`${i + 1}) ${nombre} +${fmtMonto(valor)}`));
-  cierre.push("🔴 NEGATIVOS (-)");
+  cierre.push("🔴 *NEGATIVOS (-)*");
   if (negativos.length === 0) cierre.push("—");
   else negativos.forEach(([nombre, valor], i) => cierre.push(`${i + 1}) ${nombre} -${fmtMonto(Math.abs(valor))}`));
 
@@ -811,10 +811,11 @@ export function relacionResultados(
   return [
     cabeceraCarrera(meta),
     "",
+    "*JUGADAS EN VIVO*",
     ...cuerpoEnVivo,
+    ...(cuerpoAdelantadas.length > 0 ? ["", "*JUGADAS ADELANTADAS*", ...cuerpoAdelantadas] : []),
     "",
     ...cierre,
-    ...(cuerpoAdelantadas.length > 0 ? ["", "JUGADAS ADELANTADAS", ...cuerpoAdelantadas] : []),
     "",
     pieEstricto(jugadas.length),
     ...notas,

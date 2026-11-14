@@ -22,6 +22,14 @@ interface SalaJuego {
   estado_carrera?: string;
   whatsapp_group_jid?: string | null;
   whatsapp_group_nombre?: string | null;
+  grupos_whatsapp?: Array<{
+    id?: string;
+    sala_id: string;
+    whatsapp_group_jid: string;
+    whatsapp_group_nombre?: string | null;
+    estado_conexion?: string;
+    motivo_estado?: string;
+  }>;
 }
 
 interface RespaldoSala {
@@ -126,6 +134,9 @@ export default function WhatsappPage() {
   const [carreraPorSala, setCarreraPorSala] = useState<Record<string, string>>({});
   const [procesandoAccion, setProcesandoAccion] = useState<string | null>(null);
   const [filtroGrupo, setFiltroGrupo] = useState("");
+  const [gruposSistema, setGruposSistema] = useState<Array<{ id: string; nombre: string }>>([]);
+  const [grupoFiltroId, setGrupoFiltroId] = useState<string>("");
+  const [vinculosPorSala, setVinculosPorSala] = useState<Record<string, NonNullable<SalaJuego["grupos_whatsapp"]>>>({});
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [pingPorSala, setPingPorSala] = useState<
     Record<string, { latenciaMs: number; conectado: boolean; participantes?: number; error?: string }>
@@ -207,11 +218,132 @@ export default function WhatsappPage() {
     }
   }, []);
 
+  const cargarSalasGrupos = useCallback(async (gId?: string) => {
+    try {
+      const targetGrupo = gId !== undefined ? gId : grupoFiltroId;
+      const qs = targetGrupo ? `?grupoId=${encodeURIComponent(targetGrupo)}` : "";
+      const res = await fetch(`/api/whatsapp-sala/salas-grupos${qs}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (Array.isArray(json.gruposSistema)) {
+        setGruposSistema(json.gruposSistema);
+        if (!grupoFiltroId && !gId && json.gruposSistema.length > 0) {
+          setGrupoFiltroId(json.gruposSistema[0].id);
+        }
+      }
+      if (Array.isArray(json.salas)) {
+        const mapa: Record<string, NonNullable<SalaJuego["grupos_whatsapp"]>> = {};
+        for (const s of json.salas) {
+          mapa[s.id] = Array.isArray(s.grupos_whatsapp) ? s.grupos_whatsapp : [];
+        }
+        setVinculosPorSala((prev) => ({ ...prev, ...mapa }));
+      }
+    } catch {
+      // No bloqueante
+    }
+  }, [grupoFiltroId]);
+
   useEffect(() => {
     consultarEstado(false);
-    const timer = setInterval(() => consultarEstado(true), 4000);
+    void cargarSalasGrupos();
+    const timer = setInterval(() => {
+      consultarEstado(true);
+      void cargarSalasGrupos();
+    }, 4000);
     return () => clearInterval(timer);
-  }, [consultarEstado]);
+  }, [consultarEstado, cargarSalasGrupos]);
+
+  const agregarSalaAlGrupo = async () => {
+    const gId = grupoFiltroId || salas[0]?.grupo_id || gruposSistema[0]?.id;
+    if (!gId) return;
+    setProcesandoAccion("crear-sala");
+    try {
+      const res = await fetch("/api/whatsapp-sala/salas-grupos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "crear-sala", grupoId: gId }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setFeedback({ tipo: "ok", texto: `✅ ${json.motivo || "Sala agregada"}` });
+        await Promise.all([consultarEstado(true), cargarSalasGrupos(gId)]);
+      } else {
+        setFeedback({ tipo: "error", texto: `❌ ${json.motivo || "No se pudo agregar la sala"}` });
+      }
+    } catch (e: any) {
+      setFeedback({ tipo: "error", texto: `❌ ${e?.message || "Error de red"}` });
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
+  const eliminarSalaDelGrupo = async (salaId: string) => {
+    setProcesandoAccion(`eliminar-sala-${salaId}`);
+    try {
+      const res = await fetch("/api/whatsapp-sala/salas-grupos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "eliminar-sala", salaId }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setFeedback({ tipo: "ok", texto: `✅ ${json.motivo || "Sala eliminada"}` });
+        await Promise.all([consultarEstado(true), cargarSalasGrupos()]);
+      } else {
+        setFeedback({ tipo: "error", texto: `❌ ${json.motivo || "No se pudo eliminar"}` });
+      }
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
+  const vincularMultiGrupo = async (sala: SalaJuego, groupJid: string) => {
+    if (!groupJid) return;
+    setProcesandoAccion(`vincular-multi-${sala.id}`);
+    try {
+      const res = await fetch("/api/whatsapp-sala/salas-grupos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accion: "verificar-y-vincular",
+          grupoId: sala.grupo_id || grupoFiltroId,
+          salaId: sala.id,
+          groupJid,
+        }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setFeedback({ tipo: "ok", texto: `✅ Conectado: ${json.motivo || "Conectado correctamente"}` });
+        await Promise.all([consultarEstado(true), cargarSalasGrupos()]);
+      } else {
+        setFeedback({ tipo: "error", texto: `❌ No se pudo conectar: ${json.motivo || "Error desconocido"}` });
+      }
+    } catch (e: any) {
+      setFeedback({ tipo: "error", texto: `❌ No se pudo conectar: ${e?.message || "Error de red"}` });
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
+  const desvincularMultiGrupo = async (vinculoId: string | undefined, salaId: string, groupJid: string) => {
+    setProcesandoAccion(`desvincular-multi-${salaId}-${groupJid}`);
+    try {
+      const res = await fetch("/api/whatsapp-sala/salas-grupos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "desvincular-grupo", id: vinculoId, salaId, groupJid }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setFeedback({ tipo: "ok", texto: `✅ Grupo desvinculado` });
+        await cargarSalasGrupos();
+      } else {
+        setFeedback({ tipo: "error", texto: `❌ ${json.motivo || "No se pudo desvincular"}` });
+      }
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
 
   const guardarRespaldo = useCallback((salaId: string, datos: RespaldoSala | null) => {
     setRespaldoLocal((prev) => {
@@ -845,19 +977,55 @@ export default function WhatsappPage() {
 
         {/* ---------- Columna: salas ---------- */}
         <div className="space-y-4 lg:col-span-2">
-          {salas.length === 0 ? (
+          {/* Selector de Grupo del Sistema + Agregar Sala (máx. 2 por grupo) */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-3">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="text-xs font-black text-slate-300 shrink-0">Grupo:</span>
+              <select
+                value={grupoFiltroId}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setGrupoFiltroId(val);
+                  void cargarSalasGrupos(val);
+                }}
+                className="min-w-0 flex-1 max-w-xs rounded-xl border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold text-white outline-none focus:border-emerald-500"
+              >
+                <option value="">Todos los grupos</option>
+                {gruposSistema.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {grupoFiltroId &&
+              salas.filter((s) => !grupoFiltroId || s.grupo_id === grupoFiltroId).length < 2 && (
+                <button
+                  type="button"
+                  onClick={() => void agregarSalaAlGrupo()}
+                  disabled={ocupado}
+                  className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-black text-white shadow transition hover:bg-emerald-500 disabled:opacity-40"
+                >
+                  {procesandoAccion === "crear-sala" ? "Creando…" : "+ Agregar Sala (máx. 2)"}
+                </button>
+              )}
+          </div>
+
+          {salas.filter((s) => !grupoFiltroId || s.grupo_id === grupoFiltroId).length === 0 ? (
             <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/60 p-10 text-center text-slate-400">
               <p className="text-2xl">🏇</p>
               <p className="mt-2 text-sm font-bold text-slate-200">
                 No hay salas de juego activas
               </p>
               <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed">
-                Crea o activa una sala desde el módulo de Salas para poder vincularle un grupo de
-                WhatsApp.
+                Crea o activa una sala desde el botón &quot;+ Agregar Sala&quot; para poder vincularle grupos de WhatsApp.
               </p>
             </div>
           ) : (
-            salas.map((sala, index) => {
+            salas
+              .filter((s) => !grupoFiltroId || s.grupo_id === grupoFiltroId)
+              .slice(0, grupoFiltroId ? 2 : undefined)
+              .map((sala, index) => {
               const respaldo = respaldoLocal[sala.id] || {};
               const jidActual = seleccionGrupoPorSala[sala.id] ?? sala.whatsapp_group_jid ?? "";
               const pizarraValor = pizarraPorSala[sala.id] ?? "";
@@ -910,6 +1078,15 @@ export default function WhatsappPage() {
                       >
                         📱 Sala WhatsApp
                       </a>
+                      <button
+                        type="button"
+                        onClick={() => void eliminarSalaDelGrupo(sala.id)}
+                        disabled={ocupado}
+                        className="rounded-full border border-rose-500/40 bg-rose-950/60 px-2.5 py-0.5 text-[10px] font-black text-rose-200 transition hover:bg-rose-900 disabled:opacity-40"
+                        title="Eliminar esta sala del grupo"
+                      >
+                        🗑️ Eliminar
+                      </button>
                       <span
                         className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${
                           abierta
@@ -1086,13 +1263,35 @@ export default function WhatsappPage() {
 
                       <button
                         type="button"
-                        onClick={() => vincularGrupoASala(sala, jidActual)}
+                        onClick={() => void vincularMultiGrupo(sala, jidActual)}
                         disabled={ocupado || !jidActual}
                         className="shrink-0 rounded-xl bg-emerald-600 px-4 py-2 text-[11px] font-black text-white shadow transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        {procesandoAccion === `vincular-${sala.id}` ? "Vinculando…" : "🔗 Vincular"}
+                        {procesandoAccion === `vincular-multi-${sala.id}` ? "Verificando…" : "🔗 Verificar y Agregar"}
                       </button>
                     </div>
+
+                    {(vinculosPorSala[sala.id] || []).length > 0 && (
+                      <div className="mt-2.5 flex flex-wrap gap-1.5">
+                        {(vinculosPorSala[sala.id] || []).map((v) => (
+                          <span
+                            key={v.id || v.whatsapp_group_jid}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-950/60 px-2.5 py-1 text-[10px] font-bold text-emerald-200"
+                          >
+                            <span>🟢 {v.whatsapp_group_nombre || v.whatsapp_group_jid}</span>
+                            <button
+                              type="button"
+                              onClick={() => void desvincularMultiGrupo(v.id, sala.id, v.whatsapp_group_jid)}
+                              disabled={ocupado}
+                              className="ml-0.5 rounded-full px-1 text-rose-300 hover:bg-rose-900/60 hover:text-white"
+                              title="Desvincular este grupo"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {status.grupos.length === 0 && (
                       <p className="mt-2 text-[10px] leading-relaxed text-amber-300/80">

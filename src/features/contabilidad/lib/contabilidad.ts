@@ -973,10 +973,17 @@ export function validarAsientoNIIF(asiento: AsientoNIIF): string[] {
  * NUNCA borra nada: un error se corrige con un contra-asiento
  * (`registrarContraAsientoNIIF`).
  */
+const CLAVES_NIIF_ERROR = new Set<string>();
+let niifRpcBloqueada = false;
+
 export async function registrarAsientoPartidaDobleNIIF(
   asiento: AsientoNIIF
 ): Promise<ResultadoAsientoNIIF> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  const claveNiif = String(asiento.clave ?? "").trim();
+  if (niifRpcBloqueada || (claveNiif && CLAVES_NIIF_ERROR.has(claveNiif))) {
+    return { ok: false, error: "Sincronización NIIF omitida por error previo o falta de permiso." };
+  }
 
   // 1) Validación ESTRICTA en el cliente. Se LANZA: el error es del dato
   //    armado, no del servidor, y el que llama tiene que enterarse ya.
@@ -1029,6 +1036,12 @@ export async function registrarAsientoPartidaDobleNIIF(
     p_usuario: asiento.usuario ?? null,
   });
   if (error) {
+    if (claveNiif) CLAVES_NIIF_ERROR.add(claveNiif);
+    const msg = String(error.message || "").toLowerCase();
+    const code = String((error as unknown as Record<string, unknown>).code ?? "");
+    if (code === "42501" || msg.includes("403") || msg.includes("permission") || msg.includes("forbidden")) {
+      niifRpcBloqueada = true;
+    }
     if (esRpcAusente(error)) return { ok: false, error: MENSAJE_SIN_RPC_NIIF };
     return { ok: false, error: error.message };
   }

@@ -20,11 +20,39 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify(body),
     });
 
-    return await procesarPOST(peticionInterna);
+    const resp = await procesarPOST(peticionInterna);
+    if (resp.status >= 500) {
+      const errData = await resp.json().catch(() => ({}));
+      return NextResponse.json(
+        {
+          ok: false,
+          conectado: false,
+          grupos: [],
+          motivo:
+            errData?.motivo ||
+            errData?.error ||
+            "Servicio Baileys (puerto 3005) apagado o iniciando",
+        },
+        { status: 200 }
+      );
+    }
+    return resp;
   } catch (err: any) {
+    const msg = String(err?.message || err?.cause?.code || "");
+    const esOffline =
+      msg.includes("ECONNREFUSED") ||
+      msg.includes("fetch failed") ||
+      msg.includes("3005");
     return NextResponse.json(
-      { ok: false, error: err?.message || "Error procesando acción administrativa" },
-      { status: 500 }
+      {
+        ok: false,
+        conectado: false,
+        grupos: [],
+        motivo: esOffline
+          ? "Servicio Baileys (puerto 3005) apagado o iniciando"
+          : msg || "Servicio Baileys (puerto 3005) apagado o iniciando",
+      },
+      { status: 200 }
     );
   }
 }
