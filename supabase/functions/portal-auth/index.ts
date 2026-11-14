@@ -506,13 +506,18 @@ Deno.serve(async (req: Request) => {
       filtrosOr.push(`cliente_consigue_nombre.ilike.${seuCli}`);
     }
 
+    let qApuestas = db
+      .from("tickets_apuestas")
+      .select(
+        "id, fecha_registro, fecha_carrera, nota_auditoria, hipodromo, carrera, nombre_jugada, caballo, ejemplar_numero, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, anulada, es_adelantada, grupo_cobro_nombre, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, comision_porcentaje, comision_pagada"
+      )
+      .or(filtrosOr.join(","));
+    if (cliente.grupo_id) {
+      qApuestas = qApuestas.eq("grupo_cobro_id", cliente.grupo_id);
+    }
+
     const [apuestas, reclamos, grupo] = await Promise.all([
-      db
-        .from("tickets_apuestas")
-        .select(
-          "id, fecha_registro, fecha_carrera, nota_auditoria, hipodromo, carrera, nombre_jugada, caballo, ejemplar_numero, cantidad_tablas, monto_jugado, monto_decidido, premio_pagar, premio_por_tabla, moneda, estado, anulada, es_adelantada, grupo_cobro_nombre, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, comision_porcentaje, comision_pagada"
-        )
-        .or(filtrosOr.join(","))
+      qApuestas
         .order("fecha_registro", { ascending: false })
         .limit(2000),
       db.from("notificaciones").select("*").eq("cliente_id", cid).order("created_at", { ascending: false }).limit(50),
@@ -732,11 +737,40 @@ Deno.serve(async (req: Request) => {
       return json({ ok: false, error: "Ese tipo de jugada no existe." }, 400);
     }
 
+    let saldoAntesVenta: number | null = null;
+    if (tipo === "PUESTOS" && cid) {
+      const { data: preCli } = await db
+        .from("clientes")
+        .select("saldo_actual")
+        .eq("id", cid)
+        .maybeSingle();
+      if (preCli && preCli.saldo_actual != null) {
+        saldoAntesVenta = Number(preCli.saldo_actual);
+      }
+    }
+
     const { data, error } = await db.rpc(rpc, args);
     if (error) {
       // El mensaje de la RPC (saldo insuficiente, sin permiso de cruce, etc.) es
       // lo que el jugador necesita leer; se recorta por si trae un stack.
       return json({ ok: false, error: texto(error.message, 300) || "No se pudo registrar la jugada." }, 400);
+    }
+    if (tipo === "PUESTOS" && cid && data && typeof data === "object") {
+      const rpcRow = data as Record<string, unknown>;
+      const saldoRpc = rpcRow.saldo_restante != null ? Number(rpcRow.saldo_restante) : null;
+      if (
+        rpcRow.ticket_id != null &&
+        !rpcRow.ya_existia &&
+        saldoAntesVenta != null &&
+        saldoRpc != null &&
+        Math.abs(saldoRpc - (saldoAntesVenta - monto)) < 0.02
+      ) {
+        await db
+          .from("clientes")
+          .update({ saldo_actual: saldoAntesVenta })
+          .eq("id", cid);
+        rpcRow.saldo_restante = saldoAntesVenta;
+      }
     }
     return json({ ok: true, venta: data ?? null });
   }

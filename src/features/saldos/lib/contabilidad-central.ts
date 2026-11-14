@@ -113,6 +113,10 @@ export function aplicarDevolucionIncentivoAFavor(
 
 export type TicketContableRaw = {
   id?: string | number;
+  grupo_cobro_id?: string | null;
+  grupo_comision_id?: string | null;
+  grupo_id?: string | null;
+  grupo?: string | null;
   cliente_juega_id?: string | number | null;
   cliente_juega_nombre?: string | null;
   cliente_consigue_id?: string | number | null;
@@ -267,7 +271,16 @@ export function calcularResumenContableCliente(params: {
   let jugadasEnVivoCount = 0;
   let jugadasAdelantadasCount = 0;
 
+  const grupoObjetivo = String(params.grupoId ?? "").trim();
+
   for (const t of tickets) {
+    if (grupoObjetivo) {
+      const tGrpRec = t as Record<string, unknown>;
+      const tGrupoId = String(
+        tGrpRec.grupo_cobro_id ?? tGrpRec.grupo_comision_id ?? tGrpRec.grupo_id ?? ""
+      ).trim();
+      if (tGrupoId && tGrupoId !== grupoObjetivo) continue;
+    }
     const jId = t.cliente_juega_id != null ? String(t.cliente_juega_id) : "";
     const jNom = normalizarNombreCliente(t.cliente_juega_nombre ?? t.jugador);
     const cId = t.cliente_consigue_id != null ? String(t.cliente_consigue_id) : "";
@@ -491,8 +504,12 @@ export function calcularResumenContableCliente(params: {
       const simList = abiertasPorCarrera.get(raceKey) ?? [];
       simList.push({
         id: t.id,
-        jugador: String(t.cliente_juega_nombre ?? t.jugador ?? (esJugador ? params.nombre : "")),
-        tercio: String(t.cliente_consigue_nombre ?? t.tercio ?? t.contraparte ?? (esDador ? params.nombre : "")),
+        jugador: esJugador
+          ? params.nombre
+          : String(t.cliente_juega_nombre ?? t.jugador ?? ""),
+        tercio: esDador
+          ? params.nombre
+          : String(t.cliente_consigue_nombre ?? t.tercio ?? t.contraparte ?? ""),
         jugada: String(t.nombre_jugada ?? t.jugada ?? "1P"),
         caballo: String(t.caballo ?? "1"),
         monto,
@@ -818,7 +835,7 @@ export async function sincronizarSaldosRealesClientes<
       const { data, error } = await supabase
         .from("tickets_apuestas")
         .select(
-          "id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, caballo, monto_jugado, premio_pagar, monto_decidido, comision_porcentaje, comision_pagada, estado, anulada, es_adelantada"
+          "id, grupo_cobro_id, grupo_comision_id, grupo, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, caballo, monto_jugado, premio_pagar, monto_decidido, comision_porcentaje, comision_pagada, estado, anulada, es_adelantada"
         )
         .order("id", { ascending: false })
         .limit(5000);
@@ -828,7 +845,7 @@ export async function sincronizarSaldosRealesClientes<
           const rMin = await supabase
             .from("tickets_apuestas")
             .select(
-              "id, cliente_juega_id, cliente_juega_nombre, monto_jugado, premio_pagar, estado, anulada"
+              "id, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, monto_jugado, premio_pagar, estado, anulada"
             )
             .order("id", { ascending: false })
             .limit(5000);

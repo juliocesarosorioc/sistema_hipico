@@ -203,6 +203,22 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     }
   }
 
+  let saldoAntesVenta: number | null = null;
+  if (v.clienteId) {
+    try {
+      const { data: preCli } = await supabase
+        .from("clientes")
+        .select("saldo_actual")
+        .eq("id", v.clienteId)
+        .maybeSingle();
+      if (preCli && preCli.saldo_actual != null) {
+        saldoAntesVenta = Number(preCli.saldo_actual);
+      }
+    } catch {
+      // ignorar error de lectura previa
+    }
+  }
+
   const { data, error } = await supabase.rpc("club_vender_jugada", {
     p_hipodromo: String(v.hipodromo ?? "").trim().toUpperCase(),
     p_fecha: v.fecha,
@@ -265,25 +281,24 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
   const riesgoDador =
     dadorFinal && !esDadorSistema ? calcularRiesgoCliente2(montoNum, String(v.jugada ?? "")) : 0;
 
-  // Descontar saldo del jugador que consigue en base de datos si es un cliente real del grupo
-  const idDadorEfectivo = v.clienteDadorId || dadorCliData?.id;
-  if (idDadorEfectivo && riesgoDador > 0 && r.ticket_id != null) {
+  // El saldo_actual almacena el saldo liquidado (cerrado); las jugadas Pendientes
+  // descuentan disponibilidad via riesgoEnCurso sin rebajar doble en saldo_actual.
+  if (r.ticket_id != null && !r.ya_existia && v.clienteId && montoNum > 0) {
     try {
-      const { data: dadorRow } = await supabase
-        .from("clientes")
-        .select("saldo_actual")
-        .eq("id", idDadorEfectivo)
-        .maybeSingle();
-      if (dadorRow) {
-        const saldoPrevio = Number(dadorRow.saldo_actual ?? 0);
-        const nuevoSaldo = Math.round((saldoPrevio - riesgoDador) * 100) / 100;
+      const saldoRpc = r.saldo_restante != null ? Number(r.saldo_restante) : null;
+      const rpcDesconto =
+        saldoAntesVenta != null &&
+        saldoRpc != null &&
+        Math.abs(saldoRpc - (saldoAntesVenta - montoNum)) < 0.02;
+      if (rpcDesconto && saldoAntesVenta != null) {
         await supabase
           .from("clientes")
-          .update({ saldo_actual: nuevoSaldo })
-          .eq("id", idDadorEfectivo);
+          .update({ saldo_actual: saldoAntesVenta })
+          .eq("id", v.clienteId);
+        r.saldo_restante = saldoAntesVenta;
       }
     } catch (e) {
-      console.warn("No se pudo descontar saldo de jugador que consigue en BD:", e);
+      console.warn("No se pudo preservar saldo liquidado tras registro pendiente:", e);
     }
   }
 
@@ -317,6 +332,35 @@ export async function anularJugada(
   usuario?: string | null
 ): Promise<{ ok: boolean; devuelto?: number; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  let preClienteJuegaId: string | null = null;
+  let saldoAntesAnular: number | null = null;
+  try {
+    const { data: preTk } = await supabase
+      .from("tickets_apuestas")
+      .select("cliente_juega_id, estado, anulada")
+      .eq("id", ticketId)
+      .maybeSingle();
+    const estPre = String(preTk?.estado ?? "").trim().toUpperCase();
+    if (
+      preTk &&
+      !preTk.anulada &&
+      preTk.cliente_juega_id &&
+      (estPre === "PENDIENTE" || estPre === "ACTIVA" || estPre === "ABIERTA" || estPre === "")
+    ) {
+      preClienteJuegaId = String(preTk.cliente_juega_id);
+      const { data: preCli } = await supabase
+        .from("clientes")
+        .select("saldo_actual")
+        .eq("id", preClienteJuegaId)
+        .maybeSingle();
+      if (preCli && preCli.saldo_actual != null) {
+        saldoAntesAnular = Number(preCli.saldo_actual);
+      }
+    }
+  } catch {
+    // ignorar fallo de lectura previa
+  }
+
   const { data, error } = await supabase.rpc("club_anular_jugada", {
     p_ticket_id: ticketId,
     p_usuario: usuario ?? null,
@@ -327,48 +371,16 @@ export async function anularJugada(
     return { ok: false, error: /club_anular_jugada|not found|404/i.test(texto) ? MENSAJE_SIN_RPC : texto };
   }
   const r = (data ?? {}) as Record<string, unknown>;
-  // Reintegrar también el saldo del jugador que consigue si la jugada tenía contraparte real
-  try {
-    const { data: tkData } = await supabase
-      .from("tickets_apuestas")
-      .select("cliente_consigue_id, cliente_consigue_nombre, monto_jugado, nombre_jugada")
-      .eq("id", ticketId)
-      .maybeSingle();
-    if (tkData && (tkData.cliente_consigue_id || tkData.cliente_consigue_nombre)) {
-      const nomDador = String(tkData.cliente_consigue_nombre ?? "").trim().toUpperCase();
-      const esSistema = (USUARIOS_SISTEMA_MODALIDADES as readonly string[]).includes(nomDador);
-      if (!esSistema) {
-        const riesgoConsigue = calcularRiesgoCliente2(Number(tkData.monto_jugado ?? 0), String(tkData.nombre_jugada ?? ""));
-        if (riesgoConsigue > 0) {
-          let idConsigue = tkData.cliente_consigue_id;
-          if (!idConsigue && nomDador) {
-            const { data: cRow } = await supabase
-              .from("clientes")
-              .select("id")
-              .or(`nombre.ilike.${nomDador},seudonimo.ilike.${nomDador}`)
-              .limit(1)
-              .maybeSingle();
-            idConsigue = cRow?.id;
-          }
-          if (idConsigue) {
-            const { data: cData } = await supabase
-              .from("clientes")
-              .select("saldo_actual")
-              .eq("id", idConsigue)
-              .maybeSingle();
-            if (cData) {
-              const saldoActual = Number(cData.saldo_actual ?? 0);
-              await supabase
-                .from("clientes")
-                .update({ saldo_actual: Math.round((saldoActual + riesgoConsigue) * 100) / 100 })
-                .eq("id", idConsigue);
-            }
-          }
-        }
-      }
+  // Un ticket Pendiente no habia rebajado saldo_actual: mantener saldo_actual sin inflar.
+  if (!r.ya_anulada && preClienteJuegaId && saldoAntesAnular != null) {
+    try {
+      await supabase
+        .from("clientes")
+        .update({ saldo_actual: saldoAntesAnular })
+        .eq("id", preClienteJuegaId);
+    } catch (e) {
+      console.warn("No se pudo preservar saldo liquidado al anular ticket pendiente:", e);
     }
-  } catch (e) {
-    console.warn("No se pudo restaurar saldo de jugador que consigue al anular:", e);
   }
 
   limpiarCacheClientes();

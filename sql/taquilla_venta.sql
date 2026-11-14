@@ -189,10 +189,9 @@ begin
     );
     v_comision := coalesce(p_comision, v_grupo.comision_default, 0);
 
-    -- Riesgo descontado ANTES de crear el ticket, en la misma transaccion.
-    update public.clientes
-       set saldo_actual = v_saldo - p_monto
-     where id = p_cliente_id;
+    -- El saldo_actual almacena el saldo liquidado (cerrado); el riesgo de
+    -- jugadas Pendientes se controla via riesgoEnCurso al evaluar disponible.
+    v_saldo := coalesce(v_saldo, 0);
 
     insert into public.tickets_apuestas (
         fecha_registro, hipodromo, carrera, nombre_jugada, caballo, ejemplar_numero,
@@ -238,7 +237,7 @@ begin
     return jsonb_build_object(
         'ok',             true,
         'ticket_id',      v_ins.id,
-        'saldo_restante', v_saldo - p_monto
+        'saldo_restante', v_saldo
     );
 
     exception
@@ -291,13 +290,9 @@ begin
         raise exception 'No se puede anular el ticket %: su estado es %.', p_ticket_id, v_tk.estado;
     end if;
 
-    -- Devolucion exacta del saldo que se desconto en la venta.
-    if v_tk.cliente_juega_id is not null and coalesce(v_tk.monto_jugado, 0) > 0 then
-        select saldo_actual into v_saldo from public.clientes where id = v_tk.cliente_juega_id for update;
-        update public.clientes
-           set saldo_actual = coalesce(v_saldo, 0) + v_tk.monto_jugado
-         where id = v_tk.cliente_juega_id;
-    end if;
+    -- Las jugadas Pendientes no rebajan saldo_actual (solo bloquean riesgoEnCurso);
+    -- por lo tanto, anularlas libera el riesgo sin sumar monto_jugado a saldo_actual.
+    v_saldo := null;
 
     update public.tickets_apuestas
        set estado          = 'Anulado',

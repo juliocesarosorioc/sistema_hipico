@@ -613,12 +613,31 @@ export async function aplicarLiquidacionSaldos(
   }
   if (nombresSinId.size > 0) {
     try {
-      const { data: cliCatalogo } = await sdb
+      let qCatalogo = sdb
         .from("clientes")
         .select("id, nombre, seudonimo, grupo_id")
         .limit(2000);
+      if (grupoFiltro) {
+        qCatalogo = qCatalogo.eq("grupo_id", grupoFiltro);
+      }
+      const { data: cliCatalogo } = await qCatalogo;
       if (Array.isArray(cliCatalogo) && cliCatalogo.length > 0) {
-        const porIdentidad = new Map<string, { id: string; alias: string; grupoId?: string }>();
+        const porGrupoIdentidad = new Map<string, { id: string; alias: string; grupoId?: string }>();
+        const porIdentidadUnico = new Map<string, { id: string; alias: string; grupoId?: string } | null>();
+        const registrar = (claveNom: string, item: { id: string; alias: string; grupoId?: string }) => {
+          const nomNorm = claveNom.toUpperCase();
+          if (item.grupoId) {
+            porGrupoIdentidad.set(`${item.grupoId.toUpperCase()}::${nomNorm}`, item);
+          }
+          if (!porIdentidadUnico.has(nomNorm)) {
+            porIdentidadUnico.set(nomNorm, item);
+          } else {
+            const prev = porIdentidadUnico.get(nomNorm);
+            if (prev && prev.id !== item.id) {
+              porIdentidadUnico.set(nomNorm, null);
+            }
+          }
+        };
         for (const c of cliCatalogo as Array<Record<string, unknown>>) {
           const id = String(c.id ?? "").trim();
           if (!id) continue;
@@ -626,22 +645,33 @@ export async function aplicarLiquidacionSaldos(
           const seu = String(c.seudonimo ?? "").trim();
           const alias = seu || nom;
           const gId = c.grupo_id ? String(c.grupo_id).trim() : undefined;
-          if (nom) porIdentidad.set(nom.toUpperCase(), { id, alias, grupoId: gId });
-          if (seu) porIdentidad.set(seu.toUpperCase(), { id, alias, grupoId: gId });
+          if (nom) registrar(nom, { id, alias, grupoId: gId });
+          if (seu) registrar(seu, { id, alias, grupoId: gId });
         }
+        const resolverIdentidad = (nombre: string, grupoTicket: string) => {
+          const nomNorm = nombre.trim().toUpperCase();
+          if (!nomNorm) return undefined;
+          if (grupoTicket) {
+            return porGrupoIdentidad.get(`${grupoTicket.toUpperCase()}::${nomNorm}`) ?? undefined;
+          }
+          return porIdentidadUnico.get(nomNorm) ?? undefined;
+        };
         for (const raw of filas) {
           const f = raw as Record<string, unknown>;
+          const grupoTicket = String(
+            f.grupo_cobro_id ?? f.grupo_comision_id ?? f.grupo_cuenta_id ?? grupoFiltro ?? ""
+          ).trim();
           if (!String(f.cliente_juega_id ?? "").trim()) {
-            const m = porIdentidad.get(String(f.cliente_juega_nombre ?? "").trim().toUpperCase());
-            if (m) {
+            const m = resolverIdentidad(String(f.cliente_juega_nombre ?? ""), grupoTicket);
+            if (m && (!grupoTicket || !m.grupoId || m.grupoId === grupoTicket)) {
               f.cliente_juega_id = m.id;
               f.cliente_juega_nombre = m.alias;
               if (!f.grupo_cuenta_id && m.grupoId) f.grupo_cuenta_id = m.grupoId;
             }
           }
           if (!String(f.cliente_consigue_id ?? "").trim()) {
-            const m = porIdentidad.get(String(f.cliente_consigue_nombre ?? "").trim().toUpperCase());
-            if (m) {
+            const m = resolverIdentidad(String(f.cliente_consigue_nombre ?? ""), grupoTicket);
+            if (m && (!grupoTicket || !m.grupoId || m.grupoId === grupoTicket)) {
               f.cliente_consigue_id = m.id;
               f.cliente_consigue_nombre = m.alias;
             }
@@ -945,10 +975,14 @@ export async function aplicarLiquidacionSaldos(
       }
       const faltantes = Array.from(nombresParticipantes).filter((nom) => !encontradosNombres.has(nom));
       if (faltantes.length > 0) {
-        const { data: dbFaltantes } = await sdb
+        let qFalt = sdb
           .from("clientes")
           .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, incentivo_base, socio_id, socio_asignado, socio_comision_pct, comision_socio_pct, socio_base, grupo_id")
           .or(faltantes.map((f) => `nombre.ilike.${f},seudonimo.ilike.${f}`).join(","));
+        if (grupoFiltro) {
+          qFalt = qFalt.eq("grupo_id", grupoFiltro);
+        }
+        const { data: dbFaltantes } = await qFalt;
         if (dbFaltantes) {
           listaClientes = [...listaClientes, ...(dbFaltantes as Array<Record<string, unknown>>)];
         }
@@ -970,18 +1004,26 @@ export async function aplicarLiquidacionSaldos(
       const cliIdStr = String(cli.id ?? "").trim().toUpperCase();
       const cliNom = String(cli.nombre ?? "").trim().toUpperCase();
       const cliSeu = String(cli.seudonimo ?? "").trim().toUpperCase();
+      const cliGrupo = String(cli.grupo_id ?? "").trim().toUpperCase();
 
-      // Identificar si una jugada pertenece a este cliente
+      const mismoGrupoFila = (fila: any) => {
+        const fGrupo = String(fila.grupo_cobro_id ?? fila.grupo_comision_id ?? fila.grupo_id ?? "").trim().toUpperCase();
+        return !cliGrupo || !fGrupo || cliGrupo === fGrupo;
+      };
+
+      // Identificar si una jugada pertenece a este cliente (estrictamente dentro de su grupo)
       const esClienteJuega = (fila: any) => {
+        if (!mismoGrupoFila(fila)) return false;
         const fId = String(fila.cliente_juega_id ?? "").trim().toUpperCase();
         const fNom = String(fila.cliente_juega_nombre ?? fila.clienteJuega ?? "").trim().toUpperCase();
-        return (cliIdStr && fId === cliIdStr) || (cliNom && fNom === cliNom) || (cliSeu && fNom === cliSeu);
+        return (!!cliIdStr && fId === cliIdStr) || (!!cliNom && fNom === cliNom) || (!!cliSeu && fNom === cliSeu);
       };
 
       const esClienteConsigue = (fila: any) => {
+        if (!mismoGrupoFila(fila)) return false;
         const fId = String(fila.cliente_consigue_id ?? "").trim().toUpperCase();
         const fNom = String(fila.cliente_consigue_nombre ?? fila.clienteConsigue ?? fila.tercio ?? "").trim().toUpperCase();
-        return (cliIdStr && fId === cliIdStr) || (cliNom && fNom === cliNom) || (cliSeu && fNom === cliSeu);
+        return (!!cliIdStr && fId === cliIdStr) || (!!cliNom && fNom === cliNom) || (!!cliSeu && fNom === cliSeu);
       };
 
       let ganadoBrutoCarrera = 0;

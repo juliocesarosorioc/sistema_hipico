@@ -384,6 +384,7 @@ export function EstadoCuentaAcordeon({ clientes, clienteEstado, onActivo, onCarg
       id: c.id,
       nombre: c.nombre ?? c.seudonimo ?? "",
       seudonimo: c.seudonimo ?? null,
+      grupoId: c.grupo_id ?? null,
       saldoBaseBd,
       aval: c.aval ?? 0,
       comisionPct: Number(c.comision) > 0 ? Number(c.comision) : 5,

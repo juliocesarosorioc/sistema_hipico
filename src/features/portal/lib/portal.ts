@@ -548,6 +548,7 @@ async function construirSesion(clienteParam: ClienteRow): Promise<SesionPortal |
     id: cliente.id,
     nombre: cliente.nombre ?? cliente.seudonimo ?? "",
     seudonimo: cliente.seudonimo ?? null,
+    grupoId: cliente.grupo_id ?? null,
     saldoBaseBd: cliente.saldo_actual ?? 0,
     aval: cliente.aval ?? 0,
     comisionPct: Number(cliente.comision) > 0 ? Number(cliente.comision) : 5,
@@ -671,8 +672,13 @@ export async function datosCliente(clienteParam?: ClienteRow | null): Promise<{
   ]);
 
   const mapaTickets = new Map<string, TicketApuesta>();
+  const grupoClientePortal = String(clienteRef?.grupo_id ?? "").trim();
   if (r.ok) {
     for (const t of de<TicketApuesta[]>(r.data, "tickets") ?? []) {
+      const tGrupoId = String(
+        (t as unknown as { grupo_cobro_id?: string | null }).grupo_cobro_id ?? ""
+      ).trim();
+      if (grupoClientePortal && tGrupoId && tGrupoId !== grupoClientePortal) continue;
       mapaTickets.set(String(t.id), t);
     }
   }
@@ -1118,8 +1124,35 @@ export async function realizarJugada(cuerpo: Record<string, unknown>): Promise<{
     }
 
     if (rpc) {
-      const { error: errRpc } = await supabase.rpc(rpc, args);
+      let saldoAntesVenta: number | null = null;
+      if (tipo === "PUESTOS" && cid) {
+        const { data: preCli } = await supabase
+          .from("clientes")
+          .select("saldo_actual")
+          .eq("id", cid)
+          .maybeSingle();
+        if (preCli && preCli.saldo_actual != null) {
+          saldoAntesVenta = Number(preCli.saldo_actual);
+        }
+      }
+      const { data: rpcData, error: errRpc } = await supabase.rpc(rpc, args);
       if (errRpc) return { ok: false, error: errRpc.message };
+      if (tipo === "PUESTOS" && cid) {
+        const rpcRow = (rpcData ?? {}) as Record<string, unknown>;
+        const saldoRpc = rpcRow.saldo_restante != null ? Number(rpcRow.saldo_restante) : null;
+        if (
+          rpcRow.ticket_id != null &&
+          !rpcRow.ya_existia &&
+          saldoAntesVenta != null &&
+          saldoRpc != null &&
+          Math.abs(saldoRpc - (saldoAntesVenta - monto)) < 0.02
+        ) {
+          await supabase
+            .from("clientes")
+            .update({ saldo_actual: saldoAntesVenta })
+            .eq("id", cid);
+        }
+      }
       return { ok: true };
     }
 

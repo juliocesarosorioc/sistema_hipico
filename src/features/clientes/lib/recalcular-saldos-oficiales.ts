@@ -99,11 +99,15 @@ export async function recalcularYActualizarSaldosOficiales(
     }
 
     // 4. Cargar tickets de apuestas decididos
-    const { data: dbTickets, error: eT } = await supabase
+    let qTickets = supabase
       .from("tickets_apuestas")
-      .select("id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, banquero_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, monto_jugado, premio_pagar, monto_decidido, comision_pagada, estado, anulada")
+      .select("id, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, banquero_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, monto_jugado, premio_pagar, monto_decidido, comision_pagada, estado, anulada")
       .or("anulada.is.null,anulada.eq.false")
       .limit(10000);
+    if (grupoId) {
+      qTickets = qTickets.eq("grupo_cobro_id", grupoId);
+    }
+    const { data: dbTickets, error: eT } = await qTickets;
 
     if (eT) throw eT;
 
@@ -130,8 +134,11 @@ export async function recalcularYActualizarSaldosOficiales(
       const grpCli = comisionesGrupo.get(String(cli.grupo_id ?? ""));
       const comPctDefault = Number(grpCli?.comision_default ?? 5) || 5;
 
-      // Filtrar tickets del cliente
+      // Filtrar tickets del cliente (estrictamente dentro de su grupo)
+      const cliGrupoId = String(cli.grupo_id ?? "").trim();
       const ticketsCliente = ticketsValidos.filter((t) => {
+        const tGrupoId = String((t as Record<string, unknown>).grupo_cobro_id ?? "").trim();
+        if (cliGrupoId && tGrupoId && tGrupoId !== cliGrupoId) return false;
         const jId = String(t.cliente_juega_id ?? "").trim();
         const cId = String(t.cliente_consigue_id ?? "").trim();
         const jNom = normalizarNombreCliente(t.cliente_juega_nombre ?? "");
@@ -179,14 +186,11 @@ export async function recalcularYActualizarSaldosOficiales(
             esPuestos = true;
           }
 
-          // Ganancia bruta SIN comisión:
-          // Si mDec > 0 -> mDec
-          // Si prem > m -> (prem - m) + comPag (por si prem se guardó neteado de comisión en carreras viejas)
-          // Else -> m
+          // Ganancia bruta SIN comisión: prem ya es bruto cuando supera m
           const gananciaBruta = prem > m
-            ? (prem - m) + comPag
+            ? restarDinero(prem, m)
             : mDec > m
-              ? (mDec - m)
+              ? restarDinero(mDec, m)
               : mDec > 0
                 ? mDec
                 : m;

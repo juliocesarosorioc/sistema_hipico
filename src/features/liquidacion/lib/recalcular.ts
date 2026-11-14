@@ -327,10 +327,14 @@ export async function revertirLiquidacionCarrera(opts: {
         }
         const faltantes = Array.from(nombresParticipantes).filter((n) => !encontrados.has(n));
         if (faltantes.length > 0) {
-          const { data: dbFalt } = await sdb
+          let qFalt = sdb
             .from("clientes")
             .select("id, nombre, seudonimo, saldo_actual, devolucion, incentivo_pct, socio_id, socio_asignado, socio_comision_pct, comision_socio_pct, grupo_id")
             .or(faltantes.map((f) => `nombre.ilike.${f},seudonimo.ilike.${f}`).join(","));
+          if (grupoRespaldo) {
+            qFalt = qFalt.eq("grupo_id", grupoRespaldo);
+          }
+          const { data: dbFalt } = await qFalt;
           if (dbFalt) listaClientes = [...listaClientes, ...(dbFalt as Array<Record<string, unknown>>)];
         }
       }
@@ -344,6 +348,7 @@ export async function revertirLiquidacionCarrera(opts: {
         const cliIdStr = String(cli.id ?? "").trim().toUpperCase();
         const cliNom = String(cli.nombre ?? "").trim().toUpperCase();
         const cliSeu = String(cli.seudonimo ?? "").trim().toUpperCase();
+        const cliGrupo = String(cli.grupo_id ?? "").trim().toUpperCase();
         let ganadoBruto = 0;
         let perdidoBruto = 0;
         let ganadoBrutoSoloJuega = 0;
@@ -352,6 +357,8 @@ export async function revertirLiquidacionCarrera(opts: {
 
         for (const d of decisiones) {
           const f = d.fila as Record<string, unknown>;
+          const fGrupo = String(f.grupo_cobro_id ?? f.grupo_comision_id ?? f.grupo_id ?? "").trim().toUpperCase();
+          if (cliGrupo && fGrupo && cliGrupo !== fGrupo) continue;
           const r = d.res;
           const m = NUM(f.monto_jugado);
           const jId = String(f.cliente_juega_id ?? "").trim().toUpperCase();
