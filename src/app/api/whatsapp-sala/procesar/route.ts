@@ -222,7 +222,6 @@ export async function POST(req: Request) {
           hipodromo_activo: hipoLimpio,
           numero_carrera_activa: numCarrera,
           estado_carrera: "abierta",
-          retirados: [],
           updated_at: new Date().toISOString(),
         })
         .eq("id", salaId)

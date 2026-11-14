@@ -200,7 +200,6 @@ export async function ejecutarAperturaCarrera(sala, groupJid, hipodromoArg, carr
       hipodromo_activo: hipoLimpio,
       numero_carrera_activa: numCarrera,
       estado_carrera: "abierta",
-      retirados: [],
       updated_at: new Date().toISOString(),
     })
     .eq("id", sala.id);
@@ -321,10 +320,9 @@ export async function ejecutarAnulacionORetiro(sala, groupJid, comando, argument
 
     // Fallback determinístico si el RPC no está o requiere liberar tickets manualmente
     if (!procesadoRpc) {
-      const retiradosActuales = Array.from(new Set([...(sala.retirados || []), argLimpio]));
       await supabase
         .from("salas_juego")
-        .update({ retirados: retiradosActuales, updated_at: new Date().toISOString() })
+        .update({ updated_at: new Date().toISOString() })
         .eq("id", sala.id);
 
       const { data: ticketsActivos } = await supabase
