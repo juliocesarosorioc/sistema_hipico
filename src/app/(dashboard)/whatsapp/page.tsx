@@ -458,7 +458,9 @@ export default function WhatsappPage() {
                   <div className="flex flex-col sm:flex-row gap-2">
                     <select
                       value={jidActual}
-                      onChange={(e) => vincularGrupoASala(sala, e.target.value)}
+                      onChange={(e) =>
+                        setSeleccionGrupoPorSala((prev) => ({ ...prev, [sala.id]: e.target.value }))
+                      }
                       disabled={procesandoAccion === `vincular-${sala.id}`}
                       className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-emerald-500"
                     >
@@ -475,7 +477,12 @@ export default function WhatsappPage() {
 
                     <button
                       type="button"
-                      onClick={() => vincularGrupoASala(sala, jidActual)}
+                      onClick={() =>
+                        vincularGrupoASala(
+                          sala,
+                          seleccionGrupoPorSala[sala.id] ?? sala.whatsapp_group_jid ?? ""
+                        )
+                      }
                       disabled={procesandoAccion === `vincular-${sala.id}`}
                       className="rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2.5 text-xs font-black text-white transition shadow"
                     >
