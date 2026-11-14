@@ -71,6 +71,9 @@ const supabase =
   SUPABASE_URL && SUPABASE_SERVICE_KEY
     ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
         auth: { autoRefreshToken: false, persistSession: false },
+        realtime: {
+          transport: WebSocket,
+        },
       })
     : null;
 
