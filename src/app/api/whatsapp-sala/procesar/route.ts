@@ -443,13 +443,19 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
       }
 
+      const updatePayload: Record<string, any> = {
+        whatsapp_group_jid: groupJid || null,
+        updated_at: new Date().toISOString(),
+      };
+      if (!groupJid) {
+        updatePayload.whatsapp_group_nombre = null;
+      } else if (groupNombre) {
+        updatePayload.whatsapp_group_nombre = groupNombre;
+      }
+
       const { data: salaActualizada, error } = await supabaseAdmin
         .from("salas_juego")
-        .update({
-          whatsapp_group_jid: groupJid || null,
-          whatsapp_group_nombre: groupNombre || null,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq("id", salaId)
         .select()
         .maybeSingle();

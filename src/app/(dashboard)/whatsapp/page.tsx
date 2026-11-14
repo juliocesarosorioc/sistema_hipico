@@ -125,6 +125,7 @@ export default function WhatsappPage() {
   const [hipodromoPorSala, setHipodromoPorSala] = useState<Record<string, string>>({});
   const [carreraPorSala, setCarreraPorSala] = useState<Record<string, string>>({});
   const [procesandoAccion, setProcesandoAccion] = useState<string | null>(null);
+  const [filtroGrupo, setFiltroGrupo] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [pingPorSala, setPingPorSala] = useState<
     Record<string, { latenciaMs: number; conectado: boolean; participantes?: number; error?: string }>
@@ -166,8 +167,10 @@ export default function WhatsappPage() {
         setSeleccionGrupoPorSala((prev) => {
           const next = { ...prev };
           for (const s of salasServidor) {
-            if (next[s.id] === undefined) {
-              next[s.id] = s.whatsapp_group_jid || "";
+            if (s.whatsapp_group_jid) {
+              next[s.id] = s.whatsapp_group_jid;
+            } else if (next[s.id] === undefined) {
+              next[s.id] = "";
             }
           }
           return next;
@@ -870,7 +873,7 @@ export default function WhatsappPage() {
               return (
                 <article
                   key={sala.id}
-                  className="rounded-3xl border border-slate-800 bg-slate-950 p-4 text-white shadow-xl transition hover:border-slate-700 sm:p-5"
+                  className="min-w-0 overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 p-4 text-white shadow-xl transition hover:border-slate-700 sm:p-5"
                 >
                   {/* Cabecera de la sala */}
                   <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800/80 pb-3">
@@ -899,6 +902,13 @@ export default function WhatsappPage() {
                         title="Abrir la Sala de Juegos en vivo de este grupo"
                       >
                         🎮 Ver Sala de Juegos
+                      </a>
+                      <a
+                        href={sala.grupo_id ? `/sala?ui=whatsapp&grupoId=${sala.grupo_id}` : "/sala?ui=whatsapp"}
+                        className="rounded-full border border-emerald-500/40 bg-emerald-950/60 px-2.5 py-0.5 text-[10px] font-black text-emerald-200 transition hover:bg-emerald-900"
+                        title="Abrir la vista tipo WhatsApp Web de este grupo"
+                      >
+                        📱 Sala WhatsApp
                       </a>
                       <span
                         className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${
@@ -975,7 +985,7 @@ export default function WhatsappPage() {
                     </div>
 
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                           Grupo de WhatsApp
                         </p>
@@ -1026,25 +1036,47 @@ export default function WhatsappPage() {
                     </div>
 
                     {/* Selector de grupo */}
-                    <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                    {status.grupos.length > 6 && (
+                      <div className="mt-2">
+                        <input
+                          type="text"
+                          value={filtroGrupo}
+                          onChange={(e) => setFiltroGrupo(e.target.value)}
+                          placeholder="🔍 Filtrar grupo por nombre..."
+                          className="w-full rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-1.5 text-[11px] text-white placeholder-slate-500 outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    )}
+                    <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
                       <select
                         value={jidActual}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const nuevo = e.target.value;
                           setSeleccionGrupoPorSala((prev) => ({
                             ...prev,
-                            [sala.id]: e.target.value,
-                          }))
-                        }
+                            [sala.id]: nuevo,
+                          }));
+                          if (nuevo && nuevo !== sala.whatsapp_group_jid) {
+                            void vincularGrupoASala(sala, nuevo);
+                          }
+                        }}
                         disabled={ocupado}
-                        className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none transition focus:border-emerald-500 disabled:opacity-50"
+                        className="w-full min-w-0 max-w-full flex-1 truncate rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none transition focus:border-emerald-500 disabled:opacity-50"
                         aria-label={`Grupo de WhatsApp para ${sala.nombre_sala}`}
                       >
                         <option value="">— Seleccionar grupo de WhatsApp —</option>
-                        {status.grupos.map((g) => (
-                          <option key={g.jid} value={g.jid}>
-                            {g.nombre} ({g.jid})
-                          </option>
-                        ))}
+                        {status.grupos
+                          .filter(
+                            (g) =>
+                              !filtroGrupo.trim() ||
+                              g.jid === jidActual ||
+                              g.nombre.toLowerCase().includes(filtroGrupo.trim().toLowerCase())
+                          )
+                          .map((g) => (
+                            <option key={g.jid} value={g.jid}>
+                              {g.nombre.length > 48 ? `${g.nombre.slice(0, 48)}…` : g.nombre}
+                            </option>
+                          ))}
                         {jidActual && !status.grupos.some((g) => g.jid === jidActual) && (
                           <option value={jidActual}>
                             Grupo guardado ({respaldo.groupNombre || jidActual})
@@ -1056,7 +1088,7 @@ export default function WhatsappPage() {
                         type="button"
                         onClick={() => vincularGrupoASala(sala, jidActual)}
                         disabled={ocupado || !jidActual}
-                        className="rounded-xl bg-emerald-600 px-4 py-2 text-[11px] font-black text-white shadow transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="shrink-0 rounded-xl bg-emerald-600 px-4 py-2 text-[11px] font-black text-white shadow transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {procesandoAccion === `vincular-${sala.id}` ? "Vinculando…" : "🔗 Vincular"}
                       </button>
