@@ -4,6 +4,7 @@ import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { SalaJuegosApp } from "@/features/sala-juegos/components/SalaJuegosApp";
 import { SalaWhatsAppConectada } from "@/features/sala-juegos/components/SalaWhatsAppConectada";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 
 class SalaErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -52,7 +53,8 @@ class SalaErrorBoundary extends React.Component<
 
 function SalaContenido() {
   const params = useSearchParams();
-  const grupoId = params.get("grupo") || params.get("grupoId") || undefined;
+  const grupoStore = useAuthStore((s) => s.grupoId || s.grupoActivo);
+  const grupoId = params.get("grupo") || params.get("grupoId") || grupoStore || undefined;
   const clienteId = params.get("clienteId") || params.get("cliente_id") || undefined;
   const portalToken = params.get("token") || params.get("portalToken") || params.get("portal_token") || undefined;
   const staffToken = params.get("staffToken") || params.get("staff_token") || undefined;

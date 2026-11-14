@@ -1027,6 +1027,7 @@ export const useAuthStore = create<EstadoAuth>()(
         }
 
         if (idLimpio === "operador" && (clave === "operador2026" || clave === "operador123" || clave === "123456")) {
+          await iniciarSesionStaffSala(idLimpio, clave);
           get().entrarComoOperador();
           return true;
         }
@@ -1163,6 +1164,7 @@ export const useAuthStore = create<EstadoAuth>()(
                   grupoId: opCache?.grupoId || "",
                   grupoNombre: opCache?.grupoNombre || "Operador Móvil",
                 };
+                await iniciarSesionStaffSala(identificador, clave);
                 get().entrarComoOperadorGrupo(opFinal);
                 return true;
               }

@@ -102,6 +102,9 @@ export function obtenerCredencialesGuardadas(): CredencialesSala {
   return _credenciales;
 }
 
+let _restaurandoStaffPromise: Promise<string | null> | null = null;
+let _restauracionStaffIntentada = false;
+
 async function headersAuth(): Promise<HeadersInit> {
   const creds = obtenerCredencialesGuardadas();
   const headers: Record<string, string> = {
@@ -109,6 +112,31 @@ async function headersAuth(): Promise<HeadersInit> {
   };
 
   let tokenStaff = creds.staffToken;
+  if (!tokenStaff && !creds.portalToken && !_restauracionStaffIntentada && typeof window !== "undefined") {
+    try {
+      const sesionOpLocal = localStorage.getItem("hipico_sesion_operador_local") === "1";
+      const rawOp = localStorage.getItem("hipico_operador_actual");
+      if (sesionOpLocal && rawOp) {
+        const parsedOp = JSON.parse(rawOp);
+        const opId = String(parsedOp?.id || "").trim();
+        if (opId) {
+          _restauracionStaffIntentada = true;
+          if (!_restaurandoStaffPromise) {
+            _restaurandoStaffPromise = iniciarSesionStaffSala(opId, "__RESTAURAR_OPERADOR_ACTIVO__")
+              .then((r) => (r.ok && r.token ? r.token : null))
+              .catch(() => null)
+              .finally(() => {
+                _restaurandoStaffPromise = null;
+              });
+          }
+          const recuperado = await _restaurandoStaffPromise;
+          if (recuperado) tokenStaff = recuperado;
+        }
+      }
+    } catch {
+      // noop
+    }
+  }
   if (!tokenStaff && typeof window !== "undefined" && supabase) {
     try {
       const { data } = await supabase.auth.getSession();
@@ -175,6 +203,7 @@ export function limpiarSesionStaffSala(): void {
     localStorage.removeItem("sala_staff_token");
   }
   _credenciales.staffToken = undefined;
+  _restauracionStaffIntentada = false;
 }
 
 async function requestApi<T = any>(
