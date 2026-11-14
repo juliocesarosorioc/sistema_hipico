@@ -16,7 +16,11 @@ import { listarGruposAdmin, type GrupoRow } from "@/features/grupos/lib/grupos";
 import { logosFrescosDeCarrera } from "@/features/liquidacion/lib/logos-reporte";
 import { conCacheBust } from "@/shared/lib/logos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
-import { grupoActivoVigente } from "@/features/seguridad/lib/vigente";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
@@ -449,7 +453,13 @@ export default function ReporteLiquidacionModal({
     // Logos FRESCOS en el momento de armar el reporte: no dependemos de que el
     // catálogo cargado al abrir ya tenga el logo recién incorporado. Se
     // resuelven contra la base en paralelo con el detalle de la carrera.
-    const logoGrupoId = grupoId || grupoInicial || grupoActivoVigente() || undefined;
+    const logoGrupoId =
+      grupoId ||
+      grupoInicial ||
+      (veTodosLosGruposVigente()
+        ? grupoActivoVigente() || grupoVigente()
+        : grupoVigente() || grupoActivoVigente()) ||
+      undefined;
     Promise.all([
       carreraReporteDetalle(fechaActiva, hipoActivo, carrActiva, undefined, logoGrupoId),
       logosFrescosDeCarrera({ hipodromo: hipoActivo, grupoId: logoGrupoId }),
@@ -461,7 +471,7 @@ export default function ReporteLiquidacionModal({
           (s ?? "").replace(/["'{}]/g, "").split(/[\s·,\/\-]+/).filter((x) => /^\d+$/.test(x)).length;
 
         const { esCarreraReversadaLocal, leerResultadoOficial } = await import("@/features/carreras/lib/carreras-dia");
-        const reversada = esCarreraReversadaLocal(fechaActiva, hipoActivo, carrActiva);
+        const reversada = esCarreraReversadaLocal(fechaActiva, hipoActivo, carrActiva, logoGrupoId);
         if (reversada) {
           c.pizarra = "";
           c.pizarraRaya = undefined;
@@ -515,6 +525,14 @@ export default function ReporteLiquidacionModal({
   }, [detalle, nombreGrupo, disponibleDe, liquidada, logoHipodromo, logoGrupo, filtroModalidad, clientes, observacionesExceso]);
 
   const itemsLiquidadasExtra = useMemo<ItemCarreraLiquidada[]>(() => {
+    const grupoEfectivo =
+      grupoId ||
+      grupoInicial ||
+      (veTodosLosGruposVigente()
+        ? grupoActivoVigente() || grupoVigente()
+        : grupoVigente() || grupoActivoVigente()) ||
+      "";
+    if (grupoEfectivo) return [];
     return carrerasDia
       .filter(
         (c) =>
@@ -538,7 +556,7 @@ export default function ReporteLiquidacionModal({
           liquidada_at: (cAny.liquidada_at ?? cAny.updated_at ?? null) as string | null,
         };
       });
-  }, [carrerasDia]);
+  }, [carrerasDia, grupoId, grupoInicial]);
 
   if (!abierto) return null;
 

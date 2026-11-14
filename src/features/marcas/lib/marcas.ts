@@ -11,7 +11,12 @@
  */
 
 import { supabase } from "@/core/supabase";
-import { exigirCapacidad } from "@/features/seguridad/lib/vigente";
+import {
+  exigirCapacidad,
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 import { listarClientesVenta, listarGruposVenta, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
 import { listarCarrerasCentrales, type CarreraCentral, type EjemplarCarreraCentral } from "@/features/carreras/lib/central";
 import {
@@ -443,14 +448,21 @@ export async function liquidarMarcas(
   }
   for (const m of String(res.retirados ?? "").match(/\d+/g) ?? []) retirados.add(m);
 
-  // 2) Leer tickets de MARCA pendientes de la carrera.
-  const { data: rawTickets, error: et } = await sdb
+  // 2) Leer tickets de MARCA pendientes de la carrera (aislados al grupo activo).
+  const activoGrupo = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente()
+    : grupoVigente() || grupoActivoVigente();
+  let qMarcas = sdb
     .from("tickets_apuestas")
     .select("*")
     .ilike("hipodromo", `%${hip}%`)
     .eq("carrera", nCarrera)
     .ilike("nombre_jugada", "MARCA%")
     .limit(1000);
+  if (activoGrupo) {
+    qMarcas = qMarcas.eq("grupo_cobro_id", String(activoGrupo));
+  }
+  const { data: rawTickets, error: et } = await qMarcas;
 
   if (et) return { ok: false, error: et.message };
 

@@ -31,7 +31,21 @@ import {
 } from "@/features/motores/lib/puestos";
 import { cargarOpcionesCrucesPuestosPorGrupos } from "@/features/gestion/lib/cruces-carrera";
 import { grupoDeCuenta } from "@/features/grupos/lib/atribucion-grupo";
-import { grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
+
+function grupoLiquidacionEfectivo(grupoId?: string | number | null): string {
+  const g =
+    grupoId != null && String(grupoId).trim() !== ""
+      ? String(grupoId).trim()
+      : veTodosLosGruposVigente()
+        ? grupoActivoVigente() || grupoVigente()
+        : grupoVigente() || grupoActivoVigente();
+  return String(g ?? "").trim();
+}
 import { redondearCentavos, sumarDinero, restarDinero, formatearMontoSinMoneda, calcularComisionExacta } from "@/shared/lib/dinero";
 import {
   calcularEstadoCuentaCliente,
@@ -435,10 +449,11 @@ export function creditoDeTicket(res: ResultadoMotor): number {
 async function jornadasConJugadasDeOtraFecha(
   sdb: NonNullable<typeof supabase>,
   input: LiquidarSaldosInput,
-  dia: string
+  dia: string,
+  grupoFiltro = ""
 ): Promise<string[]> {
   try {
-    const { data, error } = await sdb
+    let q = sdb
       .from("tickets_apuestas")
       .select("fecha_carrera, fecha_registro, anulada, estado")
       .eq("hipodromo", input.hipodromo.trim().toUpperCase())
@@ -446,6 +461,10 @@ async function jornadasConJugadasDeOtraFecha(
       .eq("estado", "Pendiente")
       .or("anulada.is.null,anulada.eq.false")
       .limit(2000);
+    if (grupoFiltro) {
+      q = q.eq("grupo_cobro_id", grupoFiltro);
+    }
+    const { data, error } = await q;
     if (error) return [];
     const filas = ((data ?? []) as Array<{ fecha_carrera?: string | null; fecha_registro?: string | null; anulada?: boolean | null }> ).filter(
       (r) => !r.anulada && (!r.fecha_registro || String(r.fecha_registro).slice(0, 10) === dia)
@@ -475,9 +494,10 @@ export async function aplicarLiquidacionSaldos(
   // `fecha` NO existe en tickets_apuestas: la consulta moría en el catch.)
   const f = input.fecha || hoyLocal();
   const dia = String(f).slice(0, 10);
+  const grupoFiltro = grupoLiquidacionEfectivo(input.grupoId);
   let filas: unknown[] = [];
   try {
-    const { data, error } = await sdb
+    let qPend = sdb
       .from("tickets_apuestas")
       .select("*")
       // El día de la JORNADA es el de la CARRERA, no el de la venta (ver
@@ -503,6 +523,10 @@ export async function aplicarLiquidacionSaldos(
       // "jugada perdedora" (monto × pct) en vez de solo sobre la ganancia.
       .not("nombre_jugada", "like", "TABLA FIJA%")
       .limit(2000);
+    if (grupoFiltro) {
+      qPend = qPend.eq("grupo_cobro_id", grupoFiltro);
+    }
+    const { data, error } = await qPend;
     if (error) throw error;
     filas = (data ?? []).filter((f) => !(f as Record<string, unknown>).anulada);
   } catch (e) {
@@ -511,13 +535,17 @@ export async function aplicarLiquidacionSaldos(
 
   if (filas.length === 0) {
     // Seguridad idempotente: si no hay Pendiente pero sí decididos o anulados en esta jornada → ya aplicado / sin pendientes.
-    const { data: decididos } = await sdb
+    let qDec = sdb
       .from("tickets_apuestas")
       .select("id, estado, anulada, premio_pagar, monto_jugado")
       .or(filtroDiaJornada(dia))
       .eq("hipodromo", input.hipodromo.trim().toUpperCase())
       .eq("carrera", Number(input.carrera))
       .limit(500);
+    if (grupoFiltro) {
+      qDec = qDec.eq("grupo_cobro_id", grupoFiltro);
+    }
+    const { data: decididos } = await qDec;
     if ((decididos ?? []).length > 0) {
       const idsMalAnuladas = ((decididos ?? []) as Array<Record<string, unknown>>)
         .filter(
@@ -543,7 +571,7 @@ export async function aplicarLiquidacionSaldos(
     // siempre. Ahora se comprueba si la MISMA carrera tiene jugadas archivadas
     // bajo otra jornada: si las hay, la liquidación no es un éxito, es un ERROR
     // que nombra hasta dónde se movieron los tickets.
-    const desalineadas = await jornadasConJugadasDeOtraFecha(sdb, input, dia);
+    const desalineadas = await jornadasConJugadasDeOtraFecha(sdb, input, dia, grupoFiltro);
     if (desalineadas.length > 0) {
       const dias = desalineadas.join(", ");
       return {

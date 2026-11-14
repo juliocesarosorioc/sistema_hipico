@@ -30,6 +30,11 @@ import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
 import { _reembolsosCruce, normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
 import { calcularEstadoCuentaCliente } from "@/features/saldos/lib/contabilidad-central";
 import { cargarMapaSeudonimosClientes } from "@/features/clientes/lib/clientes";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 
 export { calcularEstadoCuentaCliente };
 import type { TicketMotor } from "@/features/betting/lib/bettingEngine";
@@ -112,6 +117,8 @@ export type FiltroCarrera = {
   fecha?: string;
   /** Si true, solo tickets estado = Pendiente (relación pre-carrera). */
   soloPendientes?: boolean;
+  /** Grupo de cobro para aislar las jugadas de la relación. */
+  grupoId?: string | null;
 };
 
 // ============================================================
@@ -933,6 +940,13 @@ export async function cargarJugadasDeCarrera(
 ): Promise<JugadaRelacion[]> {
   if (!supabase) return [];
   const sb = supabase;
+  const activo = String(
+    filtro.grupoId ??
+      (veTodosLosGruposVigente()
+        ? grupoActivoVigente() || grupoVigente()
+        : grupoVigente() || grupoActivoVigente()) ??
+      ""
+  ).trim();
   try {
     const consultar = (cols: string) => {
       let q = sb
@@ -946,6 +960,9 @@ export async function cargarJugadasDeCarrera(
       }
       if (filtro.soloPendientes) {
         q = q.eq("estado", "Pendiente");
+      }
+      if (activo) {
+        q = q.eq("grupo_cobro_id", activo);
       }
       return q;
     };

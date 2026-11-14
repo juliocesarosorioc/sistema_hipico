@@ -40,7 +40,21 @@ import {
   type NeteoCruceItem,
   type TicketMotor,
 } from "@/features/betting/lib/bettingEngine";
-import { esPrincipalVigente, grupoActivoVigente, veTodosLosGruposVigente } from "@/features/seguridad/lib/vigente";
+import {
+  esPrincipalVigente,
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
+
+function grupoReporteEfectivo(grupoId?: string | number | null): string {
+  const explicito = grupoId != null ? String(grupoId).trim() : "";
+  if (explicito) return explicito;
+  const g = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente()
+    : grupoVigente() || grupoActivoVigente();
+  return String(g ?? "").trim();
+}
 import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
 import { jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros-nucleo";
 
@@ -943,7 +957,7 @@ async function leerTickets(
       .eq("carrera", carrera)
       .ilike("hipodromo", `%${hipodromo}%`)
       .order("fecha_registro");
-    const activo = grupoId || grupoActivoVigente();
+    const activo = grupoReporteEfectivo(grupoId);
     if (activo) {
       q = q.eq("grupo_cobro_id", activo);
     }
@@ -951,7 +965,13 @@ async function leerTickets(
     const base = error
       ? []
       : ((data ?? []) as Record<string, unknown>[]).filter((r) => perteneceADiaJornada(r, dia));
-    const extras = await leerJugadasModulosExtrasHipodromo(dia, hipodromo, String(carrera), base);
+    const extras = await leerJugadasModulosExtrasHipodromo(
+      dia,
+      hipodromo,
+      String(carrera),
+      base,
+      activo || undefined
+    );
     return [...base, ...(extras.get(claveCarrera(carrera)) ?? [])];
   } catch {
     return [];
@@ -968,11 +988,12 @@ export async function leerJugadasModulosExtrasHipodromo(
   dia: string,
   hipodromo: string,
   carreraFiltro: string | null,
-  ticketsExistentes: Record<string, unknown>[]
+  ticketsExistentes: Record<string, unknown>[],
+  grupoId?: string | null
 ): Promise<Map<string, Record<string, unknown>[]>> {
   const extras = new Map<string, Record<string, unknown>[]>();
   if (!supabase || !dia) return extras;
-  const activo = grupoActivoVigente();
+  const activo = grupoReporteEfectivo(grupoId);
   const idsCaballosRemateEnTickets = new Set<string>();
   for (const t of ticketsExistentes) {
     const rawNota = String(t.nota_auditoria ?? "");
@@ -1101,10 +1122,12 @@ export async function leerJugadasModulosExtrasHipodromo(
     /* best-effort */
   }
 
-  // 3) Eventos Libres de la fecha `dia` (tabla `apuestas_eventos_especiales`)
+  // 3) Eventos Libres de la fecha `dia` (tabla `apuestas_eventos_especiales` - grupo ARGENTINA)
   try {
     const hipoNorm = txt(hipodromo).toUpperCase();
-    if (!hipodromo || hipoNorm.includes("EVENTO") || hipoNorm.includes("LIBRE")) {
+    const permiteEventosLibres =
+      !activo || activo === "d290daa1-a44b-4ed4-bb8a-03db4ecc32b0";
+    if (permiteEventosLibres && (!hipodromo || hipoNorm.includes("EVENTO") || hipoNorm.includes("LIBRE"))) {
       const { data: dataEv } = await supabase
         .from("apuestas_eventos_especiales")
         .select("*")
@@ -1169,54 +1192,63 @@ export async function leerJugadasModulosExtrasHipodromo(
   return extras;
 }
 
-/** Hipódromos con actividad del día (Matriz carreras + Gaceta + tablas fijas + tickets). */
-async function hipodromosDelDia(fecha: string): Promise<string[]> {
+/** Hipódromos con actividad del día (Matriz carreras + Gaceta + tablas fijas + tickets), aislados si hay grupo activo. */
+async function hipodromosDelDia(fecha: string, grupoId?: string | null): Promise<string[]> {
   const set = new Set<string>();
-  const prog = await leerProgramaPorFecha(fecha);
-  for (const h of prog.data?.hipodromos ?? []) if (txt(h)) set.add(txt(h).toUpperCase());
-  for (const c of prog.data?.carreras ?? []) if (txt(c.hipodromo)) set.add(txt(c.hipodromo).toUpperCase());
+  const activo = grupoReporteEfectivo(grupoId);
   const sig = sumarDias(fecha, 1);
+
+  if (!activo) {
+    const prog = await leerProgramaPorFecha(fecha);
+    for (const h of prog.data?.hipodromos ?? []) if (txt(h)) set.add(txt(h).toUpperCase());
+    for (const c of prog.data?.carreras ?? []) if (txt(c.hipodromo)) set.add(txt(c.hipodromo).toUpperCase());
+  }
+
   if (supabase) {
-    try {
-      // MATRIZ MAESTRA DE CARRERAS: hipódromos oficialmente programados en la fecha.
-      const { data: carrs, error } = await supabase
-        .from("carreras")
-        .select("hipodromo")
-        .eq("fecha", fecha);
-      if (!error) {
-        for (const r of (carrs ?? []) as Array<{ hipodromo?: unknown }>) {
-          if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+    if (!activo) {
+      try {
+        // MATRIZ MAESTRA DE CARRERAS: hipódromos oficialmente programados en la fecha (solo vista global).
+        const { data: carrs, error } = await supabase
+          .from("carreras")
+          .select("hipodromo")
+          .eq("fecha", fecha);
+        if (!error) {
+          for (const r of (carrs ?? []) as Array<{ hipodromo?: unknown }>) {
+            if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+          }
         }
+      } catch {
+        /* sin tabla */
       }
-    } catch {
-      /* sin tabla */
+      try {
+        // TABLAS FIJAS: fecha del evento, o heredadas sin fecha creadas durante el día (solo vista global).
+        const { data: tabs, error } = await supabase
+          .from("tablas_fijas")
+          .select("hipodromo")
+          .eq("fecha", fecha);
+        if (!error) for (const r of (tabs ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+        const { data: tabs2 } = await supabase
+          .from("tablas_fijas")
+          .select("hipodromo, fecha")
+          .is("fecha", null)
+          .gte("fecha_creacion", `${fecha}T00:00:00`)
+          .lt("fecha_creacion", `${sig}T00:00:00`);
+        for (const r of (tabs2 ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+      } catch {
+        /* sin tabla */
+      }
     }
     try {
-      // TABLAS FIJAS: fecha del evento, o heredadas sin fecha creadas durante el día.
-      const { data: tabs, error } = await supabase
-        .from("tablas_fijas")
-        .select("hipodromo")
-        .eq("fecha", fecha);
-      if (!error) for (const r of (tabs ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
-      const { data: tabs2 } = await supabase
-        .from("tablas_fijas")
-        .select("hipodromo, fecha")
-        .is("fecha", null)
-        .gte("fecha_creacion", `${fecha}T00:00:00`)
-        .lt("fecha_creacion", `${sig}T00:00:00`);
-      for (const r of (tabs2 ?? []) as Array<{ hipodromo?: unknown }>) if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
-    } catch {
-      /* sin tabla */
-    }
-    try {
-      // TICKETS: por el día de la CARRERA (`fecha_carrera`); las filas heredadas
-      // sin la columna caen al día local de la venta (`fecha_registro`). `fecha`
-      // y `fecha_creacion` no existen en `tickets_apuestas`.
+      // TICKETS: por el día de la CARRERA (`fecha_carrera`), acotados al grupo si corresponde.
       const dia = String(fecha ?? "").slice(0, 10);
-      const { data: tk2, error: e2 } = await supabase
+      let qTk2 = supabase
         .from("tickets_apuestas")
         .select("hipodromo, fecha_carrera, fecha_registro, nota_auditoria")
         .or(filtroDiaJornada(dia));
+      if (activo) {
+        qTk2 = qTk2.eq("grupo_cobro_id", activo);
+      }
+      const { data: tk2, error: e2 } = await qTk2;
       if (!e2) {
         for (const r of (tk2 ?? []) as Array<Record<string, unknown>>) {
           if (perteneceADiaJornada(r, dia) && txt(r.hipodromo)) {
@@ -1225,22 +1257,30 @@ async function hipodromosDelDia(fecha: string): Promise<string[]> {
         }
       }
       // Remates del día
-      const { data: rems } = await supabase.from("remates").select("hipodromo").eq("fecha", dia);
+      let qRems = supabase.from("remates").select("hipodromo").eq("fecha", dia);
+      if (activo) qRems = qRems.eq("grupo_id", activo);
+      const { data: rems } = await qRems;
       for (const r of (rems ?? []) as Array<{ hipodromo?: unknown }>) {
         if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
       }
-      // Dupletas del día
-      const { data: dups } = await supabase.from("dupletas").select("hipodromo").eq("fecha", dia);
-      for (const r of (dups ?? []) as Array<{ hipodromo?: unknown }>) {
-        if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+      // Dupletas del día (solo vista global, tabla sin grupo_id)
+      if (!activo) {
+        const { data: dups } = await supabase.from("dupletas").select("hipodromo").eq("fecha", dia);
+        for (const r of (dups ?? []) as Array<{ hipodromo?: unknown }>) {
+          if (txt(r.hipodromo)) set.add(txt(r.hipodromo).toUpperCase());
+        }
       }
-      // Eventos Libres del día
-      const { data: evEsp } = await supabase.from("apuestas_eventos_especiales").select("id").eq("fecha", dia).limit(1);
-      if (evEsp && evEsp.length > 0) {
-        set.add("EVENTOS LIBRES");
+      // Eventos Libres del día (solo grupo ARGENTINA o vista global)
+      if (!activo || activo === "d290daa1-a44b-4ed4-bb8a-03db4ecc32b0") {
+        const { data: evEsp } = await supabase.from("apuestas_eventos_especiales").select("id").eq("fecha", dia).limit(1);
+        if (evEsp && evEsp.length > 0) {
+          set.add("EVENTOS LIBRES");
+        }
       }
       // Pollas del día
-      const { data: pols } = await supabase.from("pollas").select("carreras").eq("fecha", dia);
+      let qPols = supabase.from("pollas").select("carreras").eq("fecha", dia);
+      if (activo) qPols = qPols.eq("grupo_id", activo);
+      const { data: pols } = await qPols;
       for (const r of (pols ?? []) as Array<{ carreras?: unknown }>) {
         const carrs = Array.isArray(r.carreras) ? (r.carreras as Array<{ hipodromo?: unknown }>) : [];
         for (const c of carrs) {
@@ -1304,7 +1344,7 @@ async function leerTicketsHipodromo(
       .or(filtroDiaJornada(dia))
       .ilike("hipodromo", `%${hipodromo}%`)
       .order("fecha_registro");
-    const activo = grupoId || grupoActivoVigente();
+    const activo = grupoReporteEfectivo(grupoId);
     if (activo) {
       q = q.eq("grupo_cobro_id", activo);
     }
@@ -1318,7 +1358,13 @@ async function leerTicketsHipodromo(
       if (lista) lista.push(row);
       else porCarrera.set(k, [row]);
     }
-    const extras = await leerJugadasModulosExtrasHipodromo(dia, hipodromo, null, filasValidas);
+    const extras = await leerJugadasModulosExtrasHipodromo(
+      dia,
+      hipodromo,
+      null,
+      filasValidas,
+      activo || undefined
+    );
     for (const [k, rowsExtra] of extras.entries()) {
       const lista = porCarrera.get(k);
       if (lista) lista.push(...rowsExtra);
@@ -2088,10 +2134,15 @@ export async function reportesCarrerasLote(
   return salida;
 }
 
-async function hipodromoReporte(fecha: string, hipodromo: string, tasaComision?: number | null): Promise<HipodromoReporte> {
+async function hipodromoReporte(
+  fecha: string,
+  hipodromo: string,
+  tasaComision?: number | null,
+  grupoId?: string | null
+): Promise<HipodromoReporte> {
   const carreras: CarreraReporte[] = [];
   const [ticketsPorCarrera, pizarrasPorCarrera, tablasPorCarrera] = await Promise.all([
-    leerTicketsHipodromo(fecha, hipodromo),
+    leerTicketsHipodromo(fecha, hipodromo, grupoId),
     leerPizarrasHipodromo(fecha, hipodromo),
     leerTablasHipodromo(fecha, hipodromo),
   ]);
@@ -2104,11 +2155,18 @@ async function hipodromoReporte(fecha: string, hipodromo: string, tasaComision?:
   const numeros = [...setNumeros].sort((a, b) => a - b);
   for (const numero of numeros) {
     const k = claveCarrera(numero);
-    const c = await carreraReporte(fecha, hipodromo, numero, tasaComision, {
-      pizarra: pizarrasPorCarrera.get(k) ?? null,
-      tickets: ticketsPorCarrera.get(k) ?? [],
-      enTablas: tablasPorCarrera.has(k),
-    });
+    const c = await carreraReporte(
+      fecha,
+      hipodromo,
+      numero,
+      tasaComision,
+      {
+        pizarra: pizarrasPorCarrera.get(k) ?? null,
+        tickets: ticketsPorCarrera.get(k) ?? [],
+        enTablas: tablasPorCarrera.has(k),
+      },
+      grupoId
+    );
     if (c) carreras.push(c);
   }
   carreras.sort((a, b) => Number(a.numero) - Number(b.numero));
@@ -2150,16 +2208,17 @@ export async function construirReporteSemana(
   const base = rangoSemanaDeGrupo(hoyLocal(), ciclo);
   const { desde, hasta } = rangoReporteDe(base, opts);
   const tasaComision = opts?.tasaComision ?? null;
+  const grupoFiltroId = grupo?.id != null && String(grupo.id).trim() !== "" ? String(grupo.id).trim() : undefined;
 
   try {
     const dias: DiaReporte[] = [];
     for (const fecha of diasEnRango(desde, hasta)) {
-      const hips = await hipodromosDelDia(fecha);
+      const hips = await hipodromosDelDia(fecha, grupoFiltroId);
       if (!hips.length) continue;
       const hipodromos: HipodromoReporte[] = [];
       let totalDia = 0;
       for (const hip of hips) {
-        const h = await hipodromoReporte(fecha, hip, tasaComision);
+        const h = await hipodromoReporte(fecha, hip, tasaComision, grupoFiltroId);
         if (h.carreras.length) {
           hipodromos.push(h);
           totalDia += h.subtotal;

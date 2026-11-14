@@ -26,7 +26,12 @@
  * pague dos veces, y esa guarda vive adentro de la función.
  */
 import { supabase } from "@/core/supabase";
-import { exigirCapacidad, grupoActivoVigente } from "@/features/seguridad/lib/vigente";
+import {
+  exigirCapacidad,
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 import { leerCarrerasMaestro, aCarreraCentral } from "@/features/carreras/lib/maestro";
 import { filtrarParaDupletaYPolla } from "@/features/gaceta/lib/modales-selectores";
 import type { FilaCarreraMaestro } from "@/features/carreras/lib/maestro-nucleo";
@@ -336,9 +341,10 @@ export async function listarPollas(fecha?: string): Promise<Res<Polla[]>> {
   try {
     let q = supabase.from("pollas").select("*");
     if (fecha) q = q.eq("fecha", fecha);
-    // Filtro del super administrador ("ver un grupo"). Un usuario con grupo ya
-    // viene acotado por el RLS de la base.
-    const activo = grupoActivoVigente();
+    // Aislar siempre al grupo activo (operador o filtro de SuperAdmin).
+    const activo = veTodosLosGruposVigente()
+      ? grupoActivoVigente() || grupoVigente()
+      : grupoVigente() || grupoActivoVigente();
     if (activo) q = q.eq("grupo_id", activo);
     let { data, error } = await q.order("fecha", { ascending: false });
     // La tabla viva puede no tener `pollas.grupo_id` todavía (migración a

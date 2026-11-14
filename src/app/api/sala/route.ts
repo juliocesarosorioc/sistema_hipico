@@ -585,7 +585,8 @@ async function liquidarCarreraFallback(
           .filter((x): x is string => Boolean(x && String(x).trim()))
           .map((x) => String(x).trim());
 
-  // Sincronizar llegada oficial a resultados_carreras y carreras de la plataforma
+  // Sincronizar llegada oficial en resultados_carreras sin alterar el estado global
+  // de `carreras`, para no cambiar el estatus de otros grupos (cada grupo mantiene su estado en salas_juego).
   const fechaHoy = new Date().toISOString().split("T")[0];
   try {
     const { data: resExistente } = await supabaseAdmin
@@ -611,18 +612,6 @@ async function liquidarCarreraFallback(
     } else {
       await supabaseAdmin.from("resultados_carreras").insert(payloadResultados);
     }
-
-    // Actualizar estado en carreras de la plataforma
-    await supabaseAdmin
-      .from("carreras")
-      .update({
-        estado: "Finalizada",
-        pizarra_oficial: ganadoresArray,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("fecha", fechaHoy)
-      .ilike("hipodromo", `%${hipodromo.trim()}%`)
-      .eq("carrera", numCarrera);
   } catch (errRes) {
     console.error("Error sincronizando resultado a resultados_carreras:", errRes);
   }
@@ -960,21 +949,8 @@ async function reversarCarrera(grupoId: string, salaId: string, operadorNombre: 
     }
   }
 
-  // 3b. Eliminar pizarra de resultados_carreras y volver carreras a "Programada"
-  try {
-    await supabaseAdmin
-      .from("resultados_carreras")
-      .delete()
-      .ilike("hipodromo", `%${hipodromo.replace(/\s+/g, "%")}%`)
-      .eq("carrera", numCarrera);
-    await supabaseAdmin
-      .from("carreras")
-      .update({ estado: "Programada" })
-      .ilike("hipodromo", `%${hipodromo.replace(/\s+/g, "%")}%`)
-      .eq("carrera", numCarrera);
-  } catch {
-    /* best-effort */
-  }
+  // 3b. No modificar `resultados_carreras` ni `carreras` globales al reversar en Sala:
+  // cada grupo gestiona su estado de carrera de manera aislada en `salas_juego` / `salas_carreras_estado`.
 
   // 4. Actualizar estado de sala a abierta (sin pizarra ni liquidación)
   await supabaseAdmin

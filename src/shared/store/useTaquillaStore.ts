@@ -1,6 +1,18 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { MODALIDAD_POR_DEFECTO, type ModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
+
+function grupoTicketVigente(): string | undefined {
+  const g = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente()
+    : grupoVigente() || grupoActivoVigente();
+  return g ? String(g) : undefined;
+}
 
 export type TicketTaquilla = {
   id: string;
@@ -99,7 +111,12 @@ export const useTaquillaStore = create<TaquillaState>()(
 
       agregarTicket: (t) =>
         set((s) => {
-          const nuevo: TicketTaquilla = { ...t, id: uid(), addedAt: Date.now() };
+          const nuevo: TicketTaquilla = {
+            ...t,
+            grupoId: t.grupoId || grupoTicketVigente(),
+            id: uid(),
+            addedAt: Date.now(),
+          };
           if (!esTicketSesionValido(nuevo)) return s;
           return {
             tickets: [...s.tickets.filter(esTicketSesionValido), nuevo],
@@ -109,8 +126,14 @@ export const useTaquillaStore = create<TaquillaState>()(
       agregarTickets: (ts) =>
         set((s) => {
           if (!ts || ts.length === 0) return s;
+          const gFallback = grupoTicketVigente();
           const nuevos: TicketTaquilla[] = ts
-            .map((t) => ({ ...t, id: uid(), addedAt: Date.now() }))
+            .map((t) => ({
+              ...t,
+              grupoId: t.grupoId || gFallback,
+              id: uid(),
+              addedAt: Date.now(),
+            }))
             .filter(esTicketSesionValido);
           if (nuevos.length === 0) return s;
           return {

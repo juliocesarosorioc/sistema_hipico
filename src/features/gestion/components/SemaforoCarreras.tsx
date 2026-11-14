@@ -10,6 +10,8 @@ import { useCarrerasDiaStore, type CarreraDelDia } from "@/shared/store/useCarre
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { diaDeLaTabla } from "@/features/tablas/components/MonitorTablas";
 import { useHipodromosActivos } from "@/shared/store/useHipodromosStore";
+import { useAuthStore } from "@/shared/store/useAuthStore";
+import { esCarreraReversadaLocal } from "@/features/carreras/lib/carreras-dia";
 import { nombrePropioHipodromo } from "@/features/hipodromos/lib/nombre";
 import {
   COLORES_SEMAFORO as COLORES,
@@ -84,6 +86,10 @@ export function SemaforoCarreras({
   const tickets = useTaquillaStore((s) => s.tickets);
   const carrerasDia = useCarrerasDiaStore((s) => s.carreras);
   const activos = useHipodromosActivos();
+  const grupoId = useAuthStore((s) => s.grupoId);
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const veTodosLosGrupos = useAuthStore((s) => s.veTodosLosGrupos);
+  const grupoEfectivo = String((veTodosLosGrupos ? grupoActivo || grupoId : grupoId || grupoActivo) || "").trim();
   const hipoLimpio = String(hipodromo ?? "").trim();
   const claveHipo = claveHipodromo(hipoLimpio);
   const tieneHipodromo = Boolean(hipoLimpio && claveHipo && hipoLimpio.toUpperCase() !== "SIN_HIPODROMO");
@@ -123,28 +129,37 @@ export function SemaforoCarreras({
     }
     void (async () => {
       try {
+        let qTickets = sb
+          .from("tickets_apuestas")
+          .select("carrera, hipodromo, estado, anulada, nota_auditoria, fecha_carrera, fecha_registro, grupo_cobro_id")
+          .ilike("hipodromo", `%${hipoLimpio}%`)
+          .order("id", { ascending: false })
+          .limit(3000);
+        if (grupoEfectivo) {
+          qTickets = qTickets.eq("grupo_cobro_id", grupoEfectivo);
+        }
+
         const [ticketsRes, resultadosRes, tablasRes] = await Promise.all([
-          sb
-            .from("tickets_apuestas")
-            .select("carrera, hipodromo, estado, anulada, nota_auditoria, fecha_carrera, fecha_registro")
-            .ilike("hipodromo", `%${hipoLimpio}%`)
-            .order("id", { ascending: false })
-            .limit(3000),
-          sb
-            .from("resultados_carreras")
-            .select("carrera, hipodromo, ganadores, orden_llegada, aplicado_a_tablas")
-            .eq("fecha", dia),
-          sb
-            .from("tablas_fijas")
-            .select("carrera, hipodromo, estado")
-            .eq("fecha", dia)
-            .ilike("hipodromo", `%${hipoLimpio}%`),
+          qTickets,
+          grupoEfectivo
+            ? Promise.resolve({ data: null })
+            : sb
+                .from("resultados_carreras")
+                .select("carrera, hipodromo, ganadores, orden_llegada, aplicado_a_tablas")
+                .eq("fecha", dia),
+          grupoEfectivo
+            ? Promise.resolve({ data: null })
+            : sb
+                .from("tablas_fijas")
+                .select("carrera, hipodromo, estado")
+                .eq("fecha", dia)
+                .ilike("hipodromo", `%${hipoLimpio}%`),
         ]);
 
         if (!vivo) return;
 
         const setLiq = new Set<number>();
-        if (resultadosRes.data && Array.isArray(resultadosRes.data)) {
+        if (!grupoEfectivo && resultadosRes.data && Array.isArray(resultadosRes.data)) {
           for (const r of resultadosRes.data as Array<Record<string, unknown>>) {
             if (claveHipodromo(String(r.hipodromo ?? "")) !== claveHipo) continue;
             const tieneTab = r.aplicado_a_tablas === true;
@@ -155,7 +170,7 @@ export function SemaforoCarreras({
             }
           }
         }
-        if (tablasRes.data && Array.isArray(tablasRes.data)) {
+        if (!grupoEfectivo && tablasRes.data && Array.isArray(tablasRes.data)) {
           for (const t of tablasRes.data as Array<Record<string, unknown>>) {
             if (claveHipodromo(String(t.hipodromo ?? "")) !== claveHipo) continue;
             const est = String(t.estado ?? "").trim().toLowerCase();
@@ -166,9 +181,35 @@ export function SemaforoCarreras({
           }
         }
 
+        if (grupoEfectivo && typeof window !== "undefined") {
+          try {
+            const rawLiq = window.localStorage.getItem(`liquidadas:${grupoEfectivo}:${dia}`);
+            if (rawLiq) {
+              const arr = JSON.parse(rawLiq) as unknown[];
+              if (Array.isArray(arr)) {
+                for (const x of arr) {
+                  if (typeof x === "number" || /^\d+$/.test(String(x))) {
+                    const num = Number(x);
+                    if (num > 0) setLiq.add(num);
+                  } else {
+                    const [hk, nc] = String(x).split("|");
+                    if (hk && nc && claveHipodromo(hk) === claveHipo) {
+                      const num = Number(nc);
+                      if (num > 0) setLiq.add(num);
+                    }
+                  }
+                }
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+
         const statsTickets = new Map<number, { total: number; liquidados: number; pendientes: number }>();
         const setNums = new Set<number>();
         for (const r of (ticketsRes.data ?? []) as Array<Record<string, unknown>>) {
+          if (grupoEfectivo && r.grupo_cobro_id && String(r.grupo_cobro_id) !== grupoEfectivo) continue;
           if (Boolean(r.anulada)) continue;
           const est = String(r.estado ?? "").trim().toLowerCase();
           if (est.startsWith("anul")) continue;
@@ -208,7 +249,7 @@ export function SemaforoCarreras({
       }
     })();
     return () => { vivo = false; };
-  }, [fecha, hipodromo, centrales, carrerasConJugadas?.length, carrerasLiquidadas?.length, recargaVersion, tieneHipodromo, hipoLimpio, claveHipo]);
+  }, [fecha, hipodromo, centrales, carrerasConJugadas?.length, carrerasLiquidadas?.length, recargaVersion, tieneHipodromo, hipoLimpio, claveHipo, grupoEfectivo]);
 
   const porCarrera = (n: number): { estado: EstadoCarrera; tieneVentas: boolean; tieneCaballos: boolean } => {
     if (!tieneHipodromo) return { estado: "inactiva", tieneVentas: false, tieneCaballos: false };
@@ -243,16 +284,22 @@ export function SemaforoCarreras({
     );
     const tieneCaballos = cantCaballos > 0 || Boolean(carrerasConCaballos?.includes(n));
 
-    // Detección estricta de jugadas activas (tickets no anulados)
+    const tablaGrupoOk =
+      !grupoEfectivo || (tabla && (tabla as { grupoId?: string }).grupoId === grupoEfectivo);
+    const tablaParaSemaforo = tablaGrupoOk ? tabla : null;
+
+    // Detección estricta de jugadas activas (tickets no anulados) aislada por grupo
     const jugadasEnMemoria =
       tickets.some(
         (tk) =>
           tk.carrera === n &&
           Boolean(tk.hipodromo && hipoKey(tk.hipodromo) === hipo) &&
-          Boolean(tk.fecha && tk.fecha === fecha)
+          Boolean(tk.fecha && tk.fecha === fecha) &&
+          (!grupoEfectivo || (tk.grupoId ? String(tk.grupoId) === grupoEfectivo : false))
       ) ||
-      (Number((tabla as { cantidad_vendida?: number } | undefined)?.cantidad_vendida ?? 0) > 0) ||
-      (registro?.ventas?.length ?? 0) > 0;
+      (!grupoEfectivo &&
+        (Number((tabla as { cantidad_vendida?: number } | undefined)?.cantidad_vendida ?? 0) > 0 ||
+          (registro?.ventas?.length ?? 0) > 0));
 
     // Jugadas activas: la lista del módulo padre (sesión) y la leída de BD.
     // NO se consulta la carrera seleccionada: su color no puede depender de la
@@ -262,8 +309,21 @@ export function SemaforoCarreras({
       Boolean(carrerasConJugadas?.includes(n)) ||
       carrerasBdConJugadas.includes(n);
 
+    // Con grupo activo, no heredar estado "liquidada" / "aplicado_a_tablas" del registro
+    // central global ni de `registro` local sin ámbito de grupo; conservar solo programa/caballos.
+    const centralAislado =
+      grupoEfectivo && central
+        ? { ...central, estado: "Programada", aplicado_a_tablas: false, ganadores: [] }
+        : central;
+    const reversadaLocal = grupoEfectivo
+      ? esCarreraReversadaLocal(fecha, hipoLimpio, n, grupoEfectivo)
+      : esCarreraReversadaLocal(fecha, hipoLimpio, n);
+    const reversadasLista = reversadaLocal
+      ? [...(carrerasReversadas ?? []), n]
+      : carrerasReversadas;
+
     // MÁQUINA DE ESTADOS DETERMINÍSTICA ESTRICTA (4 ESTADOS):
-    // 1. ROJO: si está liquidada (aplicado a tablas).
+    // 1. ROJO: si está liquidada (aislada por grupo).
     // 2. AMARILLO: si hay jugadas y no está liquidada (al reversar vuelve aquí).
     // 3. VERDE: si tiene caballos registrados y NO hay jugadas (al borrar jugadas vuelve aquí).
     // 4. GRIS: si no tiene ni jugadas ni caballos (al borrar caballos vuelve aquí).
@@ -272,14 +332,14 @@ export function SemaforoCarreras({
     // `semaforo-estado.ts`; aquí solo se recolecta la data.
     const estado = estadoSemaforoCarrera({
       carrera: n,
-      central,
-      tabla,
-      registro,
+      central: centralAislado,
+      tabla: tablaParaSemaforo,
+      registro: grupoEfectivo ? null : registro,
       tieneJugadas,
       tieneCaballos,
       carrerasLiquidadas,
       carrerasBdLiquidadas,
-      carrerasReversadas,
+      carrerasReversadas: reversadasLista,
     });
 
     return { estado, tieneVentas: tieneJugadas, tieneCaballos };

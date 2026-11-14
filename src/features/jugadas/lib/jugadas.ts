@@ -12,7 +12,13 @@
  * `nota_auditoria::jsonb->>'fecha_carrera'`, que sellan los RPC de venta.
  */
 import { supabase } from "@/core/supabase";
-import { exigirCapacidad, grupoActivoVigente, tieneCapacidad } from "@/features/seguridad/lib/vigente";
+import {
+  exigirCapacidad,
+  grupoActivoVigente,
+  grupoVigente,
+  tieneCapacidad,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 import { nombreDeEjemplarEnMatriz } from "@/features/liquidacion/lib/resolver-ejemplar";
 import {
   resolverContraparteModalidad,
@@ -71,6 +77,7 @@ export type JugadaAdmin = {
   cantidad_tablas?: number | null;
   premio_por_tabla?: number | null;
   pts_ejemplar?: number | null;
+  grupo_cobro_id?: string | null;
 };
 
 export type AuditoriaJugada = {
@@ -291,9 +298,9 @@ export async function listarMonitorJugadas(): Promise<{
   if (!supabase) return { ok: false, filas: [], error: "Sin conexión a Supabase." };
   const sb = supabase;
   try {
-    // Filtro del super administrador ("ver un grupo"). Un usuario con grupo ya
-    // viene acotado por el RLS de la vista (security_invoker = true).
-    const activo = grupoActivoVigente();
+    const activo = veTodosLosGruposVigente()
+      ? grupoActivoVigente() || grupoVigente()
+      : grupoVigente() || grupoActivoVigente();
     const consultar = (porGrupo: boolean) => {
       let q = sb.from("v_jugadas_monitor").select("*").order("hipodromo").order("carrera");
       if (porGrupo && activo) q = q.eq("grupo_cobro_id", activo);
@@ -302,9 +309,48 @@ export async function listarMonitorJugadas(): Promise<{
     let { data, error } = await consultar(Boolean(activo));
     let aviso: string | undefined;
     if (error && activo && esColumnaFaltanteGrupo(error)) {
-      // La vista de la base no fue recreada con `sql/jugadas_monitor.sql`: se
-      // reintenta SIN el filtro del administrador para no romper el monitor con
-      // un 400, y se avisa que hay que actualizar la base.
+      // Vista vieja sin `grupo_cobro_id`: reconstruir el monitor directo desde
+      // `tickets_apuestas` filtrado por grupo para no mezclar jugadas entre grupos.
+      const rTickets = await sb
+        .from("tickets_apuestas")
+        .select(
+          "hipodromo, carrera, fecha_carrera, fecha_registro, monto_jugado, premio_pagar, estado, anulada, cliente_juega_nombre, nota_auditoria"
+        )
+        .eq("grupo_cobro_id", activo)
+        .limit(5000);
+      if (!rTickets.error) {
+        const filasDirectas: FilaMonitorJugada[] = (rTickets.data ?? []).map((raw) => {
+          const r = raw as Record<string, unknown>;
+          const est = texto(r.estado);
+          const esAnulada = r.anulada === true || est === "Anulada";
+          const esLiquidada = est === "Ganador" || est === "Perdedor" || est === "Liquidada";
+          const monto = num(r.monto_jugado);
+          const premio = num(r.premio_pagar);
+          const nota = leerNotaAuditoria(r.nota_auditoria);
+          const nom = texto(r.cliente_juega_nombre);
+          const orig = texto(nota.origen);
+          return {
+            hipodromo: texto(r.hipodromo),
+            carrera: num(r.carrera),
+            fecha_carrera:
+              (r.fecha_carrera ? String(r.fecha_carrera) : r.fecha_registro ? String(r.fecha_registro) : "").slice(0, 10) ||
+              null,
+            total_jugadas: 1,
+            total_monto: monto,
+            total_premio: premio,
+            en_juego: !esAnulada && est === "Pendiente" ? 1 : 0,
+            por_pagar: !esAnulada && est === "Ganador" ? 1 : 0,
+            liquidadas: !esAnulada && esLiquidada ? 1 : 0,
+            anuladas: esAnulada ? 1 : 0,
+            monto_vigente: esAnulada ? 0 : monto,
+            premio_ganador: !esAnulada && est === "Ganador" ? premio : 0,
+            usuarios: nom ? [nom] : null,
+            origenes: orig || null,
+            resultado_cargado: !esAnulada && esLiquidada,
+          };
+        });
+        return { ok: true, filas: agruparMonitor(filasDirectas), aviso: AVISO_VISTA_VIEJA };
+      }
       const r2 = await consultar(false);
       data = r2.data;
       error = r2.error;
@@ -313,6 +359,7 @@ export async function listarMonitorJugadas(): Promise<{
     if (error) throw error;
     const filas: FilaMonitorJugada[] = (data ?? []).map((r) => {
       const x = r as Record<string, unknown>;
+      const liq = num(x.liquidadas);
       return {
         hipodromo: texto(x.hipodromo),
         carrera: num(x.carrera),
@@ -322,13 +369,13 @@ export async function listarMonitorJugadas(): Promise<{
         total_premio: num(x.total_premio),
         en_juego: num(x.en_juego),
         por_pagar: num(x.por_pagar),
-        liquidadas: num(x.liquidadas),
+        liquidadas: liq,
         anuladas: num(x.anuladas),
         monto_vigente: num(x.monto_vigente),
         premio_ganador: num(x.premio_ganador),
         usuarios: Array.isArray(x.usuarios) ? (x.usuarios as unknown[]).map(String) : null,
         origenes: x.origenes ? String(x.origenes) : null,
-        resultado_cargado: x.resultado_cargado === true,
+        resultado_cargado: activo ? liq > 0 : x.resultado_cargado === true,
       };
     });
     return { ok: true, filas: agruparMonitor(filas), aviso };
@@ -349,9 +396,9 @@ export async function listarJugadasDeCarrera(
   if (!supabase) return { ok: false, jugadas: [], error: "Sin conexión a Supabase." };
   const sb = supabase;
   try {
-    // Filtro del super administrador ("ver un grupo"). Un usuario con grupo ya
-    // viene acotado por el RLS de la vista (security_invoker = true).
-    const activo = grupoActivoVigente();
+    const activo = veTodosLosGruposVigente()
+      ? grupoActivoVigente() || grupoVigente()
+      : grupoVigente() || grupoActivoVigente();
     const consultar = (porGrupo: boolean, cols = COLS_DETALLE) => {
       let q = sb
         .from("v_jugadas_carrera")
@@ -366,8 +413,8 @@ export async function listarJugadasDeCarrera(
     let { data, error } = await consultar(Boolean(activo), COLS_DETALLE);
     let aviso: string | undefined;
     if (error && activo && esColumnaFaltanteGrupo(error)) {
-      // Vista vieja en la base (sin `grupo_cobro_id`): se reintenta sin el filtro
-      // del administrador para no romper el detalle con un 400.
+      // Vista vieja en la base (sin `grupo_cobro_id`): se reintenta y se filtra
+      // estrictamente en memoria por `tickets_apuestas.grupo_cobro_id`.
       const r2 = await consultar(false, COLS_DETALLE_BASE);
       data = r2.data;
       error = r2.error;
@@ -376,17 +423,25 @@ export async function listarJugadasDeCarrera(
     if (error) throw error;
     let jugadas = (data ?? []) as unknown as JugadaAdmin[];
     if (jugadas.length > 0) {
+      const mapaExtras = new Map<string, Record<string, unknown>>();
       try {
         const ids = jugadas.map((j) => j.id).filter(Boolean);
-        const { data: extras } = await sb
+        const { data: extras, error: errExtras } = await sb
           .from("tickets_apuestas")
           .select(
-            "id, hipodromo, carrera, fecha_carrera, es_adelantada, cliente_juega_id, cliente_juega_nombre, cliente_consigue_nombre, anulada, cantidad_tablas, premio_por_tabla, pts_ejemplar, nota_auditoria"
+            "id, hipodromo, carrera, fecha_carrera, es_adelantada, cliente_juega_id, cliente_juega_nombre, cliente_consigue_nombre, anulada, cantidad_tablas, premio_por_tabla, pts_ejemplar, nota_auditoria, grupo_cobro_id, grupo_comision_id"
           )
           .in("id", ids as never[]);
-        if (Array.isArray(extras) && extras.length > 0) {
-          const mapaExtras = new Map<string, Record<string, unknown>>();
-          for (const ex of extras) {
+        let extrasFinal = extras;
+        if (errExtras) {
+          const { data: extrasMin } = await sb
+            .from("tickets_apuestas")
+            .select("id, grupo_cobro_id, grupo_comision_id, cliente_juega_id")
+            .in("id", ids as never[]);
+          extrasFinal = extrasMin as typeof extras;
+        }
+        if (Array.isArray(extrasFinal) && extrasFinal.length > 0) {
+          for (const ex of extrasFinal) {
             const row = ex as Record<string, unknown>;
             mapaExtras.set(String(row.id ?? ""), row);
           }
@@ -410,6 +465,8 @@ export async function listarJugadasDeCarrera(
               fecha_carrera: texto(ex?.fecha_carrera).slice(0, 10) || j.fecha_carrera || null,
               cliente_juega_nombre: nombreJuegaDirecto || j.cliente_juega_nombre,
               cliente_consigue_nombre: contraparteCanonica || j.cliente_consigue_nombre,
+              grupo_cobro_id:
+                (ex?.grupo_cobro_id as string | null | undefined) ?? j.grupo_cobro_id ?? null,
             };
             if (!ex) return base;
             return {
@@ -428,6 +485,46 @@ export async function listarJugadasDeCarrera(
         }
       } catch {
         // Si la tabla no tiene `es_adelantada`, se conserva el respaldo por `nota_auditoria`.
+      }
+      if (activo) {
+        // Aislar estrictamente al grupo activo: verificar `grupo_cobro_id` directo y,
+        // solo si viene nulo en tickets legados, respaldar con `clientes.grupo_id`.
+        const idsClientesSinGrupo = [
+          ...new Set(
+            jugadas
+              .filter((j) => {
+                const ex = mapaExtras.get(String(j.id));
+                const g = texto(ex?.grupo_cobro_id ?? j.grupo_cobro_id);
+                return !g && (ex?.cliente_juega_id ?? j.cliente_juega_id) != null;
+              })
+              .map((j) => {
+                const ex = mapaExtras.get(String(j.id));
+                return String(ex?.cliente_juega_id ?? j.cliente_juega_id);
+              })
+          ),
+        ];
+        const clientesDelGrupo = new Set<string>();
+        if (idsClientesSinGrupo.length > 0) {
+          try {
+            const { data: cliGrp } = await sb
+              .from("clientes")
+              .select("id")
+              .eq("grupo_id", activo)
+              .in("id", idsClientesSinGrupo as never[]);
+            for (const c of (cliGrp ?? []) as { id: string | number }[]) {
+              clientesDelGrupo.add(String(c.id));
+            }
+          } catch {
+            // Ignorar si falla lectura auxiliar
+          }
+        }
+        jugadas = jugadas.filter((j) => {
+          const ex = mapaExtras.get(String(j.id));
+          const g = texto(ex?.grupo_cobro_id ?? j.grupo_cobro_id);
+          if (g) return g === activo;
+          const cid = ex?.cliente_juega_id ?? j.cliente_juega_id;
+          return cid != null && clientesDelGrupo.has(String(cid));
+        });
       }
       // Si algún ticket tiene cliente_juega_id pero le falta cliente_juega_nombre, resolver desde clientes
       const idsSinNombre = [

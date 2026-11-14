@@ -34,7 +34,22 @@ import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { revertirLiquidacionCarrera } from "@/features/liquidacion/lib/recalcular";
 import { marcarCarreraReversadaLocal, revertirResultadoCentral } from "@/features/carreras/lib/carreras-dia";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
-import { exigirPermiso, tieneCapacidad } from "@/features/seguridad/lib/vigente";
+import {
+  exigirPermiso,
+  grupoActivoVigente,
+  grupoVigente,
+  tieneCapacidad,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
+
+function grupoReversarEfectivo(grupoId?: string | null): string {
+  const explicito = String(grupoId ?? "").trim();
+  if (explicito) return explicito;
+  const g = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente()
+    : grupoVigente() || grupoActivoVigente();
+  return String(g ?? "").trim();
+}
 import { registrarAuditoria } from "@/features/grupos/lib/grupos";
 import { reabrirRemate } from "@/features/remates/lib/remates";
 import { listarRemates } from "@/features/remates/lib/remates";
@@ -91,20 +106,26 @@ async function revertirEspecialesDeCarrera(opts: {
   hipodromo: string;
   carrera: number;
   dia: string;
+  grupoId?: string | null;
 }): Promise<{ tablas: number; marcas: number; dupletas: number; revertido: number; tickets: number; errores: string[] }> {
   const out = { tablas: 0, marcas: 0, dupletas: 0, revertido: 0, tickets: 0, errores: [] as string[] };
   if (!supabase) return out;
   const sdb = supabase;
+  const grupoFiltro = grupoReversarEfectivo(opts.grupoId);
 
   let filas: Array<Record<string, unknown>> = [];
   try {
-    const { data, error } = await sdb
+    let qEsp = sdb
       .from("tickets_apuestas")
       .select("*")
       .or(filtroDiaJornada(opts.dia))
       .eq("carrera", opts.carrera)
       .in("estado", ["Ganador", "Perdedor", "Retirado"])
       .limit(2000);
+    if (grupoFiltro) {
+      qEsp = qEsp.eq("grupo_cobro_id", grupoFiltro);
+    }
+    const { data, error } = await qEsp;
     if (error) throw error;
     const claveHip = claveHipodromo(opts.hipodromo);
     filas = ((data ?? []) as Array<Record<string, unknown>>).filter(
@@ -243,9 +264,11 @@ async function reabrirRematesDeCarrera(opts: {
   hipodromo: string;
   carrera: number;
   dia: string;
+  grupoId?: string | null;
 }): Promise<{ reabiertos: number; errores: string[] }> {
   const out = { reabiertos: 0, errores: [] as string[] };
   if (!supabase) return out;
+  const grupoFiltro = grupoReversarEfectivo(opts.grupoId);
   let remates: Array<Record<string, unknown>> = [];
   try {
     const r = await listarRemates();
@@ -259,6 +282,7 @@ async function reabrirRematesDeCarrera(opts: {
     if (claveHipodromo(String(m.hipodromo ?? "")) !== clave) continue;
     if (Number(m.carrera) !== opts.carrera) continue;
     if (String(m.fecha ?? "").slice(0, 10) !== opts.dia) continue;
+    if (grupoFiltro && m.grupo_id && String(m.grupo_id) !== grupoFiltro) continue;
     if (String(m.estado ?? "").trim().toLowerCase() !== "cerrado") continue;
     try {
       const r = await reabrirRemate(String(m.id));
@@ -331,16 +355,23 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
   }
 
   const errores: string[] = [];
+  const grupoFiltro = grupoReversarEfectivo(opts.grupoId);
 
   // 1) Especiales (Tabla Fija / Marca / Dupleta) — antes que el barrido universal.
-  const esp = await revertirEspecialesDeCarrera({ hipodromo, carrera, dia });
+  const esp = await revertirEspecialesDeCarrera({ hipodromo, carrera, dia, grupoId: grupoFiltro || undefined });
   errores.push(...esp.errores);
 
   // 2) Universal (WPS/Puestos/Bloques/ninis) — devuelve el crédito exacto.
   let universales = 0;
   let revertidoUniversal = 0;
   try {
-    const rev = await revertirLiquidacionCarrera({ hipodromo, carrera, fecha, tasaComision: opts.tasaComision ?? null });
+    const rev = await revertirLiquidacionCarrera({
+      hipodromo,
+      carrera,
+      fecha,
+      tasaComision: opts.tasaComision ?? null,
+      grupoId: grupoFiltro || undefined,
+    });
     universales = rev.revertidos;
     revertidoUniversal = rev.revertidoTotal;
     errores.push(...rev.errores);
@@ -349,50 +380,74 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
     errores.push(`Universal: ${(e as Error).message}`);
   }
 
-  // 3) Remates cerrados de la carrera → reabrir.
-  const rem = await reabrirRematesDeCarrera({ hipodromo, carrera, dia });
+  // 3) Remates cerrados de la carrera → reabrir (del grupo activo).
+  const rem = await reabrirRematesDeCarrera({ hipodromo, carrera, dia, grupoId: grupoFiltro || undefined });
   errores.push(...rem.errores);
 
-  // 4) Pollas liquidadas del día → Cerrada.
+  // 4) Pollas liquidadas del día → Cerrada (del grupo activo).
   const pol = await reabrirPollasDelDia(dia);
   errores.push(...pol.errores);
 
-  // 5) Resultado central → la carrera vuelve a "Programada" (ABIERTA) y se elimina la pizarra.
-  marcarCarreraReversadaLocal(dia, hipodromo, carrera);
-  let resultadoCentral = false;
-  try {
-    const central = await revertirResultadoCentral({ fecha: dia, hipodromo, carrera });
-    resultadoCentral = central.ok;
-    if (!central.ok && central.error) errores.push(`Resultado central: ${central.error}`);
-  } catch (e) {
-    errores.push(`Resultado central: ${(e as Error).message}`);
-  }
-
-  // 5b) Reabrir Tablas Fijas en BD y sincronizar stores locales (useTablasFijasStore + useCarrerasDiaStore)
-  // para que el Semáforo pase de Rojo (Liquidada) a Amarillo (Con jugadas) o Verde (Abierta) de inmediato.
-  try {
-    const { data: tablasRows } = await supabase
-      .from("tablas_fijas")
-      .select("id, hipodromo, carrera, fecha, fecha_creacion, estado")
-      .eq("carrera", carrera)
-      .or(`fecha.eq.${dia},fecha.is.null`)
-      .limit(100);
-    const clave = claveHipodromo(hipodromo);
-    const idsReabrir = ((tablasRows ?? []) as Array<Record<string, unknown>>)
-      .filter((t) => claveHipodromo(String(t.hipodromo ?? "")) === clave)
-      .filter((t) => String(t.fecha ?? t.fecha_creacion ?? "").slice(0, 10) === dia)
-      .filter((t) => String(t.estado ?? "").toLowerCase() !== "abierta")
-      .map((t) => t.id);
-    if (idsReabrir.length > 0) {
-      await supabase.from("tablas_fijas").update({ estado: "Abierta", ganador: null, ganadores: null }).in("id", idsReabrir as never[]);
+  // 5) Resultado central → marcar reversión local por grupo; solo revertir el
+  //    resultado central compartido si NO existen tickets decididos de otros grupos.
+  marcarCarreraReversadaLocal(dia, hipodromo, carrera, grupoFiltro || undefined);
+  let hayOtroGrupoDecidido = false;
+  if (grupoFiltro) {
+    try {
+      const { data: otros } = await supabase
+        .from("tickets_apuestas")
+        .select("id, hipodromo, grupo_cobro_id")
+        .eq("carrera", carrera)
+        .or(filtroDiaJornada(dia))
+        .in("estado", ["Ganador", "Perdedor", "Retirado", "Liquidada", "GANO", "PERDIO", "Solucionado", "SOLUCIONADO"])
+        .or("anulada.is.null,anulada.eq.false")
+        .neq("grupo_cobro_id", grupoFiltro)
+        .limit(50);
+      const claveH = claveHipodromo(hipodromo);
+      hayOtroGrupoDecidido = ((otros ?? []) as Array<Record<string, unknown>>).some(
+        (t) => claveHipodromo(String(t.hipodromo ?? "")) === claveH
+      );
+    } catch {
+      hayOtroGrupoDecidido = false;
     }
-  } catch {
-    // best-effort
+  }
+  let resultadoCentral = false;
+  if (!grupoFiltro || !hayOtroGrupoDecidido) {
+    try {
+      const central = await revertirResultadoCentral({ fecha: dia, hipodromo, carrera });
+      resultadoCentral = central.ok;
+      if (!central.ok && central.error) errores.push(`Resultado central: ${central.error}`);
+    } catch (e) {
+      errores.push(`Resultado central: ${(e as Error).message}`);
+    }
   }
 
-  // 5c) BARRIDO DE SEGURIDAD TOTAL: Asegurar que TODO ticket de la carrera vuelva a Pendiente
+  // 5b) Reabrir Tablas Fijas en BD solo si ningún otro grupo tiene liquidación activa
+  if (!grupoFiltro || !hayOtroGrupoDecidido) {
+    try {
+      const { data: tablasRows } = await supabase
+        .from("tablas_fijas")
+        .select("id, hipodromo, carrera, fecha, fecha_creacion, estado")
+        .eq("carrera", carrera)
+        .or(`fecha.eq.${dia},fecha.is.null`)
+        .limit(100);
+      const clave = claveHipodromo(hipodromo);
+      const idsReabrir = ((tablasRows ?? []) as Array<Record<string, unknown>>)
+        .filter((t) => claveHipodromo(String(t.hipodromo ?? "")) === clave)
+        .filter((t) => String(t.fecha ?? t.fecha_creacion ?? "").slice(0, 10) === dia)
+        .filter((t) => String(t.estado ?? "").toLowerCase() !== "abierta")
+        .map((t) => t.id);
+      if (idsReabrir.length > 0) {
+        await supabase.from("tablas_fijas").update({ estado: "Abierta", ganador: null, ganadores: null }).in("id", idsReabrir as never[]);
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  // 5c) BARRIDO DE SEGURIDAD TOTAL: Asegurar que los tickets de ESTE grupo vuelvan a Pendiente
   try {
-    const { data: ticketsRestantes } = await supabase
+    let qSweep = supabase
       .from("tickets_apuestas")
       .select("id, hipodromo")
       .eq("carrera", carrera)
@@ -400,6 +455,10 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
       .in("estado", ["Ganador", "Perdedor", "Retirado", "Liquidada", "GANO", "PERDIO", "Solucionado", "SOLUCIONADO"])
       .or("anulada.is.null,anulada.eq.false")
       .limit(2000);
+    if (grupoFiltro) {
+      qSweep = qSweep.eq("grupo_cobro_id", grupoFiltro);
+    }
+    const { data: ticketsRestantes } = await qSweep;
     const clave = claveHipodromo(hipodromo);
     const idsReset = ((ticketsRestantes ?? []) as Array<Record<string, unknown>>)
       .filter((t) => claveHipodromo(String(t.hipodromo ?? "")) === clave)
@@ -413,66 +472,68 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
   } catch {
     // best-effort
   }
-  try {
-    useTablasFijasStore.getState().marcarAbierta(hipodromo, carrera);
-    const prevCarrera = useCarrerasDiaStore.getState().estadoDe(hipodromo, carrera, dia);
-    if (prevCarrera) {
-      useCarrerasDiaStore.getState().upsert({
-        ...prevCarrera,
-        fecha: dia,
-        hipodromo,
-        carrera,
-        estado: "Programada",
-        ganadores: [],
-        aplicado_a_tablas: false,
-        pago: null,
-      });
+  if (!grupoFiltro || !hayOtroGrupoDecidido) {
+    try {
+      useTablasFijasStore.getState().marcarAbierta(hipodromo, carrera);
+      const prevCarrera = useCarrerasDiaStore.getState().estadoDe(hipodromo, carrera, dia);
+      if (prevCarrera) {
+        useCarrerasDiaStore.getState().upsert({
+          ...prevCarrera,
+          fecha: dia,
+          hipodromo,
+          carrera,
+          estado: "Programada",
+          ganadores: [],
+          aplicado_a_tablas: false,
+          pago: null,
+        });
+      }
+      const reg = useRegistroCentral.getState();
+      const carreraActual = (reg.porFecha[dia] ?? []).find(
+        (c) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo) && Number(c.carrera) === Number(carrera)
+      );
+      if (carreraActual) {
+        reg.registrarCarrera({
+          ...carreraActual,
+          fecha: dia,
+          hipodromo,
+          carrera,
+          estado: "Programada",
+          ganadores: [],
+          orden_llegada_raya: [],
+          aplicado_a_tablas: false,
+        });
+      } else {
+        reg.registrarCarrera({
+          fecha: dia,
+          hipodromo,
+          carrera,
+          estado: "Programada",
+          ganadores: [],
+          orden_llegada_raya: [],
+          aplicado_a_tablas: false,
+        });
+      }
+      const listaActual = reg.porFecha[dia] ?? [];
+      const idx = listaActual.findIndex(
+        (c) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo) && Number(c.carrera) === Number(carrera)
+      );
+      if (idx >= 0) {
+        listaActual[idx] = {
+          ...listaActual[idx],
+          estado: "Programada",
+          ganadores: [],
+          orden_llegada_raya: [],
+          aplicado_a_tablas: false,
+        };
+        useRegistroCentral.setState({
+          porFecha: { ...reg.porFecha, [dia]: [...listaActual] },
+        });
+      }
+      reg.invalidarCarreras();
+    } catch {
+      // best-effort en entorno node/test
     }
-    const reg = useRegistroCentral.getState();
-    const carreraActual = (reg.porFecha[dia] ?? []).find(
-      (c) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo) && Number(c.carrera) === Number(carrera)
-    );
-    if (carreraActual) {
-      reg.registrarCarrera({
-        ...carreraActual,
-        fecha: dia,
-        hipodromo,
-        carrera,
-        estado: "Programada",
-        ganadores: [],
-        orden_llegada_raya: [],
-        aplicado_a_tablas: false,
-      });
-    } else {
-      reg.registrarCarrera({
-        fecha: dia,
-        hipodromo,
-        carrera,
-        estado: "Programada",
-        ganadores: [],
-        orden_llegada_raya: [],
-        aplicado_a_tablas: false,
-      });
-    }
-    const listaActual = reg.porFecha[dia] ?? [];
-    const idx = listaActual.findIndex(
-      (c) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo) && Number(c.carrera) === Number(carrera)
-    );
-    if (idx >= 0) {
-      listaActual[idx] = {
-        ...listaActual[idx],
-        estado: "Programada",
-        ganadores: [],
-        orden_llegada_raya: [],
-        aplicado_a_tablas: false,
-      };
-      useRegistroCentral.setState({
-        porFecha: { ...reg.porFecha, [dia]: [...listaActual] },
-      });
-    }
-    reg.invalidarCarreras();
-  } catch {
-    // best-effort en entorno node/test
   }
 
   const tickets = universales + esp.tickets;

@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/core/supabase";
+import { useAuthStore } from "@/shared/store/useAuthStore";
+import { claveHipodromo } from "@/features/carreras/lib/claves";
 import { useCarrerasDiaStore } from "@/shared/store/useCarrerasDiaStore";
 import { useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
@@ -76,6 +79,7 @@ export function BarraCarrerasLiquidadas({
   carreraActiva,
   conteoJugadasActiva = 0,
   pizarraActiva,
+  refreshKey = 0,
   itemsExtra = [],
   abiertoInicial = false,
   onSeleccionarCarrera,
@@ -87,6 +91,20 @@ export function BarraCarrerasLiquidadas({
   const tablas = useTablasFijasStore((s) => s.tablas);
   const tickets = useTaquillaStore((s) => s.tickets);
   const { carrerasDe } = useRegistroCentralOpts(fecha);
+  const grupoId = useAuthStore((s) => s.grupoId);
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const veTodosLosGrupos = useAuthStore((s) => s.veTodosLosGrupos);
+  const grupoEfectivo = String((veTodosLosGrupos ? grupoActivo || grupoId : grupoId || grupoActivo) || "").trim();
+  const [tickEvento, setTickEvento] = useState(0);
+  const [bdLiqPorGrupo, setBdLiqPorGrupo] = useState<
+    Array<{ carrera: number; hipodromo: string; jugadas: number }>
+  >([]);
+
+  useEffect(() => {
+    const onAct = () => setTickEvento((v) => v + 1);
+    window.addEventListener("hipico:carreras-actualizadas", onAct);
+    return () => window.removeEventListener("hipico:carreras-actualizadas", onAct);
+  }, []);
 
   // Cerrar con Escape
   useEffect(() => {
@@ -101,6 +119,74 @@ export function BarraCarrerasLiquidadas({
 
   const fechaObjetivo = useMemo(() => normalizarFechaISO(fecha), [fecha]);
 
+  useEffect(() => {
+    let vivo = true;
+    const sb = supabase;
+    if (!grupoEfectivo || !sb || !fechaObjetivo || !hipodromo) {
+      setBdLiqPorGrupo([]);
+      return () => { vivo = false; };
+    }
+    const hipoLimpio = String(hipodromo).trim();
+    const claveHipo = claveHipodromo(hipoLimpio);
+    void (async () => {
+      try {
+        const { data, error } = await sb
+          .from("tickets_apuestas")
+          .select("carrera, hipodromo, estado, anulada, fecha_carrera, fecha_registro, nota_auditoria, grupo_cobro_id")
+          .eq("grupo_cobro_id", grupoEfectivo)
+          .ilike("hipodromo", `%${hipoLimpio}%`)
+          .order("id", { ascending: false })
+          .limit(3000);
+        if (!vivo || error) return;
+
+        const stats = new Map<number, { hipodromo: string; total: number; liq: number; pend: number }>();
+        for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+          if (r.grupo_cobro_id && String(r.grupo_cobro_id) !== grupoEfectivo) continue;
+          if (Boolean(r.anulada)) continue;
+          const est = String(r.estado ?? "").trim().toLowerCase();
+          if (est.startsWith("anul")) continue;
+          if (claveHipodromo(String(r.hipodromo ?? "")) !== claveHipo) continue;
+          let fechaTicket = String(r.fecha_carrera ?? r.fecha_registro ?? "").slice(0, 10);
+          try {
+            const nota = typeof r.nota_auditoria === "string" ? JSON.parse(r.nota_auditoria) : r.nota_auditoria;
+            if (!r.fecha_carrera && nota && typeof nota === "object" && (nota as Record<string, unknown>).fecha_carrera) {
+              fechaTicket = String((nota as Record<string, unknown>).fecha_carrera).slice(0, 10);
+            }
+          } catch {
+            /* ignore */
+          }
+          if (fechaTicket && fechaTicket !== fechaObjetivo) continue;
+          const numC = Number(r.carrera);
+          if (!Number.isFinite(numC) || numC <= 0) continue;
+          const prev = stats.get(numC) ?? {
+            hipodromo: String(r.hipodromo ?? hipoLimpio),
+            total: 0,
+            liq: 0,
+            pend: 0,
+          };
+          prev.total++;
+          if (est.includes("ganad") || est.includes("perd") || est.includes("gano") || est === "liquidada") {
+            prev.liq++;
+          } else {
+            prev.pend++;
+          }
+          stats.set(numC, prev);
+        }
+
+        const lista: Array<{ carrera: number; hipodromo: string; jugadas: number }> = [];
+        for (const [numC, st] of stats.entries()) {
+          if (st.liq > 0 && st.pend === 0) {
+            lista.push({ carrera: numC, hipodromo: st.hipodromo, jugadas: st.total });
+          }
+        }
+        setBdLiqPorGrupo(lista);
+      } catch {
+        // best-effort
+      }
+    })();
+    return () => { vivo = false; };
+  }, [fechaObjetivo, hipodromo, grupoEfectivo, refreshKey, tickEvento]);
+
   const itemsLiquidadas = useMemo(() => {
     const hipo = hipoKey(hipodromo);
     const hipLabel = nombreHipodromo || hipodromo || "Hipódromo";
@@ -108,12 +194,36 @@ export function BarraCarrerasLiquidadas({
     const recolectadas: ItemCarreraLiquidada[] = [];
 
     const reversadasSet = new Set<string>();
+    const liquidadasLocalNums = new Set<number>();
     if (typeof window !== "undefined") {
       try {
-        const raw = window.localStorage.getItem(`reversadas:${fechaObjetivo}`);
+        const keyRev = grupoEfectivo
+          ? `reversadas:${grupoEfectivo}:${fechaObjetivo}`
+          : `reversadas:${fechaObjetivo}`;
+        const raw = window.localStorage.getItem(keyRev);
         if (raw) {
           const arr = JSON.parse(raw) as string[];
           if (Array.isArray(arr)) arr.forEach((k) => reversadasSet.add(String(k).toUpperCase().replace(/\s+/g, "")));
+        }
+        if (grupoEfectivo) {
+          const rawLiq = window.localStorage.getItem(`liquidadas:${grupoEfectivo}:${fechaObjetivo}`);
+          if (rawLiq) {
+            const arrLiq = JSON.parse(rawLiq) as unknown[];
+            if (Array.isArray(arrLiq)) {
+              for (const x of arrLiq) {
+                if (typeof x === "number" || /^\d+$/.test(String(x))) {
+                  const n = Number(x);
+                  if (n > 0) liquidadasLocalNums.add(n);
+                } else {
+                  const [hk, nc] = String(x).split("|");
+                  if (hk && nc && hipoKey(hk) === hipo) {
+                    const n = Number(nc);
+                    if (n > 0) liquidadasLocalNums.add(n);
+                  }
+                }
+              }
+            }
+          }
         }
       } catch {
         /* ignore */
@@ -131,92 +241,145 @@ export function BarraCarrerasLiquidadas({
       });
     }
 
-    // 2. Registro Central (filtradas estrictamente al día consultado)
-    for (const c of centrales) {
-      const fC = normalizarFechaISO((c as { fecha?: unknown }).fecha);
-      if (fechaObjetivo && fC && fC !== fechaObjetivo) continue;
+    if (grupoEfectivo) {
+      // Con grupo activo: SOLO incluir carreras liquidadas en ESTE grupo (tickets en BD o marca local).
+      // `centrales` aporta únicamente la pizarra de ganadores si la carrera ya fue liquidada aquí.
+      const mapaCentralPorNum = new Map<number, (typeof centrales)[number]>();
+      for (const c of centrales) {
+        const fC = normalizarFechaISO((c as { fecha?: unknown }).fecha);
+        if (fechaObjetivo && fC && fC !== fechaObjetivo) continue;
+        mapaCentralPorNum.set(Number(c.carrera), c);
+      }
 
-      const est = String(c.estado ?? "").toLowerCase();
-      const ganadores = Array.isArray(c.ganadores) ? c.ganadores.filter(Boolean) : [];
-      const esLiq =
-        est === "liquidada" ||
-        est === "cerrada" ||
-        c.aplicado_a_tablas === true ||
-        ganadores.length > 0;
-      if (!esLiq) continue;
+      const mapaGrupoLiq = new Map<number, number>();
+      for (const bd of bdLiqPorGrupo) {
+        if (reversadasSet.has(`${hipo}|${bd.carrera}`)) continue;
+        mapaGrupoLiq.set(bd.carrera, bd.jugadas);
+      }
+      for (const numLocal of liquidadasLocalNums) {
+        if (reversadasSet.has(`${hipo}|${numLocal}`)) continue;
+        if (!mapaGrupoLiq.has(numLocal)) mapaGrupoLiq.set(numLocal, 0);
+      }
 
-      const numC = Number(c.carrera);
-      if (reversadasSet.has(`${hipo}|${numC}`)) continue;
-      const jugCount =
-        numC === carreraActiva && conteoJugadasActiva > 0
-          ? conteoJugadasActiva
-          : tickets.filter(
-              (tk) =>
-                tk.carrera === numC &&
-                (!tk.hipodromo || hipoKey(tk.hipodromo) === hipo) &&
-                (!tk.fecha || normalizarFechaISO(tk.fecha) === fechaObjetivo)
-            ).length;
-      const cAny = c as Record<string, unknown>;
-      recolectadas.push({
-        fecha: fechaObjetivo || fC,
-        carrera: numC,
-        hipodromo: hipLabel,
-        pizarra:
-          numC === carreraActiva && pizarraActiva
-            ? pizarraActiva
-            : ganadores.length > 0
-              ? ganadores.slice(0, 5).join("-")
-              : "Oficial",
-        jugadas: jugCount,
-        totalJugadas: jugCount,
-        liquidada: true,
-        liquidada_at: (cAny.liquidada_at ?? cAny.updated_at ?? cAny.created_at ?? null) as string | null,
-      });
-    }
+      for (const [numC, bdJugadas] of mapaGrupoLiq.entries()) {
+        const c = mapaCentralPorNum.get(numC);
+        const ganadores = Array.isArray(c?.ganadores) ? c.ganadores.filter(Boolean) : [];
+        const cAny = (c ?? {}) as Record<string, unknown>;
+        const memCount = tickets.filter(
+          (tk) =>
+            tk.carrera === numC &&
+            (!tk.hipodromo || hipoKey(tk.hipodromo) === hipo) &&
+            (!tk.fecha || normalizarFechaISO(tk.fecha) === fechaObjetivo) &&
+            tk.grupoId === grupoEfectivo
+        ).length;
+        const jugCount =
+          numC === carreraActiva && conteoJugadasActiva > 0
+            ? conteoJugadasActiva
+            : Math.max(bdJugadas, memCount);
+        recolectadas.push({
+          fecha: fechaObjetivo,
+          carrera: numC,
+          hipodromo: hipLabel,
+          pizarra:
+            numC === carreraActiva && pizarraActiva
+              ? pizarraActiva
+              : ganadores.length > 0
+                ? ganadores.slice(0, 5).join("-")
+                : "Oficial",
+          jugadas: jugCount,
+          totalJugadas: jugCount,
+          liquidada: true,
+          liquidada_at: (cAny.liquidada_at ?? cAny.updated_at ?? cAny.created_at ?? null) as string | null,
+        });
+      }
+    } else {
+      // 2. Registro Central (solo cuando el SuperAdmin visualiza "Todos los grupos")
+      for (const c of centrales) {
+        const fC = normalizarFechaISO((c as { fecha?: unknown }).fecha);
+        if (fechaObjetivo && fC && fC !== fechaObjetivo) continue;
 
-    // 3. Carreras del Día del store (filtradas estrictamente al día consultado)
-    for (const r of carrerasDia) {
-      const fR = normalizarFechaISO(r.fecha);
-      if (fechaObjetivo && fR !== fechaObjetivo) continue;
-      if (hipo && hipoKey(r.hipodromo) !== hipo) continue;
-      if (String(r.estado ?? "").toLowerCase() !== "liquidada") continue;
+        const est = String(c.estado ?? "").toLowerCase();
+        const ganadores = Array.isArray(c.ganadores) ? c.ganadores.filter(Boolean) : [];
+        const esLiq =
+          est === "liquidada" ||
+          est === "cerrada" ||
+          c.aplicado_a_tablas === true ||
+          ganadores.length > 0;
+        if (!esLiq) continue;
 
-      const numC = Number(r.carrera);
-      if (reversadasSet.has(`${hipoKey(r.hipodromo)}|${numC}`)) continue;
-      const rAny = r as unknown as Record<string, unknown>;
-      recolectadas.push({
-        fecha: fR || fechaObjetivo,
-        carrera: numC,
-        hipodromo: nombreHipodromo || r.hipodromo,
-        pizarra: numC === carreraActiva && pizarraActiva ? pizarraActiva : "Liquidada",
-        jugadas: numC === carreraActiva ? conteoJugadasActiva : 0,
-        totalJugadas: numC === carreraActiva ? conteoJugadasActiva : 0,
-        liquidada: true,
-        liquidada_at: (rAny.liquidada_at ?? rAny.updated_at ?? null) as string | null,
-      });
-    }
+        const numC = Number(c.carrera);
+        if (reversadasSet.has(`${hipo}|${numC}`)) continue;
+        const jugCount =
+          numC === carreraActiva && conteoJugadasActiva > 0
+            ? conteoJugadasActiva
+            : tickets.filter(
+                (tk) =>
+                  tk.carrera === numC &&
+                  (!tk.hipodromo || hipoKey(tk.hipodromo) === hipo) &&
+                  (!tk.fecha || normalizarFechaISO(tk.fecha) === fechaObjetivo)
+              ).length;
+        const cAny = c as Record<string, unknown>;
+        recolectadas.push({
+          fecha: fechaObjetivo || fC,
+          carrera: numC,
+          hipodromo: hipLabel,
+          pizarra:
+            numC === carreraActiva && pizarraActiva
+              ? pizarraActiva
+              : ganadores.length > 0
+                ? ganadores.slice(0, 5).join("-")
+                : "Oficial",
+          jugadas: jugCount,
+          totalJugadas: jugCount,
+          liquidada: true,
+          liquidada_at: (cAny.liquidada_at ?? cAny.updated_at ?? cAny.created_at ?? null) as string | null,
+        });
+      }
 
-    // 4. Tablas fijas cerradas (filtradas estrictamente al día consultado)
-    for (const t of tablas) {
-      const fT = normalizarFechaISO(t.fecha || t.fecha_creacion);
-      if (fechaObjetivo && fT !== fechaObjetivo) continue;
-      if (hipo && hipoKey(t.hipodromo) !== hipo) continue;
-      const esCerrada = Boolean(t.cerrada) || String(t.estado ?? "").toLowerCase() === "cerrada";
-      if (!esCerrada) continue;
+      // 3. Carreras del Día del store (solo en vista global)
+      for (const r of carrerasDia) {
+        const fR = normalizarFechaISO(r.fecha);
+        if (fechaObjetivo && fR !== fechaObjetivo) continue;
+        if (hipo && hipoKey(r.hipodromo) !== hipo) continue;
+        if (String(r.estado ?? "").toLowerCase() !== "liquidada") continue;
 
-      const numC = Number(t.carrera);
-      if (reversadasSet.has(`${hipoKey(t.hipodromo)}|${numC}`)) continue;
-      const tAny = t as unknown as Record<string, unknown>;
-      recolectadas.push({
-        fecha: fT || fechaObjetivo,
-        carrera: numC,
-        hipodromo: hipLabel,
-        pizarra: numC === carreraActiva && pizarraActiva ? pizarraActiva : "Cerrada",
-        jugadas: numC === carreraActiva ? conteoJugadasActiva : 0,
-        totalJugadas: numC === carreraActiva ? conteoJugadasActiva : 0,
-        liquidada: true,
-        liquidada_at: (tAny.liquidada_at ?? tAny.updated_at ?? t.fecha_creacion ?? null) as string | null,
-      });
+        const numC = Number(r.carrera);
+        if (reversadasSet.has(`${hipoKey(r.hipodromo)}|${numC}`)) continue;
+        const rAny = r as unknown as Record<string, unknown>;
+        recolectadas.push({
+          fecha: fR || fechaObjetivo,
+          carrera: numC,
+          hipodromo: nombreHipodromo || r.hipodromo,
+          pizarra: numC === carreraActiva && pizarraActiva ? pizarraActiva : "Liquidada",
+          jugadas: numC === carreraActiva ? conteoJugadasActiva : 0,
+          totalJugadas: numC === carreraActiva ? conteoJugadasActiva : 0,
+          liquidada: true,
+          liquidada_at: (rAny.liquidada_at ?? rAny.updated_at ?? null) as string | null,
+        });
+      }
+
+      // 4. Tablas fijas cerradas (solo en vista global)
+      for (const t of tablas) {
+        const fT = normalizarFechaISO(t.fecha || t.fecha_creacion);
+        if (fechaObjetivo && fT !== fechaObjetivo) continue;
+        if (hipo && hipoKey(t.hipodromo) !== hipo) continue;
+        const esCerrada = Boolean(t.cerrada) || String(t.estado ?? "").toLowerCase() === "cerrada";
+        if (!esCerrada) continue;
+
+        const numC = Number(t.carrera);
+        if (reversadasSet.has(`${hipoKey(t.hipodromo)}|${numC}`)) continue;
+        const tAny = t as unknown as Record<string, unknown>;
+        recolectadas.push({
+          fecha: fT || fechaObjetivo,
+          carrera: numC,
+          hipodromo: hipLabel,
+          pizarra: numC === carreraActiva && pizarraActiva ? pizarraActiva : "Cerrada",
+          jugadas: numC === carreraActiva ? conteoJugadasActiva : 0,
+          totalJugadas: numC === carreraActiva ? conteoJugadasActiva : 0,
+          liquidada: true,
+          liquidada_at: (tAny.liquidada_at ?? tAny.updated_at ?? t.fecha_creacion ?? null) as string | null,
+        });
+      }
     }
 
     // 5. Deduplicación y filtro final por fecha objetivo
@@ -239,6 +402,9 @@ export function BarraCarrerasLiquidadas({
     conteoJugadasActiva,
     pizarraActiva,
     itemsExtra,
+    grupoEfectivo,
+    bdLiqPorGrupo,
+    tickEvento,
   ]);
 
   return (

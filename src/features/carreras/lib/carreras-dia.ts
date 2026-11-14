@@ -6,7 +6,13 @@
  * ventas/estado en vivo para la UI (sincronizado entre pestañas por persist).
  */
 import { supabase } from "@/core/supabase";
-import { exigirCapacidad, tieneCapacidad } from "@/features/seguridad/lib/vigente";
+import {
+  exigirCapacidad,
+  grupoActivoVigente,
+  grupoVigente,
+  tieneCapacidad,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 import { puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
 import { useCarrerasDiaStore, type CarreraDelDia } from "@/shared/store/useCarrerasDiaStore";
 import { claveCarrera, claveHipodromo } from "@/features/carreras/lib/claves";
@@ -41,10 +47,32 @@ function hoy(): string {
  * NUNCA vuelva a aparecer como Liquidada ni con pizarra registrada hasta que el
  * operador o administrador la liquide de nuevo explícitamente.
  */
+export function grupoStorageEfectivo(grupoId?: string | null): string {
+  const explicito = String(grupoId ?? "").trim();
+  if (explicito) return explicito;
+  const g = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente()
+    : grupoVigente() || grupoActivoVigente();
+  return String(g ?? "").trim();
+}
+
+export function claveStorageReversadas(fecha: string | undefined, grupoId?: string | null): string {
+  const f = String(fecha || hoy()).slice(0, 10);
+  const g = grupoStorageEfectivo(grupoId);
+  return g ? `reversadas:${g}:${f}` : `reversadas:${f}`;
+}
+
+export function claveStorageLiquidadas(fecha: string | undefined, grupoId?: string | null): string {
+  const f = String(fecha || hoy()).slice(0, 10);
+  const g = grupoStorageEfectivo(grupoId);
+  return g ? `liquidadas:${g}:${f}` : `liquidadas:${f}`;
+}
+
 export function marcarCarreraReversadaLocal(
   fecha: string | undefined,
   hipodromo: string,
-  carrera: number | string
+  carrera: number | string,
+  grupoId?: string | null
 ): void {
   if (typeof window === "undefined") return;
   try {
@@ -52,7 +80,7 @@ export function marcarCarreraReversadaLocal(
     const cur = claveHipodromo(hipodromo);
     const num = Number(carrera) || 0;
     if (!f || !cur || !num) return;
-    const key = `reversadas:${f}`;
+    const key = claveStorageReversadas(f, grupoId);
     const raw = window.localStorage.getItem(key);
     const prev = raw ? (JSON.parse(raw) as string[]) : [];
     const set = new Set(Array.isArray(prev) ? prev.map(String) : []);
@@ -66,7 +94,8 @@ export function marcarCarreraReversadaLocal(
 export function desmarcarCarreraReversadaLocal(
   fecha: string | undefined,
   hipodromo: string,
-  carrera: number | string
+  carrera: number | string,
+  grupoId?: string | null
 ): void {
   if (typeof window === "undefined") return;
   try {
@@ -74,7 +103,7 @@ export function desmarcarCarreraReversadaLocal(
     const cur = claveHipodromo(hipodromo);
     const num = Number(carrera) || 0;
     if (!f || !cur || !num) return;
-    const key = `reversadas:${f}`;
+    const key = claveStorageReversadas(f, grupoId);
     const raw = window.localStorage.getItem(key);
     if (!raw) return;
     const prev = JSON.parse(raw) as string[];
@@ -91,7 +120,8 @@ export function desmarcarCarreraReversadaLocal(
 export function esCarreraReversadaLocal(
   fecha: string | undefined,
   hipodromo: string,
-  carrera: number | string
+  carrera: number | string,
+  grupoId?: string | null
 ): boolean {
   if (typeof window === "undefined") return false;
   try {
@@ -99,7 +129,8 @@ export function esCarreraReversadaLocal(
     const cur = claveHipodromo(hipodromo);
     const num = Number(carrera) || 0;
     if (!f || !cur || !num) return false;
-    const raw = window.localStorage.getItem(`reversadas:${f}`);
+    const key = claveStorageReversadas(f, grupoId);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return false;
     const arr = JSON.parse(raw) as string[];
     if (!Array.isArray(arr)) return false;

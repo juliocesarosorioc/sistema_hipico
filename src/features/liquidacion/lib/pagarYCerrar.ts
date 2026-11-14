@@ -28,7 +28,18 @@ import {
   type OpcionesCrucesPuestos,
 } from "@/features/motores/lib/puestos";
 import { cargarOpcionesCrucesPuestosPorGrupos } from "@/features/gestion/lib/cruces-carrera";
-import { grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
+
+function grupoModalidadEfectivo(): string {
+  const g = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente()
+    : grupoVigente() || grupoActivoVigente();
+  return String(g ?? "").trim();
+}
 import { extraerNumeroTablaFija } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { pagoPotencialTablaFija } from "@/features/liquidacion/lib/reportes";
 import { calcularRiesgoCliente2 } from "@/features/motores/lib/puestos";
@@ -829,7 +840,8 @@ export async function liquidarTablasFijasDeCarrera(
   // 'Pendiente' para que la RPC los re-decida con su regla. Un 'Ganador' NO se
   // toca: ya está pagado (no se duplica el abono). Un perdedor legítimo se vuelve
   // a marcar 'Perdedor' (pago 0), así que el reproceso es idempotente.
-  await reabrirTablasFijasMalDecididas(hipodromo, carrera, dia);
+  const grupoFiltro = grupoModalidadEfectivo();
+  await reabrirTablasFijasMalDecididas(hipodromo, carrera, dia, grupoFiltro);
 
   let pagado = 0;
   let comision = 0;
@@ -848,7 +860,7 @@ export async function liquidarTablasFijasDeCarrera(
 
   // ── LIQUIDACIÓN DIRECTA DE TICKETS DE TABLA FIJA EN tickets_apuestas ──
   try {
-    const { data: ticketsTF } = await supabase
+    let qTF = supabase
       .from("tickets_apuestas")
       .select("*")
       .eq("carrera", carrera)
@@ -856,6 +868,10 @@ export async function liquidarTablasFijasDeCarrera(
       .in("estado", ["Pendiente", "Perdedor"])
       .or("anulada.is.null,anulada.eq.false")
       .limit(1000);
+    if (grupoFiltro) {
+      qTF = qTF.eq("grupo_cobro_id", grupoFiltro);
+    }
+    const { data: ticketsTF } = await qTF;
 
     const clave = claveHipodromo(hipodromo);
     const ticketsDeCarrera = ((ticketsTF ?? []) as Array<Record<string, unknown>>)
@@ -985,10 +1001,15 @@ export async function liquidarTablasFijasDeCarrera(
  *
  * Best-effort: si falla, la RPC igual liquida los que estén 'Pendiente'.
  */
-async function reabrirTablasFijasMalDecididas(hipodromo: string, carrera: number, dia: string): Promise<void> {
+async function reabrirTablasFijasMalDecididas(
+  hipodromo: string,
+  carrera: number,
+  dia: string,
+  grupoFiltro = ""
+): Promise<void> {
   if (!supabase) return;
   try {
-    await supabase
+    let q = supabase
       .from("tickets_apuestas")
       .update({ estado: "Pendiente", premio_pagar: 0, monto_decidido: 0, comision_pagada: 0 })
       .eq("carrera", carrera)
@@ -996,6 +1017,10 @@ async function reabrirTablasFijasMalDecididas(hipodromo: string, carrera: number
       .like("nombre_jugada", "TABLA FIJA%")
       .eq("estado", "Perdedor")
       .or(filtroDiaJornada(dia));
+    if (grupoFiltro) {
+      q = q.eq("grupo_cobro_id", grupoFiltro);
+    }
+    await q;
   } catch {
     // Best-effort: la liquidación sigue con lo que ya esté 'Pendiente'.
   }
@@ -1119,16 +1144,21 @@ export async function liquidarRematesDeCarrera(
 
   const dia = String(fecha).slice(0, 10);
   const clave = claveHipodromo(hipodromo);
+  const grupoFiltro = grupoModalidadEfectivo();
   let premioPorRemate = new Map<string, number>();
   let premioDefault = 0;
 
   try {
-    const { data: rematesData } = await supabase
+    let qRem = supabase
       .from("remates")
-      .select("id, hipodromo, carrera, fecha, incentivo, incentivo_pct, comision_pct")
+      .select("id, hipodromo, carrera, fecha, incentivo, incentivo_pct, comision_pct, grupo_id")
       .eq("carrera", carrera)
       .eq("fecha", dia)
       .limit(50);
+    if (grupoFiltro) {
+      qRem = qRem.eq("grupo_id", grupoFiltro);
+    }
+    const { data: rematesData } = await qRem;
 
     const rematesCarrera = ((rematesData ?? []) as Array<Record<string, unknown>>).filter(
       (r) => claveHipodromo(String(r.hipodromo ?? "")) === clave
@@ -1153,13 +1183,17 @@ export async function liquidarRematesDeCarrera(
       }
     }
 
-    const { data: ticketsData } = await supabase
+    let qTkRem = supabase
       .from("tickets_apuestas")
       .select("id, caballo, ejemplar_numero, monto_jugado, premio_pagar, estado, nota_auditoria")
       .eq("carrera", carrera)
       .ilike("hipodromo", `%${hipodromo.trim()}%`)
       .like("nombre_jugada", "REMATE%")
       .or(filtroDiaJornada(dia));
+    if (grupoFiltro) {
+      qTkRem = qTkRem.eq("grupo_cobro_id", grupoFiltro);
+    }
+    const { data: ticketsData } = await qTkRem;
 
     const retiradosRem = Array.isArray((pizarra as Record<string, unknown>)?.retirados)
       ? ((pizarra as { retirados?: Array<string | number> }).retirados ?? [])

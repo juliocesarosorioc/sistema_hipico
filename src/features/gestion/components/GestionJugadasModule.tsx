@@ -63,6 +63,7 @@ import {
   leerResultadoOficial,
   marcarCarreraReversadaLocal,
   desmarcarCarreraReversadaLocal,
+  grupoStorageEfectivo,
 } from "@/features/carreras/lib/carreras-dia";
 import { guardarCarreraCentral, numerosEjemplares } from "@/features/carreras/lib/central";
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados, jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros";
@@ -238,10 +239,13 @@ export function GestionJugadasModule() {
   const [carrerasLiquidadasLocal, setCarrerasLiquidadasLocal] = useState<Set<number>>(new Set());
 
   const leerCarrerasSetStorage = useCallback(
-    (prefijo: "reversadas" | "liquidadas"): Set<number> => {
+    (prefijo: "reversadas" | "liquidadas", grupoOverride?: string | null): Set<number> => {
       try {
         if (typeof window === "undefined") return new Set();
-        const raw = window.localStorage.getItem(`${prefijo}:${String(fecha).slice(0, 10)}`);
+        const g = String(grupoOverride ?? grupoStorageEfectivo() ?? "").trim();
+        const dia = String(fecha).slice(0, 10);
+        const clave = g ? `${prefijo}:${g}:${dia}` : `${prefijo}:${dia}`;
+        const raw = window.localStorage.getItem(clave);
         if (!raw) return new Set();
         const arr = JSON.parse(raw) as string[];
         if (!Array.isArray(arr)) return new Set();
@@ -259,10 +263,12 @@ export function GestionJugadasModule() {
   );
 
   const guardarCarreraLiquidadaStorage = useCallback(
-    (numCarrera: number, liquidada: boolean) => {
+    (numCarrera: number, liquidada: boolean, grupoOverride?: string | null) => {
       try {
         if (typeof window === "undefined" || !hipodromo || !numCarrera) return;
-        const claveStorage = `liquidadas:${String(fecha).slice(0, 10)}`;
+        const g = String(grupoOverride ?? grupoStorageEfectivo() ?? "").trim();
+        const dia = String(fecha).slice(0, 10);
+        const claveStorage = g ? `liquidadas:${g}:${dia}` : `liquidadas:${dia}`;
         const keyCarrera = `${claveHipodromo(hipodromo)}|${Number(numCarrera)}`;
         const raw = window.localStorage.getItem(claveStorage);
         const arr = raw ? (JSON.parse(raw) as string[]) : [];
@@ -443,6 +449,27 @@ export function GestionJugadasModule() {
     esUsuarioOAdminPrincipal && !tieneGrupoEfectivo
   );
 
+  const prevGrupoSesionRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    setCarrerasReversadas(leerCarrerasSetStorage("reversadas", grupoSesion));
+    setCarrerasLiquidadasLocal(leerCarrerasSetStorage("liquidadas", grupoSesion));
+  }, [grupoSesion, fecha, hipodromo, leerCarrerasSetStorage]);
+
+  useEffect(() => {
+    if (prevGrupoSesionRef.current === undefined) {
+      prevGrupoSesionRef.current = grupoSesion;
+      return;
+    }
+    if (prevGrupoSesionRef.current === grupoSesion) return;
+    prevGrupoSesionRef.current = grupoSesion;
+    setPizarraCentral(null);
+    setUltimaPizarra(null);
+    setPizarraReporteActiva(null);
+    setResumen(null);
+    setReapertura(false);
+    setJugadasGuardadas([]);
+  }, [grupoSesion]);
+
   /**
    * Relee los saldos del catálogo. Es CLAVE refrescarlos después de cada venta y
    * de cada liquidación: la RPC revalida `saldo + aval` contra la base, así que
@@ -613,27 +640,39 @@ export function GestionJugadasModule() {
     if (carrerasLiquidadasLocal.has(numCarrera)) {
       return true;
     }
-    const c = carrerasDelDia.find((x) => Number(x.carrera) === numCarrera);
-    const est = String(c?.estado ?? "").toLowerCase();
-    const centralLiq = est === "liquidada" || c?.aplicado_a_tablas === true;
-    if (centralLiq) return true;
-    if (jugadasGuardadas.some((j) => {
-      const e = String(j.estado ?? "").toLowerCase();
-      return e === "ganador" || e === "perdedor" || e === "liquidada";
-    })) {
+    if (
+      jugadasGuardadas.some((j) => {
+        const e = String(j.estado ?? "").toLowerCase();
+        return e === "ganador" || e === "perdedor" || e === "liquidada";
+      })
+    ) {
       return true;
     }
+    if (!tieneGrupoEfectivo) {
+      const c = carrerasDelDia.find((x) => Number(x.carrera) === numCarrera);
+      const est = String(c?.estado ?? "").toLowerCase();
+      const centralLiq = est === "liquidada" || c?.aplicado_a_tablas === true;
+      if (centralLiq) return true;
+    }
     return false;
-  }, [hipodromo, carrerasDelDia, carrera, jugadasGuardadas, carrerasReversadas, carrerasLiquidadasLocal]);
+  }, [
+    hipodromo,
+    carrerasDelDia,
+    carrera,
+    jugadasGuardadas,
+    carrerasReversadas,
+    carrerasLiquidadasLocal,
+    tieneGrupoEfectivo,
+  ]);
 
   const tieneResultadoCargado = carreraLiquidada || Boolean(pizarraCentral);
 
-  // Precarga automática del resultado oficial de pizarra cuando la carrera ya está liquidada
-  // o tiene resultados registrados en la base central (resultados_carreras).
+  // Precarga automática del resultado oficial de pizarra solo cuando la carrera ya está liquidada
+  // en este grupo (o en vista global), sin heredar estados de otros grupos.
   useEffect(() => {
     let activo = true;
     if (!hipodromo || !carrera || !fecha) return;
-    if (carrerasReversadas.has(Number(carrera))) {
+    if (carrerasReversadas.has(Number(carrera)) || (tieneGrupoEfectivo && !carreraLiquidada)) {
       setPizarraCentral(null);
       return;
     }
@@ -655,7 +694,7 @@ export function GestionJugadasModule() {
     return () => {
       activo = false;
     };
-  }, [hipodromo, fecha, carrera, carreraLiquidada, carrerasReversadas]);
+  }, [hipodromo, fecha, carrera, carreraLiquidada, carrerasReversadas, tieneGrupoEfectivo]);
   /** Ítem 1: sólo quien tenga la capacidad puede reabrir una liquidada. */
   const puedeReabrir = tieneCapacidad("gestion_jugadas:fn_reabrir_carrera");
   const [resumen, setResumen] = useState<ResLiquidarCarrera | null>(null);
@@ -1643,9 +1682,10 @@ const hipodromosDelDia = useMemo(() => {
         if (t.carrera === undefined || Number(t.carrera) !== Number(carrera)) return false;
         if (!t.fecha || t.fecha !== fecha) return false;
         if (!t.hipodromo || hipoKey(t.hipodromo) !== hipoKey(hipodromo)) return false;
+        if (grupoSesion && (!t.grupoId || String(t.grupoId) !== String(grupoSesion))) return false;
         return true;
       }),
-    [tickets, carrera, fecha, hipodromo]
+    [tickets, carrera, fecha, hipodromo, grupoSesion]
   );
 
   /**
@@ -1667,7 +1707,7 @@ const hipodromosDelDia = useMemo(() => {
     } finally {
       setCargandoGuardadas(false);
     }
-  }, [listoParaCargar, hipodromo, carrera, fecha]);
+  }, [listoParaCargar, hipodromo, carrera, fecha, grupoSesion]);
 
   useEffect(() => {
     void recargarJugadasGuardadas();
@@ -1677,24 +1717,47 @@ const hipodromosDelDia = useMemo(() => {
   const pizarraPuestosActual = useMemo<string[]>(() => {
     if (carrerasReversadas.has(Number(carrera))) return [];
     const deUltima = ultimaPizarra?.pizarra ? posicionesDePizarra(ultimaPizarra.pizarra) : [];
-    const deCentralPiz = pizarraCentral?.pizarra ? posicionesDePizarra(pizarraCentral.pizarra) : [];
-    const deCentralGanadores = (centralDeCarrera?.ganadores ?? []).map(String).filter(Boolean);
+    const permiteCentral = !tieneGrupoEfectivo || carreraLiquidada;
+    const deCentralPiz =
+      permiteCentral && pizarraCentral?.pizarra ? posicionesDePizarra(pizarraCentral.pizarra) : [];
+    const deCentralGanadores =
+      permiteCentral ? (centralDeCarrera?.ganadores ?? []).map(String).filter(Boolean) : [];
 
     // Priorizar siempre la fuente con mayor cantidad de ejemplares registrados
     const candidatos = [deUltima, deCentralPiz, deCentralGanadores];
     return candidatos.reduce((max, arr) => (arr.length > max.length ? arr : max), [] as string[]);
-  }, [centralDeCarrera, ultimaPizarra, pizarraCentral, carrerasReversadas, carrera]);
+  }, [
+    centralDeCarrera,
+    ultimaPizarra,
+    pizarraCentral,
+    carrerasReversadas,
+    carrera,
+    tieneGrupoEfectivo,
+    carreraLiquidada,
+  ]);
 
   const pizarraRayaActual = useMemo<string[]>(() => {
     if (carrerasReversadas.has(Number(carrera))) return [];
     const deUltimaRaya = ultimaPizarra?.pizarra ? posicionesRayaDePizarra(ultimaPizarra.pizarra) : [];
-    const deCentralPizRaya = pizarraCentral?.pizarra ? posicionesRayaDePizarra(pizarraCentral.pizarra) : [];
-    const deCentralRaya = (centralDeCarrera?.orden_llegada_raya ?? []).map(String).filter(Boolean);
+    const permiteCentral = !tieneGrupoEfectivo || carreraLiquidada;
+    const deCentralPizRaya =
+      permiteCentral && pizarraCentral?.pizarra ? posicionesRayaDePizarra(pizarraCentral.pizarra) : [];
+    const deCentralRaya =
+      permiteCentral ? (centralDeCarrera?.orden_llegada_raya ?? []).map(String).filter(Boolean) : [];
 
     const candidatos = [deUltimaRaya, deCentralPizRaya, deCentralRaya];
     const mejor = candidatos.reduce((max, arr) => (arr.length > max.length ? arr : max), [] as string[]);
     return mejor.length > 0 ? mejor : pizarraPuestosActual;
-  }, [centralDeCarrera, ultimaPizarra, pizarraCentral, pizarraPuestosActual, carrerasReversadas, carrera]);
+  }, [
+    centralDeCarrera,
+    ultimaPizarra,
+    pizarraCentral,
+    pizarraPuestosActual,
+    carrerasReversadas,
+    carrera,
+    tieneGrupoEfectivo,
+    carreraLiquidada,
+  ]);
 
   const retiradosPizarraActual = useMemo<string[]>(() => {
     const enLlegada = new Set(
@@ -1741,20 +1804,34 @@ const hipodromosDelDia = useMemo(() => {
 
   const carrerasLiquidadasDelDia = useMemo(() => {
     const setNums = new Set<number>();
-    // El estado se deriva de la data del día (registro central) + liquidaciones activas de sesión.
-    for (const c of carrerasDelDia) {
-      const n = Number(c.carrera);
-      if (carrerasReversadas.has(n)) continue;
-      const est = String(c.estado ?? "").toLowerCase();
-      if (est === "liquidada" || c.aplicado_a_tablas === true) {
-        setNums.add(n);
+    if (!tieneGrupoEfectivo) {
+      // En vista global ("Todos los grupos"), el estado se deriva del registro central.
+      for (const c of carrerasDelDia) {
+        const n = Number(c.carrera);
+        if (carrerasReversadas.has(n)) continue;
+        const est = String(c.estado ?? "").toLowerCase();
+        if (est === "liquidada" || c.aplicado_a_tablas === true) {
+          setNums.add(n);
+        }
+      }
+    } else if (carreraLiquidada && carrera) {
+      const nAct = Number(carrera);
+      if (nAct > 0 && !carrerasReversadas.has(nAct)) {
+        setNums.add(nAct);
       }
     }
     for (const n of carrerasLiquidadasLocal) {
       if (!carrerasReversadas.has(n)) setNums.add(n);
     }
     return [...setNums];
-  }, [carrerasDelDia, carrerasReversadas, carrerasLiquidadasLocal]);
+  }, [
+    carrerasDelDia,
+    carrerasReversadas,
+    carrerasLiquidadasLocal,
+    tieneGrupoEfectivo,
+    carreraLiquidada,
+    carrera,
+  ]);
 
   const abrirResultados = useCallback(async () => {
     if (!listoParaCargar) return;
@@ -2501,17 +2578,21 @@ const hipodromosDelDia = useMemo(() => {
       return [...conservar, filaVacia()];
     });
 
-    // Si la carrera ya está liquidada (o tiene resultado oficial cargado), liquidar
-    // automáticamente las jugadas recién cargadas sin requerir presionar "Liquidar Carrera".
-    const auto = await autoReliquidarSiLiquidada({
-      hipodromo,
-      carrera,
-      fecha,
-      tasaComision: comisionNum,
-      usuario: usuarioVigente(),
-    });
-    let liquidadaAutomatico = auto.reliquidada;
-    let motivoAuto = auto.resumen?.motivo ?? "";
+    // Si la carrera ya está liquidada en ESTE grupo (o vista global con resultado oficial),
+    // liquidar automáticamente las jugadas recién cargadas sin requerir presionar "Liquidar Carrera".
+    const auto =
+      !tieneGrupoEfectivo || carreraLiquidada || reapertura
+        ? await autoReliquidarSiLiquidada({
+            hipodromo,
+            carrera,
+            fecha,
+            tasaComision: comisionNum,
+            usuario: usuarioVigente(),
+            grupoId: grupoSesion || undefined,
+          })
+        : null;
+    let liquidadaAutomatico = auto?.reliquidada ?? false;
+    let motivoAuto = auto?.resumen?.motivo ?? "";
 
     if (!liquidadaAutomatico && (carreraLiquidada || reapertura) && pizarraEfectiva) {
       const pizarraConRet = {
@@ -2537,7 +2618,7 @@ const hipodromosDelDia = useMemo(() => {
     }
 
     if (liquidadaAutomatico) {
-      desmarcarCarreraReversadaLocal(fecha, hipodromo, carrera);
+      desmarcarCarreraReversadaLocal(fecha, hipodromo, carrera, grupoSesion);
       setCarrerasReversadas((prev) => {
         const next = new Set(prev);
         next.delete(Number(carrera));
@@ -2805,11 +2886,12 @@ const hipodromosDelDia = useMemo(() => {
         fecha,
         usuario: usuarioVigente(),
         tasaComision: comisionNum,
+        grupoId: grupoSesion || undefined,
       });
       setAviso(r.ok ? `🔄 ${r.motivo}` : `❌ ${r.motivo}${r.errores.length ? ` · ${r.errores.join(" | ")}` : ""}`);
       if (r.ok) {
-        guardarCarreraLiquidadaStorage(carrera, false);
-        marcarCarreraReversadaLocal(fecha, hipodromo, carrera);
+        guardarCarreraLiquidadaStorage(carrera, false, grupoSesion);
+        marcarCarreraReversadaLocal(fecha, hipodromo, carrera, grupoSesion);
         setCarrerasReversadas((prev) => new Set([...prev, Number(carrera)]));
       }
       // La carrera vuelve a "Programada", se elimina toda pizarra y los saldos cambian:
@@ -3043,8 +3125,8 @@ const hipodromosDelDia = useMemo(() => {
         return { ok: false, motivo: mensaje };
       }
       if (r.ok) {
-        guardarCarreraLiquidadaStorage(carrera, true);
-        desmarcarCarreraReversadaLocal(fecha, hipodromo, carrera);
+        guardarCarreraLiquidadaStorage(carrera, true, grupoSesion);
+        desmarcarCarreraReversadaLocal(fecha, hipodromo, carrera, grupoSesion);
         setCarrerasReversadas((prev) => {
           const next = new Set(prev);
           next.delete(Number(carrera));
@@ -3074,40 +3156,43 @@ const hipodromosDelDia = useMemo(() => {
         setModalAgentePizarra(false);
         setModalEditarJugadas(false);
         setAccionPreview(null);
-        // Actualizar registro central en memoria de inmediato para bloquear la UI y convertir el botón a Reversar sin demora
-        try {
-          const dia = String(fecha).slice(0, 10);
-          const reg = useRegistroCentral.getState();
-          const lista = reg.porFecha[dia] ?? [];
-          const idx = lista.findIndex(
-            (c: any) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo) && Number(c.carrera) === Number(carrera)
-          );
-          const nuevaLista = [...lista];
-          if (idx >= 0) {
-            nuevaLista[idx] = {
-              ...nuevaLista[idx],
-              estado: "Liquidada",
-              ganadores: puestosReporte.length > 0 ? puestosReporte : nuevaLista[idx].ganadores,
-              aplicado_a_tablas: true,
-            };
-          } else {
-            nuevaLista.push({
-              id: `liq-${dia}-${claveHipodromo(hipodromo)}-${Number(carrera)}`,
-              fecha: dia,
-              hipodromo: nombreHipodromo,
-              carrera: Number(carrera),
-              caballos: [],
-              estado: "Liquidada",
-              ganadores: puestosReporte,
-              aplicado_a_tablas: true,
-              origen: "Liquidación",
-            } as any);
+        // Solo actualizar el cache global de useRegistroCentral en vista global ("Todos");
+        // con grupo activo no debe contaminar el estado de otros grupos en el navegador.
+        if (!tieneGrupoEfectivo) {
+          try {
+            const dia = String(fecha).slice(0, 10);
+            const reg = useRegistroCentral.getState();
+            const lista = reg.porFecha[dia] ?? [];
+            const idx = lista.findIndex(
+              (c: any) => claveHipodromo(c.hipodromo) === claveHipodromo(hipodromo) && Number(c.carrera) === Number(carrera)
+            );
+            const nuevaLista = [...lista];
+            if (idx >= 0) {
+              nuevaLista[idx] = {
+                ...nuevaLista[idx],
+                estado: "Liquidada",
+                ganadores: puestosReporte.length > 0 ? puestosReporte : nuevaLista[idx].ganadores,
+                aplicado_a_tablas: true,
+              };
+            } else {
+              nuevaLista.push({
+                id: `liq-${dia}-${claveHipodromo(hipodromo)}-${Number(carrera)}`,
+                fecha: dia,
+                hipodromo: nombreHipodromo,
+                carrera: Number(carrera),
+                caballos: [],
+                estado: "Liquidada",
+                ganadores: puestosReporte,
+                aplicado_a_tablas: true,
+                origen: "Liquidación",
+              } as any);
+            }
+            useRegistroCentral.setState({
+              porFecha: { ...reg.porFecha, [dia]: nuevaLista },
+            });
+          } catch {
+            /* best-effort */
           }
-          useRegistroCentral.setState({
-            porFecha: { ...reg.porFecha, [dia]: nuevaLista },
-          });
-        } catch {
-          /* best-effort */
         }
         if (abrirReporte) {
           setModoExclusivoReporte(true);

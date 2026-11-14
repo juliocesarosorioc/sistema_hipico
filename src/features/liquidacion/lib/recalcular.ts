@@ -41,7 +41,21 @@ import { editarJugada, anularJugada, type EditablesJugada } from "@/features/jug
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import { cargarOpcionesCrucesPuestosPorGrupos } from "@/features/gestion/lib/cruces-carrera";
 import { grupoDeCuenta } from "@/features/grupos/lib/atribucion-grupo";
-import { grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
+
+function grupoRecalculoEfectivo(grupoId?: string | number | null): string {
+  const g =
+    grupoId != null && String(grupoId).trim() !== ""
+      ? String(grupoId).trim()
+      : veTodosLosGruposVigente()
+        ? grupoActivoVigente() || grupoVigente()
+        : grupoVigente() || grupoActivoVigente();
+  return String(g ?? "").trim();
+}
 import {
   sincronizarSaldosRealesClientes,
   calcularIncentivoCarreraCliente,
@@ -108,11 +122,13 @@ export async function revertirLiquidacionCarrera(opts: {
   carrera: number | string;
   fecha?: string;
   tasaComision?: number | null;
+  grupoId?: string | null;
 }): Promise<ResRecalcular> {
   const vacio: ResRecalcular = { ok: true, motivo: "", revertidos: 0, revertidoTotal: 0, reliquidados: 0, abonoTotal: 0, errores: [] };
   if (!supabase) return { ...vacio, ok: false, motivo: "Sin conexión a Supabase", errores: ["Sin conexión a Supabase."] };
   const sdb = supabase;
   const fecha = opts.fecha || hoyLocal();
+  const grupoFiltro = grupoRecalculoEfectivo(opts.grupoId);
 
   // Resultado oficial vigente (pizarra + dividendos) para recomputar igual.
   const oficial = await leerResultadoOficial(opts.hipodromo, opts.carrera, fecha);
@@ -123,7 +139,7 @@ export async function revertirLiquidacionCarrera(opts: {
 
   let filas: unknown[] = [];
   try {
-    const { data, error } = await sdb
+    let qRev = sdb
       .from("tickets_apuestas")
       .select("*")
       // Día de la CARRERA, no de la venta (ver `filtroDiaJornada`).
@@ -137,6 +153,10 @@ export async function revertirLiquidacionCarrera(opts: {
       // a pagar → doble/incorrecto reembolso.
       .not("nombre_jugada", "like", "TABLA FIJA%")
       .limit(2000);
+    if (grupoFiltro) {
+      qRev = qRev.eq("grupo_cobro_id", grupoFiltro);
+    }
+    const { data, error } = await qRev;
     if (error) throw error;
     const claveHip = claveHipodromo(opts.hipodromo);
     filas = (data ?? []).filter((f) => {
@@ -438,10 +458,12 @@ async function reliquidar(opts: {
   carrera: number | string;
   fecha?: string;
   tasaComision?: number | null;
+  grupoId?: string | null;
 }): Promise<ResRecalcular> {
   const vacio: ResRecalcular = { ok: true, motivo: "", revertidos: 0, revertidoTotal: 0, reliquidados: 0, abonoTotal: 0, errores: [] };
   if (!supabase) return { ...vacio, ok: false, motivo: "Sin conexión a Supabase", errores: ["Sin conexión a Supabase."] };
   const fecha = opts.fecha || hoyLocal();
+  const grupoFiltro = grupoRecalculoEfectivo(opts.grupoId);
   const oficial = await leerResultadoOficial(opts.hipodromo, opts.carrera, fecha);
   const pizarra = pizarraDePuestos(oficial?.puestos ?? []);
   if (!pizarra) return { ...vacio, ok: true, motivo: "Carrera abierta sin resultado oficial (se liquidará al cargar la pizarra).", errores: [] };
@@ -452,6 +474,7 @@ async function reliquidar(opts: {
     pizarra,
     dividendos: dividendosDePizarra({ dividendos: oficial?.dividendos ?? null }),
     tasaComision: opts.tasaComision ?? null,
+    grupoId: grupoFiltro || undefined,
     fecha,
   });
   return {
@@ -665,7 +688,8 @@ const VACIO_JUGADAS: ResumenJugadas = {
 async function reCerrarRematesDeCarrera(
   hipodromo: string,
   carrera: number,
-  fecha: string
+  fecha: string,
+  grupoFiltro = ""
 ): Promise<ResRecalcularCompleto["remates"]> {
   const out: ResRecalcularCompleto["remates"] = { reabiertosCerrados: 0, omitidosCerrados: 0, errores: [] };
   if (!supabase) return out;
@@ -681,12 +705,16 @@ async function reCerrarRematesDeCarrera(
     return out;
   }
 
-  const deEstaCarrera = remates.filter(
-    (m) =>
-      claveHipodromo(String(m.hipodromo ?? "")) === clave &&
-      Number(m.carrera) === carrera &&
-      String(m.fecha ?? "").slice(0, 10) === dia
-  );
+  const deEstaCarrera = remates.filter((m) => {
+    if (claveHipodromo(String(m.hipodromo ?? "")) !== clave) return false;
+    if (Number(m.carrera) !== carrera) return false;
+    if (String(m.fecha ?? "").slice(0, 10) !== dia) return false;
+    if (grupoFiltro) {
+      const gid = (m as unknown as { grupo_id?: string | null }).grupo_id;
+      if (gid && String(gid) !== grupoFiltro) return false;
+    }
+    return true;
+  });
   for (const m of deEstaCarrera) {
     const cerrado = String(m.estado ?? "").trim().toLowerCase() === "cerrado";
     if (cerrado) {
@@ -737,6 +765,7 @@ export async function recalcularCarreraCompleta(opts: {
   fecha?: string;
   tasaComision?: number | null;
   usuario?: string | null;
+  grupoId?: string | null;
 }): Promise<ResRecalcularCompleto> {
   const vacio: ResRecalcularCompleto = {
     ok: false,
@@ -754,6 +783,8 @@ export async function recalcularCarreraCompleta(opts: {
   const fecha = opts.fecha || hoyLocal();
   const carrera = Number(opts.carrera) || 0;
   const dia = String(fecha).slice(0, 10);
+  const grupoFiltro = grupoRecalculoEfectivo(opts.grupoId);
+  const optsGrupo = { ...opts, grupoId: grupoFiltro || undefined };
 
   // 0. Detección de resultado oficial: sin él no hay nada que recalcular.
   const oficial = await leerResultadoOficial(opts.hipodromo, opts.carrera, fecha);
@@ -764,10 +795,10 @@ export async function recalcularCarreraCompleta(opts: {
   const puestos = (oficial?.puestos ?? []).map((p) => String(p));
 
   // 1. REVERTIR la liquidación universal previa (devuelve el crédito).
-  const rev = await revertirLiquidacionCarrera(opts);
+  const rev = await revertirLiquidacionCarrera(optsGrupo);
 
   // 2. RE-LIQUIDAR el motor universal (WPS/Puestos/Bloques/REMATE).
-  const re = await reliquidar(opts);
+  const re = await reliquidar(optsGrupo);
 
   // 3. JUGADAS ESPECIALES (tablas fijas + marcas + dupletas), RPCs idempotentes.
   let jugadas: ResumenJugadas;
@@ -785,7 +816,7 @@ export async function recalcularCarreraCompleta(opts: {
   }
 
   // 4. REMATES abiertos de esta carrera → cerrar contra el resultado.
-  const remates = await reCerrarRematesDeCarrera(opts.hipodromo, carrera, dia);
+  const remates = await reCerrarRematesDeCarrera(opts.hipodromo, carrera, dia, grupoFiltro);
 
   const errores = [...rev.errores, ...re.errores, ...remates.errores];
   if (jugadas.tablasFijas && !jugadas.tablasFijas.ok && jugadas.tablasFijas.error) errores.push(`Tablas fijas: ${jugadas.tablasFijas.error}`);
@@ -827,12 +858,65 @@ export async function autoReliquidarSiLiquidada(opts: {
   fecha?: string;
   tasaComision?: number | null;
   usuario?: string | null;
+  grupoId?: string | null;
 }): Promise<{ reliquidada: boolean; resumen: ResRecalcularCompleto | null }> {
   if (!supabase) return { reliquidada: false, resumen: null };
   const fecha = opts.fecha || hoyLocal();
+  const dia = String(fecha).slice(0, 10);
+  const grupoFiltro = grupoRecalculoEfectivo(opts.grupoId);
   const oficial = await leerResultadoOficial(opts.hipodromo, opts.carrera, fecha);
   if (!oficial?.puestos?.length) return { reliquidada: false, resumen: null };
-  const resumen = await recalcularCarreraCompleta(opts);
+
+  if (grupoFiltro) {
+    const claveHip = claveHipodromo(opts.hipodromo);
+    const numC = Number(opts.carrera) || 0;
+    let grupoYaLiquido = false;
+    let grupoReversado = false;
+    if (typeof window !== "undefined") {
+      try {
+        const rawRev = window.localStorage.getItem(`reversadas:${grupoFiltro}:${dia}`);
+        if (rawRev) {
+          const arrRev = JSON.parse(rawRev) as string[];
+          if (
+            Array.isArray(arrRev) &&
+            arrRev.some((k) => String(k).toUpperCase().replace(/\s+/g, "") === `${claveHip}|${numC}`)
+          ) {
+            grupoReversado = true;
+          }
+        }
+        const rawLiq = window.localStorage.getItem(`liquidadas:${grupoFiltro}:${dia}`);
+        if (rawLiq) {
+          const arrLiq = JSON.parse(rawLiq) as string[];
+          if (
+            Array.isArray(arrLiq) &&
+            arrLiq.some((k) => String(k).toUpperCase().replace(/\s+/g, "") === `${claveHip}|${numC}`)
+          ) {
+            grupoYaLiquido = true;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    if (grupoReversado) return { reliquidada: false, resumen: null };
+    if (!grupoYaLiquido) {
+      const { data: decGrupo } = await supabase
+        .from("tickets_apuestas")
+        .select("id, hipodromo")
+        .eq("grupo_cobro_id", grupoFiltro)
+        .eq("carrera", numC)
+        .or(filtroDiaJornada(dia))
+        .in("estado", ["Ganador", "Perdedor", "Retirado", "Liquidada", "GANO", "PERDIO"])
+        .or("anulada.is.null,anulada.eq.false")
+        .limit(50);
+      grupoYaLiquido = ((decGrupo ?? []) as Array<{ hipodromo?: unknown }>).some(
+        (r) => claveHipodromo(String(r.hipodromo ?? "")) === claveHip
+      );
+    }
+    if (!grupoYaLiquido) return { reliquidada: false, resumen: null };
+  }
+
+  const resumen = await recalcularCarreraCompleta({ ...opts, grupoId: grupoFiltro || undefined });
   return { reliquidada: true, resumen };
 }
 

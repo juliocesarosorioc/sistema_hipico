@@ -15,7 +15,13 @@
  * un solo módulo.
  */
 import { supabase } from "@/core/supabase";
-import { exigirCapacidad, grupoActivoVigente, tieneCapacidad } from "@/features/seguridad/lib/vigente";
+import {
+  exigirCapacidad,
+  grupoActivoVigente,
+  grupoVigente,
+  tieneCapacidad,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 import { clienteDelUsuario } from "@/features/seguridad/lib/accesos";
 import {
   calcularFinanzasRemate,
@@ -132,9 +138,10 @@ export async function listarRemates(): Promise<ResRemates> {
   if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
   try {
     // `select("*")` tolera que falte una columna opcional (migración a medias).
-    // Filtro del super administrador ("ver un grupo"): un usuario con grupo no
-    // filtra acá porque su visibilidad ya la impone el RLS de la base.
-    const activo = grupoActivoVigente();
+    // Aislar siempre al grupo activo (operador o filtro de SuperAdmin).
+    const activo = veTodosLosGruposVigente()
+      ? grupoActivoVigente() || grupoVigente()
+      : grupoVigente() || grupoActivoVigente();
     let q = supabase
       .from("remates")
       .select("*, hipodromos(nombre)")
