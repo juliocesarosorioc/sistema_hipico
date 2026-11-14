@@ -64,7 +64,6 @@ function TotalBadge({ v, small }: { v: number; small?: boolean }) {
 export type VistaTablaDinamica =
   | "JERARQUIA"
   | "PIVOT_CARRERAS"
-  | "PIVOT_CLIENTE_CARRERA"
   | "RESUMEN_4_COLUMNAS";
 export type FiltroModalidadPivot =
   | "TODAS"
@@ -593,7 +592,7 @@ export function ReporteModule() {
     filtroResultado,
   ]);
 
-  // Datos pre-calculados para las vistas de Tabla Dinámica por Carrera y Cliente × Carrera
+  // Datos pre-calculados para la Tabla Dinámica por Carrera y el Resumen de Saldos
   const datosTablaDinamica = useMemo(() => {
     const filasCarreras: Array<{
       clave: string;
@@ -1080,17 +1079,6 @@ export function ReporteModule() {
               }`}
             >
               📊 Tabla Dinámica (Carreras)
-            </button>
-            <button
-              type="button"
-              onClick={() => setVistaPivot("PIVOT_CLIENTE_CARRERA")}
-              className={`px-2.5 py-1 font-bold transition ${
-                vistaPivot === "PIVOT_CLIENTE_CARRERA"
-                  ? "bg-amber-400 text-slate-950"
-                  : "text-slate-300 hover:bg-slate-700"
-              }`}
-            >
-              🧮 Matriz Cliente × Carrera
             </button>
           </div>
 
@@ -1755,74 +1743,7 @@ export function ReporteModule() {
           </div>
         )}
 
-        {/* VISTA 2: MATRIZ DINÁMICA CLIENTE × CARRERA */}
-        {rpt && rpt.dias.length > 0 && vistaPivot === "PIVOT_CLIENTE_CARRERA" && (
-          <div className="p-3 overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-800 text-white uppercase text-[10px]">
-                  <th className="py-2 px-2.5 sticky left-0 bg-slate-800 z-10">Cliente / Jugador</th>
-                  {datosTablaDinamica.filasCarreras.map((fc) => (
-                    <th key={fc.clave} className="py-2 px-2 text-right whitespace-nowrap">
-                      <div>{fc.hipodromo}</div>
-                      <div className="text-amber-300 font-black">C{fc.numero}</div>
-                    </th>
-                  ))}
-                  <th className="py-2 px-2.5 text-right bg-slate-900">Neto Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {datosTablaDinamica.filasClientes.map((row) => (
-                  <tr key={row.cliente} className="hover:bg-blue-50/40">
-                    <td className="py-1.5 px-2.5 font-black text-slate-800 sticky left-0 bg-white">
-                      {(() => {
-                        const meta = mapaInfoClientes.get(row.cliente);
-                        return (
-                          <div className="flex items-center gap-1.5">
-                            <span title={meta?.etiqueta} className="text-sm shrink-0">
-                              {meta?.icono ?? "💎"}
-                            </span>
-                            <span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">
-                              {nombreVisibleReporte(row.cliente)}
-                            </span>
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    {datosTablaDinamica.filasCarreras.map((fc) => {
-                      const val = row.porCarrera[fc.clave] ?? null;
-                      return (
-                        <td key={fc.clave} className="py-1.5 px-2 text-right font-mono whitespace-nowrap">
-                          <Signo v={val} />
-                        </td>
-                      );
-                    })}
-                    <td className="py-1.5 px-2.5 text-right font-mono bg-slate-50">
-                      <Signo v={row.netoTotal} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
-                  <td className="py-2 px-2.5 uppercase text-[10px] text-slate-700 sticky left-0 bg-slate-100">
-                    Subtotal Carrera
-                  </td>
-                  {datosTablaDinamica.filasCarreras.map((fc) => (
-                    <td key={fc.clave} className="py-2 px-2 text-right whitespace-nowrap">
-                      <TotalBadge v={fc.subtotal} small />
-                    </td>
-                  ))}
-                  <td className="py-2 px-2.5 text-right whitespace-nowrap">
-                    <TotalBadge v={rpt.totalSemana} small />
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-
-        {/* VISTA 3: JERARQUÍA CLÁSICA (DÍA → HIPÓDROMO → CARRERA) FILTRADA */}
+        {/* VISTA 2: JERARQUÍA CLÁSICA (DÍA → HIPÓDROMO → CARRERA) FILTRADA */}
         {vistaPivot === "JERARQUIA" &&
           rpt?.dias.map((dia) => {
             const abiertoDia = !abiertos.has(`D-${dia.fecha}`);

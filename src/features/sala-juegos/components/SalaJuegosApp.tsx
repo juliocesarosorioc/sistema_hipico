@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { salaApi, configurarCredencialesSala } from "../lib/sala-api";
 import { ChatSalaPanel, FAMILIAS_FUENTE_SALA, type ClaveFuenteSala, type TemaSala } from "./ChatSalaPanel";
 import { ModalOperadorSala } from "./ModalOperadorSala";
