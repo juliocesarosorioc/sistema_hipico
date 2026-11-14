@@ -332,7 +332,9 @@ export default function SalaJuegosWhatsApp({
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (supabase) {
+        supabase.removeChannel(channel);
+      }
     };
   }, [salaActiva?.id]);
 
