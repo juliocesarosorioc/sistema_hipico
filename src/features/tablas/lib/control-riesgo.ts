@@ -5,6 +5,11 @@ import type { TablaFijaRow } from "@/features/tablas/lib/tablas-fijas";
 import { parseNum, type EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, registrarAuditoria, type CupoTablaGrupo } from "@/features/grupos/lib/grupos";
 import { diaDeCarrera } from "@/features/carreras/lib/agruparHipodromos";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 
 export type CompradorEjemplar = {
   ticketId: string | number;
@@ -80,16 +85,24 @@ export async function obtenerAnalisisRiesgoTabla(
   const premioTabla = Number(tabla.premio_recalculado ?? tabla.premio_original ?? 0);
   const moneda = tabla.moneda ?? "USD";
 
-  // 1. Cargar tickets vendidos de la carrera
+  const activo = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente() || null
+    : grupoVigente() || grupoActivoVigente() || null;
+
+  // 1. Cargar tickets vendidos de la carrera (aislados al grupo activo cuando existe)
   let tickets: Array<Record<string, unknown>> = [];
-  if (supabase) {
+  if (supabase && (activo || veTodosLosGruposVigente())) {
     try {
-      const { data, error } = await supabase
+      let qTickets = supabase
         .from("tickets_apuestas")
         .select("*")
         .eq("hipodromo", hipo)
         .eq("carrera", carr)
         .ilike("nombre_jugada", "TABLA%");
+      if (activo) {
+        qTickets = qTickets.eq("grupo_cobro_id", String(activo));
+      }
+      const { data, error } = await qTickets;
 
       if (!error && data) {
         tickets = data as Array<Record<string, unknown>>;
@@ -99,11 +112,17 @@ export async function obtenerAnalisisRiesgoTabla(
     }
   }
 
-  // 2. Cargar cupos por grupo (con defaults según moneda: 3 para USD, 3.000 / 1.000 para VES)
+  // 2. Cargar cupos por grupo (solo del grupo activo cuando existe)
   let cuposGrupos = await listarCuposTabla(tabla.id).catch(() => []);
-  if (cuposGrupos.length === 0) {
+  if (activo) {
+    cuposGrupos = cuposGrupos.filter((cg) => String(cg.grupo_id) === String(activo));
+  } else if (!veTodosLosGruposVigente()) {
+    cuposGrupos = [];
+  }
+  if (cuposGrupos.length === 0 && (activo || veTodosLosGruposVigente())) {
     const grupos = await listarGruposVenta().catch(() => []);
-    cuposGrupos = grupos.map((g) => {
+    const gruposScope = activo ? grupos.filter((g) => String(g.id) === String(activo)) : grupos;
+    cuposGrupos = gruposScope.map((g) => {
       const esBs =
         String(g.moneda ?? moneda ?? "").toUpperCase().includes("VES") ||
         String(g.moneda ?? "").toUpperCase().includes("BS");
@@ -368,15 +387,27 @@ export async function comunicarCupoAgotadoAdmin(opts: {
     const hipo = String(opts.tabla.hipodromo ?? "").toUpperCase();
     const carr = Number(opts.tabla.carrera ?? 1);
     const numCab = String(opts.caballoNumero);
+    const gIdFiltro =
+      opts.grupoId ??
+      (veTodosLosGruposVigente()
+        ? grupoActivoVigente() || grupoVigente() || null
+        : grupoVigente() || grupoActivoVigente() || null);
+    if (!gIdFiltro && !veTodosLosGruposVigente()) {
+      return { ok: true };
+    }
 
-    // Obtener quién compró en este caballo
-    const { data: tickets } = await supabase
+    // Obtener quién compró en este caballo (estríctamente aislado al grupo)
+    let qTickets = supabase
       .from("tickets_apuestas")
       .select("id, cliente_juega_nombre, grupo_cobro_nombre, cantidad_tablas, monto_jugado, premio_pagar, fecha_registro, caballo")
       .eq("hipodromo", hipo)
       .eq("carrera", carr)
       .ilike("nombre_jugada", "TABLA%")
       .order("fecha_registro", { ascending: false });
+    if (gIdFiltro) {
+      qTickets = qTickets.eq("grupo_cobro_id", String(gIdFiltro));
+    }
+    const { data: tickets } = await qTickets;
 
     const filtrados = (tickets ?? []).filter((t) =>
       extraerNumeroCaballo(String(t.caballo ?? "")) === numCab
@@ -422,7 +453,7 @@ export async function comunicarCupoAgotadoAdmin(opts: {
           carrera: carr,
           caballo_numero: numCab,
           caballo_nombre: opts.caballoNombre,
-          grupo_id: opts.grupoId ?? null,
+          grupo_id: gIdFiltro ?? null,
           grupo_nombre: opts.grupoNombre ?? null,
           total_tablas_vendidas: totalTablas,
           compras: comprasResumen,

@@ -144,7 +144,7 @@ async function revertirEspecialesDeCarrera(opts: {
   out.dupletas = resumen.porModalidad.DUPLETA.tickets;
 
   const updates: Promise<unknown>[] = [];
-  let deltaReversionMarcas = 0;
+  const deltaMarcasPorGrupo = new Map<string, number>();
 
   for (const f of filas) {
     const mod = modalidadDeTicket(f.nombre_jugada ?? f);
@@ -153,14 +153,23 @@ async function revertirEspecialesDeCarrera(opts: {
       const est = String(f.estado ?? "").trim().toUpperCase();
       const monto = NUM(f.monto_jugado);
       const tasa = f.comision_porcentaje != null && String(f.comision_porcentaje).trim() !== "" ? NUM(f.comision_porcentaje) : 5;
-      if (est === "GANADOR") {
-        const pagoMarca = Math.round(((monto * 5) / 6) * 100) / 100;
-        const comGrupo = Math.round(pagoMarca * (tasa / 100) * 100) / 100;
-        deltaReversionMarcas = Math.round((deltaReversionMarcas + (pagoMarca + comGrupo)) * 100) / 100;
-      } else if (est === "PERDEDOR") {
-        const comGrupo = Math.round(monto * (tasa / 100) * 100) / 100;
-        const cobroNeto = Math.round((monto - comGrupo) * 100) / 100;
-        deltaReversionMarcas = Math.round((deltaReversionMarcas - cobroNeto) * 100) / 100;
+      const grpKey = String(f.grupo_cobro_id ?? grupoFiltro ?? "").trim();
+      if (grpKey) {
+        if (est === "GANADOR") {
+          const pagoMarca = Math.round(((monto * 5) / 6) * 100) / 100;
+          const comGrupo = Math.round(pagoMarca * (tasa / 100) * 100) / 100;
+          deltaMarcasPorGrupo.set(
+            grpKey,
+            Math.round(((deltaMarcasPorGrupo.get(grpKey) ?? 0) + (pagoMarca + comGrupo)) * 100) / 100
+          );
+        } else if (est === "PERDEDOR") {
+          const comGrupo = Math.round(monto * (tasa / 100) * 100) / 100;
+          const cobroNeto = Math.round((monto - comGrupo) * 100) / 100;
+          deltaMarcasPorGrupo.set(
+            grpKey,
+            Math.round(((deltaMarcasPorGrupo.get(grpKey) ?? 0) - cobroNeto) * 100) / 100
+          );
+        }
       }
     }
 
@@ -231,13 +240,15 @@ async function revertirEspecialesDeCarrera(opts: {
     );
   }
 
-  if (Math.abs(deltaReversionMarcas) >= 0.005) {
+  for (const [grpKey, deltaMarcas] of deltaMarcasPorGrupo.entries()) {
+    if (!grpKey || Math.abs(deltaMarcas) < 0.005) continue;
     updates.push(
       (async () => {
         try {
           const { data: cliM } = await sdb
             .from("clientes")
             .select("id, saldo_actual")
+            .eq("grupo_id", grpKey as never)
             .ilike("nombre", "MARCAS")
             .limit(1)
             .maybeSingle();
@@ -245,7 +256,7 @@ async function revertirEspecialesDeCarrera(opts: {
             const act = NUM((cliM as Record<string, unknown>).saldo_actual);
             await sdb
               .from("clientes")
-              .update({ saldo_actual: Math.round((act + deltaReversionMarcas) * 100) / 100 })
+              .update({ saldo_actual: Math.round((act + deltaMarcas) * 100) / 100 })
               .eq("id", cliM.id as never);
           }
         } catch {

@@ -18,6 +18,11 @@ import type { EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { parseNum } from "@/features/tablas/lib/tipos";
 import { esc, fsAuto, col, monSinSimb, fmtPts, fmt, monCode, fmtFecha, hoy, hipoKey, diaDe, MAX_N, type Orientacion, DIM_PAGINA } from "@/features/impresion/lib/util";
 import { normalizarNacionalidad } from "@/shared/components/ui/BanderaPais";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 
 export type EjemplarImpresion = {
   numero: string;
@@ -270,9 +275,14 @@ export async function cargarMatrizImpresion(
 async function montosJugados(hipoRaw: string): Promise<Map<string, number>> {
   const montos = new Map<string, number>();
   if (!supabase) return montos;
+  const activo = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente() || null
+    : grupoVigente() || grupoActivoVigente() || null;
+  if (!activo && !veTodosLosGruposVigente()) return montos;
   try {
     let q = supabase.from("tickets_apuestas").select("hipodromo,carrera,ejemplar_numero,monto_jugado");
     if (hipoRaw) q = q.ilike("hipodromo", hipoRaw);
+    if (activo) q = q.eq("grupo_cobro_id", String(activo));
     const { data, error: eM } = await q;
     if (!eM) {
       for (const t of (data ?? []) as Array<{ hipodromo?: unknown; carrera?: unknown; ejemplar_numero?: unknown; monto_jugado?: unknown }>) {

@@ -197,7 +197,7 @@ function aplicarOverridesCicloGrupo<T extends { id: string | number; dia_inicio_
       if (parsed.dia_inicio_semana != null) copia.dia_inicio_semana = Number(parsed.dia_inicio_semana);
       if (parsed.dia_fin_semana != null) copia.dia_fin_semana = Number(parsed.dia_fin_semana);
     }
-    const rawVig = window.localStorage.getItem(`hipico_semana_vigente_${gid}`) ?? window.localStorage.getItem("hipico_semana_vigente_global");
+    const rawVig = window.localStorage.getItem(`hipico_semana_vigente_${gid}`);
     if (rawVig === "__NULL__") {
       copia.semana_vigente_inicio = null;
     } else if (rawVig && /^\d{4}-\d{2}-\d{2}$/.test(rawVig)) {
@@ -271,7 +271,7 @@ export function porcentajeDeEntrada(
   return Number.isFinite(n) && n >= 0 ? n : porDefecto;
 }
 
-/** Lista clientes con sus saldos y grupos (clientes + clientes_grupos). */
+/** Lista clientes con sus saldos y su único grupo asignado (aislamiento estricto por grupo_id). */
 export async function listarClientesVenta(force = false): Promise<ClienteVenta[]> {
   const activo = grupoActivoVigente() || grupoVigente() || null;
   if (!force && cacheClientes && cacheClientesGrupo === activo && Date.now() - cacheClientesTs < 1500) {
@@ -285,13 +285,8 @@ export async function listarClientesVenta(force = false): Promise<ClienteVenta[]
         .from("clientes")
         .select("id, nombre, seudonimo, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar")
         .eq("grupo_id", activo);
-      if (!err1 && d1 && d1.length > 0) {
+      if (!err1 && d1) {
         cli = d1;
-      } else {
-        const { data: dAll } = await supabase
-          .from("clientes")
-          .select("id, nombre, seudonimo, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar");
-        if (dAll) cli = dAll;
       }
     } else {
       const { data: dAll } = await supabase
@@ -300,15 +295,6 @@ export async function listarClientesVenta(force = false): Promise<ClienteVenta[]
       if (dAll) cli = dAll;
     }
 
-    let cg: { grupo_id: any; cliente_id: any }[] = [];
-    try {
-      const { data: dCg } = await supabase
-        .from("clientes_grupos")
-        .select("grupo_id, cliente_id");
-      if (dCg) cg = dCg;
-    } catch {
-      /* sin clientes_grupos */
-    }
     const clientes = (cli ?? []).map((c) => ({
       id: String(c.id),
       nombre: String(c.seudonimo || c.nombre || ""),
@@ -322,15 +308,10 @@ export async function listarClientesVenta(force = false): Promise<ClienteVenta[]
       permite_cruces: c.permite_cruces != null ? Boolean(c.permite_cruces) : null,
       cruce_mismo_ejemplar: c.cruce_mismo_ejemplar != null ? Boolean(c.cruce_mismo_ejemplar) : null,
       cruce_diferente_ejemplar: c.cruce_diferente_ejemplar != null ? Boolean(c.cruce_diferente_ejemplar) : null,
-      grupos: [
-        ...new Set([
-          ...((cg ?? []).filter((x) => String(x.cliente_id) === String(c.id)).map((x) => String(x.grupo_id))),
-          ...(c.grupo_id ? [String(c.grupo_id)] : []),
-        ].filter(Boolean)),
-      ],
+      grupos: c.grupo_id ? [String(c.grupo_id)] : [],
     }));
     const clientesGrupo = activo
-      ? clientes.filter((c) => String(c.grupo_id) === String(activo) || (Array.isArray(c.grupos) && c.grupos.map(String).includes(String(activo))))
+      ? clientes.filter((c) => c.grupo_id != null && String(c.grupo_id) === String(activo))
       : clientes;
     cacheClientes = await sincronizarSaldosRealesClientes(
       clientesGrupo.map((c) => ({
@@ -385,10 +366,10 @@ export function clientePerteneceAGrupo(
   }
 
   const cGrupoId = c.grupo_id != null ? String(c.grupo_id).trim().toUpperCase() : null;
-  const cGrupos = (c.grupos ?? []).map((x) => String(x).trim().toUpperCase());
+  if (!cGrupoId || cGrupoId === "NULL" || cGrupoId === "UNDEFINED") return false;
 
-  if (cGrupoId === matchId || cGrupos.includes(matchId)) return true;
-  if (matchNombre && (cGrupoId === matchNombre || cGrupos.includes(matchNombre))) return true;
+  if (cGrupoId === matchId) return true;
+  if (matchNombre && cGrupoId === matchNombre) return true;
   return false;
 }
 
@@ -409,7 +390,7 @@ export function filtrarClientesPorGrupo(
 
 /**
  * Regla de negocio: PROHIBIDO que jugadores de distintos grupos interactúen entre sí.
- * Si ambos son clientes registrados en el sistema, DEBEN pertenecer al mismo grupo.
+ * Si ambos son clientes registrados en el sistema, DEBEN pertenecer al mismo grupo (grupo_id único).
  */
 export function clientesPertenecenAlMismoGrupo(
   c1: { grupo_id?: string | number | null; grupos?: (string | number)[] } | null | undefined,
@@ -418,12 +399,14 @@ export function clientesPertenecenAlMismoGrupo(
 ): boolean {
   if (!c1 || !c2) return true;
   const g1Ids = new Set<string>();
-  if (c1.grupo_id != null) g1Ids.add(String(c1.grupo_id).trim().toUpperCase());
-  (c1.grupos ?? []).forEach((g) => g1Ids.add(String(g).trim().toUpperCase()));
+  if (c1.grupo_id != null && String(c1.grupo_id).trim() !== "") {
+    g1Ids.add(String(c1.grupo_id).trim().toUpperCase());
+  }
 
   const g2Ids = new Set<string>();
-  if (c2.grupo_id != null) g2Ids.add(String(c2.grupo_id).trim().toUpperCase());
-  (c2.grupos ?? []).forEach((g) => g2Ids.add(String(g).trim().toUpperCase()));
+  if (c2.grupo_id != null && String(c2.grupo_id).trim() !== "") {
+    g2Ids.add(String(c2.grupo_id).trim().toUpperCase());
+  }
 
   if (gruposVenta && gruposVenta.length > 0) {
     for (const g of gruposVenta) {
@@ -1182,85 +1165,22 @@ export async function listarClientesLigeros(force = false): Promise<ClienteLiger
   }
 }
 
-export async function listarMembresias(force = false): Promise<MembresiaClienteGrupo[]> {
-  if (!supabase) return [];
-  try {
-    const { data, error } = await supabase
-      .from("clientes_grupos")
-      .select("id, cliente_id, grupo_id, es_principal, activo");
-    if (error) throw error;
-    return (data ?? []) as MembresiaClienteGrupo[];
-  } catch {
-    return [];
-  }
+export async function listarMembresias(_force = false): Promise<MembresiaClienteGrupo[]> {
+  // Aislamiento estricto por grupo: ningún cliente puede pertenecer a múltiples grupos.
+  return [];
 }
 
-/** Agrega clientes como pertenencia ADICIONAL a un grupo (cliente_grupos).
- *  Regla del legacy: nunca duplica a los principales del destino ni a
- *  adicionales existentes, y excluye el propio grupo destino. */
+/** Aislamiento estricto por grupo: asignar a un grupo MUEVE su grupo_id único y limpia cualquier vínculo adicional. */
 export async function agregarClientesGrupo(
   clienteIds: (string | number)[],
   grupoId: string | number
 ): Promise<{ ok: boolean; agregados: number; error?: string; sinTabla?: boolean }> {
   if (!supabase) return { ok: false, agregados: 0, error: "Sin conexión a Supabase" };
-  try {
-    // La pagina /grupos solo exige grupos:ruta_grupos (LECTURA): sin esta
-    // comprobacion, un usuario de solo lectura podria alterar las
-    // pertenencias. Las RPC son security definer, asi que la base no frena
-    // el abuso: el control va aqui (mismo criterio que moverClientesGrupo).
-    exigirCapacidad("grupos:modal_miembros");
-    const idsSet = new Set(clienteIds.map((x) => String(x)));
-    idsSet.delete(String(grupoId));
-    if (!idsSet.size) return { ok: true, agregados: 0 };
-    const filas = [...idsSet].map((cliente_id) => ({
-      cliente_id,
-      grupo_id: grupoId,
-      es_principal: false,
-      activo: true,
-    }));
-    let yaExisten = new Set<string>();
-    let principalesDestino = new Set<string>();
-    try {
-      const [p, e] = await Promise.all([
-        supabase.from("clientes").select("id").eq("grupo_id", String(grupoId) as never),
-        (async () => {
-          const { data, error } = await supabase.from("clientes_grupos").select("cliente_id").eq("grupo_id", String(grupoId) as never);
-          return error ? null : data;
-        })(),
-      ]);
-      if (p && !p.error && Array.isArray(p.data)) principalesDestino = new Set(p.data.map((x) => String(x.id)));
-      if (e && Array.isArray(e)) yaExisten = new Set(e.map((x) => String(x.cliente_id)));
-    } catch {
-      /* tabla clientes_grupos posiblemente ausente → fallback directo */
-    }
-    const nuevas = filas.filter((f) => !yaExisten.has(String(f.cliente_id)) && !principalesDestino.has(String(f.cliente_id)));
-    if (!nuevas.length) return { ok: true, agregados: 0 };
-    const { error } = await supabase.from("clientes_grupos").insert(nuevas as Record<string, unknown>[]);
-    if (error) {
-      // Fallback sin tabla clientes_grupos (mismo comportamiento del legacy):
-      // se mueve el grupo_id principal del cliente (schema sin multi-grupo).
-      if (/relation .* does not exist|PGRST205/i.test(error.message)) {
-        const { error: e2 } = await supabase.from("clientes").update({ grupo_id: grupoId }).in("id", [...idsSet]);
-        if (e2) return { ok: false, agregados: 0, error: e2.message };
-        cacheClientes = null;
-        return { ok: true, agregados: nuevas.length, sinTabla: true };
-      }
-      // Fallback a la RPC security definer (sql/grupos_asignacion_rpc.sql):
-      // el RLS bloquea el insert directo, la RPC corre como duena de la tabla.
-      const rpc = await supabase.rpc("club_agregar_clientes_grupo", {
-        p_cliente_ids: [...idsSet],
-        p_grupo_id: grupoId,
-      });
-      if (rpc.error) return { ok: false, agregados: 0, error: rpc.error.message };
-      cacheClientes = null;
-      const dato = (rpc.data ?? {}) as Record<string, unknown>;
-      return { ok: true, agregados: Number(dato.agregados ?? nuevas.length) };
-    }
-    cacheClientes = null;
-    return { ok: true, agregados: nuevas.length };
-  } catch (e) {
-    return { ok: false, agregados: 0, error: e instanceof Error ? e.message : String(e) };
-  }
+  const idsUnicos = [...new Set(clienteIds.map((x) => String(x)).filter(Boolean))];
+  if (!idsUnicos.length) return { ok: true, agregados: 0 };
+  const res = await moverClientesGrupo(idsUnicos, grupoId);
+  if (!res.ok) return { ok: false, agregados: 0, error: res.error };
+  return { ok: true, agregados: idsUnicos.length };
 }
 
 /** Quita pertenencias ADICIONALES del grupo (nunca el grupo_id principal del cliente). */
@@ -1290,13 +1210,14 @@ export async function quitarClientesGrupo(
       cacheClientes = null;
       return { ok: true };
     }
+    cacheClientes = null;
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
-/** Movimiento sin tabla clientes_grupos (fallback): asigna grupo_id principal. */
+/** Movimiento exclusivo de clientes: asigna el nuevo grupo_id único y limpia cualquier fila en clientes_grupos. */
 export async function moverClientesGrupo(
   clienteIds: (string | number)[],
   grupoId: string | number
@@ -1312,8 +1233,11 @@ export async function moverClientesGrupo(
         p_grupo_id: grupoId,
       });
       if (rpc.error) return { ok: false, error: rpc.error.message };
-      cacheClientes = null;
-      return { ok: true };
+    }
+    try {
+      await supabase.from("clientes_grupos").delete().in("cliente_id", clienteIds);
+    } catch {
+      /* best-effort limpieza puente multi-grupo */
     }
     cacheClientes = null;
     return { ok: true };

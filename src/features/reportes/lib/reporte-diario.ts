@@ -28,6 +28,11 @@
 import { supabase } from "@/core/supabase";
 import { extraerFechaCarreraTicket, filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
+import {
   buscarPizarraEnMapa,
   desglosarTicketEnFilasUnificadas,
   leerJugadasModulosExtrasHipodromo,
@@ -721,6 +726,14 @@ function leerRespuestaRpc(data: unknown): ReporteDiario | null {
 /** Trae y suma las jugadas del rango usando el motor unificado de `reportes.ts`. */
 async function leerPorRespaldo(opts: OpcionesReporteDiario): Promise<ResultadoReporteDiario> {
   if (!supabase) return { ok: false, error: "Supabase no está configurado." };
+  const grupoEfectivo =
+    opts.grupoId ||
+    (veTodosLosGruposVigente()
+      ? grupoActivoVigente() || grupoVigente() || null
+      : grupoVigente() || grupoActivoVigente() || null);
+  if (!grupoEfectivo && !veTodosLosGruposVigente()) {
+    return { ok: true, datos: armarReporteDiario([]), fuente: "cliente", respaldo: true };
+  }
 
   // Fecha de la carrera (incluyendo jugadas registradas cualquier día para carreras dentro del rango).
   const orFecha =
@@ -739,7 +752,7 @@ async function leerPorRespaldo(opts: OpcionesReporteDiario): Promise<ResultadoRe
     .order("fecha_registro", { ascending: true })
     .limit(20000);
   if (opts.hipodromo) q = q.ilike("hipodromo", `%${opts.hipodromo}%`);
-  if (opts.grupoId) q = q.eq("grupo_cobro_id", opts.grupoId);
+  if (grupoEfectivo) q = q.eq("grupo_cobro_id", String(grupoEfectivo));
 
   const { data, error } = await q;
   if (error) return { ok: false, error: error.message };
@@ -769,7 +782,8 @@ async function leerPorRespaldo(opts: OpcionesReporteDiario): Promise<ResultadoRe
         dia,
         opts.hipodromo ?? "",
         null,
-        ticketsBase as unknown as Record<string, unknown>[]
+        ticketsBase as unknown as Record<string, unknown>[],
+        grupoEfectivo ? String(grupoEfectivo) : undefined
       );
       for (const rowsExtra of extrasMap.values()) {
         ticketsTotales.push(...(rowsExtra as unknown as TicketCrudo[]));
@@ -779,10 +793,14 @@ async function leerPorRespaldo(opts: OpcionesReporteDiario): Promise<ResultadoRe
     }
   }
 
-  // Cargar pizarras y clientes para evaluar con el motor oficial de `reportes.ts`.
+  // Cargar pizarras y clientes del grupo para evaluar con el motor oficial de `reportes.ts`.
+  let qClientes = supabase.from("clientes").select("id, nombre, seudonimo, devolucion");
+  if (grupoEfectivo) {
+    qClientes = qClientes.eq("grupo_id", String(grupoEfectivo));
+  }
   const [pizarras, resClientes] = await Promise.all([
     leerPizarrasPorFechas([...fechasEnTickets]),
-    supabase.from("clientes").select("id, nombre, seudonimo, devolucion"),
+    qClientes,
   ]);
 
   const devolucionPorCliente = new Map<string, number>();

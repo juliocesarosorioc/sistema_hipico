@@ -17,6 +17,11 @@ import { supabase } from "@/core/supabase";
 import { parseNum } from "@/features/tablas/lib/tipos";
 import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
 import { esc, fsAuto, col, fmt, monCode, fmtFecha, hoy, hipoKey, type Orientacion, DIM_PAGINA } from "@/features/impresion/lib/util";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 
 export type EjemplarJugador = {
   numero: string;
@@ -87,6 +92,12 @@ const un = (v: unknown): string => String(v ?? "").trim();
 /** Carga tickets + metadatos de tablas y arma el árbol jugador→grupo→nivel. */
 export async function cargarReporteJugadores(filtros?: { dia?: string; hipodromo?: string }): Promise<ReporteJugadores> {
   if (!supabase) return { jugadores: [], fuente: "local", error: "Sin conexión a Supabase" };
+  const activo = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente() || null
+    : grupoVigente() || grupoActivoVigente() || null;
+  if (!activo && !veTodosLosGruposVigente()) {
+    return { jugadores: [], fuente: "reales" };
+  }
 
   const dia = filtros?.dia || "";
   const hipo = filtros?.hipodromo ? String(filtros.hipodromo).toUpperCase() : "";
@@ -99,6 +110,7 @@ export async function cargarReporteJugadores(filtros?: { dia?: string; hipodromo
         "id,fecha_registro,fecha_carrera,nota_auditoria,hipodromo,carrera,ejemplar_numero,caballo,cantidad_tablas,monto_jugado,monto_decidido,cliente_juega_id,cliente_juega_nombre,grupo,moneda,estado,anulada"
       )
       .order("fecha_registro");
+    if (activo) sel = sel.eq("grupo_cobro_id", String(activo));
     if (dia) sel = sel.or(filtroDiaJornada(dia));
     if (hipo) sel = sel.ilike("hipodromo", hipo);
     const { data, error } = await sel;

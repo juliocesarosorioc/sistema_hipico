@@ -452,6 +452,9 @@ export async function liquidarMarcas(
   const activoGrupo = veTodosLosGruposVigente()
     ? grupoActivoVigente() || grupoVigente()
     : grupoVigente() || grupoActivoVigente();
+  if (!activoGrupo && !veTodosLosGruposVigente()) {
+    return { ok: true, liquidados: 0, ganadores: 0, perdedores: 0, reintegrados: 0, gananciaTotal: 0 };
+  }
   let qMarcas = sdb
     .from("tickets_apuestas")
     .select("*")
@@ -486,21 +489,27 @@ export async function liquidarMarcas(
     return { ok: true, liquidados: 0, ganadores: 0, perdedores: 0, reintegrados: 0, gananciaTotal: 0 };
   }
 
-  // 3) Asegurar usuario `MARCAS` en `public.clientes` para imputarle el pago/cobro.
-  let idUsuarioMarcas: string | number | null = null;
-  let saldoUsuarioMarcas = 0;
-  try {
-    const { data: cliMarcas } = await sdb
-      .from("clientes")
-      .select("id, saldo_actual")
-      .ilike("nombre", "MARCAS")
-      .limit(1)
-      .maybeSingle();
-    if (cliMarcas?.id != null) {
-      idUsuarioMarcas = cliMarcas.id as string | number;
-      saldoUsuarioMarcas = Number(cliMarcas.saldo_actual ?? 0) || 0;
-    } else {
-      const grupoSample = ticketsPendientes.find((t) => t.grupo_cobro_id != null)?.grupo_cobro_id ?? null;
+  // 3) Resolver/asegurar usuario `MARCAS` estrictamente por grupo_id (sin mezcla entre grupos).
+  const marcasPorGrupo = new Map<string, { id: string | number; saldo: number }>();
+  const resolverUsuarioMarcasGrupo = async (grupoKey: string): Promise<string | number | null> => {
+    if (!grupoKey) return null;
+    const enMem = marcasPorGrupo.get(grupoKey);
+    if (enMem) return enMem.id;
+    try {
+      const { data: cliMarcas } = await sdb
+        .from("clientes")
+        .select("id, saldo_actual")
+        .eq("grupo_id", grupoKey)
+        .ilike("nombre", "MARCAS")
+        .limit(1)
+        .maybeSingle();
+      if (cliMarcas?.id != null) {
+        marcasPorGrupo.set(grupoKey, {
+          id: cliMarcas.id as string | number,
+          saldo: Number(cliMarcas.saldo_actual ?? 0) || 0,
+        });
+        return cliMarcas.id as string | number;
+      }
       const { data: creado } = await sdb
         .from("clientes")
         .insert([
@@ -511,27 +520,31 @@ export async function liquidarMarcas(
             libre: true,
             saldo_actual: 0,
             aval: 0,
-            ...(grupoSample != null ? { grupo_id: grupoSample } : {}),
+            grupo_id: grupoKey,
           },
         ])
         .select("id, saldo_actual")
         .maybeSingle();
       if (creado?.id != null) {
-        idUsuarioMarcas = creado.id as string | number;
-        saldoUsuarioMarcas = Number(creado.saldo_actual ?? 0) || 0;
+        marcasPorGrupo.set(grupoKey, {
+          id: creado.id as string | number,
+          saldo: Number(creado.saldo_actual ?? 0) || 0,
+        });
+        return creado.id as string | number;
       }
+    } catch {
+      /* best-effort */
     }
-  } catch {
-    /* best-effort */
-  }
+    return null;
+  };
 
-  // 4) Evaluar cada ticket de Marca y acumular deltas de saldo por jugador y para `MARCAS`.
+  // 4) Evaluar cada ticket de Marca y acumular deltas de saldo por jugador y para `MARCAS` por grupo.
   let liquidados = 0;
   let ganadores = 0;
   let perdedores = 0;
   let reintegrados = 0;
   let gananciaCasaTotal = 0;
-  let deltaUsuarioMarcas = 0;
+  const deltaMarcasPorGrupo = new Map<string, number>();
   const deltaPorJugador = new Map<string, number>();
 
   const acumularJugador = (clienteId: unknown, delta: number) => {
@@ -542,9 +555,11 @@ export async function liquidarMarcas(
 
   const comisionGruposMap = new Map<string, number>();
   try {
-    const { data: grps } = await sdb
-      .from("grupos_venta")
-      .select("id, comision_marcas, comision_default");
+    let qGrps = sdb.from("grupos_venta").select("id, comision_marcas, comision_default");
+    if (activoGrupo) {
+      qGrps = qGrps.eq("id", String(activoGrupo));
+    }
+    const { data: grps } = await qGrps;
     for (const g of grps ?? []) {
       const com = g.comision_marcas ?? g.comision_default ?? 2.5;
       comisionGruposMap.set(String(g.id), Number(com));
@@ -561,6 +576,8 @@ export async function liquidarMarcas(
     const grpId = String(t.grupo_cobro_id ?? t.grupo_comision_id ?? "");
     const comGrupoConf = comisionGruposMap.get(grpId);
     const tasaCom = tPct > 0 ? tPct : (comGrupoConf ?? 2.5);
+    const grpEfectivo = grpId || (activoGrupo ? String(activoGrupo) : "");
+    const idUsuarioMarcas = await resolverUsuarioMarcasGrupo(grpEfectivo);
     const cab = numeroCaballoMarca(t.caballo, t.ejemplar_numero) ?? "";
     const rivales = extraerRivalesTicketMarca(t, cab);
 
@@ -626,7 +643,12 @@ export async function liquidarMarcas(
       ganadores += 1;
       gananciaCasaTotal = Math.round((gananciaCasaTotal + comGrupo) * 100) / 100;
       acumularJugador(t.cliente_juega_id, bruto);
-      deltaUsuarioMarcas = Math.round((deltaUsuarioMarcas - (pagoMarca + comGrupo)) * 100) / 100;
+      if (grpEfectivo) {
+        deltaMarcasPorGrupo.set(
+          grpEfectivo,
+          Math.round(((deltaMarcasPorGrupo.get(grpEfectivo) ?? 0) - (pagoMarca + comGrupo)) * 100) / 100
+        );
+      }
 
       await sdb
         .from("tickets_apuestas")
@@ -648,7 +670,12 @@ export async function liquidarMarcas(
       liquidados += 1;
       perdedores += 1;
       gananciaCasaTotal = Math.round((gananciaCasaTotal + comGrupo) * 100) / 100;
-      deltaUsuarioMarcas = Math.round((deltaUsuarioMarcas + cobroNetoMarcas) * 100) / 100;
+      if (grpEfectivo) {
+        deltaMarcasPorGrupo.set(
+          grpEfectivo,
+          Math.round(((deltaMarcasPorGrupo.get(grpEfectivo) ?? 0) + cobroNetoMarcas) * 100) / 100
+        );
+      }
 
       await sdb
         .from("tickets_apuestas")
@@ -682,13 +709,15 @@ export async function liquidarMarcas(
     }
   }
 
-  // 6) Aplicar pago/cobro neto al usuario `MARCAS` en `public.clientes`.
-  if (idUsuarioMarcas != null && Math.abs(deltaUsuarioMarcas) >= 0.005) {
+  // 6) Aplicar pago/cobro neto al usuario `MARCAS` de cada grupo en `public.clientes`.
+  for (const [grpKey, deltaGrp] of deltaMarcasPorGrupo.entries()) {
+    const infoM = marcasPorGrupo.get(grpKey);
+    if (!infoM || Math.abs(deltaGrp) < 0.005) continue;
     try {
       await sdb
         .from("clientes")
-        .update({ saldo_actual: Math.round((saldoUsuarioMarcas + deltaUsuarioMarcas) * 100) / 100 })
-        .eq("id", idUsuarioMarcas as never);
+        .update({ saldo_actual: Math.round((infoM.saldo + deltaGrp) * 100) / 100 })
+        .eq("id", infoM.id as never);
     } catch {
       /* best-effort */
     }
@@ -892,5 +921,5 @@ export async function listarPizarraMarcas(filtros: {
 /** Clientes de un grupo, para el filtro en cascada del modal. */
 export function clientesDelGrupo(clientes: ClienteVenta[], grupoId: string): ClienteVenta[] {
   if (!grupoId) return [];
-  return clientes.filter((c) => (c.grupos ?? []).map(String).includes(String(grupoId)));
+  return clientes.filter((c) => c.grupo_id != null && String(c.grupo_id) === String(grupoId));
 }

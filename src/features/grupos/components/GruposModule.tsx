@@ -450,17 +450,7 @@ export function GruposModule() {
 
     (grupoId: string): (ClienteLigero & { adicional: boolean })[] => {
 
-      const principales = clientes.filter((c) => String(c.grupo_id) === String(grupoId));
-
-      const extraIds = new Set(
-
-        (membresias.filter((m) => String(m.grupo_id) === String(grupoId)) || [])
-
-          .map((m) => String(m.cliente_id))
-
-          .filter((id) => !principales.some((p) => String(p.id) === id))
-
-      );
+      const principales = clientes.filter((c) => c.grupo_id != null && String(c.grupo_id) === String(grupoId));
 
       const vistos = new Set<string>();
 
@@ -476,31 +466,17 @@ export function GruposModule() {
 
       }
 
-      for (const c of clientes) {
-
-        if (extraIds.has(String(c.id)) && !vistos.has(String(c.id))) {
-
-          vistos.add(String(c.id));
-
-          out.push({ ...c, adicional: true });
-
-        }
-
-      }
-
       return out;
 
     },
 
-    [clientes, membresias]
+    [clientes]
 
   );
 
 
 
   const conteoPorGrupo = useMemo(() => {
-
-    const mapa = new Map<string, number>();
 
     const contadores = new Map<string, number>();
 
@@ -512,19 +488,9 @@ export function GruposModule() {
 
     }
 
-    for (const m of membresias) {
-
-      const id = String(m.grupo_id);
-
-      const esPrincipal = clientes.some((c) => String(c.id) === String(m.cliente_id) && String(c.grupo_id) === id);
-
-      if (!esPrincipal) contadores.set(id, (contadores.get(id) ?? 0) + 1);
-
-    }
-
     return contadores;
 
-  }, [clientes, membresias, grupos]);
+  }, [clientes, grupos]);
 
 
 

@@ -847,15 +847,17 @@ export async function liquidarTablasFijasDeCarrera(
   let comision = 0;
   let tablas = 0;
   const errores: string[] = [];
-  for (const id of ids) {
-    const r = await liquidarTablaFija({ tablaId: id, ganadores, usuario });
-    if (!r.ok) {
-      errores.push(r.error ?? "No se pudo liquidar la tabla fija.");
-      continue;
+  if (!grupoFiltro) {
+    for (const id of ids) {
+      const r = await liquidarTablaFija({ tablaId: id, ganadores, usuario });
+      if (!r.ok) {
+        errores.push(r.error ?? "No se pudo liquidar la tabla fija.");
+        continue;
+      }
+      tablas += 1;
+      pagado += r.pagado ?? 0;
+      comision += r.comision ?? 0;
     }
-    tablas += 1;
-    pagado += r.pagado ?? 0;
-    comision += r.comision ?? 0;
   }
 
   // ── LIQUIDACIÓN DIRECTA DE TICKETS DE TABLA FIJA EN tickets_apuestas ──

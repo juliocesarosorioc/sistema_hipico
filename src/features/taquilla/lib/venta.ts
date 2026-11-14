@@ -144,15 +144,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     }
     if (cRow) {
       cRowData = cRow;
-      let pertenece = String(cRow.grupo_id) === String(grupoEfectivo);
-      if (!pertenece) {
-        const { data: cgRow } = await supabase
-          .from("clientes_grupos")
-          .select("grupo_id")
-          .eq("cliente_id", v.clienteId)
-          .eq("grupo_id", grupoEfectivo);
-        pertenece = Boolean(cgRow && cgRow.length > 0);
-      }
+      const pertenece = cRow.grupo_id != null && String(cRow.grupo_id) === String(grupoEfectivo);
       if (!pertenece) {
         return {
           ok: false,
@@ -178,6 +170,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
       const { data: dadorRows } = await supabase
         .from("clientes")
         .select("id, nombre, seudonimo, grupo_id")
+        .eq("grupo_id", grupoEfectivo)
         .or(`nombre.ilike.${dadorTexto},seudonimo.ilike.${dadorTexto}`)
         .limit(1);
       if (dadorRows && dadorRows.length > 0) {
@@ -185,15 +178,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
       }
     }
     if (dadorCliData) {
-      let perteneceDador = String(dadorCliData.grupo_id) === String(grupoEfectivo);
-      if (!perteneceDador) {
-        const { data: cgDador } = await supabase
-          .from("clientes_grupos")
-          .select("grupo_id")
-          .eq("cliente_id", dadorCliData.id)
-          .eq("grupo_id", grupoEfectivo);
-        perteneceDador = Boolean(cgDador && cgDador.length > 0);
-      }
+      const perteneceDador = dadorCliData.grupo_id != null && String(dadorCliData.grupo_id) === String(grupoEfectivo);
       if (!perteneceDador) {
         return {
           ok: false,

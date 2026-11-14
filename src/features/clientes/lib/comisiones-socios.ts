@@ -14,6 +14,11 @@
 
 import { supabase } from "@/core/supabase";
 import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 
 export interface ReglaDevolucionCliente {
   nombre: string;
@@ -29,6 +34,7 @@ export type ClienteSocioLike = {
   id?: string | number | null;
   nombre?: string | null;
   seudonimo?: string | null;
+  grupo_id?: string | number | null;
   es_socio?: boolean | null;
   socio_asignado?: string | null;
   devolucion?: number | string | null;
@@ -41,6 +47,7 @@ export type SocioRefLike = {
   id?: string | number | null;
   nombre?: string | null;
   seudonimo?: string | null;
+  grupo_id?: string | number | null;
 };
 
 /**
@@ -167,23 +174,28 @@ function resolverSocioRef(
     id: ref?.id ?? socioId ?? undefined,
     nombre: ref?.nombre ?? socioNombre,
     seudonimo: ref?.seudonimo ?? socioNombre,
+    grupo_id: ref?.grupo_id ?? null,
   };
 }
 
 /**
- * Determina si un cliente pertenece/está afiliado a un socio.
+ * Determina si un cliente pertenece/está afiliado a un socio DEL MISMO GRUPO.
  *
  * `clientes.socio_asignado` históricamente guardó el NOMBRE, pero el valor
  * canónico actual es el **ID** del socio (`valorSocioAsignado`). Esta función
- * acepta ambos para que la comisión no se pierda al migrar los datos.
+ * exige coincidencia de `grupo_id` cuando ambos están definidos.
  */
 export function esClienteAfiliadoAlSocio(
-  cliente: Pick<ClienteSocioLike, "id" | "socio_asignado"> | null | undefined,
+  cliente: Pick<ClienteSocioLike, "id" | "socio_asignado" | "grupo_id"> | null | undefined,
   socio: SocioRefLike | null | undefined,
   clientesParaResolver: ClienteSocioLike[] = []
 ): boolean {
   const valor = String(cliente?.socio_asignado ?? "").trim();
   if (!valor || !socio) return false;
+
+  const gCli = cliente?.grupo_id != null && String(cliente.grupo_id).trim() !== "" ? String(cliente.grupo_id).trim() : null;
+  const gSoc = socio.grupo_id != null && String(socio.grupo_id).trim() !== "" ? String(socio.grupo_id).trim() : null;
+  if (gCli && gSoc && gCli !== gSoc) return false;
 
   if (socio.id != null && valor === String(socio.id)) return true;
 
@@ -192,9 +204,14 @@ export function esClienteAfiliadoAlSocio(
   );
   if (aliasSocio.has(normalizar(valor))) return true;
 
-  // Si `socio_asignado` guarda el ID, resolvemos ese cliente y comparamos
+  // Si `socio_asignado` guarda el ID, resolvemos ese cliente dentro del mismo grupo y comparamos
   // sus nombres/seudónimos con los del socio.
-  const referencia = clientesParaResolver.find((c) => String(c.id ?? "") === valor);
+  const referencia = clientesParaResolver.find((c) => {
+    if (String(c.id ?? "") !== valor) return false;
+    if (gCli && c.grupo_id != null && String(c.grupo_id).trim() !== gCli) return false;
+    if (gSoc && c.grupo_id != null && String(c.grupo_id).trim() !== gSoc) return false;
+    return true;
+  });
   if (referencia) {
     const aliasReferencia = [referencia.nombre, referencia.seudonimo]
       .map(normalizar)
@@ -229,17 +246,31 @@ export function calcularComisionesSocioPorClientes(params: {
   const tickets = params.tickets || [];
   const clientes = params.clientes || [];
   const socioRef = resolverSocioRef(params.socioNombre, params.socioId, clientes);
+  const socioClienteObj =
+    (params.socioId != null
+      ? clientes.find((c) => String(c.id ?? "") === String(params.socioId))
+      : undefined) ??
+    clientes.find(
+      (c) => normalizar(c.seudonimo) === socioNorm || normalizar(c.nombre) === socioNorm
+    );
+  const grupoSocio = socioRef.grupo_id ?? socioClienteObj?.grupo_id ?? null;
+  const grupoSocioStr =
+    grupoSocio != null && String(grupoSocio).trim() !== "" ? String(grupoSocio).trim() : null;
 
-  // Buscar todos los clientes que tienen a este socio asignado
+  // Buscar todos los clientes del mismo grupo que tienen a este socio asignado
   const clientesAfiliados: Array<{
     id?: string | number;
     nombre: string;
     comisionPct: number;
     fechaInicio: string;
+    grupoId?: string | number | null;
   }> = [];
 
-  // Primero de la lista viva de clientes
+  // Primero de la lista viva de clientes (estrictamente del mismo grupo)
   for (const c of clientes) {
+    if (grupoSocioStr && c.grupo_id != null && String(c.grupo_id).trim() !== grupoSocioStr) {
+      continue;
+    }
     if (esClienteAfiliadoAlSocio(c, socioRef, clientes)) {
       const nom = c.seudonimo || c.nombre || "";
       const regla = clientes.length === 0 ? buscarReglaDevolucionCliente(nom) : undefined;
@@ -251,6 +282,7 @@ export function calcularComisionesSocioPorClientes(params: {
         nombre: nom,
         comisionPct: comPct,
         fechaInicio: fIni,
+        grupoId: c.grupo_id ?? grupoSocio ?? null,
       });
     }
   }
@@ -331,30 +363,30 @@ export function calcularComisionesSocioPorClientes(params: {
     };
   };
 
-  // Devolución propia del socio
-  const socioRegla = buscarReglaDevolucionCliente(params.socioNombre);
-  const socioClienteObj =
-    (params.socioId != null
-      ? clientes.find((c) => String(c.id ?? "") === String(params.socioId))
-      : undefined) ??
-    clientes.find(
-      (c) => normalizar(c.seudonimo) === socioNorm || normalizar(c.nombre) === socioNorm
-    );
+  // Devolución propia del socio (sin fallback cruzado cuando hay lista viva de clientes)
+  const socioRegla = clientes.length === 0 ? buscarReglaDevolucionCliente(params.socioNombre) : undefined;
   const devPropiaPct = socioClienteObj != null
     ? Math.max(0, Number(socioClienteObj.devolucion ?? (socioClienteObj as any).incentivo_pct ?? 0) || 0)
     : (socioRegla?.devolucionPropiaPct ?? 0);
 
-  // Calcular jugadas propias del socio para su devolución propia (por carrera con regla de monto decidido y cruces)
+  // Calcular jugadas propias del socio para su devolución propia (aislado por grupo_id y socioId)
   let montoJugadoPropio = 0;
   let totalDevPropia = 0;
 
   const ticketsPropiosPorCarrera = new Map<string, any[]>();
   for (const t of tickets) {
     if (t.anulada) continue;
+    const tGrupo = (t.grupo_cobro_id ?? t.grupo_id) != null ? String(t.grupo_cobro_id ?? t.grupo_id).trim() : "";
+    if (grupoSocioStr && (!tGrupo || tGrupo !== grupoSocioStr)) continue;
     const tCli = normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre);
     const tCon = normalizar(t.cliente_consigue_nombre || t.clienteConsigue || t.tercio);
-    const fechaT = String(t.fecha_carrera || t.fecha || "").slice(0, 10);
-    if (tCli === socioNorm || tCon === socioNorm) {
+    const idSocStr = socioRef.id != null ? String(socioRef.id) : null;
+    const matchIdJ = idSocStr != null && t.cliente_juega_id != null && String(t.cliente_juega_id) === idSocStr;
+    const matchIdC = idSocStr != null && t.cliente_consigue_id != null && String(t.cliente_consigue_id) === idSocStr;
+    if (matchIdJ || matchIdC || tCli === socioNorm || tCon === socioNorm) {
+      if (idSocStr && tCli === socioNorm && t.cliente_juega_id != null && !matchIdJ && !matchIdC) continue;
+      if (idSocStr && tCon === socioNorm && t.cliente_consigue_id != null && !matchIdC && !matchIdJ) continue;
+      const fechaT = String(t.fecha_carrera || t.fecha || "").slice(0, 10);
       if (params.fechaDesde && fechaT < params.fechaDesde) continue;
       if (params.fechaHasta && fechaT > params.fechaHasta) continue;
       const k = `${fechaT}::${t.hipodromo || "USA"}::${t.carrera || 1}`;
@@ -375,12 +407,17 @@ export function calcularComisionesSocioPorClientes(params: {
   totalDevPropia = Math.round(totalDevPropia * 100) / 100;
   montoJugadoPropio = Math.round(montoJugadoPropio * 100) / 100;
 
-  // Calcular comisiones por cada cliente afiliado (por carrera con regla de monto decidido y cruces)
+  // Calcular comisiones por cada cliente afiliado (aislado estrictamente al grupo_id del afiliado y su ID)
   const desglosePorCliente: ComisionClienteParaSocio[] = [];
   let totalComisionesClientes = 0;
 
   for (const af of clientesAfiliados) {
     const afNorm = normalizar(af.nombre);
+    const afGrupoStr =
+      af.grupoId != null && String(af.grupoId).trim() !== ""
+        ? String(af.grupoId).trim()
+        : grupoSocioStr;
+    const afIdStr = af.id != null ? String(af.id) : null;
     let totalJugadoAf = 0;
     let totalComisionAf = 0;
     const jugadas: DetalleJugadaComisionSocio[] = [];
@@ -388,13 +425,19 @@ export function calcularComisionesSocioPorClientes(params: {
     const ticketsAfPorCarrera = new Map<string, any[]>();
     for (const t of tickets) {
       if (t.anulada) continue;
+      const tGrupo = (t.grupo_cobro_id ?? t.grupo_id) != null ? String(t.grupo_cobro_id ?? t.grupo_id).trim() : "";
+      if (afGrupoStr && (!tGrupo || tGrupo !== afGrupoStr)) continue;
       const tCli = normalizar(t.cliente_juega_nombre || t.clienteJuega || t.cliente_nombre);
       const tCon = normalizar(t.cliente_consigue_nombre || t.clienteConsigue || t.tercio);
       const fechaT = String(t.fecha_carrera || t.fecha || "").slice(0, 10);
 
       // Comisión de socio: jugadas como Juega; como dador (Consigue) solo cuentan si hay cruce
       // en la carrera, y entonces la comisión se calcula sobre la diferencia.
-      if (tCli === afNorm || tCon === afNorm) {
+      const matchIdJ = afIdStr != null && t.cliente_juega_id != null && String(t.cliente_juega_id) === afIdStr;
+      const matchIdC = afIdStr != null && t.cliente_consigue_id != null && String(t.cliente_consigue_id) === afIdStr;
+      if (matchIdJ || matchIdC || tCli === afNorm || tCon === afNorm) {
+        if (afIdStr && tCli === afNorm && t.cliente_juega_id != null && !matchIdJ && !matchIdC) continue;
+        if (afIdStr && tCon === afNorm && t.cliente_consigue_id != null && !matchIdC && !matchIdJ) continue;
         if (fechaT < af.fechaInicio) continue;
         if (params.fechaDesde && fechaT < params.fechaDesde) continue;
         if (params.fechaHasta && fechaT > params.fechaHasta) continue;
@@ -670,16 +713,32 @@ export async function aplicarParametrosOficialesDevolucion(grupoId?: string): Pr
 }
 
 /**
- * Carga los tickets necesarios para el cálculo de comisiones y devoluciones
+ * Carga los tickets necesarios para el cálculo de comisiones y devoluciones,
+ * aislados estrictamente al grupo activo cuando existe.
  */
-export async function cargarTodosTicketsParaComisiones(): Promise<any[]> {
+export async function cargarTodosTicketsParaComisiones(grupoId?: string | null): Promise<any[]> {
   if (!supabase) return [];
+  const activo =
+    grupoId !== undefined
+      ? grupoId
+      : veTodosLosGruposVigente()
+        ? grupoActivoVigente() || grupoVigente() || null
+        : grupoVigente() || grupoActivoVigente() || null;
+  if (!activo && !veTodosLosGruposVigente()) return [];
   try {
-    const { data, error } = await supabase
+    let q = supabase
       .from("tickets_apuestas")
       .select("*")
       .order("fecha_registro", { ascending: false })
       .limit(10000);
+    if (
+      activo &&
+      (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(activo).trim()) ||
+        /^\d+$/.test(String(activo).trim()))
+    ) {
+      q = q.eq("grupo_cobro_id", String(activo).trim());
+    }
+    const { data, error } = await q;
     if (error) throw error;
     return (data ?? []) as any[];
   } catch (e) {

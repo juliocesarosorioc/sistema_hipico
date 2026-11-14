@@ -106,30 +106,12 @@ async function clientesDeGrupo(grupoId: string): Promise<Array<{
   cruce_diferente_ejemplar: boolean | null;
 }>> {
   if (!supabase) throw new Error("Sin conexión a Supabase.");
-  const [clientesResult, miembrosResult] = await Promise.all([
-    supabase
-      .from("clientes")
-      .select("id, nombre, seudonimo, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar")
-      .eq("grupo_id", grupoId),
-    supabase.from("clientes_grupos").select("cliente_id").eq("grupo_id", grupoId),
-  ]);
+  const clientesResult = await supabase
+    .from("clientes")
+    .select("id, nombre, seudonimo, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar")
+    .eq("grupo_id", grupoId);
   if (clientesResult.error) throw new Error(`Clientes del grupo: ${clientesResult.error.message}`);
-  if (miembrosResult.error) throw new Error(`Membresías del grupo: ${miembrosResult.error.message}`);
   const clientes = (clientesResult.data ?? []) as Array<Record<string, unknown>>;
-  const idsCargados = new Set(clientes.map((cliente) => String(cliente.id)));
-  const idsMembresia = [...new Set(
-    (miembrosResult.data ?? [])
-      .map((m) => String(m.cliente_id))
-      .filter((id) => id && !idsCargados.has(id))
-  )];
-  if (idsMembresia.length) {
-    const adicionales = await supabase
-      .from("clientes")
-      .select("id, nombre, seudonimo, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar")
-      .in("id", idsMembresia);
-    if (adicionales.error) throw new Error(`Clientes asociados al grupo: ${adicionales.error.message}`);
-    clientes.push(...((adicionales.data ?? []) as Array<Record<string, unknown>>));
-  }
   return clientes.map((cliente) => ({
       id: String(cliente.id),
       nombre: String(cliente.seudonimo || cliente.nombre || ""),

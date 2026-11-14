@@ -254,6 +254,7 @@ export function apuestaEventoEspecialATicket(apuesta: {
   pago_potencial: number | string;
   logro_cuota?: string | null;
   estado: string;
+  grupo_id?: string | number | null;
 }): TicketApuesta {
   const estado = String(apuesta.estado ?? "").toUpperCase();
   const estadoTicket =
@@ -277,6 +278,7 @@ export function apuestaEventoEspecialATicket(apuesta: {
     comision_pagada: 0,
     cliente_juega_id: apuesta.cliente_id ?? null,
     cliente_juega_nombre: apuesta.cliente_nombre,
+    grupo_cobro_id: apuesta.grupo_id ?? null,
     estado: estadoTicket,
     anulada: estado === "ANULADA",
   };
@@ -503,33 +505,26 @@ export async function listarClientes(force = false, grupoIdOverride?: string | n
         /* best-effort */
       }
 
-      // Buscar también clientes asociados por la tabla puente clientes_grupos
-      const idsClientesPuente = new Set<string>();
-      try {
-        const { data: cgRows } = await supabase
-          .from("clientes_grupos")
-          .select("cliente_id, grupo_id");
-        for (const cg of cgRows ?? []) {
-          if (idsObjetivo.has(String(cg.grupo_id)) && cg.cliente_id != null) {
-            idsClientesPuente.add(String(cg.cliente_id));
-          }
-        }
-      } catch {
-        /* best-effort */
+      // Filtrar estrictamente por grupo_id en la base de datos (sin puente clientes_grupos)
+      const uuidsObjetivo = [...idsObjetivo].filter((x) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x)
+      );
+      let q = supabase.from("clientes").select("*").order("nombre");
+      if (uuidsObjetivo.length === 1) {
+        q = q.eq("grupo_id", uuidsObjetivo[0]);
+      } else if (uuidsObjetivo.length > 1) {
+        q = q.in("grupo_id", uuidsObjetivo);
+      } else if (/^\d+$/.test(String(activo).trim())) {
+        q = q.eq("grupo_id", String(activo).trim());
       }
-
-      // Filtrar por grupo_id en la base de datos
-      const q = supabase.from("clientes").select("*").order("nombre");
       const { data, error } = await q;
       if (error) throw error;
 
       // Aislamiento ESTRICTO en memoria: solo clientes que pertenezcan única y exclusivamente a este grupo
       const candidatos = ((data ?? []) as ClienteRow[]);
       const filtradosPorGrupo = candidatos.filter((c) => {
-        const gCli = c.grupo_id != null ? String(c.grupo_id) : "";
-        if (gCli && idsObjetivo.has(gCli)) return true;
-        if (idsClientesPuente.has(String(c.id))) return true;
-        return false;
+        const gCli = c.grupo_id != null ? String(c.grupo_id).trim() : "";
+        return Boolean(gCli && (idsObjetivo.has(gCli) || idsObjetivo.has(gCli.toUpperCase())));
       });
       const overlayExt = leerOverlayClientesExt();
       lista = (await sincronizarSaldosRealesClientes(
@@ -564,6 +559,7 @@ export async function listarClientes(force = false, grupoIdOverride?: string | n
 
 
 let cacheMapaSeudonimos: Map<string, string> | null = null;
+let cacheMapaSeudonimosGrupo: string | null = null;
 let cacheMapaSeudonimosTs = 0;
 
 function normalizarNombreBusquedaClientes(v: unknown): string {
@@ -579,23 +575,43 @@ function normalizarNombreBusquedaClientes(v: unknown): string {
  * Mapa centralizado de resolución de seudónimos para reportes.
  * En los reportes el usuario SIEMPRE debe identificarse por su SEUDÓNIMO.
  * Asocia id -> seudonimo || nombre, nombre -> seudonimo, y seudonimo -> seudonimo.
+ * Aislamiento estricto por grupo: solo incluye clientes del grupo activo.
  */
 export async function cargarMapaSeudonimosClientes(force = false): Promise<Map<string, string>> {
-  if (!force && cacheMapaSeudonimos && Date.now() - cacheMapaSeudonimosTs < 15000) {
+  const grupoFiltro = grupoParaFiltrar() ?? null;
+  if (
+    !force &&
+    cacheMapaSeudonimos &&
+    cacheMapaSeudonimosGrupo === grupoFiltro &&
+    Date.now() - cacheMapaSeudonimosTs < 15000
+  ) {
     return cacheMapaSeudonimos;
   }
   const mapa = new Map<string, string>();
   if (!supabase) return mapa;
+  if (!grupoFiltro && !esPrincipalVigente()) return mapa;
   try {
-    let rows: Array<{ id?: string | number; nombre?: string | null; seudonimo?: string | null }> = [];
-    const { data, error } = await supabase
-      .from("clientes")
-      .select("id, nombre, seudonimo");
-    if (!error && Array.isArray(data) && data.length > 0) {
-      rows = data;
+    let rows: Array<{ id?: string | number; nombre?: string | null; seudonimo?: string | null; grupo_id?: string | number | null }> = [];
+    const isUUID =
+      grupoFiltro != null &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(grupoFiltro).trim());
+    let q = supabase.from("clientes").select("id, nombre, seudonimo, grupo_id");
+    if (grupoFiltro && (isUUID || /^\d+$/.test(String(grupoFiltro).trim()))) {
+      q = q.eq("grupo_id", String(grupoFiltro).trim());
+    }
+    const { data, error } = await q;
+    if (!error && Array.isArray(data)) {
+      rows = grupoFiltro
+        ? data.filter((c) => c.grupo_id != null && String(c.grupo_id) === String(grupoFiltro))
+        : data;
+      // Si el grupoFiltro era nombre/slug (no UUID), delegar al listado aislado de clientes
+      if (grupoFiltro && !isUUID && !/^\d+$/.test(String(grupoFiltro).trim()) && rows.length === 0) {
+        const fall = await listarClientes(force, grupoFiltro).catch(() => []);
+        rows = fall.map((c) => ({ id: c.id, nombre: c.nombre, seudonimo: c.seudonimo, grupo_id: c.grupo_id }));
+      }
     } else {
-      const fall = await listarClientes(true).catch(() => []);
-      rows = fall.map((c) => ({ id: c.id, nombre: c.nombre, seudonimo: c.seudonimo }));
+      const fall = await listarClientes(true, grupoFiltro).catch(() => []);
+      rows = fall.map((c) => ({ id: c.id, nombre: c.nombre, seudonimo: c.seudonimo, grupo_id: c.grupo_id }));
     }
 
     for (const c of rows) {
@@ -619,6 +635,7 @@ export async function cargarMapaSeudonimosClientes(force = false): Promise<Map<s
       }
     }
     cacheMapaSeudonimos = mapa;
+    cacheMapaSeudonimosGrupo = grupoFiltro;
     cacheMapaSeudonimosTs = Date.now();
   } catch {
     /* best effort */
@@ -627,6 +644,8 @@ export async function cargarMapaSeudonimosClientes(force = false): Promise<Map<s
 }
 
 export function obtenerMapaSeudonimosClientesSync(): Map<string, string> | null {
+  const grupoFiltro = grupoParaFiltrar() ?? null;
+  if (cacheMapaSeudonimosGrupo !== grupoFiltro) return null;
   return cacheMapaSeudonimos;
 }
 
@@ -636,7 +655,7 @@ export function resolverSeudonimoClienteSync(
 ): string {
   const raw = String(identificador ?? "").trim();
   if (!raw || raw === "—" || raw === "-") return raw;
-  const m = mapa ?? cacheMapaSeudonimos;
+  const m = mapa ?? obtenerMapaSeudonimosClientesSync();
   if (!m) return raw;
   return (
     m.get(raw) ||
@@ -650,6 +669,9 @@ export function resolverSeudonimoClienteSync(
 export function limpiarCacheClientes(): void {
   cacheClientes = null;
   cacheClientesGrupo = undefined;
+  cacheMapaSeudonimos = null;
+  cacheMapaSeudonimosGrupo = null;
+  cacheMapaSeudonimosTs = 0;
 }
 
 export async function crearCliente(payload: Partial<ClienteRow>): Promise<{ ok: boolean; id?: string; error?: string }> {
@@ -826,16 +848,25 @@ export async function convertirSocio(nombre: string): Promise<{ ok: boolean; err
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
     const existente = await listarClientes(true);
+    const gid =
+      grupoParaFiltrar() ||
+      cacheClientesGrupo ||
+      (existente.find((c) => c.grupo_id != null)?.grupo_id
+        ? String(existente.find((c) => c.grupo_id != null)!.grupo_id)
+        : null);
     const ya = existente.find((c) => String(c.nombre).toUpperCase() === nombre);
     if (ya) {
       const { error } = await supabase.from("clientes").update({ es_socio: true }).eq("id", ya.id);
       if (error) return { ok: false, error: error.message };
     } else {
+      if (!gid) {
+        return { ok: false, error: "Debe seleccionar un grupo activo antes de crear un socio." };
+      }
       // Sin seudónimo el socio quedaba con "—" y no aparecía en la venta de
       // tablas, que identifica al jugador por seudónimo.
       const { error } = await supabase
         .from("clientes")
-        .insert([{ nombre, seudonimo: nombre, es_socio: true, modo_juego: "aval" }]);
+        .insert([{ nombre, seudonimo: nombre, es_socio: true, modo_juego: "aval", grupo_id: gid }]);
       if (error) return { ok: false, error: error.message };
     }
     limpiarCachéClientesTodo();
@@ -999,16 +1030,87 @@ export async function guardarPortal(
 // Notificaciones del portal (solicitudes de actualización de datos)
 // ---------------------------------------------------------------------------
 
+async function resolverScopeClientesGrupo(grupoActivo: string | number): Promise<{
+  idsObjetivo: Set<string>;
+  uuidsObjetivo: string[];
+  idsClientes: Set<string>;
+}> {
+  const gStr = String(grupoActivo).trim();
+  const idsObjetivo = new Set<string>([gStr, gStr.toUpperCase()]);
+  if (supabase) {
+    try {
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(gStr);
+      const { data: gRows } = await supabase
+        .from("grupos_venta")
+        .select("id, nombre, slug")
+        .or(
+          isUUID
+            ? `id.eq.${gStr},nombre.ilike.%${gStr}%,slug.ilike.%${gStr}%`
+            : `nombre.ilike.%${gStr}%,slug.ilike.%${gStr}%`
+        );
+      for (const g of gRows ?? []) {
+        if (g.id != null) idsObjetivo.add(String(g.id));
+        if (g.slug) idsObjetivo.add(String(g.slug).trim().toUpperCase());
+        if (g.nombre) idsObjetivo.add(String(g.nombre).trim().toUpperCase());
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+  const uuidsObjetivo = [...idsObjetivo].filter((x) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x)
+  );
+  const idsClientes = new Set<string>();
+  if (supabase && (uuidsObjetivo.length > 0 || /^\d+$/.test(gStr))) {
+    try {
+      const { data: cliRows } = await (
+        uuidsObjetivo.length > 1
+          ? supabase.from("clientes").select("id").in("grupo_id", uuidsObjetivo)
+          : supabase.from("clientes").select("id").eq("grupo_id", uuidsObjetivo[0] ?? gStr)
+      );
+      for (const c of cliRows ?? []) {
+        if (c.id != null) idsClientes.add(String(c.id).trim());
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+  return { idsObjetivo, uuidsObjetivo, idsClientes };
+}
+
 export async function listarNotificaciones(limite = 40): Promise<NotificacionRow[]> {
   if (!supabase) return [];
   try {
+    const grupoActivo = grupoParaFiltrar();
+    if (!grupoActivo && !esPrincipalVigente()) return [];
+
     const { data, error } = await supabase
       .from("notificaciones")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(limite);
+      .limit(grupoActivo ? Math.max(limite * 5, 200) : limite);
     if (error) throw error;
-    return (data ?? []) as NotificacionRow[];
+    const rows = (data ?? []) as NotificacionRow[];
+    if (!grupoActivo) return rows;
+
+    const { idsObjetivo, idsClientes } = await resolverScopeClientesGrupo(grupoActivo);
+    return rows
+      .filter((n) => {
+        const d = (n.datos ?? {}) as Record<string, unknown>;
+        const nGrupoId = d.grupo_id != null ? String(d.grupo_id).trim() : "";
+        if (nGrupoId) {
+          return idsObjetivo.has(nGrupoId) || idsObjetivo.has(nGrupoId.toUpperCase());
+        }
+        if (n.cliente_id != null && String(n.cliente_id).trim() !== "") {
+          return idsClientes.has(String(n.cliente_id).trim());
+        }
+        const nGrupoNom = d.grupo != null ? String(d.grupo).trim().toUpperCase() : "";
+        if (nGrupoNom) {
+          return idsObjetivo.has(nGrupoNom);
+        }
+        return false;
+      })
+      .slice(0, limite);
   } catch {
     return [];
   }
@@ -1138,6 +1240,9 @@ export async function ignorarNotificacion(n: NotificacionRow, atendidaPor: strin
 export async function listarReclamos(limite = 40): Promise<ReclamoRow[]> {
   if (!supabase) return [];
   try {
+    const grupoActivo = grupoParaFiltrar();
+    if (!grupoActivo && !esPrincipalVigente()) return [];
+
     // OJO: la tabla tickets_jugadas tiene `creado_at`, NO `created_at`
     // (verificado en sql/paquete_pendientes.sql). Pedir `created_at` hacía
     // fallar el order y la bandeja salía SIEMPRE vacía, aunque hubiera reclamos.
@@ -1145,9 +1250,25 @@ export async function listarReclamos(limite = 40): Promise<ReclamoRow[]> {
       .from("tickets_jugadas")
       .select("*")
       .order("creado_at", { ascending: false })
-      .limit(limite);
+      .limit(grupoActivo ? Math.max(limite * 5, 200) : limite);
     if (error) throw error;
-    return (data ?? []) as ReclamoRow[];
+    const rows = (data ?? []) as ReclamoRow[];
+    if (!grupoActivo) return rows;
+
+    const { idsObjetivo, idsClientes } = await resolverScopeClientesGrupo(grupoActivo);
+    return rows
+      .filter((r) => {
+        const raw = r as unknown as Record<string, unknown>;
+        const rGrupo = raw.grupo_id != null ? String(raw.grupo_id).trim() : "";
+        if (rGrupo) {
+          return idsObjetivo.has(rGrupo) || idsObjetivo.has(rGrupo.toUpperCase());
+        }
+        if (r.cliente_id != null && String(r.cliente_id).trim() !== "") {
+          return idsClientes.has(String(r.cliente_id).trim());
+        }
+        return false;
+      })
+      .slice(0, limite);
   } catch {
     return [];
   }
@@ -1774,7 +1895,48 @@ export async function cargarTicketsCliente(
   try {
     const idStr = String(clienteId ?? "").trim();
     const clienteMem = cacheClientes?.find((c) => String(c.id) === idStr);
-    const grupoCliente = clienteInfo?.grupo_id ?? clienteMem?.grupo_id ?? null;
+    let grupoCliente: string | number | null = clienteInfo?.grupo_id ?? clienteMem?.grupo_id ?? null;
+    if ((grupoCliente == null || String(grupoCliente).trim() === "") && idStr && !idStr.startsWith("sys-")) {
+      try {
+        const { data: cliG } = await supabase
+          .from("clientes")
+          .select("grupo_id")
+          .eq("id", idStr)
+          .maybeSingle();
+        if (cliG?.grupo_id != null) grupoCliente = cliG.grupo_id;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (grupoCliente == null || String(grupoCliente).trim() === "") {
+      grupoCliente = grupoParaFiltrar();
+    }
+    if (!grupoCliente && !esPrincipalVigente()) {
+      return [];
+    }
+
+    const scopeGrupo = grupoCliente ? await resolverScopeClientesGrupo(grupoCliente) : null;
+    let grupoCanonicoId = grupoCliente != null ? String(grupoCliente).trim() : "";
+    let grupoCanonicoNombre = grupoCanonicoId;
+    if (grupoCliente && scopeGrupo) {
+      if (scopeGrupo.uuidsObjetivo.length > 0) {
+        grupoCanonicoId = scopeGrupo.uuidsObjetivo[0];
+      }
+      try {
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(grupoCanonicoId);
+        if (isUUID) {
+          const { data: gRow } = await supabase
+            .from("grupos_venta")
+            .select("nombre")
+            .eq("id", grupoCanonicoId)
+            .maybeSingle();
+          if (gRow?.nombre) grupoCanonicoNombre = String(gRow.nombre);
+        }
+      } catch {
+        /* best-effort */
+      }
+    }
+
     const nombresCliente = new Set(
       [
         clienteInfo?.nombre,
@@ -1787,11 +1949,20 @@ export async function cargarTicketsCliente(
         .filter(Boolean)
     );
 
-    const { data, error } = await supabase
+    let qTickets = supabase
       .from("tickets_apuestas")
       .select("*")
       .order("fecha_registro", { ascending: false })
       .limit(10000);
+    if (scopeGrupo && scopeGrupo.uuidsObjetivo.length === 1) {
+      qTickets = qTickets.eq("grupo_cobro_id", scopeGrupo.uuidsObjetivo[0]);
+    } else if (scopeGrupo && scopeGrupo.uuidsObjetivo.length > 1) {
+      qTickets = qTickets.in("grupo_cobro_id", scopeGrupo.uuidsObjetivo);
+    } else if (grupoCanonicoId && /^\d+$/.test(grupoCanonicoId)) {
+      qTickets = qTickets.eq("grupo_cobro_id", grupoCanonicoId);
+    }
+
+    const { data, error } = await qTickets;
     if (error) throw error;
     const filas: any[] = ((data ?? []) as Array<Record<string, unknown>>)
       .filter((r) => !String(r.nota_auditoria ?? "").includes("EVENTO_LIBRE_P2P:"))
@@ -1800,7 +1971,7 @@ export async function cargarTicketsCliente(
         fecha_carrera: extraerFechaCarreraTicket(r) || (r.fecha_carrera as string | null) || null,
       }));
 
-    // Cargar eventos libres individuales y P2P para el estado de cuenta.
+    // Cargar eventos libres individuales y P2P para el estado de cuenta (aislados al grupo).
     try {
       const { data: dataEv } = await supabase
         .from("apuestas_eventos_especiales")
@@ -1815,7 +1986,25 @@ export async function cargarTicketsCliente(
           } catch {
             /* ignore */
           }
+          const evRowGrupo = (evRow as { grupo_id?: string | number | null }).grupo_id ?? null;
           if (parsed) {
+            const parsedGrupo = parsed.grupoId ?? parsed.grupo_id ?? evRowGrupo ?? null;
+            const pGrupoStr = parsedGrupo != null ? String(parsedGrupo).trim() : "";
+            const j1Id = String(parsed.jugador1Id || evRow.cliente_id || "").trim();
+            const j2Id = String(parsed.jugador2Id || "").trim();
+            if (scopeGrupo) {
+              if (pGrupoStr) {
+                if (!scopeGrupo.idsObjetivo.has(pGrupoStr) && !scopeGrupo.idsObjetivo.has(pGrupoStr.toUpperCase())) {
+                  continue;
+                }
+              } else {
+                const perteneceParticipante =
+                  (j1Id && scopeGrupo.idsClientes.has(j1Id)) ||
+                  (j2Id && scopeGrupo.idsClientes.has(j2Id));
+                if (!perteneceParticipante) continue;
+              }
+            }
+
             const ganoJ1 = parsed.estado === "GANO_JUGADOR_1" || String(evRow.estado).toUpperCase() === "GANADOR";
             const ganoJ2 = parsed.estado === "GANO_JUGADOR_2";
             const montoJuega = Number(parsed.riesgoJugador1) || Number(evRow.monto) || 0;
@@ -1824,6 +2013,8 @@ export async function cargarTicketsCliente(
             const comisionCobrada = Number(parsed.comisionCobrada ?? (montoGanancia * 0.05)) || 0;
             const premioPagar = ganoJ1 ? (montoJuega + montoGanancia) : 0;
             const estadoTicket = ganoJ1 ? "Ganador" : ganoJ2 ? "Perdedor" : "Pendiente";
+            const gidEv = pGrupoStr || grupoCanonicoId || null;
+            const gNomEv = String(parsed.grupoNombre || grupoCanonicoNombre || "").trim() || undefined;
 
             filas.push({
               id: `ev-libre-${evRow.id}`,
@@ -1838,22 +2029,34 @@ export async function cargarTicketsCliente(
               premio_pagar: premioPagar,
               comision_porcentaje: Number(parsed.comisionGrupoPct || 5),
               comision_pagada: comisionCobrada,
-              cliente_juega_id: String(parsed.jugador1Id || evRow.cliente_id || ""),
+              cliente_juega_id: j1Id,
               cliente_juega_nombre: String(parsed.jugador1Nombre || evRow.cliente_nombre || ""),
-              cliente_consigue_id: String(parsed.jugador2Id || ""),
+              cliente_consigue_id: j2Id,
               cliente_consigue_nombre: String(parsed.jugador2Nombre || ""),
               estado: estadoTicket,
               anulada: false,
-              grupo: "ARGENTINA",
-              grupo_cobro_id: "d290daa1-a44b-4ed4-bb8a-03db4ecc32b0",
-              grupo_cobro_nombre: "ARGENTINA",
-              grupo_comision_id: "d290daa1-a44b-4ed4-bb8a-03db4ecc32b0",
-              grupo_comision_nombre: "ARGENTINA",
+              grupo: gNomEv,
+              grupo_cobro_id: gidEv,
+              grupo_cobro_nombre: gNomEv,
+              grupo_comision_id: gidEv,
+              grupo_comision_nombre: gNomEv,
               nota_auditoria: evRow.nota,
             } as unknown as TicketApuesta);
           } else {
             const apuestaClienteId = String(evRow.cliente_id ?? "").trim();
             const apuestaClienteNombre = String(evRow.cliente_nombre ?? "").trim().toUpperCase();
+            const evGrupoStr = evRowGrupo != null ? String(evRowGrupo).trim() : "";
+            if (scopeGrupo) {
+              if (evGrupoStr && !scopeGrupo.idsObjetivo.has(evGrupoStr) && !scopeGrupo.idsObjetivo.has(evGrupoStr.toUpperCase())) {
+                continue;
+              }
+              if (apuestaClienteId && !scopeGrupo.idsClientes.has(apuestaClienteId)) {
+                continue;
+              }
+              if (!apuestaClienteId && !evGrupoStr) {
+                continue;
+              }
+            }
             if (
               (idStr && apuestaClienteId === idStr) ||
               (apuestaClienteNombre && nombresCliente.has(apuestaClienteNombre))
@@ -1869,6 +2072,7 @@ export async function cargarTicketsCliente(
                 pago_potencial: Number(evRow.pago_potencial) || 0,
                 logro_cuota: evRow.logro_cuota ? String(evRow.logro_cuota) : null,
                 estado: String(evRow.estado ?? "PENDIENTE"),
+                grupo_id: evGrupoStr || grupoCanonicoId || null,
               }));
             }
           }
@@ -1878,15 +2082,14 @@ export async function cargarTicketsCliente(
       /* best-effort */
     }
     const filtrados = filas.filter((t) => {
-      // Si el cliente pertenece a un grupo específico, no mezclar con tickets de otros grupos
-      if (grupoCliente) {
-        const gEsperado = String(grupoCliente).trim();
+      // Aislamiento ESTRICTO: el ticket debe pertenecer al mismo grupo del cliente, nunca vacío ni ajeno
+      if (scopeGrupo) {
         const tGrupo = String(
           (t as unknown as { grupo_cobro_id?: string | number; grupo_id?: string | number }).grupo_cobro_id ??
           (t as unknown as { grupo_id?: string | number }).grupo_id ??
           ""
         ).trim();
-        if (tGrupo && tGrupo !== gEsperado) {
+        if (!tGrupo || (!scopeGrupo.idsObjetivo.has(tGrupo) && !scopeGrupo.idsObjetivo.has(tGrupo.toUpperCase()))) {
           return false;
         }
       }

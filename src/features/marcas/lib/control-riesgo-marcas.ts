@@ -3,6 +3,11 @@
 import { supabase } from "@/core/supabase";
 import { registrarAuditoria } from "@/features/grupos/lib/grupos";
 import { separarNumeros, type ConfigMarcas } from "@/features/marcas/lib/marcas";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 
 export type LimitesMarcas = {
   limite_general_plataforma?: number | null; // Tope máximo global en $ por marca para la carrera
@@ -146,14 +151,26 @@ export async function obtenerAnalisisRiesgoMarcas(
   const cfg = (cfgRow ?? {}) as ConfigMarcas & { limites?: unknown };
   const marcasLista = separarNumeros(cfg.marcas ?? "");
   const nvLista = separarNumeros(cfg.nv ?? "");
-  // 2. Obtener tickets jugados de Marcas en esta carrera
-  const { data: tickets } = await supabase
-    .from("tickets_apuestas")
-    .select("id, cliente_juega_nombre, grupo_cobro_nombre, caballo, monto_jugado, premio_pagar, fecha_registro, nota_auditoria, moneda")
-    .eq("hipodromo", hipo)
-    .eq("carrera", carr)
-    .ilike("nombre_jugada", "MARCA%")
-    .order("fecha_registro", { ascending: false });
+  const activo = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente() || null
+    : grupoVigente() || grupoActivoVigente() || null;
+
+  // 2. Obtener tickets jugados de Marcas en esta carrera (aislados al grupo activo)
+  let tickets: Array<Record<string, unknown>> | null = [];
+  if (activo || veTodosLosGruposVigente()) {
+    let qTickets = supabase
+      .from("tickets_apuestas")
+      .select("id, cliente_juega_nombre, grupo_cobro_nombre, caballo, monto_jugado, premio_pagar, fecha_registro, nota_auditoria, moneda")
+      .eq("hipodromo", hipo)
+      .eq("carrera", carr)
+      .ilike("nombre_jugada", "MARCA%")
+      .order("fecha_registro", { ascending: false });
+    if (activo) {
+      qTickets = qTickets.eq("grupo_cobro_id", String(activo));
+    }
+    const resT = await qTickets;
+    tickets = (resT.data ?? []) as Array<Record<string, unknown>>;
+  }
 
   const ticketsValidos = (tickets ?? []).filter((t) => {
     // Excluir cancelados o anulados si aplica
@@ -195,7 +212,7 @@ export async function obtenerAnalisisRiesgoMarcas(
     }
 
     compradoresPorCaballo[cabStr].push({
-      ticketId: t.id,
+      ticketId: typeof t.id === "number" ? t.id : String(t.id ?? ""),
       jugadorNombre: String(t.cliente_juega_nombre ?? "Cliente"),
       grupoNombre: String(t.grupo_cobro_nombre ?? "General"),
       caballo: cabStr,
@@ -482,6 +499,7 @@ export async function comunicarCupoMarcaAgotadoAdmin(opts: {
   fecha: string;
   caballoNumero: string | number;
   rival?: string;
+  grupoId?: string | number | null;
   grupoNombre?: string;
   jugadorNombre?: string;
   montoIntentado?: number;
@@ -493,15 +511,25 @@ export async function comunicarCupoMarcaAgotadoAdmin(opts: {
     const hipo = String(opts.hipodromo).trim().toUpperCase();
     const carr = Number(opts.carrera);
     const cabStr = String(opts.caballoNumero);
+    const grupoEfectivo =
+      opts.grupoId ??
+      (veTodosLosGruposVigente()
+        ? grupoActivoVigente() || grupoVigente() || null
+        : grupoVigente() || grupoActivoVigente() || null);
+    if (!grupoEfectivo && !veTodosLosGruposVigente()) return;
 
-    // 1. Obtener historial de compradores de esta marca en la carrera
-    const { data: tickets } = await supabase
+    // 1. Obtener historial de compradores de esta marca en la carrera (estríctamente aislado al grupo)
+    let qTickets = supabase
       .from("tickets_apuestas")
       .select("id, cliente_juega_nombre, grupo_cobro_nombre, monto_jugado, premio_pagar, fecha_registro, caballo")
       .eq("hipodromo", hipo)
       .eq("carrera", carr)
       .ilike("nombre_jugada", "MARCA%")
       .order("fecha_registro", { ascending: false });
+    if (grupoEfectivo) {
+      qTickets = qTickets.eq("grupo_cobro_id", String(grupoEfectivo));
+    }
+    const { data: tickets } = await qTickets;
 
     const filtrados = (tickets ?? []).filter((t) => {
       const num = String(t.caballo ?? "").replace(/\D/g, "");
@@ -539,6 +567,7 @@ export async function comunicarCupoMarcaAgotadoAdmin(opts: {
         total_acumulado: totalJugado,
         monto_intentado: opts.montoIntentado,
         jugador_intentando: opts.jugadorNombre,
+        grupo_id: grupoEfectivo ?? null,
         grupo_intentando: opts.grupoNombre,
         compradores: compradoresResumen,
       },
@@ -663,6 +692,7 @@ export async function verificarCupoMarcaDisponible(opts: {
         carrera: carr,
         fecha: opts.fecha,
         caballoNumero: cabStr,
+        grupoId: opts.grupoId,
         grupoNombre: opts.grupoNombre,
         jugadorNombre: opts.jugadorNombre,
         montoIntentado: monto,
@@ -686,6 +716,7 @@ export async function verificarCupoMarcaDisponible(opts: {
         carrera: carr,
         fecha: opts.fecha,
         caballoNumero: cabStr,
+        grupoId: opts.grupoId,
         grupoNombre: opts.grupoNombre,
         jugadorNombre: opts.jugadorNombre,
         montoIntentado: monto,

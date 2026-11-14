@@ -32,14 +32,10 @@ export function leerSemanaVigenteLocal(grupoId?: string | number | null): string
   if (typeof window === "undefined") return null;
   try {
     const gid = String(grupoId ?? "").trim();
-    if (gid) {
-      const val = window.localStorage.getItem(`${CLAVE_SEMANA_VIGENTE_PREFIX}${gid}`);
-      if (val === "__NULL__") return null;
-      if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
-    }
-    const globalVal = window.localStorage.getItem(CLAVE_SEMANA_VIGENTE_GLOBAL);
-    if (globalVal === "__NULL__") return null;
-    if (globalVal && /^\d{4}-\d{2}-\d{2}$/.test(globalVal)) return globalVal;
+    if (!gid) return null;
+    const val = window.localStorage.getItem(`${CLAVE_SEMANA_VIGENTE_PREFIX}${gid}`);
+    if (val === "__NULL__") return null;
+    if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
   } catch {
     /* ignore */
   }
@@ -50,11 +46,9 @@ export function guardarSemanaVigenteLocal(grupoId: string | number, inicio: stri
   if (typeof window === "undefined") return;
   try {
     const gid = String(grupoId ?? "").trim();
+    if (!gid) return;
     const valor = inicio ? inicio.slice(0, 10) : "__NULL__";
-    if (gid) {
-      window.localStorage.setItem(`${CLAVE_SEMANA_VIGENTE_PREFIX}${gid}`, valor);
-    }
-    window.localStorage.setItem(CLAVE_SEMANA_VIGENTE_GLOBAL, valor);
+    window.localStorage.setItem(`${CLAVE_SEMANA_VIGENTE_PREFIX}${gid}`, valor);
   } catch {
     /* ignore */
   }
@@ -62,7 +56,7 @@ export function guardarSemanaVigenteLocal(grupoId: string | number, inicio: stri
 
 /**
  * Semana vigente del grupo. Si la columna no existe, deduce de hoy (fallback)
- * o lee la semana activada localmente por el usuario.
+ * o lee la semana activada localmente por el grupo.
  */
 export function semanaVigente(
   hoyIso: string,
@@ -70,12 +64,11 @@ export function semanaVigente(
   fijadaInicio?: string | null,
   grupoId?: string | number | null
 ): SemanaVigente {
+  const gid = String(grupoId ?? "").trim();
   const localRaw =
-    typeof window !== "undefined" && grupoId != null
-      ? window.localStorage.getItem(`${CLAVE_SEMANA_VIGENTE_PREFIX}${String(grupoId).trim()}`)
-      : typeof window !== "undefined"
-        ? window.localStorage.getItem(CLAVE_SEMANA_VIGENTE_GLOBAL)
-        : null;
+    typeof window !== "undefined" && gid
+      ? window.localStorage.getItem(`${CLAVE_SEMANA_VIGENTE_PREFIX}${gid}`)
+      : null;
   const efectiva =
     localRaw === "__NULL__"
       ? null

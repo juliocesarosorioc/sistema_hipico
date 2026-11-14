@@ -10,6 +10,11 @@
 import { cargarMapaSeudonimosClientes } from "@/features/clientes/lib/clientes";
 import { supabase } from "@/core/supabase";
 import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
+import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
 import { normalizarMarca, rivalesDeNota } from "@/features/marcas/lib/reporte-marcas-nucleo";
 import type { VentaTablaReporte } from "@/features/tablas/lib/reporte-tablas-nucleo";
 import { puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
@@ -66,14 +71,24 @@ export async function cargarMarcasJugadas(fecha: string): Promise<ResultadoCarga
   if (!supabase) return { ok: false, ventas: [], error: "Sin credenciales Supabase (.env.local)." };
   const dia = String(fecha ?? "").slice(0, 10);
   if (!dia) return { ok: false, ventas: [], error: "Indique el día del reporte." };
+  const activoGrupo = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente() || null
+    : grupoVigente() || grupoActivoVigente() || null;
+  if (!activoGrupo && !veTodosLosGruposVigente()) {
+    return { ok: true, ventas: [] };
+  }
   try {
+    let qTickets = supabase
+      .from("tickets_apuestas")
+      .select("*")
+      .or(filtroDiaJornada(dia))
+      .ilike("nombre_jugada", "%MARCA%")
+      .order("fecha_registro");
+    if (activoGrupo) {
+      qTickets = qTickets.eq("grupo_cobro_id", String(activoGrupo));
+    }
     const [{ data, error }, resultadosDia, mapaSeudonimos] = await Promise.all([
-      supabase
-        .from("tickets_apuestas")
-        .select("*")
-        .or(filtroDiaJornada(dia))
-        .ilike("nombre_jugada", "%MARCA%")
-        .order("fecha_registro"),
+      qTickets,
       leerResultadosDia(dia),
       cargarMapaSeudonimosClientes(),
     ]);

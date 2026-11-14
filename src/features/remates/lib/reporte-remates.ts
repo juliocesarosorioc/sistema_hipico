@@ -10,6 +10,11 @@ import { cargarMapaSeudonimosClientes } from "@/features/clientes/lib/clientes";
 import { supabase } from "@/core/supabase";
 import { filtroDiaJornada, perteneceADiaJornada } from "@/features/liquidacion/lib/fecha";
 import {
+  grupoActivoVigente,
+  grupoVigente,
+  veTodosLosGruposVigente,
+} from "@/features/seguridad/lib/vigente";
+import {
   estadoNormalizado,
   normalizarVenta,
   type VentaTablaReporte,
@@ -29,22 +34,34 @@ export async function cargarRematesVendidos(fecha: string): Promise<ResultadoCar
   if (!supabase) return { ok: false, ventas: [], error: "Sin credenciales Supabase (.env.local)." };
   const dia = String(fecha ?? "").slice(0, 10);
   if (!dia) return { ok: false, ventas: [], error: "Indique el día del reporte." };
+  const activoGrupo = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente() || null
+    : grupoVigente() || grupoActivoVigente() || null;
+  if (!activoGrupo && !veTodosLosGruposVigente()) {
+    return { ok: true, ventas: [] };
+  }
   try {
+    let qTickets = supabase
+      .from("tickets_apuestas")
+      .select("*")
+      .or(filtroDiaJornada(dia))
+      .ilike("nombre_jugada", "REMATE %")
+      .order("fecha_registro");
+    let qRemates = supabase
+      .from("remates")
+      .select("id, hipodromo, carrera, fecha, incentivo, incentivo_pct, comision_pct, grupo_id")
+      .eq("fecha", dia);
+    if (activoGrupo) {
+      qTickets = qTickets.eq("grupo_cobro_id", String(activoGrupo));
+      qRemates = qRemates.eq("grupo_id", String(activoGrupo));
+    }
     const [{ data, error }, { data: resData }, { data: rematesData }, mapaSeudonimos] = await Promise.all([
-      supabase
-        .from("tickets_apuestas")
-        .select("*")
-        .or(filtroDiaJornada(dia))
-        .ilike("nombre_jugada", "REMATE %")
-        .order("fecha_registro"),
+      qTickets,
       supabase
         .from("resultados_carreras")
         .select("hipodromo, carrera, ganadores, orden_llegada, retirados")
         .eq("fecha", dia),
-      supabase
-        .from("remates")
-        .select("id, hipodromo, carrera, fecha, incentivo, incentivo_pct, comision_pct")
-        .eq("fecha", dia),
+      qRemates,
       cargarMapaSeudonimosClientes().catch(() => new Map<string, string>()),
     ]);
     if (error) return { ok: false, ventas: [], error: error.message };

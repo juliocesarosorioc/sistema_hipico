@@ -795,15 +795,34 @@ export async function sincronizarSaldosRealesClientes<
 >(clientes: T[], _grupoId?: string | number | null): Promise<T[]> {
   if (!clientes) return [];
 
+  const gruposDistintos = [
+    ...new Set(
+      clientes
+        .map((c) => (c.grupo_id != null && String(c.grupo_id).trim() !== "" ? String(c.grupo_id).trim() : null))
+        .filter((g): g is string => Boolean(g))
+    ),
+  ];
+  const grupoUnico =
+    _grupoId != null && String(_grupoId).trim() !== ""
+      ? String(_grupoId).trim()
+      : gruposDistintos.length === 1
+        ? gruposDistintos[0]
+        : null;
+  const esGrupoIdFiltro =
+    grupoUnico != null &&
+    (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(grupoUnico) ||
+      /^\d+$/.test(grupoUnico));
+
   let tickets: TicketContableRaw[] = [];
   const telefonosMap = new Map<string, { telefono: string | null; codigo_pais: string | null }>();
   const gruposMap = new Map<string, GrupoComisiones>();
   if (supabase) {
     try {
-      const { data: telRows } = await supabase
-        .from("clientes")
-        .select("id, telefono, codigo_pais")
-        .limit(3000);
+      let telQ = supabase.from("clientes").select("id, telefono, codigo_pais").limit(3000);
+      if (esGrupoIdFiltro && grupoUnico) {
+        telQ = telQ.eq("grupo_id", grupoUnico);
+      }
+      const { data: telRows } = await telQ;
       if (telRows) {
         for (const row of telRows as Array<{ id?: unknown; telefono?: unknown; codigo_pais?: unknown }>) {
           if (row.id != null) {
@@ -832,23 +851,31 @@ export async function sincronizarSaldosRealesClientes<
       /* fallback silencioso */
     }
     try {
-      const { data, error } = await supabase
+      let tQ = supabase
         .from("tickets_apuestas")
         .select(
           "id, grupo_cobro_id, grupo_comision_id, grupo, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, caballo, monto_jugado, premio_pagar, monto_decidido, comision_porcentaje, comision_pagada, estado, anulada, es_adelantada"
         )
         .order("id", { ascending: false })
         .limit(5000);
+      if (esGrupoIdFiltro && grupoUnico) {
+        tQ = tQ.eq("grupo_cobro_id", grupoUnico);
+      }
+      const { data, error } = await tQ;
       if (error) {
         if (!esTablaInexistente42P01(error)) {
           // Si falla por columna opcional inexistente, reintenta con columnas mínimas
-          const rMin = await supabase
+          let rMinQ = supabase
             .from("tickets_apuestas")
             .select(
               "id, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, monto_jugado, premio_pagar, estado, anulada"
             )
             .order("id", { ascending: false })
             .limit(5000);
+          if (esGrupoIdFiltro && grupoUnico) {
+            rMinQ = rMinQ.eq("grupo_cobro_id", grupoUnico);
+          }
+          const rMin = await rMinQ;
           if (!rMin.error && rMin.data) {
             tickets = rMin.data as TicketContableRaw[];
           }
@@ -920,15 +947,7 @@ export async function sincronizarSaldosRealesClientes<
   }
 
   // Asegurar que existan los 5 usuarios del sistema por modalidad:
-  // MARCAS, TF, REMATES, DUPLETA, POLLAS
-  const todosGrupos = [
-    ...new Set(
-      [
-        _grupoId != null && String(_grupoId) !== "" ? String(_grupoId) : null,
-        ...clientes.map((c) => (c.grupo_id != null ? String(c.grupo_id) : null)),
-      ].filter((g): g is string => Boolean(g))
-    ),
-  ];
+  // MARCAS, TF, REMATES, DUPLETA, POLLAS (aislados al grupo correspondiente)
   const grupoDefault = _grupoId != null && String(_grupoId) !== "" ? _grupoId : (clientes.find((c) => c.grupo_id != null)?.grupo_id ?? null);
 
   const listaBase: T[] = clientes.map((c) => {
@@ -949,11 +968,12 @@ export async function sincronizarSaldosRealesClientes<
   for (const sysName of USUARIOS_SISTEMA_MODALIDADES) {
     if (presentes.has(sysName)) continue;
     let nuevoId: string | number = `sys-${sysName.toLowerCase()}`;
-    if (supabase) {
+    if (supabase && grupoDefault != null) {
       try {
         const { data: ya } = await supabase
           .from("clientes")
           .select("id")
+          .eq("grupo_id", grupoDefault)
           .ilike("nombre", sysName)
           .limit(1)
           .maybeSingle();
@@ -970,7 +990,7 @@ export async function sincronizarSaldosRealesClientes<
                 libre: true,
                 saldo_actual: 0,
                 aval: 0,
-                ...(grupoDefault != null ? { grupo_id: grupoDefault } : {}),
+                grupo_id: grupoDefault,
               },
             ])
             .select("id")
@@ -990,7 +1010,7 @@ export async function sincronizarSaldosRealesClientes<
       libre: true,
       modo_juego: "libre",
       grupo_id: grupoDefault,
-      grupos: todosGrupos,
+      grupos: grupoDefault != null ? [String(grupoDefault)] : [],
       portal_habilitado: false,
       portal_token: `TK${sysName}`,
       portal_clave: `CL${sysName}`,
@@ -998,8 +1018,8 @@ export async function sincronizarSaldosRealesClientes<
     presentes.add(sysName);
   }
 
-  // Comisiones de socios: se calculan una vez por socio y se imputan a su saldo.
-  // El ticket nominal no se toca; es un crédito independiente a favor del socio.
+  // Comisiones de socios: se calculan una vez por socio y se imputan a su saldo,
+  // particionadas estrictamente por grupo_id para impedir mezcla entre grupos.
   const comisionesPorCliente = new Map<string, number>();
   if (tickets.length > 0) {
     try {
@@ -1009,22 +1029,32 @@ export async function sincronizarSaldosRealesClientes<
         const id = String(c.id);
         const nombre = String(c.nombre ?? c.seudonimo ?? "").trim();
         if (!nombre) continue;
+        const gCliente = c.grupo_id != null && String(c.grupo_id).trim() !== "" ? String(c.grupo_id).trim() : null;
+        const clientesGrupo = gCliente
+          ? clientesSocio.filter((x) => x.grupo_id != null && String(x.grupo_id).trim() === gCliente)
+          : clientesSocio;
+        const ticketsGrupo = gCliente
+          ? tickets.filter((t) => {
+              const tg = t.grupo_cobro_id ?? (t as Record<string, unknown>).grupo_id;
+              return tg != null && String(tg).trim() === gCliente;
+            })
+          : tickets;
         const esSocio = Boolean(c.es_socio);
-        const tieneAfiliados = clientesSocio.some(
+        const tieneAfiliados = clientesGrupo.some(
           (x) =>
             String(x.id ?? "") !== id &&
             esClienteAfiliadoAlSocio(
-              { id: x.id, socio_asignado: x.socio_asignado },
-              { id: c.id, nombre: c.nombre, seudonimo: c.seudonimo },
-              clientesSocio
+              { id: x.id, socio_asignado: x.socio_asignado, grupo_id: x.grupo_id },
+              { id: c.id, nombre: c.nombre, seudonimo: c.seudonimo, grupo_id: c.grupo_id },
+              clientesGrupo
             )
         );
         if (!esSocio && !tieneAfiliados) continue;
         const res = calcularComisionesSocioPorClientes({
           socioNombre: nombre,
           socioId: c.id,
-          tickets,
-          clientes: clientesSocio,
+          tickets: ticketsGrupo,
+          clientes: clientesGrupo,
         });
         if (res.totalComisionesClientes > 0) {
           comisionesPorCliente.set(id, res.totalComisionesClientes);
