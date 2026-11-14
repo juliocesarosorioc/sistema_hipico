@@ -168,6 +168,21 @@ function guardarMensajeEnCache(msg) {
   }
 }
 
+// Cierre VULN-15: Set en memoria de los últimos 500 msg.key.id para descartar reintentos en < 1ms
+const ultimosMensajesProcesados = new Set();
+function esMensajeDuplicado(msgId) {
+  if (!msgId) return false;
+  if (ultimosMensajesProcesados.has(msgId)) {
+    return true;
+  }
+  ultimosMensajesProcesados.add(msgId);
+  if (ultimosMensajesProcesados.size > 500) {
+    const primerId = ultimosMensajesProcesados.values().next().value;
+    if (primerId) ultimosMensajesProcesados.delete(primerId);
+  }
+  return false;
+}
+
 function normalizarTelefono(raw) {
   if (!raw) return "";
   return String(raw)
@@ -706,6 +721,14 @@ async function manejarMensajeEntrante(msg) {
   try {
     if (!msg?.key || msg.key.fromMe) return;
 
+    const whatsappMsgId = msg.key.id || null;
+
+    // Cierre VULN-15: Descartar mensajes duplicados / reintentos en < 1ms
+    if (whatsappMsgId && esMensajeDuplicado(whatsappMsgId)) {
+      console.log(`[Bot WhatsApp] ⏩ [Idempotencia] Reintento descartado: ${whatsappMsgId}`);
+      return;
+    }
+
     const remoteJid = msg.key.remoteJid || "";
     if (!remoteJid.endsWith("@g.us")) return;
 
@@ -721,10 +744,16 @@ async function manejarMensajeEntrante(msg) {
     const textoLimpio = String(texto || "").trim();
     if (!textoLimpio) return;
 
+    // Cierre VULN-14: Soporte para JIDs @lid y participantAlt
     const participantJid = msg.key.participant || msg.participant || "";
+    const participantAlt = msg.key.participantAlt || msg.participantAlt || "";
     const senderNombre = msg.pushName || "Jugador";
 
-    console.log(`[Bot WhatsApp] 📩 [${remoteJid}] (${senderNombre} / ${participantJid}): "${textoLimpio}"`);
+    const telPrincipal = normalizarTelefono(participantJid);
+    const telAlt = normalizarTelefono(participantAlt);
+    const telNormalizado = telPrincipal || telAlt;
+
+    console.log(`[Bot WhatsApp] 📩 [${remoteJid}] (${senderNombre} / ${participantJid}${participantAlt ? ` / alt:${participantAlt}` : ""}): "${textoLimpio}"`);
 
     if (!supabase) {
       console.warn("[Bot WhatsApp] ⚠️ Supabase no inicializado");
@@ -832,27 +861,55 @@ async function manejarMensajeEntrante(msg) {
       }
     }
 
-    // 2. Cruzar remitente con public.clientes (por telefono_normalizado o whatsapp_jid)
+    // 2. Cruzar remitente con public.clientes (Cierre VULN-14: Soporte @lid y auto-guardado)
     let cliente = null;
 
-    if (participantJid || telNormalizado) {
+    const condicionesOr = [];
+    if (participantJid) condicionesOr.push(`whatsapp_jid.eq.${participantJid}`);
+    if (participantAlt) condicionesOr.push(`whatsapp_jid.eq.${participantAlt}`);
+    if (telPrincipal) condicionesOr.push(`telefono_normalizado.eq.${telPrincipal}`);
+    if (telAlt && telAlt !== telPrincipal) condicionesOr.push(`telefono_normalizado.eq.${telAlt}`);
+
+    if (condicionesOr.length > 0) {
       const { data: clExacto } = await supabase
         .from("clientes")
         .select("id, nombre, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
-        .or(`whatsapp_jid.eq.${participantJid},telefono_normalizado.eq.${telNormalizado}`)
+        .or(condicionesOr.join(","))
         .limit(1)
         .maybeSingle();
 
       if (clExacto) {
         cliente = clExacto;
-      } else if (telNormalizado.length >= 7) {
-        const { data: clParcial } = await supabase
-          .from("clientes")
-          .select("id, nombre, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
-          .ilike("telefono", `%${telNormalizado.slice(-8)}%`)
-          .limit(1)
-          .maybeSingle();
+      }
+    }
+
+    if (!cliente && telNormalizado.length >= 7) {
+      const { data: clParcial } = await supabase
+        .from("clientes")
+        .select("id, nombre, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
+        .ilike("telefono", `%${telNormalizado.slice(-8)}%`)
+        .limit(1)
+        .maybeSingle();
+      if (clParcial) {
         cliente = clParcial;
+      }
+    }
+
+    // Guardar automáticamente el whatsapp_jid (@lid o jid actual) en la ficha del cliente cuando se identifique por teléfono
+    if (cliente && participantJid && cliente.whatsapp_jid !== participantJid) {
+      try {
+        await supabase
+          .from("clientes")
+          .update({
+            whatsapp_jid: participantJid,
+            whatsapp_vinculado: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", cliente.id);
+        cliente.whatsapp_jid = participantJid;
+        console.log(`[Bot WhatsApp] 🔗 Auto-guardado whatsapp_jid (${participantJid}) en ficha de "${cliente.nombre}" (${cliente.id})`);
+      } catch (errVinculo) {
+        console.warn("[Bot WhatsApp] Aviso al auto-guardar whatsapp_jid:", errVinculo?.message);
       }
     }
 
@@ -922,7 +979,15 @@ async function iniciarConexionBaileys() {
   reconectando = true;
 
   try {
-    fs.mkdirSync(AUTH_DIR, { recursive: true });
+    // Cierre VULN-16: Permisos restringidos 700 para proteger las llaves de sesión
+    fs.mkdirSync(AUTH_DIR, { recursive: true, mode: 0o700 });
+    try {
+      if (process.platform === "linux") {
+        fs.chmodSync(AUTH_DIR, 0o700);
+      }
+    } catch (errPerm) {
+      console.warn("[Bot WhatsApp] Aviso aplicando chmod 700:", errPerm?.message);
+    }
 
     const baileys = await import("@whiskeysockets/baileys");
     const makeWASocket = baileys.default?.default || baileys.default || baileys.makeWASocket;

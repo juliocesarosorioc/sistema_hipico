@@ -14,6 +14,19 @@ export const dynamic = "force-dynamic";
 const BOT_DAEMON_URL = process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
 const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
+// Cierre VULN-15: Set en memoria de los últimos 500 whatsappMsgId para descartar reintentos en < 1ms
+const ultimosWhatsappMsgIds = new Set<string>();
+function esWhatsappMsgIdDuplicado(msgId?: string | null): boolean {
+  if (!msgId) return false;
+  if (ultimosWhatsappMsgIds.has(msgId)) return true;
+  ultimosWhatsappMsgIds.add(msgId);
+  if (ultimosWhatsappMsgIds.size > 500) {
+    const primer = ultimosWhatsappMsgIds.values().next().value;
+    if (primer) ultimosWhatsappMsgIds.delete(primer);
+  }
+  return false;
+}
+
 // Mutex FIFO en memoria por propuesta para garantizar ejecución secuencial (1 a la vez: Caso 90 + 10 = 100)
 const colasConcrecionFifo = new Map<string, Promise<any>>();
 
@@ -218,6 +231,17 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
+
+    // Cierre VULN-15: Descartar reintentos en < 1ms por idempotencia de whatsappMsgId
+    if (body.whatsappMsgId && esWhatsappMsgIdDuplicado(body.whatsappMsgId)) {
+      return NextResponse.json({
+        ok: true,
+        tipo: "REINTENTO_DESCARTADO",
+        idempotente: true,
+        respuestaGrupo: null,
+        mensajePrivadoAutor: null,
+      });
+    }
 
     // ------------------------------------------------------------------------
     // ACCIONES ADMINISTRATIVAS DESDE LA PANTALLA /whatsapp
@@ -1256,11 +1280,14 @@ export async function POST(req: Request) {
     let propId: string | null = null;
     let rpcPublicado = false;
 
-    // Llamar a `publicar_propuesta_atomica` según especificación
+    // Llamar a `publicar_propuesta_atomica` según especificación (Cierre VULN-15)
     try {
-      const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc(
-        "publicar_propuesta_atomica",
-        {
+      let rpcRes: any = null;
+      let rpcErr: any = null;
+
+      // 1. Intentar con p_whatsapp_msg_id
+      try {
+        const intentoConWa = await supabaseAdmin.rpc("publicar_propuesta_atomica", {
           p_grupo_id: grupoId,
           p_sala_id: salaId,
           p_carrera_id: sala.carrera_activa_id || "00000000-0000-0000-2026-111400000001",
@@ -1274,8 +1301,34 @@ export async function POST(req: Request) {
           p_proporcion: "1x1",
           p_monto_solicitado: analisis.monto,
           p_texto_estandarizado: analisis.jugadaEstandarizada,
-        }
-      );
+          p_whatsapp_msg_id: whatsappMsgId || null,
+        });
+        rpcRes = intentoConWa.data;
+        rpcErr = intentoConWa.error;
+      } catch (errConWa) {
+        rpcErr = errConWa;
+      }
+
+      // 2. Si falla por schema cache (función sin p_whatsapp_msg_id en BD), invocar sin el parámetro
+      if (rpcErr && (rpcErr.message?.includes("schema cache") || rpcErr.message?.includes("Could not find"))) {
+        const intentoSinWa = await supabaseAdmin.rpc("publicar_propuesta_atomica", {
+          p_grupo_id: grupoId,
+          p_sala_id: salaId,
+          p_carrera_id: sala.carrera_activa_id || "00000000-0000-0000-2026-111400000001",
+          p_jugador_id: cliente.id,
+          p_accion: analisis.accionProponente,
+          p_es_match: analisis.esMatch,
+          p_modalidad: analisis.modalidad,
+          p_caballos_a: analisis.caballosBandoA,
+          p_caballos_b: analisis.caballosBandoB,
+          p_ejemplar_texto: analisis.ejemplarTexto,
+          p_proporcion: "1x1",
+          p_monto_solicitado: analisis.monto,
+          p_texto_estandarizado: analisis.jugadaEstandarizada,
+        });
+        rpcRes = intentoSinWa.data;
+        rpcErr = intentoSinWa.error;
+      }
 
       if (!rpcErr && rpcRes && (rpcRes as any).propuesta_id) {
         propId = (rpcRes as any).propuesta_id;
