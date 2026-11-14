@@ -64,6 +64,43 @@ const AUTH_DIR =
     ? "/root/sistema_hipico/whatsapp_auth"
     : path.join(__dirname, "whatsapp_auth"));
 
+// Respaldo de los grupos desconectados: permite volver a conectar una sala sin
+// obligar al operador a recordar el JID. Vive junto a la sesión de Baileys para
+// sobrevivir a reinicios del demonio y a recargas/cambios de navegador.
+const ARCHIVO_SALAS_DESCONECTADAS = path.join(AUTH_DIR, "salas_desconectadas.json");
+let salasDesconectadas = {};
+
+function cargarSalasDesconectadas() {
+  try {
+    if (!fs.existsSync(ARCHIVO_SALAS_DESCONECTADAS)) return {};
+    const crudo = fs.readFileSync(ARCHIVO_SALAS_DESCONECTADAS, "utf8");
+    const parseado = JSON.parse(crudo);
+    return parseado && typeof parseado === "object" && !Array.isArray(parseado)
+      ? parseado
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistirSalasDesconectadas() {
+  try {
+    fs.mkdirSync(AUTH_DIR, { recursive: true });
+    fs.writeFileSync(
+      ARCHIVO_SALAS_DESCONECTADAS,
+      JSON.stringify(salasDesconectadas, null, 2),
+      "utf8"
+    );
+  } catch (err) {
+    console.warn(
+      "[Bot WhatsApp] No se pudo persistir el respaldo de salas desconectadas:",
+      err?.message || err
+    );
+  }
+}
+
+salasDesconectadas = cargarSalasDesconectadas();
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_SERVICE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -1157,6 +1194,7 @@ const server = http.createServer(async (req, res) => {
         qrDataUrl,
         numeroVinculado,
         grupos: gruposCache,
+        salasDesconectadas,
       });
     }
 
@@ -1174,6 +1212,7 @@ const server = http.createServer(async (req, res) => {
 
       const updates = {
         whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: groupNombre || null,
         updated_at: new Date().toISOString(),
       };
 
@@ -1188,11 +1227,148 @@ const server = http.createServer(async (req, res) => {
         return responderJson(res, 500, { ok: false, error: error.message });
       }
 
+      // Al vincular manualmente, cualquier respaldo de desconexión previo deja
+      // de tener sentido: la sala ya tiene un grupo activo.
+      if (salasDesconectadas[salaId]) {
+        delete salasDesconectadas[salaId];
+        persistirSalasDesconectadas();
+      }
+
       return responderJson(res, 200, {
         ok: true,
         salaId,
         groupJid: groupJid || null,
         groupNombre: groupNombre || null,
+        sala: salaActualizada,
+      });
+    }
+
+    // 2.b POST /desconectar-sala
+    // Pausa la sala: guarda el JID/nombre en el respaldo persistente y deja la
+    // sala sin grupo de WhatsApp activo (whatsapp_group_jid = null).
+    if (req.method === "POST" && pathname === "/desconectar-sala") {
+      const body = await leerBodyJson(req);
+      const { salaId } = body;
+
+      if (!salaId) {
+        return responderJson(res, 400, { ok: false, error: "salaId es requerido" });
+      }
+      if (!supabase) {
+        return responderJson(res, 500, { ok: false, error: "Supabase no configurado" });
+      }
+
+      const { data: sala, error: errorLectura } = await supabase
+        .from("salas_juego")
+        .select("id, whatsapp_group_jid, whatsapp_group_nombre, nombre_sala")
+        .eq("id", salaId)
+        .maybeSingle();
+
+      if (errorLectura) {
+        return responderJson(res, 500, { ok: false, error: errorLectura.message });
+      }
+      if (!sala) {
+        return responderJson(res, 404, { ok: false, error: "Sala no encontrada" });
+      }
+
+      const groupJid = sala.whatsapp_group_jid || salasDesconectadas[salaId]?.groupJid || null;
+      const groupNombre =
+        sala.whatsapp_group_nombre || salasDesconectadas[salaId]?.groupNombre || null;
+
+      if (groupJid) {
+        salasDesconectadas[salaId] = {
+          groupJid,
+          groupNombre,
+          desconectadoEn: new Date().toISOString(),
+        };
+        persistirSalasDesconectadas();
+      }
+
+      const { error } = await supabase
+        .from("salas_juego")
+        .update({
+          whatsapp_group_jid: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", salaId);
+
+      if (error) {
+        return responderJson(res, 500, { ok: false, error: error.message });
+      }
+
+      return responderJson(res, 200, {
+        ok: true,
+        salaId,
+        desconectado: true,
+        puedeReconectar: Boolean(groupJid),
+        groupJid,
+        groupNombre,
+        respaldo: salasDesconectadas[salaId] || null,
+      });
+    }
+
+    // 2.c POST /reconectar-sala
+    // Reactiva la sala con el grupo guardado (o con el JID/nombre que envíe la UI).
+    if (req.method === "POST" && pathname === "/reconectar-sala") {
+      const body = await leerBodyJson(req);
+      const { salaId, groupJid, groupNombre } = body;
+
+      if (!salaId) {
+        return responderJson(res, 400, { ok: false, error: "salaId es requerido" });
+      }
+      if (!supabase) {
+        return responderJson(res, 500, { ok: false, error: "Supabase no configurado" });
+      }
+
+      const { data: sala, error: errorLectura } = await supabase
+        .from("salas_juego")
+        .select("id, whatsapp_group_jid, whatsapp_group_nombre")
+        .eq("id", salaId)
+        .maybeSingle();
+
+      if (errorLectura) {
+        return responderJson(res, 500, { ok: false, error: errorLectura.message });
+      }
+      if (!sala) {
+        return responderJson(res, 404, { ok: false, error: "Sala no encontrada" });
+      }
+
+      const respaldo = salasDesconectadas[salaId] || {};
+      const jidFinal = groupJid || sala.whatsapp_group_jid || respaldo.groupJid || null;
+      const nombreFinal = groupNombre || sala.whatsapp_group_nombre || respaldo.groupNombre || null;
+
+      if (!jidFinal) {
+        return responderJson(res, 400, {
+          ok: false,
+          error: "No hay un grupo de WhatsApp guardado para esta sala. Vincúlala de nuevo.",
+        });
+      }
+
+      const { data: salaActualizada, error } = await supabase
+        .from("salas_juego")
+        .update({
+          whatsapp_group_jid: jidFinal,
+          whatsapp_group_nombre: nombreFinal,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", salaId)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        return responderJson(res, 500, { ok: false, error: error.message });
+      }
+
+      if (salasDesconectadas[salaId]) {
+        delete salasDesconectadas[salaId];
+        persistirSalasDesconectadas();
+      }
+
+      return responderJson(res, 200, {
+        ok: true,
+        salaId,
+        reconectado: true,
+        groupJid: jidFinal,
+        groupNombre: nombreFinal,
         sala: salaActualizada,
       });
     }

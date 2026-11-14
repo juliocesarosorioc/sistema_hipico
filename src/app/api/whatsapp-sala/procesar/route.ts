@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import { supabaseAdmin } from "@/core/supabase-admin";
 import {
   analizarYEstandarizarJugada,
@@ -25,6 +27,50 @@ function esWhatsappMsgIdDuplicado(msgId?: string | null): boolean {
     if (primer) ultimosWhatsappMsgIds.delete(primer);
   }
   return false;
+}
+
+// Respaldo de grupos desconectados. Usa el MISMO archivo que el demonio Baileys
+// (AUTH_DIR/salas_desconectadas.json) para que ambos vean lo mismo tras un
+// reinicio, aunque el demonio esté caído en el momento de desconectar.
+const AUTH_DIR_WHATSAPP =
+  process.env.WHATSAPP_AUTH_DIR ||
+  (process.platform === "linux"
+    ? "/root/sistema_hipico/whatsapp_auth"
+    : path.join(process.cwd(), "whatsapp_auth"));
+const ARCHIVO_SALAS_DESCONECTADAS = path.join(AUTH_DIR_WHATSAPP, "salas_desconectadas.json");
+
+type RespaldoSalaDesconectada = {
+  groupJid?: string | null;
+  groupNombre?: string | null;
+  desconectadoEn?: string;
+};
+
+function leerRespaldoDesconectadas(): Record<string, RespaldoSalaDesconectada> {
+  try {
+    if (!fs.existsSync(ARCHIVO_SALAS_DESCONECTADAS)) return {};
+    const crudo = fs.readFileSync(ARCHIVO_SALAS_DESCONECTADAS, "utf8");
+    const parseado = JSON.parse(crudo);
+    return parseado && typeof parseado === "object" && !Array.isArray(parseado)
+      ? parseado
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function escribirRespaldoDesconectadas(
+  datos: Record<string, RespaldoSalaDesconectada>
+): void {
+  try {
+    fs.mkdirSync(AUTH_DIR_WHATSAPP, { recursive: true });
+    fs.writeFileSync(
+      ARCHIVO_SALAS_DESCONECTADAS,
+      JSON.stringify(datos, null, 2),
+      "utf8"
+    );
+  } catch {
+    // El respaldo en disco es best-effort; no debe romper la acción.
+  }
 }
 
 // Mutex FIFO en memoria por propuesta para garantizar ejecución secuencial (1 a la vez: Caso 90 + 10 = 100)
@@ -171,6 +217,7 @@ export async function GET() {
     numeroVinculado: null as string | null,
     grupos: [] as Array<{ jid: string; nombre: string }>,
     daemonOnline: false,
+    salasDesconectadas: {} as Record<string, RespaldoSalaDesconectada>,
   };
 
   try {
@@ -191,11 +238,25 @@ export async function GET() {
         numeroVinculado: json.numeroVinculado || null,
         grupos: Array.isArray(json.grupos) ? json.grupos : [],
         daemonOnline: true,
+        salasDesconectadas:
+          json.salasDesconectadas &&
+          typeof json.salasDesconectadas === "object" &&
+          !Array.isArray(json.salasDesconectadas)
+            ? json.salasDesconectadas
+            : {},
       };
     }
   } catch {
     // Si el demonio local en :3005 aún no está encendido, responder estado desconectado limpio
   }
+
+  // El respaldo en disco es la fuente más confiable (sobrevive a reinicios y a
+  // que el demonio esté apagado). Se fusiona con lo que reporte el demonio.
+  const respaldoDisco = leerRespaldoDesconectadas();
+  estadoBot.salasDesconectadas = {
+    ...respaldoDisco,
+    ...estadoBot.salasDesconectadas,
+  };
 
   let salas: any[] = [];
   try {
@@ -380,6 +441,7 @@ export async function POST(req: Request) {
         .from("salas_juego")
         .update({
           whatsapp_group_jid: groupJid || null,
+          whatsapp_group_nombre: groupNombre || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", salaId)
@@ -404,11 +466,203 @@ export async function POST(req: Request) {
         // Demonio offline, pero ya quedó guardado en Supabase
       }
 
+      // Al vincular manualmente ya no hay nada que reconectar.
+      const respaldo = leerRespaldoDesconectadas();
+      if (respaldo[salaId]) {
+        delete respaldo[salaId];
+        escribirRespaldoDesconectadas(respaldo);
+      }
+
       return NextResponse.json({
         ok: true,
         sala: salaActualizada,
         groupJid: groupJid || null,
         groupNombre: groupNombre || null,
+      });
+    }
+
+    // ------------------------------------------------------------------------
+    // DESCONECTAR SALA: guarda el grupo en el respaldo y deja la sala sin JID
+    // ------------------------------------------------------------------------
+    if (body.accion === "desconectar-sala") {
+      const { salaId } = body;
+      if (!salaId) {
+        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+      }
+
+      let groupJid: string | null = null;
+      let groupNombre: string | null = null;
+
+      // 1) Intentar con el demonio (guarda el respaldo junto a la sesión Baileys)
+      try {
+        const rBot = await fetch(`${BOT_DAEMON_URL}/desconectar-sala`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({ salaId }),
+        });
+        const json = await rBot.json().catch(() => ({}));
+        if (rBot.ok && json?.ok) {
+          return NextResponse.json({
+            ok: true,
+            salaId,
+            desconectado: true,
+            puedeReconectar: Boolean(json.puedeReconectar),
+            groupJid: json.groupJid || null,
+            groupNombre: json.groupNombre || null,
+            viaDaemon: true,
+          });
+        }
+        groupJid = json?.groupJid || null;
+        groupNombre = json?.groupNombre || null;
+      } catch {
+        // Demonio offline: se resuelve directo contra Supabase + respaldo en disco
+      }
+
+      // 2) Fallback directo contra Supabase
+      const { data: sala, error: errorLectura } = await supabaseAdmin
+        .from("salas_juego")
+        .select("id, whatsapp_group_jid, whatsapp_group_nombre")
+        .eq("id", salaId)
+        .maybeSingle();
+
+      if (errorLectura) {
+        return NextResponse.json({ ok: false, error: errorLectura.message }, { status: 500 });
+      }
+      if (!sala) {
+        return NextResponse.json({ ok: false, error: "Sala no encontrada" }, { status: 404 });
+      }
+
+      const respaldoActual = leerRespaldoDesconectadas();
+      const jidRespaldo = groupJid || sala.whatsapp_group_jid || respaldoActual[salaId]?.groupJid || null;
+      const nombreRespaldo =
+        groupNombre || sala.whatsapp_group_nombre || respaldoActual[salaId]?.groupNombre || null;
+
+      if (jidRespaldo) {
+        respaldoActual[salaId] = {
+          groupJid: jidRespaldo,
+          groupNombre: nombreRespaldo,
+          desconectadoEn: new Date().toISOString(),
+        };
+        escribirRespaldoDesconectadas(respaldoActual);
+      }
+
+      const { error } = await supabaseAdmin
+        .from("salas_juego")
+        .update({
+          whatsapp_group_jid: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", salaId);
+
+      if (error) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        salaId,
+        desconectado: true,
+        puedeReconectar: Boolean(jidRespaldo),
+        groupJid: jidRespaldo,
+        groupNombre: nombreRespaldo,
+        viaDaemon: false,
+      });
+    }
+
+    // ------------------------------------------------------------------------
+    // RECONECTAR SALA: restaura el grupo guardado (o el que envíe la UI)
+    // ------------------------------------------------------------------------
+    if (body.accion === "reconectar-sala") {
+      const { salaId, groupJid, groupNombre } = body;
+      if (!salaId) {
+        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+      }
+
+      // 1) Intentar con el demonio
+      try {
+        const rBot = await fetch(`${BOT_DAEMON_URL}/reconectar-sala`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({ salaId, groupJid, groupNombre }),
+        });
+        const json = await rBot.json().catch(() => ({}));
+        if (rBot.ok && json?.ok) {
+          return NextResponse.json({
+            ok: true,
+            salaId,
+            reconectado: true,
+            groupJid: json.groupJid || null,
+            groupNombre: json.groupNombre || null,
+            viaDaemon: true,
+          });
+        }
+      } catch {
+        // Demonio offline: se resuelve directo contra Supabase + respaldo en disco
+      }
+
+      // 2) Fallback directo contra Supabase
+      const { data: sala, error: errorLectura } = await supabaseAdmin
+        .from("salas_juego")
+        .select("id, whatsapp_group_jid, whatsapp_group_nombre")
+        .eq("id", salaId)
+        .maybeSingle();
+
+      if (errorLectura) {
+        return NextResponse.json({ ok: false, error: errorLectura.message }, { status: 500 });
+      }
+      if (!sala) {
+        return NextResponse.json({ ok: false, error: "Sala no encontrada" }, { status: 404 });
+      }
+
+      const respaldoActual = leerRespaldoDesconectadas();
+      const respaldoSala = respaldoActual[salaId] || {};
+      const jidFinal =
+        groupJid || sala.whatsapp_group_jid || respaldoSala.groupJid || null;
+      const nombreFinal =
+        groupNombre || sala.whatsapp_group_nombre || respaldoSala.groupNombre || null;
+
+      if (!jidFinal) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "No hay un grupo de WhatsApp guardado para esta sala. Vincúlala de nuevo desde el selector.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const { error } = await supabaseAdmin
+        .from("salas_juego")
+        .update({
+          whatsapp_group_jid: jidFinal,
+          whatsapp_group_nombre: nombreFinal,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", salaId);
+
+      if (error) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      }
+
+      if (respaldoActual[salaId]) {
+        delete respaldoActual[salaId];
+        escribirRespaldoDesconectadas(respaldoActual);
+      }
+
+      return NextResponse.json({
+        ok: true,
+        salaId,
+        reconectado: true,
+        groupJid: jidFinal,
+        groupNombre: nombreFinal,
+        viaDaemon: false,
       });
     }
 

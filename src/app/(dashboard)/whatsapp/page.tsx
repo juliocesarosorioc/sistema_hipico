@@ -1,6 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+
+// ============================================================================
+// TIPOS
+// ============================================================================
 
 interface GrupoWhatsApp {
   jid: string;
@@ -15,6 +19,13 @@ interface SalaJuego {
   numero_carrera_activa?: number;
   estado_carrera?: string;
   whatsapp_group_jid?: string | null;
+  whatsapp_group_nombre?: string | null;
+}
+
+interface RespaldoSala {
+  groupJid?: string | null;
+  groupNombre?: string | null;
+  desconectadoEn?: string;
 }
 
 interface StatusResponse {
@@ -25,7 +36,73 @@ interface StatusResponse {
   grupos: GrupoWhatsApp[];
   daemonOnline?: boolean;
   salas?: SalaJuego[];
+  salasDesconectadas?: Record<string, RespaldoSala>;
 }
+
+type Feedback = {
+  tipo: "ok" | "error" | "info";
+  texto: string;
+  detalle?: string;
+};
+
+// Respaldo local para no perder el JID si el navegador se recarga justo cuando
+// el demonio está caído. El respaldo "oficial" vive en el servidor.
+const STORAGE_DESCONECTADAS = "hipico_whatsapp_salas_desconectadas_v1";
+
+function leerRespaldoLocal(): Record<string, RespaldoSala> {
+  if (typeof window === "undefined") return {};
+  try {
+    const crudo = window.localStorage.getItem(STORAGE_DESCONECTADAS);
+    if (!crudo) return {};
+    const parseado = JSON.parse(crudo);
+    return parseado && typeof parseado === "object" && !Array.isArray(parseado)
+      ? parseado
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function escribirRespaldoLocal(datos: Record<string, RespaldoSala>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_DESCONECTADAS, JSON.stringify(datos));
+  } catch {
+    /* almacenamiento lleno o bloqueado: el respaldo del servidor sigue vivo */
+  }
+}
+
+function mensajeDeError(err: unknown, porDefecto: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "string" && err) return err;
+  return porDefecto;
+}
+
+function tituloCorto(sala: SalaJuego, index: number): string {
+  if (index === 0) return "Sala 1";
+  if (index === 1) return "Sala 2";
+  return `Sala ${index + 1}`;
+}
+
+function nombreGrupo(
+  jid: string | null | undefined,
+  salas: SalaJuego[],
+  grupos: GrupoWhatsApp[],
+  respaldo: Record<string, RespaldoSala>,
+  salaId: string
+): string | null {
+  if (!jid) return null;
+  const sala = salas.find((s) => s.id === salaId);
+  if (sala?.whatsapp_group_nombre) return sala.whatsapp_group_nombre;
+  const enGrupos = grupos.find((g) => g.jid === jid);
+  if (enGrupos?.nombre) return enGrupos.nombre;
+  if (respaldo[salaId]?.groupNombre) return respaldo[salaId].groupNombre || null;
+  return null;
+}
+
+// ============================================================================
+// PÁGINA
+// ============================================================================
 
 export default function WhatsappPage() {
   const [status, setStatus] = useState<StatusResponse>({
@@ -38,16 +115,27 @@ export default function WhatsappPage() {
   });
   const [cargandoStatus, setCargandoStatus] = useState(true);
   const [salas, setSalas] = useState<SalaJuego[]>([]);
-  const [seleccionGrupoPorSala, setSeleccionGrupoPorSala] = useState<Record<string, string>>({});
+  const [respaldoLocal, setRespaldoLocal] = useState<Record<string, RespaldoSala>>({});
+  const [seleccionGrupoPorSala, setSeleccionGrupoPorSala] = useState<Record<string, string>>(
+    {}
+  );
   const [pizarraPorSala, setPizarraPorSala] = useState<Record<string, string>>({});
   const [hipodromoPorSala, setHipodromoPorSala] = useState<Record<string, string>>({});
   const [carreraPorSala, setCarreraPorSala] = useState<Record<string, string>>({});
   const [procesandoAccion, setProcesandoAccion] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{
-    tipo: "ok" | "error" | "info";
-    texto: string;
-    detalle?: string;
-  } | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+
+  // Respaldos locales iniciales
+  useEffect(() => {
+    setRespaldoLocal(leerRespaldoLocal());
+  }, []);
+
+  // Auto-cierre del aviso no bloqueante
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(null), feedback.tipo === "error" ? 12000 : 8000);
+    return () => clearTimeout(timer);
+  }, [feedback]);
 
   const consultarEstado = useCallback(async (silencioso = false) => {
     if (!silencioso) setCargandoStatus(true);
@@ -56,28 +144,55 @@ export default function WhatsappPage() {
       if (!res.ok) return;
       const data: StatusResponse = await res.json();
 
+      const salasServidor = Array.isArray(data.salas) ? data.salas : [];
+
       setStatus({
         conectado: Boolean(data.conectado),
         qrDataUrl: data.qrDataUrl || null,
         numeroVinculado: data.numeroVinculado || null,
         grupos: Array.isArray(data.grupos) ? data.grupos : [],
         daemonOnline: Boolean(data.daemonOnline),
+        salas: salasServidor,
       });
 
-      if (Array.isArray(data.salas) && data.salas.length > 0) {
-        setSalas(data.salas);
+      if (salasServidor.length > 0) {
+        setSalas(salasServidor);
         setSeleccionGrupoPorSala((prev) => {
           const next = { ...prev };
-          for (const s of data.salas!) {
+          for (const s of salasServidor) {
             if (next[s.id] === undefined) {
               next[s.id] = s.whatsapp_group_jid || "";
             }
           }
           return next;
         });
+      } else {
+        setSalas([]);
+      }
+
+      // Fusionar el respaldo del servidor con el local y podar las salas que ya
+      // tengan un grupo activo (esas ya no necesitan "volver a conectar").
+      const respaldoServidor =
+        data.salasDesconectadas && typeof data.salasDesconectadas === "object"
+          ? data.salasDesconectadas
+          : {};
+      const fusionado: Record<string, RespaldoSala> = {
+        ...leerRespaldoLocal(),
+        ...respaldoServidor,
+      };
+      const porId = new Map(salasServidor.map((s) => [s.id, s]));
+      for (const id of Object.keys(fusionado)) {
+        const sala = porId.get(id);
+        if (sala?.whatsapp_group_jid) delete fusionado[id];
+      }
+
+      const previo = JSON.stringify(leerRespaldoLocal());
+      setRespaldoLocal(fusionado);
+      if (JSON.stringify(fusionado) !== previo) {
+        escribirRespaldoLocal(fusionado);
       }
     } catch {
-      // Continuar reintentando en el próximo ciclo
+      // Se reintenta en el próximo ciclo; el respaldo local sigue disponible
     } finally {
       if (!silencioso) setCargandoStatus(false);
     }
@@ -85,13 +200,40 @@ export default function WhatsappPage() {
 
   useEffect(() => {
     consultarEstado(false);
-    const timer = setInterval(() => {
-      consultarEstado(true);
-    }, 4000);
+    const timer = setInterval(() => consultarEstado(true), 4000);
     return () => clearInterval(timer);
   }, [consultarEstado]);
 
-  // Vincular con 1 clic un grupo de WhatsApp a una Sala (Sala 1 - Nacionales / Sala 2 - Americanas)
+  const guardarRespaldo = useCallback((salaId: string, datos: RespaldoSala | null) => {
+    setRespaldoLocal((prev) => {
+      const next = { ...prev };
+      if (datos && (datos.groupJid || datos.groupNombre)) {
+        next[salaId] = datos;
+      } else {
+        delete next[salaId];
+      }
+      escribirRespaldoLocal(next);
+      return next;
+    });
+  }, []);
+
+  // --------------------------------------------------------------------------
+  // ACCIONES CONTRA EL API
+  // --------------------------------------------------------------------------
+
+  const ejecutarAdmin = useCallback(
+    async (body: Record<string, unknown>) => {
+      const res = await fetch("/api/whatsapp-sala/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      return { res, json } as { res: Response; json: any };
+    },
+    []
+  );
+
   const vincularGrupoASala = async (sala: SalaJuego, nuevoGroupJid: string) => {
     setSeleccionGrupoPorSala((prev) => ({ ...prev, [sala.id]: nuevoGroupJid }));
     setProcesandoAccion(`vincular-${sala.id}`);
@@ -100,64 +242,216 @@ export default function WhatsappPage() {
     const grupoObj = status.grupos.find((g) => g.jid === nuevoGroupJid);
 
     try {
-      const res = await fetch("/api/whatsapp-sala/admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accion: "vincular-sala",
-          salaId: sala.id,
-          groupJid: nuevoGroupJid || null,
-          groupNombre: grupoObj?.nombre || null,
-        }),
+      const { json } = await ejecutarAdmin({
+        accion: "vincular-sala",
+        salaId: sala.id,
+        groupJid: nuevoGroupJid || null,
+        groupNombre: grupoObj?.nombre || null,
       });
-      const json = await res.json();
 
       if (json.ok) {
         setSalas((prev) =>
           prev.map((s) =>
-            s.id === sala.id ? { ...s, whatsapp_group_jid: nuevoGroupJid || null } : s
+            s.id === sala.id
+              ? {
+                  ...s,
+                  whatsapp_group_jid: nuevoGroupJid || null,
+                  whatsapp_group_nombre: grupoObj?.nombre || null,
+                }
+              : s
           )
         );
+        guardarRespaldo(sala.id, null);
         setFeedback({
           tipo: "ok",
           texto: nuevoGroupJid
-            ? `✅ ${sala.nombre_sala} vinculada exitosamente al grupo "${grupoObj?.nombre || nuevoGroupJid}".`
-            : `ℹ️ Se desvinculó el grupo de WhatsApp de ${sala.nombre_sala}.`,
+            ? `Sala vinculada a "${grupoObj?.nombre || nuevoGroupJid}".`
+            : `Se desvinculó el grupo de ${sala.nombre_sala}.`,
         });
+        consultarEstado(true);
       } else {
         setFeedback({
           tipo: "error",
           texto: json.error || "No se pudo guardar la vinculación de la sala.",
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFeedback({
         tipo: "error",
-        texto: err?.message || "Error de red al vincular la sala.",
+        texto: mensajeDeError(err, "Error de red al vincular la sala."),
       });
     } finally {
       setProcesandoAccion(null);
     }
   };
 
-  // Disparar manualmente: 🏆 Abrir Carrera
+  const desconectarSala = async (sala: SalaJuego) => {
+    const jidActual = sala.whatsapp_group_jid || seleccionGrupoPorSala[sala.id] || "";
+    const nombreActual =
+      nombreGrupo(jidActual, salas, status.grupos, respaldoLocal, sala.id) || null;
+
+    setProcesandoAccion(`desconectar-${sala.id}`);
+    setFeedback(null);
+    try {
+      const { json } = await ejecutarAdmin({
+        accion: "desconectar-sala",
+        salaId: sala.id,
+      });
+
+      if (json.ok) {
+        setSalas((prev) =>
+          prev.map((s) => (s.id === sala.id ? { ...s, whatsapp_group_jid: null } : s))
+        );
+        setSeleccionGrupoPorSala((prev) => ({ ...prev, [sala.id]: "" }));
+        guardarRespaldo(sala.id, {
+          groupJid: json.groupJid || jidActual || null,
+          groupNombre: json.groupNombre || nombreActual,
+          desconectadoEn: new Date().toISOString(),
+        });
+        setFeedback({
+          tipo: "ok",
+          texto: `Grupo desconectado de ${sala.nombre_sala}. El bot dejó de publicar en esa sala.`,
+        });
+        consultarEstado(true);
+      } else {
+        setFeedback({
+          tipo: "error",
+          texto: json.error || "No se pudo desconectar el grupo de la sala.",
+        });
+      }
+    } catch (err: unknown) {
+      setFeedback({
+        tipo: "error",
+        texto: mensajeDeError(err, "Error de red al desconectar la sala."),
+      });
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
+  const reconectarSala = async (sala: SalaJuego) => {
+    const respaldo = respaldoLocal[sala.id] || {};
+    const jid =
+      seleccionGrupoPorSala[sala.id] || respaldo.groupJid || sala.whatsapp_group_jid || "";
+    const nombre =
+      nombreGrupo(jid, salas, status.grupos, respaldoLocal, sala.id) ||
+      respaldo.groupNombre ||
+      null;
+
+    if (!jid) {
+      setFeedback({
+        tipo: "error",
+        texto:
+          "No hay un grupo guardado para esta sala. Selecciona un grupo de la lista y pulsa Vincular.",
+      });
+      return;
+    }
+
+    setProcesandoAccion(`reconectar-${sala.id}`);
+    setFeedback(null);
+    try {
+      const { json } = await ejecutarAdmin({
+        accion: "reconectar-sala",
+        salaId: sala.id,
+        groupJid: jid,
+        groupNombre: nombre,
+      });
+
+      if (json.ok) {
+        setSalas((prev) =>
+          prev.map((s) =>
+            s.id === sala.id
+              ? {
+                  ...s,
+                  whatsapp_group_jid: json.groupJid || jid,
+                  whatsapp_group_nombre: json.groupNombre || nombre,
+                }
+              : s
+          )
+        );
+        setSeleccionGrupoPorSala((prev) => ({
+          ...prev,
+          [sala.id]: json.groupJid || jid,
+        }));
+        guardarRespaldo(sala.id, null);
+        setFeedback({
+          tipo: "ok",
+          texto: `Grupo reconectado a ${sala.nombre_sala}${
+            nombre ? ` ("${nombre}")` : ""
+          }. El bot vuelve a publicar en esa sala.`,
+        });
+        consultarEstado(true);
+      } else {
+        setFeedback({
+          tipo: "error",
+          texto: json.error || "No se pudo reconectar el grupo de la sala.",
+        });
+      }
+    } catch (err: unknown) {
+      setFeedback({
+        tipo: "error",
+        texto: mensajeDeError(err, "Error de red al reconectar la sala."),
+      });
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
+  const desconectarTodas = async () => {
+    const vinculadas = salas.filter((s) => s.whatsapp_group_jid);
+    if (vinculadas.length === 0) {
+      setFeedback({ tipo: "info", texto: "No hay salas con grupo vinculado." });
+      return;
+    }
+    if (
+      !window.confirm(
+        `¿Desconectar las ${vinculadas.length} sala(s) con grupo vinculado? El bot dejará de publicar hasta que las reconectes.`
+      )
+    ) {
+      return;
+    }
+    setProcesandoAccion("desconectar-todas");
+    try {
+      for (const sala of vinculadas) {
+        await desconectarSala(sala);
+      }
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
+  const reconectarTodas = async () => {
+    const reconectables = salas.filter(
+      (s) => !s.whatsapp_group_jid && (respaldoLocal[s.id]?.groupJid || seleccionGrupoPorSala[s.id])
+    );
+    if (reconectables.length === 0) {
+      setFeedback({ tipo: "info", texto: "No hay salas pausadas con grupo guardado." });
+      return;
+    }
+    setProcesandoAccion("reconectar-todas");
+    try {
+      for (const sala of reconectables) {
+        await reconectarSala(sala);
+      }
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
   const abrirCarrera = async (sala: SalaJuego) => {
-    const hipodromo = (hipodromoPorSala[sala.id] || sala.hipodromo_activo || "LA RINCONADA").trim();
+    const hipodromo = (hipodromoPorSala[sala.id] || sala.hipodromo_activo || "LA RINCONADA")
+      .trim()
+      .toUpperCase();
     const carrera = (carreraPorSala[sala.id] || sala.numero_carrera_activa || 1).toString();
     setProcesandoAccion(`abrir-${sala.id}`);
     setFeedback(null);
     try {
-      const res = await fetch("/api/whatsapp-sala/admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accion: "abrir-carrera",
-          salaId: sala.id,
-          hipodromo,
-          carrera,
-        }),
+      const { json } = await ejecutarAdmin({
+        accion: "abrir-carrera",
+        salaId: sala.id,
+        hipodromo,
+        carrera,
       });
-      const json = await res.json();
       if (json.ok) {
         setSalas((prev) =>
           prev.map((s) =>
@@ -174,34 +468,25 @@ export default function WhatsappPage() {
         setFeedback({
           tipo: "ok",
           texto: json.enviadoWhatsApp
-            ? `🏆 Carrera abierta (${hipodromo} #${carrera}) y anunciada en el grupo de WhatsApp.`
-            : `🏆 Carrera abierta (${hipodromo} #${carrera}) en sala ${sala.nombre_sala}.`,
+            ? `Carrera abierta (${hipodromo} #${carrera}) y anunciada en el grupo.`
+            : `Carrera abierta (${hipodromo} #${carrera}) en sala ${sala.nombre_sala}.`,
           detalle: json.textoApertura,
         });
       } else {
         setFeedback({ tipo: "error", texto: json.error || "No se pudo abrir la carrera." });
       }
-    } catch (err: any) {
-      setFeedback({ tipo: "error", texto: err?.message || "Error al abrir la carrera." });
+    } catch (err: unknown) {
+      setFeedback({ tipo: "error", texto: mensajeDeError(err, "Error al abrir la carrera.") });
     } finally {
       setProcesandoAccion(null);
     }
   };
 
-  // Disparar manualmente: 🔒 Cerrar Carrera
   const cerrarCarrera = async (sala: SalaJuego) => {
     setProcesandoAccion(`cerrar-${sala.id}`);
     setFeedback(null);
     try {
-      const res = await fetch("/api/whatsapp-sala/admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accion: "cerrar-carrera",
-          salaId: sala.id,
-        }),
-      });
-      const json = await res.json();
+      const { json } = await ejecutarAdmin({ accion: "cerrar-carrera", salaId: sala.id });
       if (json.ok) {
         setSalas((prev) =>
           prev.map((s) => (s.id === sala.id ? { ...s, estado_carrera: "cerrada" } : s))
@@ -209,40 +494,31 @@ export default function WhatsappPage() {
         setFeedback({
           tipo: "ok",
           texto: json.enviadoWhatsApp
-            ? `🔒 Carrera cerrada y anunciada en el grupo de WhatsApp.`
-            : `🔒 Carrera cerrada en sala ${sala.nombre_sala}.`,
+            ? "Carrera cerrada y anunciada en el grupo."
+            : `Carrera cerrada en sala ${sala.nombre_sala}.`,
           detalle: json.textoCierre,
         });
       } else {
         setFeedback({ tipo: "error", texto: json.error || "No se pudo cerrar la carrera." });
       }
-    } catch (err: any) {
-      setFeedback({ tipo: "error", texto: err?.message || "Error al cerrar la carrera." });
+    } catch (err: unknown) {
+      setFeedback({ tipo: "error", texto: mensajeDeError(err, "Error al cerrar la carrera.") });
     } finally {
       setProcesandoAccion(null);
     }
   };
 
-  // Disparar manualmente: 📋 Publicar Plano de Jugadas
   const publicarPlanoJugadas = async (sala: SalaJuego) => {
     setProcesandoAccion(`plano-${sala.id}`);
     setFeedback(null);
     try {
-      const res = await fetch("/api/whatsapp-sala/admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accion: "publicar-plano",
-          salaId: sala.id,
-        }),
-      });
-      const json = await res.json();
+      const { json } = await ejecutarAdmin({ accion: "publicar-plano", salaId: sala.id });
       if (json.ok) {
         setFeedback({
           tipo: "ok",
           texto: json.enviadoWhatsApp
-            ? `📋 Plano de Jugadas enviado en vivo al grupo de WhatsApp (${sala.nombre_sala}).`
-            : `📋 Plano de Jugadas generado (${sala.nombre_sala}). Conecta el bot o vincula un grupo para enviarlo en vivo.`,
+            ? `Plano de Jugadas enviado al grupo (${sala.nombre_sala}).`
+            : `Plano de Jugadas generado (${sala.nombre_sala}). Vincula un grupo para enviarlo.`,
           detalle: json.textoPlano,
         });
       } else {
@@ -251,23 +527,22 @@ export default function WhatsappPage() {
           texto: json.error || "No se pudo publicar el Plano de Jugadas.",
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFeedback({
         tipo: "error",
-        texto: err?.message || "Error al publicar el Plano de Jugadas.",
+        texto: mensajeDeError(err, "Error al publicar el Plano de Jugadas."),
       });
     } finally {
       setProcesandoAccion(null);
     }
   };
 
-  // Disparar manualmente: 🏁 Publicar Sentencia / Pizarra
   const publicarSentenciaPizarra = async (sala: SalaJuego) => {
     const pizarra = (pizarraPorSala[sala.id] || "").trim();
     if (!pizarra) {
       setFeedback({
         tipo: "error",
-        texto: `⚠️ Escribe el orden de llegada (ej. 10.5.1.2.7) antes de publicar la sentencia en ${sala.nombre_sala}.`,
+        texto: `Escribe el orden de llegada (ej. 10.5.1.2.7) antes de publicar en ${sala.nombre_sala}.`,
       });
       return;
     }
@@ -275,22 +550,17 @@ export default function WhatsappPage() {
     setProcesandoAccion(`sentencia-${sala.id}`);
     setFeedback(null);
     try {
-      const res = await fetch("/api/whatsapp-sala/admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accion: "publicar-sentencia",
-          salaId: sala.id,
-          pizarra,
-        }),
+      const { json } = await ejecutarAdmin({
+        accion: "publicar-sentencia",
+        salaId: sala.id,
+        pizarra,
       });
-      const json = await res.json();
       if (json.ok) {
         setFeedback({
           tipo: "ok",
           texto: json.enviadoWhatsApp
-            ? `🏁 Sentencia / Pizarra (${pizarra}) liquidada y publicada en el grupo de WhatsApp.`
-            : `🏁 Sentencia / Pizarra (${pizarra}) liquidada en Supabase.`,
+            ? `Sentencia (${pizarra}) liquidada y publicada en el grupo.`
+            : `Sentencia (${pizarra}) liquidada en Supabase.`,
           detalle: json.textoResultado,
         });
       } else {
@@ -299,277 +569,471 @@ export default function WhatsappPage() {
           texto: json.error || "No se pudo ejecutar la sentencia de la carrera.",
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFeedback({
         tipo: "error",
-        texto: err?.message || "Error al publicar la sentencia.",
+        texto: mensajeDeError(err, "Error al publicar la sentencia."),
       });
     } finally {
       setProcesandoAccion(null);
     }
   };
 
-  const etiquetaSala = (sala: SalaJuego, index: number) => {
-    if (index === 0) return "Sala 1 - Nacionales";
-    if (index === 1) return "Sala 2 - Americanas";
-    return sala.nombre_sala || `Sala ${index + 1}`;
-  };
+  // --------------------------------------------------------------------------
+  // MÉTRICAS DERIVADAS
+  // --------------------------------------------------------------------------
+  const metricas = useMemo(() => {
+    const vinculadas = salas.filter((s) => Boolean(s.whatsapp_group_jid)).length;
+    const pausadas = salas.filter(
+      (s) => !s.whatsapp_group_jid && Boolean(respaldoLocal[s.id]?.groupJid)
+    ).length;
+    return {
+      vinculadas,
+      pausadas,
+      sinGrupo: salas.length - vinculadas - pausadas,
+      grupos: status.grupos.length,
+    };
+  }, [salas, respaldoLocal, status.grupos.length]);
+
+  const ocupado = procesandoAccion !== null;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-20">
-      {/* ENCABEZADO Y ESTADO DE CONEXIÓN */}
-      <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-950 p-5 text-white shadow-lg">
-        <div>
-          <h1 className="text-lg font-black uppercase tracking-wide text-white flex items-center gap-2">
-            <span className="text-emerald-400">💬</span> Motor Bot de WhatsApp en Vivo (Baileys 24/7)
-          </h1>
-          <p className="mt-1 text-xs text-slate-400">
-            Escanea el código QR, vincula tus grupos de WhatsApp a las Salas de Juego y dispara el Plano de Jugadas o la Sentencia Oficial.
-          </p>
+    <div className="mx-auto w-full max-w-6xl space-y-5 pb-24">
+      {/* ==================== ENCABEZADO ==================== */}
+      <header className="relative overflow-hidden rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/70 p-5 text-white shadow-2xl sm:p-6">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-emerald-500/10 blur-3xl" />
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="grid h-10 w-10 place-items-center rounded-2xl bg-emerald-500/15 text-xl ring-1 ring-emerald-500/30">
+                💬
+              </span>
+              <div>
+                <h1 className="text-base font-black uppercase tracking-wide sm:text-lg">
+                  Motor Bot de WhatsApp en Vivo
+                  <span className="ml-2 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-black tracking-wider text-emerald-300 ring-1 ring-emerald-500/30">
+                    Baileys 24/7
+                  </span>
+                </h1>
+                <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-400">
+                  Vincula grupos a cada sala, abre y cierra carreras, publica el plano de
+                  jugadas y liquida la sentencia oficial sin salir de este panel.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-black ${
+                status.conectado
+                  ? "border-emerald-500/40 bg-emerald-950/70 text-emerald-300"
+                  : "border-amber-500/40 bg-amber-950/60 text-amber-300"
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  status.conectado ? "bg-emerald-400" : "bg-amber-400 animate-pulse"
+                }`}
+              />
+              {status.conectado
+                ? `Conectado${status.numeroVinculado ? ` · +${status.numeroVinculado}` : ""}`
+                : status.qrDataUrl
+                ? "Esperando escaneo QR"
+                : "Bot desconectado"}
+            </span>
+
+            <span
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold ${
+                status.daemonOnline
+                  ? "border-slate-700 bg-slate-900/80 text-slate-300"
+                  : "border-rose-500/40 bg-rose-950/50 text-rose-300"
+              }`}
+              title="Demonio HTTP en el puerto 3005"
+            >
+              ⚙️ {status.daemonOnline ? "Demonio en línea" : "Demonio sin respuesta"}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => consultarEstado(false)}
+              disabled={cargandoStatus}
+              className="rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-[11px] font-bold text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {cargandoStatus ? "Actualizando…" : "⟳ Refrescar"}
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {status.conectado ? (
-            <div className="flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-950/80 px-4 py-2 text-xs font-black text-emerald-300 shadow">
-              <span>🟢 Conectado</span>
-              {status.numeroVinculado && (
-                <span className="font-mono text-[11px] text-emerald-200">
-                  (+{status.numeroVinculado})
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-950/80 px-4 py-2 text-xs font-black text-amber-300">
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-400 animate-pulse" />
-              <span>{status.qrDataUrl ? "Esperando Escaneo QR" : "Desconectado"}</span>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => consultarEstado(false)}
-            disabled={cargandoStatus}
-            className="rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-xs font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-50 transition"
-          >
-            {cargandoStatus ? "Actualizando…" : "⟳ Refrescar"}
-          </button>
+        {/* KPIs */}
+        <div className="relative mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <Kpi
+            etiqueta="Salas vinculadas"
+            valor={metricas.vinculadas}
+            total={salas.length}
+            color="emerald"
+          />
+          <Kpi etiqueta="Salas pausadas" valor={metricas.pausadas} color="amber" />
+          <Kpi
+            etiqueta="Sin grupo"
+            valor={metricas.sinGrupo < 0 ? 0 : metricas.sinGrupo}
+            color="slate"
+          />
+          <Kpi etiqueta="Grupos detectados" valor={metricas.grupos} color="sky" />
         </div>
       </header>
 
-      {/* SECCIÓN 1: CÓDIGO QR EN VIVO Y ESTADO */}
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 p-6 text-center text-white shadow-lg">
-          <h2 className="text-xs font-black uppercase tracking-wider text-emerald-400 mb-3">
-            1. Vinculación por Código QR
-          </h2>
-
-          {status.conectado ? (
-            <div className="flex flex-col items-center justify-center space-y-3 py-6">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/20 border-2 border-emerald-400 text-4xl">
-                🟢
-              </div>
-              <p className="text-base font-black text-emerald-400">🟢 Conectado</p>
-              <p className="text-xs text-slate-300">
-                Sesión activa 24/7 en{" "}
-                <code className="rounded bg-slate-900 px-1.5 py-0.5 text-emerald-300">
-                  /root/sistema_hipico/whatsapp_auth
-                </code>
-              </p>
-              {status.numeroVinculado && (
-                <span className="rounded-lg bg-slate-900 px-3 py-1 font-mono text-xs font-bold text-slate-200 border border-slate-800">
-                  Número: +{status.numeroVinculado}
-                </span>
-              )}
-              <span className="text-[11px] text-slate-400">
-                Grupos detectados: <strong className="text-white">{status.grupos.length}</strong>
-              </span>
+      {/* ==================== CUERPO ==================== */}
+      <section className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        {/* ---------- Columna: conexión / QR ---------- */}
+        <div className="space-y-4">
+          <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5 text-white shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-400">
+                Sesión de WhatsApp
+              </h2>
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${
+                  status.conectado ? "bg-emerald-400" : "bg-amber-400 animate-pulse"
+                }`}
+              />
             </div>
-          ) : status.qrDataUrl ? (
-            <div className="flex flex-col items-center space-y-3">
-              <div className="rounded-2xl bg-white p-3 shadow-xl">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={status.qrDataUrl}
-                  alt="Código QR de WhatsApp"
-                  className="h-56 w-56 object-contain"
-                />
+
+            {status.conectado ? (
+              <div className="flex flex-col items-center gap-3 py-4 text-center">
+                <div className="grid h-20 w-20 place-items-center rounded-full border-2 border-emerald-400/60 bg-emerald-500/15 text-3xl">
+                  🟢
+                </div>
+                <p className="text-sm font-black text-emerald-400">Sesión activa 24/7</p>
+                {status.numeroVinculado && (
+                  <span className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1 font-mono text-xs font-bold text-slate-200">
+                    +{status.numeroVinculado}
+                  </span>
+                )}
+                <p className="text-[11px] leading-relaxed text-slate-400">
+                  El demonio mantiene la sesión persistente en{" "}
+                  <code className="rounded bg-slate-900 px-1.5 py-0.5 text-emerald-300">
+                    whatsapp_auth
+                  </code>
+                  . Si el servidor se reinicia, se reconecta solo.
+                </p>
               </div>
-              <p className="text-xs font-semibold text-slate-300">
-                Abre WhatsApp en tu teléfono → <strong>Dispositivos vinculados</strong> →{" "}
-                <strong>Vincular un dispositivo</strong> y escanea este QR.
+            ) : status.qrDataUrl ? (
+              <div className="flex flex-col items-center gap-3">
+                <div className="rounded-2xl bg-white p-3 shadow-2xl">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={status.qrDataUrl}
+                    alt="Código QR para vincular WhatsApp"
+                    className="h-52 w-52 object-contain sm:h-56 sm:w-56"
+                  />
+                </div>
+                <ol className="w-full space-y-1 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-[11px] leading-relaxed text-slate-300">
+                  <li>1. Abre WhatsApp en tu teléfono.</li>
+                  <li>2. Entra en Dispositivos vinculados.</li>
+                  <li>3. Toca Vincular un dispositivo y escanea el QR.</li>
+                </ol>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3 py-6 text-center">
+                <div className="grid h-12 w-12 place-items-center rounded-full border-2 border-dashed border-slate-600 text-xl">
+                  📱
+                </div>
+                <p className="text-xs font-bold text-slate-300">
+                  {status.daemonOnline
+                    ? "Generando código QR desde Baileys…"
+                    : "El demonio del bot no responde en el puerto 3005"}
+                </p>
+                <p className="max-w-xs text-[11px] leading-relaxed text-slate-500">
+                  En el servidor ejecuta{" "}
+                  <code className="text-emerald-400">pm2 restart bot-whatsapp</code> y vuelve a
+                  cargar esta pantalla.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Acciones globales */}
+          <div className="rounded-3xl border border-slate-800 bg-slate-950 p-4 text-white shadow-xl">
+            <h3 className="mb-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+              Acciones globales
+            </h3>
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                type="button"
+                onClick={desconectarTodas}
+                disabled={ocupado || metricas.vinculadas === 0}
+                className="rounded-xl border border-rose-500/40 bg-rose-950/40 px-3 py-2 text-[11px] font-black text-rose-200 transition hover:bg-rose-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ⏸ Desconectar todas las salas
+              </button>
+              <button
+                type="button"
+                onClick={reconectarTodas}
+                disabled={ocupado || metricas.pausadas === 0}
+                className="rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-3 py-2 text-[11px] font-black text-emerald-200 transition hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ▶ Reconectar salas pausadas
+              </button>
+            </div>
+            <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+              Desconectar pausa la sala sin salir del grupo: el bot deja de publicar ahí y el
+              grupo queda guardado para reconectarlo cuando quieras.
+            </p>
+          </div>
+        </div>
+
+        {/* ---------- Columna: salas ---------- */}
+        <div className="space-y-4 lg:col-span-2">
+          {salas.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/60 p-10 text-center text-slate-400">
+              <p className="text-2xl">🏇</p>
+              <p className="mt-2 text-sm font-bold text-slate-200">
+                No hay salas de juego activas
+              </p>
+              <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed">
+                Crea o activa una sala desde el módulo de Salas para poder vincularle un grupo de
+                WhatsApp.
               </p>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center space-y-3 py-8 text-slate-400">
-              <div className="h-12 w-12 rounded-full border-2 border-dashed border-slate-600 flex items-center justify-center text-xl">
-                📱
-              </div>
-              <p className="text-xs font-bold text-slate-300">
-                {status.daemonOnline
-                  ? "Generando código QR desde Baileys…"
-                  : "Servicio bot-whatsapp-server.mjs en espera (Puerto 3005)"}
-              </p>
-              <p className="text-[11px] text-slate-500 max-w-xs">
-                Ejecuta <code className="text-emerald-400">node bot-whatsapp-server.mjs</code> en el
-                servidor para iniciar el demonio 24/7 en el puerto 3005.
-              </p>
-            </div>
-          )}
-        </div>
+            salas.map((sala, index) => {
+              const respaldo = respaldoLocal[sala.id] || {};
+              const jidActual = seleccionGrupoPorSala[sala.id] ?? sala.whatsapp_group_jid ?? "";
+              const pizarraValor = pizarraPorSala[sala.id] ?? "";
+              const vinculada = Boolean(sala.whatsapp_group_jid);
+              const pausada = !vinculada && Boolean(respaldo.groupJid);
+              const nombreMostrado =
+                nombreGrupo(sala.whatsapp_group_jid, salas, status.grupos, respaldoLocal, sala.id) ||
+                respaldo.groupNombre ||
+                null;
+              const estado = String(sala.estado_carrera || "abierta").toLowerCase();
+              const abierta = estado === "abierta";
 
-        {/* SECCIÓN 2: VINCULACIÓN DE GRUPOS A SALAS Y BOTONES RÁPIDOS */}
-        <div className="lg:col-span-2 space-y-4">
-          {salas.map((sala, index) => {
-            const tituloSala = etiquetaSala(sala, index);
-            const jidActual = seleccionGrupoPorSala[sala.id] ?? sala.whatsapp_group_jid ?? "";
-            const pizarraValor = pizarraPorSala[sala.id] ?? "";
+              return (
+                <article
+                  key={sala.id}
+                  className="rounded-3xl border border-slate-800 bg-slate-950 p-4 text-white shadow-xl transition hover:border-slate-700 sm:p-5"
+                >
+                  {/* Cabecera de la sala */}
+                  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800/80 pb-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-300">
+                          {tituloCorto(sala, index)}
+                        </span>
+                        <h3 className="truncate text-sm font-black text-white">
+                          {sala.nombre_sala || `Sala ${index + 1}`}
+                        </h3>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        {sala.hipodromo_activo || "Sin hipódromo"} · Carrera #
+                        {sala.numero_carrera_activa || 1}
+                      </p>
+                    </div>
 
-            return (
-              <div
-                key={sala.id}
-                className="rounded-2xl border border-slate-800 bg-slate-950 p-5 text-white shadow-lg space-y-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-                  <div className="flex items-center gap-2.5">
-                    <span className="rounded-lg bg-emerald-500/20 border border-emerald-500/40 px-2.5 py-1 text-xs font-black text-emerald-300">
-                      {tituloSala}
-                    </span>
-                    <span className="text-xs font-bold text-slate-300">
-                      {sala.hipodromo_activo || "HIPÓDROMO"} · Carrera #{sala.numero_carrera_activa || 1}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${
+                          abierta
+                            ? "border-emerald-600/50 bg-emerald-950 text-emerald-300"
+                            : "border-amber-600/50 bg-amber-950 text-amber-300"
+                        }`}
+                      >
+                        ● {abierta ? "Carrera abierta" : "Carrera cerrada"}
+                      </span>
+                      <span
+                        className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${
+                          vinculada
+                            ? "border-sky-500/50 bg-sky-950 text-sky-300"
+                            : pausada
+                            ? "border-amber-500/50 bg-amber-950 text-amber-300"
+                            : "border-slate-700 bg-slate-900 text-slate-400"
+                        }`}
+                      >
+                        {vinculada ? "Grupo vinculado" : pausada ? "Pausada" : "Sin grupo"}
+                      </span>
+                    </div>
                   </div>
 
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase ${
-                      String(sala.estado_carrera || "").toLowerCase() === "abierta"
-                        ? "bg-emerald-950 text-emerald-300 border border-emerald-600/50"
-                        : "bg-amber-950 text-amber-300 border border-amber-600/50"
-                    }`}
-                  >
-                    ● {sala.estado_carrera || "ABIERTA"}
-                  </span>
-                </div>
+                  {/* Estado del grupo + acciones de conexión */}
+                  <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-900/50 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Grupo de WhatsApp
+                        </p>
+                        {vinculada ? (
+                          <p className="truncate text-xs font-bold text-emerald-300">
+                            {nombreMostrado || "Grupo vinculado"}
+                            <span className="ml-1 font-mono text-[10px] font-normal text-slate-500">
+                              {sala.whatsapp_group_jid}
+                            </span>
+                          </p>
+                        ) : pausada ? (
+                          <p className="truncate text-xs font-bold text-amber-300">
+                            Desconectado · guardado{" "}
+                            {respaldo.groupNombre ? `("${respaldo.groupNombre}")` : ""}
+                          </p>
+                        ) : (
+                          <p className="text-xs font-bold text-slate-400">
+                            Sin grupo asignado a esta sala
+                          </p>
+                        )}
+                      </div>
 
-                {/* Selector desplegable de grupo de WhatsApp con vinculación en 1 clic */}
-                <div className="space-y-1.5">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Grupo de WhatsApp vinculado a {tituloSala}:
-                  </label>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <select
-                      value={jidActual}
-                      onChange={(e) =>
-                        setSeleccionGrupoPorSala((prev) => ({ ...prev, [sala.id]: e.target.value }))
-                      }
-                      disabled={procesandoAccion === `vincular-${sala.id}`}
-                      className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-emerald-500"
-                    >
-                      <option value="">— Seleccionar grupo de WhatsApp para vincular —</option>
-                      {status.grupos.map((g) => (
-                        <option key={g.jid} value={g.jid}>
-                          {g.nombre} ({g.jid})
-                        </option>
-                      ))}
-                      {jidActual && !status.grupos.some((g) => g.jid === jidActual) && (
-                        <option value={jidActual}>Grupo vinculado actual ({jidActual})</option>
+                      {vinculada ? (
+                        <button
+                          type="button"
+                          onClick={() => desconectarSala(sala)}
+                          disabled={ocupado}
+                          className="rounded-xl border border-rose-500/40 bg-rose-950/40 px-3 py-1.5 text-[11px] font-black text-rose-200 transition hover:bg-rose-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Pausa la sala: el bot deja de publicar en este grupo"
+                        >
+                          {procesandoAccion === `desconectar-${sala.id}`
+                            ? "Desconectando…"
+                            : "⏸ Desconectar grupo"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => reconectarSala(sala)}
+                          disabled={ocupado || !jidActual}
+                          className="rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-3 py-1.5 text-[11px] font-black text-emerald-200 transition hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Restaura el grupo guardado y el bot vuelve a publicar"
+                        >
+                          {procesandoAccion === `reconectar-${sala.id}`
+                            ? "Reconectando…"
+                            : "▶ Volver a conectar"}
+                        </button>
                       )}
-                    </select>
+                    </div>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        vincularGrupoASala(
-                          sala,
-                          seleccionGrupoPorSala[sala.id] ?? sala.whatsapp_group_jid ?? ""
-                        )
-                      }
-                      disabled={procesandoAccion === `vincular-${sala.id}`}
-                      className="rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2.5 text-xs font-black text-white transition shadow"
-                    >
-                      {procesandoAccion === `vincular-${sala.id}` ? "Vinculando…" : "🔗 Vincular Sala"}
-                    </button>
+                    {/* Selector de grupo */}
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                      <select
+                        value={jidActual}
+                        onChange={(e) =>
+                          setSeleccionGrupoPorSala((prev) => ({
+                            ...prev,
+                            [sala.id]: e.target.value,
+                          }))
+                        }
+                        disabled={ocupado}
+                        className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none transition focus:border-emerald-500 disabled:opacity-50"
+                        aria-label={`Grupo de WhatsApp para ${sala.nombre_sala}`}
+                      >
+                        <option value="">— Seleccionar grupo de WhatsApp —</option>
+                        {status.grupos.map((g) => (
+                          <option key={g.jid} value={g.jid}>
+                            {g.nombre} ({g.jid})
+                          </option>
+                        ))}
+                        {jidActual && !status.grupos.some((g) => g.jid === jidActual) && (
+                          <option value={jidActual}>
+                            Grupo guardado ({respaldo.groupNombre || jidActual})
+                          </option>
+                        )}
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() => vincularGrupoASala(sala, jidActual)}
+                        disabled={ocupado || !jidActual}
+                        className="rounded-xl bg-emerald-600 px-4 py-2 text-[11px] font-black text-white shadow transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {procesandoAccion === `vincular-${sala.id}` ? "Vinculando…" : "🔗 Vincular"}
+                      </button>
+                    </div>
+
+                    {status.grupos.length === 0 && (
+                      <p className="mt-2 text-[10px] leading-relaxed text-amber-300/80">
+                        El bot aún no detecta grupos. Verifica que la sesión esté conectada y que
+                        la cuenta esté dentro de los grupos.
+                      </p>
+                    )}
                   </div>
-                </div>
 
-                {/* Control de Carrera: Hipódromo, Número de Carrera, Apertura y Cierre */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 space-y-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                      <span>🏇</span> Configuración y Estado de Carrera:
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      También puedes usar en WhatsApp: <code className="text-emerald-400 font-mono">!abrir [hipodromo] [carrera]</code> y <code className="text-amber-400 font-mono">!cerrar</code>
-                    </span>
-                  </div>
+                  {/* Control de carrera */}
+                  <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-3">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        🏇 Carrera en curso
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Atajos en WhatsApp:{" "}
+                        <code className="font-mono text-emerald-400">!abrir hipódromo #</code> y{" "}
+                        <code className="font-mono text-amber-400">!cerrar</code>
+                      </span>
+                    </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                    <div className="sm:col-span-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
                       <input
                         type="text"
-                        value={hipodromoPorSala[sala.id] ?? sala.hipodromo_activo ?? "LA RINCONADA"}
+                        value={
+                          hipodromoPorSala[sala.id] ?? sala.hipodromo_activo ?? "LA RINCONADA"
+                        }
                         onChange={(e) =>
                           setHipodromoPorSala((prev) => ({ ...prev, [sala.id]: e.target.value }))
                         }
-                        placeholder="Hipódromo (ej. LA RINCONADA)"
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none focus:border-emerald-500 uppercase"
+                        placeholder="Hipódromo"
+                        className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold uppercase text-white outline-none transition focus:border-emerald-500 sm:col-span-2"
+                        aria-label={`Hipódromo de ${sala.nombre_sala}`}
                       />
-                    </div>
-                    <div>
                       <input
                         type="number"
-                        min="1"
-                        max="20"
+                        min={1}
+                        max={30}
                         value={carreraPorSala[sala.id] ?? sala.numero_carrera_activa ?? 1}
                         onChange={(e) =>
                           setCarreraPorSala((prev) => ({ ...prev, [sala.id]: e.target.value }))
                         }
                         placeholder="Carrera #"
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-emerald-300 outline-none focus:border-emerald-500"
+                        className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-emerald-300 outline-none transition focus:border-emerald-500"
+                        aria-label={`Número de carrera de ${sala.nombre_sala}`}
                       />
-                    </div>
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => abrirCarrera(sala)}
-                        disabled={procesandoAccion === `abrir-${sala.id}`}
-                        className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-2.5 py-2 text-xs font-black text-white transition shadow flex items-center justify-center gap-1"
-                        title="Abrir carrera y anunciar en WhatsApp"
-                      >
-                        <span>🟢 Abrir</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => cerrarCarrera(sala)}
-                        disabled={procesandoAccion === `cerrar-${sala.id}`}
-                        className="flex-1 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-2.5 py-2 text-xs font-black text-white transition shadow flex items-center justify-center gap-1"
-                        title="Cerrar carrera y anunciar en WhatsApp"
-                      >
-                        <span>🔒 Cerrar</span>
-                      </button>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => abrirCarrera(sala)}
+                          disabled={ocupado}
+                          className="flex-1 rounded-xl bg-emerald-600 px-2 py-2 text-[11px] font-black text-white shadow transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Abrir carrera y anunciar en WhatsApp"
+                        >
+                          {procesandoAccion === `abrir-${sala.id}` ? "…" : "🟢 Abrir"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => cerrarCarrera(sala)}
+                          disabled={ocupado}
+                          className="flex-1 rounded-xl bg-amber-600 px-2 py-2 text-[11px] font-black text-white shadow transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Cerrar carrera y anunciar en WhatsApp"
+                        >
+                          {procesandoAccion === `cerrar-${sala.id}` ? "…" : "🔒 Cerrar"}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Botones rápidos para disparar manualmente al grupo de WhatsApp */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
-                  {/* Botón 1: Publicar Plano de Jugadas */}
-                  <div className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/70 p-3 space-y-2">
-                    <span className="text-[11px] font-bold text-slate-300">
-                      Publicar lista numerada de tickets activos en el grupo:
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => publicarPlanoJugadas(sala)}
-                      disabled={procesandoAccion === `plano-${sala.id}`}
-                      className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2.5 text-xs font-black text-white transition shadow flex items-center justify-center gap-2"
-                    >
-                      <span>📋 Publicar Plano de Jugadas</span>
-                    </button>
-                  </div>
+                  {/* Publicaciones */}
+                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div className="flex flex-col justify-between gap-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+                      <span className="text-[11px] leading-relaxed text-slate-400">
+                        Lista numerada de tickets activos de la carrera.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => publicarPlanoJugadas(sala)}
+                        disabled={ocupado}
+                        className="w-full rounded-xl bg-indigo-600 px-3 py-2 text-[11px] font-black text-white shadow transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {procesandoAccion === `plano-${sala.id}`
+                          ? "Publicando…"
+                          : "📋 Publicar Plano de Jugadas"}
+                      </button>
+                    </div>
 
-                  {/* Botón 2: Publicar Sentencia / LLEGADA */}
-                  <div className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/70 p-3 space-y-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col justify-between gap-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
                       <input
                         type="text"
                         value={pizarraValor}
@@ -577,77 +1041,150 @@ export default function WhatsappPage() {
                           setPizarraPorSala((prev) => ({ ...prev, [sala.id]: e.target.value }))
                         }
                         placeholder="LLEGADA ej: 10.5.1.2.7"
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs font-mono font-bold text-emerald-300 placeholder-slate-500 outline-none focus:border-emerald-500"
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-mono text-xs font-bold text-emerald-300 outline-none transition placeholder:text-slate-600 focus:border-emerald-500"
+                        aria-label={`Orden de llegada de ${sala.nombre_sala}`}
                       />
+                      <button
+                        type="button"
+                        onClick={() => publicarSentenciaPizarra(sala)}
+                        disabled={ocupado}
+                        className="w-full rounded-xl bg-emerald-600 px-3 py-2 text-[11px] font-black text-white shadow transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {procesandoAccion === `sentencia-${sala.id}`
+                          ? "Liquidando…"
+                          : "🏁 Publicar Llegada / Pizarra"}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => publicarSentenciaPizarra(sala)}
-                      disabled={procesandoAccion === `sentencia-${sala.id}`}
-                      className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-4 py-2.5 text-xs font-black text-white transition shadow flex items-center justify-center gap-2"
-                    >
-                      <span>🏁 Publicar LLEGADA / Pizarra</span>
-                    </button>
                   </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* PANEL DE CONFIRMACIÓN Y PREVISUALIZACIÓN DE MENSAJE DISPARADO */}
-      {feedback && (
-        <section
-          className={`rounded-2xl border p-4 text-xs shadow-lg ${
-            feedback.tipo === "ok"
-              ? "border-emerald-500/50 bg-emerald-950/60 text-emerald-100"
-              : feedback.tipo === "error"
-              ? "border-rose-500/50 bg-rose-950/60 text-rose-100"
-              : "border-slate-700 bg-slate-900 text-slate-200"
-          }`}
-        >
-          <p className="font-black text-sm">{feedback.texto}</p>
-          {feedback.detalle && (
-            <pre className="mt-3 whitespace-pre-wrap rounded-xl border border-black/30 bg-black/40 p-3 font-mono text-xs text-slate-200">
-              {feedback.detalle}
-            </pre>
+                </article>
+              );
+            })
           )}
-        </section>
-      )}
-
-      {/* GUÍA RÁPIDA DE COMANDOS DE OPERADOR DESDE WHATSAPP */}
-      <section className="rounded-2xl border border-slate-800 bg-slate-950 p-5 text-white shadow">
-        <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 mb-3">
-          ⚡ Comandos Directos del Operador dentro del Grupo de WhatsApp
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
-            <code className="font-mono font-black text-emerald-300">!abrir [hipodromo] [carrera]</code>
-            <p className="mt-1 text-[11px] text-slate-400">
-              Abre la carrera directamente en el grupo. Ej: <code className="text-white">!abrir La Rinconada 1</code> o <code className="text-white">!abrir Gulfstream 4</code>.
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
-            <code className="font-mono font-black text-rose-300">!cerrar</code>
-            <p className="mt-1 text-[11px] text-slate-400">
-              Cierra la carrera para bloquear nuevas jugadas. También responde a <code className="text-white">cerrada</code>.
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
-            <code className="font-mono font-black text-indigo-300">LLEGADA: 10.5.1.2.7</code>
-            <p className="mt-1 text-[11px] text-slate-400">
-              Liquida oficialmente la carrera, actualiza saldos y publica POSITIVOS (+) y NEGATIVOS (-).
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
-            <code className="font-mono font-black text-amber-300">!plano</code> / <code className="font-mono font-black text-amber-300">!anular</code>
-            <p className="mt-1 text-[11px] text-slate-400">
-              Publica el plano numerado de jugadas activas o anula tickets/retirados en vivo.
-            </p>
-          </div>
         </div>
       </section>
+
+      {/* ==================== COMANDOS ==================== */}
+      <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5 text-white shadow-xl">
+        <h3 className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-emerald-400">
+          ⚡ Comandos directos del operador dentro del grupo
+        </h3>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Comando
+            codigo="!abrir [hipódromo] [#]"
+            color="text-emerald-300"
+            descripcion={
+              <>
+                Abre la carrera y la anuncia. Ej:{" "}
+                <code className="text-white">!abrir La Rinconada 1</code>.
+              </>
+            }
+          />
+          <Comando
+            codigo="!cerrar"
+            color="text-rose-300"
+            descripcion="Cierra la carrera y bloquea nuevas jugadas."
+          />
+          <Comando
+            codigo="LLEGADA: 10.5.1.2.7"
+            color="text-indigo-300"
+            descripcion="Liquida la carrera, actualiza saldos y publica positivos/negativos."
+          />
+          <Comando
+            codigo="!plano / !anular"
+            color="text-amber-300"
+            descripcion="Publica el plano numerado o anula tickets y retirados en vivo."
+          />
+        </div>
+      </section>
+
+      {/* ==================== TOAST NO BLOQUEANTE ==================== */}
+      {feedback && (
+        <div className="fixed inset-x-3 bottom-3 z-50 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[420px]">
+          <div
+            role="status"
+            className={`rounded-2xl border p-4 text-xs shadow-2xl backdrop-blur ${
+              feedback.tipo === "ok"
+                ? "border-emerald-500/50 bg-emerald-950/90 text-emerald-50"
+                : feedback.tipo === "error"
+                ? "border-rose-500/50 bg-rose-950/90 text-rose-50"
+                : "border-slate-700 bg-slate-900/95 text-slate-100"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <p className="font-black leading-snug">{feedback.texto}</p>
+              <button
+                type="button"
+                onClick={() => setFeedback(null)}
+                className="shrink-0 rounded-lg border border-white/10 px-1.5 py-0.5 text-[11px] font-bold opacity-70 transition hover:opacity-100"
+                aria-label="Cerrar aviso"
+              >
+                ✕
+              </button>
+            </div>
+            {feedback.detalle && (
+              <details className="mt-2 rounded-xl border border-black/30 bg-black/30 p-2">
+                <summary className="cursor-pointer text-[11px] font-bold opacity-80">
+                  Ver mensaje enviado
+                </summary>
+                <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed opacity-90">
+                  {feedback.detalle}
+                </pre>
+              </details>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// COMPONENTES AUXILIARES
+// ============================================================================
+
+function Kpi({
+  etiqueta,
+  valor,
+  total,
+  color,
+}: {
+  etiqueta: string;
+  valor: number;
+  total?: number;
+  color: "emerald" | "amber" | "slate" | "sky";
+}) {
+  const estilos: Record<typeof color, string> = {
+    emerald: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+    amber: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    slate: "border-slate-700 bg-slate-900/60 text-slate-300",
+    sky: "border-sky-500/30 bg-sky-500/10 text-sky-300",
+  };
+  return (
+    <div className={`rounded-2xl border px-3 py-2.5 ${estilos[color]}`}>
+      <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">{etiqueta}</p>
+      <p className="mt-0.5 text-lg font-black leading-none">
+        {valor}
+        {typeof total === "number" && (
+          <span className="ml-1 text-[11px] font-bold opacity-60">/ {total}</span>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function Comando({
+  codigo,
+  descripcion,
+  color,
+}: {
+  codigo: string;
+  descripcion: React.ReactNode;
+  color: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
+      <code className={`font-mono text-xs font-black ${color}`}>{codigo}</code>
+      <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{descripcion}</p>
     </div>
   );
 }
