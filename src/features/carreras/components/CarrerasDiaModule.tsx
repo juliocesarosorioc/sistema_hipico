@@ -619,15 +619,39 @@ export function CarrerasDiaModule() {
           </button>
           {listaNumerosCarrerasDisponibles.map((num) => {
             const estaActiva = carreraFiltro === num;
+            const carrerasNum = carreras.filter((c) => Number(c.carrera) === num);
+            const estaLiquidada = carrerasNum.some((c) => {
+              const est = String(c.estado ?? "").toLowerCase();
+              return (
+                Boolean(c.aplicado_a_tablas) ||
+                (Array.isArray(c.ganadores) && c.ganadores.length > 0) ||
+                est.includes("liquid") ||
+                est.includes("finaliz") ||
+                est.includes("cerrad")
+              );
+            });
+            const tieneCaballos = carrerasNum.some(
+              (c) => Array.isArray(c.caballos) && c.caballos.length > 0
+            );
+            const claseColor = estaLiquidada
+              ? "border border-rose-700 bg-rose-600 text-white hover:bg-rose-500"
+              : tieneCaballos
+                ? "border border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-500"
+                : "border border-slate-300 bg-slate-200 text-slate-700 hover:bg-slate-300";
             return (
               <button
                 key={num}
                 type="button"
                 onClick={() => setCarreraFiltro(estaActiva ? null : num)}
-                className={`rounded-lg px-3 py-1 text-xs font-black transition-all font-mono tabular-nums ${
-                  estaActiva
-                    ? "bg-amber-500 text-slate-950 shadow-md ring-2 ring-amber-300 scale-105"
-                    : "border border-cyan-200 bg-cyan-50/70 text-cyan-800 hover:bg-cyan-100 hover:scale-102"
+                title={
+                  estaLiquidada
+                    ? `C${num} · Liquidada / Con resultados`
+                    : tieneCaballos
+                      ? `C${num} · Programada con ejemplares`
+                      : `C${num} · Sin ejemplares`
+                }
+                className={`rounded-lg px-3 py-1 text-xs font-black transition-all font-mono tabular-nums ${claseColor} ${
+                  estaActiva ? "ring-2 ring-indigo-500 ring-offset-1 scale-105 shadow-md" : ""
                 }`}
               >
                 C{num}

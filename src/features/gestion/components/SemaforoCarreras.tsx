@@ -229,7 +229,15 @@ export function SemaforoCarreras({
             setNums.add(num);
             const prev = statsTickets.get(num) ?? { total: 0, liquidados: 0, pendientes: 0 };
             prev.total++;
-            if (est.includes("ganad") || est.includes("perd") || est.includes("gano")) {
+            if (
+              est.includes("ganad") ||
+              est.includes("perd") ||
+              est.includes("gano") ||
+              est.includes("empate") ||
+              est.includes("liquid") ||
+              est.includes("finaliz") ||
+              est.includes("reembols")
+            ) {
               prev.liquidados++;
             } else {
               prev.pendientes++;
@@ -400,11 +408,11 @@ export function SemaforoCarreras({
           )}
         </div>
         
-        <div className="hidden sm:flex flex-wrap items-center gap-2.5 text-[10px]">
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs border border-slate-400 bg-slate-300" /> Sin registro ni caballos (Gris)</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-emerald-600" /> Precargado con caballos (Verde)</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-amber-400 ring-1 ring-amber-500" /> Con jugadas · Sin liquidar (Amarillo)</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-red-600" /> Liquidada (Rojo)</span>
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10px]">
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs border border-slate-300 bg-slate-200" /> Sin registro ni caballos</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-emerald-600" /> Precargada</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-amber-400 ring-1 ring-amber-500" /> Con jugadas</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-xs bg-rose-600" /> Liquidada</span>
         </div>
       </div>
 
@@ -428,7 +436,7 @@ export function SemaforoCarreras({
                   !existe
                     ? `cursor-not-allowed ${COLORES.inactiva.chip} opacity-80`
                     : `hover:brightness-95 active:scale-95 ${c.chip}`
-                } ${activaEsta ? "ring-2 ring-indigo-600 ring-offset-2 ring-offset-surface shadow-md" : ""}`}
+                } ${activaEsta ? "ring-2 ring-indigo-500 ring-offset-2 ring-offset-surface scale-105 shadow-md font-extrabold" : ""}`}
               >
                 {n}
               </button>

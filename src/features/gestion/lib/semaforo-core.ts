@@ -27,15 +27,15 @@ export type ConfigColorCarrera = {
 export const COLORES_SEMAFORO: Record<EstadoCarrera, ConfigColorCarrera> = {
   // GRIS: Si la carrera no tiene ni registros de jugadas ni caballos su color es gris.
   inactiva: {
-    chip: "border-slate-400 bg-slate-300 text-slate-800 shadow-xs",
+    chip: "border-slate-300 bg-slate-200/90 text-slate-600 shadow-none",
     label: "Sin registros de jugadas ni caballos (Gris)",
-    txt: "text-slate-800",
+    txt: "text-slate-600",
     hex: "#cbd5e1",
     colorName: "gris",
   },
   // VERDE: Si la carrera tiene caballos registrados (precargado), es verde.
   abierta: {
-    chip: "border-emerald-700 bg-emerald-600 text-white shadow-xs",
+    chip: "border-emerald-700 bg-emerald-600 text-white shadow-sm",
     label: "Caballos registrados · Precargado (Verde)",
     txt: "text-emerald-600",
     hex: "#059669",
@@ -43,7 +43,7 @@ export const COLORES_SEMAFORO: Record<EstadoCarrera, ConfigColorCarrera> = {
   },
   // AMARILLO: Si hay jugadas y no está liquidada es amarillo.
   con_jugadas: {
-    chip: "border-amber-500 bg-amber-400 text-slate-950 shadow-xs ring-1 ring-amber-500",
+    chip: "border-amber-600 bg-amber-400 text-slate-950 shadow-sm ring-1 ring-amber-500/70",
     label: "Con jugadas · Sin liquidar (Amarillo)",
     txt: "text-amber-600",
     hex: "#fbbf24",
@@ -51,17 +51,17 @@ export const COLORES_SEMAFORO: Record<EstadoCarrera, ConfigColorCarrera> = {
   },
   // ROJO: Y si se liquidaron las jugadas es rojo.
   cerrada: {
-    chip: "border-red-700 bg-red-600 text-white shadow-xs",
+    chip: "border-rose-700 bg-rose-600 text-white shadow-sm",
     label: "Jugadas liquidadas (Rojo)",
-    txt: "text-red-600",
-    hex: "#dc2626",
+    txt: "text-rose-600",
+    hex: "#e11d48",
     colorName: "rojo",
   },
   // Alias compatible
   borrada: {
-    chip: "border-slate-400 bg-slate-300 text-slate-800 shadow-xs",
+    chip: "border-slate-300 bg-slate-200/90 text-slate-600 shadow-none",
     label: "Sin registros de jugadas ni caballos (Gris)",
-    txt: "text-slate-800",
+    txt: "text-slate-600",
     hex: "#cbd5e1",
     colorName: "gris",
   },
