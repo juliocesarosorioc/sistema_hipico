@@ -27,6 +27,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Solicitud inválida." }, { status: 400 });
   }
 
+  // Blindaje SecOps: Validación estricta de Hash SHA-256 y Monto antes de invocar Service Role
+  const hashImagenSha256 = String(body.hashImagenSha256 ?? body.hash_imagen_sha256 ?? "").trim();
+  if (!/^[a-f0-9]{64}$/i.test(hashImagenSha256)) {
+    return NextResponse.json(
+      { ok: false, error: "La huella hashImagenSha256 debe ser un valor hexadecimal SHA-256 válido de 64 caracteres." },
+      { status: 400 }
+    );
+  }
+
+  const montoReportado = Number(body.montoReportado ?? body.monto_reportado ?? body.monto);
+  if (!Number.isFinite(montoReportado) || montoReportado <= 0) {
+    return NextResponse.json(
+      { ok: false, error: "El montoReportado debe ser un número positivo mayor a 0." },
+      { status: 400 }
+    );
+  }
+
   const resultado = await validarSolicitudRecargaServidor(auth.identidad, {
     grupoId: body.grupoId ?? body.grupo_id,
     clienteId: body.clienteId ?? body.cliente_id,

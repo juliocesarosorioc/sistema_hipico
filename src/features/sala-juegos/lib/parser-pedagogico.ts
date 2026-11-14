@@ -95,7 +95,18 @@ export function evaluarConcrecionEstricta(
   nombreAceptante?: string,
   moneda?: string
 ): ResultadoConcrecionEstricta {
-  const texto = (textoRespuesta || '').trim();
+  // Blindaje SecOps Anti-ReDoS: Descartar textos gigantes antes de evaluar regex
+  if (!textoRespuesta || typeof textoRespuesta !== 'string' || textoRespuesta.length > 180) {
+    return {
+      valido: false,
+      motivoRechazo: 'El texto de concreción excede el límite de 180 caracteres permitidos.',
+      montoSolicitado: 0,
+      montoEfectivo: 0,
+      excedioSaldo: false,
+    };
+  }
+
+  const texto = textoRespuesta.trim();
 
   // Validar verbos autorizados según el rol de la propuesta citada:
   // - Si la propuesta es Juego: solo acepta Consigo, Doy, J, Jugaste, Jugamos, Ponte
@@ -203,6 +214,24 @@ export function analizarYEstandarizarJugada(
   nombreUsuario?: string,
   moneda?: string
 ): ResultadoAnalisisJugada {
+  // Blindaje SecOps Anti-ReDoS: Descartar textos gigantes antes de evaluar regex
+  if (!textoUsuario || typeof textoUsuario !== 'string' || textoUsuario.length > 180) {
+    return {
+      esIntencionDeJugada: false,
+      valido: true,
+      accionProponente: 'JUEGA',
+      esMatch: false,
+      modalidad: '',
+      caballosBandoA: [],
+      caballosBandoB: [],
+      ejemplarTexto: '',
+      monto: 0,
+      jugadaEstandarizada: String(textoUsuario || '').slice(0, 180),
+      confianza: 1.0,
+      requiereOperador: false,
+    };
+  }
+
   const texto = textoUsuario.trim().replace(/\s+/g, ' ');
   const prefijo = prefijoMonedaGrupo(moneda);
 

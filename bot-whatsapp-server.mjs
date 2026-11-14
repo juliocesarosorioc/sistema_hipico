@@ -57,6 +57,7 @@ cargarVariablesEntorno();
 
 const PORT = Number(process.env.WHATSAPP_BOT_PORT || 3005);
 const NEXT_API_BASE = process.env.NEXT_INTERNAL_URL || "http://127.0.0.1:3000";
+const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 const AUTH_DIR =
   process.env.WHATSAPP_AUTH_DIR ||
   (process.platform === "linux"
@@ -76,6 +77,77 @@ const supabase =
         },
       })
     : null;
+
+// Caché en memoria para verificar operadores autorizados sin sobrecargar Supabase
+const cacheOperadores = new Map();
+
+async function verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado) {
+  const cacheKey = `${remoteJid}_${participantJid}`;
+  const enCache = cacheOperadores.get(cacheKey);
+  if (enCache && Date.now() < enCache.exp) {
+    return enCache.esOp;
+  }
+
+  let esAutorizado = false;
+
+  // 1. Chequeo de Admin / Superadmin del grupo en Baileys
+  if (sock && remoteJid) {
+    try {
+      const meta = await sock.groupMetadata(remoteJid);
+      const participant = (meta?.participants || []).find(
+        (p) => p.id === participantJid || normalizarTelefono(p.id) === telNormalizado
+      );
+      if (participant?.admin === "admin" || participant?.admin === "superadmin") {
+        esAutorizado = true;
+      }
+    } catch (errMeta) {
+      console.warn("[Bot WhatsApp] Error consultando groupMetadata:", errMeta?.message);
+    }
+  }
+
+  // 2. Chequeo vía RPC Supabase public.es_operador_autorizado_whatsapp
+  if (!esAutorizado && supabase && sala?.id && telNormalizado) {
+    try {
+      const { data: esOpRpc, error: errRpc } = await supabase.rpc(
+        "es_operador_autorizado_whatsapp",
+        {
+          p_sala_id: sala.id,
+          p_telefono: telNormalizado,
+        }
+      );
+      if (!errRpc && esOpRpc === true) {
+        esAutorizado = true;
+      }
+    } catch {
+      // Si la función RPC no existe en la BD o falla la firma
+    }
+  }
+
+  // 3. Chequeo directo en usuario_sistema (si es_principal o es operador del grupo de la sala)
+  if (!esAutorizado && supabase && telNormalizado) {
+    try {
+      const { data: usuario } = await supabase
+        .from("usuario_sistema")
+        .select("id, nombre, activo, es_principal, grupo_id")
+        .ilike("telefono", `%${telNormalizado.slice(-8)}%`)
+        .limit(1)
+        .maybeSingle();
+
+      if (usuario && usuario.activo !== false) {
+        if (usuario.es_principal) {
+          esAutorizado = true;
+        } else if (sala.grupo_id && usuario.grupo_id === sala.grupo_id) {
+          esAutorizado = true;
+        }
+      }
+    } catch {
+      // Ignorar fallback
+    }
+  }
+
+  cacheOperadores.set(cacheKey, { esOp: esAutorizado, exp: Date.now() + 1000 * 60 * 2 }); // 2 min
+  return esAutorizado;
+}
 
 // Estado en memoria del demonio Baileys
 let sock = null;
@@ -683,6 +755,7 @@ async function manejarMensajeEntrante(msg) {
     const whatsappMsgId = msg.key.id || null;
     const quotedMsgId =
       msg.message?.extendedTextMessage?.contextInfo?.stanzaId || null;
+    const telNormalizado = normalizarTelefono(participantJid);
 
     // 1. Comandos de Operador desde WhatsApp:
     // - !abrir [hipodromo] [carrera] (o "abrir la rinconada 1")
@@ -694,6 +767,12 @@ async function manejarMensajeEntrante(msg) {
     // Detección de LLEGADA: A.B.C.D.E (con o sin '!')
     const matchLlegada = textoLimpio.match(/^(?:!)?(?:llegada|sentenciar|pizarra)\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
     if (matchLlegada) {
+      const esOp = await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado);
+      if (!esOp) {
+        console.warn(`[Bot WhatsApp] ⛔ Comando sentenciar rechazado: ${participantJid} no es operador.`);
+        await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para sentenciar o publicar resultados oficiales.");
+        return;
+      }
       console.log(`[Bot WhatsApp] 🏁 Ejecutando sentencia de pizarra: ${matchLlegada[1]}`);
       await ejecutarSentenciaPizarra(sala, remoteJid, matchLlegada[1]);
       return;
@@ -702,6 +781,12 @@ async function manejarMensajeEntrante(msg) {
     // Detección de Apertura: !abrir [hipodromo] [carrera] o "abrir [hipodromo] [carrera]"
     const matchAbrir = textoLimpio.match(/^(?:!)?(?:abrir|abierta|abrir\s+carrera)\s*(.+?)?(?:\s+(?:c(?:arrera)?\s*)?(\d{1,2}))?$/i);
     if (matchAbrir && (/^(?:!)?abrir/i.test(textoLimpio) || /^(?:!)?abierta/i.test(textoLimpio))) {
+      const esOp = await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado);
+      if (!esOp) {
+        console.warn(`[Bot WhatsApp] ⛔ Comando abrir rechazado: ${participantJid} no es operador.`);
+        await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para abrir carreras en la sala.");
+        return;
+      }
       const posibleHipo = (matchAbrir[1] || "").trim() || sala.hipodromo_activo || "LA RINCONADA";
       const posibleCarrera = matchAbrir[2] || sala.numero_carrera_activa || "1";
       console.log(`[Bot WhatsApp] 🏆 Abriendo carrera: ${posibleHipo} #${posibleCarrera}`);
@@ -711,6 +796,12 @@ async function manejarMensajeEntrante(msg) {
 
     // Detección de Cierre: !cerrar o "cerrada"
     if (/^(?:!)?(?:cerrar|cerrada|no va mas|no va más|carrera cerrada)$/i.test(textoLimpio)) {
+      const esOp = await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado);
+      if (!esOp) {
+        console.warn(`[Bot WhatsApp] ⛔ Comando cerrar rechazado: ${participantJid} no es operador.`);
+        await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para cerrar carreras en la sala.");
+        return;
+      }
       console.log(`[Bot WhatsApp] 🔒 Cerrando carrera en sala "${sala.nombre_sala}"`);
       await ejecutarCierreCarrera(sala, remoteJid);
       return;
@@ -729,6 +820,12 @@ async function manejarMensajeEntrante(msg) {
       const resto = partes.slice(1).join(" ").trim();
 
       if (cmd === "anular" || cmd === "retirar") {
+        const esOp = await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado);
+        if (!esOp) {
+          console.warn(`[Bot WhatsApp] ⛔ Comando ${cmd} rechazado: ${participantJid} no es operador.`);
+          await enviarMensajePrivado(participantJid, `⚠️ No está autorizado para ejecutar el comando !${cmd}.`);
+          return;
+        }
         console.log(`[Bot WhatsApp] 🚫 Ejecutando ${cmd}: ${resto}`);
         await ejecutarAnulacionORetiro(sala, remoteJid, cmd, resto);
         return;
@@ -736,7 +833,6 @@ async function manejarMensajeEntrante(msg) {
     }
 
     // 2. Cruzar remitente con public.clientes (por telefono_normalizado o whatsapp_jid)
-    const telNormalizado = normalizarTelefono(participantJid);
     let cliente = null;
 
     if (participantJid || telNormalizado) {
@@ -760,10 +856,13 @@ async function manejarMensajeEntrante(msg) {
       }
     }
 
-    // 3 y 4. Delegar a http://127.0.0.1:3000/api/whatsapp-sala/procesar
+    // 3 y 4. Delegar a http://127.0.0.1:3000/api/whatsapp-sala/procesar con header secreto
     const res = await fetch(`${NEXT_API_BASE}/api/whatsapp-sala/procesar`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+      },
       body: JSON.stringify({
         groupJid: remoteJid,
         participantJid,
@@ -972,6 +1071,17 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
   const pathname = url.pathname;
+
+  // Blindaje SecOps Parche 1: Secreto interno obligatorio para todas las acciones (excepto /status local)
+  if (pathname !== "/status") {
+    const authHeader = req.headers["x-internal-bot-secret"];
+    if (authHeader !== INTERNAL_BOT_SECRET) {
+      return responderJson(res, 401, {
+        ok: false,
+        error: "401 Unauthorized: Header x-internal-bot-secret inválido o ausente",
+      });
+    }
+  }
 
   try {
     // 1. GET /status

@@ -12,6 +12,7 @@ import { sincronizarTicketsPropuestaATaquilla } from "@/features/whatsapp-sala/l
 export const dynamic = "force-dynamic";
 
 const BOT_DAEMON_URL = process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
+const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
 // Mutex FIFO en memoria por propuesta para garantizar ejecución secuencial (1 a la vez: Caso 90 + 10 = 100)
 const colasConcrecionFifo = new Map<string, Promise<any>>();
@@ -164,6 +165,7 @@ export async function GET() {
     const timer = setTimeout(() => controller.abort(), 3000);
     const res = await fetch(`${BOT_DAEMON_URL}/status`, {
       cache: "no-store",
+      headers: { "x-internal-bot-secret": INTERNAL_BOT_SECRET },
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -201,6 +203,20 @@ export async function GET() {
 // ============================================================================
 export async function POST(req: Request) {
   try {
+    // Blindaje SecOps Parche 1: Header de secreto interno estricto
+    const authHeader = req.headers.get("x-internal-bot-secret");
+    if (authHeader !== INTERNAL_BOT_SECRET) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "401 Unauthorized: Solicitud no autorizada. Header x-internal-bot-secret requerido.",
+          respuestaGrupo: null,
+          mensajePrivadoAutor: null,
+        },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
 
     // ------------------------------------------------------------------------
@@ -239,7 +255,10 @@ export async function POST(req: Request) {
         try {
           const rBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            },
             body: JSON.stringify({
               groupJid: salaActualizada.whatsapp_group_jid,
               texto: textoApertura,
@@ -302,7 +321,10 @@ export async function POST(req: Request) {
         try {
           const rBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            },
             body: JSON.stringify({
               groupJid: salaActualizada.whatsapp_group_jid,
               texto: textoCierre,
@@ -348,7 +370,10 @@ export async function POST(req: Request) {
       try {
         await fetch(`${BOT_DAEMON_URL}/vincular-sala`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
           body: JSON.stringify({ salaId, groupJid, groupNombre }),
         });
       } catch {
@@ -424,7 +449,10 @@ export async function POST(req: Request) {
         try {
           const rBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            },
             body: JSON.stringify({
               groupJid: sala.whatsapp_group_jid,
               texto: textoPlano,
@@ -477,7 +505,10 @@ export async function POST(req: Request) {
       try {
         const rDaemon = await fetch(`${BOT_DAEMON_URL}/publicar-sentencia`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
           body: JSON.stringify({
             salaId,
             groupJid: sala.whatsapp_group_jid,

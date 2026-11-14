@@ -100,7 +100,7 @@ export default function WhatsappPage() {
     const grupoObj = status.grupos.find((g) => g.jid === nuevoGroupJid);
 
     try {
-      const res = await fetch("/api/whatsapp-sala/procesar", {
+      const res = await fetch("/api/whatsapp-sala/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -147,7 +147,7 @@ export default function WhatsappPage() {
     setProcesandoAccion(`abrir-${sala.id}`);
     setFeedback(null);
     try {
-      const res = await fetch("/api/whatsapp-sala/procesar", {
+      const res = await fetch("/api/whatsapp-sala/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -193,7 +193,7 @@ export default function WhatsappPage() {
     setProcesandoAccion(`cerrar-${sala.id}`);
     setFeedback(null);
     try {
-      const res = await fetch("/api/whatsapp-sala/procesar", {
+      const res = await fetch("/api/whatsapp-sala/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -228,7 +228,7 @@ export default function WhatsappPage() {
     setProcesandoAccion(`plano-${sala.id}`);
     setFeedback(null);
     try {
-      const res = await fetch("/api/whatsapp-sala/procesar", {
+      const res = await fetch("/api/whatsapp-sala/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -275,7 +275,7 @@ export default function WhatsappPage() {
     setProcesandoAccion(`sentencia-${sala.id}`);
     setFeedback(null);
     try {
-      const res = await fetch("/api/whatsapp-sala/procesar", {
+      const res = await fetch("/api/whatsapp-sala/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
