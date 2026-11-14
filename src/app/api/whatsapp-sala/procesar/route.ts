@@ -811,13 +811,19 @@ export async function POST(req: Request) {
     // FLUJO A: CONCRECIÓN SECUENCIAL POR RESPUESTA CITADA (quotedMsgId)
     // ========================================================================
     if (quotedMsgId) {
-      const { data: propMsg } = await supabaseAdmin
+      const esUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(quotedMsgId);
+      let queryProp = supabaseAdmin
         .from("chat_mensajes")
         .select("*")
-        .or(`whatsapp_msg_id.eq.${quotedMsgId},id.eq.${quotedMsgId}`)
-        .eq("sala_id", salaId)
-        .limit(1)
-        .maybeSingle();
+        .eq("sala_id", salaId);
+
+      if (esUuid) {
+        queryProp = queryProp.or(`whatsapp_msg_id.eq.${quotedMsgId},id.eq.${quotedMsgId}`);
+      } else {
+        queryProp = queryProp.eq("whatsapp_msg_id", quotedMsgId);
+      }
+
+      const { data: propMsg, error: errProp } = await queryProp.limit(1).maybeSingle();
 
       if (
         !propMsg ||
