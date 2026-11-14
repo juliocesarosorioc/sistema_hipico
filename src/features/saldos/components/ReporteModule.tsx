@@ -27,7 +27,11 @@ import { ModalPagoAGanadorYConciliacion } from "@/features/contabilidad/componen
 import { ModalCobroYValidacionCliente } from "@/features/contabilidad/components/ModalCobroYValidacionCliente";
 import { BotonIconoReporteSaldosVisual } from "@/features/saldos/components/ReporteSaldosVisual";
 import { etiquetaJugada, caballoPareoLegible, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
-import { redondearCentavos } from "@/shared/lib/dinero";
+import {
+  esGrupoBolivares,
+  prefijoMonedaGrupo,
+  redondearCentavos,
+} from "@/shared/lib/dinero";
 import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
 import { cargarMovimientosSaldoSemanal } from "@/features/saldos/lib/movimientos-saldo-semanal";
 import { calcularSaldoSemana } from "@/features/saldos/lib/saldo-semanal";
@@ -64,7 +68,8 @@ function TotalBadge({ v, small }: { v: number; small?: boolean }) {
 export type VistaTablaDinamica =
   | "JERARQUIA"
   | "PIVOT_CARRERAS"
-  | "RESUMEN_4_COLUMNAS";
+  | "RESUMEN_4_COLUMNAS"
+  | "COMISIONES_TERCIOS";
 export type FiltroModalidadPivot =
   | "TODAS"
   | "EN_VIVO"
@@ -140,6 +145,24 @@ function cumpleResultadoPivot(f: FilaReporte, filtro: FiltroResultadoPivot): boo
   if (filtro === "PERDEDORES") return (f.resultado ?? 0) < 0;
   if (filtro === "PENDIENTES") return f.resultado === null;
   return true;
+}
+
+/**
+ * ¿La fila es una jugada ENTRE TERCIOS (puestos/taquilla)?
+ *
+ * El reporte de comisiones por tercios NO debe mezclar los productos que tienen
+ * su propio convenio (Marcas, Tablas Fijas, Remates, Dupletas, WPS y Polla).
+ * `tipoJugada` ya separa Marcas/Tablas; el resto se reconoce por el rótulo de
+ * la jugada, que es el que deja la liquidación.
+ */
+function esJugadaEntreTercios(f: FilaReporte): boolean {
+  if (f.rol !== "Juega" && f.rol !== "Consigue") return false;
+  if (f.tipoJugada === "TABLA" || f.tipoJugada === "MARCA") return false;
+  const jugada = String(f.jugada ?? "").trim().toUpperCase();
+  if (!jugada) return false;
+  return !/^(TABLA|TF|MARCA|MARCAS|REMATE|REMATES|DUPLETA|DUPLETAS|POLLA|POLLAS|WPS|GANADOR|PLACE|SHOW)\b/.test(
+    jugada
+  );
 }
 
 export function ReporteModule() {
@@ -469,6 +492,96 @@ export function ReporteModule() {
       })
     );
   }, [rptOriginal, mapaInfoClientes, clientesGrupo, movimientosCaja]);
+
+  // ── REPORTE: COMISIONES POR TERCIOS + SALDO DE LA SEMANA ─────────────────
+  // Por cliente:
+  //   · comisiones por tercios = comisión cobrada en sus jugadas entre tercios
+  //     (filas Juega + Consigue), sin productos con convenio propio;
+  //   · saldo de la semana = mismo saldo reconstruido del resumen semanal
+  //     (resultado neto + devolución/incentivo + movimientos de caja);
+  //   · total = comisiones + saldo de la semana.
+  const reporteComisionesTercios = useMemo(() => {
+    const comisionesPorClienteId = new Map<string, number>();
+
+    for (const dia of rptOriginal?.dias ?? []) {
+      for (const hipodromo of dia.hipodromos) {
+        for (const carrera of hipodromo.carreras) {
+          for (const fila of carrera.filas) {
+            if (!esJugadaEntreTercios(fila)) continue;
+            const comision = redondearCentavos(fila.comisionCobrada ?? 0);
+            if (comision <= 0) continue;
+            const info = mapaInfoClientes.get(
+              String(fila.cliente ?? "").trim().toUpperCase()
+            );
+            if (!info) continue;
+            comisionesPorClienteId.set(
+              info.id,
+              redondearCentavos((comisionesPorClienteId.get(info.id) ?? 0) + comision)
+            );
+          }
+        }
+      }
+    }
+
+    const q = filtroCliente.trim().toUpperCase();
+    const filas = clientesGrupo
+      .map((cliente) => {
+        const id = String(cliente.id);
+        const tipo = obtenerTipoJugador(cliente);
+        const meta = infoTipoJugador(tipo);
+        const saldo = redondearCentavos(saldoSemanalPorCliente.get(id)?.saldo ?? 0);
+        const comisiones = redondearCentavos(comisionesPorClienteId.get(id) ?? 0);
+        const total = redondearCentavos(comisiones + saldo);
+        return {
+          id,
+          nombre: String(cliente.seudonimo || cliente.nombre || cliente.id)
+            .trim()
+            .toUpperCase(),
+          comisiones,
+          saldo,
+          total,
+          saldoPersistido: redondearCentavos(Number(cliente.saldo_actual) || 0),
+          tipo,
+          icono: meta.icono,
+          etiqueta: meta.etiqueta,
+        };
+      })
+      .filter((fila) => {
+        if (q && !fila.nombre.includes(q)) return false;
+        if (filtroTipoJugador === "AVAL") return fila.tipo === "aval";
+        if (filtroTipoJugador === "LIBRE") return fila.tipo === "libre";
+        if (filtroTipoJugador === "POZO") return fila.tipo === "pozo" && fila.total > 0.004;
+        return true;
+      })
+      .filter(
+        (fila) =>
+          Math.abs(fila.comisiones) > 0.004 ||
+          Math.abs(fila.saldo) > 0.004 ||
+          Math.abs(fila.total) > 0.004
+      )
+      .sort((a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre, "es"));
+
+    const totalComisiones = redondearCentavos(
+      filas.reduce((acc, fila) => acc + fila.comisiones, 0)
+    );
+    const totalSaldo = redondearCentavos(
+      filas.reduce((acc, fila) => acc + fila.saldo, 0)
+    );
+
+    return {
+      filas,
+      totalComisiones,
+      totalSaldo,
+      totalGeneral: redondearCentavos(totalComisiones + totalSaldo),
+    };
+  }, [
+    rptOriginal,
+    mapaInfoClientes,
+    clientesGrupo,
+    saldoSemanalPorCliente,
+    filtroCliente,
+    filtroTipoJugador,
+  ]);
 
   const rangoSaldoDentroDeUnaSemana = useMemo(() => {
     const grupo = grupos.find((item) => String(item.id) === grupoId);
@@ -869,6 +982,15 @@ export function ReporteModule() {
   const resumen = resumirReporte(rpt);
   const hoy = hoyLocal();
 
+  // Moneda del grupo activo: el nuevo reporte no debe rotular USD cuando el
+  // grupo opera en bolívares (MVP).
+  const monedaGrupo =
+    grupos.find((g) => String(g.id) === String(grupoId))?.moneda ?? "USD";
+  const prefijoMoneda = prefijoMonedaGrupo(monedaGrupo);
+  const codigoMoneda = esGrupoBolivares(monedaGrupo) ? "VES" : "USD";
+  const fmtMontoMoneda = (v: number) =>
+    `${prefijoMoneda}${fmtMonto(Math.abs(redondearCentavos(v)))}`;
+
   // Claves de todas las carreras del reporte, para el botón global de contraer/expandir.
   const clavesCarreras = useMemo(() => {
     const claves: string[] = [];
@@ -1040,6 +1162,17 @@ export function ReporteModule() {
               }`}
             >
               📊 Tabla Dinámica (Carreras)
+            </button>
+            <button
+              type="button"
+              onClick={() => setVistaPivot("COMISIONES_TERCIOS")}
+              className={`px-2.5 py-1 font-bold transition ${
+                vistaPivot === "COMISIONES_TERCIOS"
+                  ? "bg-amber-400 text-slate-950"
+                  : "text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              🎯 Comisiones Tercios + Saldo
             </button>
           </div>
 
@@ -1558,9 +1691,264 @@ export function ReporteModule() {
           </div>
         )}
 
+        {/* REPORTE: COMISIONES POR TERCIOS + SALDO DE LA SEMANA + TOTAL */}
+        {vistaPivot === "COMISIONES_TERCIOS" && (
+          <div className="m-3 rounded-xl border border-slate-300 bg-white shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 px-4 py-3 text-white">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
+                    🎯 Comisiones por Tercios + Saldo de la Semana
+                  </div>
+                  <p className="mt-1 max-w-3xl text-[10px] font-semibold text-amber-100">
+                    Por cliente: comisión cobrada en sus jugadas entre tercios
+                    (Juega + Consigue, sin Marcas, Tablas, Remates, Dupletas, WPS
+                    ni Polla) + saldo semanal reconstruido. Total = comisiones +
+                    saldo de la semana.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClientePagoSeleccionadoId(null);
+                      setPestanaModalPagos("PAGAR_GANADORES");
+                      setModalPagoGanadorAbierto(true);
+                    }}
+                    className="rounded-md bg-emerald-500 px-2.5 py-1 font-black text-slate-950 hover:bg-emerald-400 transition shadow-sm"
+                  >
+                    💸 Pagar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClienteCobroSeleccionado(null);
+                      setModalCobroAbierto(true);
+                    }}
+                    className="rounded-md bg-blue-600 px-2.5 py-1 font-black text-white hover:bg-blue-500 transition shadow-sm"
+                  >
+                    📥 Cobrar
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
+                <div className="rounded-lg border border-amber-300/30 bg-white/10 p-2.5">
+                  <div className="text-[9px] font-black uppercase tracking-wider text-amber-200">
+                    Comisiones por tercios
+                  </div>
+                  <div className="mt-0.5 font-mono text-lg font-black">
+                    {fmtMontoMoneda(reporteComisionesTercios.totalComisiones)}
+                    <span className="ml-1 text-[10px] font-bold text-amber-200">
+                      {codigoMoneda}
+                    </span>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-emerald-300/30 bg-white/10 p-2.5">
+                  <div className="text-[9px] font-black uppercase tracking-wider text-emerald-200">
+                    Saldo de la semana
+                  </div>
+                  <div className="mt-0.5 font-mono text-lg font-black">
+                    {reporteComisionesTercios.totalSaldo < 0 ? "-" : ""}
+                    {fmtMontoMoneda(reporteComisionesTercios.totalSaldo)}
+                    <span className="ml-1 text-[10px] font-bold text-emerald-200">
+                      {codigoMoneda}
+                    </span>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-sky-300/30 bg-white/10 p-2.5">
+                  <div className="text-[9px] font-black uppercase tracking-wider text-sky-200">
+                    Total (comisiones + saldo)
+                  </div>
+                  <div className="mt-0.5 font-mono text-lg font-black">
+                    {reporteComisionesTercios.totalGeneral < 0 ? "-" : ""}
+                    {fmtMontoMoneda(reporteComisionesTercios.totalGeneral)}
+                    <span className="ml-1 text-[10px] font-bold text-sky-200">
+                      {codigoMoneda}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 border-b-2 border-slate-300 text-[11px] font-black uppercase tracking-wide">
+                    <th className="py-2.5 px-3 text-left text-slate-800">
+                      Cliente
+                    </th>
+                    <th className="w-40 py-2.5 px-3 text-right text-amber-900 bg-amber-50/70">
+                      Comisiones por tercios
+                    </th>
+                    <th className="w-40 py-2.5 px-3 text-right text-emerald-900 bg-emerald-50/70">
+                      Saldo de la semana
+                    </th>
+                    <th className="w-40 py-2.5 px-3 text-right text-sky-900 bg-sky-50/70">
+                      Total
+                    </th>
+                    <th className="w-48 py-2.5 px-3 text-center text-slate-800">
+                      Acciones
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {reporteComisionesTercios.filas.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="py-6 text-center font-semibold text-slate-400"
+                      >
+                        Sin comisiones entre tercios ni saldos en la semana
+                        seleccionada.
+                      </td>
+                    </tr>
+                  ) : (
+                    reporteComisionesTercios.filas.map((fila) => {
+                      const puedePagar = fila.saldoPersistido > 0.004;
+                      const puedeCobrar = fila.saldoPersistido < -0.004;
+                      return (
+                        <tr key={fila.id} className="hover:bg-slate-50">
+                          <td className="py-1.5 px-3 font-bold text-slate-800">
+                            <div className="flex min-w-0 items-start gap-1.5">
+                              <span title={fila.etiqueta} className="shrink-0 text-sm">
+                                {fila.icono}
+                              </span>
+                              <span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">
+                                {fila.nombre}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-1.5 px-3 text-right font-mono font-bold text-amber-700 bg-amber-50/30">
+                            {fila.comisiones > 0.004
+                              ? `+${fmtMontoMoneda(fila.comisiones)}`
+                              : "—"}
+                          </td>
+                          <td
+                            className={`py-1.5 px-3 text-right font-mono font-bold ${
+                              fila.saldo > 0.004
+                                ? "text-emerald-700"
+                                : fila.saldo < -0.004
+                                  ? "text-rose-600"
+                                  : "text-slate-500"
+                            } bg-emerald-50/30`}
+                          >
+                            {fila.saldo > 0.004
+                              ? `+${fmtMontoMoneda(fila.saldo)}`
+                              : fila.saldo < -0.004
+                                ? `-${fmtMontoMoneda(fila.saldo)}`
+                                : "0,00"}
+                          </td>
+                          <td
+                            className={`py-1.5 px-3 text-right font-mono font-black ${
+                              fila.total > 0.004
+                                ? "text-emerald-700"
+                                : fila.total < -0.004
+                                  ? "text-rose-600"
+                                  : "text-slate-500"
+                            } bg-sky-50/30`}
+                          >
+                            {fila.total > 0.004
+                              ? `+${fmtMontoMoneda(fila.total)}`
+                              : fila.total < -0.004
+                                ? `-${fmtMontoMoneda(fila.total)}`
+                                : "0,00"}
+                          </td>
+                          <td className="py-1.5 px-3">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setClientePagoSeleccionadoId(fila.id);
+                                  setPestanaModalPagos("PAGAR_GANADORES");
+                                  setModalPagoGanadorAbierto(true);
+                                }}
+                                disabled={!puedePagar}
+                                title={
+                                  puedePagar
+                                    ? "Pagar la ganancia persistida de este cliente"
+                                    : "Se opera sobre el saldo persistido: este cliente no tiene saldo a favor."
+                                }
+                                className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-0.5 text-[10px] font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                💸 Pagar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setClienteCobroSeleccionado({
+                                    id: fila.id,
+                                    nombre: fila.nombre,
+                                    saldo: fila.saldoPersistido,
+                                  });
+                                  setModalCobroAbierto(true);
+                                }}
+                                disabled={!puedeCobrar}
+                                title={
+                                  puedeCobrar
+                                    ? "Cobrar el saldo deudor persistido de este cliente"
+                                    : "Se opera sobre el saldo persistido: este cliente no tiene saldo deudor."
+                                }
+                                className="inline-flex items-center gap-1 rounded bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                📥 Cobrar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-400 bg-slate-900 text-xs font-black text-white sm:text-sm">
+                    <td className="py-2.5 px-3 uppercase tracking-wide text-amber-300">
+                      Totales ({reporteComisionesTercios.filas.length} clientes)
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-amber-300">
+                      +{fmtMontoMoneda(reporteComisionesTercios.totalComisiones)}
+                    </td>
+                    <td
+                      className={`py-2.5 px-3 text-right font-mono ${
+                        reporteComisionesTercios.totalSaldo < 0
+                          ? "text-rose-300"
+                          : "text-emerald-300"
+                      }`}
+                    >
+                      {reporteComisionesTercios.totalSaldo < 0 ? "-" : "+"}
+                      {fmtMontoMoneda(reporteComisionesTercios.totalSaldo)}
+                    </td>
+                    <td
+                      className={`py-2.5 px-3 text-right font-mono ${
+                        reporteComisionesTercios.totalGeneral < 0
+                          ? "text-rose-300"
+                          : "text-emerald-300"
+                      }`}
+                    >
+                      {reporteComisionesTercios.totalGeneral < 0 ? "-" : "+"}
+                      {fmtMontoMoneda(reporteComisionesTercios.totalGeneral)}
+                    </td>
+                    <td className="py-2.5 px-3 text-center text-[10px] font-bold text-slate-300">
+                      {codigoMoneda}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[10px] font-semibold text-slate-600">
+              Pagar y Cobrar registran el movimiento sobre el saldo persistido
+              del cliente (<code>clientes.saldo_actual</code>). El saldo de la
+              semana es una reconstrucción informativa del rango fiscal y no
+              modifica el libro hasta que se registre el pago/cobro.
+            </div>
+          </div>
+        )}
+
         {(!rpt || rpt.dias.length === 0) &&
           !planilla?.error &&
-          vistaPivot !== "RESUMEN_4_COLUMNAS" && (
+          vistaPivot !== "RESUMEN_4_COLUMNAS" &&
+          vistaPivot !== "COMISIONES_TERCIOS" && (
             <div className="p-8 text-center text-gray-400 text-sm">
               {cargando
                 ? "Consultando saldos consolidados…"
