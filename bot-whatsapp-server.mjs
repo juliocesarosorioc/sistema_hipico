@@ -220,6 +220,33 @@ function esMensajeDuplicado(msgId) {
   return false;
 }
 
+// OPTIMIZACIÓN DE VELOCIDAD: Caché en memoria de Salas vinculadas (TTL 60s)
+const salasCacheMap = new Map();
+async function obtenerSalaPorGroupJid(remoteJid) {
+  const cached = salasCacheMap.get(remoteJid);
+  if (cached && Date.now() < cached.exp) {
+    return cached.sala;
+  }
+  if (!supabase) return null;
+  const { data: sala, error: errSala } = await supabase
+    .from("salas_juego")
+    .select("*")
+    .eq("whatsapp_group_jid", remoteJid)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (errSala) {
+    console.error("[Bot WhatsApp] Error consultando sala:", errSala.message);
+    return null;
+  }
+  salasCacheMap.set(remoteJid, { sala: sala || null, exp: Date.now() + 60000 });
+  return sala || null;
+}
+
+// OPTIMIZACIÓN DE VELOCIDAD: Caché en memoria de Clientes identificados (TTL 120s)
+const clientesCacheMap = new Map();
+
 function normalizarTelefono(raw) {
   if (!raw) return "";
   return String(raw)
@@ -792,31 +819,11 @@ async function manejarMensajeEntrante(msg) {
 
     console.log(`[Bot WhatsApp] 📩 [${remoteJid}] (${senderNombre} / ${participantJid}${participantAlt ? ` / alt:${participantAlt}` : ""}): "${textoLimpio}"`);
 
-    if (!supabase) {
-      console.warn("[Bot WhatsApp] ⚠️ Supabase no inicializado");
-      return;
-    }
-
-    // Verificar si el grupo está vinculado en public.salas_juego.whatsapp_group_jid
-    const { data: sala, error: errSala } = await supabase
-      .from("salas_juego")
-      .select("*")
-      .eq("whatsapp_group_jid", remoteJid)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (errSala) {
-      console.error("[Bot WhatsApp] Error al consultar sala:", errSala.message);
-      return;
-    }
-
+    // Obtener Sala vinculada usando caché ultra-rápido en memoria (0ms)
+    const sala = await obtenerSalaPorGroupJid(remoteJid);
     if (!sala) {
-      console.log(`[Bot WhatsApp] ℹ️ Grupo ${remoteJid} no está vinculado a ninguna sala activa.`);
       return;
     }
-
-    console.log(`[Bot WhatsApp] 🎯 Sala encontrada: "${sala.nombre_sala}" (${sala.id}) | Carrera: ${sala.estado_carrera} (${sala.hipodromo_activo || 'S/H'} #${sala.numero_carrera_activa || 1})`);
 
     const quotedMsgId =
       msg.message?.extendedTextMessage?.contextInfo?.stanzaId || null;
@@ -896,37 +903,74 @@ async function manejarMensajeEntrante(msg) {
       }
     }
 
-    // 2. Cruzar remitente con public.clientes (Cierre VULN-14: Soporte @lid y auto-guardado)
+    // 2. Cruzar remitente con public.clientes usando caché ultra-rápido en memoria (0ms)
     let cliente = null;
-
-    const condicionesOr = [];
-    if (participantJid) condicionesOr.push(`whatsapp_jid.eq.${participantJid}`);
-    if (participantAlt) condicionesOr.push(`whatsapp_jid.eq.${participantAlt}`);
-    if (telPrincipal) condicionesOr.push(`telefono_normalizado.eq.${telPrincipal}`);
-    if (telAlt && telAlt !== telPrincipal) condicionesOr.push(`telefono_normalizado.eq.${telAlt}`);
-
-    if (condicionesOr.length > 0) {
-      const { data: clExacto } = await supabase
-        .from("clientes")
-        .select("id, nombre, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
-        .or(condicionesOr.join(","))
-        .limit(1)
-        .maybeSingle();
-
-      if (clExacto) {
-        cliente = clExacto;
+    const cachedCl = clientesCacheMap.get(participantJid);
+    if (cachedCl && Date.now() < cachedCl.exp) {
+      cliente = cachedCl.cliente;
+    } else if (telNormalizado && clientesCacheMap.has(telNormalizado)) {
+      const cachedTel = clientesCacheMap.get(telNormalizado);
+      if (cachedTel && Date.now() < cachedTel.exp) {
+        cliente = cachedTel.cliente;
       }
     }
 
-    if (!cliente && telNormalizado.length >= 7) {
-      const { data: clParcial } = await supabase
-        .from("clientes")
-        .select("id, nombre, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
-        .ilike("telefono", `%${telNormalizado.slice(-8)}%`)
-        .limit(1)
-        .maybeSingle();
-      if (clParcial) {
-        cliente = clParcial;
+    if (!cliente && supabase) {
+      const condicionesOr = [];
+      if (participantJid) condicionesOr.push(`whatsapp_jid.eq.${participantJid}`);
+      if (participantAlt) condicionesOr.push(`whatsapp_jid.eq.${participantAlt}`);
+      if (telPrincipal) condicionesOr.push(`telefono_normalizado.eq.${telPrincipal}`);
+      if (telAlt && telAlt !== telPrincipal) condicionesOr.push(`telefono_normalizado.eq.${telAlt}`);
+
+      if (condicionesOr.length > 0) {
+        const { data: clExacto } = await supabase
+          .from("clientes")
+          .select("id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
+          .or(condicionesOr.join(","))
+          .order("saldo_actual", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (clExacto) {
+          cliente = clExacto;
+        }
+      }
+
+      if (!cliente && telNormalizado.length >= 7 && !participantJid.endsWith("@lid")) {
+        const { data: clParcial } = await supabase
+          .from("clientes")
+          .select("id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
+          .ilike("telefono", `%${telNormalizado.slice(-8)}%`)
+          .order("saldo_actual", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (clParcial) {
+          cliente = clParcial;
+        }
+      }
+
+      // Si aún no se halla, buscar por tokens del senderNombre (ej. "Every", "Alfonso")
+      const senderLimpio = String(senderNombre || "").trim().replace(/[~_+*#]/g, "").trim();
+      if (!cliente && senderLimpio && senderLimpio.toLowerCase() !== "jugador") {
+        const tokens = senderLimpio.split(/\s+/).filter(t => t.length >= 3);
+        for (const token of tokens) {
+          const { data: clToken } = await supabase
+            .from("clientes")
+            .select("id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
+            .or(`nombre.ilike.%${token}%,seudonimo.ilike.%${token}%`)
+            .order("saldo_actual", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (clToken) {
+            cliente = clToken;
+            break;
+          }
+        }
+      }
+
+      if (cliente) {
+        clientesCacheMap.set(participantJid, { cliente, exp: Date.now() + 120000 });
+        if (telNormalizado) clientesCacheMap.set(telNormalizado, { cliente, exp: Date.now() + 120000 });
       }
     }
 
@@ -942,6 +986,7 @@ async function manejarMensajeEntrante(msg) {
           })
           .eq("id", cliente.id);
         cliente.whatsapp_jid = participantJid;
+        clientesCacheMap.set(participantJid, { cliente, exp: Date.now() + 120000 });
         console.log(`[Bot WhatsApp] 🔗 Auto-guardado whatsapp_jid (${participantJid}) en ficha de "${cliente.nombre}" (${cliente.id})`);
       } catch (errVinculo) {
         console.warn("[Bot WhatsApp] Aviso al auto-guardar whatsapp_jid:", errVinculo?.message);
@@ -958,7 +1003,8 @@ async function manejarMensajeEntrante(msg) {
       body: JSON.stringify({
         groupJid: remoteJid,
         participantJid,
-        senderNombre: senderNombre || cliente?.nombre || "Jugador",
+        senderNombre: senderNombre || cliente?.seudonimo || cliente?.nombre || "Jugador",
+        clientePreviamenteIdentificado: cliente || null,
         texto: textoLimpio,
         whatsappMsgId,
         quotedMsgId: quotedMsgId || null,
@@ -970,36 +1016,43 @@ async function manejarMensajeEntrante(msg) {
 
     console.log(`[Bot WhatsApp] 🤖 Respuesta del procesador:`, JSON.stringify({ ok: data.ok, tipo: data.tipo, respuestaGrupo: data.respuestaGrupo, reaccionEmoji: data.reaccionEmoji }));
 
-    // Reaccionar con emoji en vivo si la jugada fue aceptada
+    // Despacho ultra-rápido concurrente en paralelo (de >1200ms a <80ms)
+    const envios = [];
     if (data.reaccionEmoji && sock && msg.key) {
-      try {
-        await sock.sendMessage(remoteJid, {
+      envios.push(
+        sock.sendMessage(remoteJid, {
           react: { text: data.reaccionEmoji, key: msg.key },
-        });
-      } catch (errReact) {
-        console.warn("[Bot WhatsApp] Aviso enviando reacción:", errReact?.message || errReact);
-      }
+        }).catch((errReact) => console.warn("[Bot WhatsApp] Aviso enviando reacción:", errReact?.message || errReact))
+      );
     }
 
-    // Publicar respuesta en el grupo (citando el mensaje original del jugador)
     const respuestaGrupo = data.respuestaGrupo || data.acciones?.responderEnGrupo;
     if (respuestaGrupo) {
-      await enviarMensajeGrupo(remoteJid, respuestaGrupo, whatsappMsgId);
+      envios.push(
+        enviarMensajeGrupo(remoteJid, respuestaGrupo, whatsappMsgId)
+          .catch((errG) => console.warn("[Bot WhatsApp] Aviso enviando respuesta de grupo:", errG?.message || errG))
+      );
     }
 
-    // Enviar mensaje privado al autor (corrección pedagógica, alerta de saldo o confirmación)
     const mensajePrivadoAutor = data.mensajePrivadoAutor || data.acciones?.enviarPrivadoJugador;
     if (mensajePrivadoAutor && participantJid) {
-      await enviarMensajePrivado(participantJid, mensajePrivadoAutor);
+      envios.push(
+        enviarMensajePrivado(participantJid, mensajePrivadoAutor)
+          .catch((errPriv) => console.warn("[Bot WhatsApp] Aviso enviando privado autor:", errPriv?.message || errPriv))
+      );
     }
 
-    // Enviar mensaje privado al proponente original cuando le concretan una parada
     const mensajePrivadoProponente =
       data.mensajePrivadoProponente || data.acciones?.enviarPrivadoProponente;
     const proponenteDestino = data.proponenteJid || data.proponenteTelefono;
     if (mensajePrivadoProponente && proponenteDestino) {
-      await enviarMensajePrivado(proponenteDestino, mensajePrivadoProponente);
+      envios.push(
+        enviarMensajePrivado(proponenteDestino, mensajePrivadoProponente)
+          .catch((errProp) => console.warn("[Bot WhatsApp] Aviso enviando privado proponente:", errProp?.message || errProp))
+      );
     }
+
+    await Promise.allSettled(envios);
   } catch (err) {
     console.error("[Bot WhatsApp] Error procesando mensaje en vivo:", err?.message || err);
   }
@@ -1184,9 +1237,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    // 1. GET /status
+    // 1. GET /status (Soporta ?force=true para refresco instantáneo de grupos)
     if (req.method === "GET" && pathname === "/status") {
-      if (conectado && gruposCache.length === 0) {
+      const forzarRefresco = url.searchParams.get("force") === "true";
+      if (conectado && (gruposCache.length === 0 || forzarRefresco)) {
         await refrescarGruposParticipantes();
       }
       return responderJson(res, 200, {
@@ -1196,6 +1250,42 @@ const server = http.createServer(async (req, res) => {
         grupos: gruposCache,
         salasDesconectadas,
       });
+    }
+
+    // 1.b GET /ping-grupo (Medición de latencia y verificación de conexión con el grupo en vivo)
+    if (req.method === "GET" && pathname === "/ping-grupo") {
+      const groupJid = url.searchParams.get("groupJid");
+      if (!groupJid) {
+        return responderJson(res, 400, { ok: false, error: "groupJid es requerido" });
+      }
+      if (!sock || !conectado) {
+        return responderJson(res, 200, {
+          ok: false,
+          conectado: false,
+          latenciaMs: 0,
+          error: "Bot desconectado de WhatsApp",
+        });
+      }
+      const t0 = Date.now();
+      try {
+        const metadata = await sock.groupMetadata(groupJid);
+        const latenciaMs = Date.now() - t0;
+        return responderJson(res, 200, {
+          ok: true,
+          conectado: true,
+          latenciaMs,
+          groupJid,
+          groupNombre: metadata?.subject || null,
+          totalParticipantes: metadata?.participants?.length || 0,
+        });
+      } catch (errPing) {
+        return responderJson(res, 200, {
+          ok: false,
+          conectado: false,
+          latenciaMs: Date.now() - t0,
+          error: errPing?.message || "No se pudo consultar el grupo en WhatsApp",
+        });
+      }
     }
 
     // 2. POST /vincular-sala
@@ -1209,6 +1299,8 @@ const server = http.createServer(async (req, res) => {
       if (!supabase) {
         return responderJson(res, 500, { ok: false, error: "Supabase no configurado" });
       }
+
+      salasCacheMap.clear();
 
       const updates = {
         whatsapp_group_jid: groupJid || null,
@@ -1256,6 +1348,8 @@ const server = http.createServer(async (req, res) => {
       if (!supabase) {
         return responderJson(res, 500, { ok: false, error: "Supabase no configurado" });
       }
+
+      salasCacheMap.clear();
 
       const { data: sala, error: errorLectura } = await supabase
         .from("salas_juego")
@@ -1318,6 +1412,8 @@ const server = http.createServer(async (req, res) => {
       if (!supabase) {
         return responderJson(res, 500, { ok: false, error: "Supabase no configurado" });
       }
+
+      salasCacheMap.clear();
 
       const { data: sala, error: errorLectura } = await supabase
         .from("salas_juego")

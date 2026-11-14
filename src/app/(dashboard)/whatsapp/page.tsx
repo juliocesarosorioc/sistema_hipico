@@ -124,6 +124,10 @@ export default function WhatsappPage() {
   const [carreraPorSala, setCarreraPorSala] = useState<Record<string, string>>({});
   const [procesandoAccion, setProcesandoAccion] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [pingPorSala, setPingPorSala] = useState<
+    Record<string, { latenciaMs: number; conectado: boolean; participantes?: number; error?: string }>
+  >({});
+  const [haciendoPing, setHaciendoPing] = useState<Record<string, boolean>>({});
 
   // Respaldos locales iniciales
   useEffect(() => {
@@ -137,10 +141,10 @@ export default function WhatsappPage() {
     return () => clearTimeout(timer);
   }, [feedback]);
 
-  const consultarEstado = useCallback(async (silencioso = false) => {
+  const consultarEstado = useCallback(async (silencioso = false, forzar = false) => {
     if (!silencioso) setCargandoStatus(true);
     try {
-      const res = await fetch("/api/whatsapp-sala/status", { cache: "no-store" });
+      const res = await fetch(`/api/whatsapp-sala/status${forzar ? "?force=true" : ""}`, { cache: "no-store" });
       if (!res.ok) return;
       const data: StatusResponse = await res.json();
 
@@ -233,6 +237,49 @@ export default function WhatsappPage() {
     },
     []
   );
+
+  const probarPingGrupo = async (salaId: string, groupJid: string) => {
+    if (!groupJid) return;
+    setHaciendoPing((p) => ({ ...p, [salaId]: true }));
+    try {
+      const { json } = await ejecutarAdmin({
+        accion: "ping-grupo",
+        groupJid,
+      });
+      setPingPorSala((p) => ({
+        ...p,
+        [salaId]: {
+          latenciaMs: json.latenciaMs ?? 0,
+          conectado: Boolean(json.conectado),
+          participantes: json.totalParticipantes,
+          error: json.error,
+        },
+      }));
+    } catch (e: any) {
+      setPingPorSala((p) => ({
+        ...p,
+        [salaId]: {
+          latenciaMs: 0,
+          conectado: false,
+          error: e?.message || "Error al conectar",
+        },
+      }));
+    } finally {
+      setHaciendoPing((p) => ({ ...p, [salaId]: false }));
+    }
+  };
+
+  const refrescarGruposWhatsApp = async () => {
+    setProcesandoAccion("refrescar-grupos");
+    try {
+      await consultarEstado(false, true);
+      setFeedback({ tipo: "ok", texto: "Lista de grupos actualizada exitosamente desde WhatsApp." });
+    } catch {
+      setFeedback({ tipo: "error", texto: "No se pudo actualizar la lista de grupos." });
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
 
   const vincularGrupoASala = async (sala: SalaJuego, nuevoGroupJid: string) => {
     setSeleccionGrupoPorSala((prev) => ({ ...prev, [sala.id]: nuevoGroupJid }));
@@ -775,6 +822,14 @@ export default function WhatsappPage() {
               >
                 ▶ Reconectar salas pausadas
               </button>
+              <button
+                type="button"
+                onClick={refrescarGruposWhatsApp}
+                disabled={ocupado}
+                className="rounded-xl border border-sky-500/40 bg-sky-950/40 px-3 py-2 text-[11px] font-black text-sky-200 transition hover:bg-sky-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {procesandoAccion === "refrescar-grupos" ? "Sincronizando…" : "🔄 Sincronizar Grupos de WhatsApp"}
+              </button>
             </div>
             <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
               Desconectar pausa la sala sin salir del grupo: el bot deja de publicar ahí y el
@@ -858,6 +913,55 @@ export default function WhatsappPage() {
 
                   {/* Estado del grupo + acciones de conexión */}
                   <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-900/50 p-3">
+                    {/* Indicador de conexión en vivo con pulso y socket ping */}
+                    <div className={`mb-3 rounded-xl border p-2.5 transition-all ${
+                      vinculada
+                        ? "border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 to-slate-900/60 shadow-md shadow-emerald-950/20"
+                        : pausada
+                        ? "border-amber-500/30 bg-amber-950/20"
+                        : "border-slate-800 bg-slate-900/40"
+                    }`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-2.5 w-2.5">
+                            {vinculada && (
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                            )}
+                            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
+                              vinculada ? "bg-emerald-500" : pausada ? "bg-amber-400" : "bg-slate-600"
+                            }`}></span>
+                          </span>
+                          <span className={`text-[11px] font-black tracking-wide uppercase ${
+                            vinculada ? "text-emerald-300" : pausada ? "text-amber-300" : "text-slate-400"
+                          }`}>
+                            {vinculada ? "🟢 ENLAZADO Y ESCUCHANDO EN VIVO" : pausada ? "⏸ PAUSADA (Desconectada temporalmente)" : "⚪ SIN GRUPO ENLAZADO"}
+                          </span>
+                        </div>
+
+                        {vinculada && sala.whatsapp_group_jid && (
+                          <div className="flex items-center gap-2">
+                            {pingPorSala[sala.id] ? (
+                              <span className={`font-mono text-[10px] font-black ${
+                                pingPorSala[sala.id].conectado ? "text-emerald-300" : "text-rose-400"
+                              }`}>
+                                ⚡ {pingPorSala[sala.id].latenciaMs}ms
+                                {pingPorSala[sala.id].participantes ? ` (${pingPorSala[sala.id].participantes} miembros)` : ""}
+                              </span>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => probarPingGrupo(sala.id, sala.whatsapp_group_jid!)}
+                              disabled={ocupado || haciendoPing[sala.id]}
+                              className="rounded-lg border border-emerald-500/50 bg-emerald-950/60 px-2 py-0.5 text-[10px] font-black text-emerald-200 transition hover:bg-emerald-900 disabled:opacity-50"
+                              title="Probar latencia y socket en vivo con este grupo de WhatsApp"
+                            >
+                              {haciendoPing[sala.id] ? "Midiendo…" : "⚡ Ping Socket"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
