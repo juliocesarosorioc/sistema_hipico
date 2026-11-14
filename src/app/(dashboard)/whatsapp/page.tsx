@@ -40,6 +40,8 @@ export default function WhatsappPage() {
   const [salas, setSalas] = useState<SalaJuego[]>([]);
   const [seleccionGrupoPorSala, setSeleccionGrupoPorSala] = useState<Record<string, string>>({});
   const [pizarraPorSala, setPizarraPorSala] = useState<Record<string, string>>({});
+  const [hipodromoPorSala, setHipodromoPorSala] = useState<Record<string, string>>({});
+  const [carreraPorSala, setCarreraPorSala] = useState<Record<string, string>>({});
   const [procesandoAccion, setProcesandoAccion] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{
     tipo: "ok" | "error" | "info";
@@ -133,6 +135,89 @@ export default function WhatsappPage() {
         tipo: "error",
         texto: err?.message || "Error de red al vincular la sala.",
       });
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
+  // Disparar manualmente: 🏆 Abrir Carrera
+  const abrirCarrera = async (sala: SalaJuego) => {
+    const hipodromo = (hipodromoPorSala[sala.id] || sala.hipodromo_activo || "LA RINCONADA").trim();
+    const carrera = (carreraPorSala[sala.id] || sala.numero_carrera_activa || 1).toString();
+    setProcesandoAccion(`abrir-${sala.id}`);
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/whatsapp-sala/procesar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accion: "abrir-carrera",
+          salaId: sala.id,
+          hipodromo,
+          carrera,
+        }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setSalas((prev) =>
+          prev.map((s) =>
+            s.id === sala.id
+              ? {
+                  ...s,
+                  estado_carrera: "abierta",
+                  hipodromo_activo: hipodromo,
+                  numero_carrera_activa: parseInt(carrera, 10),
+                }
+              : s
+          )
+        );
+        setFeedback({
+          tipo: "ok",
+          texto: json.enviadoWhatsApp
+            ? `🏆 Carrera abierta (${hipodromo} #${carrera}) y anunciada en el grupo de WhatsApp.`
+            : `🏆 Carrera abierta (${hipodromo} #${carrera}) en sala ${sala.nombre_sala}.`,
+          detalle: json.textoApertura,
+        });
+      } else {
+        setFeedback({ tipo: "error", texto: json.error || "No se pudo abrir la carrera." });
+      }
+    } catch (err: any) {
+      setFeedback({ tipo: "error", texto: err?.message || "Error al abrir la carrera." });
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
+  // Disparar manualmente: 🔒 Cerrar Carrera
+  const cerrarCarrera = async (sala: SalaJuego) => {
+    setProcesandoAccion(`cerrar-${sala.id}`);
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/whatsapp-sala/procesar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accion: "cerrar-carrera",
+          salaId: sala.id,
+        }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setSalas((prev) =>
+          prev.map((s) => (s.id === sala.id ? { ...s, estado_carrera: "cerrada" } : s))
+        );
+        setFeedback({
+          tipo: "ok",
+          texto: json.enviadoWhatsApp
+            ? `🔒 Carrera cerrada y anunciada en el grupo de WhatsApp.`
+            : `🔒 Carrera cerrada en sala ${sala.nombre_sala}.`,
+          detalle: json.textoCierre,
+        });
+      } else {
+        setFeedback({ tipo: "error", texto: json.error || "No se pudo cerrar la carrera." });
+      }
+    } catch (err: any) {
+      setFeedback({ tipo: "error", texto: err?.message || "Error al cerrar la carrera." });
     } finally {
       setProcesandoAccion(null);
     }
@@ -396,6 +481,65 @@ export default function WhatsappPage() {
                     >
                       {procesandoAccion === `vincular-${sala.id}` ? "Vinculando…" : "🔗 Vincular Sala"}
                     </button>
+                  </div>
+                </div>
+
+                {/* Control de Carrera: Hipódromo, Número de Carrera, Apertura y Cierre */}
+                <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                      <span>🏇</span> Configuración y Estado de Carrera:
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      También puedes usar en WhatsApp: <code className="text-emerald-400 font-mono">!abrir [hipodromo] [carrera]</code> y <code className="text-amber-400 font-mono">!cerrar</code>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                    <div className="sm:col-span-2">
+                      <input
+                        type="text"
+                        value={hipodromoPorSala[sala.id] ?? sala.hipodromo_activo ?? "LA RINCONADA"}
+                        onChange={(e) =>
+                          setHipodromoPorSala((prev) => ({ ...prev, [sala.id]: e.target.value }))
+                        }
+                        placeholder="Hipódromo (ej. LA RINCONADA)"
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none focus:border-emerald-500 uppercase"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={carreraPorSala[sala.id] ?? sala.numero_carrera_activa ?? 1}
+                        onChange={(e) =>
+                          setCarreraPorSala((prev) => ({ ...prev, [sala.id]: e.target.value }))
+                        }
+                        placeholder="Carrera #"
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-emerald-300 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => abrirCarrera(sala)}
+                        disabled={procesandoAccion === `abrir-${sala.id}`}
+                        className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-2.5 py-2 text-xs font-black text-white transition shadow flex items-center justify-center gap-1"
+                        title="Abrir carrera y anunciar en WhatsApp"
+                      >
+                        <span>🟢 Abrir</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => cerrarCarrera(sala)}
+                        disabled={procesandoAccion === `cerrar-${sala.id}`}
+                        className="flex-1 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-2.5 py-2 text-xs font-black text-white transition shadow flex items-center justify-center gap-1"
+                        title="Cerrar carrera y anunciar en WhatsApp"
+                      >
+                        <span>🔒 Cerrar</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 

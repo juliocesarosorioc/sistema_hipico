@@ -121,7 +121,7 @@ const cabecerasSeguridad = [
           "img-src 'self' data: blob: https:",
           "font-src 'self' data: https://fonts.gstatic.com",
           // connect-src restringido a dominios reales que usa la app:
-          "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://generativelanguage.googleapis.com https://api64.ipify.org https://api.ipify.org https://challenges.cloudflare.com",
+          "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://generativelanguage.googleapis.com https://fonts.googleapis.com https://fonts.gstatic.com https://api64.ipify.org https://api.ipify.org https://challenges.cloudflare.com",
           // frame-ancestors DENY: ningún sitio puede embeber esta app en un iframe.
           "frame-ancestors 'none'",
           "frame-src https://challenges.cloudflare.com https://www.google.com",

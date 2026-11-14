@@ -103,8 +103,8 @@ export function evaluarConcrecionEstricta(
   const esPropuestaJuego = accionPropuesta === 'JUEGA';
 
   // Soporta 5k, 10k, 10.000, 20.000, 10.424,50, etc.
-  const regexJuego = /^(consigo|doy|j|jugaste|jugamos|ponte)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+))?$/i;
-  const regexConsigo = /^(juego|jugue|jugué|j|voy|ponte)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+))?$/i;
+  const regexJuego = /^(consigo|doy|j|jugaste|jugamos|ponte|copiado|pago|voy|va)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+))?$/i;
+  const regexConsigo = /^(juego|jugue|jugué|jugo|j|voy|ponte|copiado|pago|va)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+))?$/i;
 
   const match = esPropuestaJuego ? texto.match(regexJuego) : texto.match(regexConsigo);
 
@@ -207,7 +207,7 @@ export function analizarYEstandarizarJugada(
   const prefijo = prefijoMonedaGrupo(moneda);
 
   // 1. Detectar si el mensaje tiene intención de jugada
-  const patronIntencion = /\b(juego|j|consigo|doy|voy|1p|2p|3p|4p|5p|1\/2|2\/3|2n|3n|4n|5n|2y2n|3y3n|x|contra)\b/i;
+  const patronIntencion = /\b(juego|jugo|jugó|jugue|jugué|j|consigo|doy|voy|ponte|copiado|pago|[1-9]p|10p|[1-9]n|10n|1\/2|2\/3|2y2|3y3|x|contra)\b/i;
   if (!patronIntencion.test(texto) && !/^[0-9kK\.,]+\s+(?:al?|del?|el)\s+\d{1,2}$/i.test(texto)) {
     return {
       esIntencionDeJugada: false,
@@ -325,22 +325,45 @@ export function analizarYEstandarizarJugada(
     }
   }
 
-  // 3. CASO B: JUGADAS DE PUESTOS Y LLAVES (1P, 1P-1/2N, 1/2N, 1/2N-2N, 2N, ..., hasta 5P)
-  // Soporta montos numéricos estándar, K (5k, 10k), miles (10.000, 20.000) y exactos (10.424,50)
-  const regexPuestos = /^(?:(juego|consigo|doy)\s+)?([1-5][pn]\s*-\s*[1-5]\/[1-5]n|[1-5]\/[1-5]n?\s*-\s*[1-5][pn]|[1-5]\/[1-5]n|[1-5]n\s*-\s*[1-5]\/[1-5]n|[1-5]n\s+y\s+[1-5]y[1-5]n|[1-5]p\s+y\s+[1-5]y[1-5]n|[1-5]y[1-5]n|[1-5][pn])\s+(?:de\s+la\s+|del\s+|de\s+|la\s+|el\s+|#)?([0-9A-Za-z\.\-,\s]+?)\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+)$/i;
-  const matchPuesto = texto.match(regexPuestos);
+  // 3. CASO B: JUGADAS DE PUESTOS, LLAVES Y CABALLOS CON NÚMERO Y/O NOMBRE
+  // Ejemplos reales:
+  // - "Juego 1P 5 500", "Juego 2N 5 100", "Juego 2y2 5 100", "Juego 6p 100"
+  // - "JUEGO A 6 AMOR PROHIBIDO 500", "JUEGO A 5 ALANA 500"
+  // - "JUEGO 2Y2 DE MAHOMES 500", "JUEGO 2N DE BROTHER WILL 500"
+  // - "JUGO 2N DE FOUR PALMS QUEEN 500", "JUEGO 3N DE ROSE SENSATION 500"
+  // - "JUEGO 4P DE LITTLE VALERY 500", "Juego 5p special one 100", "Juego 6p gold rock 100"
+  // - "Juego 5 5k", "Juego al 7 10.000", "Consigo 8 50"
+  const regexPuestosYCaballos = /^(?:(juego|jugo|jugó|consigo|doy|voy)\s+)?(?:([1-9]p|10p|[1-9]n|10n|[1-5]y[1-5]n?|[1-5]\/[1-5]n?|a|al)\s+)?(?:de\s+la\s+|del\s+|de\s+|la\s+|el\s+|a\s+|al\s+|#)?([0-9A-Za-z\.\-,\s']+?)\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+)$/i;
+  const matchPuesto = texto.match(regexPuestosYCaballos);
 
   if (matchPuesto) {
-    let modLimpia = matchPuesto[2].toUpperCase().replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ');
-    // Normalizar fracciones compuestas sin N previa (ej: 1/2-2N -> 1/2N-2N, 5/5-5P -> 5/5N-5P)
-    modLimpia = modLimpia.replace(/^([1-5]\/[1-5])(?=-)/, '$1N');
-    const caballos = normalizarBandoCaballos(matchPuesto[3], maxEjemplarCarrera);
+    const rawMod = (matchPuesto[2] || "").trim().toUpperCase();
+    let modLimpia = "1P";
+    if (rawMod && rawMod !== "A" && rawMod !== "AL") {
+      modLimpia = rawMod.replace(/\s*-\s*/g, "-").replace(/\s+/g, " ");
+      modLimpia = modLimpia.replace(/^([1-5]\/[1-5])(?=-)/, "$1N");
+    }
 
+    const rawEjemplar = (matchPuesto[3] || "").trim();
     const { monto, montoTexto } = extraerMontoNumerico(matchPuesto[4]);
 
-    if (caballos.length > 0 && monto > 0) {
-      const retiradoDetectado = caballos.find((c) =>
-        ejemplaresRetirados.map((r) => r.trim()).includes(c)
+    if (rawEjemplar && monto > 0) {
+      // Analizar si el ejemplar contiene números o nombres
+      const numMatch = rawEjemplar.match(/^\d+/);
+      const caballos = normalizarBandoCaballos(rawEjemplar, maxEjemplarCarrera);
+      const ejemplarIdentificador = numMatch ? numMatch[0] : (caballos[0] || rawEjemplar.toUpperCase());
+      const caballosBandoA = caballos.length > 0 ? caballos : [ejemplarIdentificador];
+
+      // Formatear texto limpio del ejemplar
+      let ejemplarTexto = rawEjemplar.toUpperCase();
+      if (numMatch && !/^\d+$/.test(rawEjemplar)) {
+        // Ejemplo: "6 AMOR PROHIBIDO" -> "#6 AMOR PROHIBIDO"
+        ejemplarTexto = `#${rawEjemplar.toUpperCase()}`;
+      }
+
+      // Verificar retirados
+      const retiradoDetectado = caballosBandoA.find((c) =>
+        ejemplaresRetirados.map((r) => r.trim().toUpperCase()).includes(c.toUpperCase())
       );
       if (retiradoDetectado) {
         return {
@@ -349,15 +372,15 @@ export function analizarYEstandarizarJugada(
           accionProponente,
           esMatch: false,
           modalidad: modLimpia,
-          caballosBandoA: caballos,
+          caballosBandoA,
           caballosBandoB: [],
-          ejemplarTexto: caballos.join('-'),
+          ejemplarTexto,
           monto,
           montoTexto,
           jugadaEstandarizada: '',
           confianza: 1.0,
           requiereOperador: false,
-          mensajePedagogicoPrivado: `🚫 El ejemplar #${retiradoDetectado} está RETIRADO oficialmente. Elige otro ejemplar activo.`,
+          mensajePedagogicoPrivado: `🚫 El ejemplar ${ejemplarTexto} está RETIRADO oficialmente. Elige otro ejemplar activo.`,
         };
       }
 
@@ -369,9 +392,9 @@ export function analizarYEstandarizarJugada(
           accionProponente,
           esMatch: false,
           modalidad: modLimpia,
-          caballosBandoA: caballos,
+          caballosBandoA,
           caballosBandoB: [],
-          ejemplarTexto: caballos.join('-'),
+          ejemplarTexto,
           monto,
           montoTexto,
           jugadaEstandarizada: '',
@@ -385,7 +408,7 @@ export function analizarYEstandarizarJugada(
         };
       }
 
-      const jugadaEstandarizada = `${verboEstandar} ${modLimpia} ${caballos.join('-')} ${montoTexto}`;
+      const jugadaEstandarizada = `${verboEstandar} ${modLimpia} ${ejemplarTexto} ${montoTexto}`;
       const msgPublicoBotPuesto = excedioSaldoPuesto
         ? `${nombreUsuario || 'El jugador'} solo dispone de ${prefijo}${formatearMontoRegional(saldoDisponible)} para esta jugada.`
         : undefined;
@@ -399,9 +422,9 @@ export function analizarYEstandarizarJugada(
         accionProponente,
         esMatch: false,
         modalidad: modLimpia,
-        caballosBandoA: caballos,
+        caballosBandoA,
         caballosBandoB: [],
-        ejemplarTexto: caballos.join('-'),
+        ejemplarTexto,
         monto,
         montoTexto,
         jugadaEstandarizada,
@@ -411,92 +434,6 @@ export function analizarYEstandarizarJugada(
         montoDisponibleValido: excedioSaldoPuesto ? saldoDisponible : monto,
         msgPublicoBot: msgPublicoBotPuesto,
         msgPrivadoBot: msgPrivadoBotPuesto,
-      };
-    }
-  }
-
-  // 4. CASO C: JUGADA SIMPLE DE CABALLO (por defecto 1P)
-  // Ejemplos: "Juego 5 5k", "Juego al 7 10.000", "Juego del 1 con 20.000", "Consigo 8 50", "Juego 7 10.424,50"
-  const regexSimple = /^(?:(juego|consigo|doy)\s+)?(?:del?\s+|al?\s+|el\s+|#)?(\d{1,2})\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+)$/i;
-  const matchSimple = texto.match(regexSimple);
-
-  if (matchSimple) {
-    const caballos = [matchSimple[2]];
-    const { monto, montoTexto } = extraerMontoNumerico(matchSimple[3]);
-
-    if (monto > 0) {
-      const retiradoDetectado = caballos.find((c) =>
-        ejemplaresRetirados.map((r) => r.trim()).includes(c)
-      );
-      if (retiradoDetectado) {
-        return {
-          esIntencionDeJugada: true,
-          valido: false,
-          accionProponente,
-          esMatch: false,
-          modalidad: '1P',
-          caballosBandoA: caballos,
-          caballosBandoB: [],
-          ejemplarTexto: caballos[0],
-          monto,
-          montoTexto,
-          jugadaEstandarizada: '',
-          confianza: 1.0,
-          requiereOperador: false,
-          mensajePedagogicoPrivado: `🚫 El ejemplar #${retiradoDetectado} está RETIRADO oficialmente. Elige otro ejemplar activo.`,
-        };
-      }
-
-      const excedioSaldoSimple = monto > saldoDisponible;
-      if (excedioSaldoSimple && saldoDisponible <= 0) {
-        return {
-          esIntencionDeJugada: true,
-          valido: false,
-          accionProponente,
-          esMatch: false,
-          modalidad: '1P',
-          caballosBandoA: caballos,
-          caballosBandoB: [],
-          ejemplarTexto: caballos[0],
-          monto,
-          montoTexto,
-          jugadaEstandarizada: '',
-          confianza: 1.0,
-          requiereOperador: false,
-          excedioSaldo: true,
-          montoDisponibleValido: 0,
-          mensajePedagogicoPrivado: `🔒 Saldo insuficiente (${prefijo}${formatearMontoRegional(saldoDisponible)}). Debes recargar saldo antes de publicar jugadas.`,
-          msgPublicoBot: `${nombreUsuario || 'El jugador'} no dispone de saldo suficiente para esta jugada.`,
-          msgPrivadoBot: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
-        };
-      }
-
-      const jugadaEstandarizada = `${verboEstandar} 1P ${caballos[0]} ${montoTexto}`;
-      const msgPublicoBotSimple = excedioSaldoSimple
-        ? `${nombreUsuario || 'El jugador'} solo dispone de ${prefijo}${formatearMontoRegional(saldoDisponible)} para esta jugada.`
-        : undefined;
-      const msgPrivadoBotSimple = excedioSaldoSimple
-        ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
-        : undefined;
-
-      return {
-        esIntencionDeJugada: true,
-        valido: true,
-        accionProponente,
-        esMatch: false,
-        modalidad: '1P',
-        caballosBandoA: caballos,
-        caballosBandoB: [],
-        ejemplarTexto: caballos[0],
-        monto,
-        montoTexto,
-        jugadaEstandarizada,
-        confianza: 0.99,
-        requiereOperador: false,
-        excedioSaldo: excedioSaldoSimple,
-        montoDisponibleValido: excedioSaldoSimple ? saldoDisponible : monto,
-        msgPublicoBot: msgPublicoBotSimple,
-        msgPrivadoBot: msgPrivadoBotSimple,
       };
     }
   }

@@ -651,10 +651,18 @@ async function manejarMensajeEntrante(msg) {
     const textoLimpio = String(texto || "").trim();
     if (!textoLimpio) return;
 
-    if (!supabase) return;
+    const participantJid = msg.key.participant || msg.participant || "";
+    const senderNombre = msg.pushName || "Jugador";
+
+    console.log(`[Bot WhatsApp] 📩 [${remoteJid}] (${senderNombre} / ${participantJid}): "${textoLimpio}"`);
+
+    if (!supabase) {
+      console.warn("[Bot WhatsApp] ⚠️ Supabase no inicializado");
+      return;
+    }
 
     // Verificar si el grupo está vinculado en public.salas_juego.whatsapp_group_jid
-    const { data: sala } = await supabase
+    const { data: sala, error: errSala } = await supabase
       .from("salas_juego")
       .select("*")
       .eq("whatsapp_group_jid", remoteJid)
@@ -662,9 +670,18 @@ async function manejarMensajeEntrante(msg) {
       .limit(1)
       .maybeSingle();
 
-    if (!sala) return;
+    if (errSala) {
+      console.error("[Bot WhatsApp] Error al consultar sala:", errSala.message);
+      return;
+    }
 
-    const participantJid = msg.key.participant || msg.participant || "";
+    if (!sala) {
+      console.log(`[Bot WhatsApp] ℹ️ Grupo ${remoteJid} no está vinculado a ninguna sala activa.`);
+      return;
+    }
+
+    console.log(`[Bot WhatsApp] 🎯 Sala encontrada: "${sala.nombre_sala}" (${sala.id}) | Carrera: ${sala.estado_carrera} (${sala.hipodromo_activo || 'S/H'} #${sala.numero_carrera_activa || 1})`);
+
     const whatsappMsgId = msg.key.id || null;
     const quotedMsgId =
       msg.message?.extendedTextMessage?.contextInfo?.stanzaId || null;
@@ -679,22 +696,32 @@ async function manejarMensajeEntrante(msg) {
     // Detección de LLEGADA: A.B.C.D.E (con o sin '!')
     const matchLlegada = textoLimpio.match(/^(?:!)?(?:llegada|sentenciar|pizarra)\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
     if (matchLlegada) {
+      console.log(`[Bot WhatsApp] 🏁 Ejecutando sentencia de pizarra: ${matchLlegada[1]}`);
       await ejecutarSentenciaPizarra(sala, remoteJid, matchLlegada[1]);
       return;
     }
 
-    // Detección de Apertura: !abrir [hipodromo] [carrera] o "abierta [hipodromo] [carrera]"
-    const matchAbrir = textoLimpio.match(/^(?:!)?(?:abrir|abierta)\s+(.+?)(?:\s+(?:c(?:arrera)?\s*)?(\d{1,2}))?$/i);
-    if (matchAbrir) {
-      const posibleHipo = matchAbrir[1].trim();
-      const posibleCarrera = matchAbrir[2] || "1";
+    // Detección de Apertura: !abrir [hipodromo] [carrera] o "abrir [hipodromo] [carrera]"
+    const matchAbrir = textoLimpio.match(/^(?:!)?(?:abrir|abierta|abrir\s+carrera)\s*(.+?)?(?:\s+(?:c(?:arrera)?\s*)?(\d{1,2}))?$/i);
+    if (matchAbrir && (/^(?:!)?abrir/i.test(textoLimpio) || /^(?:!)?abierta/i.test(textoLimpio))) {
+      const posibleHipo = (matchAbrir[1] || "").trim() || sala.hipodromo_activo || "LA RINCONADA";
+      const posibleCarrera = matchAbrir[2] || sala.numero_carrera_activa || "1";
+      console.log(`[Bot WhatsApp] 🏆 Abriendo carrera: ${posibleHipo} #${posibleCarrera}`);
       await ejecutarAperturaCarrera(sala, remoteJid, posibleHipo, posibleCarrera);
       return;
     }
 
     // Detección de Cierre: !cerrar o "cerrada"
-    if (/^(?:!)?(?:cerrar|cerrada|no va mas|no va más)$/i.test(textoLimpio)) {
+    if (/^(?:!)?(?:cerrar|cerrada|no va mas|no va más|carrera cerrada)$/i.test(textoLimpio)) {
+      console.log(`[Bot WhatsApp] 🔒 Cerrando carrera en sala "${sala.nombre_sala}"`);
       await ejecutarCierreCarrera(sala, remoteJid);
+      return;
+    }
+
+    // Detección de Plano / Prejugadas: !plano o plano
+    if (/^(?:!)?(?:plano|prejugadas)$/i.test(textoLimpio)) {
+      console.log(`[Bot WhatsApp] 📋 Publicando plano de jugadas en "${sala.nombre_sala}"`);
+      await construirYPublicarPlano(sala, remoteJid);
       return;
     }
 
@@ -703,12 +730,8 @@ async function manejarMensajeEntrante(msg) {
       const cmd = (partes[0] || "").toLowerCase();
       const resto = partes.slice(1).join(" ").trim();
 
-      if (cmd === "plano" || cmd === "prejugadas") {
-        await construirYPublicarPlano(sala, remoteJid);
-        return;
-      }
-
       if (cmd === "anular" || cmd === "retirar") {
+        console.log(`[Bot WhatsApp] 🚫 Ejecutando ${cmd}: ${resto}`);
         await ejecutarAnulacionORetiro(sala, remoteJid, cmd, resto);
         return;
       }
@@ -728,7 +751,7 @@ async function manejarMensajeEntrante(msg) {
 
       if (clExacto) {
         cliente = clExacto;
-      } else if (telNormalizado.length >= 8) {
+      } else if (telNormalizado.length >= 7) {
         const { data: clParcial } = await supabase
           .from("clientes")
           .select("id, nombre, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
@@ -746,7 +769,7 @@ async function manejarMensajeEntrante(msg) {
       body: JSON.stringify({
         groupJid: remoteJid,
         participantJid,
-        senderNombre: msg.pushName || cliente?.nombre || "Jugador",
+        senderNombre: senderNombre || cliente?.nombre || "Jugador",
         texto: textoLimpio,
         whatsappMsgId,
         quotedMsgId: quotedMsgId || null,
@@ -755,6 +778,19 @@ async function manejarMensajeEntrante(msg) {
 
     const data = await res.json().catch(() => null);
     if (!data) return;
+
+    console.log(`[Bot WhatsApp] 🤖 Respuesta del procesador:`, JSON.stringify({ ok: data.ok, tipo: data.tipo, respuestaGrupo: data.respuestaGrupo, reaccionEmoji: data.reaccionEmoji }));
+
+    // Reaccionar con emoji en vivo si la jugada fue aceptada
+    if (data.reaccionEmoji && sock && msg.key) {
+      try {
+        await sock.sendMessage(remoteJid, {
+          react: { text: data.reaccionEmoji, key: msg.key },
+        });
+      } catch (errReact) {
+        console.warn("[Bot WhatsApp] Aviso enviando reacción:", errReact?.message || errReact);
+      }
+    }
 
     // Publicar respuesta en el grupo (citando el mensaje original del jugador)
     const respuestaGrupo = data.respuestaGrupo || data.acciones?.responderEnGrupo;

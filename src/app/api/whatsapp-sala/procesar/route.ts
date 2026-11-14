@@ -72,10 +72,9 @@ async function asegurarDosSalasPrincipales() {
     .from("salas_juego")
     .select("*")
     .eq("activa", true)
-    .order("orden_sala", { ascending: true })
-    .limit(2);
+    .order("orden_sala", { ascending: true });
 
-  if (salasExistentes && salasExistentes.length >= 2) {
+  if (salasExistentes && salasExistentes.length > 0) {
     return salasExistentes;
   }
 
@@ -207,6 +206,125 @@ export async function POST(req: Request) {
     // ------------------------------------------------------------------------
     // ACCIONES ADMINISTRATIVAS DESDE LA PANTALLA /whatsapp
     // ------------------------------------------------------------------------
+    if (body.accion === "abrir-carrera") {
+      const { salaId, hipodromo, carrera } = body;
+      if (!salaId) {
+        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+      }
+
+      const hipoLimpio = String(hipodromo || "LA RINCONADA").toUpperCase().trim();
+      const numCarrera = parseInt(carrera, 10) || 1;
+      const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
+
+      const { data: salaActualizada, error } = await supabaseAdmin
+        .from("salas_juego")
+        .update({
+          hipodromo_activo: hipoLimpio,
+          numero_carrera_activa: numCarrera,
+          estado_carrera: "abierta",
+          retirados: [],
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", salaId)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      }
+
+      const textoApertura = `🏆🏇${hipoLimpio}, ${ord} Carrera🏆🏇\nCARRERA ABIERTA Y EN JUEGO\nMucha suerte a todos.`;
+
+      let enviadoWhatsApp = false;
+      if (salaActualizada?.whatsapp_group_jid) {
+        try {
+          const rBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              groupJid: salaActualizada.whatsapp_group_jid,
+              texto: textoApertura,
+            }),
+          });
+          enviadoWhatsApp = rBot.ok;
+        } catch {
+          enviadoWhatsApp = false;
+        }
+      }
+
+      await emitirBroadcastSala(salaId, "carrera_abierta", {
+        salaId,
+        hipodromo: hipoLimpio,
+        carrera: numCarrera,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        sala: salaActualizada,
+        textoApertura,
+        enviadoWhatsApp,
+      });
+    }
+
+    if (body.accion === "cerrar-carrera") {
+      const { salaId } = body;
+      if (!salaId) {
+        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+      }
+
+      const { data: salaPrevia } = await supabaseAdmin
+        .from("salas_juego")
+        .select("*")
+        .eq("id", salaId)
+        .maybeSingle();
+
+      const { data: salaActualizada, error } = await supabaseAdmin
+        .from("salas_juego")
+        .update({
+          estado_carrera: "cerrada",
+          carrera_recien_cerrada_id: salaPrevia?.carrera_activa_id || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", salaId)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      }
+
+      const hipo = String(salaActualizada?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
+      const numCarrera = salaActualizada?.numero_carrera_activa || 1;
+      const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
+      const textoCierre = `${hipo}, ${ord} Carrera\nCARRERA CERRADA\n\nPUEDE ESCRIBIR LA PIZARRA: LLEGADA: 1RO.2DO.3RO.4TO.5TO`;
+
+      let enviadoWhatsApp = false;
+      if (salaActualizada?.whatsapp_group_jid) {
+        try {
+          const rBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              groupJid: salaActualizada.whatsapp_group_jid,
+              texto: textoCierre,
+            }),
+          });
+          enviadoWhatsApp = rBot.ok;
+        } catch {
+          enviadoWhatsApp = false;
+        }
+      }
+
+      await emitirBroadcastSala(salaId, "carrera_cerrada", { salaId });
+
+      return NextResponse.json({
+        ok: true,
+        sala: salaActualizada,
+        textoCierre,
+        enviadoWhatsApp,
+      });
+    }
+
     if (body.accion === "vincular-sala") {
       const { salaId, groupJid, groupNombre } = body;
       if (!salaId) {
@@ -610,35 +728,62 @@ export async function POST(req: Request) {
     const grupoId = sala.grupo_id;
     const carreraAbierta = String(sala.estado_carrera || "").toLowerCase() === "abierta";
 
-    // 2. Identificar al jugador en `public.clientes` (por telefono_normalizado o whatsapp_jid)
+    // 2. Identificar al jugador en `public.clientes` (por telefono_normalizado, whatsapp_jid o coincidencia de sufijo/alias)
     const telNormalizado = normalizarTelefono(participantJid);
     let cliente: any = null;
 
-    const { data: clPorJidOTel } = await supabaseAdmin
-      .from("clientes")
-      .select(
-        "id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
-      )
-      .or(`whatsapp_jid.eq.${participantJid},telefono_normalizado.eq.${telNormalizado}`)
-      .limit(1)
-      .maybeSingle();
+    // A. Búsqueda exacta por JID o teléfono normalizado
+    if (participantJid || telNormalizado) {
+      const { data: clPorJidOTel } = await supabaseAdmin
+        .from("clientes")
+        .select(
+          "id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
+        )
+        .or(`whatsapp_jid.eq.${participantJid},telefono_normalizado.eq.${telNormalizado}`)
+        .limit(1)
+        .maybeSingle();
 
-    if (clPorJidOTel) {
-      cliente = clPorJidOTel;
-    } else if (telNormalizado.length >= 8) {
+      if (clPorJidOTel) {
+        cliente = clPorJidOTel;
+      }
+    }
+
+    // B. Búsqueda por sufijo numérico (últimos 7 u 8 dígitos)
+    if (!cliente && telNormalizado.length >= 7) {
+      const sufijo = telNormalizado.slice(-8);
       const { data: clPorSufijo } = await supabaseAdmin
         .from("clientes")
         .select(
           "id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
         )
-        .ilike("telefono", `%${telNormalizado.slice(-8)}%`)
+        .ilike("telefono", `%${sufijo}%`)
         .limit(1)
         .maybeSingle();
-      cliente = clPorSufijo;
+
+      if (clPorSufijo) {
+        cliente = clPorSufijo;
+      }
+    }
+
+    // C. Búsqueda de respaldo por alias / senderNombre si el JID está anonimizado en WhatsApp
+    const senderNombreLimpio = String(body.senderNombre || "").trim();
+    if (!cliente && senderNombreLimpio && senderNombreLimpio.toLowerCase() !== "jugador") {
+      const { data: clPorNombre } = await supabaseAdmin
+        .from("clientes")
+        .select(
+          "id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
+        )
+        .or(`nombre.ilike.%${senderNombreLimpio}%,seudonimo.ilike.%${senderNombreLimpio}%`)
+        .limit(1)
+        .maybeSingle();
+
+      if (clPorNombre) {
+        cliente = clPorNombre;
+      }
     }
 
     const nombreJugador =
-      cliente?.seudonimo || cliente?.nombre || body.senderNombre || "Jugador";
+      cliente?.seudonimo || cliente?.nombre || senderNombreLimpio || "Jugador";
 
     if (!cliente) {
       return NextResponse.json({
@@ -649,12 +794,16 @@ export async function POST(req: Request) {
       });
     }
 
-    // Vincular automáticamente el whatsapp_jid si aún no lo tenía guardado
+    // Vincular automáticamente el whatsapp_jid y telefono_normalizado si aún no estaban guardados
+    const updatesCl: Record<string, any> = {};
     if (!cliente.whatsapp_jid && participantJid.includes("@")) {
-      await supabaseAdmin
-        .from("clientes")
-        .update({ whatsapp_jid: participantJid })
-        .eq("id", cliente.id);
+      updatesCl.whatsapp_jid = participantJid;
+    }
+    if (!cliente.telefono_normalizado && telNormalizado) {
+      updatesCl.telefono_normalizado = telNormalizado;
+    }
+    if (Object.keys(updatesCl).length > 0) {
+      await supabaseAdmin.from("clientes").update(updatesCl).eq("id", cliente.id);
     }
 
     const saldoDisponible = calcularSaldoDisponible(cliente);
@@ -1180,6 +1329,7 @@ export async function POST(req: Request) {
       propuestaId: propId,
       jugadaEstandarizada: analisis.jugadaEstandarizada,
       montoPublicado: montoAPublicar,
+      reaccionEmoji: "🏇",
       respuestaGrupo: null,
       mensajePrivadoAutor: null,
     });
