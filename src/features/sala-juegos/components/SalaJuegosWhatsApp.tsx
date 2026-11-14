@@ -231,6 +231,7 @@ export default function SalaJuegosWhatsApp({
       montoDisponible: m?.monto_disponible,
       accionProponente: m?.accion_proponente,
       estadoPropuesta: m?.estado_propuesta,
+      whatsapp_msg_id: m?.whatsapp_msg_id,
       firmaSha256: m?.firma_sha256 ? String(m.firma_sha256).slice(0, 12) : undefined,
       propuestaCitada: m?.reply_to_msg_id
         ? { remitente: 'Mensaje citado', contenido: String(m.reply_to_msg_id).slice(0, 8) }
@@ -296,6 +297,44 @@ export default function SalaJuegosWhatsApp({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [salas.map((s) => s.id).join('|')]);
+
+  // Realtime: Suscripción a nuevos mensajes insertados en la sala activa
+  useEffect(() => {
+    if (!salaActiva?.id || !supabase) return;
+
+    const channel = supabase
+      .channel(`chat_mensajes_${salaActiva.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_mensajes',
+          filter: `sala_id=eq.${salaActiva.id}`,
+        },
+        (payload: any) => {
+          if (!payload?.new) return;
+          const nuevo = {
+            ...payload.new,
+            ...mapearMensajeServidor(payload.new),
+            whatsapp_msg_id: payload.new.whatsapp_msg_id,
+          };
+          setMensajesPorSala((prev) => {
+            const actuales = prev[salaActiva.id] || [];
+            if (actuales.some((m) => m.id === nuevo.id)) return prev;
+            return {
+              ...prev,
+              [salaActiva.id]: [...actuales, nuevo],
+            };
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [salaActiva?.id]);
 
   // 1. APERTURA DE CARRERA CON DOBLE VISTA E INVITACIÓN EXACTA
   const abrirCarreraOperador = (sala: SalaActivaInfo, hipodromo: string, numero: number, distancia: number) => {
@@ -748,6 +787,9 @@ export default function SalaJuegosWhatsApp({
                 <div className="flex justify-between items-center text-[11px] mb-1 font-mono gap-2">
                   <span className={`font-semibold ${esMio ? 'text-emerald-200' : 'text-emerald-400'}`}>
                     {esMio ? 'Tú' : m.remitente}
+                    {m.whatsapp_msg_id && (
+                      <span className="ml-1 text-[10px] text-emerald-400 font-semibold">🟩 WA</span>
+                    )}
                   </span>
                   <span className="text-[10px] text-gray-400">
                     {m.hora} {m.firmaSha256 ? `🔒#${m.firmaSha256}` : ''}
