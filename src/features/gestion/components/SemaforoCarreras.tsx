@@ -139,14 +139,11 @@ export function SemaforoCarreras({
           qTickets = qTickets.eq("grupo_cobro_id", grupoEfectivo);
         }
 
-        let qTablas = sb
+        const qTablas = sb
           .from("tablas_fijas")
-          .select("carrera, hipodromo, estado, grupo_id")
+          .select("carrera, hipodromo, estado")
           .eq("fecha", dia)
           .ilike("hipodromo", `%${hipoLimpio}%`);
-        if (grupoEfectivo) {
-          qTablas = qTablas.eq("grupo_id", grupoEfectivo);
-        }
 
         const [ticketsRes, resultadosRes, tablasRes] = await Promise.all([
           qTickets,
