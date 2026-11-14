@@ -10,7 +10,7 @@ import {
 import { generarHashArchivoSHA256, generarHashTextoSHA256, cifrarMensajeSala } from '../lib/seguridad-crypto';
 import { salaApi } from '../lib/sala-api';
 import { supabase } from '@/core/supabase';
-import { formatearMontoRegional } from '@/shared/lib/dinero';
+import { formatearMontoRegional, prefijoMonedaGrupo, esGrupoBolivares } from '@/shared/lib/dinero';
 import { construirMensajeCarreraAbierta } from '../lib/mensajes-carrera';
 
 export interface SalaActivaInfo {
@@ -28,6 +28,8 @@ export interface SalaActivaInfo {
 interface PropsSalaJuegos {
   grupoId: string;
   grupoNombre: string;
+  /** Moneda del grupo (`USD` o `VES`). Define el prefijo de TODOS los reportes. */
+  moneda?: string | null;
   permitirCrucesNetting: boolean;
   usuarioActual: {
     id: string;
@@ -43,11 +45,16 @@ interface PropsSalaJuegos {
 export default function SalaJuegosWhatsApp({
   grupoId,
   grupoNombre,
+  moneda,
   permitirCrucesNetting,
   usuarioActual,
   salasActivasIniciales,
   onEjecutarRpc,
 }: PropsSalaJuegos) {
+  // La moneda la define el grupo: todos los montos del tablero y sus reportes
+  // (texto y PNG) deben mostrarse con el mismo símbolo.
+  const prefijo = prefijoMonedaGrupo(moneda);
+  const monedaCodigo = esGrupoBolivares(moneda) ? 'VES' : 'USD';
   const [salas, setSalas] = useState<SalaActivaInfo[]>(
     salasActivasIniciales.slice(0, 2) // Máximo 2 salas activas simultáneas por grupo
   );
@@ -428,7 +435,7 @@ export default function SalaJuegosWhatsApp({
                 remitente: '🤖 ASISTENTE DE SALA',
                 esBot: true,
                 tipo: 'alerta_bot',
-                contenido: `Esta jugada solo por $${formatearMontoRegional(montoConcretadoReal)}`,
+                contenido: `Esta jugada solo por ${prefijo}${formatearMontoRegional(montoConcretadoReal)}`,
               });
               setSugerenciaPedagogica({
                 mensaje: '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo',
@@ -442,14 +449,14 @@ export default function SalaJuegosWhatsApp({
             const nuevoDesglose = [...desglosePrevio, { jugador: usuarioActual.nombre, monto: montoConcretadoReal }];
             const totalVanJugando = nuevoDesglose.reduce((acc, x) => acc + Number(x.monto || 0), 0);
             const lineasDesglose = nuevoDesglose
-              .map((x) => `• ${x.jugador} jugó ${formatearMontoRegional(x.monto)}`)
+              .map((x) => `• ${x.jugador} jugó ${prefijo}${formatearMontoRegional(x.monto)}`)
               .join('\n');
 
             // Publicación oficial en el grupo ("Van jugando por X" + desglose)
             const msgPublico =
-              `🤝 *Van jugando por ${formatearMontoRegional(totalVanJugando)}* (${replyToPropuesta.contenido})\n` +
+              `🤝 *Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}* (${replyToPropuesta.contenido})\n` +
               `${lineasDesglose}\n` +
-              `${Number(respConc.remanente_propuesta) > 0 ? `Remanente disponible: ${formatearMontoRegional(Number(respConc.remanente_propuesta))}` : '✅ ¡Jugada completada!'}`;
+              `${Number(respConc.remanente_propuesta) > 0 ? `Remanente disponible: ${prefijo}${formatearMontoRegional(Number(respConc.remanente_propuesta))}` : '✅ ¡Jugada completada!'}`;
             agregarMensajeLocal(salaActiva.id, {
               remitente: '🤖 ASISTENTE DE SALA',
               esBot: true,
@@ -463,7 +470,7 @@ export default function SalaJuegosWhatsApp({
                 remitente: 'ℹ️ AVISO DE CIERRE',
                 esBot: true,
                 tipo: 'aviso_remanente',
-                contenido: `⚡ Propuesta #${String(replyToPropuesta.id).slice(0, 8)} completada al 100%. Solo quedaban $${formatearMontoRegional(montoConcretadoReal)} disponibles y fueron asignados a ${usuarioActual.nombre}.`,
+                contenido: `⚡ Propuesta #${String(replyToPropuesta.id).slice(0, 8)} completada al 100%. Solo quedaban ${prefijo}${formatearMontoRegional(montoConcretadoReal)} disponibles y fueron asignados a ${usuarioActual.nombre}.`,
               });
             }
 
@@ -619,7 +626,7 @@ export default function SalaJuegosWhatsApp({
           remitente: '🤖 ASISTENTE DE SALA',
           esBot: true,
           tipo: 'alerta_bot',
-          contenido: `${usuarioActual.nombre} solo dispone de $${formatearMontoRegional(usuarioActual.saldoDisponible)} para esta jugada.`,
+          contenido: `${usuarioActual.nombre} solo dispone de ${prefijo}${formatearMontoRegional(usuarioActual.saldoDisponible)} para esta jugada.`,
         });
 
         // El Bot le envía simultáneamente en privado al jugador:
@@ -646,9 +653,10 @@ export default function SalaJuegosWhatsApp({
   // 3. DESCARGAR IMAGEN PNG DEL REPORTE DE PREJUGADAS (CANVAS NATIVO)
   const descargarImagenPrejugadas = () => {
     const jugadas = mensajesSala.filter((m) => m.tipo === 'propuesta_jugada');
+    const totalPactado = jugadas.reduce((acc, j) => acc + Number(j.monto || 0), 0);
     const canvas = document.createElement('canvas');
     canvas.width = 800;
-    canvas.height = Math.max(400, 180 + jugadas.length * 42);
+    canvas.height = Math.max(400, 180 + jugadas.length * 42 + 70);
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -659,12 +667,16 @@ export default function SalaJuegosWhatsApp({
     ctx.fillText(`📋 REPORTE DE PREJUGADAS — ${salaActiva.hipodromoActivo} C${salaActiva.numeroCarreraActiva}`, 30, 45);
     ctx.fillStyle = '#e9edef';
     ctx.font = '16px monospace';
-    ctx.fillText(`Grupo: ${grupoNombre} | Sello E2EE Verificado`, 30, 75);
+    ctx.fillText(`Grupo: ${grupoNombre} | Moneda: ${prefijo.trim()} | Sello E2EE Verificado`, 30, 75);
 
     jugadas.forEach((j, idx) => {
       ctx.fillStyle = '#ffd279';
       ctx.fillText(`${idx + 1}) ${j.remitente}: ${j.contenido} [Hash: ${j.firmaSha256}]`, 30, 130 + idx * 36);
     });
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText(`TOTAL PACTADO: ${prefijo}${formatearMontoRegional(totalPactado)}`, 30, 130 + jugadas.length * 36 + 30);
 
     const link = document.createElement('a');
     link.download = `Prejugadas_${salaActiva.hipodromoActivo}_C${salaActiva.numeroCarreraActiva}.png`;
@@ -687,7 +699,7 @@ export default function SalaJuegosWhatsApp({
       bancoOrigen: bancoRecarga,
       referencia: referenciaRecarga,
       montoReportado: parseFloat(montoRecarga),
-      moneda: 'USD',
+      moneda: monedaCodigo,
       nombreArchivo: archivoComprobante.name,
       hashImagenSha256: hashImagen,
     });
@@ -699,7 +711,7 @@ export default function SalaJuegosWhatsApp({
 
     const data = (resp.data?.resultado || {}) as Record<string, any>;
     if (data.auto_aprobado) {
-      setEstadoRecargaMsg(`✅ ¡Recarga Auto-Aprobada! Nuevo saldo acreditado: $${data.nuevo_saldo_disponible}`);
+      setEstadoRecargaMsg(`✅ ¡Recarga Auto-Aprobada! Nuevo saldo acreditado: ${prefijo}${formatearMontoRegional(data.nuevo_saldo_disponible)}`);
     } else {
       setEstadoRecargaMsg(
         data.mensaje ||
@@ -763,7 +775,7 @@ export default function SalaJuegosWhatsApp({
                       <span className="text-gray-400">Estado de Parada:</span>
                       <div className="flex items-center gap-1.5">
                         <span className={`font-bold ${tieneDisponible ? 'text-emerald-400' : 'text-gray-500 line-through'}`}>
-                          Disponible: ${formatearMontoRegional(montoDisp)} de ${formatearMontoRegional(montoOrig)}
+                          Disponible: {prefijo}{formatearMontoRegional(montoDisp)} de {prefijo}{formatearMontoRegional(montoOrig)}
                         </span>
                         {esMio && tieneDisponible && (
                           <button
@@ -794,12 +806,12 @@ export default function SalaJuegosWhatsApp({
                     {Array.isArray(m.desgloseJugaron) && m.desgloseJugaron.length > 0 && (
                       <div className="mt-2 rounded-lg bg-black/30 border border-emerald-500/30 px-2.5 py-1.5 text-[11px] space-y-0.5">
                         <div className="font-bold text-emerald-400">
-                          🤝 Van jugando por {formatearMontoRegional(Number(m.montoJugadoTotal ?? (montoOrig - montoDisp)))}
+                          🤝 Van jugando por {prefijo}{formatearMontoRegional(Number(m.montoJugadoTotal ?? (montoOrig - montoDisp)))}
                         </div>
                         {m.desgloseJugaron.map((item: { jugador: string; monto: number }, idx: number) => (
                           <div key={idx} className="text-gray-200 font-medium">
                             • <span className="font-bold">{item.jugador}</span> jugó{' '}
-                            <span className="font-mono font-bold">{formatearMontoRegional(item.monto)}</span>
+                            <span className="font-mono font-bold">{prefijo}{formatearMontoRegional(item.monto)}</span>
                           </div>
                         ))}
                       </div>
@@ -816,7 +828,7 @@ export default function SalaJuegosWhatsApp({
                           }}
                           className="w-full bg-[#00a884] hover:bg-emerald-400 text-black text-xs font-black py-1.5 px-3 rounded-lg flex items-center justify-center gap-1 transition shadow-sm"
                         >
-                          ⚡ Tomar Jugada Total (${formatearMontoRegional(montoDisp)})
+                          ⚡ Tomar Jugada Total ({prefijo}{formatearMontoRegional(montoDisp)})
                         </button>
 
                         <div className="grid grid-cols-2 gap-1.5">
@@ -845,7 +857,7 @@ export default function SalaJuegosWhatsApp({
                         {tomandoParteId === m.id && (
                           <div className="p-2 bg-[#111b21] rounded-lg border border-emerald-500/40 space-y-2 mt-1">
                             <div className="text-[10px] text-gray-300 font-semibold flex items-center justify-between">
-                              <span>Monto a tomar (Máx: ${montoDisp}):</span>
+                              <span>Monto a tomar (Máx: {prefijo}{formatearMontoRegional(montoDisp)}):</span>
                               <button onClick={() => setTomandoParteId(null)} className="text-gray-400 hover:text-white text-xs font-bold">
                                 ✕
                               </button>
@@ -863,7 +875,7 @@ export default function SalaJuegosWhatsApp({
                                   }}
                                   className="bg-[#202c33] hover:bg-emerald-600 hover:text-black text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-xs font-mono font-bold"
                                 >
-                                  Tomar ${val}
+                                  Tomar {prefijo}{formatearMontoRegional(val)}
                                 </button>
                               ))}
                             </div>
@@ -874,14 +886,14 @@ export default function SalaJuegosWhatsApp({
                                 max={montoDisp}
                                 value={montoParcialInput}
                                 onChange={(e) => setMontoParcialInput(e.target.value)}
-                                placeholder={`Monto (1 - ${montoDisp})`}
+                                placeholder={`Monto (1 - ${prefijo}${formatearMontoRegional(montoDisp)})`}
                                 className="flex-1 bg-[#202c33] text-white text-xs px-2.5 py-1.5 rounded border border-gray-700 outline-none focus:border-emerald-400 font-mono"
                               />
                               <button
                                 onClick={() => {
                                   const n = Number(montoParcialInput);
                                   if (!n || n <= 0 || n > montoDisp) {
-                                    alert(`Monto inválido. Ingrese entre 1 y ${montoDisp}`);
+                                    alert(`Monto inválido. Ingrese entre 1 y ${prefijo}${formatearMontoRegional(montoDisp)}`);
                                     return;
                                   }
                                   const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
@@ -971,7 +983,7 @@ export default function SalaJuegosWhatsApp({
           <div className="flex items-center bg-[#111b21] px-2.5 py-1 rounded border border-gray-700 text-xs font-mono tabular-nums">
             <span className="text-gray-400 mr-1">🔒 Saldo:</span>
             <span className="text-emerald-400 font-bold">
-              {ocultarSaldo ? '$ ••••' : `$${formatearMontoRegional(usuarioActual.saldoDisponible)}`}
+              {ocultarSaldo ? `${prefijo} ••••` : `${prefijo}${formatearMontoRegional(usuarioActual.saldoDisponible)}`}
             </span>
             <button onClick={() => setOcultarSaldo(!ocultarSaldo)} className="ml-2 text-gray-400 hover:text-white">
               👁️
@@ -1044,7 +1056,7 @@ export default function SalaJuegosWhatsApp({
             <span className="text-emerald-400 text-sm">↩️</span>
             <div className="min-w-0">
               <p className="text-[11px] font-bold text-emerald-400 truncate">
-                Respondiendo a {replyToPropuesta.remitente} (Disponible: ${Number(replyToPropuesta.montoDisponible ?? replyToPropuesta.monto ?? 0).toFixed(2)})
+                Respondiendo a {replyToPropuesta.remitente} (Disponible: {prefijo}{formatearMontoRegional(Number(replyToPropuesta.montoDisponible ?? replyToPropuesta.monto ?? 0))})
               </p>
               <p className="text-[11px] text-gray-300 font-mono truncate">{replyToPropuesta.contenido}</p>
             </div>
@@ -1151,10 +1163,15 @@ export default function SalaJuegosWhatsApp({
               📋 Reporte Preliminar de Prejugadas — {salaActiva?.hipodromoActivo} C{salaActiva?.numeroCarreraActiva}
             </h3>
             <pre className="bg-[#111b21] p-3 rounded text-xs font-mono overflow-y-auto max-h-60 whitespace-pre-wrap">
-              {mensajesSala
+              {(mensajesSala
                 .filter((m) => m.tipo === 'propuesta_jugada')
                 .map((m, i) => `${i + 1}) ${m.remitente}: ${m.contenido}`)
-                .join('\n') || 'Aún no hay prejugadas registradas en esta carrera.'}
+                .join('\n') || 'Aún no hay prejugadas registradas en esta carrera.') +
+                `\n\nTOTAL PACTADO: ${prefijo}${formatearMontoRegional(
+                  mensajesSala
+                    .filter((m) => m.tipo === 'propuesta_jugada')
+                    .reduce((acc, m) => acc + Number(m.monto || 0), 0)
+                )}`}
             </pre>
             <div className="flex justify-end gap-2 mt-4">
               <button
@@ -1208,7 +1225,7 @@ export default function SalaJuegosWhatsApp({
             <input
               type="number"
               step="0.01"
-              placeholder="Monto exacto ($)"
+              placeholder="Monto exacto (moneda del grupo)"
               value={montoRecarga}
               onChange={(e) => setMontoRecarga(e.target.value)}
               className="w-full bg-[#111b21] p-2 rounded text-sm font-mono"

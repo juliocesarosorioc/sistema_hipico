@@ -561,12 +561,13 @@ async function liquidarCarreraFallback(
 
   const { data: grupo } = await supabaseAdmin
     .from("grupos_venta")
-    .select("permite_cruces, comision_default")
+    .select("permite_cruces, comision_default, moneda")
     .eq("id", grupoId)
     .single();
 
   const permiteCruces = grupo?.permite_cruces ?? true;
   const porcentajeComision = (grupo?.comision_default ?? 5) / 100;
+  const prefijoReporte = prefijoMonedaGrupo(grupo?.moneda);
 
   // Extraer lista completa de ganadores
   const ganadoresArray: string[] =
@@ -769,7 +770,7 @@ async function liquidarCarreraFallback(
           observacion: `Liquidación Sala ${sala.nombre_sala} (${permiteCruces ? "Netting con Cruces" : "Individual"})`,
           creado_por: operadorNombre,
         });
-        reportePositivos.push(`🟢 ${b.nombre}: +$${balanceNetoFinal.toFixed(2)}`);
+        reportePositivos.push(`🟢 ${b.nombre}: +${prefijoReporte}${formatearMontoRegional(balanceNetoFinal)}`);
       } else if (balanceNetoFinal < 0) {
         const montoAbs = Math.abs(balanceNetoFinal);
         await supabaseAdmin.from("libro_mayor_clientes").insert({
@@ -785,7 +786,7 @@ async function liquidarCarreraFallback(
           observacion: `Liquidación Sala ${sala.nombre_sala} (${permiteCruces ? "Netting con Cruces" : "Individual"})`,
           creado_por: operadorNombre,
         });
-        reporteNegativos.push(`🔴 ${b.nombre}: -$${montoAbs.toFixed(2)}`);
+        reporteNegativos.push(`🔴 ${b.nombre}: -${prefijoReporte}${formatearMontoRegional(montoAbs)}`);
       }
     }
   }
@@ -1423,13 +1424,13 @@ export async function POST(req: Request) {
 
           const totalVanJugando = listaDesglose.reduce((acc, d) => acc + d.monto, 0);
           const lineasDesglose = listaDesglose
-            .map((d) => `• ${d.jugador} jugó ${formatearMontoRegional(d.monto)}`)
+            .map((d) => `• ${d.jugador} jugó ${prefijo}${formatearMontoRegional(d.monto)}`)
             .join("\n");
 
           const textoVanJugando =
-            `🤝 *Van jugando por ${formatearMontoRegional(totalVanJugando)}* (${propMsg.jugada_estandarizada || propMsg.contenido})\n` +
+            `🤝 *Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}* (${propMsg.jugada_estandarizada || propMsg.contenido})\n` +
             `${lineasDesglose}` +
-            (nuevoRemanente > 0 ? `\nDisponible: ${formatearMontoRegional(nuevoRemanente)}` : "");
+            (nuevoRemanente > 0 ? `\nDisponible: ${prefijo}${formatearMontoRegional(nuevoRemanente)}` : "");
 
           // Insertar mensaje de concreción en chat_mensajes ("Van jugando por X" + desglose)
           await supabaseAdmin.from("chat_mensajes").insert({
@@ -1500,13 +1501,13 @@ export async function POST(req: Request) {
           const totalVanJugando = listaDesglose.reduce((acc, d) => acc + d.monto, 0);
           const remRestante = Number(propActualizada?.monto_disponible ?? 0);
           const lineasDesglose = listaDesglose
-            .map((d) => `• ${d.jugador} jugó ${formatearMontoRegional(d.monto)}`)
+            .map((d) => `• ${d.jugador} jugó ${prefijo}${formatearMontoRegional(d.monto)}`)
             .join("\n");
 
           const textoVanJugando =
-            `🤝 *Van jugando por ${formatearMontoRegional(totalVanJugando)}* (${propActualizada?.jugada_estandarizada || propActualizada?.contenido || propMsg.contenido})\n` +
+            `🤝 *Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}* (${propActualizada?.jugada_estandarizada || propActualizada?.contenido || propMsg.contenido})\n` +
             `${lineasDesglose}` +
-            (remRestante > 0 ? `\nDisponible: ${formatearMontoRegional(remRestante)}` : "");
+            (remRestante > 0 ? `\nDisponible: ${prefijo}${formatearMontoRegional(remRestante)}` : "");
 
           // Actualizar cualquier mensaje derivado en chat_mensajes con el formato "Van jugando por X" + desglose
           const { data: msgsDerivados } = await supabaseAdmin

@@ -5,7 +5,7 @@ import {
   evaluarConcrecionEstricta,
   analizarComandoRetiro,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
-import { formatearMontoRegional } from "@/shared/lib/dinero";
+import { formatearMontoRegional, prefijoMonedaGrupo } from "@/shared/lib/dinero";
 import { sincronizarTicketsPropuestaATaquilla } from "./sincronizar-tickets-sala";
 
 export interface MensajeEntranteWhatsApp {
@@ -125,6 +125,15 @@ export async function procesarMensajeEntranteWhatsApp(
   const salaId = sala.id;
   const grupoId = sala.grupo_id;
   const esCarreraAbierta = sala.estado_carrera === "abierta";
+
+  // Moneda del grupo: todos los mensajes/reportes del bot deben usar el mismo
+  // símbolo que el grupo (USD -> $, VES -> Bs.).
+  const { data: grupoMoneda } = await supabaseAdmin
+    .from("grupos_venta")
+    .select("moneda")
+    .eq("id", grupoId)
+    .maybeSingle();
+  const prefijo = prefijoMonedaGrupo(grupoMoneda?.moneda || sala.moneda);
 
   // 2. Identificar al cliente en la base de datos
   const telLimpio = normalizarTelefono(senderJid);
@@ -395,13 +404,13 @@ export async function procesarMensajeEntranteWhatsApp(
 
         const totalVanJugando = listaJugaron.reduce((acc, x) => acc + x.monto, 0);
         const lineasDesglose = listaJugaron
-          .map((x) => `• ${x.jugador} jugó ${formatearMontoRegional(x.monto)}`)
+          .map((x) => `• ${x.jugador} jugó ${prefijo}${formatearMontoRegional(x.monto)}`)
           .join("\n");
 
         const contenidoVanJugando =
-          `🤝 *Van jugando por ${formatearMontoRegional(totalVanJugando)}* (${propFresca.jugada_estandarizada || propFresca.contenido})\n` +
+          `🤝 *Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}* (${propFresca.jugada_estandarizada || propFresca.contenido})\n` +
           `${lineasDesglose}\n` +
-          `${nuevoRemanente > 0 ? `Remanente disponible: ${formatearMontoRegional(nuevoRemanente)}` : "✅ ¡Jugada completada!"}`;
+          `${nuevoRemanente > 0 ? `Remanente disponible: ${prefijo}${formatearMontoRegional(nuevoRemanente)}` : "✅ ¡Jugada completada!"}`;
 
         // Registrar mensaje de concreción en chat_mensajes ("Van jugando por X", nunca "CRUCE")
         await supabaseAdmin.from("chat_mensajes").insert({
@@ -426,7 +435,7 @@ export async function procesarMensajeEntranteWhatsApp(
         let msgPrivadoBot: string | null = null;
 
         if (evaluacion.excedioSaldo) {
-          msgPublicoBot = evaluacion.msgPublicoBot || `Esta jugada solo por $${formatearMontoRegional(saldoDisponible)}`;
+          msgPublicoBot = evaluacion.msgPublicoBot || `Esta jugada solo por ${prefijo}${formatearMontoRegional(saldoDisponible)}`;
           msgPrivadoBot = evaluacion.msgPrivadoBot || `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
         }
 
@@ -434,8 +443,8 @@ export async function procesarMensajeEntranteWhatsApp(
           ? `${msgPublicoBot}\n${contenidoVanJugando}`
           : contenidoVanJugando;
 
-        const msgPrivadoAceptante = msgPrivadoBot || `✅ Has tomado la jugada de ${propFresca.remitente_nombre} por $${formatearMontoRegional(montoConcretado)}. Retención aplicada: $${formatearMontoRegional(montoConcretado)}.`;
-        const msgPrivadoProponente = `🔔 ${nombreJugador} jugó $${formatearMontoRegional(montoConcretado)} en tu jugada (${propFresca.jugada_estandarizada || propFresca.contenido}). Van jugando por $${formatearMontoRegional(totalVanJugando)}. ${nuevoRemanente > 0 ? `Remanente activo: $${formatearMontoRegional(nuevoRemanente)}` : "Tu jugada está 100% pactada."}`;
+        const msgPrivadoAceptante = msgPrivadoBot || `✅ Has tomado la jugada de ${propFresca.remitente_nombre} por ${prefijo}${formatearMontoRegional(montoConcretado)}. Retención aplicada: ${prefijo}${formatearMontoRegional(montoConcretado)}.`;
+        const msgPrivadoProponente = `🔔 ${nombreJugador} jugó ${prefijo}${formatearMontoRegional(montoConcretado)} en tu jugada (${propFresca.jugada_estandarizada || propFresca.contenido}). Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}. ${nuevoRemanente > 0 ? `Remanente activo: ${prefijo}${formatearMontoRegional(nuevoRemanente)}` : "Tu jugada está 100% pactada."}`;
 
         return {
           ok: true,
@@ -509,7 +518,7 @@ export async function procesarMensajeEntranteWhatsApp(
       tipo: "TEXTO",
       acciones: {
         responderEnGrupo: null,
-        enviarPrivadoJugador: `Has cerrado exitosamente todas tus jugadas abiertas. Se liberó una retención de $${formatearMontoRegional(totalDevuelto)}.`,
+        enviarPrivadoJugador: `Has cerrado exitosamente todas tus jugadas abiertas. Se liberó una retención de ${prefijo}${formatearMontoRegional(totalDevuelto)}.`,
       },
     };
   }
@@ -660,13 +669,13 @@ export async function procesarMensajeEntranteWhatsApp(
     let msgPrivadoBot: string | null = null;
 
     if (excedioSaldoRpc) {
-      msgPublicoBot = analisis.msgPublicoBot || `[${nombreJugador}] solo dispone de $${formatearMontoRegional(saldoDisponible)} para esta jugada.`;
+      msgPublicoBot = analisis.msgPublicoBot || `[${nombreJugador}] solo dispone de ${prefijo}${formatearMontoRegional(saldoDisponible)} para esta jugada.`;
       msgPrivadoBot = analisis.msgPrivadoBot || `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
     }
 
     const msgGrupo = msgPublicoBot
-      ? `${msgPublicoBot}\n🏇 *Propuesta Registrada*: ${analisis.jugadaEstandarizada} por $${formatearMontoRegional(montoEfectivo)}`
-      : `🏇 *Nueva Propuesta*: ${analisis.jugadaEstandarizada} ($${formatearMontoRegional(montoEfectivo)})\n↩️ Responde a este mensaje con *Consigo*, *Doy*, *J* o *Ponte* para tomarla.`;
+      ? `${msgPublicoBot}\n🏇 *Propuesta Registrada*: ${analisis.jugadaEstandarizada} por ${prefijo}${formatearMontoRegional(montoEfectivo)}`
+      : `🏇 *Nueva Propuesta*: ${analisis.jugadaEstandarizada} (${prefijo}${formatearMontoRegional(montoEfectivo)})\n↩️ Responde a este mensaje con *Consigo*, *J* o *Ponte* para tomarla.`;
 
     return {
       ok: true,

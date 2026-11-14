@@ -3,15 +3,19 @@
 import React, { useState } from "react";
 import { generarHashArchivoSHA256 } from "../lib/seguridad-crypto";
 import { salaApi } from "../lib/sala-api";
+import { esGrupoBolivares, formatearMontoRegional, prefijoMonedaGrupo } from "@/shared/lib/dinero";
 
 interface PropsModalRecarga {
   grupoId: string;
   clienteId?: string;
+  moneda?: string | null;
   onCerrar: () => void;
   onExito: (nuevoSaldo?: number) => void;
 }
 
-export function ModalRecargaBlindada({ grupoId, clienteId, onCerrar, onExito }: PropsModalRecarga) {
+export function ModalRecargaBlindada({ grupoId, clienteId, moneda, onCerrar, onExito }: PropsModalRecarga) {
+  const prefijo = prefijoMonedaGrupo(moneda);
+  const monedaCodigo = esGrupoBolivares(moneda) ? "VES" : "USD";
   const [metodo, setMetodo] = useState("PAGO_MOVIL");
   const [banco, setBanco] = useState("BANESCO");
   const [referencia, setReferencia] = useState("");
@@ -64,7 +68,7 @@ export function ModalRecargaBlindada({ grupoId, clienteId, onCerrar, onExito }: 
         bancoOrigen: banco,
         referencia: referencia.trim(),
         montoReportado: parseFloat(monto),
-        moneda: "USD",
+        moneda: monedaCodigo,
         nombreArchivo: archivo.name,
         hashImagenSha256: hashArchivo,
       });
@@ -80,7 +84,7 @@ export function ModalRecargaBlindada({ grupoId, clienteId, onCerrar, onExito }: 
         if (data.auto_aprobado) {
           setEstadoMsg({
             tipo: "exito",
-            texto: `✅ ¡Recarga Exitosa Auto-Aprobada! Nuevo saldo disponible: $${data.nuevo_saldo_disponible || monto}`,
+            texto: `✅ ¡Recarga Exitosa Auto-Aprobada! Nuevo saldo disponible: ${prefijo}${formatearMontoRegional(data.nuevo_saldo_disponible || monto)}`,
           });
           setTimeout(() => {
             onExito(data.nuevo_saldo_disponible);
@@ -163,7 +167,7 @@ export function ModalRecargaBlindada({ grupoId, clienteId, onCerrar, onExito }: 
           </div>
 
           <div>
-            <label className="block text-gray-300 font-medium mb-1">Monto ($ USD)</label>
+            <label className="block text-gray-300 font-medium mb-1">Monto ({prefijo.trim()})</label>
             <input
               type="number"
               step="any"

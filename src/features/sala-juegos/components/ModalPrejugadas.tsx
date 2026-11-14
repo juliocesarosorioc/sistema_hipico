@@ -2,14 +2,16 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { salaApi } from "../lib/sala-api";
+import { formatearMontoRegional, prefijoMonedaGrupo } from "@/shared/lib/dinero";
 
 interface PropsModalPrejugadas {
   salaId: string;
   grupoNombre: string;
+  moneda?: string | null;
   onCerrar: () => void;
 }
 
-export function ModalPrejugadas({ salaId, grupoNombre, onCerrar }: PropsModalPrejugadas) {
+export function ModalPrejugadas({ salaId, grupoNombre, moneda, onCerrar }: PropsModalPrejugadas) {
   const [cargando, setCargando] = useState(true);
   const [tickets, setTickets] = useState<any[]>([]);
   const [salaInfo, setSalaInfo] = useState<any>(null);
@@ -35,6 +37,8 @@ export function ModalPrejugadas({ salaId, grupoNombre, onCerrar }: PropsModalPre
   const hipodromo = (salaInfo?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
   const carrera = salaInfo?.numero_carrera_activa || 1;
   const fecha = new Date().toLocaleDateString();
+  // La moneda la define el grupo: todo el reporte (texto y PNG) usa el mismo prefijo.
+  const prefijo = prefijoMonedaGrupo(moneda);
 
   // Texto optimizado para WhatsApp
   const textoWhatsApp =
@@ -49,12 +53,12 @@ export function ModalPrejugadas({ salaId, grupoNombre, onCerrar }: PropsModalPre
             const jugada = t.es_match
               ? `Match: ${t.caballos_bando_a?.join("-")} x ${t.caballos_bando_b?.join("-")}`
               : `${t.modalidad || "1P"} #${t.ejemplar_numero || t.caballos_bando_a?.join("-")}`;
-            return `${idx + 1}. [T-${(t.codigo_ticket || t.id.slice(0, 6)).toUpperCase()}] $${t.monto_concretado}\n   ${cruce}\n   ${jugada}`;
+            return `${idx + 1}. [T-${(t.codigo_ticket || t.id.slice(0, 6)).toUpperCase()}] ${prefijo}${formatearMontoRegional(t.monto_concretado)}\n   ${cruce}\n   ${jugada}`;
           })
           .join("\n\n")
       : "No hay jugadas pactadas aún para esta carrera.") +
     `\n----------------------------------------\n` +
-    `Total pactado: $${tickets.reduce((acc, t) => acc + Number(t.monto_concretado || 0), 0).toFixed(2)}\n` +
+    `Total pactado: ${prefijo}${formatearMontoRegional(tickets.reduce((acc, t) => acc + Number(t.monto_concretado || 0), 0))}\n` +
     `¡Mucha suerte a todos los participantes! 🏇✨`;
 
   const copiarTexto = async () => {
@@ -137,7 +141,7 @@ export function ModalPrejugadas({ salaId, grupoNombre, onCerrar }: PropsModalPre
 
         ctx.fillStyle = "#25d366";
         ctx.font = "bold 16px sans-serif";
-        ctx.fillText(`$${Number(t.monto_concretado).toFixed(2)}`, 770, y + 5);
+        ctx.fillText(`${prefijo}${formatearMontoRegional(t.monto_concretado)}`, 770, y + 5);
 
         y += itemHeight;
       });
@@ -150,7 +154,7 @@ export function ModalPrejugadas({ salaId, grupoNombre, onCerrar }: PropsModalPre
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 16px sans-serif";
-    ctx.fillText(`TOTAL PACTADO: $${total.toFixed(2)} USD`, 55, totalHeight - 37);
+    ctx.fillText(`TOTAL PACTADO: ${prefijo}${formatearMontoRegional(total)}`, 55, totalHeight - 37);
 
     ctx.fillStyle = "#8696a0";
     ctx.font = "12px monospace";

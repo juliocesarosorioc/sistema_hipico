@@ -110,7 +110,7 @@ export function evaluarConcrecionEstricta(
 
   if (!match) {
     const permitidas = esPropuestaJuego
-      ? 'Consigo, Doy, J, Jugaste, Jugamos, Ponte'
+      ? 'Consigo, J, Jugaste, Jugamos, Ponte'
       : 'Juego, Jugue, Jugué, J, Voy, Ponte';
     return {
       valido: false,

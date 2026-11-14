@@ -157,6 +157,7 @@ export function SalaWhatsAppConectada({
       key={`${usuarioActual.id}-${grupoActivo?.id || ""}`}
       grupoId={String(grupoActivo?.id || "")}
       grupoNombre={String(grupoActivo?.nombre || "Sala Hípica")}
+      moneda={grupoActivo?.moneda}
       permitirCrucesNetting={Boolean(grupoActivo?.permite_cruces)}
       usuarioActual={usuarioActual}
       salasActivasIniciales={salas}

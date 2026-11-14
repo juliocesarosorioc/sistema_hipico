@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { salaApi, configurarCredencialesSala } from "../lib/sala-api";
 import { ChatSalaPanel, FAMILIAS_FUENTE_SALA, type ClaveFuenteSala, type TemaSala } from "./ChatSalaPanel";
 import { ModalOperadorSala } from "./ModalOperadorSala";
@@ -823,6 +823,7 @@ export function SalaJuegosApp({
         <ModalRecargaBlindada
           grupoId={grupoActivo?.id}
           clienteId={identidad?.usuarioId}
+          moneda={grupoActivo?.moneda}
           onCerrar={() => setModalRecargaAbierto(false)}
           onExito={() => refrescarSaldo()}
         />
@@ -832,6 +833,7 @@ export function SalaJuegosApp({
         <ModalPrejugadas
           salaId={salaActiva.id}
           grupoNombre={grupoActivo?.nombre || ""}
+          moneda={grupoActivo?.moneda}
           onCerrar={() => setModalPrejugadasAbierto(false)}
         />
       )}
