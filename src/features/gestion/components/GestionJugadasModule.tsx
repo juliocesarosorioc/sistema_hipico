@@ -6579,22 +6579,22 @@ const hipodromosDelDia = useMemo(() => {
 
       {/* Carga Rápida (texto libre) — pegar bloque y poblar tabla */}
       {modalCargaRapida && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-line bg-white shadow-2xl">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-slate-800 px-4 py-3 text-white">
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/60 p-4 py-6 sm:items-center">
+          <div className="flex max-h-[calc(100dvh-3rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-2xl">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-line bg-slate-800 px-4 py-3 text-white">
               <h3 className="text-xs font-black uppercase">⚡ Carga Rápida — <span className="normal-case">{nombreHipodromo}</span> C{carrera}</h3>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => setModalCargaRapida(false)} className="text-slate-300 hover:text-white">✕</button>
               </div>
             </div>
-            <div className="space-y-3 p-4">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
               <textarea
                 value={textoCargaRapida}
                 onChange={(e) => setTextoCargaRapida(e.target.value)}
-                rows={14}
+                rows={10}
                 spellCheck={false}
                 placeholder={"Pegá el bloque de jugadas (1 por línea, CUALQUIER orden):\n\n3y3 9 40 emy mar\n2p 1 100 Perrito molinas\nJuega Lolo 2p (1) con 300 da Mar\n1/2 y 2n 7 100 Eddie Manuel\n2x3 10/8 2 100 Juan Pedro\nWalcot 2y3-3n 4 astronauta 400"}
-                className="w-full resize-y rounded-xl border border-line bg-white p-3 font-mono text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                className="max-h-[35vh] w-full resize-y rounded-xl border border-line bg-white p-3 font-mono text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               />
               {incoherenciasCargaRapida.length > 0 && (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-2">
@@ -6708,7 +6708,7 @@ const hipodromosDelDia = useMemo(() => {
                 resto del bloque.
               </p>
             </div>
-            <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
+            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
               <Button variant="ghost" size="sm" onClick={() => { setTextoCargaRapida(""); setModalCargaRapida(false); }}>
                 Cancelar
               </Button>
