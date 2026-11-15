@@ -124,12 +124,19 @@ const mutedJids = new Set();
 const RATE_LIMIT_WINDOW_MS = 10000; // 10 segundos
 const MAX_MESSAGES_PER_WINDOW = 5;
 
+function normalizarParadaPremio(raw) {
+  if (typeof raw !== "string" || !raw) return "";
+  return raw.replace(
+    /(?:^|(?<=[\s,(\[]))(?:10)?[aª@\/](\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/gi,
+    "10/$1"
+  );
+}
+
 const sanitizarTexto = (str) => {
   if (typeof str !== "string") return "";
-  return str
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w\s.,!¡?¿$*+=\-()\[\]]/g, "")
+  const conPremio = normalizarParadaPremio(str);
+  return conPremio
+    .replace(/[^\w\s.,!¡?¿$*+=\-()\[\]/@ªáéíóúÁÉÍÓÚñÑ]/gi, "")
     .replace(/\s+/g, " ")
     .trim();
 };

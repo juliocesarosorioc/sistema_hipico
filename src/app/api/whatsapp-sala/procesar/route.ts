@@ -9,6 +9,7 @@ import {
   evaluarConcrecionEstricta,
   analizarComandoRetiro,
   evaluarAmpliacionPropuesta,
+  normalizarParadaPremio,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
 import { formatearMontoRegional } from "@/shared/lib/dinero";
 import { sincronizarTicketsPropuestaATaquilla } from "@/features/whatsapp-sala/lib/sincronizar-tickets-sala";
@@ -18,9 +19,7 @@ export const dynamic = "force-dynamic";
 function sanitizarTexto(str: unknown): string {
   if (typeof str !== "string") return "";
   return str
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w\s.,!¡?¿$*+=\-()\[\]]/g, "")
+    .replace(/[^\w\s.,!¡?¿$*+=\-()\[\]/@ªáéíóúÁÉÍÓÚñÑ]/gi, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -418,7 +417,7 @@ export async function POST(req: Request) {
       body.senderNombre = sanitizarTexto(body.senderNombre) || "Usuario";
     }
     if (typeof body.texto === "string") {
-      body.texto = sanitizarTexto(body.texto);
+      body.texto = normalizarParadaPremio(sanitizarTexto(body.texto));
     }
 
     // Cierre VULN-15: Descartar reintentos en < 1ms por idempotencia de whatsappMsgId
@@ -1606,6 +1605,79 @@ export async function POST(req: Request) {
         });
       }
 
+      // 1. Comando de retiro de propuesta citada por su autor ("Se Fue")
+      const cmdRetiroCita = analizarComandoRetiro(texto);
+      if (cmdRetiroCita.esComandoRetiro) {
+        if (!cmdRetiroCita.esValido) {
+          return NextResponse.json({
+            ok: false,
+            tipo: "PEDAGOGICO",
+            respuestaGrupo: null,
+            mensajePrivadoAutor:
+              cmdRetiroCita.mensajeAclaratoria ||
+              "Por favor aclara si deseas retirar tu propuesta con: 'Se fue' o 'sf'",
+          });
+        }
+
+        if (propMsg.remitente_id !== cliente.id) {
+          return NextResponse.json({
+            ok: false,
+            tipo: "NO_AUTORIZADO",
+            respuestaGrupo: null,
+            mensajePrivadoAutor: "⚠️ Solo el autor de la propuesta puede retirarla con 'Se fue'.",
+          });
+        }
+
+        // Cancelar únicamente esa propuesta específica (cancelar_propuesta_proponente_atomica)
+        const remanenteRetirar = Number(propMsg.monto_disponible ?? propMsg.monto_original ?? 0);
+        await supabaseAdmin
+          .from("chat_mensajes")
+          .update({ estado_propuesta: "cancelada", monto_disponible: 0 })
+          .eq("id", propMsg.id);
+
+        if (!cliente.libre && remanenteRetirar > 0) {
+          const nuevoRet = Math.max(0, Number((Number(cliente.saldo_retenido || 0) - remanenteRetirar).toFixed(2)));
+          await supabaseAdmin
+            .from("clientes")
+            .update({
+              saldo_retenido: nuevoRet,
+              saldo_disponible: Math.max(
+                0,
+                Number((Number(cliente.saldo_actual || 0) + Number(cliente.aval || 0) - nuevoRet).toFixed(2))
+              ),
+            })
+            .eq("id", cliente.id);
+        }
+
+        const jugadaTexto = propMsg.jugada_estandarizada || propMsg.contenido || "propuesta";
+        const msgRetiroCita = `🚫 *Se Fue* — ${nombreJugador} retiró su propuesta (${jugadaTexto}).`;
+        await supabaseAdmin.from("chat_mensajes").insert({
+          grupo_id: grupoId,
+          sala_id: salaId,
+          remitente_nombre: "🤖 ASISTENTE DE SALA",
+          es_operador: true,
+          tipo_mensaje: "concrecion_fifo",
+          contenido: msgRetiroCita,
+          whatsapp_msg_id: whatsappMsgId || null,
+          whatsapp_group_jid: groupJid || null,
+          whatsapp_group_nombre: whatsappGroupNombre || null,
+          origen_canal: "whatsapp",
+        });
+
+        await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+        return NextResponse.json({
+          ok: true,
+          tipo: "RETIRO_PROPUESTA_ESPECIFICA",
+          respuestaGrupo: msgRetiroCita,
+          msg_publico: msgRetiroCita,
+          msg_publico_bot: msgRetiroCita,
+          respuestaPublica: msgRetiroCita,
+          mensajePrivadoAutor: `✅ Tu propuesta (${jugadaTexto}) fue retirada ("Se fue"). Saldo liberado: $${formatearMontoRegional(remanenteRetirar)}.`,
+          senderJid: participantJid,
+        });
+      }
+
       if (propMsg.remitente_id === cliente.id) {
         const amp = evaluarAmpliacionPropuesta(texto);
         if (amp.esAmpliacion) {
@@ -1631,6 +1703,68 @@ export async function POST(req: Request) {
           propFresca?.monto_disponible ?? propFresca?.monto_original ?? 0
         );
         const estadoProp = String(propFresca?.estado_propuesta || "abierta").toLowerCase();
+
+        // 2. Vencimiento por Tiempo (X minutos): Si superó el tiempo, expirada + devolver saldo retenido
+        const tiempoVencimientoMin = Number(sala.tiempo_vencimiento_propuesta_min || sala.tiempo_vencimiento_min || 5);
+        const fechaPropMs = propFresca?.created_at ? new Date(propFresca.created_at).getTime() : Date.now();
+        const minutosTranscurridos = (Date.now() - fechaPropMs) / (1000 * 60);
+
+        if (minutosTranscurridos > tiempoVencimientoMin && estadoProp !== "expirada") {
+          await supabaseAdmin
+            .from("chat_mensajes")
+            .update({ estado_propuesta: "expirada", monto_disponible: 0 })
+            .eq("id", propFresca.id);
+
+          if (remanenteDisponible > 0) {
+            const { data: propOwner } = await supabaseAdmin
+              .from("clientes")
+              .select("id, saldo_retenido, saldo_actual, aval, libre")
+              .eq("id", propFresca.remitente_id)
+              .maybeSingle();
+
+            if (propOwner && !propOwner.libre) {
+              const nuevoRet = Math.max(0, Number((Number(propOwner.saldo_retenido || 0) - remanenteDisponible).toFixed(2)));
+              await supabaseAdmin
+                .from("clientes")
+                .update({
+                  saldo_retenido: nuevoRet,
+                  saldo_disponible: Math.max(
+                    0,
+                    Number((Number(propOwner.saldo_actual || 0) + Number(propOwner.aval || 0) - nuevoRet).toFixed(2))
+                  ),
+                })
+                .eq("id", propOwner.id);
+            }
+          }
+
+          const msgFueraTiempo = "❌⏰ Nada aquí, fuera de tiempo";
+          await supabaseAdmin.from("chat_mensajes").insert({
+            grupo_id: grupoId,
+            sala_id: salaId,
+            remitente_nombre: "🤖 ASISTENTE DE SALA",
+            es_operador: true,
+            tipo_mensaje: "concrecion_fifo",
+            contenido: msgFueraTiempo,
+            whatsapp_msg_id: whatsappMsgId || null,
+            whatsapp_group_jid: groupJid || null,
+            whatsapp_group_nombre: whatsappGroupNombre || null,
+            origen_canal: "whatsapp",
+          });
+
+          await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+          return NextResponse.json({
+            ok: false,
+            tipo: "FUERA_DE_TIEMPO",
+            nada_aqui: true,
+            respuestaGrupo: msgFueraTiempo,
+            msg_publico: msgFueraTiempo,
+            msg_publico_bot: msgFueraTiempo,
+            respuestaPublica: msgFueraTiempo,
+            mensajePrivadoAutor: "Esta propuesta superó el tiempo máximo de vigencia y ha expirado.",
+            senderJid: participantJid,
+          });
+        }
 
         if (
           remanenteDisponible <= 0 ||
@@ -1669,9 +1803,7 @@ export async function POST(req: Request) {
             ? "CONSIGUE"
             : "JUEGA";
 
-        // Evaluar palabras estrictas:
-        // Contra Juego -> Consigo, Doy, J, Jugaste, Jugamos, Ponte
-        // Contra Consigo -> Juego, Jugue, J, Voy, Ponte
+        // Evaluar palabras estrictas según diccionario direccional
         const evalConcrecion = evaluarConcrecionEstricta(
           texto,
           accionProp,
@@ -1699,6 +1831,36 @@ export async function POST(req: Request) {
             mensajePrivadoAutor:
               evalConcrecion.motivoRechazo ||
               "Palabra no autorizada para concretar esta jugada.",
+          });
+        }
+
+        // 3. Validación de Apuesta Mínima (salvo que el remanente sea menor)
+        const apuestaMinima = Number(sala.apuesta_minima || 10.00);
+        if (evalConcrecion.montoSolicitado < apuestaMinima && remanenteDisponible >= apuestaMinima) {
+          const msgMinimoBot = `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`;
+          await supabaseAdmin.from("chat_mensajes").insert({
+            grupo_id: grupoId,
+            sala_id: salaId,
+            remitente_nombre: "🤖 ASISTENTE DE SALA",
+            es_operador: true,
+            tipo_mensaje: "concrecion_fifo",
+            contenido: msgMinimoBot,
+            whatsapp_msg_id: whatsappMsgId || null,
+            whatsapp_group_jid: groupJid || null,
+            whatsapp_group_nombre: whatsappGroupNombre || null,
+            origen_canal: "whatsapp",
+          });
+          await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+          return NextResponse.json({
+            ok: false,
+            tipo: "APUESTA_MINIMA",
+            nada_aqui: true,
+            respuestaGrupo: msgMinimoBot,
+            msg_publico: msgMinimoBot,
+            msg_publico_bot: msgMinimoBot,
+            respuestaPublica: msgMinimoBot,
+            mensajePrivadoAutor: `El monto mínimo de apuesta configurado es $${apuestaMinima.toFixed(2)}.`,
+            senderJid: participantJid,
           });
         }
 
@@ -1934,7 +2096,8 @@ export async function POST(req: Request) {
         });
       }
 
-      const { data: abiertas } = await supabaseAdmin
+      // Cancela en bloque TODAS las propuestas abiertas vigentes de ese jugador en la sala/carrera actual
+      let qAbiertas = supabaseAdmin
         .from("chat_mensajes")
         .select("id, monto_disponible")
         .eq("sala_id", salaId)
@@ -1942,12 +2105,18 @@ export async function POST(req: Request) {
         .in("estado_propuesta", ["abierta", "parcial"])
         .gt("monto_disponible", 0);
 
+      if (sala.carrera_activa_id) {
+        qAbiertas = qAbiertas.eq("carrera_id", sala.carrera_activa_id);
+      }
+
+      const { data: abiertas } = await qAbiertas;
+
       let liberado = 0;
       for (const p of abiertas || []) {
         liberado += Number(p.monto_disponible || 0);
         await supabaseAdmin
           .from("chat_mensajes")
-          .update({ estado_propuesta: "cerrada", monto_disponible: 0 })
+          .update({ estado_propuesta: "cancelada", monto_disponible: 0 })
           .eq("id", p.id);
       }
 
@@ -1965,13 +2134,31 @@ export async function POST(req: Request) {
           .eq("id", cliente.id);
       }
 
+      const msgPublicoRetiro = `🚫 *Se Fue* — Todas las propuestas abiertas de ${nombreJugador} fueron retiradas.`;
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_nombre: "🤖 ASISTENTE DE SALA",
+        es_operador: true,
+        tipo_mensaje: "concrecion_fifo",
+        contenido: msgPublicoRetiro,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "whatsapp",
+      });
+
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
       return NextResponse.json({
         ok: true,
         tipo: "RETIRO_PROPUESTAS",
-        respuestaGrupo: null,
-        mensajePrivadoAutor: `✅ Tus propuestas abiertas fueron cerradas ("Se fue"). Saldo liberado: $${formatearMontoRegional(liberado)}.`,
+        respuestaGrupo: msgPublicoRetiro,
+        msg_publico: msgPublicoRetiro,
+        msg_publico_bot: msgPublicoRetiro,
+        respuestaPublica: msgPublicoRetiro,
+        mensajePrivadoAutor: `✅ Todas tus propuestas abiertas fueron retiradas ("Se fue"). Saldo liberado: $${formatearMontoRegional(liberado)}.`,
+        senderJid: participantJid,
       });
     }
 
@@ -2179,6 +2366,36 @@ export async function POST(req: Request) {
       });
     }
 
+    // Regla: Apuesta Mínima para proponer
+    const apuestaMinima = Number(sala.apuesta_minima || 10.00);
+    if (analisis.monto < apuestaMinima) {
+      const msgMinimoBot = `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`;
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_nombre: "🤖 ASISTENTE DE SALA",
+        es_operador: true,
+        tipo_mensaje: "concrecion_fifo",
+        contenido: msgMinimoBot,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "whatsapp",
+      });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+      return NextResponse.json({
+        ok: false,
+        tipo: "APUESTA_MINIMA",
+        nada_aqui: true,
+        respuestaGrupo: msgMinimoBot,
+        msg_publico: msgMinimoBot,
+        msg_publico_bot: msgMinimoBot,
+        respuestaPublica: msgMinimoBot,
+        mensajePrivadoAutor: `El monto mínimo para publicar es $${apuestaMinima.toFixed(2)}.`,
+        senderJid: participantJid,
+      });
+    }
+
     // Determinar monto a publicar (topado a saldoDisponible si excedió su saldo)
     const excedioSaldo = Boolean(analisis.excedioSaldo || analisis.monto > saldoDisponible);
     const montoAPublicar = excedioSaldo
@@ -2207,7 +2424,7 @@ export async function POST(req: Request) {
           p_caballos_a: analisis.caballosBandoA,
           p_caballos_b: analisis.caballosBandoB,
           p_ejemplar_texto: analisis.ejemplarTexto,
-          p_proporcion: "1x1",
+          p_proporcion: analisis.proporcion || "1x1",
           p_monto_solicitado: montoAPublicar,
           p_texto_estandarizado: analisis.jugadaEstandarizada,
           p_whatsapp_msg_id: whatsappMsgId || null,
@@ -2231,7 +2448,7 @@ export async function POST(req: Request) {
           p_caballos_a: analisis.caballosBandoA,
           p_caballos_b: analisis.caballosBandoB,
           p_ejemplar_texto: analisis.ejemplarTexto,
-          p_proporcion: "1x1",
+          p_proporcion: analisis.proporcion || "1x1",
           p_monto_solicitado: montoAPublicar,
           p_texto_estandarizado: analisis.jugadaEstandarizada,
         });

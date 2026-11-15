@@ -409,6 +409,32 @@ export async function liquidarMarcas(
     return { ok: false, error: er?.message ?? "La carrera aún no tiene resultado cargado." };
   }
 
+  const activoGrupo = veTodosLosGruposVigente()
+    ? grupoActivoVigente() || grupoVigente()
+    : grupoVigente() || grupoActivoVigente();
+
+  // Recorte oficial de pizarra según tipo de hipódromo (Nacional vs Internacional)
+  const esNacional = /(?:RINCONADA|VALENCIA|RANCHO\s*ALEGRE|SANTA\s*RITA|NACIONAL)/i.test(hip);
+  let topeCaballos = esNacional ? 5 : 4;
+  try {
+    let qConf = sdb.from("grupos_venta").select("tope_caballos_marcas_nacional, tope_caballos_marcas_internacional");
+    if (activoGrupo) {
+      qConf = qConf.eq("id", String(activoGrupo));
+    }
+    const { data: gData } = await qConf.limit(1).maybeSingle();
+    if (gData) {
+      const topNac = Number(gData.tope_caballos_marcas_nacional);
+      const topInt = Number(gData.tope_caballos_marcas_internacional);
+      if (esNacional && Number.isFinite(topNac) && topNac > 0) {
+        topeCaballos = topNac;
+      } else if (!esNacional && Number.isFinite(topInt) && topInt > 0) {
+        topeCaballos = topInt;
+      }
+    }
+  } catch {
+    /* fallback defaults */
+  }
+
   const puestos = new Map<string, number>();
   const ordenArr = Array.isArray(res.orden_llegada)
     ? (res.orden_llegada as Array<unknown>)
@@ -418,20 +444,22 @@ export async function liquidarMarcas(
       const obj = item as Record<string, unknown>;
       const num = String(obj.numero ?? "").trim();
       const p = Number(obj.puesto ?? idx + 1);
-      if (num && Number.isFinite(p) && p > 0 && !puestos.has(num)) {
+      if (num && Number.isFinite(p) && p > 0 && p <= topeCaballos && !puestos.has(num)) {
         puestos.set(num, p);
       }
     } else {
       const num = String(item ?? "").trim();
-      if (num && !puestos.has(num)) {
-        puestos.set(num, idx + 1);
+      const p = idx + 1;
+      if (num && p <= topeCaballos && !puestos.has(num)) {
+        puestos.set(num, p);
       }
     }
   });
   if (puestos.size === 0 && Array.isArray(res.ganadores)) {
     (res.ganadores as Array<unknown>).forEach((g, idx) => {
       const num = String(g ?? "").trim();
-      if (num && !puestos.has(num)) puestos.set(num, idx + 1);
+      const p = idx + 1;
+      if (num && p <= topeCaballos && !puestos.has(num)) puestos.set(num, p);
     });
   }
 
@@ -449,9 +477,6 @@ export async function liquidarMarcas(
   for (const m of String(res.retirados ?? "").match(/\d+/g) ?? []) retirados.add(m);
 
   // 2) Leer tickets de MARCA pendientes de la carrera (aislados al grupo activo).
-  const activoGrupo = veTodosLosGruposVigente()
-    ? grupoActivoVigente() || grupoVigente()
-    : grupoVigente() || grupoActivoVigente();
   if (!activoGrupo && !veTodosLosGruposVigente()) {
     return { ok: true, liquidados: 0, ganadores: 0, perdedores: 0, reintegrados: 0, gananciaTotal: 0 };
   }

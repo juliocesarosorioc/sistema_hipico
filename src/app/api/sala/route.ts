@@ -1340,9 +1340,13 @@ export async function POST(req: Request) {
           return NextResponse.json({ ok: false, error: "La carrera está cerrada para nuevas jugadas" }, { status: 400 });
         }
 
-        // 1. Control estricto de vigencia de la jugada (tiempo configurable, default 120s)
-        const tiempoVigencia = Number(sala.tiempo_vigencia_segundos || 120);
-        const edadSegundos = (Date.now() - new Date(propMsg.created_at).getTime()) / 1000;
+        // 1. Control estricto de vigencia de la jugada (tiempo configurable en minutos, default 5 min)
+        const tiempoVencimientoMin = Number(
+          sala.tiempo_vencimiento_propuesta_min ??
+          sala.tiempo_vencimiento_min ??
+          Math.max(1, Math.round(Number(sala.tiempo_vigencia_segundos || 300) / 60))
+        );
+        const edadMinutos = (Date.now() - new Date(propMsg.created_at).getTime()) / 60000;
         const remanenteDisponible = Number(propMsg.monto_disponible ?? propMsg.monto_original ?? 0);
 
         // Una propuesta con tomas parciales queda en estado "parcial" y debe
@@ -1351,16 +1355,24 @@ export async function POST(req: Request) {
         const estadoAceptaTomas =
           propMsg.estado_propuesta === "abierta" || propMsg.estado_propuesta === "parcial";
 
-        if (edadSegundos > tiempoVigencia || !estadoAceptaTomas || remanenteDisponible <= 0) {
+        if (edadMinutos > tiempoVencimientoMin || !estadoAceptaTomas || remanenteDisponible <= 0) {
           if (estadoAceptaTomas) {
+            const retenidoRemanente = Number(propMsg.riesgo_retenido ?? remanenteDisponible);
+            if (retenidoRemanente > 0 && propMsg.remitente_id) {
+              await supabaseAdmin.rpc("devolver_riesgo_remanente_propuesta", {
+                p_jugador_id: propMsg.remitente_id,
+                p_monto: retenidoRemanente,
+              });
+            }
             await supabaseAdmin
               .from("chat_mensajes")
-              .update({ estado_propuesta: "cerrada", monto_disponible: 0 })
+              .update({ estado_propuesta: "expirada", monto_disponible: 0 })
               .eq("id", propuestaId);
           }
           return NextResponse.json({
             ok: false,
-            error: "Jugada no concreta por estar vencida.",
+            error: "❌⏰ Nada aquí, fuera de tiempo",
+            msg_publico_bot: "❌⏰ Nada aquí, fuera de tiempo",
           }, { status: 400 });
         }
 
@@ -1438,6 +1450,15 @@ export async function POST(req: Request) {
         }
 
         montoPedido = Math.min(montoPedido, remanenteDisponible);
+
+        const apuestaMinima = Number(sala.apuesta_minima ?? 10.00);
+        if (montoPedido < apuestaMinima && remanenteDisponible >= apuestaMinima) {
+          return NextResponse.json({
+            ok: false,
+            error: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`,
+            msg_publico_bot: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`,
+          }, { status: 400 });
+        }
 
         let resFifo: any = null;
         let fifoExitoso = false;
@@ -1737,6 +1758,43 @@ export async function POST(req: Request) {
             });
           }
 
+          if (body.cerrarPropuestaId && esUuidValido(body.cerrarPropuestaId) && esUuidValido(identidad.usuarioId)) {
+            try {
+              const { data: resCanc, error: errCanc } = await supabaseAdmin.rpc("cancelar_propuesta_proponente_atomica", {
+                p_propuesta_msg_id: body.cerrarPropuestaId,
+                p_jugador_id: identidad.usuarioId,
+              });
+              if (!errCanc && resCanc && (resCanc as any).ok) {
+                await emitirBroadcast(salaId, "nuevo_mensaje", { salaId, idsCerrados: [body.cerrarPropuestaId] });
+                return NextResponse.json({
+                  ok: true,
+                  canceladas: 1,
+                  montoLiberado: (resCanc as any).liberado || 0,
+                  idsCerrados: [body.cerrarPropuestaId],
+                  nuevoSaldoDisponible: (resCanc as any).nuevo_saldo_disponible,
+                });
+              }
+            } catch {}
+          } else if (esUuidValido(salaId) && esUuidValido(identidad.usuarioId)) {
+            try {
+              const { data: resCancTot, error: errCancTot } = await supabaseAdmin.rpc("cancelar_todas_propuestas_proponente_atomica", {
+                p_sala_id: salaId,
+                p_carrera_id: (sala as any).carrera_activa_id || null,
+                p_jugador_id: identidad.usuarioId,
+              });
+              if (!errCancTot && resCancTot && (resCancTot as any).ok) {
+                await emitirBroadcast(salaId, "nuevo_mensaje", { salaId, idsCerrados: (resCancTot as any).canceladas_ids || [] });
+                return NextResponse.json({
+                  ok: true,
+                  canceladas: (resCancTot as any).canceladas || 0,
+                  montoLiberado: (resCancTot as any).total_liberado || 0,
+                  idsCerrados: (resCancTot as any).canceladas_ids || [],
+                  nuevoSaldoDisponible: (resCancTot as any).nuevo_saldo_disponible,
+                });
+              }
+            } catch {}
+          }
+
           let queryAbiertas = supabaseAdmin
             .from("chat_mensajes")
             .select("id, monto_disponible, monto_original")
@@ -1829,6 +1887,15 @@ export async function POST(req: Request) {
             return NextResponse.json({ ok: false, error: "La carrera está cerrada para nuevas jugadas" }, { status: 400 });
           }
 
+          const apuestaMinima = Number(sala.apuesta_minima ?? 10.00);
+          if (Number(analisis.monto) < apuestaMinima) {
+            return NextResponse.json({
+              ok: false,
+              error: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`,
+              msg_publico_bot: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`,
+            }, { status: 400 });
+          }
+
           // Resolver carrera activa de forma robusta
           let carreraIdActiva = sala.carrera_activa_id;
           if (!carreraIdActiva || !esUuidValido(carreraIdActiva)) {
@@ -1864,7 +1931,7 @@ export async function POST(req: Request) {
                 p_caballos_a: analisis.caballosBandoA || (analisis.ejemplarTexto ? [analisis.ejemplarTexto] : []),
                 p_caballos_b: analisis.caballosBandoB || [],
                 p_ejemplar_texto: analisis.ejemplarTexto || "",
-                p_proporcion: "1x1",
+                p_proporcion: analisis.proporcion || "1x1",
                 p_monto_solicitado: analisis.monto,
                 p_texto_estandarizado: analisis.jugadaEstandarizada,
               });

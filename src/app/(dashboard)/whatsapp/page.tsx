@@ -37,6 +37,13 @@ interface SalaJuego {
   hipodromo_activo?: string;
   numero_carrera_activa?: number;
   estado_carrera?: string;
+  apuesta_minima?: number;
+  tiempo_vencimiento_propuesta_min?: number;
+  tiempo_vencimiento_min?: number;
+  tope_caballos_marcas_nacional?: number;
+  tope_marcas_nacional?: number;
+  tope_caballos_marcas_internacional?: number;
+  tope_marcas_americano?: number;
   whatsapp_group_jid?: string | null;
   whatsapp_group_nombre?: string | null;
   grupos_whatsapp?: Array<{
@@ -160,6 +167,69 @@ export default function WhatsappPage() {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [salaConfigurando, setSalaConfigurando] = useState<SalaJuego | null>(null);
   const [grupoParaVincularEnModal, setGrupoParaVincularEnModal] = useState<string>("");
+  const [confApuestaMin, setConfApuestaMin] = useState<string>("10");
+  const [confTiempoVenc, setConfTiempoVenc] = useState<string>("5");
+  const [confTopeNac, setConfTopeNac] = useState<string>("5");
+  const [confTopeInt, setConfTopeInt] = useState<string>("4");
+  const [guardandoParametros, setGuardandoParametros] = useState<boolean>(false);
+
+  const abrirConfigSala = (sala: SalaJuego) => {
+    setSalaConfigurando(sala);
+    setGrupoParaVincularEnModal("");
+    setConfApuestaMin(String(sala.apuesta_minima ?? 10));
+    setConfTiempoVenc(String(sala.tiempo_vencimiento_propuesta_min ?? sala.tiempo_vencimiento_min ?? 5));
+    setConfTopeNac(String(sala.tope_caballos_marcas_nacional ?? sala.tope_marcas_nacional ?? 5));
+    setConfTopeInt(String(sala.tope_caballos_marcas_internacional ?? sala.tope_marcas_americano ?? 4));
+  };
+
+  const guardarParametrosSala = async () => {
+    if (!salaConfigurando) return;
+    setGuardandoParametros(true);
+    try {
+      const res = await fetch("/api/whatsapp-sala/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accion: "actualizar_config_sala",
+          salaId: salaConfigurando.id,
+          apuestaMinima: parseFloat(confApuestaMin) || 10,
+          tiempoVencimientoPropuestaMin: parseInt(confTiempoVenc, 10) || 5,
+          topeCaballosMarcasNacional: parseInt(confTopeNac, 10) || 5,
+          topeCaballosMarcasInternacional: parseInt(confTopeInt, 10) || 4,
+        }),
+      });
+      const json = await res.json();
+      if (json?.ok) {
+        setFeedback({ tipo: "ok", texto: "✅ Parámetros de sala actualizados correctamente." });
+        const apMinNum = parseFloat(confApuestaMin) || 10;
+        const tiempoNum = parseInt(confTiempoVenc, 10) || 5;
+        const topeNacNum = parseInt(confTopeNac, 10) || 5;
+        const topeIntNum = parseInt(confTopeInt, 10) || 4;
+        setSalas((prev) =>
+          prev.map((s) =>
+            s.id === salaConfigurando.id
+              ? {
+                  ...s,
+                  apuesta_minima: apMinNum,
+                  tiempo_vencimiento_propuesta_min: tiempoNum,
+                  tiempo_vencimiento_min: tiempoNum,
+                  tope_caballos_marcas_nacional: topeNacNum,
+                  tope_marcas_nacional: topeNacNum,
+                  tope_caballos_marcas_internacional: topeIntNum,
+                  tope_marcas_americano: topeIntNum,
+                }
+              : s
+          )
+        );
+      } else {
+        setFeedback({ tipo: "error", texto: json?.motivo || "Error al actualizar parámetros." });
+      }
+    } catch (err: any) {
+      setFeedback({ tipo: "error", texto: err?.message || "Error al actualizar parámetros de la sala." });
+    } finally {
+      setGuardandoParametros(false);
+    }
+  };
   const [pingPorSala, setPingPorSala] = useState<
     Record<string, { latenciaMs: number; conectado: boolean; participantes?: number; error?: string }>
   >({});
@@ -1274,10 +1344,7 @@ export default function WhatsappPage() {
                       </a>
                       <button
                         type="button"
-                        onClick={() => {
-                          setSalaConfigurando(sala);
-                          setGrupoParaVincularEnModal("");
-                        }}
+                        onClick={() => abrirConfigSala(sala)}
                         className="rounded-full border border-sky-500/40 bg-sky-950/60 px-2.5 py-0.5 text-[10px] font-black text-sky-200 transition hover:bg-sky-900"
                         title="Configurar y gestionar grupos de esta sala"
                       >
@@ -1947,6 +2014,85 @@ export default function WhatsappPage() {
                 >
                   🔗 Vincular
                 </button>
+              </div>
+            </div>
+
+            {/* Parámetros de Reglas de Juego y Marcas */}
+            <div className="mt-5 rounded-2xl border border-slate-800/80 bg-slate-900/50 p-4">
+              <div className="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-300">
+                  ⚙️ Parámetros de Juego y Liquidación
+                </h4>
+                <button
+                  type="button"
+                  onClick={guardarParametrosSala}
+                  disabled={guardandoParametros}
+                  className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-black text-white transition hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {guardandoParametros ? "Guardando…" : "💾 Guardar Parámetros"}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">
+                    Apuesta Mínima ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="1"
+                    value={confApuestaMin}
+                    onChange={(e) => setConfApuestaMin(e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 font-mono text-white outline-none focus:border-emerald-500"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-0.5">Mínimo para proponer o cruzar (def: 10.00)</p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">
+                    Vencimiento Propuesta (minutos)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={confTiempoVenc}
+                    onChange={(e) => setConfTiempoVenc(e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 font-mono text-white outline-none focus:border-emerald-500"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-0.5">Minutos antes de expirar parada abierta (def: 5)</p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">
+                    Tope Marcas Nacional (La Rinconada)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={confTopeNac}
+                    onChange={(e) => setConfTopeNac(e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 font-mono text-white outline-none focus:border-emerald-500"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-0.5">Lugares de pizarra evaluados (def: 5)</p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">
+                    Tope Marcas Internacional (Americanas)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={confTopeInt}
+                    onChange={(e) => setConfTopeInt(e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 font-mono text-white outline-none focus:border-emerald-500"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-0.5">Lugares de pizarra evaluados (def: 4)</p>
+                </div>
               </div>
             </div>
 

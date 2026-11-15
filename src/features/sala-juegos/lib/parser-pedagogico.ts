@@ -17,6 +17,7 @@ export interface ResultadoAnalisisJugada {
   ejemplarTexto: string;
   monto: number;
   montoTexto?: string;
+  proporcion?: string;
   jugadaEstandarizada: string;
   confianza: number;
   requiereOperador: boolean;
@@ -85,6 +86,16 @@ export function extraerMontoNumerico(rawInput: string): { monto: number; montoTe
 }
 
 /**
+ * Normaliza cualquier variante de proporción o parada a premio al estándar interno 10/X:
+ * Formatos: 10ª5, 10@5, A5, @5, 10/5, a5, 10a5 -> 10/5
+ * (Cuando se omite el 10 inicial como en A5 o @5, asume base 10 automáticamente: ^(?:10)?[aª@\/](\d+)$ -> 10/$1)
+ */
+export function normalizarParadaPremio(texto: string): string {
+  if (!texto) return texto;
+  return texto.replace(/(?:^|(?<=[\s,(\[]))(?:10)?[aª@\/](\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/gi, "10/$1");
+}
+
+/**
  * Valida de forma estricta las palabras autorizadas para responder y concretar una propuesta
  */
 export function evaluarConcrecionEstricta(
@@ -106,23 +117,23 @@ export function evaluarConcrecionEstricta(
     };
   }
 
-  const texto = textoRespuesta.trim();
+  const texto = normalizarParadaPremio(textoRespuesta.trim());
 
   // Validar verbos autorizados según el rol de la propuesta citada:
-  // - Si la propuesta es Juego: solo acepta Consigo, Doy, J, Jugaste, Jugamos, Ponte
-  // - Si la propuesta es Consigo / Doy: solo acepta Juego, Jugue, Jugué, J, Voy, Ponte
+  // - Si el proponente "CONSIGUE / DA" (accion_proponente = consigo/doy): Solo concretan: Juego, Jugue, Jugué, Ponte, Jugamos, Voy, J
+  // - Si el proponente "JUEGA / VOY" (accion_proponente = juego): Solo concretan: Jugaste, Ponte, Consigo, J
   const esPropuestaJuego = accionPropuesta === 'JUEGA';
 
-  // Soporta 5k, 10k, 10.000, 20.000, 10.424,50, etc.
-  const regexJuego = /^(consigo|doy|j|jugaste|jugamos|ponte|copiado|pago|voy|va)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+))?$/i;
-  const regexConsigo = /^(juego|jugue|jugué|jugo|j|voy|ponte|copiado|pago|va)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+))?$/i;
+  // Soporta montos opcionales: 5k, 10k, 10.000, 20.000, 10.424,50, etc.
+  const regexJuego = /^(jugaste|ponte|consigo|j)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+))?$/i;
+  const regexConsigo = /^(juego|jugue|jugué|ponte|jugamos|voy|j)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+))?$/i;
 
   const match = esPropuestaJuego ? texto.match(regexJuego) : texto.match(regexConsigo);
 
   if (!match) {
     const permitidas = esPropuestaJuego
-      ? 'Consigo, J, Jugaste, Jugamos, Ponte'
-      : 'Juego, Jugue, Jugué, J, Voy, Ponte';
+      ? 'Jugaste, Ponte, Consigo, J'
+      : 'Juego, Jugue, Jugué, Ponte, Jugamos, Voy, J';
     return {
       valido: false,
       motivoRechazo: `Palabra no autorizada para concretar. Palabras válidas: ${permitidas}`,
@@ -232,11 +243,16 @@ export function analizarYEstandarizarJugada(
     };
   }
 
-  const texto = textoUsuario.trim().replace(/\s+/g, ' ');
+  const textoNormalizado = normalizarParadaPremio(textoUsuario.trim());
+  const texto = textoNormalizado.replace(/\s+/g, ' ');
   const prefijo = prefijoMonedaGrupo(moneda);
 
+  // Extraer proporción gabela si existe en el texto (ej. 10/5, 10/8, 10/6.5)
+  const matchGabela = texto.match(/\b(10\/\d+(?:[.,]\d+)?)\b/);
+  const proporcionDetectada = matchGabela ? matchGabela[1].replace(',', '.') : '1x1';
+
   // 1. Detectar si el mensaje tiene intención de jugada
-  const patronIntencion = /\b(juego|jugo|jugó|jugue|jugué|j|consigo|doy|voy|ponte|copiado|pago|[1-9]p|10p|[1-9]n|10n|1\/2|2\/3|2y2|3y3|x|contra)\b/i;
+  const patronIntencion = /\b(juego|jugo|jugó|jugue|jugué|j|consigo|doy|voy|ponte|copiado|pago|[1-9]p|10p|[1-9]n|10n|[1-5]y[1-5]n?|[1-5]\/[1-5]n?|10\/\d+|x|contra)\b/i;
   if (!patronIntencion.test(texto) && !/^[0-9kK\.,]+\s+(?:al?|del?|el)\s+\d{1,2}$/i.test(texto)) {
     return {
       esIntencionDeJugada: false,
@@ -248,6 +264,7 @@ export function analizarYEstandarizarJugada(
       caballosBandoB: [],
       ejemplarTexto: '',
       monto: 0,
+      proporcion: '1x1',
       jugadaEstandarizada: texto,
       confianza: 1.0,
       requiereOperador: false,
@@ -343,6 +360,7 @@ export function analizarYEstandarizarJugada(
         ejemplarTexto: `${bandoA.join('-')} x ${bandoB.join('-')}`,
         monto,
         montoTexto,
+        proporcion: proporcionDetectada,
         jugadaEstandarizada,
         confianza: 0.99,
         requiereOperador: false,
@@ -362,15 +380,19 @@ export function analizarYEstandarizarJugada(
   // - "JUGO 2N DE FOUR PALMS QUEEN 500", "JUEGO 3N DE ROSE SENSATION 500"
   // - "JUEGO 4P DE LITTLE VALERY 500", "Juego 5p special one 100", "Juego 6p gold rock 100"
   // - "Juego 5 5k", "Juego al 7 10.000", "Consigo 8 50"
-  const regexPuestosYCaballos = /^(?:(juego|jugo|jugó|consigo|doy|voy)\s+)?(?:([1-9]p|10p|[1-9]n|10n|[1-5]y[1-5]n?|[1-5]\/[1-5]n?|a|al)\s+)?(?:de\s+la\s+|del\s+|de\s+|la\s+|el\s+|a\s+|al\s+|#)?([0-9A-Za-z\.\-,\s']+?)\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+)$/i;
+  const regexPuestosYCaballos = /^(?:(juego|jugo|jugó|consigo|doy|voy)\s+)?(?:([1-9]p|10p|[1-9]n|10n|[1-5]y[1-5]n?|[1-5]\/[1-5]n?|10\/\d+(?:[\.,]\d+)?|a|al)\s+)?(?:de\s+la\s+|del\s+|de\s+|la\s+|el\s+|a\s+|al\s+|#)?([0-9A-Za-z\.\-,\s']+?)\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+)$/i;
   const matchPuesto = texto.match(regexPuestosYCaballos);
 
   if (matchPuesto) {
     const rawMod = (matchPuesto[2] || "").trim().toUpperCase();
     let modLimpia = "1P";
     if (rawMod && rawMod !== "A" && rawMod !== "AL") {
-      modLimpia = rawMod.replace(/\s*-\s*/g, "-").replace(/\s+/g, " ");
-      modLimpia = modLimpia.replace(/^([1-5]\/[1-5])(?=-)/, "$1N");
+      if (rawMod.startsWith("10/")) {
+        modLimpia = "A_PREMIO";
+      } else {
+        modLimpia = rawMod.replace(/\s*-\s*/g, "-").replace(/\s+/g, " ");
+        modLimpia = modLimpia.replace(/^([1-5]\/[1-5])(?=-)/, "$1N");
+      }
     }
 
     const rawEjemplar = (matchPuesto[3] || "").trim();
@@ -456,6 +478,7 @@ export function analizarYEstandarizarJugada(
         ejemplarTexto,
         monto,
         montoTexto,
+        proporcion: rawMod.startsWith('10/') ? rawMod : proporcionDetectada,
         jugadaEstandarizada,
         confianza: 0.99,
         requiereOperador: false,
@@ -492,6 +515,7 @@ export function analizarYEstandarizarJugada(
           ejemplarTexto: caballos[0],
           monto,
           montoTexto,
+          proporcion: proporcionDetectada,
           jugadaEstandarizada: '',
           confianza: 1.0,
           requiereOperador: false,
@@ -512,6 +536,7 @@ export function analizarYEstandarizarJugada(
           ejemplarTexto: caballos[0],
           monto,
           montoTexto,
+          proporcion: proporcionDetectada,
           jugadaEstandarizada: '',
           confianza: 1.0,
           requiereOperador: false,
@@ -542,6 +567,7 @@ export function analizarYEstandarizarJugada(
         ejemplarTexto: caballos[0],
         monto,
         montoTexto,
+        proporcion: proporcionDetectada,
         jugadaEstandarizada,
         confianza: 0.99,
         requiereOperador: false,
@@ -609,8 +635,8 @@ export interface ResultadoComandoRetiro {
 export function analizarComandoRetiro(textoInput: string): ResultadoComandoRetiro {
   const texto = (textoInput || "").trim().toLowerCase();
 
-  // 1. Palabras exactas autorizadas
-  const regexExacto = /^(se\s*fue|sf|cf|c\s*fue|ce\s*fue)$/i;
+  // 1. Palabras exactas autorizadas: Se Fue, SF, s fue, cf, cfue, c fue
+  const regexExacto = /^(se\s*fue|sf|s\s*fue|cf|cfue|c\s*fue)$/i;
   if (regexExacto.test(texto)) {
     return {
       esComandoRetiro: true,
@@ -619,12 +645,12 @@ export function analizarComandoRetiro(textoInput: string): ResultadoComandoRetir
   }
 
   // 2. Palabras similares que requieren aclaratoria obligatoria del bot
-  const regexSimilar = /^(se\s*fu|sefve|c\s*fuee|cefue|se\s*fuee|se\s*va|c\s*va|me\s*fui|retirar|cancelar|cerrar\s*jugadas)$/i;
+  const regexSimilar = /^(se\s*fu|sefve|c\s*fuee|se\s*fuee|se\s*va|c\s*va|me\s*fui|retirar|cancelar|cerrar\s*jugadas)$/i;
   if (regexSimilar.test(texto)) {
     return {
       esComandoRetiro: true,
       esValido: false,
-      mensajeAclaratoria: "Por favor aclara si deseas retirar tus jugadas con: 'Se fue' o 'sf'",
+      mensajeAclaratoria: "Por favor aclara si deseas retirar tus jugadas con: 'Se fue', 'sf' o 'cf'",
     };
   }
 

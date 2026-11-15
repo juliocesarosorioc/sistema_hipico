@@ -187,6 +187,66 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 4.1 Actualizar configuración de sala (apuesta mínima, vencimiento, topes de marcas)
+    if (accion === "actualizar_config_sala" || accion === "actualizar-config-sala") {
+      const {
+        salaId,
+        apuestaMinima,
+        tiempoVencimientoPropuestaMin,
+        topeCaballosMarcasNacional,
+        topeCaballosMarcasInternacional,
+        nombreSala,
+        hipodromoActivo,
+      } = body;
+      if (!salaId) {
+        return NextResponse.json({ ok: false, motivo: "salaId es requerido" }, { status: 200 });
+      }
+
+      const payload: Record<string, any> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (apuestaMinima !== undefined) {
+        const n = parseFloat(String(apuestaMinima));
+        if (Number.isFinite(n) && n > 0) payload.apuesta_minima = n;
+      }
+      if (tiempoVencimientoPropuestaMin !== undefined) {
+        const n = parseInt(String(tiempoVencimientoPropuestaMin), 10);
+        if (Number.isFinite(n) && n > 0) {
+          payload.tiempo_vencimiento_propuesta_min = n;
+          payload.tiempo_vencimiento_min = n;
+        }
+      }
+      if (topeCaballosMarcasNacional !== undefined) {
+        const n = parseInt(String(topeCaballosMarcasNacional), 10);
+        if (Number.isFinite(n) && n > 0) {
+          payload.tope_caballos_marcas_nacional = n;
+          payload.tope_marcas_nacional = n;
+        }
+      }
+      if (topeCaballosMarcasInternacional !== undefined) {
+        const n = parseInt(String(topeCaballosMarcasInternacional), 10);
+        if (Number.isFinite(n) && n > 0) {
+          payload.tope_caballos_marcas_internacional = n;
+          payload.tope_marcas_americano = n;
+        }
+      }
+      if (nombreSala) payload.nombre_sala = String(nombreSala).trim();
+      if (hipodromoActivo) payload.hipodromo_activo = String(hipodromoActivo).trim().toUpperCase();
+
+      const { data: updated, error: errUpd } = await supabaseAdmin
+        .from("salas_juego")
+        .update(payload)
+        .eq("id", salaId)
+        .select()
+        .single();
+
+      if (errUpd) {
+        return NextResponse.json({ ok: false, motivo: errUpd.message }, { status: 200 });
+      }
+
+      return NextResponse.json({ ok: true, sala: updated }, { status: 200 });
+    }
+
     // 5. Proxy fallback seguro a http://127.0.0.1:3005
     try {
       const endpoint = body.endpoint ? String(body.endpoint) : "/status";
