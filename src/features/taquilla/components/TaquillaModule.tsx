@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BetSlip } from "@/features/taquilla/components/BetSlip";
+import { ListaTickets } from "@/features/taquilla/components/ListaTickets";
+import { JugadasAdelantadasTaquilla } from "@/features/taquilla/components/JugadasAdelantadasTaquilla";
 import { BarraCarrerasLiquidadas } from "@/features/gestion/components/BarraCarrerasLiquidadas";
 import { PagarCarreraModal } from "@/features/taquilla/components/PagarCarreraModal";
 import { RelacionCarrera } from "@/features/taquilla/components/RelacionCarrera";
@@ -100,6 +102,8 @@ export function TaquillaModule() {
         <>
           <BarraCarrerasLiquidadas fecha={new Date().toISOString().slice(0, 10)} hipodromo="" />
           <BetSlip />
+          <JugadasAdelantadasTaquilla />
+          <ListaTickets />
           <RelacionCarrera />
           <PagarCarreraModal />
         </>

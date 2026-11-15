@@ -433,6 +433,7 @@ export function BetSlip() {
         cliente1Id: String(c1.id),
         cliente2Id: c2 ? String(c2.id) : undefined,
         grupoId: grupoId ?? undefined,
+        es_adelantada: modalidadTiempo === "ADELANTADA",
       });
       // Modalidad de TIEMPO: si la jugada se cargó ADELANTADA, se marca el
       // ticket recién creado (`tickets_apuestas.es_adelantada`). La venta YA está

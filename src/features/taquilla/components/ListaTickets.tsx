@@ -82,6 +82,11 @@ export function ListaTickets() {
                   <div className="min-w-0">
                     <p className="truncate font-mono text-[12px] font-bold text-slate-700">
                       {t.comando}{" "}
+                      {t.es_adelantada ? (
+                        <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 align-middle text-[9px] font-black uppercase text-amber-800">
+                          ⏳ Adelantada
+                        </span>
+                      ) : null}
                       {t.ticketId !== undefined ? (
                         <span
                           className="ml-1 rounded bg-emerald-100 px-1 py-0.5 align-middle text-[9px] font-black uppercase text-emerald-700"
