@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
     let qSalas = supabaseAdmin
       .from("salas_juego")
-      .select("*, grupos_venta(nombre)")
+      .select("*")
       .eq("activa", true)
       .order("orden_sala", { ascending: true });
 
@@ -53,9 +53,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const grupoNombrePorId = new Map<string, string>();
+    for (const g of gruposSistema || []) {
+      if (g?.id) grupoNombrePorId.set(String(g.id), String(g.nombre || ""));
+    }
+
     const salas = (salasRaw || []).map((s: any) => ({
       ...s,
-      grupo_nombre: s.grupos_venta?.nombre || null,
+      grupo_nombre: grupoNombrePorId.get(String(s.grupo_id)) || null,
       grupos_whatsapp: vinculosPorSala[s.id] || [],
     }));
 
