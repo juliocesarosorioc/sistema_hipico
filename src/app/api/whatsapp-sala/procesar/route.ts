@@ -1388,6 +1388,64 @@ export async function POST(req: Request) {
 
     const saldoDisponible = calcularSaldoDisponible(cliente);
 
+    // ========================================================================
+    // 1. REGLAS ENTRENADAS DE LA SALA DE JUEGOS
+    // Si no es comando de operador (!), consultar evaluar_respuesta_entrenada_sala
+    // ========================================================================
+    if (!texto.trim().startsWith("!")) {
+      try {
+        const { data: dataEntrenada } = await supabaseAdmin.rpc(
+          "evaluar_respuesta_entrenada_sala",
+          {
+            p_grupo_id: grupoId,
+            p_jugador_id: cliente.id,
+            p_texto: texto,
+          }
+        );
+
+        if (
+          dataEntrenada?.coincidencia === true &&
+          (dataEntrenada.accion_sistema === "respuesta_directa" ||
+            dataEntrenada.accion_sistema === "consultar_saldo")
+        ) {
+          const msgPublico = dataEntrenada.msg_publico || null;
+          const msgPrivado = dataEntrenada.msg_privado || null;
+
+          if (msgPublico) {
+            await supabaseAdmin.from("chat_mensajes").insert({
+              grupo_id: grupoId,
+              sala_id: salaId,
+              remitente_nombre: "🤖 ASISTENTE DE SALA",
+              es_operador: true,
+              tipo_mensaje: "bot_entrenado",
+              contenido: msgPublico,
+              whatsapp_msg_id: whatsappMsgId || null,
+              whatsapp_group_jid: groupJid || null,
+              whatsapp_group_nombre: whatsappGroupNombre || null,
+              origen_canal: "whatsapp",
+            });
+            await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+          }
+
+          return NextResponse.json({
+            ok: true,
+            tipo: "RESPUESTA_ENTRENADA",
+            respuestaGrupo: msgPublico,
+            msg_publico: msgPublico,
+            msg_publico_bot: msgPublico,
+            respuestaPublica: msgPublico,
+            mensajePrivadoAutor: msgPrivado,
+            msg_privado_bot: msgPrivado,
+            alertaPrivada: null,
+            notificaciones_privadas: [],
+            senderJid: participantJid,
+          });
+        }
+      } catch (errRpcEntrenada) {
+        console.warn("[procesar] Aviso evaluar_respuesta_entrenada_sala:", errRpcEntrenada);
+      }
+    }
+
     const ejecutarAmpliacionCupo = async (
       quotedPropuestaId: string | null,
       nuevoTope: number | null

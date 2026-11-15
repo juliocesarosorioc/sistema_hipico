@@ -78,6 +78,13 @@ export default function SalaJuegosWhatsApp({
   const [textoInput, setTextoInput] = useState<string>('');
   const [modalPrejugadasAbierto, setModalPrejugadasAbierto] = useState<boolean>(false);
   const [modalRecargaAbierto, setModalRecargaAbierto] = useState<boolean>(false);
+  const [modalEntrenadorAbierto, setModalEntrenadorAbierto] = useState<boolean>(false);
+  const [reglasEntrenadas, setReglasEntrenadas] = useState<any[]>([]);
+  const [fraseDisparadora, setFraseDisparadora] = useState<string>('');
+  const [tipoCoincidencia, setTipoCoincidencia] = useState<'exacta' | 'contiene'>('contiene');
+  const [respuestaPublica, setRespuestaPublica] = useState<string>('');
+  const [respuestaPrivada, setRespuestaPrivada] = useState<string>('');
+  const [guardandoRegla, setGuardandoRegla] = useState<boolean>(false);
 
   // Propuesta citada para responder/concretar
   const [replyToPropuesta, setReplyToPropuesta] = useState<any | null>(null);
@@ -962,6 +969,68 @@ export default function SalaJuegosWhatsApp({
     }
   };
 
+  // 5. ENTRENADOR DE RESPUESTAS AUTOMÁTICAS Y REGLAS (BAILEYS + SALA DE JUEGOS)
+  const cargarReglasEntrenadas = async () => {
+    if (!grupoId || !supabase) return;
+    try {
+      const { data } = await supabase
+        .from('reglas_respuestas_automaticas')
+        .select('*')
+        .eq('grupo_id', grupoId)
+        .order('created_at', { ascending: false });
+      if (data) setReglasEntrenadas(data);
+    } catch {
+      // noop
+    }
+  };
+
+  const guardarReglaEntrenada = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!grupoId || !supabase || !fraseDisparadora.trim()) return;
+
+    setGuardandoRegla(true);
+    try {
+      const { error } = await supabase
+        .from('reglas_respuestas_automaticas')
+        .upsert(
+          {
+            grupo_id: grupoId,
+            frase_disparadora: fraseDisparadora.trim(),
+            tipo_coincidencia: tipoCoincidencia,
+            respuesta_publica: respuestaPublica.trim() || null,
+            respuesta_privada: respuestaPrivada.trim() || null,
+            activo: true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'grupo_id,frase_disparadora' }
+        );
+
+      if (!error) {
+        setFraseDisparadora('');
+        setRespuestaPublica('');
+        setRespuestaPrivada('');
+        void cargarReglasEntrenadas();
+      }
+    } catch (err) {
+      console.warn('Error guardando regla entrenada:', err);
+    } finally {
+      setGuardandoRegla(false);
+    }
+  };
+
+  const alternarReglaActiva = async (id: string, activoActual: boolean) => {
+    if (!supabase) return;
+    try {
+      await supabase
+        .from('reglas_respuestas_automaticas')
+        .update({ activo: !activoActual, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      void cargarReglasEntrenadas();
+    } catch {
+      // noop
+    }
+  };
+
   const renderFeedSala = (sala: SalaActivaInfo) => {
     return (
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3" style={{ fontSize: `${tamanoLetra}px` }}>
@@ -1261,6 +1330,18 @@ export default function SalaJuegosWhatsApp({
 
         {/* CONTROLES DE TAMAÑO DE LETRA, PREJUGADAS Y BILLETERA PERSONAL PRIVADA */}
         <div className="flex items-center gap-2">
+          {usuarioActual.esOperador && (
+            <button
+              onClick={() => {
+                setModalEntrenadorAbierto(true);
+                void cargarReglasEntrenadas();
+              }}
+              className="bg-indigo-600/30 border border-indigo-500/50 text-indigo-300 hover:bg-indigo-600/40 px-2.5 py-1 rounded text-xs font-bold flex items-center gap-1"
+              title="Entrenar respuestas automáticas para la Sala y el Bot de WhatsApp"
+            >
+              <span>🤖</span> Entrenar Respuestas
+            </button>
+          )}
           <button
             onClick={() => setModalPrejugadasAbierto(true)}
             className="bg-amber-600/20 border border-amber-500/40 text-amber-300 hover:bg-amber-600/30 px-2.5 py-1 rounded text-xs font-semibold"
@@ -1536,6 +1617,157 @@ export default function SalaJuegosWhatsApp({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* MODAL ENTRENADOR DE RESPUESTAS AUTOMÁTICAS Y REGLAS */}
+      {modalEntrenadorAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-2xl rounded-3xl border border-slate-700 bg-slate-950 p-6 text-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="rounded-md border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-indigo-300">
+                  Entrenador de Sala & WhatsApp
+                </span>
+                <h3 className="mt-1 text-base font-black text-white">
+                  Respuestas Automáticas y Reglas Entrenadas
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Aprende frases de los jugadores para responder al instante en el Grupo de WhatsApp y en la Sala Web.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalEntrenadorAbierto(false)}
+                className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+
+            {/* Formulario para agregar / editar regla */}
+            <form onSubmit={guardarReglaEntrenada} className="mt-4 space-y-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="sm:col-span-2">
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                    Frase Disparadora (Mensaje del Jugador)
+                  </label>
+                  <input
+                    type="text"
+                    value={fraseDisparadora}
+                    onChange={(e) => setFraseDisparadora(e.target.value)}
+                    placeholder="Ej: saldo, como jugar, horario, banco..."
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none focus:border-indigo-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                    Tipo Coincidencia
+                  </label>
+                  <select
+                    value={tipoCoincidencia}
+                    onChange={(e) => setTipoCoincidencia(e.target.value as 'exacta' | 'contiene')}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none focus:border-indigo-500"
+                  >
+                    <option value="contiene">Contiene frase</option>
+                    <option value="exacta">Exacta</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                  Respuesta Pública (Grupo de WhatsApp y Sala de Juegos)
+                </label>
+                <input
+                  type="text"
+                  value={respuestaPublica}
+                  onChange={(e) => setRespuestaPublica(e.target.value)}
+                  placeholder="Mensaje que saldrá en el grupo de WhatsApp (opcional)"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                  Respuesta Privada (Privado del Jugador en WhatsApp)
+                </label>
+                <input
+                  type="text"
+                  value={respuestaPrivada}
+                  onChange={(e) => setRespuestaPrivada(e.target.value)}
+                  placeholder="Mensaje que llegará directo al privado del jugador (opcional)"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="submit"
+                  disabled={guardandoRegla || !fraseDisparadora.trim()}
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow transition hover:bg-indigo-500 disabled:opacity-40"
+                >
+                  {guardandoRegla ? "Enseñando..." : "💾 Guardar Regla / Enseñar al Bot"}
+                </button>
+              </div>
+            </form>
+
+            {/* Lista de reglas existentes */}
+            <div className="mt-4">
+              <h4 className="text-[11px] font-bold uppercase text-slate-400 mb-2">
+                Reglas Entrenadas ({reglasEntrenadas.length})
+              </h4>
+              <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                {reglasEntrenadas.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic p-3 text-center border border-dashed border-slate-800 rounded-xl">
+                    No hay reglas personalizadas aún para este grupo. Agrega una arriba.
+                  </p>
+                ) : (
+                  reglasEntrenadas.map((r) => (
+                    <div
+                      key={r.id}
+                      className={`flex items-start justify-between p-3 rounded-xl border ${
+                        r.activo ? "border-slate-800 bg-slate-900/60" : "border-slate-800/40 bg-slate-950/40 opacity-50"
+                      }`}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-white">
+                            &quot;{r.frase_disparadora}&quot;
+                          </span>
+                          <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-mono">
+                            {r.tipo_coincidencia}
+                          </span>
+                        </div>
+                        {r.respuesta_publica && (
+                          <p className="text-[11px] text-emerald-300 mt-1 truncate">
+                            📢 Grupo: {r.respuesta_publica}
+                          </p>
+                        )}
+                        {r.respuesta_privada && (
+                          <p className="text-[11px] text-sky-300 mt-0.5 truncate">
+                            🔒 Privado: {r.respuesta_privada}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => alternarReglaActiva(r.id, r.activo)}
+                        className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition ${
+                          r.activo
+                            ? "border-emerald-600/40 bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900"
+                            : "border-slate-700 bg-slate-800 text-slate-400 hover:bg-slate-700"
+                        }`}
+                      >
+                        {r.activo ? "Activa" : "Inactiva"}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

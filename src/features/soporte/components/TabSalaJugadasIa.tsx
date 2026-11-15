@@ -16,6 +16,39 @@ import {
   EVENTO_ESTADO_CARRERA_CAMBIADO,
   type EstadoOperativoCarrera,
 } from "@/features/portal/lib/bloqueo-jugadas";
+import { supabase } from "@/core/supabase";
+
+export async function sincronizarReglaEntrenada(grupoId: string, regla: {
+  id?: string;
+  frase_disparadora: string;
+  tipo_coincidencia?: "exacta" | "contiene";
+  respuesta_publica?: string | null;
+  respuesta_privada?: string | null;
+  activo?: boolean;
+}) {
+  if (!grupoId || !supabase) return { ok: false, error: "grupoId o supabase no disponible" };
+  try {
+    const { data, error } = await supabase
+      .from("reglas_respuestas_automaticas")
+      .upsert(
+        {
+          grupo_id: grupoId,
+          frase_disparadora: regla.frase_disparadora.trim(),
+          tipo_coincidencia: regla.tipo_coincidencia || "contiene",
+          respuesta_publica: regla.respuesta_publica ? regla.respuesta_publica.trim() : null,
+          respuesta_privada: regla.respuesta_privada ? regla.respuesta_privada.trim() : null,
+          activo: regla.activo !== undefined ? regla.activo : true,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "grupo_id,frase_disparadora" }
+      )
+      .select();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, data };
+  } catch (err: any) {
+    return { ok: false, error: err?.message };
+  }
+}
 
 const JUGADORES_DEFECTO = [
   "ARRAEZ",
