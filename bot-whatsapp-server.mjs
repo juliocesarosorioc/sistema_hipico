@@ -124,6 +124,16 @@ const mutedJids = new Set();
 const RATE_LIMIT_WINDOW_MS = 10000; // 10 segundos
 const MAX_MESSAGES_PER_WINDOW = 5;
 
+const sanitizarTexto = (str) => {
+  if (typeof str !== "string") return "";
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s.,!¡?¿$*+=\-()\[\]]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
 async function verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado) {
   const cacheKey = `${remoteJid}_${participantJid}`;
   const enCache = cacheOperadores.get(cacheKey);
@@ -964,7 +974,7 @@ async function manejarMensajeEntrante(msg) {
       msg.message?.videoMessage?.caption ||
       "";
 
-    const textoLimpio = String(texto || "").trim();
+    const textoLimpio = sanitizarTexto(String(texto || ""));
     if (!textoLimpio) return;
 
     // Cierre VULN-14: Soporte para JIDs @lid, participantAlt y cuenta propia del teléfono
@@ -973,7 +983,7 @@ async function manejarMensajeEntrante(msg) {
       msg.participant ||
       (esFromMe ? (sock?.user?.id ? `${normalizarTelefono(sock.user.id)}@s.whatsapp.net` : "") : "");
     const participantAlt = msg.key.participantAlt || msg.participantAlt || "";
-    const senderNombre = msg.pushName || (esFromMe ? "Operador (Teléfono)" : "Jugador");
+    const senderNombre = sanitizarTexto(msg.pushName) || (esFromMe ? "Operador (Telefono)" : "Usuario");
 
     const senderJid = participantJid || participantAlt || "";
 

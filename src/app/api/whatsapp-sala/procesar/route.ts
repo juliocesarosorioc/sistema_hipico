@@ -15,6 +15,16 @@ import { sincronizarTicketsPropuestaATaquilla } from "@/features/whatsapp-sala/l
 
 export const dynamic = "force-dynamic";
 
+function sanitizarTexto(str: unknown): string {
+  if (typeof str !== "string") return "";
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s.,!¡?¿$*+=\-()\[\]]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const BOT_DAEMON_URL = process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
 const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
@@ -394,6 +404,17 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
+
+    // Sanitización estricta Anti-XSS: descartar etiquetas, SQL y caracteres de control
+    if (typeof body.pushName === "string") {
+      body.pushName = sanitizarTexto(body.pushName) || "Usuario";
+    }
+    if (typeof body.senderNombre === "string") {
+      body.senderNombre = sanitizarTexto(body.senderNombre) || "Usuario";
+    }
+    if (typeof body.texto === "string") {
+      body.texto = sanitizarTexto(body.texto);
+    }
 
     // Cierre VULN-15: Descartar reintentos en < 1ms por idempotencia de whatsappMsgId
     if (body.whatsappMsgId && esWhatsappMsgIdDuplicado(body.whatsappMsgId)) {
