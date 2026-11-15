@@ -490,3 +490,29 @@ BEGIN
   );
 END;
 $$;
+
+-- 5. Columna origen y políticas RLS en chat_mensajes para sincronización en vivo Web <-> WhatsApp
+ALTER TABLE IF EXISTS public.chat_mensajes
+  ADD COLUMN IF NOT EXISTS origen TEXT DEFAULT 'WEB';
+
+ALTER TABLE IF EXISTS public.chat_mensajes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Permitir lectura publica chat_mensajes" ON public.chat_mensajes;
+CREATE POLICY "Permitir lectura publica chat_mensajes"
+  ON public.chat_mensajes
+  FOR SELECT
+  USING (true);
+
+DROP POLICY IF EXISTS "Permitir insercion chat_mensajes" ON public.chat_mensajes;
+CREATE POLICY "Permitir insercion chat_mensajes"
+  ON public.chat_mensajes
+  FOR INSERT
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir actualizacion chat_mensajes" ON public.chat_mensajes;
+CREATE POLICY "Permitir actualizacion chat_mensajes"
+  ON public.chat_mensajes
+  FOR UPDATE
+  USING (true)
+  WITH CHECK (true);
+

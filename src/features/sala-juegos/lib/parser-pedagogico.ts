@@ -48,7 +48,7 @@ export interface ResultadoConcrecionEstricta {
  */
 export function extraerMontoNumerico(rawInput: string): { monto: number; montoTexto: string; esKilo: boolean } {
   if (!rawInput) return { monto: 0, montoTexto: "0", esKilo: false };
-  const limpio = rawInput.trim().replace(/^[\$Bs\.\s]+/i, "").trim();
+  const limpio = rawInput.trim().replace(/^[\$Bs\.\s]+/i, "").replace(/\.(?=\d{3})/g, "").trim();
   if (!limpio) return { monto: 0, montoTexto: "0", esKilo: false };
 
   // 1. Detectar explícitamente sufijo k / K (enteros o decimales: 5k, 5.5k, 5,5k, 10k, 20k)
@@ -343,7 +343,7 @@ export function analizarYEstandarizarJugada(
 
       const jugadaEstandarizada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')} ${montoTexto}`;
       const msgPublicoBotMatch = excedioSaldoMatch
-        ? `${nombreUsuario || 'El jugador'} solo dispone de ${prefijo}${formatearMontoRegional(saldoDisponible)} para esta jugada.`
+        ? `⚠️ *${nombreUsuario || 'Jugador'}*: Disponible ${prefijo}${formatearMontoRegional(saldoDisponible)}`
         : undefined;
       const msgPrivadoBotMatch = excedioSaldoMatch
         ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
@@ -461,7 +461,7 @@ export function analizarYEstandarizarJugada(
 
       const jugadaEstandarizada = `${verboEstandar} ${modLimpia} ${ejemplarTexto} ${montoTexto}`;
       const msgPublicoBotPuesto = excedioSaldoPuesto
-        ? `${nombreUsuario || 'El jugador'} solo dispone de ${prefijo}${formatearMontoRegional(saldoDisponible)} para esta jugada.`
+        ? `⚠️ *${nombreUsuario || 'Jugador'}*: Disponible ${prefijo}${formatearMontoRegional(saldoDisponible)}`
         : undefined;
       const msgPrivadoBotPuesto = excedioSaldoPuesto
         ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
@@ -550,7 +550,7 @@ export function analizarYEstandarizarJugada(
 
       const jugadaEstandarizada = `${verboEstandar} 1P ${caballos[0]} ${montoTexto}`;
       const msgPublicoBotInv = excedioSaldoInv
-        ? `${nombreUsuario || 'El jugador'} solo dispone de ${prefijo}${formatearMontoRegional(saldoDisponible)} para esta jugada.`
+        ? `⚠️ *${nombreUsuario || 'Jugador'}*: Disponible ${prefijo}${formatearMontoRegional(saldoDisponible)}`
         : undefined;
       const msgPrivadoBotInv = excedioSaldoInv
         ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`

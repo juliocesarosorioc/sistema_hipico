@@ -112,9 +112,11 @@ function calcularSaldoDisponible(cliente: any): number {
   if (!cliente) return 0;
   if (cliente.libre) return 999999;
   const saldo = Number(cliente.saldo_actual ?? 0);
-  const aval = Number(cliente.aval ?? 0);
+  const aval = Number(cliente.aval ?? cliente.limite_credito ?? 0);
   const retenido = Number(cliente.saldo_retenido ?? 0);
-  return Math.max(0, Number((saldo + aval - retenido).toFixed(2)));
+  const dispCalculado = Math.max(0, Number((saldo + aval - retenido).toFixed(2)));
+  const dispDb = Number(cliente.saldo_disponible ?? 0);
+  return Math.max(dispCalculado, dispDb);
 }
 
 async function emitirBroadcastSala(salaId: string, evento: string, payload: any) {
@@ -1242,6 +1244,25 @@ export async function POST(req: Request) {
         .maybeSingle();
       sala = sLegacy || null;
     }
+    if (!sala) {
+      const { data: grp } = await supabaseAdmin
+        .from("grupos")
+        .select("id")
+        .eq("whatsapp_group_id", groupJid)
+        .limit(1)
+        .maybeSingle();
+      if (grp?.id) {
+        const { data: sGrp } = await supabaseAdmin
+          .from("salas_juego")
+          .select("*")
+          .eq("grupo_id", grp.id)
+          .eq("activa", true)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        sala = sGrp || null;
+      }
+    }
 
     if (!sala) {
       return NextResponse.json({
@@ -1257,27 +1278,28 @@ export async function POST(req: Request) {
     const grupoId = sala.grupo_id;
     const carreraAbierta = String(sala.estado_carrera || "").toLowerCase() === "abierta";
 
-    // FILTRO ANTI-SPAM PEDAGÓGICO:
-    // Si NO es una cita para concretar (quotedMsgId === null) y el texto NO tiene intención de jugada,
-    // responder como charla normal. NUNCA molestar al usuario en privado con mensajes de "no vinculado".
+    // Todo mensaje entrante del grupo (sea texto normal o jugada) debe registrarse
+    // para que aparezca en el monitor en vivo de la Sala de Juegos Web
     const textoUsuarioLimpio = String(texto || "").trim();
     if (!quotedMsgId) {
       const preAnalisis = analizarYEstandarizarJugada(textoUsuarioLimpio, 999999);
       if (!preAnalisis.esIntencionDeJugada) {
-        if (body.esMensajePropioTelefono && textoUsuarioLimpio) {
-          await supabaseAdmin.from("chat_mensajes").insert({
-            grupo_id: grupoId,
-            sala_id: salaId,
-            remitente_nombre: String(body.senderNombre || "Operador (WhatsApp)").trim(),
-            es_operador: true,
-            tipo_mensaje: "TEXTO",
-            contenido: textoUsuarioLimpio,
-            whatsapp_msg_id: body.whatsappMsgId || null,
-            whatsapp_group_jid: groupJid,
-            whatsapp_group_nombre: whatsappGroupNombre,
-          });
-          await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
-        }
+        const nombreRemitente = String(body.senderNombre || body.pushName || "Usuario").trim();
+        await supabaseAdmin.from("chat_mensajes").insert({
+          grupo_id: grupoId,
+          sala_id: salaId,
+          remitente_nombre: nombreRemitente,
+          es_operador: Boolean(body.esMensajePropioTelefono),
+          tipo_mensaje: "texto",
+          contenido: textoUsuarioLimpio,
+          whatsapp_msg_id: body.whatsappMsgId || null,
+          whatsapp_group_jid: groupJid,
+          whatsapp_group_nombre: whatsappGroupNombre,
+          origen_canal: "whatsapp",
+          origen: "WHATSAPP",
+        });
+        await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
         return NextResponse.json({
           ok: true,
           tipo: "CHARLA",
@@ -1386,6 +1408,10 @@ export async function POST(req: Request) {
     }
 
     const saldoDisponible = calcularSaldoDisponible(cliente);
+    if (!cliente.libre && (cliente.saldo_disponible == null || Number(cliente.saldo_disponible) !== saldoDisponible)) {
+      await supabaseAdmin.from("clientes").update({ saldo_disponible: saldoDisponible }).eq("id", cliente.id);
+      cliente.saldo_disponible = saldoDisponible;
+    }
 
     // ========================================================================
     // 1. REGLAS ENTRENADAS DE LA SALA DE JUEGOS
@@ -2225,8 +2251,24 @@ export async function POST(req: Request) {
       }
     }
 
-    // Si no tiene intención de jugada, ignorar para no ensuciar el grupo
+    // Si no tiene intención de jugada, registrar en chat_mensajes para la Sala de Juegos Web
     if (!analisis.esIntencionDeJugada) {
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_id: cliente?.id || null,
+        remitente_nombre: nombreJugador || "Jugador",
+        es_operador: false,
+        tipo_mensaje: "texto",
+        contenido: texto,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "whatsapp",
+        origen: "WHATSAPP",
+      });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
       return NextResponse.json({
         ok: true,
         tipo: "CHARLA",
@@ -2498,10 +2540,11 @@ export async function POST(req: Request) {
 
     // Si publicó por encima de su saldo_disponible, devolver los textos exactos requeridos
     if (excedioSaldo) {
-      const msgPubRecorte = (rpcResFinal as any)?.msg_publico || (rpcResFinal as any)?.msg_publico_bot || `${nombreJugador} solo dispone de $${formatearMontoRegional(saldoDisponible)} para esta jugada.`;
+      const msgPubRecorte = `⚠️ *${nombreJugador}*: Disponible $${formatearMontoRegional(saldoDisponible)}`;
       const msgPrivRecorte = (rpcResFinal as any)?.msg_privado_proponente || (rpcResFinal as any)?.msg_privado_bot || (rpcResFinal as any)?.alertaPrivada || `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
       return NextResponse.json({
         ok: true,
+        excedio_saldo: true,
         tipo: "PROPUESTA_CON_RECORTE_SALDO",
         propuestaId: propId,
         respuestaGrupo: msgPubRecorte,

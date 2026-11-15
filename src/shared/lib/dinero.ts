@@ -207,7 +207,7 @@ export interface MontoParseado {
  */
 export function parsearMontoConK(rawInput: string): MontoParseado | null {
   if (!rawInput) return null;
-  const limpio = rawInput.trim().replace(/^[\$Bs\.\s]+/i, "").trim();
+  const limpio = rawInput.trim().replace(/^[\$Bs\.\s]+/i, "").replace(/\.(?=\d{3})/g, "").trim();
   if (!limpio) return null;
 
   // 1. Detectar sufijo k / K (ej: 5k, 10k, 20k, 50k, 100k, 2.5k, 2,5k)

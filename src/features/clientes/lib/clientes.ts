@@ -90,6 +90,8 @@ export type ClienteRow = {
   es_socio?: boolean | null;
   aval?: number | string | null;
   saldo_actual?: number | string | null;
+  saldo_retenido?: number | string | null;
+  saldo_disponible?: number | string | null;
   /** Resultado neto acumulado de jugadas en carrera con devolución incluida */
   resultado?: number | string | null;
   resultado_acumulado?: number | string | null;
@@ -696,6 +698,14 @@ export async function crearCliente(payload: Partial<ClienteRow>): Promise<{ ok: 
         error: `⚠️ Ya existe el cliente "${nombreNorm}" en este grupo. No puede haber dos clientes iguales en el mismo grupo.`,
       };
     }
+    const avalNum = Number(procesado.aval ?? (procesado as any).limite_credito ?? 0);
+    const saldoNum = Number(procesado.saldo_actual ?? 0);
+    const retNum = Number(procesado.saldo_retenido ?? 0);
+    const libre = Boolean(procesado.libre);
+    const saldoDisp = libre ? 999999 : Math.max(0, Number((saldoNum + avalNum - retNum).toFixed(2)));
+    if (procesado.saldo_disponible == null || (Number(procesado.saldo_disponible) === 0 && avalNum > 0)) {
+      (procesado as any).saldo_disponible = saldoDisp;
+    }
     const { data, error } = await supabase
       .from("clientes")
       .insert([{ ...procesado, nombre: nombreNorm }])
@@ -795,6 +805,13 @@ export async function actualizarCliente(
         };
       }
       seguro.nombre = nombreNorm;
+    }
+    if ("aval" in seguro || "saldo_actual" in seguro || "saldo_retenido" in seguro || "libre" in seguro) {
+      const avalNum = Number(seguro.aval ?? fila?.aval ?? 0);
+      const saldoNum = Number(seguro.saldo_actual ?? fila?.saldo_actual ?? 0);
+      const retNum = Number(seguro.saldo_retenido ?? fila?.saldo_retenido ?? 0);
+      const libre = Boolean(seguro.libre ?? fila?.libre);
+      seguro.saldo_disponible = libre ? 999999 : Math.max(0, Number((saldoNum + avalNum - retNum).toFixed(2)));
     }
     const { data, error } = await supabase.from("clientes").update(seguro).eq("id", id).select("id");
     if (error) return { ok: false, error: error.message };

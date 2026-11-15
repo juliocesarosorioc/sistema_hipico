@@ -41,26 +41,38 @@ const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-20
 /**
  * Reenvía un mensaje publicado en la plataforma al grupo de WhatsApp vinculado a la sala (si existe)
  */
-async function publicarEnWhatsAppSala(salaId: string, texto: string) {
+async function publicarEnWhatsAppSala(salaId: string, texto: string, quotedMsgId?: string | null) {
   if (!salaId || !texto) return;
   try {
     const { data: sala } = await supabaseAdmin
       .from("salas_juego")
-      .select("whatsapp_group_jid")
+      .select("whatsapp_group_jid, grupo_id")
       .eq("id", salaId)
       .maybeSingle();
 
-    if (!sala?.whatsapp_group_jid) return;
+    let groupJid = sala?.whatsapp_group_jid;
+    if (!groupJid && sala?.grupo_id) {
+      const { data: grp } = await supabaseAdmin
+        .from("grupos")
+        .select("whatsapp_group_id")
+        .eq("id", sala.grupo_id)
+        .maybeSingle();
+      if (grp?.whatsapp_group_id) groupJid = grp.whatsapp_group_id;
+    }
 
-    await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
+    await fetch(`${BOT_DAEMON_URL}/send-group-message`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-internal-bot-secret": INTERNAL_BOT_SECRET,
       },
       body: JSON.stringify({
-        groupJid: sala.whatsapp_group_jid,
+        groupJid,
+        whatsapp_group_id: groupJid,
+        salaId,
         texto,
+        message: texto,
+        quotedMsgId: quotedMsgId || null,
       }),
       signal: AbortSignal.timeout(4000),
     });
@@ -104,11 +116,14 @@ async function emitirBroadcast(salaId: string, evento: string, payload: any) {
  * Calcula el saldo disponible de un cliente
  */
 function calcularDisponibleCliente(cliente: any): number {
+  if (!cliente) return 0;
   if (cliente.libre) return 999999;
   const saldo = Number(cliente.saldo_actual || 0);
-  const aval = Number(cliente.aval || 0);
+  const aval = Number(cliente.aval ?? cliente.limite_credito ?? 0);
   const retenido = Number(cliente.saldo_retenido || 0);
-  return Math.max(0, Number((saldo + aval - retenido).toFixed(2)));
+  const dispCalculado = Math.max(0, Number((saldo + aval - retenido).toFixed(2)));
+  const dispDb = Number(cliente.saldo_disponible ?? 0);
+  return Math.max(dispCalculado, dispDb);
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -665,7 +680,11 @@ async function liquidarCarreraFallback(
       tipo_mensaje: "ESTADO_CARRERA",
       contenido: textoCierre,
       solo_borrable_operador: true,
+      origen_canal: "web",
+      origen: "WEB",
     });
+
+    void publicarEnWhatsAppSala(salaId, textoCierre);
   }
 
   const { data: grupo } = await supabaseAdmin
@@ -1597,7 +1616,11 @@ export async function POST(req: Request) {
             contenido: textoVanJugando,
             reply_to_msg_id: propuestaId,
             carrera_id: propMsg.carrera_id || sala.carrera_activa_id,
+            origen_canal: "web",
+            origen: "WEB",
           });
+
+          void publicarEnWhatsAppSala(salaId, textoVanJugando, propMsg.whatsapp_msg_id);
 
           resFifo = {
             ok: true,
@@ -1687,8 +1710,11 @@ export async function POST(req: Request) {
               contenido: textoVanJugando,
               reply_to_msg_id: propuestaId,
               carrera_id: propMsg.carrera_id || sala.carrera_activa_id,
+              origen_canal: "web",
+              origen: "WEB",
             });
           }
+          void publicarEnWhatsAppSala(salaId, textoVanJugando, propMsg.whatsapp_msg_id);
         }
 
         // Aviso público + privado cuando el aceptante intentó tomar más de su
@@ -2024,6 +2050,8 @@ export async function POST(req: Request) {
           reply_to_msg_id: replyMsgUuid,
           imagen_url: imagenUrl || null,
           solo_borrable_operador: esOperador,
+          origen_canal: "web",
+          origen: "WEB",
         })
         .select()
         .single();
@@ -2181,8 +2209,11 @@ export async function POST(req: Request) {
           tipo_mensaje: "ESTADO_CARRERA",
           contenido: textoDestacado,
           solo_borrable_operador: true,
+          origen_canal: "web",
+          origen: "WEB",
         });
 
+        void publicarEnWhatsAppSala(salaId, textoDestacado);
         await emitirBroadcast(salaId, "carrera_abierta", { salaId });
         return NextResponse.json({ ok: true });
       }
@@ -2215,7 +2246,11 @@ export async function POST(req: Request) {
           tipo_mensaje: "ESTADO_CARRERA",
           contenido: textoCierre,
           solo_borrable_operador: true,
+          origen_canal: "web",
+          origen: "WEB",
         });
+
+        void publicarEnWhatsAppSala(salaId, textoCierre);
 
         await emitirBroadcast(salaId, "carrera_cerrada", { salaId });
         return NextResponse.json({ ok: true });
@@ -2264,16 +2299,21 @@ export async function POST(req: Request) {
           return NextResponse.json({ ok: false, error: errRet.message }, { status: 400 });
         }
 
+        const textoRetirado = `🚫 EJEMPLAR RETIRADO: Se ha procesado el retiro del ejemplar #${ejemplar}. Las jugadas pactadas han sido anuladas y los saldos restituidos.`;
+
         await supabaseAdmin.from("chat_mensajes").insert({
           grupo_id: grupoId,
           sala_id: salaId,
           remitente_nombre: "Operador de Sala",
           es_operador: true,
           tipo_mensaje: "ESTADO_CARRERA",
-          contenido: `🚫 EJEMPLAR RETIRADO: Se ha procesado el retiro del ejemplar #${ejemplar}. Las jugadas pactadas han sido anuladas y los saldos restituidos.`,
+          contenido: textoRetirado,
           solo_borrable_operador: true,
+          origen_canal: "web",
+          origen: "WEB",
         });
 
+        void publicarEnWhatsAppSala(salaId, textoRetirado);
         await emitirBroadcast(salaId, "ejemplar_retirado", { salaId, ejemplar });
         return NextResponse.json({ ok: true, resultado: retRes });
       }

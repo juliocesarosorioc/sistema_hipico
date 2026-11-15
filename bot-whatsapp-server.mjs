@@ -303,6 +303,39 @@ async function obtenerSalasPorGroupJid(remoteJid) {
     }
   }
 
+  // 3. Respaldo por grupos.whatsapp_group_id o grupos.whatsapp_group_jid
+  if (resultados.length === 0) {
+    try {
+      const { data: grp } = await supabase
+        .from("grupos")
+        .select("id, nombre, whatsapp_group_id")
+        .eq("whatsapp_group_id", remoteJid)
+        .limit(1)
+        .maybeSingle();
+
+      if (grp?.id) {
+        const { data: salasGrp } = await supabase
+          .from("salas_juego")
+          .select("*")
+          .eq("grupo_id", grp.id)
+          .order("created_at", { ascending: false });
+
+        for (const s of salasGrp || []) {
+          if (!idsVistos.has(s.id)) {
+            idsVistos.add(s.id);
+            resultados.push({
+              ...s,
+              _whatsapp_group_jid: remoteJid,
+              _whatsapp_group_nombre: s.whatsapp_group_nombre || grp.nombre || null,
+            });
+          }
+        }
+      }
+    } catch {
+      // noop
+    }
+  }
+
   salasCacheMap.set(remoteJid, { salas: resultados, exp: Date.now() + 60000 });
   return resultados;
 }
@@ -1208,24 +1241,26 @@ async function manejarMensajeEntrante(msg) {
     }
 
     // 1. Respuesta al Grupo WA (con reply/quoted al whatsappMsgId original)
+    // Despacho obligatorio SIEMPRE que venga mensaje público (incluso con excedio_saldo o rechazo)
     const respuestaGrupo =
-      data.msg_publico ||
       data.msg_publico_bot ||
+      data.msg_publico ||
       data.respuestaPublica ||
       data.respuestaGrupo ||
       data.acciones?.responderEnGrupo ||
-      data.data?.msg_publico ||
       data.data?.msg_publico_bot ||
+      data.data?.msg_publico ||
       data.data?.respuestaPublica;
 
-    if (respuestaGrupo) {
+    if (respuestaGrupo && sock) {
       envios.push(
         enviarMensajeGrupo(remoteJid, respuestaGrupo, whatsappMsgId)
           .catch((errG) => console.warn("[Bot WhatsApp] Aviso enviando respuesta de grupo:", errG?.message || errG))
       );
     }
 
-    // 2. Respuesta al Privado WA: autor / aceptante
+    // 2. Respuesta al Privado WA: remitente/autor
+    // Despacho obligatorio al JID privado del remitente
     const mensajePrivadoAutor =
       data.msg_privado_bot ||
       data.alertaPrivada ||
@@ -1236,14 +1271,17 @@ async function manejarMensajeEntrante(msg) {
       data.data?.alertaPrivada ||
       data.data?.msg_privado_aceptante;
 
-    const jidPrivadoAutor =
-      participantJid ||
-      data.senderJid ||
-      (telNormalizado ? `${telNormalizado}@s.whatsapp.net` : null);
+    const senderPnJid =
+      (participantAlt && participantAlt.endsWith("@s.whatsapp.net") ? participantAlt : null) ||
+      (telReal ? `${telReal}@s.whatsapp.net` : null) ||
+      (telNormalizado ? `${telNormalizado}@s.whatsapp.net` : null) ||
+      (data.senderJid && data.senderJid.endsWith("@s.whatsapp.net") ? data.senderJid : null);
 
-    if (mensajePrivadoAutor && jidPrivadoAutor) {
+    const dmJid = senderPnJid || participantJid || data.senderJid;
+
+    if (mensajePrivadoAutor && dmJid && sock) {
       envios.push(
-        enviarMensajePrivado(jidPrivadoAutor, mensajePrivadoAutor)
+        enviarMensajePrivado(dmJid, mensajePrivadoAutor)
           .catch((errPriv) => console.warn("[Bot WhatsApp] Aviso enviando privado autor:", errPriv?.message || errPriv))
       );
     }
@@ -1923,10 +1961,13 @@ const server = http.createServer(async (req, res) => {
       return responderJson(res, 200, { ok: true });
     }
 
-    // 3. POST /publicar-grupo
-    if (req.method === "POST" && pathname === "/publicar-grupo") {
+    // 3. POST /publicar-grupo y alias /send-group-message
+    if (req.method === "POST" && (pathname === "/publicar-grupo" || pathname === "/send-group-message")) {
       const body = await leerBodyJson(req);
-      const { groupJid, salaId, texto, quotedMsgId } = body;
+      const groupJid = body.groupJid || body.whatsapp_group_id || body.whatsapp_group_jid || null;
+      const salaId = body.salaId || body.sala_id || null;
+      const texto = body.texto || body.message || body.mensaje || "";
+      const quotedMsgId = body.quotedMsgId || body.quoted_msg_id || null;
 
       if (!texto || (!groupJid && !salaId)) {
         return responderJson(res, 400, {
@@ -1954,10 +1995,18 @@ const server = http.createServer(async (req, res) => {
         try {
           const { data: salaRow } = await supabase
             .from("salas_juego")
-            .select("whatsapp_group_jid")
+            .select("whatsapp_group_jid, grupo_id")
             .eq("id", salaId)
             .maybeSingle();
           if (salaRow?.whatsapp_group_jid) destinos.add(salaRow.whatsapp_group_jid);
+          if (salaRow?.grupo_id) {
+            const { data: grpRow } = await supabase
+              .from("grupos")
+              .select("whatsapp_group_id")
+              .eq("id", salaRow.grupo_id)
+              .maybeSingle();
+            if (grpRow?.whatsapp_group_id) destinos.add(grpRow.whatsapp_group_id);
+          }
         } catch {
           // No bloqueante
         }
