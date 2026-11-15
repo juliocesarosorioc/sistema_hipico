@@ -174,7 +174,15 @@ export default function WhatsappPage() {
       });
 
       if (salasServidor.length > 0) {
-        setSalas(salasServidor);
+        setSalas((prev) => {
+          const map = new Map(salasServidor.map((s) => [s.id, s]));
+          for (const p of prev) {
+            if (!map.has(p.id)) {
+              map.set(p.id, p);
+            }
+          }
+          return Array.from(map.values());
+        });
         setSeleccionGrupoPorSala((prev) => {
           const next = { ...prev };
           for (const s of salasServidor) {
@@ -186,8 +194,6 @@ export default function WhatsappPage() {
           }
           return next;
         });
-      } else {
-        setSalas([]);
       }
 
       // Fusionar el respaldo del servidor con el local y podar las salas que ya
@@ -237,6 +243,13 @@ export default function WhatsappPage() {
           mapa[s.id] = Array.isArray(s.grupos_whatsapp) ? s.grupos_whatsapp : [];
         }
         setVinculosPorSala((prev) => ({ ...prev, ...mapa }));
+        setSalas((prev) => {
+          const map = new Map(prev.map((item) => [item.id, item]));
+          for (const s of json.salas) {
+            map.set(s.id, { ...map.get(s.id), ...s });
+          }
+          return Array.from(map.values());
+        });
       }
     } catch {
       // No bloqueante
@@ -301,12 +314,13 @@ export default function WhatsappPage() {
     if (!groupJid) return;
     setProcesandoAccion(`vincular-multi-${sala.id}`);
     try {
+      const gId = sala.grupo_id || grupoFiltroId;
       const res = await fetch("/api/whatsapp-sala/salas-grupos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accion: "verificar-y-vincular",
-          grupoId: sala.grupo_id || grupoFiltroId,
+          grupoId: gId,
           salaId: sala.id,
           groupJid,
         }),
@@ -314,7 +328,7 @@ export default function WhatsappPage() {
       const json = await res.json();
       if (json.ok) {
         setFeedback({ tipo: "ok", texto: `✅ Conectado: ${json.motivo || "Conectado correctamente"}` });
-        await Promise.all([consultarEstado(true), cargarSalasGrupos()]);
+        await Promise.all([consultarEstado(true), cargarSalasGrupos(gId)]);
       } else {
         setFeedback({ tipo: "error", texto: `❌ No se pudo conectar: ${json.motivo || "Error desconocido"}` });
       }
@@ -336,7 +350,7 @@ export default function WhatsappPage() {
       const json = await res.json();
       if (json.ok) {
         setFeedback({ tipo: "ok", texto: `✅ Grupo desvinculado` });
-        await cargarSalasGrupos();
+        await Promise.all([consultarEstado(true), cargarSalasGrupos(grupoFiltroId)]);
       } else {
         setFeedback({ tipo: "error", texto: `❌ ${json.motivo || "No se pudo desvincular"}` });
       }

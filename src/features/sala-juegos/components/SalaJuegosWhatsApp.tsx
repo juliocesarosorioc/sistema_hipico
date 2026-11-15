@@ -24,6 +24,7 @@ export interface SalaActivaInfo {
   retirados: string[];
   carreraActivaId?: string;
   whatsappGroupJid?: string;
+  whatsappGroupNombre?: string;
 }
 
 interface PropsSalaJuegos {
@@ -207,20 +208,27 @@ export default function SalaJuegosWhatsApp({
   useEffect(() => {
     if (!salaActiva?.id) return;
     let vivo = true;
-    fetch(`/api/whatsapp-sala/salas-grupos?salaId=${encodeURIComponent(salaActiva.id)}`, { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((json) => {
-        if (!vivo || !json?.ok || !Array.isArray(json.salas)) return;
-        const found = json.salas.find((s: any) => s.id === salaActiva.id);
-        if (found) {
-          setGruposWaPorSala((prev) => ({
-            ...prev,
-            [salaActiva.id]: Array.isArray(found.grupos_whatsapp) ? found.grupos_whatsapp : [],
-          }));
-        }
-      })
-      .catch(() => {});
-    return () => { vivo = false; };
+    const consultarVinculos = () => {
+      fetch(`/api/whatsapp-sala/salas-grupos?salaId=${encodeURIComponent(salaActiva.id)}`, { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((json) => {
+          if (!vivo || !json?.ok || !Array.isArray(json.salas)) return;
+          const found = json.salas.find((s: any) => s.id === salaActiva.id);
+          if (found) {
+            setGruposWaPorSala((prev) => ({
+              ...prev,
+              [salaActiva.id]: Array.isArray(found.grupos_whatsapp) ? found.grupos_whatsapp : [],
+            }));
+          }
+        })
+        .catch(() => {});
+    };
+    consultarVinculos();
+    const interval = setInterval(consultarVinculos, 6000);
+    return () => {
+      vivo = false;
+      clearInterval(interval);
+    };
   }, [salaActiva?.id]);
 
   const agregarMensajeLocal = (salaId: string, nuevoMsg: any) => {
@@ -1146,14 +1154,36 @@ export default function SalaJuegosWhatsApp({
             ← Salir a la Plataforma
           </button>
           <span className="font-bold text-white text-sm">{grupoNombre}</span>
-          {(gruposWaPorSala[salaActiva?.id || ''] || []).map((gw) => (
-            <span
-              key={gw.id || gw.whatsapp_group_jid}
-              className="rounded-full bg-emerald-950/70 border border-emerald-400/50 px-2 py-0.5 text-[10px] font-bold text-emerald-200"
-            >
-              🟢 {gw.whatsapp_group_nombre || gw.whatsapp_group_jid}
-            </span>
-          ))}
+          {(() => {
+            const vinculados = gruposWaPorSala[salaActiva?.id || ''] || [];
+            if (vinculados.length > 0) {
+              return vinculados.map((gw) => (
+                <span
+                  key={gw.id || gw.whatsapp_group_jid}
+                  className="rounded-full bg-emerald-950/70 border border-emerald-400/50 px-2 py-0.5 text-[10px] font-bold text-emerald-200"
+                  title={`Grupo de WhatsApp: ${gw.whatsapp_group_nombre || gw.whatsapp_group_jid}`}
+                >
+                  🟢 {gw.whatsapp_group_nombre || gw.whatsapp_group_jid}
+                </span>
+              ));
+            }
+            const nomDirecto = salaActiva?.whatsappGroupNombre || (salaActiva as any)?.whatsapp_group_nombre;
+            if (nomDirecto) {
+              return (
+                <span
+                  className="rounded-full bg-emerald-950/70 border border-emerald-400/50 px-2 py-0.5 text-[10px] font-bold text-emerald-200"
+                  title={`Grupo de WhatsApp: ${nomDirecto}`}
+                >
+                  🟢 {nomDirecto}
+                </span>
+              );
+            }
+            return (
+              <span className="rounded-full bg-black/20 border border-white/20 px-2 py-0.5 text-[10px] text-white/80">
+                ⚪ Sin WhatsApp
+              </span>
+            );
+          })()}
           <div className="flex bg-[#016b58] rounded-lg p-0.5">
             {salas.map((s) => (
               <button

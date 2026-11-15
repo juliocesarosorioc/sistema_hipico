@@ -33,6 +33,7 @@ function mapearSalas(salas: any[]): SalaActivaInfo[] {
     retirados: Array.isArray(s.retirados) ? s.retirados.map(String) : [],
     carreraActivaId: s.carrera_activa_id || undefined,
     whatsappGroupJid: s.whatsapp_group_jid || undefined,
+    whatsappGroupNombre: s.whatsapp_group_nombre || undefined,
   }));
 }
 

@@ -131,14 +131,22 @@ async function emitirBroadcastSala(salaId: string, evento: string, payload: any)
 async function asegurarDosSalasPrincipales() {
   const { data: salasExistentes } = await supabaseAdmin
     .from("salas_juego")
-    .select("*, grupos_venta(nombre)")
+    .select("*")
     .eq("activa", true)
     .order("orden_sala", { ascending: true });
+
+  const { data: gruposSistema } = await supabaseAdmin
+    .from("grupos_venta")
+    .select("id, nombre");
+  const grupoNombrePorId = new Map<string, string>();
+  for (const g of gruposSistema || []) {
+    if (g?.id) grupoNombrePorId.set(String(g.id), String(g.nombre || ""));
+  }
 
   if (salasExistentes && salasExistentes.length > 0) {
     return salasExistentes.map((s: any) => ({
       ...s,
-      grupo_nombre: s.grupos_venta?.nombre || null,
+      grupo_nombre: grupoNombrePorId.get(String(s.grupo_id)) || null,
     }));
   }
 

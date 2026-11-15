@@ -318,6 +318,29 @@ export async function GET(req: Request) {
         salas = salasCreadas || [];
       }
 
+      // Enriquecer salas con sus grupos de WhatsApp vinculados
+      const salaIdsBoot = (salas || []).map((s: any) => s.id);
+      let vinculosPorSalaBoot: Record<string, any[]> = {};
+      if (salaIdsBoot.length > 0) {
+        const { data: vinculos } = await supabaseAdmin
+          .from("salas_whatsapp_grupos")
+          .select("id, sala_id, whatsapp_group_jid, whatsapp_group_nombre, estado_conexion")
+          .in("sala_id", salaIdsBoot)
+          .eq("activo", true);
+        for (const v of vinculos || []) {
+          if (!vinculosPorSalaBoot[v.sala_id]) vinculosPorSalaBoot[v.sala_id] = [];
+          vinculosPorSalaBoot[v.sala_id].push(v);
+        }
+      }
+      const salasConGruposBoot = (salas || []).map((s: any) => ({
+        ...s,
+        grupos_whatsapp: vinculosPorSalaBoot[s.id] || [],
+        whatsapp_group_nombre:
+          vinculosPorSalaBoot[s.id]?.[0]?.whatsapp_group_nombre || s.whatsapp_group_nombre || null,
+        whatsapp_group_jid:
+          vinculosPorSalaBoot[s.id]?.[0]?.whatsapp_group_jid || s.whatsapp_group_jid || null,
+      }));
+
       // Publicidad activa
       const { data: publicidad } = await supabaseAdmin
         .from("publicidad_sala")
@@ -370,7 +393,7 @@ export async function GET(req: Request) {
         },
         grupos: gruposDisponibles,
         grupoActivo,
-        salas: salas || [],
+        salas: salasConGruposBoot,
         publicidad: publicidad || [],
         estadoGrupo,
       });
@@ -390,13 +413,35 @@ export async function GET(req: Request) {
         .order("orden_sala", { ascending: true })
         .limit(2);
 
+      const salaIdsEst = (salas || []).map((s: any) => s.id);
+      let vinculosPorSalaEst: Record<string, any[]> = {};
+      if (salaIdsEst.length > 0) {
+        const { data: vinculos } = await supabaseAdmin
+          .from("salas_whatsapp_grupos")
+          .select("id, sala_id, whatsapp_group_jid, whatsapp_group_nombre, estado_conexion")
+          .in("sala_id", salaIdsEst)
+          .eq("activo", true);
+        for (const v of vinculos || []) {
+          if (!vinculosPorSalaEst[v.sala_id]) vinculosPorSalaEst[v.sala_id] = [];
+          vinculosPorSalaEst[v.sala_id].push(v);
+        }
+      }
+      const salasConGruposEst = (salas || []).map((s: any) => ({
+        ...s,
+        grupos_whatsapp: vinculosPorSalaEst[s.id] || [],
+        whatsapp_group_nombre:
+          vinculosPorSalaEst[s.id]?.[0]?.whatsapp_group_nombre || s.whatsapp_group_nombre || null,
+        whatsapp_group_jid:
+          vinculosPorSalaEst[s.id]?.[0]?.whatsapp_group_jid || s.whatsapp_group_jid || null,
+      }));
+
       const { data: estadoGrupo } = await supabaseAdmin
         .from("chat_estado_grupo")
         .select("*")
         .eq("grupo_id", grupoId)
         .maybeSingle();
 
-      return NextResponse.json({ ok: true, salas: salas || [], estadoGrupo });
+      return NextResponse.json({ ok: true, salas: salasConGruposEst, estadoGrupo });
     }
 
     // 3. MENSAJES
