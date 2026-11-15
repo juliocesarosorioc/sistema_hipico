@@ -5,6 +5,7 @@ import path from "path";
 import { supabaseAdmin } from "@/core/supabase-admin";
 import {
   analizarYEstandarizarJugada,
+  evaluarMensajePedagogico,
   evaluarConcrecionEstricta,
   analizarComandoRetiro,
   evaluarAmpliacionPropuesta,
@@ -1377,19 +1378,36 @@ export async function POST(req: Request) {
       );
 
       if (errAmp || !dataAmp || (dataAmp as any).ok === false) {
+        const msgErrPublico = (dataAmp as any)?.msg_publico || (dataAmp as any)?.msg_publico_bot || (dataAmp as any)?.respuestaPublica || null;
+        const msgErrPrivado =
+          (dataAmp as any)?.msg_privado_proponente ||
+          (dataAmp as any)?.msg_privado_bot ||
+          (dataAmp as any)?.alertaPrivada ||
+          (dataAmp as any)?.error ||
+          (dataAmp as any)?.motivo ||
+          errAmp?.message ||
+          "No se pudo ampliar el cupo de la propuesta.";
         return NextResponse.json({
           ok: false,
           tipo: "AMPLIACION_ERROR",
-          respuestaGrupo: null,
-          mensajePrivadoAutor:
-            (dataAmp as any)?.error ||
-            (dataAmp as any)?.motivo ||
-            errAmp?.message ||
-            "No se pudo ampliar el cupo de la propuesta.",
+          respuestaGrupo: msgErrPublico,
+          msg_publico: msgErrPublico,
+          msg_publico_bot: msgErrPublico,
+          respuestaPublica: msgErrPublico,
+          mensajePrivadoAutor: msgErrPrivado,
+          msg_privado_bot: (dataAmp as any)?.msg_privado_bot || msgErrPrivado,
+          msg_privado_proponente: (dataAmp as any)?.msg_privado_proponente || msgErrPrivado,
+          alertaPrivada: (dataAmp as any)?.alertaPrivada || null,
+          notificaciones_privadas: (dataAmp as any)?.notificaciones_privadas || [],
+          senderJid: participantJid,
         });
       }
 
-      const msgPublico: string | null = (dataAmp as any).msg_publico || null;
+      const msgPublico: string | null =
+        (dataAmp as any).msg_publico ||
+        (dataAmp as any).msg_publico_bot ||
+        (dataAmp as any).respuestaPublica ||
+        null;
       if (msgPublico) {
         await supabaseAdmin.from("chat_mensajes").insert({
           grupo_id: grupoId,
@@ -1398,6 +1416,10 @@ export async function POST(req: Request) {
           es_operador: true,
           tipo_mensaje: "concrecion_fifo",
           contenido: msgPublico,
+          whatsapp_msg_id: whatsappMsgId || null,
+          whatsapp_group_jid: groupJid || null,
+          whatsapp_group_nombre: whatsappGroupNombre || null,
+          origen_canal: "whatsapp",
         });
         await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
       }
@@ -1412,20 +1434,24 @@ export async function POST(req: Request) {
         if (!destinoJid && (notif?.cliente_id || notif?.jugador_id)) {
           const { data: clDest } = await supabaseAdmin
             .from("clientes")
-            .select("whatsapp_jid, telefono")
+            .select("whatsapp_jid, telefono, telefono_normalizado")
             .eq("id", notif.cliente_id || notif.jugador_id)
             .maybeSingle();
-          destinoJid = clDest?.whatsapp_jid || clDest?.telefono || null;
+          destinoJid =
+            clDest?.whatsapp_jid ||
+            (clDest?.telefono_normalizado ? `${clDest.telefono_normalizado}@s.whatsapp.net` : null) ||
+            clDest?.telefono ||
+            null;
         }
         if (destinoJid) {
           try {
-            await fetch(`${BOT_DAEMON_URL}/enviar`, {
+            await fetch(`${BOT_DAEMON_URL}/enviar-privado`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
                 "x-internal-bot-secret": INTERNAL_BOT_SECRET,
               },
-              body: JSON.stringify({ jid: destinoJid, mensaje: msgPriv }),
+              body: JSON.stringify({ telefonoOjid: destinoJid, texto: msgPriv }),
             });
           } catch {
             // No bloqueante si el bot daemon está offline
@@ -1433,12 +1459,26 @@ export async function POST(req: Request) {
         }
       }
 
+      const msgPrivadoProponente =
+        (dataAmp as any).msg_privado_proponente ||
+        (dataAmp as any).msg_privado_bot ||
+        (dataAmp as any).alertaPrivada ||
+        null;
+
       return NextResponse.json({
         ok: true,
         tipo: "AMPLIACION_CUPO",
         respuestaGrupo: msgPublico,
-        mensajePrivadoAutor: (dataAmp as any).msg_privado_proponente || null,
+        msg_publico: msgPublico,
+        msg_publico_bot: (dataAmp as any).msg_publico_bot || msgPublico,
+        respuestaPublica: (dataAmp as any).respuestaPublica || msgPublico,
+        mensajePrivadoAutor: msgPrivadoProponente,
+        msg_privado_bot: (dataAmp as any).msg_privado_bot || msgPrivadoProponente,
+        msg_privado_proponente: msgPrivadoProponente,
+        alertaPrivada: (dataAmp as any).alertaPrivada || null,
+        notificaciones_privadas: notificaciones,
         notificacionesPrivadas: notificaciones,
+        senderJid: participantJid,
         data: dataAmp,
       });
     };
@@ -1591,6 +1631,7 @@ export async function POST(req: Request) {
 
         // Ejecutar RPC oficial `concretar_jugada_fifo_atomica`
         let rpcExitoso = false;
+        let resRpcData: any = null;
         try {
           const { data: resRpc, error: errRpc } = await supabaseAdmin.rpc(
             "concretar_jugada_fifo_atomica",
@@ -1602,8 +1643,13 @@ export async function POST(req: Request) {
               p_monto_pedido: montoEfectivo,
             }
           );
+          resRpcData = resRpc;
           if (!errRpc && resRpc && (resRpc as any).nada_aqui === true) {
-            const msgPublicoNadaAqui = (resRpc as any).msg_publico || "*Nada Aquí*";
+            const msgPublicoNadaAqui =
+              (resRpc as any).msg_publico ||
+              (resRpc as any).msg_publico_bot ||
+              (resRpc as any).respuestaPublica ||
+              "*Nada Aquí*";
             await supabaseAdmin.from("chat_mensajes").insert({
               grupo_id: grupoId,
               sala_id: salaId,
@@ -1611,6 +1657,10 @@ export async function POST(req: Request) {
               es_operador: true,
               tipo_mensaje: "concrecion_fifo",
               contenido: msgPublicoNadaAqui,
+              whatsapp_msg_id: whatsappMsgId || null,
+              whatsapp_group_jid: groupJid || null,
+              whatsapp_group_nombre: whatsappGroupNombre || null,
+              origen_canal: "whatsapp",
             });
             await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
             return NextResponse.json({
@@ -1618,7 +1668,19 @@ export async function POST(req: Request) {
               tipo: "NADA_AQUI",
               nada_aqui: true,
               respuestaGrupo: msgPublicoNadaAqui,
-              mensajePrivadoAutor: (resRpc as any).msg_privado_aceptante || null,
+              msg_publico: msgPublicoNadaAqui,
+              msg_publico_bot: (resRpc as any).msg_publico_bot || msgPublicoNadaAqui,
+              respuestaPublica: (resRpc as any).respuestaPublica || msgPublicoNadaAqui,
+              mensajePrivadoAutor:
+                (resRpc as any).msg_privado_aceptante ||
+                (resRpc as any).msg_privado_bot ||
+                (resRpc as any).alertaPrivada ||
+                null,
+              msg_privado_bot: (resRpc as any).msg_privado_bot || null,
+              msg_privado_aceptante: (resRpc as any).msg_privado_aceptante || null,
+              alertaPrivada: (resRpc as any).alertaPrivada || null,
+              notificaciones_privadas: (resRpc as any).notificaciones_privadas || [],
+              senderJid: participantJid,
             });
           }
           if (!errRpc && resRpc && (resRpc as any).ok !== false) {
@@ -1630,11 +1692,25 @@ export async function POST(req: Request) {
 
         // Fallback atómico si el RPC no fue exitoso
         if (!rpcExitoso) {
+          const msgErrPub = (resRpcData as any)?.msg_publico || (resRpcData as any)?.msg_publico_bot || (resRpcData as any)?.respuestaPublica || "🚫 *Error al concretar jugada* — Intente nuevamente.";
+          const msgErrPriv =
+            (resRpcData as any)?.msg_privado_aceptante ||
+            (resRpcData as any)?.msg_privado_bot ||
+            (resRpcData as any)?.alertaPrivada ||
+            "La concreción no pudo ser procesada por el motor atómico.";
           return NextResponse.json({
             ok: false,
             tipo: "CONCRECION_ERROR",
-            respuestaGrupo: "🚫 *Error al concretar jugada* — Intente nuevamente.",
-            mensajePrivadoAutor: "La concreción no pudo ser procesada por el motor atómico.",
+            respuestaGrupo: msgErrPub,
+            msg_publico: msgErrPub,
+            msg_publico_bot: (resRpcData as any)?.msg_publico_bot || msgErrPub,
+            respuestaPublica: (resRpcData as any)?.respuestaPublica || msgErrPub,
+            mensajePrivadoAutor: msgErrPriv,
+            msg_privado_bot: (resRpcData as any)?.msg_privado_bot || msgErrPriv,
+            msg_privado_aceptante: (resRpcData as any)?.msg_privado_aceptante || msgErrPriv,
+            alertaPrivada: (resRpcData as any)?.alertaPrivada || null,
+            notificaciones_privadas: (resRpcData as any)?.notificaciones_privadas || [],
+            senderJid: participantJid,
           });
         }
 
@@ -1683,6 +1759,24 @@ export async function POST(req: Request) {
             ? `Quedan *$${formatearMontoRegional(nuevoRemanente)}* disponibles.`
             : `¡Tu jugada de $${formatearMontoRegional(Number(propFresca.monto_original || montoEfectivo))} fue completada al 100%!`);
 
+        const msgPublicoFinal =
+          (resRpcData as any)?.msg_publico ||
+          (resRpcData as any)?.msg_publico_bot ||
+          (resRpcData as any)?.respuestaPublica ||
+          respuestaGrupo;
+
+        const msgPrivAceptante =
+          (resRpcData as any)?.msg_privado_aceptante ||
+          (resRpcData as any)?.msg_privado_bot ||
+          (resRpcData as any)?.alertaPrivada ||
+          mensajePrivadoAutor;
+
+        const msgPrivProponente =
+          (resRpcData as any)?.msg_privado_proponente ||
+          mensajePrivadoProponente;
+
+        const notifs = (resRpcData as any)?.notificaciones_privadas || [];
+
         // Registrar mensaje de concreción en chat_mensajes
         await supabaseAdmin.from("chat_mensajes").insert({
           grupo_id: grupoId,
@@ -1691,10 +1785,12 @@ export async function POST(req: Request) {
           remitente_nombre: nombreJugador,
           es_operador: false,
           tipo_mensaje: "CONCRECION",
-          contenido: respuestaGrupo,
+          contenido: msgPublicoFinal,
           reply_to_msg_id: propFresca.id,
           whatsapp_msg_id: whatsappMsgId,
           whatsapp_quoted_msg_id: quotedMsgId,
+          whatsapp_group_jid: groupJid,
+          whatsapp_group_nombre: whatsappGroupNombre,
           origen_canal: "whatsapp",
           carrera_id: propFresca.carrera_id || sala.carrera_activa_id,
         });
@@ -1704,12 +1800,20 @@ export async function POST(req: Request) {
         return NextResponse.json({
           ok: true,
           tipo: "CONCRECION",
-          respuestaGrupo,
-          mensajePrivadoAutor,
-          mensajePrivadoProponente,
+          respuestaGrupo: msgPublicoFinal,
+          msg_publico: msgPublicoFinal,
+          msg_publico_bot: msgPublicoFinal,
+          respuestaPublica: msgPublicoFinal,
+          mensajePrivadoAutor: msgPrivAceptante,
+          msg_privado_bot: (resRpcData as any)?.msg_privado_bot || msgPrivAceptante,
+          msg_privado_aceptante: msgPrivAceptante,
+          msg_privado_proponente: msgPrivProponente,
+          alertaPrivada: (resRpcData as any)?.alertaPrivada || null,
+          notificaciones_privadas: notifs,
+          senderJid: participantJid,
           proponenteJid:
             proponenteRow?.whatsapp_jid ||
-            proponenteRow?.telefono_normalizado ||
+            (proponenteRow?.telefono_normalizado ? `${proponenteRow.telefono_normalizado}@s.whatsapp.net` : null) ||
             proponenteRow?.telefono ||
             null,
           datos: {
@@ -1787,9 +1891,48 @@ export async function POST(req: Request) {
       });
     }
 
-    // Analizar con `analizarYEstandarizarJugada` de `parser-pedagogico.ts`
+    // ------------------------------------------------------------------------
+    // 3. APRENDIZAJE DINÁMICO: Consultar reglas y respuestas entrenadas en BD
+    // para que WhatsApp responda idéntico a la Sala Web
+    // ------------------------------------------------------------------------
+    let respuestaAprendida: string | null = null;
+    let jugadaAprendidaSugerida: string | null = null;
+    try {
+      const { data: revPrevia } = await supabaseAdmin
+        .from("registro_revision_llm")
+        .select("jugada_corregida_sugerida, respuesta_ia_enviada, intencion_detectada")
+        .eq("grupo_id", grupoId)
+        .ilike("mensaje_usuario_original", texto.trim())
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (revPrevia) {
+        respuestaAprendida = revPrevia.respuesta_ia_enviada || null;
+        jugadaAprendidaSugerida = revPrevia.jugada_corregida_sugerida || null;
+      }
+
+      if (!respuestaAprendida && !jugadaAprendidaSugerida) {
+        const { data: dictPrevio } = await supabaseAdmin
+          .from("diccionario_aprendizaje_bot")
+          .select("jugada_corregida, termino_original")
+          .eq("grupo_id", grupoId)
+          .ilike("termino_original", texto.trim())
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (dictPrevio?.jugada_corregida) {
+          jugadaAprendidaSugerida = dictPrevio.jugada_corregida;
+        }
+      }
+    } catch {
+      // Resiliente
+    }
+
+    // Analizar con `evaluarMensajePedagogico`
     const retirados = Array.isArray(sala.retirados) ? sala.retirados : [];
-    const analisis = analizarYEstandarizarJugada(
+    let analisis = evaluarMensajePedagogico(
       texto,
       saldoDisponible,
       retirados,
@@ -1797,64 +1940,158 @@ export async function POST(req: Request) {
       nombreJugador
     );
 
+    // Si con el texto original no fue válido pero hay sugerencia aprendida en BD, reintentar con la sugerencia
+    if (!analisis.valido && jugadaAprendidaSugerida) {
+      const intentoAprendido = evaluarMensajePedagogico(
+        jugadaAprendidaSugerida,
+        saldoDisponible,
+        retirados,
+        16,
+        nombreJugador
+      );
+      if (intentoAprendido.valido) {
+        analisis = intentoAprendido;
+      }
+    }
+
     // Si no tiene intención de jugada, ignorar para no ensuciar el grupo
     if (!analisis.esIntencionDeJugada) {
       return NextResponse.json({
         ok: true,
         tipo: "CHARLA",
         respuestaGrupo: null,
+        msg_publico: null,
+        msg_publico_bot: null,
+        respuestaPublica: null,
         mensajePrivadoAutor: null,
+        msg_privado_bot: null,
+        alertaPrivada: null,
+        notificaciones_privadas: [],
+        senderJid: participantJid,
       });
     }
 
     // Bloqueo estricto de jugadas sin saldo (saldo_disponible <= 0)
     if (Number(saldoDisponible) <= 0) {
+      const msgPubSinSaldo = `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`;
+      const msgPrivSinSaldo = `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
       return NextResponse.json({
         ok: false,
         tipo: "EXCESO_SALDO",
-        respuestaGrupo: `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`,
-        mensajePrivadoAutor: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
+        respuestaGrupo: msgPubSinSaldo,
+        msg_publico: msgPubSinSaldo,
+        msg_publico_bot: msgPubSinSaldo,
+        respuestaPublica: msgPubSinSaldo,
+        mensajePrivadoAutor: msgPrivSinSaldo,
+        msg_privado_bot: msgPrivSinSaldo,
+        alertaPrivada: msgPrivSinSaldo,
+        notificaciones_privadas: [],
+        senderJid: participantJid,
       });
     }
 
     // Caso: Publicó jugada por encima de su saldo y tiene $0 disponible
     if (!analisis.valido && analisis.excedioSaldo) {
+      const msgPubExceso = `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`;
+      const msgPrivExceso = `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
       return NextResponse.json({
         ok: false,
         tipo: "EXCESO_SALDO",
-        respuestaGrupo: `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`,
-        mensajePrivadoAutor: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
+        respuestaGrupo: msgPubExceso,
+        msg_publico: msgPubExceso,
+        msg_publico_bot: msgPubExceso,
+        respuestaPublica: msgPubExceso,
+        mensajePrivadoAutor: msgPrivExceso,
+        msg_privado_bot: msgPrivExceso,
+        alertaPrivada: msgPrivExceso,
+        notificaciones_privadas: [],
+        senderJid: participantJid,
       });
     }
 
     // Caso: Enseñanza Pedagógica en Privado (mal escrita: falta Condición, Ejemplar, Jugada o Monto)
     if (!analisis.valido) {
+      // Guardar en aprendizaje dinámico (idéntico a la Sala Web)
+      try {
+        await supabaseAdmin.from("registro_revision_llm").insert({
+          grupo_id: grupoId,
+          sala_id: salaId,
+          usuario_id: cliente.id,
+          usuario_nombre: nombreJugador,
+          mensaje_usuario_original: texto.trim(),
+          jugada_corregida_sugerida: analisis.sugerenciasUnClic?.[0] || analisis.jugadaEstandarizada || jugadaAprendidaSugerida,
+          intencion_detectada: analisis.modalidad,
+          respuesta_ia_enviada: respuestaAprendida || analisis.msgPrivadoBot || analisis.mensajePedagogicoPrivado || "Corrección pedagógica",
+          nivel_confianza: analisis.confianza,
+          requiere_intervencion_humana: analisis.requiereOperador,
+          estado_ticket_soporte: analisis.requiereOperador ? "pendiente_operador" : "resuelto_ia",
+        });
+
+        await supabaseAdmin.from("diccionario_aprendizaje_bot").insert({
+          grupo_id: grupoId,
+          termino_original: texto.trim(),
+          jugada_corregida: analisis.jugadaEstandarizada || analisis.mensajePedagogicoPrivado,
+          usuario_id: cliente.id,
+          origen: "whatsapp",
+        });
+      } catch {
+        // Resiliente
+      }
+
+      const msgPrivPedagogico =
+        respuestaAprendida ||
+        analisis.msgPrivadoBot ||
+        analisis.mensajePedagogicoPrivado ||
+        `🤖 Corrección Pedagógica: Para publicar una jugada indica Condición (Juego/Consigo), Jugada, Ejemplar y Monto. Ejemplo: Juego 1P 5 100`;
+
       return NextResponse.json({
         ok: false,
         tipo: "PEDAGOGICO",
-        respuestaGrupo: null,
-        mensajePrivadoAutor:
-          analisis.mensajePedagogicoPrivado ||
-          `🤖 Corrección Pedagógica: Para publicar una jugada indica Condición (Juego/Consigo), Jugada, Ejemplar y Monto. Ejemplo: Juego 1P 5 100`,
+        respuestaGrupo: analisis.msgPublicoBot || null,
+        msg_publico: analisis.msgPublicoBot || null,
+        msg_publico_bot: analisis.msgPublicoBot || null,
+        respuestaPublica: analisis.msgPublicoBot || null,
+        mensajePrivadoAutor: msgPrivPedagogico,
+        msg_privado_bot: msgPrivPedagogico,
+        alertaPrivada: null,
+        notificaciones_privadas: [],
+        senderJid: participantJid,
       });
     }
 
     if (!carreraAbierta) {
+      const msgCerrada = `⛔ La carrera está ${String(sala.estado_carrera || "CERRADA").toUpperCase()}. No se reciben nuevas propuestas.`;
       return NextResponse.json({
         ok: false,
         tipo: "CARRERA_CERRADA",
-        respuestaGrupo: `⛔ La carrera está ${String(sala.estado_carrera || "CERRADA").toUpperCase()}. No se reciben nuevas propuestas.`,
+        respuestaGrupo: msgCerrada,
+        msg_publico: msgCerrada,
+        msg_publico_bot: msgCerrada,
+        respuestaPublica: msgCerrada,
         mensajePrivadoAutor: null,
+        msg_privado_bot: null,
+        alertaPrivada: null,
+        notificaciones_privadas: [],
+        senderJid: participantJid,
       });
     }
 
     // Bloqueo estricto: Si el cliente no posee saldo disponible
     if (saldoDisponible <= 0 && !cliente.libre) {
+      const msgSinSaldo = `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`;
+      const msgPrivSinSaldo = '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo';
       return NextResponse.json({
         ok: false,
         tipo: "SIN_SALDO",
-        respuestaGrupo: `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`,
-        mensajePrivadoAutor: '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo',
+        respuestaGrupo: msgSinSaldo,
+        msg_publico: msgSinSaldo,
+        msg_publico_bot: msgSinSaldo,
+        respuestaPublica: msgSinSaldo,
+        mensajePrivadoAutor: msgPrivSinSaldo,
+        msg_privado_bot: msgPrivSinSaldo,
+        alertaPrivada: msgPrivSinSaldo,
+        notificaciones_privadas: [],
+        senderJid: participantJid,
       });
     }
 
@@ -1866,6 +2103,7 @@ export async function POST(req: Request) {
 
     let propId: string | null = null;
     let rpcPublicado = false;
+    let rpcResFinal: any = null;
 
     // Llamar a `publicar_propuesta_atomica` según especificación exclusiva
     try {
@@ -1917,6 +2155,7 @@ export async function POST(req: Request) {
         rpcErr = intentoSinWa.error;
       }
 
+      rpcResFinal = rpcRes;
       if (!rpcErr && rpcRes && (rpcRes as any).propuesta_id) {
         propId = (rpcRes as any).propuesta_id;
         rpcPublicado = true;
@@ -1926,11 +2165,21 @@ export async function POST(req: Request) {
     }
 
     if (!rpcPublicado || !propId) {
+      const msgErrPub = (rpcResFinal as any)?.msg_publico || (rpcResFinal as any)?.msg_publico_bot || "🚫 *Error al publicar propuesta* — Intente nuevamente.";
+      const msgErrPriv = (rpcResFinal as any)?.msg_privado_proponente || (rpcResFinal as any)?.msg_privado_bot || (rpcResFinal as any)?.alertaPrivada || "La propuesta no pudo ser registrada de forma atómica.";
       return NextResponse.json({
         ok: false,
         tipo: "PROPUESTA_ERROR",
-        respuestaGrupo: "🚫 *Error al publicar propuesta* — Intente nuevamente.",
-        mensajePrivadoAutor: "La propuesta no pudo ser registrada de forma atómica.",
+        respuestaGrupo: msgErrPub,
+        msg_publico: msgErrPub,
+        msg_publico_bot: msgErrPub,
+        respuestaPublica: msgErrPub,
+        mensajePrivadoAutor: msgErrPriv,
+        msg_privado_bot: msgErrPriv,
+        msg_privado_proponente: msgErrPriv,
+        alertaPrivada: (rpcResFinal as any)?.alertaPrivada || null,
+        notificaciones_privadas: (rpcResFinal as any)?.notificaciones_privadas || [],
+        senderJid: participantJid,
       });
     }
 
@@ -1948,14 +2197,38 @@ export async function POST(req: Request) {
 
     // Si publicó por encima de su saldo_disponible, devolver los textos exactos requeridos
     if (excedioSaldo) {
+      const msgPubRecorte = (rpcResFinal as any)?.msg_publico || (rpcResFinal as any)?.msg_publico_bot || `${nombreJugador} solo dispone de $${formatearMontoRegional(saldoDisponible)} para esta jugada.`;
+      const msgPrivRecorte = (rpcResFinal as any)?.msg_privado_proponente || (rpcResFinal as any)?.msg_privado_bot || (rpcResFinal as any)?.alertaPrivada || `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
       return NextResponse.json({
         ok: true,
         tipo: "PROPUESTA_CON_RECORTE_SALDO",
         propuestaId: propId,
-        respuestaGrupo: `${nombreJugador} solo dispone de $${formatearMontoRegional(saldoDisponible)} para esta jugada.`,
-        mensajePrivadoAutor: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
+        respuestaGrupo: msgPubRecorte,
+        msg_publico: msgPubRecorte,
+        msg_publico_bot: msgPubRecorte,
+        respuestaPublica: msgPubRecorte,
+        mensajePrivadoAutor: msgPrivRecorte,
+        msg_privado_bot: msgPrivRecorte,
+        msg_privado_proponente: msgPrivRecorte,
+        alertaPrivada: (rpcResFinal as any)?.alertaPrivada || msgPrivRecorte,
+        notificaciones_privadas: (rpcResFinal as any)?.notificaciones_privadas || [],
+        senderJid: participantJid,
       });
     }
+
+    const msgPublicoRpc =
+      (rpcResFinal as any)?.msg_publico ||
+      (rpcResFinal as any)?.msg_publico_bot ||
+      (rpcResFinal as any)?.respuestaPublica ||
+      analisis.msgPublicoBot ||
+      null;
+
+    const msgPrivadoRpc =
+      (rpcResFinal as any)?.msg_privado_proponente ||
+      (rpcResFinal as any)?.msg_privado_bot ||
+      (rpcResFinal as any)?.alertaPrivada ||
+      analisis.msgPrivadoBot ||
+      null;
 
     return NextResponse.json({
       ok: true,
@@ -1964,8 +2237,16 @@ export async function POST(req: Request) {
       jugadaEstandarizada: analisis.jugadaEstandarizada,
       montoPublicado: montoAPublicar,
       reaccionEmoji: "🏇",
-      respuestaGrupo: null,
-      mensajePrivadoAutor: null,
+      respuestaGrupo: msgPublicoRpc,
+      msg_publico: msgPublicoRpc,
+      msg_publico_bot: msgPublicoRpc,
+      respuestaPublica: msgPublicoRpc,
+      mensajePrivadoAutor: msgPrivadoRpc,
+      msg_privado_bot: msgPrivadoRpc,
+      msg_privado_proponente: msgPrivadoRpc,
+      alertaPrivada: (rpcResFinal as any)?.alertaPrivada || null,
+      notificaciones_privadas: (rpcResFinal as any)?.notificaciones_privadas || [],
+      senderJid: participantJid,
     });
   } catch (err: any) {
     return NextResponse.json(

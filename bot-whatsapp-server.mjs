@@ -1190,7 +1190,17 @@ async function manejarMensajeEntrante(msg) {
       );
     }
 
-    const respuestaGrupo = data.respuestaGrupo || data.acciones?.responderEnGrupo;
+    // 1. Respuesta al Grupo WA (con reply/quoted al whatsappMsgId original)
+    const respuestaGrupo =
+      data.msg_publico ||
+      data.msg_publico_bot ||
+      data.respuestaPublica ||
+      data.respuestaGrupo ||
+      data.acciones?.responderEnGrupo ||
+      data.data?.msg_publico ||
+      data.data?.msg_publico_bot ||
+      data.data?.respuestaPublica;
+
     if (respuestaGrupo) {
       envios.push(
         enviarMensajeGrupo(remoteJid, respuestaGrupo, whatsappMsgId)
@@ -1198,22 +1208,67 @@ async function manejarMensajeEntrante(msg) {
       );
     }
 
-    const mensajePrivadoAutor = data.mensajePrivadoAutor || data.acciones?.enviarPrivadoJugador;
-    if (mensajePrivadoAutor && participantJid) {
+    // 2. Respuesta al Privado WA: autor / aceptante
+    const mensajePrivadoAutor =
+      data.msg_privado_bot ||
+      data.alertaPrivada ||
+      data.msg_privado_aceptante ||
+      data.mensajePrivadoAutor ||
+      data.acciones?.enviarPrivadoJugador ||
+      data.data?.msg_privado_bot ||
+      data.data?.alertaPrivada ||
+      data.data?.msg_privado_aceptante;
+
+    const jidPrivadoAutor =
+      participantJid ||
+      data.senderJid ||
+      (telNormalizado ? `${telNormalizado}@s.whatsapp.net` : null);
+
+    if (mensajePrivadoAutor && jidPrivadoAutor) {
       envios.push(
-        enviarMensajePrivado(participantJid, mensajePrivadoAutor)
+        enviarMensajePrivado(jidPrivadoAutor, mensajePrivadoAutor)
           .catch((errPriv) => console.warn("[Bot WhatsApp] Aviso enviando privado autor:", errPriv?.message || errPriv))
       );
     }
 
+    // 3. Respuesta al Privado WA: proponente
     const mensajePrivadoProponente =
-      data.mensajePrivadoProponente || data.acciones?.enviarPrivadoProponente;
-    const proponenteDestino = data.proponenteJid || data.proponenteTelefono;
+      data.msg_privado_proponente ||
+      data.mensajePrivadoProponente ||
+      data.acciones?.enviarPrivadoProponente ||
+      data.data?.msg_privado_proponente;
+
+    const proponenteDestino =
+      data.proponenteJid ||
+      data.proponenteTelefono ||
+      (data.proponenteTelefonoNormalizado ? `${data.proponenteTelefonoNormalizado}@s.whatsapp.net` : null);
+
     if (mensajePrivadoProponente && proponenteDestino) {
       envios.push(
         enviarMensajePrivado(proponenteDestino, mensajePrivadoProponente)
           .catch((errProp) => console.warn("[Bot WhatsApp] Aviso enviando privado proponente:", errProp?.message || errProp))
       );
+    }
+
+    // 4. Notificaciones privadas en lote (array notificaciones_privadas)
+    const notifs =
+      data.notificaciones_privadas ||
+      data.notificacionesPrivadas ||
+      data.data?.notificaciones_privadas ||
+      [];
+
+    if (Array.isArray(notifs) && notifs.length > 0) {
+      for (const notif of notifs) {
+        const txt = typeof notif === "string" ? notif : (notif?.mensaje || notif?.msg || notif?.texto || notif?.contenido);
+        const jidN = typeof notif === "object" ? (notif?.whatsapp_jid || notif?.jid || (notif?.telefono ? `${normalizarTelefono(notif.telefono)}@s.whatsapp.net` : null)) : null;
+        const destino = jidN || jidPrivadoAutor;
+        if (txt && destino) {
+          envios.push(
+            enviarMensajePrivado(destino, txt)
+              .catch((errN) => console.warn("[Bot WhatsApp] Aviso enviando notif privada:", errN?.message || errN))
+          );
+        }
+      }
     }
 
     await Promise.allSettled(envios);
@@ -1897,15 +1952,16 @@ const server = http.createServer(async (req, res) => {
       return responderJson(res, 200, { ok: true, groupJid: groupJid || null, destinos: [...destinos] });
     }
 
-    // 4. POST /enviar-privado
-    if (req.method === "POST" && pathname === "/enviar-privado") {
+    // 4. POST /enviar-privado y alias /enviar
+    if (req.method === "POST" && (pathname === "/enviar-privado" || pathname === "/enviar")) {
       const body = await leerBodyJson(req);
-      const { telefonoOjid, texto } = body;
+      const telefonoOjid = body.telefonoOjid || body.jid || body.telefono || body.destinatario;
+      const texto = body.texto || body.mensaje || body.contenido;
 
       if (!telefonoOjid || !texto) {
         return responderJson(res, 400, {
           ok: false,
-          error: "telefonoOjid y texto son requeridos",
+          error: "telefonoOjid (o jid) y texto (o mensaje) son requeridos",
         });
       }
 

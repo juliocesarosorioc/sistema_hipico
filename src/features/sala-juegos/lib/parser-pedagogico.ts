@@ -578,6 +578,12 @@ export function analizarYEstandarizarJugada(
       `• Para jugar Llave/Dupla: Juego 1P ${ej1}-${ej2} ${montoEj}\n` +
       `• Para jugar Match (Caballo vs Caballo): Juego ${ej1} x ${ej2} ${montoEj}\n` +
       `Se ha notificado también al operador por si requieres atención personalizada.`,
+    msgPrivadoBot:
+      `🤖 Corrección Pedagógica: No pude procesar tu jugada "${texto}". Así debes escribirla:\n` +
+      `• Para jugar Puesto: Juego 1P ${ej1} ${montoEj} (o Consigo 1P ${ej1} ${montoEj})\n` +
+      `• Para jugar Llave/Dupla: Juego 1P ${ej1}-${ej2} ${montoEj}\n` +
+      `• Para jugar Match (Caballo vs Caballo): Juego ${ej1} x ${ej2} ${montoEj}\n` +
+      `Se ha notificado también al operador por si requieres atención personalizada.`,
     sugerenciasUnClic: [
       `Juego 1P ${ej1} ${montoEj}`,
       `Consigo 1P ${ej1} ${montoEj}`,
@@ -585,6 +591,9 @@ export function analizarYEstandarizarJugada(
     ],
   };
 }
+
+/** Alias oficial pedagógico para evaluar mensajes e intenciones de jugadas */
+export const evaluarMensajePedagogico = analizarYEstandarizarJugada;
 
 export interface ResultadoComandoRetiro {
   esComandoRetiro: boolean;
