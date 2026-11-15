@@ -53,10 +53,65 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const { data: todosVinculosRaw } = await supabaseAdmin
+      .from("salas_whatsapp_grupos")
+      .select("id, sala_id, grupo_id, whatsapp_group_jid, whatsapp_group_nombre, estado_conexion, activo, created_at")
+      .eq("activo", true);
+
+    const { data: todasSalasRaw } = await supabaseAdmin
+      .from("salas_juego")
+      .select("id, nombre_sala, grupo_id, activa")
+      .eq("activa", true);
+
     const grupoNombrePorId = new Map<string, string>();
     for (const g of gruposSistema || []) {
       if (g?.id) grupoNombrePorId.set(String(g.id), String(g.nombre || ""));
     }
+
+    const salaInfoPorId = new Map<string, { nombre_sala: string; grupo_id: string; grupo_nombre: string }>();
+    for (const s of todasSalasRaw || []) {
+      const gNom = grupoNombrePorId.get(String(s.grupo_id)) || "";
+      salaInfoPorId.set(String(s.id), {
+        nombre_sala: String(s.nombre_sala || ""),
+        grupo_id: String(s.grupo_id || ""),
+        grupo_nombre: gNom,
+      });
+    }
+
+    const vinculosGlobales = (todosVinculosRaw || []).map((v: any) => {
+      const sInfo = salaInfoPorId.get(String(v.sala_id));
+      return {
+        ...v,
+        sala_nombre: sInfo?.nombre_sala || null,
+        grupo_nombre: sInfo?.grupo_nombre || grupoNombrePorId.get(String(v.grupo_id)) || null,
+      };
+    });
+
+    const vinculosPorGrupoId = new Map<string, any[]>();
+    for (const v of vinculosGlobales) {
+      const gId = String(v.grupo_id || "");
+      if (gId) {
+        if (!vinculosPorGrupoId.has(gId)) vinculosPorGrupoId.set(gId, []);
+        vinculosPorGrupoId.get(gId)!.push(v);
+      }
+    }
+
+    const gruposSistemaEnriquecidos = (gruposSistema || []).map((g: any) => {
+      const gId = String(g.id);
+      const salasDelG = (todasSalasRaw || []).filter((s: any) => String(s.grupo_id) === gId);
+      const vG = vinculosPorGrupoId.get(gId) || [];
+      const salasConectadasCount = salasDelG.filter((s: any) =>
+        vG.some((v: any) => String(v.sala_id) === String(s.id))
+      ).length;
+      const nombresWa = Array.from(new Set(vG.map((v: any) => v.whatsapp_group_nombre || v.whatsapp_group_jid).filter(Boolean)));
+      return {
+        ...g,
+        totalSalas: salasDelG.length,
+        salasConectadas: salasConectadasCount,
+        conectado: vG.length > 0 || salasConectadasCount > 0,
+        gruposWhatsappNombres: nombresWa,
+      };
+    });
 
     const salas = (salasRaw || []).map((s: any) => ({
       ...s,
@@ -67,7 +122,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       salas,
-      gruposSistema: gruposSistema || [],
+      gruposSistema: gruposSistemaEnriquecidos,
+      vinculosGlobales,
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -165,6 +221,37 @@ export async function POST(req: NextRequest) {
           cache: "no-store",
         });
         const json = await resBot.json().catch(() => ({}));
+        if (json?.ok) {
+          await supabaseAdmin
+            .from("salas_whatsapp_grupos")
+            .upsert(
+              {
+                sala_id: salaId,
+                grupo_id: grupoId || null,
+                whatsapp_group_jid: groupJid,
+                whatsapp_group_nombre: json?.nombreGrupo || null,
+                activo: true,
+                estado_conexion: "conectado",
+                motivo_estado: "Conectado y verificado",
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "sala_id,whatsapp_group_jid" }
+            );
+
+          try {
+            await supabaseAdmin
+              .from("salas_juego")
+              .update({
+                whatsapp_group_jid: groupJid,
+                whatsapp_group_nombre: json?.nombreGrupo || null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", salaId);
+          } catch {
+            // No bloqueante
+          }
+        }
+
         return NextResponse.json({
           ok: Boolean(json?.ok),
           motivo: json?.motivo || json?.error || "Sin respuesta del motor Baileys",
@@ -209,6 +296,24 @@ export async function POST(req: NextRequest) {
       const { error } = await qDel;
       if (error) {
         return NextResponse.json({ ok: false, motivo: error.message }, { status: 500 });
+      }
+
+      if (salaId) {
+        const { data: otros } = await supabaseAdmin
+          .from("salas_whatsapp_grupos")
+          .select("whatsapp_group_jid, whatsapp_group_nombre")
+          .eq("sala_id", salaId)
+          .eq("activo", true);
+
+        const siguiente = (otros || []).find((o: any) => o.whatsapp_group_jid !== groupJid);
+        await supabaseAdmin
+          .from("salas_juego")
+          .update({
+            whatsapp_group_jid: siguiente ? siguiente.whatsapp_group_jid : null,
+            whatsapp_group_nombre: siguiente ? siguiente.whatsapp_group_nombre : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", salaId);
       }
       return NextResponse.json({ ok: true, motivo: "Grupo desvinculado correctamente" });
     }

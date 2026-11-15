@@ -1160,10 +1160,11 @@ export default function SalaJuegosWhatsApp({
               return vinculados.map((gw) => (
                 <span
                   key={gw.id || gw.whatsapp_group_jid}
-                  className="rounded-full bg-emerald-950/70 border border-emerald-400/50 px-2 py-0.5 text-[10px] font-bold text-emerald-200"
+                  className="rounded-full bg-emerald-950/80 border border-emerald-400/60 px-2.5 py-0.5 text-[10px] font-black text-emerald-200 inline-flex items-center gap-1 shadow-sm"
                   title={`Grupo de WhatsApp: ${gw.whatsapp_group_nombre || gw.whatsapp_group_jid}`}
                 >
-                  🟢 {gw.whatsapp_group_nombre || gw.whatsapp_group_jid}
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>🟢 {gw.whatsapp_group_nombre || gw.whatsapp_group_jid}</span>
                 </span>
               ));
             }
@@ -1171,31 +1172,43 @@ export default function SalaJuegosWhatsApp({
             if (nomDirecto) {
               return (
                 <span
-                  className="rounded-full bg-emerald-950/70 border border-emerald-400/50 px-2 py-0.5 text-[10px] font-bold text-emerald-200"
+                  className="rounded-full bg-emerald-950/80 border border-emerald-400/60 px-2.5 py-0.5 text-[10px] font-black text-emerald-200 inline-flex items-center gap-1 shadow-sm"
                   title={`Grupo de WhatsApp: ${nomDirecto}`}
                 >
-                  🟢 {nomDirecto}
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>🟢 {nomDirecto}</span>
                 </span>
               );
             }
             return (
-              <span className="rounded-full bg-black/20 border border-white/20 px-2 py-0.5 text-[10px] text-white/80">
-                ⚪ Sin WhatsApp
+              <span className="rounded-full bg-black/30 border border-white/20 px-2.5 py-0.5 text-[10px] text-white/80 inline-flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                <span>⚪ Sin WhatsApp</span>
               </span>
             );
           })()}
           <div className="flex bg-[#016b58] rounded-lg p-0.5">
-            {salas.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setSalaSeleccionadaId(s.id)}
-                className={`px-2.5 py-0.5 rounded-md text-xs font-semibold transition ${
-                  salaActiva?.id === s.id ? 'bg-white text-[#008069] font-bold' : 'text-white/80 hover:text-white'
-                }`}
-              >
-                {s.nombreSala} ({s.hipodromoActivo} C{s.numeroCarreraActiva})
-              </button>
-            ))}
+            {salas.map((s) => {
+              const vinculadosS = gruposWaPorSala[s.id] || [];
+              const tieneWa = vinculadosS.length > 0 || Boolean(s.whatsappGroupNombre) || Boolean(s.whatsappGroupJid);
+              const activo = salaActiva?.id === s.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setSalaSeleccionadaId(s.id)}
+                  className={`px-2.5 py-0.5 rounded-md text-xs font-semibold transition inline-flex items-center gap-1.5 ${
+                    activo ? 'bg-white text-[#008069] font-bold shadow-sm' : 'text-white/80 hover:text-white'
+                  }`}
+                  title={tieneWa ? 'Sala conectada a grupo de WhatsApp' : 'Sala sin grupo de WhatsApp'}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${tieneWa ? (activo ? 'bg-[#008069]' : 'bg-emerald-400') : 'bg-white/40'}`} />
+                  <span>{s.nombreSala} ({s.hipodromoActivo} C{s.numeroCarreraActiva})</span>
+                  <span className={`text-[10px] ${tieneWa ? (activo ? 'text-[#008069]' : 'text-emerald-300 font-bold') : 'opacity-60'}`}>
+                    {tieneWa ? '🟢' : '⚪'}
+                  </span>
+                </button>
+              );
+            })}
           </div>
           {salas.length === 2 && (
             <button

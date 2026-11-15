@@ -280,9 +280,95 @@ export async function GET(req: Request) {
     salas = [];
   }
 
+  // Enriquecer cada grupo de WhatsApp con su estado de conexión real a la plataforma
+  let gruposEnriquecidos = estadoBot.grupos;
+  try {
+    const { data: vinculosActivos } = await supabaseAdmin
+      .from("salas_whatsapp_grupos")
+      .select("whatsapp_group_jid, whatsapp_group_nombre, sala_id, grupo_id, estado_conexion")
+      .eq("activo", true);
+
+    const { data: todasSalas } = await supabaseAdmin
+      .from("salas_juego")
+      .select("id, nombre_sala, grupo_id, whatsapp_group_jid")
+      .eq("activa", true);
+
+    const { data: gruposVenta } = await supabaseAdmin
+      .from("grupos_venta")
+      .select("id, nombre");
+
+    const grupoNombreMap = new Map<string, string>();
+    for (const g of gruposVenta || []) {
+      if (g?.id) grupoNombreMap.set(String(g.id), String(g.nombre || ""));
+    }
+
+    const salaInfoMap = new Map<string, { id: string; nombre_sala: string; grupo_id: string; grupo_nombre: string }>();
+    for (const s of todasSalas || []) {
+      salaInfoMap.set(String(s.id), {
+        id: String(s.id),
+        nombre_sala: String(s.nombre_sala || ""),
+        grupo_id: String(s.grupo_id || ""),
+        grupo_nombre: grupoNombreMap.get(String(s.grupo_id)) || "",
+      });
+    }
+
+    gruposEnriquecidos = (estadoBot.grupos || []).map((g) => {
+      const vinc = (vinculosActivos || []).find((v: any) => v.whatsapp_group_jid === g.jid);
+      let sInfo = vinc ? salaInfoMap.get(String(vinc.sala_id)) : null;
+
+      // Respaldo de compatibilidad con salas_juego.whatsapp_group_jid directo
+      if (!sInfo) {
+        const sDirecta = (todasSalas || []).find((s: any) => s.whatsapp_group_jid === g.jid);
+        if (sDirecta) {
+          sInfo = salaInfoMap.get(String(sDirecta.id)) || null;
+        }
+      }
+
+      const estaConectado = Boolean(sInfo);
+
+      return {
+        ...g,
+        conectado: estaConectado,
+        salaId: sInfo?.id || null,
+        salaNombre: sInfo?.nombre_sala || null,
+        grupoId: sInfo?.grupo_id || null,
+        grupoNombre: sInfo?.grupo_nombre || null,
+        estadoConexion: vinc?.estado_conexion || (estaConectado ? "conectado" : "desconectado"),
+      };
+    });
+
+    const vinculosPorSalaId = new Map<string, any[]>();
+    for (const v of vinculosActivos || []) {
+      const sId = String(v.sala_id);
+      if (!vinculosPorSalaId.has(sId)) vinculosPorSalaId.set(sId, []);
+      vinculosPorSalaId.get(sId)!.push(v);
+    }
+
+    salas = (salas || []).map((s: any) => {
+      const sVinculos = vinculosPorSalaId.get(String(s.id)) || [];
+      const primerV = sVinculos[0];
+      return {
+        ...s,
+        grupos_whatsapp: sVinculos,
+        whatsapp_group_jid: s.whatsapp_group_jid || primerV?.whatsapp_group_jid || null,
+        whatsapp_group_nombre: s.whatsapp_group_nombre || primerV?.whatsapp_group_nombre || null,
+      };
+    });
+  } catch {
+    // Si falla el enriquecimiento, conservar grupos originales
+  }
+
+  const metricasGrupos = {
+    total: gruposEnriquecidos.length,
+    conectados: gruposEnriquecidos.filter((g: any) => g.conectado).length,
+    desconectados: gruposEnriquecidos.filter((g: any) => !g.conectado).length,
+  };
+
   return NextResponse.json({
     ok: true,
     ...estadoBot,
+    grupos: gruposEnriquecidos,
+    metricasGrupos,
     salas,
   });
 }

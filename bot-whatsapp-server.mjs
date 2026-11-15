@@ -1423,6 +1423,24 @@ const server = http.createServer(async (req, res) => {
         return responderJson(res, 500, { ok: false, error: error.message });
       }
 
+      if (groupJid) {
+        await supabase
+          .from("salas_whatsapp_grupos")
+          .upsert(
+            {
+              sala_id: salaId,
+              grupo_id: salaActualizada?.grupo_id || null,
+              whatsapp_group_jid: groupJid,
+              whatsapp_group_nombre: groupNombre || null,
+              activo: true,
+              estado_conexion: "conectado",
+              motivo_estado: "Vinculado",
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "sala_id,whatsapp_group_jid" }
+          );
+      }
+
       // Al vincular manualmente, cualquier respaldo de desconexión previo deja
       // de tener sentido: la sala ya tiene un grupo activo.
       if (salasDesconectadas[salaId]) {
@@ -1493,6 +1511,16 @@ const server = http.createServer(async (req, res) => {
         return responderJson(res, 500, { ok: false, error: error.message });
       }
 
+      await supabase
+        .from("salas_whatsapp_grupos")
+        .update({
+          activo: false,
+          estado_conexion: "pausado",
+          motivo_estado: "Desconectado temporalmente",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("sala_id", salaId);
+
       return responderJson(res, 200, {
         ok: true,
         salaId,
@@ -1556,6 +1584,24 @@ const server = http.createServer(async (req, res) => {
 
       if (error) {
         return responderJson(res, 500, { ok: false, error: error.message });
+      }
+
+      if (groupJid) {
+        await supabase
+          .from("salas_whatsapp_grupos")
+          .upsert(
+            {
+              sala_id: salaId,
+              grupo_id: salaActualizada?.grupo_id || null,
+              whatsapp_group_jid: groupJid,
+              whatsapp_group_nombre: groupNombre || null,
+              activo: true,
+              estado_conexion: "conectado",
+              motivo_estado: "Vinculado",
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "sala_id,whatsapp_group_jid" }
+          );
       }
 
       if (salasDesconectadas[salaId]) {
@@ -1662,6 +1708,20 @@ const server = http.createServer(async (req, res) => {
             motivo: errUpsert.message || "Error guardando vinculación en Supabase",
           });
         }
+
+        // Mantener también sincronizado salas_juego.whatsapp_group_jid para que permanezca conectado
+        try {
+          await supabase
+            .from("salas_juego")
+            .update({
+              whatsapp_group_jid: groupJid,
+              whatsapp_group_nombre: nombreGrupo,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", salaId);
+        } catch {
+          // No bloqueante
+        }
       }
 
       salasCacheMap.clear();
@@ -1706,6 +1766,25 @@ const server = http.createServer(async (req, res) => {
       const { error: errDel } = await qDel;
       if (errDel) {
         return responderJson(res, 500, { ok: false, motivo: errDel.message });
+      }
+
+      if (salaId) {
+        const { data: otros } = await supabase
+          .from("salas_whatsapp_grupos")
+          .select("whatsapp_group_jid, whatsapp_group_nombre")
+          .eq("sala_id", salaId)
+          .eq("activo", true)
+          .order("created_at", { ascending: false });
+
+        const siguiente = (otros || []).find((o) => o.whatsapp_group_jid !== groupJid);
+        await supabase
+          .from("salas_juego")
+          .update({
+            whatsapp_group_jid: siguiente ? siguiente.whatsapp_group_jid : null,
+            whatsapp_group_nombre: siguiente ? siguiente.whatsapp_group_nombre : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", salaId);
       }
 
       salasCacheMap.clear();
