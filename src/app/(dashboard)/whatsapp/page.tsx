@@ -198,12 +198,17 @@ export default function WhatsappPage() {
           const map = new Map(prev.map((p) => [p.id, p]));
           for (const s of salasServidor) {
             const previo = map.get(s.id);
+            const gWa = (s.grupos_whatsapp && s.grupos_whatsapp.length > 0)
+              ? s.grupos_whatsapp
+              : (previo?.grupos_whatsapp && previo.grupos_whatsapp.length > 0)
+                ? previo.grupos_whatsapp
+                : [];
             map.set(s.id, {
               ...previo,
               ...s,
-              grupos_whatsapp: previo?.grupos_whatsapp || s.grupos_whatsapp || [],
-              whatsapp_group_jid: s.whatsapp_group_jid || previo?.whatsapp_group_jid || (previo?.grupos_whatsapp?.[0]?.whatsapp_group_jid) || null,
-              whatsapp_group_nombre: s.whatsapp_group_nombre || previo?.whatsapp_group_nombre || (previo?.grupos_whatsapp?.[0]?.whatsapp_group_nombre) || null,
+              grupos_whatsapp: gWa,
+              whatsapp_group_jid: s.whatsapp_group_jid || previo?.whatsapp_group_jid || gWa[0]?.whatsapp_group_jid || null,
+              whatsapp_group_nombre: s.whatsapp_group_nombre || previo?.whatsapp_group_nombre || gWa[0]?.whatsapp_group_nombre || null,
             });
           }
           return Array.from(map.values());

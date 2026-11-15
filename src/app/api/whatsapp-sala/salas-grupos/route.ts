@@ -40,12 +40,16 @@ export async function GET(req: NextRequest) {
     let vinculosPorSala: Record<string, any[]> = {};
 
     if (salaIds.length > 0) {
-      const { data: vinculos } = await supabaseAdmin
+      const { data: vinculos, error: errVinc } = await supabaseAdmin
         .from("salas_whatsapp_grupos")
         .select("*")
         .in("sala_id", salaIds)
         .eq("activo", true)
-        .order("created_at", { ascending: true });
+        .order("updated_at", { ascending: true });
+
+      if (errVinc) {
+        console.error("Error al obtener vinculosPorSala:", errVinc);
+      }
 
       for (const v of vinculos || []) {
         if (!vinculosPorSala[v.sala_id]) vinculosPorSala[v.sala_id] = [];
@@ -53,10 +57,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const { data: todosVinculosRaw } = await supabaseAdmin
+    const { data: todosVinculosRaw, error: errTodosVinc } = await supabaseAdmin
       .from("salas_whatsapp_grupos")
-      .select("id, sala_id, grupo_id, whatsapp_group_jid, whatsapp_group_nombre, estado_conexion, activo, created_at")
+      .select("id, sala_id, grupo_id, whatsapp_group_jid, whatsapp_group_nombre, estado_conexion, activo, updated_at")
       .eq("activo", true);
+
+    if (errTodosVinc) {
+      console.error("Error al obtener todosVinculosRaw:", errTodosVinc);
+    }
 
     const { data: todasSalasRaw } = await supabaseAdmin
       .from("salas_juego")
