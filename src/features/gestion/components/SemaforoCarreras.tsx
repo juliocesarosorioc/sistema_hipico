@@ -160,9 +160,7 @@ export function SemaforoCarreras({
         if (resultadosRes.data && Array.isArray(resultadosRes.data)) {
           for (const r of resultadosRes.data as Array<Record<string, unknown>>) {
             if (claveHipodromo(String(r.hipodromo ?? "")) !== claveHipo) continue;
-            const tieneTab = r.aplicado_a_tablas === true;
-            const conGan = Array.isArray(r.ganadores) && r.ganadores.length > 0;
-            if (tieneTab || (!grupoEfectivo && conGan)) {
+            if (r.aplicado_a_tablas === true) {
               const num = Number(r.carrera);
               if (Number.isFinite(num) && num > 0) setLiq.add(num);
             }
@@ -172,7 +170,7 @@ export function SemaforoCarreras({
           for (const t of tablasRes.data as Array<Record<string, unknown>>) {
             if (claveHipodromo(String(t.hipodromo ?? "")) !== claveHipo) continue;
             const est = String(t.estado ?? "").trim().toLowerCase();
-            if (est === "cerrada") {
+            if (est === "liquidada") {
               const num = Number(t.carrera);
               if (Number.isFinite(num) && num > 0) setLiq.add(num);
             }
