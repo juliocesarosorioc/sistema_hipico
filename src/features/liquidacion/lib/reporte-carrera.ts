@@ -18,7 +18,7 @@ import type { CarreraReporte, FilaReporte } from "@/features/liquidacion/lib/rep
 import { pasaFiltroModalidad, type FiltroModalidadTiempo } from "@/features/jugadas/lib/modalidad-tiempo";
 import { colorDiscoNumero } from "@/features/saldos/lib/discos";
 import { etiquetaJugada } from "@/features/taquilla/lib/nomenclatura";
-import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
+import { esMarca, resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { redondearCentavos, restarDinero, sumarDinero } from "@/shared/lib/dinero";
 import {
   _reembolsosCruce,
@@ -516,7 +516,10 @@ export function armarReporteCarrera(
     if (claveCliente) {
       riesgoPorCliente.set(claveCliente, sumarDinero(riesgoPorCliente.get(claveCliente) ?? 0, riesgoDeFila(f)));
 
-      if (resultado !== null) {
+      // MARCAS no suma al neto del cliente ni a los bonos por cruce de la
+      // carrera: se liquida en su propio circuito. La fila sigue visible.
+      const esMarcaFila = f.tipoJugada === "MARCA" || esMarca(f.jugada);
+      if (!esMarcaFila && resultado !== null) {
         netoPorCliente.set(claveCliente, sumarDinero(netoPorCliente.get(claveCliente) ?? 0, resultado));
         lineasCruce.push({
           cliente: nombreVisiblePorClave.get(claveCliente) ?? f.cliente,

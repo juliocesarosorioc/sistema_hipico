@@ -1971,6 +1971,10 @@ async function carreraReporte(
     .filter(
       (f) =>
         (f.rol === "Juega" || f.rol === "Consigue") &&
+        // La bolsa de MARCAS se liquida aparte (`club_liquidar_marca`): su
+        // ganancia NUNCA debe cross-ear con la taquilla/puestos del cliente.
+        f.tipoJugada !== "MARCA" &&
+        !esMarca(f.jugada) &&
         f.resultado !== null &&
         Number.isFinite(f.resultado)
     )

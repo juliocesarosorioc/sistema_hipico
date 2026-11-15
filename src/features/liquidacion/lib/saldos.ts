@@ -63,6 +63,7 @@ import { generarAsientoDevolucionIncentivo } from "@/features/contabilidad/lib/p
 import { jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros-nucleo";
 import { limpiarCacheClientes } from "@/features/clientes/lib/clientes";
 import { limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
+import { esTicketDeMarcas } from "@/features/liquidacion/lib/etiquetas-reporte";
 
 export { calcularEstadoCuentaCliente, calcularResumenContableCliente, calcularIncentivoCarreraCliente };
 
@@ -182,6 +183,9 @@ export function decidirTickets(
   const decisiones: Array<{ fila: Record<string, unknown>; res: ResultadoMotor }> = [];
   for (const fRaw of filas) {
     const fila = fRaw as Record<string, unknown>;
+    // MARCAS tiene su propia RPC (`club_liquidar_marca`) y su propia bolsa:
+    // nunca se decide ni se netea con el motor universal de la carrera.
+    if (esTicketDeMarcas(fila)) continue;
     // Comisión POR TICKET desde su grupo (`comision_porcentaje` congelado): si
     // se usara una tasa única, los grupos con comisión distinta quedarían mal
     // cobrados. El caller sigue siendo el respaldo para tickets sin el dato.

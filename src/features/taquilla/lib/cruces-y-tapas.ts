@@ -675,13 +675,12 @@ export function _reembolsosCruce(
         if (l.comisionCobrada != null && Number(l.comisionCobrada) > 0) {
           brutoGanado = redondearCentavos(l.resultado + Math.max(0, Number(l.comisionCobrada)));
         } else {
-          const pct = l.comisionPct ?? comisionPct;
-          const factorNeto = 1 - Math.max(0, Number(pct)) / 100;
-          brutoGanado =
-            factorNeto > 0
-              ? redondearCentavos(l.resultado / factorNeto)
-              : redondearCentavos(l.resultado);
-          comisionCobrada = Math.max(0, redondearCentavos(brutoGanado - l.resultado));
+          // Sin comisión explícita NO se infla la ganancia dividiendo por
+          // (1 - comisión): el neto reportado se toma como bruto y no hay
+          // comisión que devolver. El gross-up `/ 0.95` convertía un neto de
+          // 100,00 en 105,26 e inventaba un reembolso de cruce que no existe.
+          brutoGanado = redondearCentavos(l.resultado);
+          comisionCobrada = 0;
         }
       } else if (l.resultado < 0) {
         brutoPerdido = redondearCentavos(Math.abs(l.resultado));

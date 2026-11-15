@@ -39,6 +39,38 @@ export function esMarca(nombre: unknown): boolean {
   return /^MARCAS?\b/i.test(txt(nombre));
 }
 
+/**
+ * ¿El ticket pertenece a la bolsa aislada de MARCAS?
+ *
+ * Las marcas se liquidan por su propio circuito (`club_liquidar_marca`) y NO
+ * deben mezclarse con la bolsa de taquilla/puestos/ninis/emparejamientos: si se
+ * suman en la misma carrera, la ganancia de una marca compensa (u oculta) la
+ * pérdida real de taquilla del cliente.
+ *
+ * Se reconoce por cualquiera de las tres huellas oficiales:
+ *  - `nota_auditoria.origen === "MARCAS"`
+ *  - `nombre_jugada LIKE "MARCA%"`
+ *  - `cliente_consigue_nombre === "MARCAS"`
+ */
+export function esTicketDeMarcas(ticket: Record<string, unknown>): boolean {
+  if (esMarca(ticket.nombre_jugada) || esMarca(ticket.jugada)) return true;
+
+  const consigue = txt(
+    ticket.cliente_consigue_nombre ?? ticket.banquero_nombre ?? ticket.contraparte
+  ).toUpperCase();
+  if (consigue === "MARCAS" || consigue === "MARCA") return true;
+
+  const nota = ticket.nota_auditoria;
+  if (nota && typeof nota === "object") {
+    const origen = String((nota as Record<string, unknown>).origen ?? "").trim();
+    if (/^MARCAS?$/i.test(origen)) return true;
+  } else if (typeof nota === "string") {
+    const m = /"origen"\s*:\s*"([^"]+)"/i.exec(nota);
+    if (m && /^MARCAS?$/i.test(m[1].trim())) return true;
+  }
+  return false;
+}
+
 /** ¿La jugada es una Tabla Fija ("TABLA FIJA (HIPO C4)")? */
 export function esTablaFija(nombre: unknown): boolean {
   return /^TABLA FIJA\b/i.test(txt(nombre));
