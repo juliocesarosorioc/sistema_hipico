@@ -1262,7 +1262,24 @@ export async function POST(req: Request) {
     }
 
     // 2. Identificar al jugador estrictamente en `public.clientes` del `grupo_id` de la sala (SIN pushName ni auto-creación)
-    const telNormalizado = normalizarTelefono(participantJid);
+    const participantAlt = String(body.participantAlt || "");
+    const telefonoRealProp = String(body.telefonoReal || "");
+
+    const telAlt = normalizarTelefono(participantAlt);
+    let telReal = normalizarTelefono(telefonoRealProp);
+    if (!telReal) {
+      if (participantAlt && participantAlt.endsWith("@s.whatsapp.net")) {
+        telReal = telAlt;
+      } else if (participantJid && participantJid.endsWith("@s.whatsapp.net")) {
+        telReal = normalizarTelefono(participantJid);
+      } else if (telAlt && telAlt.length >= 7 && telAlt.length <= 15) {
+        telReal = telAlt;
+      } else if (!participantJid.endsWith("@lid")) {
+        const tPrinc = normalizarTelefono(participantJid);
+        if (tPrinc.length >= 7) telReal = tPrinc;
+      }
+    }
+
     let cliente: any =
       body.clientePreviamenteIdentificado?.id &&
       body.clientePreviamenteIdentificado?.grupo_id === grupoId
@@ -1270,29 +1287,34 @@ export async function POST(req: Request) {
         : null;
 
     // A. Búsqueda exacta por JID o teléfono normalizado dentro del grupo_id
-    if (!cliente && (participantJid || telNormalizado)) {
+    if (!cliente && (participantJid || participantAlt || telReal)) {
       const orConds = [];
       if (participantJid) orConds.push(`whatsapp_jid.eq.${participantJid}`);
-      if (telNormalizado) orConds.push(`telefono_normalizado.eq.${telNormalizado}`);
-      const { data: clPorJidOTel } = await supabaseAdmin
-        .from("clientes")
-        .select(
-          "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
-        )
-        .eq("grupo_id", grupoId)
-        .or(orConds.join(","))
-        .order("saldo_actual", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      if (participantAlt && participantAlt !== participantJid) orConds.push(`whatsapp_jid.eq.${participantAlt}`);
+      if (telReal && telReal.length >= 7) orConds.push(`telefono_normalizado.eq.${telReal}`);
+      if (telAlt && telAlt !== telReal && telAlt.length >= 7) orConds.push(`telefono_normalizado.eq.${telAlt}`);
 
-      if (clPorJidOTel) {
-        cliente = clPorJidOTel;
+      if (orConds.length > 0) {
+        const { data: clPorJidOTel } = await supabaseAdmin
+          .from("clientes")
+          .select(
+            "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
+          )
+          .eq("grupo_id", grupoId)
+          .or(orConds.join(","))
+          .order("saldo_actual", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (clPorJidOTel) {
+          cliente = clPorJidOTel;
+        }
       }
     }
 
-    // B. Búsqueda por sufijo numérico (últimos 8 dígitos de teléfono real, evitando LIDs) dentro del grupo_id
-    if (!cliente && telNormalizado.length >= 7 && !participantJid.endsWith("@lid")) {
-      const sufijo8 = telNormalizado.slice(-8);
+    // B. Búsqueda por sufijo numérico (últimos 8 dígitos de teléfono real) dentro del grupo_id
+    if (!cliente && telReal && telReal.length >= 7) {
+      const sufijo8 = telReal.slice(-8);
       const { data: clPorSufijo } = await supabaseAdmin
         .from("clientes")
         .select(
@@ -1321,19 +1343,20 @@ export async function POST(req: Request) {
 
     const nombreJugador = cliente.seudonimo || cliente.nombre;
 
-    // Vincular automáticamente el whatsapp_jid en la ficha del cliente para consultas instantáneas futuras
+    // Vincular automáticamente el whatsapp_jid (@lid o jid actual) en la ficha del cliente para consultas instantáneas futuras
     const updatesCl: Record<string, any> = {};
     if (participantJid && cliente.whatsapp_jid !== participantJid) {
       updatesCl.whatsapp_jid = participantJid;
       updatesCl.whatsapp_vinculado = true;
     }
-    if (!cliente.telefono_normalizado && telNormalizado && !participantJid.endsWith("@lid")) {
-      updatesCl.telefono_normalizado = telNormalizado;
+    if (!cliente.telefono_normalizado && telReal && telReal.length >= 7) {
+      updatesCl.telefono_normalizado = telReal;
     }
     if (Object.keys(updatesCl).length > 0) {
       updatesCl.updated_at = new Date().toISOString();
       await supabaseAdmin.from("clientes").update(updatesCl).eq("id", cliente.id);
       cliente.whatsapp_jid = participantJid;
+      if (telReal) cliente.telefono_normalizado = telReal;
     }
 
     const saldoDisponible = calcularSaldoDisponible(cliente);
