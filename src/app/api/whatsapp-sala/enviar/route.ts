@@ -41,51 +41,75 @@ export async function POST(req: NextRequest) {
     if (!grupoId && sRow?.grupo_id) grupoId = sRow.grupo_id;
     if (sRow?.whatsapp_group_jid) whatsappGroupJid = sRow.whatsapp_group_jid;
 
-    // 1. Insertar el mensaje en public.chat_mensajes
-    const { data: msgInsert, error: errInsert } = await supabaseAdmin
-      .from("chat_mensajes")
-      .insert({
-        sala_id: salaId,
-        grupo_id: grupoId,
-        contenido: textoLimpio,
-        remitente_nombre: String(body.remitenteNombre || "Oficial de Sala"),
-        es_bot: true,
-        es_operador: true,
-        tipo_mensaje: "TEXTO",
-        estado_propuesta: "no_aplica",
-        origen_canal: "WEB",        solo_borrable_operador: true,
-      })
-      .select()
-      .single();
-
-    if (errInsert) {
-      console.error("[Enviar] Error insertando chat_mensajes:", errInsert.message);
+    // Si la sala no tiene whatsapp_group_jid directo, buscar en salas_whatsapp_grupos
+    if (!whatsappGroupJid) {
+      const { data: vRow } = await supabaseAdmin
+        .from("salas_whatsapp_grupos")
+        .select("whatsapp_group_jid")
+        .eq("sala_id", salaId)
+        .eq("activo", true)
+        .limit(1)
+        .maybeSingle();
+      if (vRow?.whatsapp_group_jid) {
+        whatsappGroupJid = vRow.whatsapp_group_jid;
+        // Sincronizar en salas_juego para acelerar lecturas y visibilidad en frontend
+        await supabaseAdmin
+          .from("salas_juego")
+          .update({ whatsapp_group_jid: whatsappGroupJid })
+          .eq("id", salaId);
+      }
     }
 
-    // 2. Llamar a http://127.0.0.1:3005/publicar-grupo para despacho inmediato en WhatsApp si existe whatsapp_group_jid
+    // 1. Insertar el mensaje en public.chat_mensajes (salvo si skipInsertDb viene en true)
+    let msgInsert: any = null;
+    if (!body.skipInsertDb) {
+      const { data: inserted, error: errInsert } = await supabaseAdmin
+        .from("chat_mensajes")
+        .insert({
+          sala_id: salaId,
+          grupo_id: grupoId,
+          contenido: textoLimpio,
+          remitente_nombre: String(body.remitenteNombre || "Oficial de Sala"),
+          es_bot: true,
+          es_operador: true,
+          tipo_mensaje: "TEXTO",
+          estado_propuesta: "no_aplica",
+          origen_canal: "WEB",
+          whatsapp_group_jid: whatsappGroupJid || null,
+          solo_borrable_operador: true,
+        })
+        .select()
+        .single();
+
+      if (errInsert) {
+        console.error("[Enviar] Error insertando chat_mensajes:", errInsert.message);
+      } else {
+        msgInsert = inserted;
+      }
+    }
+
+    // 2. Llamar a http://127.0.0.1:3005/publicar-grupo para despacho inmediato en WhatsApp
     let resBotOk = false;
     let resBotMotivo = "";
-    if (whatsappGroupJid) {
-      try {
-        const resBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
-          },
-          body: JSON.stringify({
-            salaId,
-            groupJid: whatsappGroupJid,
-            texto: textoLimpio,
-            quotedMsgId: quotedMsgId || null,
-          }),
-        });
-        const dataBot = await resBot.json().catch(() => null);
-        resBotOk = Boolean(dataBot?.ok);
-        resBotMotivo = dataBot?.error || dataBot?.motivo || "";
-      } catch (errBot: any) {
-        console.warn("[Enviar] Baileys 3005 inaccesible o apagado:", errBot?.message);
-      }
+    try {
+      const resBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+        },
+        body: JSON.stringify({
+          salaId,
+          groupJid: whatsappGroupJid || undefined,
+          texto: textoLimpio,
+          quotedMsgId: quotedMsgId || null,
+        }),
+      });
+      const dataBot = await resBot.json().catch(() => null);
+      resBotOk = Boolean(dataBot?.ok);
+      resBotMotivo = dataBot?.error || dataBot?.motivo || "";
+    } catch (errBot: any) {
+      console.warn("[Enviar] Baileys 3005 inaccesible o apagado:", errBot?.message);
     }
 
     return NextResponse.json({

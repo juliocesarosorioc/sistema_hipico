@@ -27,13 +27,14 @@ function sanitizarTexto(str: unknown): string {
 const BOT_DAEMON_URL = process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
 const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
-// Cierre VULN-15: Set en memoria de los últimos 500 whatsappMsgId para descartar reintentos en < 1ms
+// Cierre VULN-15: Set en memoria de los últimos 1000 whatsappMsgId (por sala) para descartar reintentos en < 1ms
 const ultimosWhatsappMsgIds = new Set<string>();
-function esWhatsappMsgIdDuplicado(msgId?: string | null): boolean {
+function esWhatsappMsgIdDuplicado(msgId?: string | null, salaId?: string | null): boolean {
   if (!msgId) return false;
-  if (ultimosWhatsappMsgIds.has(msgId)) return true;
-  ultimosWhatsappMsgIds.add(msgId);
-  if (ultimosWhatsappMsgIds.size > 500) {
+  const key = salaId ? `${msgId}:${salaId}` : msgId;
+  if (ultimosWhatsappMsgIds.has(key)) return true;
+  ultimosWhatsappMsgIds.add(key);
+  if (ultimosWhatsappMsgIds.size > 1000) {
     const primer = ultimosWhatsappMsgIds.values().next().value;
     if (primer) ultimosWhatsappMsgIds.delete(primer);
   }
@@ -423,7 +424,7 @@ export async function POST(req: Request) {
     }
 
     // Cierre VULN-15: Descartar reintentos en < 1ms por idempotencia de whatsappMsgId
-    if (body.whatsappMsgId && esWhatsappMsgIdDuplicado(body.whatsappMsgId)) {
+    if (body.whatsappMsgId && esWhatsappMsgIdDuplicado(body.whatsappMsgId, body.salaId)) {
       return NextResponse.json({
         ok: true,
         tipo: "REINTENTO_DESCARTADO",
@@ -1285,30 +1286,42 @@ export async function POST(req: Request) {
     // Todo mensaje entrante del grupo (sea texto normal o jugada) debe registrarse
     // para que aparezca en el monitor en vivo de la Sala de Juegos Web
     const textoUsuarioLimpio = String(texto || "").trim();
-    if (!quotedMsgId) {
-      const preAnalisis = analizarYEstandarizarJugada(textoUsuarioLimpio, 999999);
-      if (!preAnalisis.esIntencionDeJugada) {
-        const nombreRemitente = String(body.senderNombre || body.pushName || "Usuario").trim();
-        await supabaseAdmin.from("chat_mensajes").insert({
-          grupo_id: grupoId,
-          sala_id: salaId,
-          remitente_nombre: nombreRemitente,
-          es_operador: Boolean(body.esMensajePropioTelefono),
-          tipo_mensaje: "texto",
-          contenido: textoUsuarioLimpio,
-          whatsapp_msg_id: body.whatsappMsgId || null,
-          whatsapp_group_jid: groupJid,
-          whatsapp_group_nombre: whatsappGroupNombre,
-          origen_canal: "WHATSAPP",        });
-        await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+    const esComandoOp = textoUsuarioLimpio.startsWith("!");
+    const cmdRetiroPre = analizarComandoRetiro(textoUsuarioLimpio);
+    const esAmpliacionPre = evaluarAmpliacionPropuesta(textoUsuarioLimpio).esAmpliacion;
+    const esConsultaSaldo = /^(?:!?(?:saldo|cuenta|mi saldo|ver saldo))\b/i.test(textoUsuarioLimpio);
+    const preAnalisis = analizarYEstandarizarJugada(textoUsuarioLimpio, 999999);
 
-        return NextResponse.json({
-          ok: true,
-          tipo: "CHARLA",
-          respuestaGrupo: null,
-          mensajePrivadoAutor: null,
-        });
-      }
+    const esAccionOJugada =
+      Boolean(quotedMsgId) ||
+      esComandoOp ||
+      cmdRetiroPre.esComandoRetiro ||
+      esAmpliacionPre ||
+      esConsultaSaldo ||
+      preAnalisis.esIntencionDeJugada;
+
+    if (!esAccionOJugada) {
+      const nombreRemitente = String(body.senderNombre || body.pushName || "Usuario").trim();
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_nombre: nombreRemitente,
+        es_operador: Boolean(body.esMensajePropioTelefono),
+        tipo_mensaje: "texto",
+        contenido: textoUsuarioLimpio,
+        whatsapp_msg_id: body.whatsappMsgId || null,
+        whatsapp_group_jid: groupJid,
+        whatsapp_group_nombre: whatsappGroupNombre,
+        origen_canal: "WHATSAPP",
+      });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+      return NextResponse.json({
+        ok: true,
+        tipo: "CHARLA",
+        respuestaGrupo: null,
+        mensajePrivadoAutor: null,
+      });
     }
 
     // 2. Identificar al jugador estrictamente en `public.clientes` del `grupo_id` de la sala (SIN pushName ni auto-creación)
@@ -1471,6 +1484,42 @@ export async function POST(req: Request) {
       } catch (errRpcEntrenada) {
         console.warn("[procesar] Aviso evaluar_respuesta_entrenada_sala:", errRpcEntrenada);
       }
+
+    // Consulta directa de saldo de cliente si el RPC entrenado no respondió
+    if (esConsultaSaldo) {
+      const disp = formatearMontoRegional(saldoDisponible);
+      const msgPubSaldo = `💰 *${nombreJugador}*: Saldo disponible $${disp}`;
+      const msgPrivSaldo = `📊 *Tu Saldo* (${nombreJugador}):\n• Actual: $${formatearMontoRegional(cliente.saldo_actual || 0)}\n• Aval / Crédito: $${formatearMontoRegional(cliente.aval || cliente.limite_credito || 0)}\n• Retenido: $${formatearMontoRegional(cliente.saldo_retenido || 0)}\n• Disponible para jugar: $${disp}`;
+
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_nombre: "🤖 ASISTENTE DE SALA",
+        es_operador: true,
+        es_bot: true,
+        tipo_mensaje: "sistema",
+        contenido: msgPubSaldo,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "WHATSAPP",
+      });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+      return NextResponse.json({
+        ok: true,
+        tipo: "CONSULTA_SALDO",
+        respuestaGrupo: msgPubSaldo,
+        msg_publico: msgPubSaldo,
+        msg_publico_bot: msgPubSaldo,
+        respuestaPublica: msgPubSaldo,
+        mensajePrivadoAutor: msgPrivSaldo,
+        msg_privado_bot: msgPrivSaldo,
+        alertaPrivada: null,
+        notificaciones_privadas: [],
+        senderJid: participantJid,
+      });
+    }
     }
 
     const ejecutarAmpliacionCupo = async (

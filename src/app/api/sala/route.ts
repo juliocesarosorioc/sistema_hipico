@@ -51,6 +51,16 @@ async function publicarEnWhatsAppSala(salaId: string, texto: string, quotedMsgId
       .maybeSingle();
 
     let groupJid = sala?.whatsapp_group_jid;
+    if (!groupJid) {
+      const { data: vinculo } = await supabaseAdmin
+        .from("salas_whatsapp_grupos")
+        .select("whatsapp_group_jid")
+        .eq("sala_id", salaId)
+        .eq("activo", true)
+        .limit(1)
+        .maybeSingle();
+      if (vinculo?.whatsapp_group_jid) groupJid = vinculo.whatsapp_group_jid;
+    }
     if (!groupJid && sala?.grupo_id) {
       const { data: grp } = await supabaseAdmin
         .from("grupos")
@@ -508,10 +518,24 @@ export async function GET(req: Request) {
         return NextResponse.json({ ok: false, error: "Sala no encontrada o no autorizada" }, { status: 403 });
       }
 
+      let whatsappGroupJid = sala.whatsapp_group_jid;
+      if (!whatsappGroupJid) {
+        const { data: vinculo } = await supabaseAdmin
+          .from("salas_whatsapp_grupos")
+          .select("whatsapp_group_jid")
+          .eq("sala_id", salaId)
+          .eq("activo", true)
+          .limit(1)
+          .maybeSingle();
+        if (vinculo?.whatsapp_group_jid) {
+          whatsappGroupJid = vinculo.whatsapp_group_jid;
+        }
+      }
+
       let qMensajes = supabaseAdmin.from("chat_mensajes").select("*");
-      if (sala.whatsapp_group_jid) {
+      if (whatsappGroupJid) {
         qMensajes = qMensajes.or(
-          `sala_id.eq.${salaId},and(grupo_id.eq.${sala.grupo_id},whatsapp_group_jid.eq.${sala.whatsapp_group_jid})`
+          `sala_id.eq.${salaId},and(grupo_id.eq.${sala.grupo_id},whatsapp_group_jid.eq.${whatsappGroupJid})`
         );
       } else {
         qMensajes = qMensajes.eq("sala_id", salaId);

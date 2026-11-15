@@ -914,15 +914,40 @@ export default function SalaJuegosWhatsApp({
         payloadCifrado: cifrado,
       });
 
+      // Enviar la propuesta también al grupo de WhatsApp vinculado
+      fetch('/api/whatsapp-sala/enviar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          salaId: salaActiva.id,
+          grupoId,
+          texto: textoFinalAPublicar,
+          quotedMsgId: replyToPropuesta?.whatsapp_msg_id || null,
+          skipInsertDb: true,
+        }),
+      }).catch((e) => console.warn('Aviso enviando propuesta a WhatsApp:', e));
+
       // Si el jugador publicó por más de su saldoDisponible:
       if (excedio) {
         // El Bot publica inmediatamente en el grupo citando la jugada:
+        const msgAlertaSaldo = `${usuarioActual.nombre} solo dispone de ${prefijo}${formatearMontoRegional(usuarioActual.saldoDisponible)} para esta jugada.`;
         agregarMensajeLocal(salaActiva.id, {
           remitente: '🤖 ASISTENTE DE SALA',
           esBot: true,
           tipo: 'alerta_bot',
-          contenido: `${usuarioActual.nombre} solo dispone de ${prefijo}${formatearMontoRegional(usuarioActual.saldoDisponible)} para esta jugada.`,
+          contenido: msgAlertaSaldo,
         });
+
+        fetch('/api/whatsapp-sala/enviar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            salaId: salaActiva.id,
+            grupoId,
+            texto: `⚠️ *${usuarioActual.nombre}*: Disponible ${prefijo}${formatearMontoRegional(usuarioActual.saldoDisponible)}`,
+            quotedMsgId: replyToPropuesta?.whatsapp_msg_id || null,
+          }),
+        }).catch(() => {});
 
         // El Bot le envía simultáneamente en privado al jugador:
         setSugerenciaPedagogica({

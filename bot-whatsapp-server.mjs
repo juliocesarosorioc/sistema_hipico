@@ -505,6 +505,25 @@ async function enviarMensajePrivado(telefonoOjid, texto) {
 // GENERADORES DE APERTURA, CIERRE, PLANO Y LLEGADA / SENTENCIA
 // ============================================================================
 
+async function registrarMensajeEnChatWeb(sala, groupJid, texto, tipo = "sistema") {
+  if (!supabase || !sala?.id || !texto) return;
+  try {
+    await supabase.from("chat_mensajes").insert({
+      grupo_id: sala.grupo_id,
+      sala_id: sala.id,
+      remitente_nombre: "🤖 ASISTENTE DE SALA",
+      es_operador: true,
+      es_bot: true,
+      tipo_mensaje: tipo,
+      contenido: texto,
+      whatsapp_group_jid: groupJid || sala.whatsapp_group_jid || null,
+      origen_canal: "WHATSAPP",
+    });
+  } catch (err) {
+    // best-effort
+  }
+}
+
 export async function ejecutarAperturaCarrera(sala, groupJid, hipodromoArg, carreraArg) {
   if (!supabase) throw new Error("Supabase no configurado");
 
@@ -529,6 +548,7 @@ export async function ejecutarAperturaCarrera(sala, groupJid, hipodromoArg, carr
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoApertura);
   }
+  await registrarMensajeEnChatWeb(sala, groupJid, textoApertura, "sistema");
 
   return { ok: true, hipodromo: hipoLimpio, carrera: numCarrera, textoApertura };
 }
@@ -554,6 +574,7 @@ export async function ejecutarCierreCarrera(sala, groupJid) {
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoCierre);
   }
+  await registrarMensajeEnChatWeb(sala, groupJid, textoCierre, "sistema");
 
   return { ok: true, textoCierre };
 }
@@ -606,6 +627,7 @@ export async function construirYPublicarPlano(sala, groupJid) {
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoPlano);
   }
+  await registrarMensajeEnChatWeb(sala, groupJid, textoPlano, "sistema");
 
   return { ok: true, textoPlano, totalTickets: lista.length, totalPactado };
 }
@@ -692,6 +714,7 @@ export async function ejecutarAnulacionORetiro(sala, groupJid, comando, argument
     if (groupJid && conectado) {
       await enviarMensajeGrupo(groupJid, textoConfirmacion);
     }
+    await registrarMensajeEnChatWeb(sala, groupJid, textoConfirmacion, "sistema");
     return { ok: true, mensaje: textoConfirmacion };
   }
 
@@ -745,6 +768,7 @@ export async function ejecutarAnulacionORetiro(sala, groupJid, comando, argument
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoAnulacion);
   }
+  await registrarMensajeEnChatWeb(sala, groupJid, textoAnulacion, "sistema");
   return { ok: true, mensaje: textoAnulacion };
 }
 
@@ -969,6 +993,7 @@ export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw) {
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoResultado);
   }
+  await registrarMensajeEnChatWeb(sala, groupJid, textoResultado, "llegada");
 
   return {
     ok: true,
