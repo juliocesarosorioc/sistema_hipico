@@ -57,6 +57,10 @@ export type GrupoVenta = {
   dia_inicio_semana?: number | null;
   dia_fin_semana?: number | null;
   responsable?: string | null;
+  apuesta_minima?: number | null;
+  tiempo_vencimiento_propuesta_min?: number | null;
+  tope_caballos_marcas_nacional?: number | null;
+  tope_caballos_marcas_internacional?: number | null;
 };
 
 export type ClienteVenta = {
@@ -538,6 +542,10 @@ export type GrupoRow = {
    * sigue funcionando: la app deduce la semana del ciclo como antes.
    */
   semana_vigente_inicio?: string | null;
+  apuesta_minima?: number | null;
+  tiempo_vencimiento_propuesta_min?: number | null;
+  tope_caballos_marcas_nacional?: number | null;
+  tope_caballos_marcas_internacional?: number | null;
   created_at?: string | null;
 };
 
@@ -743,6 +751,31 @@ export async function actualizarGrupo(
         }
         const rpc = await supabase.rpc("club_actualizar_grupo", { p_id: id, p_datos: datos });
         if (rpc.error && !tieneCiclo) return { ok: false, error: rpc.error.message };
+      }
+
+      if ("apuesta_minima" in resto || "tiempo_vencimiento_propuesta_min" in resto || "tope_caballos_marcas_nacional" in resto || "tope_caballos_marcas_internacional" in resto) {
+        try {
+          await supabase
+            .from("salas_juego")
+            .update({
+              ...(resto.apuesta_minima !== undefined ? { apuesta_minima: resto.apuesta_minima } : {}),
+              ...(resto.tiempo_vencimiento_propuesta_min !== undefined ? {
+                tiempo_vencimiento_propuesta_min: resto.tiempo_vencimiento_propuesta_min,
+                tiempo_vencimiento_min: resto.tiempo_vencimiento_propuesta_min,
+              } : {}),
+              ...(resto.tope_caballos_marcas_nacional !== undefined ? {
+                tope_caballos_marcas_nacional: resto.tope_caballos_marcas_nacional,
+                tope_marcas_nacional: resto.tope_caballos_marcas_nacional,
+              } : {}),
+              ...(resto.tope_caballos_marcas_internacional !== undefined ? {
+                tope_caballos_marcas_internacional: resto.tope_caballos_marcas_internacional,
+                tope_marcas_americano: resto.tope_caballos_marcas_internacional,
+              } : {}),
+            })
+            .eq("grupo_id", id);
+        } catch {
+          /* ignore */
+        }
       }
     }
 

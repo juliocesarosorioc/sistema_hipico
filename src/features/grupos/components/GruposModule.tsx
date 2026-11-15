@@ -320,6 +320,11 @@ export function GruposModule() {
 
   const [formDiaFin, setFormDiaFin] = useState("7");
 
+  const [formTiempoVencimiento, setFormTiempoVencimiento] = useState("5");
+  const [formApuestaMinima, setFormApuestaMinima] = useState("10");
+  const [formTopeNac, setFormTopeNac] = useState("5");
+  const [formTopeInt, setFormTopeInt] = useState("4");
+
   const [nuevoTipo, setNuevoTipo] = useState("");
 
   const [editandoTipo, setEditandoTipo] = useState<TipoJugadaRow | null>(null);
@@ -616,6 +621,10 @@ export function GruposModule() {
 
       dia_fin_semana: parseInt(formDiaFin) || 7,
 
+      tiempo_vencimiento_propuesta_min: parseInt(formTiempoVencimiento) || 5,
+      apuesta_minima: parseFloat(formApuestaMinima) || 10,
+      tope_caballos_marcas_nacional: parseInt(formTopeNac) || 5,
+      tope_caballos_marcas_internacional: parseInt(formTopeInt) || 4,
     });
 
     setGuardando(false);
@@ -770,6 +779,10 @@ export function GruposModule() {
 
       dia_fin_semana: editando.dia_fin_semana ?? 7,
 
+      tiempo_vencimiento_propuesta_min: editando.tiempo_vencimiento_propuesta_min != null ? Number(editando.tiempo_vencimiento_propuesta_min) : 5,
+      apuesta_minima: editando.apuesta_minima != null ? Number(editando.apuesta_minima) : 10,
+      tope_caballos_marcas_nacional: editando.tope_caballos_marcas_nacional != null ? Number(editando.tope_caballos_marcas_nacional) : 5,
+      tope_caballos_marcas_internacional: editando.tope_caballos_marcas_internacional != null ? Number(editando.tope_caballos_marcas_internacional) : 4,
     };
 
     setGuardando(true);
@@ -1373,6 +1386,87 @@ export function GruposModule() {
                     <input type="checkbox" checked={formCruceDiferente} onChange={(e) => setFormCruceDiferente(e.target.checked)} className="rounded accent-amber-500" />
                     Cruzar Diferentes Ejemplares
                   </label>
+                </div>
+              </section>
+
+              <section className="col-span-3 rounded-xl border border-indigo-200 bg-indigo-50/40 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[11px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+                    <span>⏱️</span> Reglas de Sala de Juegos y Vigencia
+                  </h3>
+                  <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-100/80 px-2 py-0.5 rounded-full">
+                    Automático WhatsApp & Web
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className={etiqueta}>
+                      ⏱️ Vigencia de Propuestas (Minutos)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={120}
+                      value={formTiempoVencimiento}
+                      onChange={(e) => setFormTiempoVencimiento(e.target.value)}
+                      className={inp + " font-bold text-right"}
+                    />
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Tiempo antes de caducar una propuesta sin casar (default: 5 min).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className={etiqueta}>
+                      💵 Apuesta Mínima ($)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      step="any"
+                      value={formApuestaMinima}
+                      onChange={(e) => setFormApuestaMinima(e.target.value)}
+                      className={inp + " font-bold text-right"}
+                    />
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Monto mínimo para proponer o cruzar jugadas (default: $10.00).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className={etiqueta}>
+                      🇻🇪 Tope Pizarra Marcas Nacional
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={formTopeNac}
+                      onChange={(e) => setFormTopeNac(e.target.value)}
+                      className={inp + " font-bold text-right"}
+                    />
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Puestos evaluados en La Rinconada/Valencia (default: 5).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className={etiqueta}>
+                      🇺🇸 Tope Pizarra Marcas Internacional
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={formTopeInt}
+                      onChange={(e) => setFormTopeInt(e.target.value)}
+                      className={inp + " font-bold text-right"}
+                    />
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Puestos evaluados en hipódromos americanos (default: 4).
+                    </p>
+                  </div>
                 </div>
               </section>
 
@@ -2522,6 +2616,107 @@ export function GruposModule() {
                     <input type="checkbox" checked={editando.cruce_diferente_ejemplar === true} onChange={(e) => setEditando({ ...editando, cruce_diferente_ejemplar: e.target.checked })} className="rounded accent-amber-500" />
                     Cruzar Diferentes Ejemplares
                   </label>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[11px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+                    <span>⏱️</span> Reglas de Sala de Juegos y Vigencia
+                  </h3>
+                  <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-100/80 px-2 py-0.5 rounded-full">
+                    Automático WhatsApp & Web
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className={etiqueta}>
+                      ⏱️ Vigencia de Propuestas (Minutos)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={120}
+                      value={editando.tiempo_vencimiento_propuesta_min ?? 5}
+                      onChange={(e) =>
+                        setEditando({
+                          ...editando,
+                          tiempo_vencimiento_propuesta_min: parseInt(e.target.value) || 5,
+                        })
+                      }
+                      className={inp + " font-bold text-right"}
+                    />
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Tiempo antes de caducar una propuesta sin casar (default: 5 min).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className={etiqueta}>
+                      💵 Apuesta Mínima ($)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      step="any"
+                      value={editando.apuesta_minima ?? 10}
+                      onChange={(e) =>
+                        setEditando({
+                          ...editando,
+                          apuesta_minima: parseFloat(e.target.value) || 10,
+                        })
+                      }
+                      className={inp + " font-bold text-right"}
+                    />
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Monto mínimo para proponer o cruzar jugadas (default: $10.00).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className={etiqueta}>
+                      🇻🇪 Tope Pizarra Marcas Nacional
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={editando.tope_caballos_marcas_nacional ?? 5}
+                      onChange={(e) =>
+                        setEditando({
+                          ...editando,
+                          tope_caballos_marcas_nacional: parseInt(e.target.value) || 5,
+                        })
+                      }
+                      className={inp + " font-bold text-right"}
+                    />
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Puestos evaluados en La Rinconada/Valencia (default: 5).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className={etiqueta}>
+                      🇺🇸 Tope Pizarra Marcas Internacional
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={editando.tope_caballos_marcas_internacional ?? 4}
+                      onChange={(e) =>
+                        setEditando({
+                          ...editando,
+                          tope_caballos_marcas_internacional: parseInt(e.target.value) || 4,
+                        })
+                      }
+                      className={inp + " font-bold text-right"}
+                    />
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Puestos evaluados en hipódromos americanos (default: 4).
+                    </p>
+                  </div>
                 </div>
               </section>
 
