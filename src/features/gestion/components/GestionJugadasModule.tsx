@@ -220,7 +220,7 @@ export function GestionJugadasModule() {
   const [fecha, setFecha] = useState(() => hoyLocal());
   const [carrerasPorDia, setCarrerasPorDia] = useState<number[]>([]);
   const [carrera, setCarrera] = useState(1);
-  const [modoManual, setModoManual] = useState(false);
+  const [modoManual, setModoManual] = useState(true);
   const [retirados, setRetirados] = useState("");
   /** Observaciones libres que se anexan al pie del preliminar de resultados. */
   const [observaciones, setObservaciones] = useState("");
