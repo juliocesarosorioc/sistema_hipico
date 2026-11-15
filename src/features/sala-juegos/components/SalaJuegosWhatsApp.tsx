@@ -328,16 +328,16 @@ export default function SalaJuegosWhatsApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [salas.map((s) => s.id).join('|')]);
 
-  // Realtime: Suscripción a nuevos mensajes insertados en la sala activa
+  // Realtime: Suscripción en vivo a mensajes y tickets de la sala activa
   useEffect(() => {
     if (!salaActiva?.id || !supabase) return;
 
     const channel = supabase
-      .channel(`chat_mensajes_${salaActiva.id}`)
+      .channel('sala-' + salaActiva.id)
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'chat_mensajes',
           filter: `sala_id=eq.${salaActiva.id}`,
@@ -352,12 +352,39 @@ export default function SalaJuegosWhatsApp({
           };
           setMensajesPorSala((prev) => {
             const actuales = prev[salaActiva.id] || [];
-            if (actuales.some((m) => m.id === nuevo.id)) return prev;
+            const idx = actuales.findIndex((m) => m.id === nuevo.id);
+            if (idx >= 0) {
+              const copia = [...actuales];
+              copia[idx] = { ...copia[idx], ...nuevo };
+              return { ...prev, [salaActiva.id]: copia };
+            }
             return {
               ...prev,
               [salaActiva.id]: [...actuales, nuevo],
             };
           });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_tickets_fifo',
+          filter: `sala_id=eq.${salaActiva.id}`,
+        },
+        async () => {
+          try {
+            const res = await salaApi.getMensajes(salaActiva.id, 80);
+            if (res.ok && res.data?.mensajes) {
+              setMensajesPorSala((prev) => ({
+                ...prev,
+                [salaActiva.id]: (res.data.mensajes as any[]).map(mapearMensajeServidor),
+              }));
+            }
+          } catch {
+            // noop
+          }
         }
       )
       .subscribe();
@@ -837,15 +864,27 @@ export default function SalaJuegosWhatsApp({
         });
       }
     } else {
-      // Mensaje de texto estándar
+      // Mensaje de texto estándar o aviso del operador
       agregarMensajeLocal(salaActiva.id, {
         remitente: usuarioActual.nombre,
-        esBot: false,
+        esBot: Boolean(usuarioActual.esOperador),
         tipo: 'texto',
         contenido: textoFinalAPublicar,
         firmaSha256: firma.slice(0, 12),
         payloadCifrado: cifrado,
       });
+
+      // Conectar el input de chat a POST /api/whatsapp-sala/enviar para publicación en WhatsApp
+      fetch('/api/whatsapp-sala/enviar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          salaId: salaActiva.id,
+          grupoId,
+          texto: textoFinalAPublicar,
+          quotedMsgId: replyToPropuesta?.whatsapp_msg_id || null,
+        }),
+      }).catch((e) => console.warn('Aviso enviando mensaje a WhatsApp:', e));
     }
 
     setTextoInput('');
@@ -949,9 +988,9 @@ export default function SalaJuegosWhatsApp({
                 <div className="flex justify-between items-center text-[11px] mb-1 font-mono gap-2">
                   <span className={`font-semibold ${esMio ? 'text-emerald-200' : 'text-emerald-400'}`}>
                     {esMio ? 'Tú' : m.remitente}
-                    {m.whatsapp_msg_id && (
+                    {(m.whatsapp_msg_id || m.whatsapp_group_nombre) && (
                       <span className="ml-1 text-[10px] text-emerald-400 font-semibold">
-                        🟩 WA{m.whatsapp_group_nombre ? ` · ${m.whatsapp_group_nombre}` : ''}
+                        🟩 WA · {m.whatsapp_group_nombre || 'WhatsApp'}
                       </span>
                     )}
                   </span>

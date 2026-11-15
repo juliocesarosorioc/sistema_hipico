@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 
     const { data: salasRaw, error: errSalas } = await qSalas;
     if (errSalas) {
-      return NextResponse.json({ ok: false, motivo: errSalas.message }, { status: 500 });
+      return NextResponse.json({ ok: false, salas: [], gruposSistema: [], vinculosGlobales: [], motivo: errSalas.message }, { status: 200 });
     }
 
     const salaIds = (salasRaw || []).map((s: any) => s.id);
@@ -135,8 +135,8 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, motivo: err?.message || "Error consultando salas y grupos" },
-      { status: 500 }
+      { ok: false, salas: [], gruposSistema: [], vinculosGlobales: [], motivo: err?.message || "Error consultando salas y grupos" },
+      { status: 200 }
     );
   }
 }
@@ -330,7 +330,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json(
       { ok: false, motivo: err?.message || "Error procesando solicitud" },
-      { status: 500 }
+      { status: 200 }
     );
   }
 }

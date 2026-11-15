@@ -1118,11 +1118,15 @@ async function manejarMensajeEntrante(msg) {
           },
           body: JSON.stringify({
             salaId: salaDest.id,
+            grupoId: salaDest.grupo_id,
             groupJid: remoteJid,
+            groupNombre: salaDest._whatsapp_group_nombre || nombreGrupoOrigen,
             whatsappGroupNombre: salaDest._whatsapp_group_nombre || nombreGrupoOrigen,
+            senderJid: participantJid,
             participantJid,
             participantAlt: participantAlt || null,
             telefonoReal: telReal || null,
+            pushName: senderNombre,
             senderNombre: senderNombre || clienteEstaSala?.seudonimo || clienteEstaSala?.nombre || "Jugador",
             clientePreviamenteIdentificado: clienteEstaSala || null,
             esMensajePropioTelefono: esFromMe,
@@ -1654,7 +1658,7 @@ const server = http.createServer(async (req, res) => {
       if (!sock?.user) {
         return responderJson(res, 200, {
           ok: false,
-          motivo: "Motor Baileys desconectado (Escanee el QR)",
+          motivo: "Motor Baileys desconectado (Escanee el QR en /whatsapp)",
         });
       }
 
@@ -1664,7 +1668,7 @@ const server = http.createServer(async (req, res) => {
       } catch {
         return responderJson(res, 200, {
           ok: false,
-          motivo: "El número del Bot no pertenece a este grupo de WhatsApp o el JID es inválido",
+          motivo: "El Bot no pertenece a este grupo de WhatsApp o el JID es inválido",
         });
       }
 
@@ -1680,7 +1684,7 @@ const server = http.createServer(async (req, res) => {
       if (!botParticipante) {
         return responderJson(res, 200, {
           ok: false,
-          motivo: "El número del Bot no pertenece a este grupo de WhatsApp o el JID es inválido",
+          motivo: "El Bot no pertenece a este grupo de WhatsApp o el JID es inválido",
         });
       }
 
@@ -1689,35 +1693,34 @@ const server = http.createServer(async (req, res) => {
       if (metadata?.announce === true && !botEsAdmin) {
         return responderJson(res, 200, {
           ok: false,
-          motivo: "El grupo solo permite mensajes de administradores y el Bot no es Admin",
+          motivo: "El grupo está cerrado a solo Administradores y el Bot no es Admin",
         });
       }
 
       const nombreGrupo = metadata?.subject || groupJid;
-      let nombreSala = "Sala";
       let grupoIdFinal = grupoId || null;
 
       if (supabase) {
-        const { data: salaRow } = await supabase
-          .from("salas_juego")
-          .select("id, grupo_id, nombre_sala")
-          .eq("id", salaId)
-          .maybeSingle();
-
-        if (salaRow?.nombre_sala) nombreSala = salaRow.nombre_sala;
-        if (!grupoIdFinal && salaRow?.grupo_id) grupoIdFinal = salaRow.grupo_id;
+        if (!grupoIdFinal) {
+          const { data: salaRow } = await supabase
+            .from("salas_juego")
+            .select("grupo_id")
+            .eq("id", salaId)
+            .maybeSingle();
+          if (salaRow?.grupo_id) grupoIdFinal = salaRow.grupo_id;
+        }
 
         const { error: errUpsert } = await supabase
           .from("salas_whatsapp_grupos")
           .upsert(
             {
-              sala_id: salaId,
               grupo_id: grupoIdFinal,
+              sala_id: salaId,
               whatsapp_group_jid: groupJid,
-              whatsapp_group_nombre: nombreGrupo,
-              activo: true,
+              whatsapp_group_nombre: metadata.subject,
               estado_conexion: "conectado",
-              motivo_estado: "Conectado y verificado",
+              motivo_estado: "Vinculado y verificado con Baileys 24/7",
+              activo: true,
               updated_at: new Date().toISOString(),
             },
             { onConflict: "sala_id,whatsapp_group_jid" }
@@ -1736,7 +1739,7 @@ const server = http.createServer(async (req, res) => {
             .from("salas_juego")
             .update({
               whatsapp_group_jid: groupJid,
-              whatsapp_group_nombre: nombreGrupo,
+              whatsapp_group_nombre: metadata.subject,
               updated_at: new Date().toISOString(),
             })
             .eq("id", salaId);
@@ -1753,51 +1756,50 @@ const server = http.createServer(async (req, res) => {
 
       await enviarMensajeGrupo(
         groupJid,
-        `🟢 *SALA CONECTADA* — Motor Baileys 24/7 vinculado a ${nombreSala}`
+        "🟢 *SALA VINCULADA* — Conectado en vivo con Sala de Juegos"
       );
 
       return responderJson(res, 200, {
         ok: true,
-        nombreGrupo,
-        motivo: "Conectado correctamente",
+        nombreGrupo: metadata.subject,
+        motivo: "Conectado correctamente al Motor Baileys 24/7",
       });
     }
 
     // 2.6 POST /desvincular-grupo
     if (req.method === "POST" && pathname === "/desvincular-grupo") {
       const body = await leerBodyJson(req);
-      const { id, salaId, groupJid } = body;
+      const { salaId, groupJid } = body;
 
       if (!supabase) {
         return responderJson(res, 500, { ok: false, motivo: "Supabase no configurado" });
       }
-      if (!id && !(salaId && groupJid)) {
+      if (!salaId || !groupJid) {
         return responderJson(res, 400, {
           ok: false,
-          motivo: "Se requiere id o (salaId y groupJid)",
+          motivo: "salaId y groupJid son requeridos",
         });
       }
 
-      let qDel = supabase.from("salas_whatsapp_grupos").delete();
-      if (id) {
-        qDel = qDel.eq("id", id);
-      } else {
-        qDel = qDel.eq("sala_id", salaId).eq("whatsapp_group_jid", groupJid);
-      }
-      const { error: errDel } = await qDel;
+      const { error: errDel } = await supabase
+        .from("salas_whatsapp_grupos")
+        .delete()
+        .eq("sala_id", salaId)
+        .eq("whatsapp_group_jid", groupJid);
+
       if (errDel) {
         return responderJson(res, 500, { ok: false, motivo: errDel.message });
       }
 
-      if (salaId) {
+      try {
         const { data: otros } = await supabase
           .from("salas_whatsapp_grupos")
           .select("whatsapp_group_jid, whatsapp_group_nombre")
           .eq("sala_id", salaId)
           .eq("activo", true)
-          .order("created_at", { ascending: false });
+          .order("updated_at", { ascending: false });
 
-        const siguiente = (otros || []).find((o) => o.whatsapp_group_jid !== groupJid);
+        const siguiente = (otros || [])[0] || null;
         await supabase
           .from("salas_juego")
           .update({
@@ -1806,10 +1808,12 @@ const server = http.createServer(async (req, res) => {
             updated_at: new Date().toISOString(),
           })
           .eq("id", salaId);
+      } catch {
+        // No bloqueante
       }
 
       salasCacheMap.clear();
-      return responderJson(res, 200, { ok: true, motivo: "Grupo desvinculado correctamente" });
+      return responderJson(res, 200, { ok: true });
     }
 
     // 3. POST /publicar-grupo
@@ -1840,18 +1844,20 @@ const server = http.createServer(async (req, res) => {
         } catch {
           // Si falla tabla multi-grupo, usar fallback abajo
         }
-        if (destinos.size === 0) {
+        try {
           const { data: salaRow } = await supabase
             .from("salas_juego")
             .select("whatsapp_group_jid")
             .eq("id", salaId)
             .maybeSingle();
           if (salaRow?.whatsapp_group_jid) destinos.add(salaRow.whatsapp_group_jid);
+        } catch {
+          // No bloqueante
         }
       }
 
       for (const jidDest of destinos) {
-        await enviarMensajeGrupo(jidDest, texto, jidDest === groupJid ? quotedMsgId || null : null);
+        await enviarMensajeGrupo(jidDest, texto, quotedMsgId || null);
       }
       return responderJson(res, 200, { ok: true, groupJid: groupJid || null, destinos: [...destinos] });
     }

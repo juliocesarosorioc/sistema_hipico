@@ -1336,7 +1336,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ok: false,
         tipo: "SIN_REGISTRO",
-        respuestaGrupo: "🚫 *Nada Aquí* — El usuario no está registrado en la nómina oficial del grupo.",
+        respuestaGrupo: "🚫 *Nada Aquí* — Jugador no registrado en la nómina oficial del grupo.",
         mensajePrivadoAutor: null,
       });
     }
@@ -1628,66 +1628,13 @@ export async function POST(req: Request) {
           rpcExitoso = false;
         }
 
-        // Fallback atómico si el RPC no está activo en la instancia
+        // Fallback atómico si el RPC no fue exitoso
         if (!rpcExitoso) {
-          if (!aceptanteFresco?.libre) {
-            const nuevoRetenido = Number(
-              (Number(aceptanteFresco?.saldo_retenido || 0) + montoEfectivo).toFixed(2)
-            );
-            await supabaseAdmin
-              .from("clientes")
-              .update({
-                saldo_retenido: nuevoRetenido,
-                saldo_disponible: Math.max(
-                  0,
-                  Number(
-                    (
-                      Number(aceptanteFresco?.saldo_actual || 0) +
-                      Number(aceptanteFresco?.aval || 0) -
-                      nuevoRetenido
-                    ).toFixed(2)
-                  )
-                ),
-              })
-              .eq("id", cliente.id);
-          }
-
-          await supabaseAdmin
-            .from("chat_mensajes")
-            .update({
-              monto_disponible: nuevoRemanente,
-              estado_propuesta: nuevoRemanente <= 0 ? "cerrada" : "parcial",
-            })
-            .eq("id", propFresca.id);
-
-          const codigoTicket = `WA-${Date.now().toString().slice(-6)}`;
-          const firma = crypto
-            .createHash("sha256")
-            .update(
-              `${codigoTicket}:${propFresca.remitente_id}:${cliente.id}:${montoEfectivo}:${Date.now()}`
-            )
-            .digest("hex");
-
-          await supabaseAdmin.from("chat_tickets_fifo").insert({
-            grupo_id: grupoId,
-            sala_id: salaId,
-            propuesta_msg_id: propFresca.id,
-            codigo_ticket: codigoTicket,
-            proponente_id: propFresca.remitente_id,
-            proponente_nombre: propFresca.remitente_nombre,
-            aceptante_id: cliente.id,
-            aceptante_nombre: nombreJugador,
-            carrera_id: propFresca.carrera_id || sala.carrera_activa_id,
-            accion_proponente: accionProp,
-            es_match: Boolean(propFresca.es_match),
-            modalidad: propFresca.modalidad_jugada || "1P",
-            ejemplar_numero:
-              propFresca.ejemplar_numero || (propFresca.caballos_bando_a?.[0] ?? "1"),
-            caballos_bando_a: propFresca.caballos_bando_a || [],
-            caballos_bando_b: propFresca.caballos_bando_b || [],
-            monto_concretado: montoEfectivo,
-            estado: "ABIERTO",
-            firma_sha256: firma,
+          return NextResponse.json({
+            ok: false,
+            tipo: "CONCRECION_ERROR",
+            respuestaGrupo: "🚫 *Error al concretar jugada* — Intente nuevamente.",
+            mensajePrivadoAutor: "La concreción no pudo ser procesada por el motor atómico.",
           });
         }
 
@@ -1901,6 +1848,16 @@ export async function POST(req: Request) {
       });
     }
 
+    // Bloqueo estricto: Si el cliente no posee saldo disponible
+    if (saldoDisponible <= 0 && !cliente.libre) {
+      return NextResponse.json({
+        ok: false,
+        tipo: "SIN_SALDO",
+        respuestaGrupo: `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`,
+        mensajePrivadoAutor: '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo',
+      });
+    }
+
     // Determinar monto a publicar (topado a saldoDisponible si excedió su saldo)
     const excedioSaldo = Boolean(analisis.excedioSaldo || analisis.monto > saldoDisponible);
     const montoAPublicar = excedioSaldo
@@ -1910,7 +1867,7 @@ export async function POST(req: Request) {
     let propId: string | null = null;
     let rpcPublicado = false;
 
-    // Llamar a `publicar_propuesta_atomica` según especificación (Cierre VULN-15)
+    // Llamar a `publicar_propuesta_atomica` según especificación exclusiva
     try {
       let rpcRes: any = null;
       let rpcErr: any = null;
@@ -1929,7 +1886,7 @@ export async function POST(req: Request) {
           p_caballos_b: analisis.caballosBandoB,
           p_ejemplar_texto: analisis.ejemplarTexto,
           p_proporcion: "1x1",
-          p_monto_solicitado: analisis.monto,
+          p_monto_solicitado: montoAPublicar,
           p_texto_estandarizado: analisis.jugadaEstandarizada,
           p_whatsapp_msg_id: whatsappMsgId || null,
         });
@@ -1953,7 +1910,7 @@ export async function POST(req: Request) {
           p_caballos_b: analisis.caballosBandoB,
           p_ejemplar_texto: analisis.ejemplarTexto,
           p_proporcion: "1x1",
-          p_monto_solicitado: analisis.monto,
+          p_monto_solicitado: montoAPublicar,
           p_texto_estandarizado: analisis.jugadaEstandarizada,
         });
         rpcRes = intentoSinWa.data;
@@ -1968,68 +1925,24 @@ export async function POST(req: Request) {
       rpcPublicado = false;
     }
 
-    if (rpcPublicado && propId) {
-      await supabaseAdmin
-        .from("chat_mensajes")
-        .update({
-          whatsapp_msg_id: whatsappMsgId,
-          whatsapp_group_jid: groupJid,
-          whatsapp_group_nombre: whatsappGroupNombre,
-          origen_canal: "whatsapp",
-        })
-        .eq("id", propId);
-    } else if (montoAPublicar > 0) {
-      // Fallback atómico en chat_mensajes + retención de saldo en clientes
-      if (!cliente.libre) {
-        const nuevoRet = Number((Number(cliente.saldo_retenido || 0) + montoAPublicar).toFixed(2));
-        await supabaseAdmin
-          .from("clientes")
-          .update({
-            saldo_retenido: nuevoRet,
-            saldo_disponible: Math.max(
-              0,
-              Number((Number(cliente.saldo_actual || 0) + Number(cliente.aval || 0) - nuevoRet).toFixed(2))
-            ),
-          })
-          .eq("id", cliente.id);
-      }
-
-      const firma = crypto
-        .createHash("sha256")
-        .update(`PROPUESTA_WA:${salaId}:${cliente.id}:${montoAPublicar}:${Date.now()}`)
-        .digest("hex");
-
-      const { data: insertada } = await supabaseAdmin
-        .from("chat_mensajes")
-        .insert({
-          grupo_id: grupoId,
-          sala_id: salaId,
-          remitente_id: cliente.id,
-          remitente_nombre: nombreJugador,
-          es_operador: false,
-          tipo_mensaje: "propuesta_jugada",
-          contenido: analisis.jugadaEstandarizada,
-          carrera_id: sala.carrera_activa_id || null,
-          accion_proponente: analisis.accionProponente,
-          es_match: analisis.esMatch,
-          modalidad_jugada: analisis.modalidad,
-          ejemplar_numero: analisis.ejemplarTexto,
-          caballos_bando_a: analisis.caballosBandoA,
-          caballos_bando_b: analisis.caballosBandoB,
-          jugada_estandarizada: analisis.jugadaEstandarizada,
-          monto_original: montoAPublicar,
-          monto_disponible: montoAPublicar,
-          estado_propuesta: "abierta",
-          proporcion_premio: "1x1",
-          firma_sha256: firma,
-          whatsapp_msg_id: whatsappMsgId,
-          origen_canal: "whatsapp",
-        })
-        .select("id")
-        .maybeSingle();
-
-      propId = insertada?.id || null;
+    if (!rpcPublicado || !propId) {
+      return NextResponse.json({
+        ok: false,
+        tipo: "PROPUESTA_ERROR",
+        respuestaGrupo: "🚫 *Error al publicar propuesta* — Intente nuevamente.",
+        mensajePrivadoAutor: "La propuesta no pudo ser registrada de forma atómica.",
+      });
     }
+
+    await supabaseAdmin
+      .from("chat_mensajes")
+      .update({
+        whatsapp_msg_id: whatsappMsgId,
+        whatsapp_group_jid: groupJid,
+        whatsapp_group_nombre: whatsappGroupNombre,
+        origen_canal: "whatsapp",
+      })
+      .eq("id", propId);
 
     await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
