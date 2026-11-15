@@ -33,7 +33,6 @@ import {
   redondearCentavos,
 } from "@/shared/lib/dinero";
 import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
-import { esMarca } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { cargarMovimientosSaldoSemanal } from "@/features/saldos/lib/movimientos-saldo-semanal";
 import { calcularSaldoSemana } from "@/features/saldos/lib/saldo-semanal";
 import {
@@ -152,15 +151,6 @@ function cumpleResultadoPivot(f: FilaReporte, filtro: FiltroResultadoPivot): boo
   if (filtro === "PERDEDORES") return (f.resultado ?? 0) < 0;
   if (filtro === "PENDIENTES") return f.resultado === null;
   return true;
-}
-
-/**
- * MARCAS se liquida en su propio circuito y NO pertenece a la bolsa de
- * taquilla/puestos/ninis/emparejamientos. Sus filas siguen visibles en la
- * tabla, pero se excluyen de todo neto/saldo de carrera.
- */
-function esFilaDeMarcas(f: FilaReporte): boolean {
-  return f.tipoJugada === "MARCA" || esMarca(f.jugada);
 }
 
 export function ReporteModule() {
@@ -475,9 +465,6 @@ export function ReporteModule() {
               }
               continue;
             }
-            // MARCAS no suma al neto semanal del cliente: su circuito se
-            // liquida aparte y no debe compensar la pérdida de taquilla.
-            if (esFilaDeMarcas(fila)) continue;
             const filas = filasPorCliente.get(cliente) ?? [];
             filas.push(fila);
             filasPorCliente.set(cliente, filas);
@@ -820,11 +807,7 @@ export function ReporteModule() {
               }
               continue;
             }
-            // MARCAS: se muestra como volumen, pero NO entra al neto por cliente
-            // ni al resultado de la bolsa de carrera (circuito liquidado aparte).
-            const esMarcaFila = esFilaDeMarcas(f);
-
-            if (!esMarcaFila && cli && cli !== "—" && f.resultado !== null) {
+            if (cli && cli !== "—" && f.resultado !== null) {
               const list = filasPorCliente.get(cli) ?? [];
               list.push(f);
               filasPorCliente.set(cli, list);
@@ -840,12 +823,10 @@ export function ReporteModule() {
                 enVivo++;
               }
             }
-            if (!esMarcaFila) {
-              if ((f.resultado ?? 0) > 0) {
-                ganan = redondearCentavos(ganan + (f.resultado ?? 0));
-              } else if ((f.resultado ?? 0) < 0) {
-                pierden = redondearCentavos(pierden + (f.resultado ?? 0));
-              }
+            if ((f.resultado ?? 0) > 0) {
+              ganan = redondearCentavos(ganan + (f.resultado ?? 0));
+            } else if ((f.resultado ?? 0) < 0) {
+              pierden = redondearCentavos(pierden + (f.resultado ?? 0));
             }
           }
 

@@ -29,7 +29,6 @@ import {
   type ModalidadCruceCarrera,
 } from "@/features/taquilla/lib/cruces-y-tapas";
 import {
-  esTicketDeMarcas,
   resolverContraparteModalidad,
   USUARIOS_SISTEMA_MODALIDADES,
 } from "@/features/liquidacion/lib/etiquetas-reporte";
@@ -247,11 +246,6 @@ export function calcularResumenContableCliente(params: {
   const idStr = String(params.clienteId ?? "");
   const nombreNorm = normalizarNombreCliente(params.nombre);
   const seudonimoNorm = normalizarNombreCliente(params.seudonimo);
-  // `MARCAS` es la contraparte de su propio circuito. Para el resto de los
-  // clientes la marca NO pertenece a la bolsa de taquilla/puestos: se liquida
-  // aparte y no debe alterar su saldo contable.
-  const esClienteMarcas =
-    /^MARCAS?$/i.test(nombreNorm) || /^MARCAS?$/i.test(seudonimoNorm);
   const avalVigente = Math.max(0, redondearCentavos(params.aval ?? 0));
   const comDefault =
     params.comisionPctDefault && params.comisionPctDefault > 0
@@ -313,10 +307,6 @@ export function calcularResumenContableCliente(params: {
         );
 
     if (!esJugador && !esDador) continue;
-
-    if (!esClienteMarcas && esTicketDeMarcas(t as Record<string, unknown>)) {
-      continue;
-    }
 
     if (esJugadaAnuladaOExcluida(t)) {
       continue;

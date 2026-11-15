@@ -50,10 +50,7 @@ export {
   calcularResultadoLiquidacionClienteCarrera,
   type ResultadoLiquidacionClienteCarrera,
 };
-import {
-  esTicketDeMarcas,
-  resolverContraparteModalidad,
-} from "@/features/liquidacion/lib/etiquetas-reporte";
+import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { extraerFechaCarreraTicket } from "@/features/liquidacion/lib/fecha";
 import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
 import {
@@ -1569,11 +1566,6 @@ export function construirEstadoCuenta(
       .filter(Boolean)
   );
   const tieneIdentidadCliente = Boolean((cliId && !cliId.startsWith("sys-")) || cliNombres.size > 0);
-  // El cliente "MARCAS" es la contraparte de su propio circuito: para él sí se
-  // muestran sus marcas. Para cualquier otro cliente, las marcas se liquidan
-  // aparte (`club_liquidar_marca`) y no entran a su estado de cuenta.
-  const esClienteMarcas = /^MARCAS?$/i.test(String(clienteActual?.nombre ?? "").trim()) ||
-    /^MARCAS?$/i.test(String(clienteActual?.seudonimo ?? "").trim());
   const tasaComisionCliente =
     clienteActual?.comision != null &&
     String(clienteActual.comision).trim() !== "" &&
@@ -1589,7 +1581,6 @@ export function construirEstadoCuenta(
 
   for (const t of tickets) {
     const rec = t as unknown as Record<string, unknown>;
-    if (!esClienteMarcas && esTicketDeMarcas(rec)) continue;
     const m = num(t.monto_jugado);
     const prem = num(t.premio_pagar);
     const mDecRaw = num(t.monto_decidido);

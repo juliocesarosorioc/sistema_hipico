@@ -1,7 +1,6 @@
 import { supabase } from "@/core/supabase";
 import { redondearCentavos, sumarDinero, restarDinero } from "@/shared/lib/dinero";
 import { normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
-import { esTicketDeMarcas } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { emitirToast } from "@/shared/lib/mensajeria";
 import {
   resolverComisionTicket,
@@ -102,7 +101,7 @@ export async function recalcularYActualizarSaldosOficiales(
     // 4. Cargar tickets de apuestas decididos
     let qTickets = supabase
       .from("tickets_apuestas")
-      .select("id, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, banquero_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, monto_jugado, premio_pagar, monto_decidido, comision_pagada, estado, anulada, nota_auditoria")
+      .select("id, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, banquero_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, monto_jugado, premio_pagar, monto_decidido, comision_pagada, estado, anulada")
       .or("anulada.is.null,anulada.eq.false")
       .limit(10000);
     if (grupoId) {
@@ -114,9 +113,6 @@ export async function recalcularYActualizarSaldosOficiales(
 
     const ticketsValidos = (dbTickets ?? []).filter((t) => {
       if (t.anulada === true) return false;
-      // MARCAS se liquida en su circuito aparte: su ganancia no puede
-      // compensar la pérdida de taquilla/puestos del cliente.
-      if (esTicketDeMarcas(t as Record<string, unknown>)) return false;
       const st = String(t.estado ?? "").trim().toUpperCase();
       return ["GANADOR", "GANO", "PERDEDOR", "PERDIO", "SOLUCIONADO"].includes(st);
     });
