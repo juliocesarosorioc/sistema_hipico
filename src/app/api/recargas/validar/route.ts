@@ -18,6 +18,11 @@ const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-20
  * 3. Valida hashImagenSha256 con /^[a-f0-9]{64}$/i y referencia de 4 a 20 dígitos numéricos.
  */
 export async function POST(req: Request) {
+  const _origin = req.headers.get("origin");
+  const _host = req.headers.get("host");
+  if (_origin && !_origin.includes(_host || "")) {
+    return NextResponse.json({ error: "CSRF bloqueado" }, { status: 403 });
+  }
   const secretHeader = req.headers.get("x-internal-bot-secret");
   const esBot = secretHeader === INTERNAL_BOT_SECRET;
 

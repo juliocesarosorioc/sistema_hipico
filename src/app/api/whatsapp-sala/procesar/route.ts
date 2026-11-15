@@ -388,6 +388,11 @@ export async function GET(req: Request) {
 // POST: Procesamiento en vivo de Jugadas, Concreciones y Acciones de Sala
 // ============================================================================
 export async function POST(req: Request) {
+  const _origin = req.headers.get("origin");
+  const _host = req.headers.get("host");
+  if (_origin && !_origin.includes(_host || "")) {
+    return NextResponse.json({ error: "CSRF bloqueado" }, { status: 403 });
+  }
   try {
     // Blindaje SecOps Parche 1: Header de secreto interno estricto
     const authHeader = req.headers.get("x-internal-bot-secret");

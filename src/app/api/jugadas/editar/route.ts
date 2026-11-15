@@ -42,6 +42,11 @@ function extraerColumnaFaltante(error: { code?: string; message?: string } | nul
  * restringe UPDATE directo en el cliente.
  */
 export async function POST(req: NextRequest) {
+  const _origin = req.headers.get("origin");
+  const _host = req.headers.get("host");
+  if (_origin && !_origin.includes(_host || "")) {
+    return NextResponse.json({ error: "CSRF bloqueado" }, { status: 403 });
+  }
   try {
     const admin = getAdminClient();
     if (!admin) {

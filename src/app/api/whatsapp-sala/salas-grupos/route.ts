@@ -142,6 +142,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const _origin = req.headers.get("origin");
+  const _host = req.headers.get("host");
+  if (_origin && !_origin.includes(_host || "")) {
+    return NextResponse.json({ error: "CSRF bloqueado" }, { status: 403 });
+  }
   try {
     const body = await req.json();
     const accion = String(body.accion || "");

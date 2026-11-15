@@ -1222,6 +1222,11 @@ async function anularCarrera(grupoId: string, salaId: string, operadorNombre: st
 // POST: Mensaje, Revisión LLM, Recarga Blindada, Operador, Sala
 // ============================================================================
 export async function POST(req: Request) {
+  const _origin = req.headers.get("origin");
+  const _host = req.headers.get("host");
+  if (_origin && !_origin.includes(_host || "")) {
+    return NextResponse.json({ error: "CSRF bloqueado" }, { status: 403 });
+  }
   const body = await req.json().catch(() => ({}));
   const accion = body.accion || body.action;
 

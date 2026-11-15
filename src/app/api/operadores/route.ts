@@ -53,6 +53,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const _origin = req.headers.get("origin");
+  const _host = req.headers.get("host");
+  if (_origin && !_origin.includes(_host || "")) {
+    return NextResponse.json({ error: "CSRF bloqueado" }, { status: 403 });
+  }
   const supabase = getAdminClient();
   if (!supabase) {
     return NextResponse.json({ ok: false, error: "Base de datos no configurada" }, { status: 500 });
@@ -126,6 +131,11 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const _origin = req.headers.get("origin");
+  const _host = req.headers.get("host");
+  if (_origin && !_origin.includes(_host || "")) {
+    return NextResponse.json({ error: "CSRF bloqueado" }, { status: 403 });
+  }
   const supabase = getAdminClient();
   if (!supabase) {
     return NextResponse.json({ ok: false, error: "Base de datos no configurada" }, { status: 500 });
