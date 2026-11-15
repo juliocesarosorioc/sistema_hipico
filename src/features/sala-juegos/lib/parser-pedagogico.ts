@@ -388,11 +388,13 @@ export function analizarYEstandarizarJugada(
     let modLimpia = "1P";
     if (rawMod && rawMod !== "A" && rawMod !== "AL") {
       if (rawMod.startsWith("10/")) {
-        modLimpia = "A_PREMIO";
+        modLimpia = rawMod.replace(",", ".");
       } else {
         modLimpia = rawMod.replace(/\s*-\s*/g, "-").replace(/\s+/g, " ");
         modLimpia = modLimpia.replace(/^([1-5]\/[1-5])(?=-)/, "$1N");
       }
+    } else if (proporcionDetectada !== "1x1") {
+      modLimpia = proporcionDetectada;
     }
 
     const rawEjemplar = (matchPuesto[3] || "").trim();

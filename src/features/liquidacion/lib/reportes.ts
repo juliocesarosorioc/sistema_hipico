@@ -33,6 +33,7 @@ import { calcularEstadoCuentaCliente, aplicarDevolucionIncentivoAFavor } from "@
 export { calcularEstadoCuentaCliente, aplicarDevolucionIncentivoAFavor };
 import { _reembolsosCruce, normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
 import { liquidarOficial, puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
+import { calcularRiesgoCliente2 } from "@/features/motores/lib/puestos";
 import {
   numerosPizarra,
   netearComisionCruce,
@@ -319,8 +320,11 @@ function puestoFinalDe(caballo: string, puestos: string[]): TicketMotor["puesto_
 }
 
 function proporcionDe(tipo: string): string | null {
+  const m10 = /\b(10)\s*[\/aAª@]\s*(\d+(?:[.,]\d+)?)\b/.exec(tipo);
+  if (m10) return `${m10[1]}/${m10[2].replace(",", ".")}`;
   const m = /(\d+)\s*\/\s*(\d+)/.exec(tipo);
-  return m ? `${m[1]}/${m[2]}` : null;
+  if (m && Number(m[1]) >= 5) return `${m[1]}/${m[2]}`;
+  return null;
 }
 
 function ticketMotorDe(
@@ -1755,7 +1759,7 @@ export function desglosarTicketEnFilasUnificadas(
       tipoJugada: desglose.tipo,
       esAdelantada: adelantada,
       monto,
-      riesgo: ev.riesgoDa ?? monto,
+      riesgo: ev.riesgoDa ?? calcularRiesgoCliente2(monto, txt(f.nombre_jugada)),
       premio: premioConsigue,
       resultado: resConsigue,
       comisionCobrada:

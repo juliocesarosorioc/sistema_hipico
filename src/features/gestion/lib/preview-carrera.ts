@@ -39,7 +39,7 @@ import {
   type CategoriaJugadaAdelantada,
 } from "@/features/liquidacion/lib/reporte-carrera";
 import { pagoPotencialTablaFija, resolverSeudonimoCliente } from "@/features/liquidacion/lib/reportes";
-import { evaluarPuestoPorPosicion } from "@/features/motores/lib/puestos";
+import { calcularRiesgoCliente2, evaluarPuestoPorPosicion } from "@/features/motores/lib/puestos";
 import { esJugadaAnuladaOExcluida } from "@/features/saldos/lib/contabilidad-central";
 import { jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros-nucleo";
 
@@ -249,16 +249,17 @@ function ladosDeLaJugada(
 ): { lado1: LadoResultado; lado2: LadoResultado; aposto1: number; aposto2: number } {
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const jugTxt = TXT(nombreJugada).toUpperCase();
-  const esTablaFija = /^TABLA\s+FIJA\b|^TF\b|^TABLA\b/i.test(jugTxt);
-  const esMarca = /^MARCAS?\b/i.test(jugTxt);
+  const esJugTabla = esTablaFija(jugTxt) || /^TABLA\s+FIJA\b|^TF\b|^TABLA\b/i.test(jugTxt);
+  const esJugMarca = esMarca(jugTxt) || /^MARCAS?\b/i.test(jugTxt);
 
-  const pagoTabla = esTablaFija
+  const pagoTabla = esJugTabla
     ? round2(premioPagar > monto ? premioPagar : premioPagar > 0 ? premioPagar : monto)
     : 0;
-  const pagoMarca = esMarca ? round2((monto * 5) / 6) : 0;
+  const pagoMarca = esJugMarca ? round2((monto * 5) / 6) : 0;
+  const riesgoDa = round2(calcularRiesgoCliente2(monto, jugTxt));
 
   const aposto1 = round2(monto);
-  const aposto2 = esTablaFija ? pagoTabla : esMarca ? pagoMarca : round2(monto);
+  const aposto2 = esJugTabla ? pagoTabla : esJugMarca ? pagoMarca : riesgoDa;
 
   const arriesga1 = (): LadoResultado => ({ estado: "ARRIESGA", liquidada: false, signo: 0, monto: aposto1 });
   const arriesga2 = (): LadoResultado => ({ estado: "ARRIESGA", liquidada: false, signo: 0, monto: aposto2 });
@@ -276,7 +277,7 @@ function ladosDeLaJugada(
     const gano = estadoFila === "Ganador";
     const pct = comisionPct > 0 ? comisionPct : 5;
 
-    if (esTablaFija) {
+    if (esJugTabla) {
       if (gano) {
         return {
           lado1: { estado: "GANO", liquidada: true, signo: 1, monto: pagoTabla },
@@ -303,7 +304,7 @@ function ladosDeLaJugada(
       };
     }
 
-    if (esMarca) {
+    if (esJugMarca) {
       if (gano) {
         return {
           lado1: { estado: "GANO", liquidada: true, signo: 1, monto: pagoMarca },

@@ -628,6 +628,24 @@ igual(resumenConAnulada.monto, 100, "la anulada NO suma al monto del panel");
   si(wspSaldos.includes("🔓 LIBRE_NEG: *-80,00*"), "WhatsApp Saldos muestra ícono 🔓 para cliente libre");
   si(wspSaldos.includes("💎 AVAL_HOLGADO: *-100,00*") && !wspSaldos.includes("AVAL_HOLGADO: *-100,00* · Disp."), "WhatsApp Saldos muestra ícono 💎 y saldo del avalado sin Disp. cuando no está próximo a agotarse");
   si(wspSaldos.includes("💎 AVAL_POR_AGOTAR: *-850,00* · Disp. 150,00"), "WhatsApp Saldos agrega Disp. XXXX cuando el avalado se aproxima a agotar su aval");
+
+  // Riesgo real por lado en jugadas con proporción (10/8, 10A8, 2x3 10/5) en JUGADAS EN VIVO (CARRERA ACTUAL)
+  const filasProp = armarFilasPreview(
+    [
+      persistida({ id: "p1", nombre_jugada: "10/8", caballo: "4", monto_jugado: 100, estado: "Pendiente" }),
+      persistida({ id: "p2", nombre_jugada: "10A6.5", caballo: "5", monto_jugado: 200, estado: "Pendiente" }),
+      persistida({ id: "p3", nombre_jugada: "2X3 10/5", caballo: "2x3", monto_jugado: 100, estado: "Pendiente" }),
+    ],
+    []
+  );
+  igual(filasProp[0].aposto1, 100, "10/8: Quien Juega arriesga 100");
+  igual(filasProp[0].aposto2, 80, "10/8: Quien Da arriesga 80 (monto en riesgo)");
+  igual(filasProp[0].lado1.monto, 100, "10/8 pendiente: lado1 muestra 100 en riesgo");
+  igual(filasProp[0].lado2.monto, 80, "10/8 pendiente: lado2 muestra 80 en riesgo");
+  igual(filasProp[1].aposto1, 200, "10A6.5: Quien Juega arriesga 200");
+  igual(filasProp[1].aposto2, 130, "10A6.5: Quien Da arriesga 130 (monto en riesgo)");
+  igual(filasProp[2].aposto1, 100, "2X3 10/5: Quien Juega arriesga 100");
+  igual(filasProp[2].aposto2, 50, "2X3 10/5: Quien Da arriesga 50 (monto en riesgo)");
 }
 
 console.log(`\n${pasan} ok / ${fallan} fallaron`);

@@ -5141,8 +5141,10 @@ const hipodromosDelDia = useMemo(() => {
                     juega: f.cliente1,
                     jugada: f.jugada,
                     caballo: f.caballo,
+                    precioTabla: f.precioTabla,
+                    cantidadTablas: f.cantidadTablas,
                     da: f.cliente2,
-                    monto: f.monto,
+                    monto: f.aposto1 ?? f.monto,
                   })),
                   jugadasAdelantadas: filasPreviewAdelantadas.map((f) => ({
                     juega: f.cliente1,
@@ -5441,11 +5443,12 @@ const hipodromosDelDia = useMemo(() => {
                           const estaLiquidada = !carrerasReversadas.has(Number(carrera)) && (carreraLiquidada || tieneResultadoCargado || pizarraPuestosActual.length > 0);
                           return {
                             juega: resolverSeudonimoCliente(f.cliente1) || f.cliente1,
-                            aposto: f.monto,
+                            aposto: f.aposto1 ?? f.monto,
                             jugo: f.jugada,
                             caballo: f.caballo,
+                            precioTabla: f.precioTabla,
                             da: resolverSeudonimoCliente(f.cliente2) || f.cliente2,
-                            apostoDa: f.monto,
+                            apostoDa: f.aposto2 ?? f.monto,
                             resultado: estaLiquidada
                               ? f.lado1.estado === "GANO"
                                 ? f.lado1.monto

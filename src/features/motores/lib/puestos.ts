@@ -270,7 +270,7 @@ export const TABLA_JUGADAS: Record<string, ReglaTablaJugada> = (() => {
  */
 export function normalizarJugadaPremio(jugadaRaw: string | null | undefined): string {
   const texto = String(jugadaRaw ?? "").trim();
-  const matchPremio = /^10\s*[aA\/]\s*(\d+(?:[.,]\d+)?)$/.exec(texto);
+  const matchPremio = /^(?:10\s*[aAª@\/]|[aAª@])\s*(\d+(?:[.,]\d+)?)$/.exec(texto);
   if (matchPremio) {
     const factor = matchPremio[1].replace(",", ".");
     return `10A${factor}`;
@@ -509,6 +509,13 @@ export function calcularRiesgoCliente2(monto: number, jugadaRaw: string): number
   const match = /^10A(\d+(?:\.\d+)?)$/.exec(norm);
   if (match) {
     const factor = parseFloat(match[1]);
+    if (Number.isFinite(factor) && factor > 0) {
+      return calcularProporcionExacta(m, factor, 10);
+    }
+  }
+  const matchEmbedded = /(?:^|\b)10\s*[aAª@\/]\s*(\d+(?:[.,]\d+)?)(?=\b|$)/.exec(String(jugadaRaw ?? ""));
+  if (matchEmbedded) {
+    const factor = parseFloat(matchEmbedded[1].replace(",", "."));
     if (Number.isFinite(factor) && factor > 0) {
       return calcularProporcionExacta(m, factor, 10);
     }

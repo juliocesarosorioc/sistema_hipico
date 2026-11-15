@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { EmptyState } from '@/shared/components/ui/EmptyState';
 import { colorDiscoNumero, numerosDeCaballo } from '@/features/saldos/lib/discos';
 import { etiquetaJugada, ladosDePareo } from '@/features/taquilla/lib/nomenclatura';
+import { calcularRiesgoCliente2 } from '@/features/motores/lib/puestos';
 import { jugadaInvolucraRetirado } from '@/features/carreras/lib/retiros-nucleo';
 import {
   esMarca,
@@ -221,6 +222,20 @@ function TablaJugadas({
         {filas.map((j, i) => {
           const aposto1Num = typeof j.aposto === 'number' ? j.aposto : parseFloat(String(j.aposto ?? '').replace(',', '.')) || 0;
           const jugoStr = String(j.jugo ?? "").trim();
+          const rawAposto2 =
+            typeof j.apostoDa === 'number'
+              ? j.apostoDa
+              : parseFloat(String(j.apostoDa ?? '').replace(',', '.')) || 0;
+          const riesgoCalc2 = esMarca(jugoStr)
+            ? Math.round(((aposto1Num * 5) / 6) * 100) / 100
+            : calcularRiesgoCliente2(aposto1Num, jugoStr);
+          const aposto2Num = !j.da
+            ? null
+            : rawAposto2 > 0 && Math.abs(rawAposto2 - aposto1Num) > 0.005
+              ? rawAposto2
+              : riesgoCalc2 > 0
+                ? riesgoCalc2
+                : rawAposto2;
           const involucraRetirado = Boolean(
             (j.esRetirado && !j.esEmpateNini && !j.sinDecision) ||
               (retirados && retirados.length > 0 && jugadaInvolucraRetirado(j.caballo, null, jugoStr, retirados))
@@ -238,8 +253,8 @@ function TablaJugadas({
               ? 0
               : mostrarResultado
                 ? (j.resultadoDa !== undefined ? j.resultadoDa : (j.resultado !== null ? -j.resultado : null))
-                : j.apostoDa != null && j.apostoDa > 0
-                  ? -Math.abs(j.apostoDa)
+                : aposto2Num != null && aposto2Num > 0
+                  ? -Math.abs(aposto2Num)
                   : null;
           const esMarcaSinDecision =
             mostrarResultado &&
@@ -308,7 +323,7 @@ function TablaJugadas({
                 )}
               </td>
               <td className="py-[3px] text-right text-slate-600 tabular-nums whitespace-nowrap align-middle">
-                {j.apostoDa === null || j.apostoDa === undefined ? '—' : j.apostoDa}
+                {aposto2Num === null || aposto2Num === undefined ? '—' : aposto2Num}
               </td>
               <td className="py-[3px] pl-1 text-right whitespace-nowrap align-middle">
                 {esMarcaSinDecision ? (

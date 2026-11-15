@@ -17,6 +17,7 @@ export interface TicketFifoBasico {
   aceptante_nombre?: string | null;
   accion_proponente?: string | null;
   modalidad?: string | null;
+  proporcion_premio?: string | null;
   ejemplar_numero?: string | null;
   caballos_bando_a?: string[] | null;
   caballos_bando_b?: string[] | null;
@@ -48,7 +49,7 @@ function normalizarCaballoTicket(t: TicketFifoBasico): string {
 
 function proponenteEsQuienJuega(accionProponente?: string | null): boolean {
   const acc = String(accionProponente || "JUEGA").trim().toUpperCase();
-  return acc !== "CONSIGO" && acc !== "DA";
+  return acc !== "CONSIGO" && acc !== "CONSIGUE" && acc !== "DA" && acc !== "DOY" && acc !== "PIDE";
 }
 
 /**
@@ -118,7 +119,19 @@ export async function sincronizarTicketsPropuestaATaquilla(
         : t.proponente_nombre || "Jugador";
 
       const esMatch = Boolean(t.es_match || (Array.isArray(t.caballos_bando_b) && t.caballos_bando_b.length > 0));
-      const nombreJugada = esMatch ? "MATCH" : String(t.modalidad || "1P").trim().toUpperCase();
+      const propRaw = String(t.proporcion_premio || "").trim();
+      const tieneProp10 = /^10\s*[\/aAª@]\s*\d+(?:[.,]\d+)?$/i.test(propRaw) && !/^10\s*[\/aAª@]\s*10$/i.test(propRaw);
+      const propCanon = tieneProp10 ? propRaw.toUpperCase().replace(/[aAª@]/g, "/").replace(",", ".") : "";
+      const modBase = String(t.modalidad || "1P").trim().toUpperCase();
+      const nombreJugada = esMatch
+        ? propCanon
+          ? `MATCH ${propCanon}`
+          : "MATCH"
+        : modBase === "A_PREMIO" || (modBase === "1P" && propCanon)
+          ? propCanon || "1P"
+          : propCanon && !modBase.includes(propCanon)
+            ? `${modBase} ${propCanon}`
+            : modBase;
       const caballo = normalizarCaballoTicket(t);
       const monto = Number(t.monto_concretado || 0);
 

@@ -217,13 +217,20 @@ function seccionAdelantadaDe(
   return null;
 }
 
-/** Proporción "a/b" de un tipo de jugada (ej. "10/6"); null si no la trae. */
+/** Proporción "a/b" de un tipo de jugada (ej. "10/6", "10A8", "10a6.5"); null si no la trae. */
 function proporcionDe(jugada: string): { a: number; b: number } | null {
-  const m = /(\d+)\s*\/\s*(\d+)/.exec(String(jugada ?? ""));
+  const s = String(jugada ?? "");
+  const m10 = /\b(10)\s*[\/aAª@]\s*(\d+(?:[.,]\d+)?)\b/.exec(s);
+  if (m10) {
+    const a = Number(m10[1]);
+    const b = parseFloat(m10[2].replace(",", "."));
+    return a > 0 && b > 0 ? { a, b } : null;
+  }
+  const m = /(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)/.exec(s);
   if (!m) return null;
-  const a = Number(m[1]);
-  const b = Number(m[2]);
-  return a > 0 && b > 0 ? { a, b } : null;
+  const a = parseFloat(m[1].replace(",", "."));
+  const b = parseFloat(m[2].replace(",", "."));
+  return a >= 5 && b > 0 ? { a, b } : null;
 }
 
 /**
@@ -233,15 +240,15 @@ function proporcionDe(jugada: string): { a: number; b: number } | null {
  */
 export function riesgoDeFila(f: FilaReporte): number {
   if (f.rol === "CRUCE") return 0;
-  if (typeof f.riesgo === "number" && Number.isFinite(f.riesgo) && f.riesgo >= 0) {
-    return redondearCentavos(f.riesgo);
-  }
   if (f.rol === "Consigue") {
     if (f.tipoJugada === "MARCA" || /^MARCAS?\b/i.test(String(f.jugada ?? "").trim())) {
       return redondearCentavos((f.monto * 5) / 6);
     }
     const p = proporcionDe(f.jugada);
     if (p) return redondearCentavos((f.monto * p.b) / p.a);
+  }
+  if (typeof f.riesgo === "number" && Number.isFinite(f.riesgo) && f.riesgo >= 0) {
+    return redondearCentavos(f.riesgo);
   }
   return redondearCentavos(f.monto);
 }
