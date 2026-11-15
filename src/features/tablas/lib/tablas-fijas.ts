@@ -124,22 +124,24 @@ export function pagoPotencialEjemplar(opts: {
  */
 export async function cerrarTablaFija(
   hipodromo: string,
-  carrera: number | string
-  ): Promise<ResultadoCerrar> {
-    if (!supabase) {
-      return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
-    }
-    try {
-      exigirCapacidad("tablas:fn_cerrar_tabla");
-    } catch (e) {
-      return { ok: false, error: (e as Error).message };
-    }
-    try {
+  carrera: number | string,
+  fecha?: string
+): Promise<ResultadoCerrar> {
+  if (!supabase) {
+    return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  }
+  try {
+    exigirCapacidad("tablas:fn_cerrar_tabla");
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+  try {
     let query = supabase
       .from("tablas_fijas")
       .update({ estado: "Cerrada" })
       .eq("carrera", carrera);
     if (hipodromo) query = query.eq("hipodromo", hipodromo);
+    if (fecha) query = query.eq("fecha", fecha.slice(0, 10));
 
     const { error, data } = await query.select("id");
 

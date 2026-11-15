@@ -613,7 +613,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
       fecha,
       pizarra: pizarraConRetirados,
     }),
-    cerrarTablaFija(hipodromo, carrera),
+    cerrarTablaFija(hipodromo, carrera, fecha),
   ]);
   const tablasFijas = jugadas.tablasFijas;
   const marcas = jugadas.marcas;

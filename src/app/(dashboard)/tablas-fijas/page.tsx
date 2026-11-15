@@ -67,7 +67,8 @@ export default function TablasFijasPage() {
           if (!cen.ok) return false;
 
           // Cerrar la tabla para que salga del Monitor.
-          const cierre = await cerrarTablaFija(t.hipodromo ?? "", t.carrera ?? 0);
+          const fechaIso = t.fecha ? String(t.fecha).slice(0, 10) : undefined;
+          const cierre = await cerrarTablaFija(t.hipodromo ?? "", t.carrera ?? 0, fechaIso);
           return cierre.ok;
         }}
       />
