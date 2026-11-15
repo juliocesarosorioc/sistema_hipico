@@ -87,9 +87,9 @@ BEGIN
   END IF;
 
   INSERT INTO public.chat_mensajes (
-    grupo_id, sala_id, remitente_nombre, es_operador, tipo_mensaje, estado_propuesta, contenido, origen_canal, origen
+    grupo_id, sala_id, remitente_nombre, es_operador, tipo_mensaje, estado_propuesta, contenido, origen_canal
   ) VALUES (
-    p_grupo_id, p_sala_id, '🤖 ASISTENTE DE SALA', true, 'concrecion_fifo', 'no_aplica', v_msg_publico, 'WHATSAPP', 'WHATSAPP'
+    p_grupo_id, p_sala_id, '🤖 ASISTENTE DE SALA', true, 'concrecion_fifo', 'no_aplica', v_msg_publico
   );
 
   RETURN jsonb_build_object(

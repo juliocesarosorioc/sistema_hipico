@@ -685,9 +685,7 @@ async function liquidarCarreraFallback(
       tipo_mensaje: "ESTADO_CARRERA",
       contenido: textoCierre,
       solo_borrable_operador: true,
-      origen_canal: "web",
-      origen: "WEB",
-    });
+      origen_canal: "web",    });
 
     void publicarEnWhatsAppSala(salaId, textoCierre);
   }
@@ -1595,9 +1593,7 @@ export async function POST(req: Request) {
               contenido: textoVanJugando,
               reply_to_msg_id: propuestaId,
               carrera_id: propMsg.carrera_id || sala.carrera_activa_id,
-              origen_canal: "web",
-              origen: "WEB",
-            });
+              origen_canal: "web",            });
           }
           void publicarEnWhatsAppSala(salaId, textoVanJugando, propMsg.whatsapp_msg_id);
         }
@@ -1871,9 +1867,7 @@ export async function POST(req: Request) {
           reply_to_msg_id: replyMsgUuid,
           imagen_url: imagenUrl || null,
           solo_borrable_operador: esOperador,
-          origen_canal: "WEB",
-          origen: "WEB",
-        })
+          origen_canal: "WEB",        })
         .select()
         .single();
 
@@ -2030,9 +2024,7 @@ export async function POST(req: Request) {
           tipo_mensaje: "ESTADO_CARRERA",
           contenido: textoDestacado,
           solo_borrable_operador: true,
-          origen_canal: "web",
-          origen: "WEB",
-        });
+          origen_canal: "web",        });
 
         void publicarEnWhatsAppSala(salaId, textoDestacado);
         await emitirBroadcast(salaId, "carrera_abierta", { salaId });
@@ -2067,9 +2059,7 @@ export async function POST(req: Request) {
           tipo_mensaje: "ESTADO_CARRERA",
           contenido: textoCierre,
           solo_borrable_operador: true,
-          origen_canal: "web",
-          origen: "WEB",
-        });
+          origen_canal: "web",        });
 
         void publicarEnWhatsAppSala(salaId, textoCierre);
 
@@ -2130,9 +2120,7 @@ export async function POST(req: Request) {
           tipo_mensaje: "ESTADO_CARRERA",
           contenido: textoRetirado,
           solo_borrable_operador: true,
-          origen_canal: "web",
-          origen: "WEB",
-        });
+          origen_canal: "web",        });
 
         void publicarEnWhatsAppSala(salaId, textoRetirado);
         await emitirBroadcast(salaId, "ejemplar_retirado", { salaId, ejemplar });

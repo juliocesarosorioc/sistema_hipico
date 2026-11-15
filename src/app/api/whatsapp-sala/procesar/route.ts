@@ -1299,9 +1299,7 @@ export async function POST(req: Request) {
           whatsapp_msg_id: body.whatsappMsgId || null,
           whatsapp_group_jid: groupJid,
           whatsapp_group_nombre: whatsappGroupNombre,
-          origen_canal: "WHATSAPP",
-          origen: "WHATSAPP",
-        });
+          origen_canal: "WHATSAPP",        });
         await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
         return NextResponse.json({
@@ -2237,9 +2235,7 @@ export async function POST(req: Request) {
         whatsapp_msg_id: whatsappMsgId || null,
         whatsapp_group_jid: groupJid || null,
         whatsapp_group_nombre: whatsappGroupNombre || null,
-        origen_canal: "WHATSAPP",
-        origen: "WHATSAPP",
-      });
+        origen_canal: "WHATSAPP",      });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
       return NextResponse.json({
@@ -2320,9 +2316,7 @@ export async function POST(req: Request) {
           grupo_id: grupoId,
           termino_original: texto.trim(),
           jugada_corregida: analisis.jugadaEstandarizada || analisis.mensajePedagogicoPrivado,
-          usuario_id: cliente.id,
-          origen: "whatsapp",
-        });
+          usuario_id: cliente.id,        });
       } catch {
         // Resiliente
       }

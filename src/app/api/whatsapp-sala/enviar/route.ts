@@ -53,9 +53,7 @@ export async function POST(req: NextRequest) {
         es_operador: true,
         tipo_mensaje: "TEXTO",
         estado_propuesta: "no_aplica",
-        origen_canal: "WEB",
-        origen: "WEB",
-        solo_borrable_operador: true,
+        origen_canal: "WEB",        solo_borrable_operador: true,
       })
       .select()
       .single();

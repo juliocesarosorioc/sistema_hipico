@@ -543,9 +543,7 @@ export async function procesarMensajeEntranteWhatsApp(
         grupo_id: grupoId,
         termino_original: textoLimpio,
         jugada_corregida: analisis.jugadaEstandarizada || analisis.mensajePedagogicoPrivado,
-        usuario_id: cliente.id,
-        origen: "whatsapp",
-      });
+        usuario_id: cliente.id,      });
     } catch {
       // Resiliente
     }
