@@ -988,13 +988,8 @@ async function manejarMensajeEntrante(msg) {
     if (!msg?.key) return;
 
     const whatsappMsgId = msg.key.id || null;
-    const esFromMe = Boolean(msg.key.fromMe);
-
-    // Si el mensaje fue enviado automáticamente por este mismo servidor/bot, ignorarlo para evitar bucles.
-    // Si NO está en mensajesEnviadosPorBot, fue escrito por el usuario manualmente desde su teléfono/WhatsApp Web.
-    if (esFromMe && whatsappMsgId && mensajesEnviadosPorBot.has(whatsappMsgId)) {
-      return;
-    }
+    if (msg.key.fromMe) return;
+    const esFromMe = false;
 
     // Cierre VULN-15: Descartar mensajes duplicados / reintentos en < 1ms
     if (whatsappMsgId && esMensajeDuplicado(whatsappMsgId)) {
@@ -1271,7 +1266,15 @@ async function manejarMensajeEntrante(msg) {
       data.data?.alertaPrivada ||
       data.data?.msg_privado_aceptante;
 
+    const telClienteDb = String(
+      data.clienteTelefono ||
+      clienteEstaSala?.telefono_normalizado ||
+      clienteEstaSala?.telefono ||
+      ""
+    ).replace(/\D/g, "");
+
     const senderPnJid =
+      (telClienteDb ? `${telClienteDb}@s.whatsapp.net` : null) ||
       (participantAlt && participantAlt.endsWith("@s.whatsapp.net") ? participantAlt : null) ||
       (telReal ? `${telReal}@s.whatsapp.net` : null) ||
       (telNormalizado ? `${telNormalizado}@s.whatsapp.net` : null) ||

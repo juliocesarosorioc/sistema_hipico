@@ -32,14 +32,14 @@ export async function POST(req: NextRequest) {
     }
 
     let grupoId = grupoIdParam;
-    if (!grupoId) {
-      const { data: sRow } = await supabaseAdmin
-        .from("salas_juego")
-        .select("grupo_id")
-        .eq("id", salaId)
-        .maybeSingle();
-      if (sRow?.grupo_id) grupoId = sRow.grupo_id;
-    }
+    let whatsappGroupJid: string | null = null;
+    const { data: sRow } = await supabaseAdmin
+      .from("salas_juego")
+      .select("grupo_id, whatsapp_group_jid")
+      .eq("id", salaId)
+      .maybeSingle();
+    if (!grupoId && sRow?.grupo_id) grupoId = sRow.grupo_id;
+    if (sRow?.whatsapp_group_jid) whatsappGroupJid = sRow.whatsapp_group_jid;
 
     // 1. Insertar el mensaje en public.chat_mensajes
     const { data: msgInsert, error: errInsert } = await supabaseAdmin
@@ -48,10 +48,13 @@ export async function POST(req: NextRequest) {
         sala_id: salaId,
         grupo_id: grupoId,
         contenido: textoLimpio,
-        remitente_nombre: "Oficial de Sala",
+        remitente_nombre: String(body.remitenteNombre || "Oficial de Sala"),
         es_bot: true,
         es_operador: true,
-        tipo_mensaje: "OPERADOR_AVISO",
+        tipo_mensaje: "TEXTO",
+        estado_propuesta: "no_aplica",
+        origen_canal: "WEB",
+        origen: "WEB",
         solo_borrable_operador: true,
       })
       .select()
@@ -61,27 +64,30 @@ export async function POST(req: NextRequest) {
       console.error("[Enviar] Error insertando chat_mensajes:", errInsert.message);
     }
 
-    // 2. Llamar a http://127.0.0.1:3005/publicar-grupo para despacho inmediato en WhatsApp
+    // 2. Llamar a http://127.0.0.1:3005/publicar-grupo para despacho inmediato en WhatsApp si existe whatsapp_group_jid
     let resBotOk = false;
     let resBotMotivo = "";
-    try {
-      const resBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-internal-bot-secret": INTERNAL_BOT_SECRET,
-        },
-        body: JSON.stringify({
-          salaId,
-          texto: textoLimpio,
-          quotedMsgId: quotedMsgId || null,
-        }),
-      });
-      const dataBot = await resBot.json().catch(() => null);
-      resBotOk = Boolean(dataBot?.ok);
-      resBotMotivo = dataBot?.error || dataBot?.motivo || "";
-    } catch (errBot: any) {
-      console.warn("[Enviar] Baileys 3005 inaccesible o apagado:", errBot?.message);
+    if (whatsappGroupJid) {
+      try {
+        const resBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({
+            salaId,
+            groupJid: whatsappGroupJid,
+            texto: textoLimpio,
+            quotedMsgId: quotedMsgId || null,
+          }),
+        });
+        const dataBot = await resBot.json().catch(() => null);
+        resBotOk = Boolean(dataBot?.ok);
+        resBotMotivo = dataBot?.error || dataBot?.motivo || "";
+      } catch (errBot: any) {
+        console.warn("[Enviar] Baileys 3005 inaccesible o apagado:", errBot?.message);
+      }
     }
 
     return NextResponse.json({

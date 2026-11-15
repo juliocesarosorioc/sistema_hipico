@@ -232,6 +232,12 @@ export async function POST(req: NextRequest) {
       }
       if (nombreSala) payload.nombre_sala = String(nombreSala).trim();
       if (hipodromoActivo) payload.hipodromo_activo = String(hipodromoActivo).trim().toUpperCase();
+      if (body.whatsappGroupJid !== undefined) {
+        payload.whatsapp_group_jid = body.whatsappGroupJid ? String(body.whatsappGroupJid).trim() : null;
+      }
+      if (body.whatsappGroupNombre !== undefined) {
+        payload.whatsapp_group_nombre = body.whatsappGroupNombre ? String(body.whatsappGroupNombre).trim() : null;
+      }
 
       const { data: updated, error: errUpd } = await supabaseAdmin
         .from("salas_juego")

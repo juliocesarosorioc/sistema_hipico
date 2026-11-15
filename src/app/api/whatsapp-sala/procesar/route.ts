@@ -1244,23 +1244,27 @@ export async function POST(req: Request) {
         .maybeSingle();
       sala = sLegacy || null;
     }
-    if (!sala) {
-      const { data: grp } = await supabaseAdmin
-        .from("grupos")
-        .select("id")
-        .eq("whatsapp_group_id", groupJid)
+    if (!sala && body.grupoId) {
+      const { data: sGrp } = await supabaseAdmin
+        .from("salas_juego")
+        .select("*")
+        .eq("grupo_id", String(body.grupoId))
+        .eq("activa", true)
+        .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (grp?.id) {
-        const { data: sGrp } = await supabaseAdmin
-          .from("salas_juego")
-          .select("*")
-          .eq("grupo_id", grp.id)
-          .eq("activa", true)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        sala = sGrp || null;
+      if (sGrp) {
+        sala = sGrp;
+        if (!sGrp.whatsapp_group_jid) {
+          await supabaseAdmin
+            .from("salas_juego")
+            .update({
+              whatsapp_group_jid: groupJid,
+              whatsapp_group_nombre: whatsappGroupNombre || sGrp.whatsapp_group_nombre || null,
+            })
+            .eq("id", sGrp.id);
+          sala.whatsapp_group_jid = groupJid;
+        }
       }
     }
 
@@ -1295,7 +1299,7 @@ export async function POST(req: Request) {
           whatsapp_msg_id: body.whatsappMsgId || null,
           whatsapp_group_jid: groupJid,
           whatsapp_group_nombre: whatsappGroupNombre,
-          origen_canal: "whatsapp",
+          origen_canal: "WHATSAPP",
           origen: "WHATSAPP",
         });
         await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
@@ -1447,7 +1451,7 @@ export async function POST(req: Request) {
               whatsapp_msg_id: whatsappMsgId || null,
               whatsapp_group_jid: groupJid || null,
               whatsapp_group_nombre: whatsappGroupNombre || null,
-              origen_canal: "whatsapp",
+              origen_canal: "WHATSAPP",
             });
             await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
           }
@@ -1528,7 +1532,7 @@ export async function POST(req: Request) {
           whatsapp_msg_id: whatsappMsgId || null,
           whatsapp_group_jid: groupJid || null,
           whatsapp_group_nombre: whatsappGroupNombre || null,
-          origen_canal: "whatsapp",
+          origen_canal: "WHATSAPP",
         });
         await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
       }
@@ -1654,41 +1658,32 @@ export async function POST(req: Request) {
           });
         }
 
-        // Cancelar únicamente esa propuesta específica (cancelar_propuesta_proponente_atomica)
-        const remanenteRetirar = Number(propMsg.monto_disponible ?? propMsg.monto_original ?? 0);
-        await supabaseAdmin
-          .from("chat_mensajes")
-          .update({ estado_propuesta: "cancelada", monto_disponible: 0 })
-          .eq("id", propMsg.id);
+        const { data: rpcSeFue, error: errSeFue } = await supabaseAdmin.rpc(
+          "cerrar_propuestas_se_fue_atomica",
+          {
+            p_grupo_id: grupoId,
+            p_sala_id: salaId,
+            p_jugador_id: cliente.id,
+            p_propuesta_id: propMsg.id,
+          }
+        );
 
-        if (!cliente.libre && remanenteRetirar > 0) {
-          const nuevoRet = Math.max(0, Number((Number(cliente.saldo_retenido || 0) - remanenteRetirar).toFixed(2)));
-          await supabaseAdmin
-            .from("clientes")
-            .update({
-              saldo_retenido: nuevoRet,
-              saldo_disponible: Math.max(
-                0,
-                Number((Number(cliente.saldo_actual || 0) + Number(cliente.aval || 0) - nuevoRet).toFixed(2))
-              ),
-            })
-            .eq("id", cliente.id);
+        if (errSeFue || rpcSeFue?.ok === false) {
+          return NextResponse.json({
+            ok: false,
+            tipo: "ERROR_RETIRO",
+            respuestaGrupo: rpcSeFue?.msg_publico_bot || null,
+            msg_publico_bot: rpcSeFue?.msg_publico_bot || null,
+            msg_privado_bot: rpcSeFue?.msg_privado_bot || null,
+            clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+            error: errSeFue?.message || rpcSeFue?.error || "No se pudo retirar la propuesta",
+          });
         }
 
+        const remanenteRetirar = Number(rpcSeFue?.monto_liberado ?? propMsg.monto_disponible ?? propMsg.monto_original ?? 0);
         const jugadaTexto = propMsg.jugada_estandarizada || propMsg.contenido || "propuesta";
-        const msgRetiroCita = `🚫 *Se Fue* — ${nombreJugador} retiró su propuesta (${jugadaTexto}).`;
-        await supabaseAdmin.from("chat_mensajes").insert({
-          grupo_id: grupoId,
-          sala_id: salaId,
-          remitente_nombre: "🤖 ASISTENTE DE SALA",
-          es_operador: true,
-          tipo_mensaje: "concrecion_fifo",
-          contenido: msgRetiroCita,
-          whatsapp_msg_id: whatsappMsgId || null,
-          whatsapp_group_jid: groupJid || null,
-          whatsapp_group_nombre: whatsappGroupNombre || null,
-          origen_canal: "whatsapp",
-        });
+        const msgRetiroCita = rpcSeFue?.msg_publico_bot || `🚫 *Se Fue* — ${nombreJugador} retiró su propuesta (${jugadaTexto}).`;
+        const msgPrivadoCita = rpcSeFue?.msg_privado_bot || `✅ Tu propuesta (${jugadaTexto}) fue retirada ("Se fue"). Saldo liberado: $${formatearMontoRegional(remanenteRetirar)}.`;
 
         await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
@@ -1699,7 +1694,9 @@ export async function POST(req: Request) {
           msg_publico: msgRetiroCita,
           msg_publico_bot: msgRetiroCita,
           respuestaPublica: msgRetiroCita,
-          mensajePrivadoAutor: `✅ Tu propuesta (${jugadaTexto}) fue retirada ("Se fue"). Saldo liberado: $${formatearMontoRegional(remanenteRetirar)}.`,
+          msg_privado_bot: msgPrivadoCita,
+          mensajePrivadoAutor: msgPrivadoCita,
+          clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
           senderJid: participantJid,
         });
       }
@@ -1774,7 +1771,7 @@ export async function POST(req: Request) {
             whatsapp_msg_id: whatsappMsgId || null,
             whatsapp_group_jid: groupJid || null,
             whatsapp_group_nombre: whatsappGroupNombre || null,
-            origen_canal: "whatsapp",
+            origen_canal: "WHATSAPP",
           });
 
           await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
@@ -1874,7 +1871,7 @@ export async function POST(req: Request) {
             whatsapp_msg_id: whatsappMsgId || null,
             whatsapp_group_jid: groupJid || null,
             whatsapp_group_nombre: whatsappGroupNombre || null,
-            origen_canal: "whatsapp",
+            origen_canal: "WHATSAPP",
           });
           await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
           return NextResponse.json({
@@ -1932,7 +1929,7 @@ export async function POST(req: Request) {
               whatsapp_msg_id: whatsappMsgId || null,
               whatsapp_group_jid: groupJid || null,
               whatsapp_group_nombre: whatsappGroupNombre || null,
-              origen_canal: "whatsapp",
+              origen_canal: "WHATSAPP",
             });
             await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
             return NextResponse.json({
@@ -2063,7 +2060,7 @@ export async function POST(req: Request) {
           whatsapp_quoted_msg_id: quotedMsgId,
           whatsapp_group_jid: groupJid,
           whatsapp_group_nombre: whatsappGroupNombre,
-          origen_canal: "whatsapp",
+          origen_canal: "WHATSAPP",
           carrera_id: propFresca.carrera_id || sala.carrera_activa_id,
         });
 
@@ -2122,57 +2119,31 @@ export async function POST(req: Request) {
         });
       }
 
-      // Cancela en bloque TODAS las propuestas abiertas vigentes de ese jugador en la sala/carrera actual
-      let qAbiertas = supabaseAdmin
-        .from("chat_mensajes")
-        .select("id, monto_disponible")
-        .eq("sala_id", salaId)
-        .eq("remitente_id", cliente.id)
-        .in("estado_propuesta", ["abierta", "parcial"])
-        .gt("monto_disponible", 0);
+      const { data: rpcSeFue, error: errSeFue } = await supabaseAdmin.rpc(
+        "cerrar_propuestas_se_fue_atomica",
+        {
+          p_grupo_id: grupoId,
+          p_sala_id: salaId,
+          p_jugador_id: cliente.id,
+          p_propuesta_id: null,
+        }
+      );
 
-      if (sala.carrera_activa_id) {
-        qAbiertas = qAbiertas.eq("carrera_id", sala.carrera_activa_id);
+      if (errSeFue || rpcSeFue?.ok === false) {
+        return NextResponse.json({
+          ok: false,
+          tipo: "ERROR_RETIRO",
+          respuestaGrupo: rpcSeFue?.msg_publico_bot || null,
+          msg_publico_bot: rpcSeFue?.msg_publico_bot || null,
+          msg_privado_bot: rpcSeFue?.msg_privado_bot || null,
+          clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+          error: errSeFue?.message || rpcSeFue?.error || "No se pudieron retirar las propuestas",
+        });
       }
 
-      const { data: abiertas } = await qAbiertas;
-
-      let liberado = 0;
-      for (const p of abiertas || []) {
-        liberado += Number(p.monto_disponible || 0);
-        await supabaseAdmin
-          .from("chat_mensajes")
-          .update({ estado_propuesta: "cancelada", monto_disponible: 0 })
-          .eq("id", p.id);
-      }
-
-      if (!cliente.libre && liberado > 0) {
-        const nuevoRet = Math.max(0, Number((Number(cliente.saldo_retenido || 0) - liberado).toFixed(2)));
-        await supabaseAdmin
-          .from("clientes")
-          .update({
-            saldo_retenido: nuevoRet,
-            saldo_disponible: Math.max(
-              0,
-              Number((Number(cliente.saldo_actual || 0) + Number(cliente.aval || 0) - nuevoRet).toFixed(2))
-            ),
-          })
-          .eq("id", cliente.id);
-      }
-
-      const msgPublicoRetiro = `🚫 *Se Fue* — Todas las propuestas abiertas de ${nombreJugador} fueron retiradas.`;
-      await supabaseAdmin.from("chat_mensajes").insert({
-        grupo_id: grupoId,
-        sala_id: salaId,
-        remitente_nombre: "🤖 ASISTENTE DE SALA",
-        es_operador: true,
-        tipo_mensaje: "concrecion_fifo",
-        contenido: msgPublicoRetiro,
-        whatsapp_msg_id: whatsappMsgId || null,
-        whatsapp_group_jid: groupJid || null,
-        whatsapp_group_nombre: whatsappGroupNombre || null,
-        origen_canal: "whatsapp",
-      });
+      const liberado = Number(rpcSeFue?.monto_liberado ?? 0);
+      const msgPublicoRetiro = rpcSeFue?.msg_publico_bot || `🚫 *Se Fue* — Todas las propuestas abiertas de ${nombreJugador} fueron retiradas.`;
+      const msgPrivadoRetiro = rpcSeFue?.msg_privado_bot || `✅ Todas tus propuestas abiertas fueron retiradas ("Se fue"). Saldo liberado: $${formatearMontoRegional(liberado)}.`;
 
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
@@ -2183,7 +2154,9 @@ export async function POST(req: Request) {
         msg_publico: msgPublicoRetiro,
         msg_publico_bot: msgPublicoRetiro,
         respuestaPublica: msgPublicoRetiro,
-        mensajePrivadoAutor: `✅ Todas tus propuestas abiertas fueron retiradas ("Se fue"). Saldo liberado: $${formatearMontoRegional(liberado)}.`,
+        msg_privado_bot: msgPrivadoRetiro,
+        mensajePrivadoAutor: msgPrivadoRetiro,
+        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
         senderJid: participantJid,
       });
     }
@@ -2264,7 +2237,7 @@ export async function POST(req: Request) {
         whatsapp_msg_id: whatsappMsgId || null,
         whatsapp_group_jid: groupJid || null,
         whatsapp_group_nombre: whatsappGroupNombre || null,
-        origen_canal: "whatsapp",
+        origen_canal: "WHATSAPP",
         origen: "WHATSAPP",
       });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
@@ -2280,6 +2253,7 @@ export async function POST(req: Request) {
         msg_privado_bot: null,
         alertaPrivada: null,
         notificaciones_privadas: [],
+        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
         senderJid: participantJid,
       });
     }
@@ -2299,6 +2273,7 @@ export async function POST(req: Request) {
         msg_privado_bot: msgPrivSinSaldo,
         alertaPrivada: msgPrivSinSaldo,
         notificaciones_privadas: [],
+        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
         senderJid: participantJid,
       });
     }
@@ -2318,6 +2293,7 @@ export async function POST(req: Request) {
         msg_privado_bot: msgPrivExceso,
         alertaPrivada: msgPrivExceso,
         notificaciones_privadas: [],
+        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
         senderJid: participantJid,
       });
     }
@@ -2368,6 +2344,7 @@ export async function POST(req: Request) {
         msg_privado_bot: msgPrivPedagogico,
         alertaPrivada: null,
         notificaciones_privadas: [],
+        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
         senderJid: participantJid,
       });
     }
@@ -2385,6 +2362,7 @@ export async function POST(req: Request) {
         msg_privado_bot: null,
         alertaPrivada: null,
         notificaciones_privadas: [],
+        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
         senderJid: participantJid,
       });
     }
@@ -2404,6 +2382,7 @@ export async function POST(req: Request) {
         msg_privado_bot: msgPrivSinSaldo,
         alertaPrivada: msgPrivSinSaldo,
         notificaciones_privadas: [],
+        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
         senderJid: participantJid,
       });
     }
@@ -2422,7 +2401,7 @@ export async function POST(req: Request) {
         whatsapp_msg_id: whatsappMsgId || null,
         whatsapp_group_jid: groupJid || null,
         whatsapp_group_nombre: whatsappGroupNombre || null,
-        origen_canal: "whatsapp",
+        origen_canal: "WHATSAPP",
       });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
       return NextResponse.json({
@@ -2522,6 +2501,7 @@ export async function POST(req: Request) {
         msg_privado_proponente: msgErrPriv,
         alertaPrivada: (rpcResFinal as any)?.alertaPrivada || null,
         notificaciones_privadas: (rpcResFinal as any)?.notificaciones_privadas || [],
+        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
         senderJid: participantJid,
       });
     }
@@ -2532,7 +2512,7 @@ export async function POST(req: Request) {
         whatsapp_msg_id: whatsappMsgId,
         whatsapp_group_jid: groupJid,
         whatsapp_group_nombre: whatsappGroupNombre,
-        origen_canal: "whatsapp",
+        origen_canal: "WHATSAPP",
       })
       .eq("id", propId);
 
@@ -2556,6 +2536,7 @@ export async function POST(req: Request) {
         msg_privado_proponente: msgPrivRecorte,
         alertaPrivada: (rpcResFinal as any)?.alertaPrivada || msgPrivRecorte,
         notificaciones_privadas: (rpcResFinal as any)?.notificaciones_privadas || [],
+        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
         senderJid: participantJid,
       });
     }

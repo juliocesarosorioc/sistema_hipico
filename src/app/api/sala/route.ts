@@ -500,7 +500,7 @@ export async function GET(req: Request) {
 
       const { data: sala } = await supabaseAdmin
         .from("salas_juego")
-        .select("id, grupo_id")
+        .select("id, grupo_id, whatsapp_group_jid")
         .eq("id", salaId)
         .maybeSingle();
 
@@ -508,10 +508,15 @@ export async function GET(req: Request) {
         return NextResponse.json({ ok: false, error: "Sala no encontrada o no autorizada" }, { status: 403 });
       }
 
-      const { data: mensajes, error } = await supabaseAdmin
-        .from("chat_mensajes")
-        .select("*")
-        .eq("sala_id", salaId)
+      let qMensajes = supabaseAdmin.from("chat_mensajes").select("*");
+      if (sala.whatsapp_group_jid) {
+        qMensajes = qMensajes.or(
+          `sala_id.eq.${salaId},and(grupo_id.eq.${sala.grupo_id},whatsapp_group_jid.eq.${sala.whatsapp_group_jid})`
+        );
+      } else {
+        qMensajes = qMensajes.eq("sala_id", salaId);
+      }
+      const { data: mensajes, error } = await qMensajes
         .eq("eliminado", false)
         .order("created_at", { ascending: false })
         .limit(limit);
@@ -1482,153 +1487,33 @@ export async function POST(req: Request) {
         let resFifo: any = null;
         let fifoExitoso = false;
 
-        // Intentar primero RPC concretar_jugada_fifo_atomica
         if (
           esUuidValido(grupoId) &&
           esUuidValido(salaId) &&
           esUuidValido(propuestaId) &&
           esUuidValido(identidad.usuarioId)
         ) {
-          try {
-            const { data: resAtomico, error: errAtomico } = await supabaseAdmin.rpc("concretar_jugada_fifo_atomica", {
-              p_grupo_id: grupoId,
-              p_sala_id: salaId,
-              p_propuesta_msg_id: propuestaId,
-              p_aceptante_id: identidad.usuarioId,
-              p_monto_pedido: montoPedido,
-            });
-            if (!errAtomico && resAtomico && (resAtomico as any).ok !== false) {
-              resFifo = resAtomico;
-              fifoExitoso = true;
-            }
-          } catch {
-            // Continúa a fallback
+          const { data: resAtomico, error: errAtomico } = await supabaseAdmin.rpc("concretar_jugada_fifo_atomica", {
+            p_grupo_id: grupoId,
+            p_sala_id: salaId,
+            p_propuesta_msg_id: propuestaId,
+            p_aceptante_id: identidad.usuarioId,
+            p_monto_pedido: montoPedido,
+          });
+          if (errAtomico || !resAtomico || (resAtomico as any).ok === false) {
+            return NextResponse.json({
+              ok: false,
+              error: errAtomico?.message || (resAtomico as any)?.msg_publico_bot || (resAtomico as any)?.error || "No se pudo concretar la jugada",
+              msg_publico_bot: (resAtomico as any)?.msg_publico_bot || null,
+              msg_privado_bot: (resAtomico as any)?.msg_privado_bot || null,
+            }, { status: 400 });
           }
+          resFifo = resAtomico;
+          fifoExitoso = true;
         }
 
-        // Si no se concretó atómicamente, intentar procesar_respuesta_jugada_fifo
-        if (!fifoExitoso && esUuidValido(grupoId) && esUuidValido(propuestaId) && esUuidValido(identidad.usuarioId)) {
-          try {
-            const { data: resResp, error: errResp } = await supabaseAdmin.rpc("procesar_respuesta_jugada_fifo", {
-              p_grupo_id: grupoId,
-              p_propuesta_msg_id: propuestaId,
-              p_aceptante_id: identidad.usuarioId,
-              p_aceptante_nombre: identidad.nombre,
-              p_texto_respuesta: texto || "Acepto",
-              p_saldo_disponible_aceptante: saldoDispAceptante,
-            });
-
-            if (!errResp && resResp && (resResp as any).ok !== false) {
-              resFifo = resResp;
-              fifoExitoso = true;
-            }
-          } catch {
-            // Continúa a fallback
-          }
-        }
-
-        // Fallback directo transaccional garantizado si los RPC fallaron por desincronización de estado
         if (!fifoExitoso) {
-          const montoConcretado = Math.min(montoPedido, remanenteDisponible);
-          const nuevoRemanente = Math.max(0, Number((remanenteDisponible - montoConcretado).toFixed(2)));
-
-          if (!aceptante?.libre) {
-            const retAceptante = Number((Number(aceptante?.saldo_retenido || 0) + montoConcretado).toFixed(2));
-            await supabaseAdmin
-              .from("clientes")
-              .update({ saldo_retenido: retAceptante })
-              .eq("id", identidad.usuarioId);
-          }
-
-          // Actualizar remanente y estado de la propuesta
-          await supabaseAdmin
-            .from("chat_mensajes")
-            .update({
-              monto_disponible: nuevoRemanente,
-              estado_propuesta: nuevoRemanente <= 0 ? "cerrada" : "abierta",
-            })
-            .eq("id", propuestaId);
-
-          const codigoTicket = `TKT-${Date.now().toString().slice(-6)}`;
-          const rawFirma = `${codigoTicket}:${propMsg.remitente_id}:${identidad.usuarioId}:${montoConcretado}:${new Date().toISOString()}`;
-          const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
-
-          await supabaseAdmin.from("chat_tickets_fifo").insert({
-            grupo_id: grupoId,
-            sala_id: salaId,
-            propuesta_msg_id: propuestaId,
-            codigo_ticket: codigoTicket,
-            proponente_id: propMsg.remitente_id,
-            proponente_nombre: propMsg.remitente_nombre,
-            aceptante_id: identidad.usuarioId,
-            aceptante_nombre: identidad.nombre,
-            carrera_id: propMsg.carrera_id || sala.carrera_activa_id,
-            modalidad: propMsg.modalidad_jugada || "1P",
-            ejemplar_numero: propMsg.ejemplar_numero || (propMsg.caballos_bando_a?.[0] ?? "1"),
-            caballos_bando_a: propMsg.caballos_bando_a || [],
-            caballos_bando_b: propMsg.caballos_bando_b || [],
-            monto_concretado: montoConcretado,
-            estado: "ABIERTO",
-            firma_sha256: firma,
-          });
-
-          await sincronizarTicketsPropuestaATaquilla(supabaseAdmin, {
-            propuestaMsgId: propuestaId,
-            sala,
-            grupoId,
-            condicionProponente: propMsg.condicion_proponente,
-          });
-
-          // Consultar todos los tickets de esta propuesta para armar el desglose acumulado ("Eddie jugó 43,50")
-          const { data: ticketsAcumulados } = await supabaseAdmin
-            .from("chat_tickets_fifo")
-            .select("aceptante_nombre, monto_concretado")
-            .eq("propuesta_msg_id", propuestaId)
-            .neq("estado", "ANULADO")
-            .order("created_at", { ascending: true });
-
-          const listaDesglose =
-            ticketsAcumulados && ticketsAcumulados.length > 0
-              ? ticketsAcumulados.map((tk) => ({
-                  jugador: tk.aceptante_nombre || identidad.nombre,
-                  monto: Number(tk.monto_concretado || 0),
-                }))
-              : [{ jugador: identidad.nombre, monto: montoConcretado }];
-
-          const totalVanJugando = listaDesglose.reduce((acc, d) => acc + d.monto, 0);
-          const lineasDesglose = listaDesglose
-            .map((d) => `• ${d.jugador} jugó ${prefijo}${formatearMontoRegional(d.monto)}`)
-            .join("\n");
-
-          const textoVanJugando =
-            `🤝 *Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}* (${propMsg.jugada_estandarizada || propMsg.contenido})\n` +
-            `${lineasDesglose}` +
-            (nuevoRemanente > 0 ? `\nDisponible: ${prefijo}${formatearMontoRegional(nuevoRemanente)}` : "");
-
-          // Insertar mensaje de concreción en chat_mensajes ("Van jugando por X" + desglose)
-          await supabaseAdmin.from("chat_mensajes").insert({
-            grupo_id: grupoId,
-            sala_id: salaId,
-            remitente_id: identidad.usuarioId,
-            remitente_nombre: identidad.nombre,
-            es_operador: false,
-            tipo_mensaje: "CONCRECION",
-            contenido: textoVanJugando,
-            reply_to_msg_id: propuestaId,
-            carrera_id: propMsg.carrera_id || sala.carrera_activa_id,
-            origen_canal: "web",
-            origen: "WEB",
-          });
-
-          void publicarEnWhatsAppSala(salaId, textoVanJugando, propMsg.whatsapp_msg_id);
-
-          resFifo = {
-            ok: true,
-            cruceConcretado: true,
-            monto: montoConcretado,
-            totalVanJugando,
-            desglose: listaDesglose,
-          };
+          return NextResponse.json({ ok: false, error: "Identificadores inválidos para concretar jugada" }, { status: 400 });
         } else {
           // Firmar ticket server-side y asociar sala_id
           const { data: ticketsCreados } = await supabaseAdmin
@@ -1821,54 +1706,33 @@ export async function POST(req: Request) {
             } catch {}
           }
 
-          let queryAbiertas = supabaseAdmin
-            .from("chat_mensajes")
-            .select("id, monto_disponible, monto_original")
-            .eq("sala_id", salaId)
-            .eq("remitente_id", identidad.usuarioId)
-            .in("estado_propuesta", ["abierta", "parcial"])
-            .gt("monto_disponible", 0);
+          const { data: resSeFue, error: errSeFue } = await supabaseAdmin.rpc(
+            "cerrar_propuestas_se_fue_atomica",
+            {
+              p_grupo_id: grupoId,
+              p_sala_id: salaId,
+              p_jugador_id: identidad.usuarioId,
+              p_propuesta_id: body.cerrarPropuestaId || null,
+            }
+          );
 
-          if (body.cerrarPropuestaId) {
-            queryAbiertas = queryAbiertas.eq("id", body.cerrarPropuestaId);
+          if (errSeFue || resSeFue?.ok === false) {
+            return NextResponse.json({
+              ok: false,
+              error: errSeFue?.message || resSeFue?.error || "No se pudo cerrar la propuesta",
+              msg_publico_bot: resSeFue?.msg_publico_bot || null,
+              msg_privado_bot: resSeFue?.msg_privado_bot || null,
+            }, { status: 400 });
           }
 
-          const { data: propuestasAbiertas } = await queryAbiertas;
-
-          let totalRemanenteLiberado = 0;
-          const idsCerrados: string[] = [];
-          for (const prop of propuestasAbiertas || []) {
-            totalRemanenteLiberado += Number(prop.monto_disponible || 0);
-            idsCerrados.push(prop.id);
-            await supabaseAdmin
-              .from("chat_mensajes")
-              .update({
-                estado_propuesta: "cerrada",
-                monto_disponible: 0,
-              })
-              .eq("id", prop.id);
-          }
-
-          // Liberar el saldo retenido no comprometido
-          if (!cl?.libre && totalRemanenteLiberado > 0) {
-            const retActual = Number(cl?.saldo_retenido || 0);
-            const nuevoRetenido = Math.max(0, Number((retActual - totalRemanenteLiberado).toFixed(2)));
-            await supabaseAdmin
-              .from("clientes")
-              .update({
-                saldo_retenido: nuevoRetenido,
-                saldo_disponible: Math.max(0, Number(((cl?.saldo_actual || 0) + (cl?.aval || 0) - nuevoRetenido).toFixed(2))),
-              })
-              .eq("id", identidad.usuarioId);
-          }
-
-          // No se inserta ningún mensaje al chat para no saturar el grupo: cada propuesta queda cerrada individualmente.
-          await emitirBroadcast(salaId, "nuevo_mensaje", { salaId, idsCerrados });
+          await emitirBroadcast(salaId, "nuevo_mensaje", { salaId, idsCerrados: resSeFue?.canceladas_ids || [] });
           return NextResponse.json({
             ok: true,
             comandoRetiro: true,
-            idsCerrados,
-            totalLiberado: totalRemanenteLiberado,
+            idsCerrados: resSeFue?.canceladas_ids || [],
+            totalLiberado: resSeFue?.monto_liberado || 0,
+            msg_publico_bot: resSeFue?.msg_publico_bot || null,
+            msg_privado_bot: resSeFue?.msg_privado_bot || null,
           });
         }
 
@@ -1970,55 +1834,11 @@ export async function POST(req: Request) {
             }
           }
 
-          // 2. Si el RPC no creó la propuesta (ej. carrera no mapeada en chat_estado_grupo), fallback directo garantizado
           if (!propId) {
-            // Retener saldo de manera segura
-            if (!cl?.libre) {
-              const saldoRetenidoActual = Number(cl?.saldo_retenido || 0);
-              const nuevoRetenido = Number((saldoRetenidoActual + Number(analisis.monto)).toFixed(2));
-              await supabaseAdmin
-                .from("clientes")
-                .update({ saldo_retenido: nuevoRetenido })
-                .eq("id", identidad.usuarioId);
-            }
-
-            const rawFirma = `PROPUESTA:${salaId}:${identidad.usuarioId}:${analisis.monto}:${Date.now()}`;
-            const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
-
-            const { data: nuevoMsg, error: errInsertDirecto } = await supabaseAdmin
-              .from("chat_mensajes")
-              .insert({
-                grupo_id: grupoId,
-                sala_id: salaId,
-                remitente_id: esUuidValido(identidad.usuarioId) ? identidad.usuarioId : null,
-                remitente_nombre: identidad.nombre,
-                es_operador: false,
-                tipo_mensaje: "propuesta_jugada",
-                contenido: analisis.jugadaEstandarizada,
-                carrera_id: esUuidValido(carreraIdActiva) ? carreraIdActiva : null,
-                accion_proponente: analisis.accionProponente || "JUEGA",
-                es_match: Boolean(analisis.esMatch),
-                modalidad_jugada: analisis.modalidad,
-                ejemplar_numero: analisis.ejemplarTexto,
-                caballos_bando_a: analisis.caballosBandoA || (analisis.ejemplarTexto ? [analisis.ejemplarTexto] : []),
-                caballos_bando_b: analisis.caballosBandoB || [],
-                jugada_estandarizada: analisis.jugadaEstandarizada,
-                monto_original: analisis.monto,
-                monto_disponible: analisis.monto,
-                estado_propuesta: "abierta",
-                proporcion_premio: "1x1",
-                firma_sha256: firma,
-                solo_borrable_operador: false,
-                eliminado: false,
-              })
-              .select()
-              .single();
-
-            if (errInsertDirecto) {
-              return NextResponse.json({ ok: false, error: errInsertDirecto.message }, { status: 500 });
-            }
-
-            propId = nuevoMsg?.id;
+            return NextResponse.json({
+              ok: false,
+              error: "La propuesta no pudo ser registrada vía publicar_propuesta_atomica.",
+            }, { status: 400 });
           }
 
           await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
@@ -2045,12 +1865,13 @@ export async function POST(req: Request) {
           remitente_nombre: identidad.nombre,
           es_operador: esOperador,
           tipo_mensaje: pizarraLlegada ? "PIZARRA" : destPrivadoUuid ? "DM_PRIVADO" : "TEXTO",
+          estado_propuesta: "no_aplica",
           contenido: texto,
           destinatario_privado_id: destPrivadoUuid,
           reply_to_msg_id: replyMsgUuid,
           imagen_url: imagenUrl || null,
           solo_borrable_operador: esOperador,
-          origen_canal: "web",
+          origen_canal: "WEB",
           origen: "WEB",
         })
         .select()
