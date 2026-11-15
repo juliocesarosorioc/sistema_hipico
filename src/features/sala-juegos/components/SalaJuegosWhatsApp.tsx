@@ -62,7 +62,33 @@ export default function SalaJuegosWhatsApp({
   );
   const [salaSeleccionadaId, setSalaSeleccionadaId] = useState<string>(salas[0]?.id || 'sala-1');
   const [vistaDualEscritorio, setVistaDualEscritorio] = useState<boolean>(false);
-  const [tamanoLetra, setTamanoLetra] = useState<number>(15);
+  const [tamanoLetra, setTamanoLetra] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const g = localStorage.getItem('sala_tamano_letra');
+      if (g) {
+        const n = parseInt(g, 10);
+        if (n >= 11 && n <= 30) return n;
+      }
+    }
+    return 16;
+  });
+
+  const cambiarTamanoLetra = (nuevo: number) => {
+    const lim = Math.max(11, Math.min(30, nuevo));
+    setTamanoLetra(lim);
+    try {
+      localStorage.setItem('sala_tamano_letra', String(lim));
+    } catch {
+      // noop
+    }
+  };
+
+  // Sincronizar salas iniciales si cambian desde el componente padre
+  useEffect(() => {
+    if (salasActivasIniciales && salasActivasIniciales.length > 0) {
+      setSalas(salasActivasIniciales.slice(0, 2));
+    }
+  }, [salasActivasIniciales]);
 
   // En escritorio (>= 1024px) con dos salas, abrir la vista dual por defecto.
   useEffect(() => {
@@ -73,6 +99,40 @@ export default function SalaJuegosWhatsApp({
       // Sin matchMedia: se mantiene la vista simple con su botón de alternancia.
     }
   }, [salas.length]);
+
+  const [habilitandoSala, setHabilitandoSala] = useState<boolean>(false);
+  const habilitarSegundaSala = async () => {
+    if (!grupoId) return;
+    setHabilitandoSala(true);
+    try {
+      const res = await fetch('/api/whatsapp-sala/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion: 'crear_sala', grupoId }),
+      });
+      const json = await res.json();
+      if (json?.ok && json.sala) {
+        const nueva: SalaActivaInfo = {
+          id: json.sala.id,
+          nombreSala: json.sala.nombre_sala || 'Sala Especiales',
+          hipodromoActivo: json.sala.hipodromo_activo || 'GULFSTREAM PARK',
+          numeroCarreraActiva: json.sala.numero_carrera_activa || 1,
+          distanciaActiva: 1200,
+          estadoCarrera: (json.sala.estado_carrera as any) || 'cerrada',
+          retirados: [],
+        };
+        setSalas((prev) => {
+          const sinDupl = prev.filter((s) => s.id !== nueva.id);
+          return [...sinDupl, nueva].slice(0, 2);
+        });
+        setVistaDualEscritorio(true);
+      }
+    } catch (err) {
+      console.warn('Aviso habilitando sala 2:', err);
+    } finally {
+      setHabilitandoSala(false);
+    }
+  };
 
   const [ocultarSaldo, setOcultarSaldo] = useState<boolean>(false);
   const [textoInput, setTextoInput] = useState<string>('');
@@ -1080,7 +1140,7 @@ export default function SalaJuegosWhatsApp({
                   </div>
                 )}
 
-                <div className="tabular-nums font-medium text-xs leading-relaxed">{m.contenido}</div>
+                <div className="tabular-nums font-medium leading-relaxed break-words" style={{ fontSize: `${tamanoLetra}px` }}>{m.contenido}</div>
 
                 {/* SELECCIÓN Y BARRA EN VIVO PARA PROPUESTAS DE JUGADA */}
                 {esPropuesta && (
@@ -1318,10 +1378,20 @@ export default function SalaJuegosWhatsApp({
               );
             })}
           </div>
-          {salas.length === 2 && (
+          {salas.length < 2 && usuarioActual.esOperador && (
+            <button
+              onClick={habilitarSegundaSala}
+              disabled={habilitandoSala}
+              className="text-xs bg-emerald-700 hover:bg-emerald-600 px-2.5 py-1 rounded text-white font-bold flex items-center gap-1 shadow-sm transition disabled:opacity-50"
+              title="Habilitar 2da Sala de Juegos para este grupo"
+            >
+              <span>{habilitandoSala ? '⏳ Creando...' : '➕ Habilitar Sala 2'}</span>
+            </button>
+          )}
+          {salas.length >= 2 && (
             <button
               onClick={() => setVistaDualEscritorio(!vistaDualEscritorio)}
-              className="hidden lg:inline-block text-xs bg-gray-800 hover:bg-gray-700 px-2.5 py-1 rounded text-gray-200"
+              className="text-xs bg-gray-800 hover:bg-gray-700 px-2.5 py-1 rounded text-gray-200 font-semibold"
             >
               {vistaDualEscritorio ? '1 Sala' : 'Vista Dual (2 Salas)'}
             </button>
@@ -1366,9 +1436,22 @@ export default function SalaJuegosWhatsApp({
             ➕ Recargar
           </button>
 
-          <div className="flex items-center gap-1 bg-[#111b21] px-2 py-1 rounded text-xs">
-            <button onClick={() => setTamanoLetra(Math.max(12, tamanoLetra - 1))} className="px-1 hover:text-emerald-400">A-</button>
-            <button onClick={() => setTamanoLetra(Math.min(22, tamanoLetra + 1))} className="px-1 hover:text-emerald-400">A+</button>
+          <div className="flex items-center gap-1 bg-[#111b21] px-2 py-1 rounded text-xs border border-gray-700/60 font-mono">
+            <button
+              onClick={() => cambiarTamanoLetra(tamanoLetra - 1)}
+              className="px-1.5 py-0.5 rounded hover:bg-white/10 text-gray-200 hover:text-emerald-400 font-bold"
+              title="Reducir tamaño de letra"
+            >
+              A-
+            </button>
+            <span className="text-[10px] text-gray-400 font-bold min-w-[28px] text-center">{tamanoLetra}px</span>
+            <button
+              onClick={() => cambiarTamanoLetra(tamanoLetra + 1)}
+              className="px-1.5 py-0.5 rounded hover:bg-white/10 text-gray-200 hover:text-emerald-400 font-bold"
+              title="Aumentar tamaño de letra"
+            >
+              A+
+            </button>
           </div>
         </div>
       </div>

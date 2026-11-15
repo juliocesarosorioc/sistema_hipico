@@ -316,6 +316,36 @@ export async function GET(req: Request) {
           .limit(2);
 
         salas = salasCreadas || [];
+      } else if (salas.length === 1) {
+        // Habilitar automáticamente la Sala 2 si el grupo solo tiene 1 sala activa
+        const nombreGrupo = grupoActivo?.nombre || "Oficial";
+        const primera = salas[0];
+        const ordenSiguiente = primera.orden_sala === 1 ? 2 : 1;
+        const nombreSegunda =
+          ordenSiguiente === 2
+            ? `Sala Especiales · ${nombreGrupo}`
+            : `Sala Principal · ${nombreGrupo}`;
+        const hipoSegunda = ordenSiguiente === 2 ? "GULFSTREAM PARK" : "LA RINCONADA";
+
+        await supabaseAdmin.from("salas_juego").insert({
+          grupo_id: grupoEfectivoId,
+          nombre_sala: nombreSegunda,
+          orden_sala: ordenSiguiente,
+          activa: true,
+          estado_carrera: "cerrada",
+          hipodromo_activo: hipoSegunda,
+          numero_carrera_activa: 1,
+        });
+
+        const { data: recargaSalas } = await supabaseAdmin
+          .from("salas_juego")
+          .select("*")
+          .eq("grupo_id", grupoEfectivoId)
+          .eq("activa", true)
+          .order("orden_sala", { ascending: true })
+          .limit(2);
+
+        salas = recargaSalas || salas;
       }
 
       // Enriquecer salas con sus grupos de WhatsApp vinculados
