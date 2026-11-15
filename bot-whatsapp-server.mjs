@@ -118,6 +118,12 @@ const supabase =
 // Caché en memoria para verificar operadores autorizados sin sobrecargar Supabase
 const cacheOperadores = new Map();
 
+// Rate Limiter Anti-Spam (escudo térmico)
+const messageTimestamps = new Map();
+const mutedJids = new Set();
+const RATE_LIMIT_WINDOW_MS = 10000; // 10 segundos
+const MAX_MESSAGES_PER_WINDOW = 5;
+
 async function verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado) {
   const cacheKey = `${remoteJid}_${participantJid}`;
   const enCache = cacheOperadores.get(cacheKey);
@@ -968,6 +974,35 @@ async function manejarMensajeEntrante(msg) {
       (esFromMe ? (sock?.user?.id ? `${normalizarTelefono(sock.user.id)}@s.whatsapp.net` : "") : "");
     const participantAlt = msg.key.participantAlt || msg.participantAlt || "";
     const senderNombre = msg.pushName || (esFromMe ? "Operador (Teléfono)" : "Jugador");
+
+    const senderJid = participantJid || participantAlt || "";
+
+    // Rate Limiter Anti-Spam: silenciar usuarios que exceden el límite de mensajes
+    if (senderJid && mutedJids.has(senderJid)) {
+      return;
+    }
+    if (senderJid) {
+      const now = Date.now();
+      const userTimes = messageTimestamps.get(senderJid) || [];
+      const recentTimes = userTimes.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+      if (recentTimes.length >= MAX_MESSAGES_PER_WINDOW) {
+        mutedJids.add(senderJid);
+        try {
+          await sock.sendMessage(remoteJid, {
+            text: "⚠️ [SISTEMA] Usuario silenciado por Spam/Flooding.",
+          });
+        } catch {
+          /* no bloqueante */
+        }
+        setTimeout(() => {
+          mutedJids.delete(senderJid);
+          messageTimestamps.delete(senderJid);
+        }, 120000);
+        return;
+      }
+      recentTimes.push(now);
+      messageTimestamps.set(senderJid, recentTimes);
+    }
 
     const telPrincipal = normalizarTelefono(participantJid);
     const telAlt = normalizarTelefono(participantAlt);
