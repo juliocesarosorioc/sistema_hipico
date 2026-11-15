@@ -717,7 +717,6 @@ export function GestionJugadasModule() {
   const [textoVisorWhatsapp, setTextoVisorWhatsapp] = useState("");
   const [filtroSaldosWsp, setFiltroSaldosWsp] = useState<FiltroSaldosWhatsapp>("todos");
   const [separarSaldosWsp, setSepararSaldosWsp] = useState(true);
-  const [acuseReciboOperador, setAcuseReciboOperador] = useState(false);
   const [comandoPizarraInput, setComandoPizarraInput] = useState("");
   const [respuestaAgentePizarra, setRespuestaAgentePizarra] = useState<string | null>(null);
   const [copiadoReporteAgente, setCopiadoReporteAgente] = useState(false);
@@ -3368,7 +3367,6 @@ const hipodromosDelDia = useMemo(() => {
       setMensajeWhatsapp(res.mensajeWhatsapp);
       setVisorWhatsappTipo("resultados");
       setTextoVisorWhatsapp(res.mensajeWhatsapp);
-      setAcuseReciboOperador(true);
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("agente-ia-reporte-generado", {
@@ -5098,7 +5096,7 @@ const hipodromosDelDia = useMemo(() => {
           );
         })()}
 
-        {/* Visor Interactivo de Reportes WhatsApp (#reporteArea) + Acuse de Recibo */}
+        {/* Visor Interactivo de Reportes WhatsApp (#reporteArea) */}
         <div id="reporteArea" className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div className="flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap py-1 scrollbar-thin">
             <button
@@ -5159,7 +5157,6 @@ const hipodromosDelDia = useMemo(() => {
                 });
                 setVisorWhatsappTipo("prejugadas");
                 setTextoVisorWhatsapp(txt);
-                setAcuseReciboOperador(false);
               }}
               className="shrink-0 whitespace-nowrap rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-[11px] font-black text-indigo-800 hover:bg-indigo-100"
             >
@@ -5180,7 +5177,6 @@ const hipodromosDelDia = useMemo(() => {
                 }
                 setVisorWhatsappTipo("resultados");
                 setTextoVisorWhatsapp(txt);
-                setAcuseReciboOperador(false);
               }}
               className="shrink-0 whitespace-nowrap rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-black text-emerald-800 hover:bg-emerald-100"
             >
@@ -5209,7 +5205,6 @@ const hipodromosDelDia = useMemo(() => {
                 });
                 setVisorWhatsappTipo("saldos");
                 setTextoVisorWhatsapp(txt);
-                setAcuseReciboOperador(false);
               }}
               className="shrink-0 whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] font-black text-amber-900 hover:bg-amber-100"
             >
@@ -5341,20 +5336,10 @@ const hipodromosDelDia = useMemo(() => {
                 rows={10}
                 className="w-full rounded-lg border border-slate-300 bg-slate-50 p-2.5 font-mono text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={acuseReciboOperador}
-                    onChange={(e) => setAcuseReciboOperador(e.target.checked)}
-                    className="h-4 w-4 accent-emerald-600"
-                  />
-                  ✅ Acuse de Recibo: Confirmo lectura y verificación del reporte antes de enviar
-                </label>
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    disabled={!acuseReciboOperador}
                     onClick={async () => {
                       try {
                         await navigator.clipboard.writeText(textoVisorWhatsapp);
@@ -5369,7 +5354,6 @@ const hipodromosDelDia = useMemo(() => {
                   </button>
                   <button
                     type="button"
-                    disabled={!acuseReciboOperador}
                     onClick={() => {
                       const url = `https://wa.me/?text=${encodeURIComponent(textoVisorWhatsapp)}`;
                       window.open(url, "_blank", "noopener,noreferrer");
