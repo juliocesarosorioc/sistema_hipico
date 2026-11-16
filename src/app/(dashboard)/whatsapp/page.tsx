@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
+import WhatsAppOperatorPanel from "@/components/whatsapp/WhatsAppOperatorPanel";
 
 // ============================================================================
 // TIPOS
@@ -1264,79 +1265,9 @@ export default function WhatsappPage() {
       <section className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* ---------- Columna: conexión / QR ---------- */}
         <div className="space-y-4">
-          <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5 text-white shadow-xl">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-400">
-                Sesión de WhatsApp
-              </h2>
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${
-                  status.conectado ? "bg-emerald-400" : "bg-amber-400 animate-pulse"
-                }`}
-              />
-            </div>
-
-            {status.conectado ? (
-              <div className="flex flex-col items-center gap-3 py-4 text-center">
-                <div className="grid h-20 w-20 place-items-center rounded-full border-2 border-emerald-400/60 bg-emerald-500/15 text-3xl">
-                  🟢
-                </div>
-                <p className="text-sm font-black text-emerald-400">Sesión activa 24/7</p>
-                {status.numeroVinculado && (
-                  <span className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1 font-mono text-xs font-bold text-slate-200">
-                    +{status.numeroVinculado}
-                  </span>
-                )}
-                <p className="text-[11px] leading-relaxed text-slate-400">
-                  El demonio mantiene la sesión persistente en{" "}
-                  <code className="rounded bg-slate-900 px-1.5 py-0.5 text-emerald-300">
-                    whatsapp_auth
-                  </code>
-                  . Si el servidor se reinicia, se reconecta solo.
-                </p>
-                <button
-                  type="button"
-                  onClick={desconectarSesion}
-                  disabled={ocupado}
-                  className="mt-1 rounded-xl border border-rose-500/50 bg-rose-950/60 px-4 py-2 text-[11px] font-black text-rose-200 transition hover:bg-rose-900/70 disabled:opacity-40"
-                >
-                  {procesandoAccion === "desconectar-sesion" ? "Desconectando…" : "🔌 Desconectar Sesión"}
-                </button>
-              </div>
-            ) : status.qrDataUrl ? (
-              <div className="flex flex-col items-center gap-3">
-                <div className="rounded-2xl bg-white p-3 shadow-2xl">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={status.qrDataUrl}
-                    alt="Código QR para vincular WhatsApp"
-                    className="h-52 w-52 object-contain sm:h-56 sm:w-56"
-                  />
-                </div>
-                <ol className="w-full space-y-1 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-[11px] leading-relaxed text-slate-300">
-                  <li>1. Abre WhatsApp en tu teléfono.</li>
-                  <li>2. Entra en Dispositivos vinculados.</li>
-                  <li>3. Toca Vincular un dispositivo y escanea el QR.</li>
-                </ol>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-3 py-6 text-center">
-                <div className="grid h-12 w-12 place-items-center rounded-full border-2 border-dashed border-slate-600 text-xl">
-                  📱
-                </div>
-                <p className="text-xs font-bold text-slate-300">
-                  {status.daemonOnline
-                    ? "Generando código QR desde Baileys…"
-                    : "El demonio del bot no responde en el puerto 3005"}
-                </p>
-                <p className="max-w-xs text-[11px] leading-relaxed text-slate-500">
-                  En el servidor ejecuta{" "}
-                  <code className="text-emerald-400">pm2 restart bot-whatsapp</code> y vuelve a
-                  cargar esta pantalla.
-                </p>
-              </div>
-            )}
-          </div>
+          <WhatsAppOperatorPanel
+            grupo_id={grupoUsuarioId || gruposFiltroIds[0] || (gruposSistema[0]?.id ? String(gruposSistema[0].id) : "")}
+          />
 
           {/* Acciones globales */}
           <div className="rounded-3xl border border-slate-800 bg-slate-950 p-4 text-white shadow-xl">

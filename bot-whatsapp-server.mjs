@@ -232,6 +232,7 @@ async function verificarEsOperadorAutorizado(sala, remoteJid, participantJid, te
 // Estado en memoria del demonio Baileys
 let sock = null;
 let conectado = false;
+let qrRaw = null;
 let qrDataUrl = null;
 let numeroVinculado = null;
 let gruposCache = [];
@@ -1582,12 +1583,14 @@ async function iniciarConexionBaileys() {
 
       if (qr) {
         conectado = false;
+        qrRaw = qr;
         qrDataUrl = await convertirQrADataUrl(qr);
         console.log("[Bot WhatsApp] Nuevo código QR generado y listo en GET /status");
       }
 
       if (connection === "open") {
         conectado = true;
+        qrRaw = null;
         qrDataUrl = null;
         numeroVinculado = normalizarTelefono(sock?.user?.id) || sock?.user?.id || "Conectado";
         console.log(`[Bot WhatsApp] 🟢 Conectado exitosamente como +${numeroVinculado}`);
@@ -1606,6 +1609,7 @@ async function iniciarConexionBaileys() {
 
         if (fueLogout) {
           numeroVinculado = null;
+          qrRaw = null;
           qrDataUrl = null;
           try {
             fs.rmSync(AUTH_DIR, { recursive: true, force: true });
@@ -1671,7 +1675,7 @@ function responderJson(res, status, payload) {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-internal-bot-secret",
   });
   res.end(JSON.stringify(payload));
 }
@@ -1684,8 +1688,16 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
   const pathname = url.pathname;
 
-  // Blindaje SecOps Parche 1: Secreto interno obligatorio para todas las acciones (excepto /status local)
-  if (pathname !== "/status") {
+  // Blindaje SecOps Parche 1: Secreto interno obligatorio para todas las acciones excepto status/connect/disconnect
+  const esRutaPublicaLocal =
+    pathname === "/status" ||
+    pathname === "/api/whatsapp/status" ||
+    pathname === "/connect" ||
+    pathname === "/api/whatsapp/connect" ||
+    pathname === "/disconnect" ||
+    pathname === "/api/whatsapp/disconnect";
+
+  if (!esRutaPublicaLocal) {
     const authHeader = req.headers["x-internal-bot-secret"];
     if (authHeader !== INTERNAL_BOT_SECRET) {
       return responderJson(res, 401, {
@@ -1696,18 +1708,59 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    // 1. GET /status (Soporta ?force=true para refresco instantáneo de grupos)
-    if (req.method === "GET" && pathname === "/status") {
+    // 1. GET /status y GET /api/whatsapp/status (Soporta ?session_id= y ?force=true)
+    if (req.method === "GET" && (pathname === "/status" || pathname === "/api/whatsapp/status")) {
+      const sessionId = url.searchParams.get("session_id") || "";
       const forzarRefresco = url.searchParams.get("force") === "true";
       if (conectado && (gruposCache.length === 0 || forzarRefresco)) {
         await refrescarGruposParticipantes();
       }
+
+      let estadoActual = "disconnected";
+      if (conectado) {
+        estadoActual = "connected";
+      } else if (qrRaw || qrDataUrl) {
+        estadoActual = "qr";
+      }
+
       return responderJson(res, 200, {
-        conectado,
+        ok: true,
+        status: estadoActual,
+        session_id: sessionId,
+        qr: qrRaw || qrDataUrl,
         qrDataUrl,
+        conectado,
+        numero: numeroVinculado,
         numeroVinculado,
         grupos: gruposCache,
         salasDesconectadas,
+      });
+    }
+
+    // 1.c POST /connect y POST /api/whatsapp/connect (Inicia conexión Baileys)
+    if (req.method === "POST" && (pathname === "/connect" || pathname === "/api/whatsapp/connect")) {
+      const body = await leerBodyJson(req);
+      const sessionId = body?.session_id || "";
+
+      if (!conectado && !sock && !reconectando) {
+        iniciarConexionBaileys();
+      }
+
+      let estadoActual = "disconnected";
+      if (conectado) {
+        estadoActual = "connected";
+      } else if (qrRaw || qrDataUrl) {
+        estadoActual = "qr";
+      }
+
+      return responderJson(res, 200, {
+        ok: true,
+        status: estadoActual,
+        session_id: sessionId,
+        qr: qrRaw || qrDataUrl,
+        qrDataUrl,
+        conectado,
+        motivo: conectado ? "Ya conectado" : "Iniciando Baileys para generar QR...",
       });
     }
 
@@ -2350,8 +2403,8 @@ const server = http.createServer(async (req, res) => {
       return responderJson(res, 200, resultado);
     }
 
-    // 7. POST /disconnect (Cerrar sesión WhatsApp y regenerar QR)
-    if (req.method === "POST" && pathname === "/disconnect") {
+    // 7. POST /disconnect y POST /api/whatsapp/disconnect (Cerrar sesión WhatsApp y regenerar QR)
+    if (req.method === "POST" && (pathname === "/disconnect" || pathname === "/api/whatsapp/disconnect")) {
       try {
         if (sock) {
           try {
@@ -2366,6 +2419,7 @@ const server = http.createServer(async (req, res) => {
 
       sock = null;
       conectado = false;
+      qrRaw = null;
       qrDataUrl = null;
       numeroVinculado = null;
       gruposCache = [];
