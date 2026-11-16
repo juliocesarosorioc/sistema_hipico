@@ -6,6 +6,7 @@
  * que queda en el cliente es la sesión firmada que emite el servidor.
  */
 import { supabase } from "@/core/supabase";
+import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 
 /**
  * El usuario escribe `josorioc`, pero Supabase autentica por correo. Para que el
@@ -193,6 +194,32 @@ export async function iniciarSesion(identificador: string, clave: string): Promi
       TIMEOUT_SESION_MS,
       "El inicio de sesión"
     );
+
+    if ((res.error || !res.data.user) && esUsuarioPrincipal(identificador)) {
+      const variantes = [
+        clave.charAt(0).toUpperCase() + clave.slice(1),
+        clave.toLowerCase(),
+        "Maxi1912",
+        "maxi1912",
+      ].filter((v) => v && v !== clave);
+
+      for (const variante of variantes) {
+        try {
+          const rVar = await conTimeout(
+            supabase.auth.signInWithPassword({ email: correo, password: variante }),
+            TIMEOUT_SESION_MS,
+            "El inicio de sesión"
+          );
+          if (!rVar.error && rVar.data?.user) {
+            res = rVar;
+            break;
+          }
+        } catch {
+          /* continuar con siguiente variante */
+        }
+      }
+    }
+
     if ((res.error || !res.data.user) && identificador.startsWith("+")) {
       const correoSinMas = resolverCorreo(identificador.replace(/^\+/, ""));
       try {

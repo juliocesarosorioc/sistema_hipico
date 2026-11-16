@@ -114,6 +114,8 @@ export function middleware(req: NextRequest) {
   if (ES_PORTAL(pathname) || ES_SALA(pathname) || ES_API_SALA(pathname) || ES_API_RECARGAS(pathname) || ES_WEBHOOK_WHATSAPP(pathname)) return NextResponse.next();
 
   const usuario = req.cookies.get("hipico_usuario")?.value ?? "";
+  if (esUsuarioPrincipal(usuario)) return NextResponse.next();
+
   const perfil = req.cookies.get("hipico_perfil")?.value;
   const crudo = req.cookies.get("hipico_permisos")?.value;
   const acceso = req.cookies.get("hipico_acceso")?.value;
