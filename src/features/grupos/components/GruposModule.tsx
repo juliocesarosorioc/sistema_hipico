@@ -799,9 +799,8 @@ export function GruposModule() {
       cruce_diferente_ejemplar: editando.cruce_diferente_ejemplar === true,
 
       dia_inicio_semana: editando.dia_inicio_semana ?? 1,
-
       dia_fin_semana: editando.dia_fin_semana ?? 7,
-
+      activo: editando.activo !== false,
       tiempo_vencimiento_propuesta_min: editando.tiempo_vencimiento_propuesta_min != null ? Number(editando.tiempo_vencimiento_propuesta_min) : 5,
       apuesta_minima: editando.apuesta_minima != null ? Number(editando.apuesta_minima) : 10,
       tope_caballos_marcas_nacional: editando.tope_caballos_marcas_nacional != null ? Number(editando.tope_caballos_marcas_nacional) : 5,
@@ -2376,20 +2375,49 @@ export function GruposModule() {
               <>
                 <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
 
-              <div>
-
-                <label className={etiqueta}>Nombre</label>
-
-                <input
-
-                  value={editando.nombre}
-
-                  onChange={(e) => setEditando({ ...editando, nombre: e.target.value.toUpperCase() })}
-
-                  className={inp + " font-black uppercase"}
-
-                />
-
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <div>
+                  <label className={etiqueta}>Nombre del Grupo</label>
+                  <input
+                    value={editando.nombre}
+                    onChange={(e) => setEditando({ ...editando, nombre: e.target.value.toUpperCase() })}
+                    className={inp + " font-black uppercase"}
+                  />
+                </div>
+                <div>
+                  <label className={etiqueta}>Estado Operativo</label>
+                  <div className="pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nuevoActivo = editando.activo === false;
+                        setEditando({ ...editando, activo: nuevoActivo });
+                      }}
+                      className={`inline-flex w-full items-center justify-between rounded-lg border px-3 py-2 text-xs font-black transition-all ${
+                        editando.activo !== false
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-800 shadow-xs hover:bg-emerald-100"
+                          : "border-red-300 bg-red-50 text-red-700 shadow-xs hover:bg-red-100"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span className="relative flex h-2.5 w-2.5">
+                          {editando.activo !== false && (
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                          )}
+                          <span
+                            className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
+                              editando.activo !== false ? "bg-emerald-500" : "bg-red-500"
+                            }`}
+                          ></span>
+                        </span>
+                        <span>{editando.activo !== false ? "ACTIVO" : "INACTIVO"}</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-500 underline">
+                        {editando.activo !== false ? "Clic para Inactivar" : "Clic para Activar"}
+                      </span>
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <LogoUploader

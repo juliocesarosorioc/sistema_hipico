@@ -889,6 +889,20 @@ export async function actualizarGrupo(
         if (rpc.error && !tieneCiclo) return { ok: false, error: rpc.error.message };
       }
 
+      if ("activo" in resto && resto.activo !== undefined) {
+        const actBool = Boolean(resto.activo);
+        try {
+          await supabase.rpc("club_toggle_grupo", { p_id: String(id).trim(), p_activo: actBool });
+        } catch {
+          /* opcional */
+        }
+        try {
+          await supabase.from("grupos").update({ estatus: actBool ? "Activo" : "Inactivo" }).eq("id", id);
+        } catch {
+          /* opcional */
+        }
+      }
+
       if ("apuesta_minima" in resto || "tiempo_vencimiento_propuesta_min" in resto || "tope_caballos_marcas_nacional" in resto || "tope_caballos_marcas_internacional" in resto) {
         try {
           await supabase
@@ -1063,43 +1077,50 @@ export async function registrarAuditoria(
 /** Activa/desactiva un grupo (la tarjeta se oculta en opciones de venta). */
 export async function toggleGrupoActivo(id: string | number, activo: boolean): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  const idStr = String(id).trim();
   const estatusStr = activo ? "Activo" : "Inactivo";
   try {
-    // 1. Actualizar public.grupos_venta (activo y estatus si existe)
-    let errVenta: unknown = null;
+    let actualizado = false;
+
+    // 1. Invocar RPC club_toggle_grupo (SECURITY DEFINER) para eludir RLS en grupos_venta
     try {
-      const resVenta = await supabase
-        .from("grupos_venta")
-        .update({ activo, estatus: estatusStr })
-        .eq("id", id);
-      if (resVenta.error) {
-        // Fallback si la columna estatus no existe en grupos_venta
-        const resSoloActivo = await supabase
-          .from("grupos_venta")
-          .update({ activo })
-          .eq("id", id);
-        if (resSoloActivo.error) errVenta = resSoloActivo.error;
+      const rpc = await supabase.rpc("club_toggle_grupo", { p_id: idStr, p_activo: activo });
+      if (!rpc.error) {
+        actualizado = true;
       }
-    } catch (e) {
-      errVenta = e;
+    } catch {
+      /* fallback */
     }
 
-    if (errVenta) {
-      const rpc = await supabase.rpc("club_toggle_grupo", { p_id: id, p_activo: activo });
-      if (rpc.error) return { ok: false, error: rpc.error.message };
+    // 2. Si la RPC no se ejecutó, intentar UPDATE directo en grupos_venta
+    if (!actualizado) {
+      const resSoloActivo = await supabase
+        .from("grupos_venta")
+        .update({ activo })
+        .eq("id", idStr)
+        .select("id");
+      if (!resSoloActivo.error && Array.isArray(resSoloActivo.data) && resSoloActivo.data.length > 0) {
+        actualizado = true;
+      } else if (resSoloActivo.error) {
+        return { ok: false, error: resSoloActivo.error.message };
+      }
     }
 
-    // 2. Sincronizar en public.grupos si la tabla existe
+    // 3. Sincronizar en public.grupos si la tabla existe
     try {
       await supabase
         .from("grupos")
         .update({ estatus: estatusStr })
-        .eq("id", id);
+        .eq("id", idStr);
     } catch {
       /* tabla o permisos opcionales; no bloquea si no existe */
     }
 
-    invalidarCacheGrupos();
+    invalidarCacheGrupos(idStr);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("hipico:grupos-actualizados"));
+      window.dispatchEvent(new CustomEvent("grupos:cambio"));
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

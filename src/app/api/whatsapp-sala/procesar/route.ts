@@ -2024,11 +2024,16 @@ export async function POST(req: Request) {
 
         const saldoDispAceptante = calcularSaldoDisponible(aceptanteFresco || cliente);
         if (Number(saldoDispAceptante) <= 0) {
+          const saldoFmt = formatearMontoRegional(Math.max(0, saldoDispAceptante));
           return NextResponse.json({
             ok: false,
             tipo: "SIN_SALDO",
-            respuestaGrupo: `🚫 *Nada Aquí* — ${nombreJugador}: Disponible 0`,
-            mensajePrivadoAutor: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
+            respuestaGrupo: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
+            msg_publico: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
+            msg_publico_bot: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
+            respuestaPublica: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
+            mensajePrivadoAutor: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
+            msg_privado_bot: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
             clienteTelefono: telefonoClienteCompleto,
             senderJid: participantJid,
           });
@@ -2052,11 +2057,16 @@ export async function POST(req: Request) {
         if (!evalConcrecion.valido) {
           // Si no tenía saldo en absoluto
           if (saldoDispAceptante <= 0 && evalConcrecion.montoSolicitado > 0) {
+            const saldoFmt = formatearMontoRegional(Math.max(0, saldoDispAceptante));
             return NextResponse.json({
               ok: false,
               tipo: "SIN_SALDO",
-              respuestaGrupo: `🚫 *Nada Aquí* — ${nombreJugador}: Disponible 0`,
-              mensajePrivadoAutor: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
+              respuestaGrupo: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
+              msg_publico: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
+              msg_publico_bot: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
+              respuestaPublica: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
+              mensajePrivadoAutor: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
+              msg_privado_bot: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
               clienteTelefono: telefonoClienteCompleto,
               senderJid: participantJid,
             });
@@ -2213,52 +2223,79 @@ export async function POST(req: Request) {
           .eq("id", propFresca.remitente_id)
           .maybeSingle();
 
-        const jugadaTexto = propFresca.jugada_estandarizada || propFresca.contenido;
-        let respuestaGrupo = "";
-        let mensajePrivadoAutor = "";
+        const esConsigueProp =
+          accionProp === "CONSIGUE" ||
+          /^(consigo|doy)\b/i.test(String(propFresca.contenido || ""));
 
-        if (evalConcrecion.excedioSaldo) {
-          // Regla estricta: si el aceptante supera su saldo
-          respuestaGrupo = `Esta jugada solo por $${formatearMontoRegional(saldoDispAceptante)} — *Aquí Jugaron*`;
-          mensajePrivadoAutor = `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
-        } else if (llenoRemanenteParcial && nuevoRemanente === 0) {
-          // Regla estricta: si llena un remanente parcial (ej. quedaban $10 de $100)
-          respuestaGrupo =
-            `Solo quedaban $${formatearMontoRegional(remanenteDisponible)} disponibles en esta jugada — *Aquí Jugaron*\n` +
-            `✅ *${nombreJugador}* completó los últimos *$${formatearMontoRegional(montoEfectivo)}* con *${propFresca.remitente_nombre}* (${jugadaTexto}). ¡Jugada 100% pactada!`;
-          mensajePrivadoAutor =
-            `✅ *Confirmación de Jugada*: Tomaste el remanente final de *$${formatearMontoRegional(montoEfectivo)}* contra *${propFresca.remitente_nombre}* en *${jugadaTexto}*.`;
+        let nombreJuega = "";
+        let nombreDa = "";
+        if (esConsigueProp) {
+          nombreDa = propFresca.remitente_nombre || "Proponente";
+          nombreJuega = nombreJugador;
         } else {
-          respuestaGrupo =
-            `🤝 *Aquí Jugaron* — *${nombreJugador}* jugó *$${formatearMontoRegional(montoEfectivo)}* con *${propFresca.remitente_nombre}* (${jugadaTexto}).` +
-            (nuevoRemanente > 0
-              ? `\n⏳ Quedan *$${formatearMontoRegional(nuevoRemanente)}* disponibles en esta parada.`
-              : `\n✅ ¡Parada completada al 100%!`);
-          mensajePrivadoAutor =
-            `✅ *Confirmación de Jugada*: Pactaste *$${formatearMontoRegional(montoEfectivo)}* contra *${propFresca.remitente_nombre}* en *${jugadaTexto}*.`;
+          nombreJuega = propFresca.remitente_nombre || "Proponente";
+          nombreDa = nombreJugador;
         }
 
-        const mensajePrivadoProponente =
-          `🔔 *Confirmación de Jugada*: *${nombreJugador}* tomó *$${formatearMontoRegional(montoEfectivo)}* de tu propuesta (*${jugadaTexto}*). ` +
-          (nuevoRemanente > 0
-            ? `Quedan *$${formatearMontoRegional(nuevoRemanente)}* disponibles.`
-            : `¡Tu jugada de $${formatearMontoRegional(Number(propFresca.monto_original || montoEfectivo))} fue completada al 100%!`);
+        // Modalidad / Caballos
+        let modalidadCaballos = "";
+        if (propFresca.es_match) {
+          const bA = Array.isArray(propFresca.caballos_bando_a)
+            ? propFresca.caballos_bando_a.join("-")
+            : String(propFresca.caballos_bando_a || "");
+          const bB = Array.isArray(propFresca.caballos_bando_b)
+            ? propFresca.caballos_bando_b.join("-")
+            : String(propFresca.caballos_bando_b || "");
+          if (bA && bB) {
+            modalidadCaballos = `${bA}x${bB}`;
+          } else {
+            modalidadCaballos = propFresca.ejemplar_texto || propFresca.modalidad_propuesta || "MATCH";
+          }
+        } else {
+          const mod = propFresca.modalidad_propuesta || propFresca.modalidad || "";
+          const ej =
+            propFresca.ejemplar_texto ||
+            (Array.isArray(propFresca.caballos_bando_a) ? propFresca.caballos_bando_a.join("-") : "") ||
+            "";
+          modalidadCaballos = `${mod} ${ej}`.trim() || propFresca.jugada_estandarizada || "JUGADA";
+        }
+
+        // Proporción
+        const propRaw = String(propFresca.proporcion_premio || propFresca.proporcion || "1x1").trim();
+        const propTexto = propRaw.includes("/") ? propRaw.replace("/", "a") : propRaw;
+
+        // Riesgos
+        const matchProp = /^10[x\/\-a@ª](\d+(?:\.\d+)?)$/i.exec(propRaw.replace(',', '.'));
+        let riesgoJuega = Number(montoEfectivo || 0);
+        let riesgoDa = Number(montoEfectivo || 0);
+        if (matchProp) {
+          const xVal = parseFloat(matchProp[1]);
+          if (Number.isFinite(xVal) && xVal > 0) {
+            riesgoDa = Math.round(montoEfectivo * 100) / 100;
+            riesgoJuega = Math.round(montoEfectivo * (xVal / 10) * 100) / 100;
+          }
+        }
+
+        const montoBaseFmt = Number(montoEfectivo).toFixed(montoEfectivo % 1 === 0 ? 0 : 2);
+        const riesgoJuegaFmt = riesgoJuega.toFixed(2);
+        const riesgoDaFmt = riesgoDa.toFixed(2);
 
         const msgPublicoFinal =
-          (resRpcData as any)?.msg_publico ||
-          (resRpcData as any)?.msg_publico_bot ||
-          (resRpcData as any)?.respuestaPublica ||
-          respuestaGrupo;
+          `✅ Jugaron: *${nombreJuega} Juega ${modalidadCaballos} ${propTexto} da ${nombreDa} $${montoBaseFmt}*\n` +
+          `🔹 Juega: ${nombreJuega} (Riesgo $${riesgoJuegaFmt})\n` +
+          `🔸 Da: ${nombreDa} (Riesgo $${riesgoDaFmt})`;
 
-        const msgPrivAceptante =
-          (resRpcData as any)?.msg_privado_aceptante ||
-          (resRpcData as any)?.msg_privado_bot ||
-          (resRpcData as any)?.alertaPrivada ||
-          mensajePrivadoAutor;
+        const msgPrivAceptante = evalConcrecion.excedioSaldo
+          ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`
+          : `✅ *Confirmación de Jugada*:\n` +
+            `Pactaste con *${propFresca.remitente_nombre}* en *${modalidadCaballos} ${propTexto}* por *$${montoBaseFmt}*.\n` +
+            `Tu rol: *${nombreJugador === nombreJuega ? "Juega" : "Da"}* (Riesgo: $${nombreJugador === nombreJuega ? riesgoJuegaFmt : riesgoDaFmt}).`;
 
         const msgPrivProponente =
-          (resRpcData as any)?.msg_privado_proponente ||
-          mensajePrivadoProponente;
+          `🔔 *Confirmación de Jugada*:\n` +
+          `*${nombreJugador}* aceptó tu jugada en *${modalidadCaballos} ${propTexto}* por *$${montoBaseFmt}*.\n` +
+          `Tu rol: *${propFresca.remitente_nombre === nombreJuega ? "Juega" : "Da"}* (Riesgo: $${propFresca.remitente_nombre === nombreJuega ? riesgoJuegaFmt : riesgoDaFmt}).` +
+          (nuevoRemanente > 0 ? `\n⏳ Quedan *$${formatearMontoRegional(nuevoRemanente)}* disponibles en tu propuesta.` : "");
 
         const notifs = (resRpcData as any)?.notificaciones_privadas || [];
 
@@ -2448,8 +2485,9 @@ export async function POST(req: Request) {
       }
 
       if (saldoDisponible <= 0 && !cliente.libre) {
-        const msgSinSaldo = `🚫 *Nada Aquí* — ${nombreJugador}: Disponible 0`;
-        const msgPrivSinSaldo = '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo';
+        const saldoFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
+        const msgSinSaldo = `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`;
+        const msgPrivSinSaldo = `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`;
         return NextResponse.json({
           ok: false,
           tipo: "SIN_SALDO",
@@ -2538,10 +2576,10 @@ export async function POST(req: Request) {
       }
 
       const msgPubBlk = excedioSaldoBloque
-        ? `⚠️ *${nombreJugador}*: Disponible $${formatearMontoRegional(saldoDisponible)}`
+        ? `⚠️ *${nombreJugador}* dispone de $${formatearMontoRegional(Math.max(0, saldoDisponible))}`
         : null;
       const msgPrivBlk = excedioSaldoBloque
-        ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
+        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`
         : null;
 
       return NextResponse.json({
@@ -2637,8 +2675,9 @@ export async function POST(req: Request) {
 
     // Caso: Publicó jugada por encima de su saldo y tiene $0 disponible
     if (!analisis.valido && analisis.excedioSaldo) {
-      const msgPubExceso = `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`;
-      const msgPrivExceso = `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
+      const saldoFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
+      const msgPubExceso = `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`;
+      const msgPrivExceso = `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`;
       return NextResponse.json({
         ok: false,
         tipo: "EXCESO_SALDO",
@@ -2724,8 +2763,9 @@ export async function POST(req: Request) {
 
     // Bloqueo estricto: Si el cliente no posee saldo disponible
     if (saldoDisponible <= 0 && !cliente.libre) {
-      const msgSinSaldo = `🚫 *Nada Aquí* — ${nombreJugador}: Disponible 0`;
-      const msgPrivSinSaldo = '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo';
+      const saldoFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
+      const msgSinSaldo = `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`;
+      const msgPrivSinSaldo = `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`;
       return NextResponse.json({
         ok: false,
         tipo: "SIN_SALDO",
@@ -2877,8 +2917,9 @@ export async function POST(req: Request) {
 
     // Si publicó por encima de su saldo_disponible, devolver los textos exactos requeridos
     if (excedioSaldo) {
-      const msgPubRecorte = `⚠️ *${nombreJugador}*: Disponible $${formatearMontoRegional(saldoDisponible)}`;
-      const msgPrivRecorte = (rpcResFinal as any)?.msg_privado_proponente || (rpcResFinal as any)?.msg_privado_bot || (rpcResFinal as any)?.alertaPrivada || `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
+      const saldoFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
+      const msgPubRecorte = `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`;
+      const msgPrivRecorte = `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`;
       return NextResponse.json({
         ok: true,
         excedio_saldo: true,
@@ -2898,20 +2939,9 @@ export async function POST(req: Request) {
       });
     }
 
-    const msgPublicoRpc =
-      (rpcResFinal as any)?.msg_publico ||
-      (rpcResFinal as any)?.msg_publico_bot ||
-      (rpcResFinal as any)?.respuestaPublica ||
-      analisis.msgPublicoBot ||
-      null;
-
-    const msgPrivadoRpc =
-      (rpcResFinal as any)?.msg_privado_proponente ||
-      (rpcResFinal as any)?.msg_privado_bot ||
-      (rpcResFinal as any)?.alertaPrivada ||
-      analisis.msgPrivadoBot ||
-      null;
-
+    // Propuesta Exitosa con Saldo: SILENCIO en grupo público.
+    // Cuando un jugador publica una jugada (ej. Juego 3x5 10a8 100) y tiene saldo,
+    // el bot NO responde nada en el grupo público. Solo la registra en la memoria interna (BD).
     return NextResponse.json({
       ok: true,
       tipo: "PROPUESTA",
@@ -2919,15 +2949,15 @@ export async function POST(req: Request) {
       jugadaEstandarizada: analisis.jugadaEstandarizada,
       montoPublicado: montoAPublicar,
       reaccionEmoji: "🏇",
-      respuestaGrupo: msgPublicoRpc,
-      msg_publico: msgPublicoRpc,
-      msg_publico_bot: msgPublicoRpc,
-      respuestaPublica: msgPublicoRpc,
-      mensajePrivadoAutor: msgPrivadoRpc,
-      msg_privado_bot: msgPrivadoRpc,
-      msg_privado_proponente: msgPrivadoRpc,
-      alertaPrivada: (rpcResFinal as any)?.alertaPrivada || null,
-      notificaciones_privadas: (rpcResFinal as any)?.notificaciones_privadas || [],
+      respuestaGrupo: null,
+      msg_publico: null,
+      msg_publico_bot: null,
+      respuestaPublica: null,
+      mensajePrivadoAutor: null,
+      msg_privado_bot: null,
+      msg_privado_proponente: null,
+      alertaPrivada: null,
+      notificaciones_privadas: [],
       senderJid: participantJid,
     });
   } catch (err: any) {

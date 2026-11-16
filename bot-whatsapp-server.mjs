@@ -1447,6 +1447,7 @@ async function manejarMensajeEntrante(msg) {
       data.data?.alertaPrivada ||
       data.data?.msg_privado_aceptante;
 
+    const clienteEstaSala = clientesPorSalaId.get(sala.id) || Array.from(clientesPorSalaId.values())[0] || null;
     const telClienteDb = String(
       data.clienteTelefono ||
       clienteEstaSala?.telefono_normalizado ||

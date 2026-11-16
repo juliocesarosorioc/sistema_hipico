@@ -371,17 +371,17 @@ export function analizarYEstandarizarJugada(
           excedioSaldo: true,
           montoDisponibleValido: 0,
           mensajePedagogicoPrivado: `🔒 Saldo insuficiente (${prefijo}${formatearMontoRegional(saldoDisponible)}). Debes recargar saldo antes de publicar jugadas.`,
-          msgPublicoBot: `🚫 *Nada Aquí* — ${nombreUsuario || 'Jugador'}: Disponible 0`,
-          msgPrivadoBot: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
+          msgPublicoBot: `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${formatearMontoRegional(Math.max(0, saldoDisponible))}`,
+          msgPrivadoBot: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
         };
       }
 
       const jugadaEstandarizada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')}${propMatch !== '1x1' ? ` ${propMatch}` : ''} ${montoTexto}`;
       const msgPublicoBotMatch = excedioSaldoMatch
-        ? `⚠️ *${nombreUsuario || 'Jugador'}*: Disponible ${prefijo}${formatearMontoRegional(saldoDisponible)}`
+        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${formatearMontoRegional(Math.max(0, saldoDisponible))}`
         : undefined;
       const msgPrivadoBotMatch = excedioSaldoMatch
-        ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
+        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`
         : undefined;
 
       const factorRiesgo = riesgoMatch > 0 ? monto / riesgoMatch : 1;
@@ -521,17 +521,17 @@ export function analizarYEstandarizarJugada(
           excedioSaldo: true,
           montoDisponibleValido: 0,
           mensajePedagogicoPrivado: `🔒 Saldo insuficiente (${prefijo}${formatearMontoRegional(saldoDisponible)}). Debes recargar saldo antes de publicar jugadas.`,
-          msgPublicoBot: `🚫 *Nada Aquí* — ${nombreUsuario || 'Jugador'}: Disponible 0`,
-          msgPrivadoBot: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
+          msgPublicoBot: `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${formatearMontoRegional(Math.max(0, saldoDisponible))}`,
+          msgPrivadoBot: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
         };
       }
 
       const jugadaEstandarizada = `${verboEstandar} ${modLimpia} ${ejemplarTexto} ${montoTexto}`;
       const msgPublicoBotPuesto = excedioSaldoPuesto
-        ? `⚠️ *${nombreUsuario || 'Jugador'}*: Disponible ${prefijo}${formatearMontoRegional(saldoDisponible)}`
+        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${formatearMontoRegional(Math.max(0, saldoDisponible))}`
         : undefined;
       const msgPrivadoBotPuesto = excedioSaldoPuesto
-        ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
+        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`
         : undefined;
 
       const factorRiesgo = riesgoPuesto > 0 ? monto / riesgoPuesto : 1;
