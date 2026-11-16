@@ -49,6 +49,7 @@ export type GrupoVenta = {
   comision_dupletas?: number | null;
   es_principal?: boolean | null;
   activo?: boolean | null;
+  estatus?: string | null;
   /** Valores permanentes de cruce por modalidad; cada uno usa false por defecto. */
   permite_cruces?: boolean | null;
   cruce_mismo_ejemplar?: boolean | null;
@@ -183,7 +184,11 @@ export async function listarGruposVenta(): Promise<GrupoVenta[]> {
   ultimoErrorGrupos = null;
   const eliminadosLocal = leerGruposEliminadosLocal();
   const activos = grupos
-    .filter((g) => !eliminadosLocal.has(String(g.id)) && g.activo !== false && !(g as any).eliminado_en)
+    .filter((g) => {
+      if (eliminadosLocal.has(String(g.id)) || (g as any).eliminado_en) return false;
+      const esActivo = g.activo !== false && String(g.estatus ?? "Activo").toLowerCase() !== "inactivo";
+      return esActivo;
+    })
     .map((g) => aplicarOverridesCicloGrupo(g));
   cacheGruposVenta = activos;
   return activos;
@@ -275,48 +280,154 @@ export function porcentajeDeEntrada(
   return Number.isFinite(n) && n >= 0 ? n : porDefecto;
 }
 
-/** Lista clientes con sus saldos y su único grupo asignado (aislamiento estricto por grupo_id). */
-export async function listarClientesVenta(force = false): Promise<ClienteVenta[]> {
-  const activo = grupoActivoVigente() || grupoVigente() || null;
-  if (!force && cacheClientes && cacheClientesGrupo === activo && Date.now() - cacheClientesTs < 1500) {
+/** Lista clientes con sus saldos y su grupo asignado (aislamiento por grupo_id + respaldo clientes_grupos). */
+export async function listarClientesVenta(
+  force = false,
+  grupoIdOverride?: string | number | null
+): Promise<ClienteVenta[]> {
+  const activoRaw =
+    grupoIdOverride != null && String(grupoIdOverride).trim() !== ""
+      ? String(grupoIdOverride).trim()
+      : grupoActivoVigente() || grupoVigente() || null;
+  if (!force && cacheClientes && cacheClientesGrupo === activoRaw && Date.now() - cacheClientesTs < 1500) {
     return cacheClientes;
   }
   if (!supabase) return [];
   try {
+    const idsObjetivo = new Set<string>();
+    const uuidsObjetivo: string[] = [];
+    if (activoRaw) {
+      idsObjetivo.add(activoRaw);
+      idsObjetivo.add(activoRaw.toUpperCase());
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activoRaw);
+      if (isUuid) uuidsObjetivo.push(activoRaw);
+      try {
+        const gruposLista = await listarGruposVenta();
+        for (const g of gruposLista) {
+          const gId = String(g.id ?? "").trim();
+          const gNom = String(g.nombre ?? "").trim().toUpperCase();
+          if (gId.toUpperCase() === activoRaw.toUpperCase() || gNom === activoRaw.toUpperCase()) {
+            if (gId) {
+              idsObjetivo.add(gId);
+              idsObjetivo.add(gId.toUpperCase());
+              if (
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(gId) &&
+                !uuidsObjetivo.includes(gId)
+              ) {
+                uuidsObjetivo.push(gId);
+              }
+            }
+            if (gNom) idsObjetivo.add(gNom);
+          }
+        }
+      } catch {
+        /* best-effort */
+      }
+    }
+
+    const CAMPOS_VENTA =
+      "id, nombre, seudonimo, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar";
     let cli: any[] = [];
-    if (activo) {
+    const gruposAdicionalesPorCliente = new Map<string, Set<string>>();
+
+    if (activoRaw) {
+      const filtroGrupoId = uuidsObjetivo[0] || activoRaw;
       const { data: d1, error: err1 } = await supabase
         .from("clientes")
-        .select("id, nombre, seudonimo, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar")
-        .eq("grupo_id", activo);
+        .select(CAMPOS_VENTA)
+        .eq("grupo_id", filtroGrupoId);
       if (!err1 && d1) {
         cli = d1;
       }
+
+      // Fallback a `clientes_grupos` donde `grupo_id = filtroGrupoId`
+      try {
+        const { data: memRows } = await supabase
+          .from("clientes_grupos")
+          .select("cliente_id, grupo_id")
+          .eq("grupo_id", filtroGrupoId);
+        const idsFaltantes: string[] = [];
+        const yaCargados = new Set(cli.map((x) => String(x.id)));
+        for (const m of memRows ?? []) {
+          const cId = String((m as any).cliente_id ?? "").trim();
+          const gId = String((m as any).grupo_id ?? filtroGrupoId).trim();
+          if (!cId) continue;
+          const setG = gruposAdicionalesPorCliente.get(cId) ?? new Set<string>();
+          setG.add(gId);
+          gruposAdicionalesPorCliente.set(cId, setG);
+          if (!yaCargados.has(cId)) {
+            idsFaltantes.push(cId);
+            yaCargados.add(cId);
+          }
+        }
+        if (idsFaltantes.length > 0) {
+          const { data: dMem } = await supabase
+            .from("clientes")
+            .select(CAMPOS_VENTA)
+            .in("id", idsFaltantes);
+          if (Array.isArray(dMem) && dMem.length > 0) {
+            cli = [...cli, ...dMem];
+          }
+        }
+      } catch {
+        /* tabla clientes_grupos opcional */
+      }
     } else {
-      const { data: dAll } = await supabase
-        .from("clientes")
-        .select("id, nombre, seudonimo, saldo_actual, aval, libre, modo_juego, grupo_id, permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar");
+      const { data: dAll } = await supabase.from("clientes").select(CAMPOS_VENTA);
       if (dAll) cli = dAll;
+      try {
+        const { data: memAll } = await supabase.from("clientes_grupos").select("cliente_id, grupo_id");
+        for (const m of memAll ?? []) {
+          const cId = String((m as any).cliente_id ?? "").trim();
+          const gId = String((m as any).grupo_id ?? "").trim();
+          if (!cId || !gId) continue;
+          const setG = gruposAdicionalesPorCliente.get(cId) ?? new Set<string>();
+          setG.add(gId);
+          gruposAdicionalesPorCliente.set(cId, setG);
+        }
+      } catch {
+        /* opcional */
+      }
     }
 
-    const clientes = (cli ?? []).map((c) => ({
-      id: String(c.id),
-      nombre: String(c.seudonimo || c.nombre || ""),
-      nombre_real: String(c.nombre ?? ""),
-      seudonimo: c.seudonimo ? String(c.seudonimo) : null,
-      saldo_actual: c.saldo_actual != null ? Number(c.saldo_actual) : null,
-      aval: c.aval != null ? Number(c.aval) : null,
-      libre: Boolean(c.libre),
-      modo_juego: c.modo_juego ? String(c.modo_juego) : null,
-      grupo_id: c.grupo_id ?? null,
-      permite_cruces: c.permite_cruces != null ? Boolean(c.permite_cruces) : null,
-      cruce_mismo_ejemplar: c.cruce_mismo_ejemplar != null ? Boolean(c.cruce_mismo_ejemplar) : null,
-      cruce_diferente_ejemplar: c.cruce_diferente_ejemplar != null ? Boolean(c.cruce_diferente_ejemplar) : null,
-      grupos: c.grupo_id ? [String(c.grupo_id)] : [],
-    }));
-    const clientesGrupo = activo
-      ? clientes.filter((c) => c.grupo_id != null && String(c.grupo_id) === String(activo))
+    const clientes = (cli ?? []).map((c) => {
+      const cIdStr = String(c.id);
+      const setG = new Set<string>();
+      if (c.grupo_id != null && String(c.grupo_id).trim() !== "") {
+        setG.add(String(c.grupo_id).trim());
+      }
+      const extras = gruposAdicionalesPorCliente.get(cIdStr);
+      if (extras) {
+        for (const g of extras) setG.add(g);
+      }
+      const grupoEfectivoCli =
+        activoRaw && uuidsObjetivo[0] && extras?.has(uuidsObjetivo[0])
+          ? uuidsObjetivo[0]
+          : (c.grupo_id ?? null);
+      return {
+        id: cIdStr,
+        nombre: String(c.seudonimo || c.nombre || ""),
+        nombre_real: String(c.nombre ?? ""),
+        seudonimo: c.seudonimo ? String(c.seudonimo) : null,
+        saldo_actual: c.saldo_actual != null ? Number(c.saldo_actual) : null,
+        aval: c.aval != null ? Number(c.aval) : null,
+        libre: Boolean(c.libre),
+        modo_juego: c.modo_juego ? String(c.modo_juego) : null,
+        grupo_id: grupoEfectivoCli,
+        permite_cruces: c.permite_cruces != null ? Boolean(c.permite_cruces) : null,
+        cruce_mismo_ejemplar: c.cruce_mismo_ejemplar != null ? Boolean(c.cruce_mismo_ejemplar) : null,
+        cruce_diferente_ejemplar: c.cruce_diferente_ejemplar != null ? Boolean(c.cruce_diferente_ejemplar) : null,
+        grupos: [...setG],
+      };
+    });
+    const clientesGrupo = activoRaw
+      ? clientes.filter((c) => {
+          const gId = c.grupo_id != null ? String(c.grupo_id).trim() : "";
+          if (gId && (idsObjetivo.has(gId) || idsObjetivo.has(gId.toUpperCase()))) return true;
+          return c.grupos.some((g) => idsObjetivo.has(String(g)) || idsObjetivo.has(String(g).toUpperCase()));
+        })
       : clientes;
+    const grupoSync = uuidsObjetivo[0] || activoRaw;
     cacheClientes = await sincronizarSaldosRealesClientes(
       clientesGrupo.map((c) => ({
         ...c,
@@ -325,9 +436,9 @@ export async function listarClientesVenta(force = false): Promise<ClienteVenta[]
         telefono: (c as { telefono?: string | null }).telefono ?? null,
         codigo_pais: (c as { codigo_pais?: string | null }).codigo_pais ?? null,
       })),
-      activo
+      grupoSync
     );
-    cacheClientesGrupo = activo;
+    cacheClientesGrupo = activoRaw;
     cacheClientesTs = Date.now();
     return cacheClientes;
   } catch {
@@ -338,7 +449,7 @@ export async function listarClientesVenta(force = false): Promise<ClienteVenta[]
 
 /** Jugadores de un grupo (misma regla que poblarJugadoresDelGrupo del legacy). */
 export async function jugadoresDeGrupo(grupoId: string | number): Promise<ClienteVenta[]> {
-  const clientes = await listarClientesVenta();
+  const clientes = await listarClientesVenta(false, grupoId);
   return filtrarClientesPorGrupo(clientes, grupoId);
 }
 
@@ -369,11 +480,25 @@ export function clientePerteneceAGrupo(
     }
   }
 
-  const cGrupoId = c.grupo_id != null ? String(c.grupo_id).trim().toUpperCase() : null;
-  if (!cGrupoId || cGrupoId === "NULL" || cGrupoId === "UNDEFINED") return false;
+  const candidatos = new Set<string>();
+  if (c.grupo_id != null) {
+    const gPrincipal = String(c.grupo_id).trim().toUpperCase();
+    if (gPrincipal && gPrincipal !== "NULL" && gPrincipal !== "UNDEFINED") {
+      candidatos.add(gPrincipal);
+    }
+  }
+  if (Array.isArray(c.grupos)) {
+    for (const gItem of c.grupos) {
+      const gStr = String(gItem ?? "").trim().toUpperCase();
+      if (gStr && gStr !== "NULL" && gStr !== "UNDEFINED") {
+        candidatos.add(gStr);
+      }
+    }
+  }
+  if (candidatos.size === 0) return false;
 
-  if (cGrupoId === matchId) return true;
-  if (matchNombre && cGrupoId === matchNombre) return true;
+  if (candidatos.has(matchId) || candidatos.has(gidStr)) return true;
+  if (matchNombre && candidatos.has(matchNombre)) return true;
   return false;
 }
 
@@ -406,10 +531,20 @@ export function clientesPertenecenAlMismoGrupo(
   if (c1.grupo_id != null && String(c1.grupo_id).trim() !== "") {
     g1Ids.add(String(c1.grupo_id).trim().toUpperCase());
   }
+  if (Array.isArray(c1.grupos)) {
+    for (const g of c1.grupos) {
+      if (g != null && String(g).trim() !== "") g1Ids.add(String(g).trim().toUpperCase());
+    }
+  }
 
   const g2Ids = new Set<string>();
   if (c2.grupo_id != null && String(c2.grupo_id).trim() !== "") {
     g2Ids.add(String(c2.grupo_id).trim().toUpperCase());
+  }
+  if (Array.isArray(c2.grupos)) {
+    for (const g of c2.grupos) {
+      if (g != null && String(g).trim() !== "") g2Ids.add(String(g).trim().toUpperCase());
+    }
   }
 
   if (gruposVenta && gruposVenta.length > 0) {
@@ -509,6 +644,7 @@ export type GrupoRow = {
   cuenta_bancaria?: string | null;
   es_principal?: boolean | null;
   activo?: boolean | null;
+  estatus?: string | null;
   /**
    * VISIBILIDAD COMPARTIDA del grupo PRINCIPAL (PROMPT #5):
    *   · `visibilidad_global_principal` → Toggle 1: TODOS los grupos ven las
@@ -611,7 +747,7 @@ export async function listarGruposAdmin(force = false): Promise<GrupoRow[]> {
   ultimoErrorGrupos = null;
   const eliminadosLocal = leerGruposEliminadosLocal();
   const enriquecidos = grupos
-    .filter((g) => !eliminadosLocal.has(String(g.id)) && g.activo !== false && !(g as any).eliminado_en)
+    .filter((g) => !eliminadosLocal.has(String(g.id)) && !(g as any).eliminado_en)
     .map((g) => aplicarOverridesCicloGrupo(g));
   cacheGruposAdmin = enriquecidos;
   return enriquecidos;
@@ -927,12 +1063,42 @@ export async function registrarAuditoria(
 /** Activa/desactiva un grupo (la tarjeta se oculta en opciones de venta). */
 export async function toggleGrupoActivo(id: string | number, activo: boolean): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
+  const estatusStr = activo ? "Activo" : "Inactivo";
   try {
-    const { error } = await supabase.from("grupos_venta").update({ activo }).eq("id", id);
-    if (error) {
+    // 1. Actualizar public.grupos_venta (activo y estatus si existe)
+    let errVenta: unknown = null;
+    try {
+      const resVenta = await supabase
+        .from("grupos_venta")
+        .update({ activo, estatus: estatusStr })
+        .eq("id", id);
+      if (resVenta.error) {
+        // Fallback si la columna estatus no existe en grupos_venta
+        const resSoloActivo = await supabase
+          .from("grupos_venta")
+          .update({ activo })
+          .eq("id", id);
+        if (resSoloActivo.error) errVenta = resSoloActivo.error;
+      }
+    } catch (e) {
+      errVenta = e;
+    }
+
+    if (errVenta) {
       const rpc = await supabase.rpc("club_toggle_grupo", { p_id: id, p_activo: activo });
       if (rpc.error) return { ok: false, error: rpc.error.message };
     }
+
+    // 2. Sincronizar en public.grupos si la tabla existe
+    try {
+      await supabase
+        .from("grupos")
+        .update({ estatus: estatusStr })
+        .eq("id", id);
+    } catch {
+      /* tabla o permisos opcionales; no bloquea si no existe */
+    }
+
     invalidarCacheGrupos();
     return { ok: true };
   } catch (e) {

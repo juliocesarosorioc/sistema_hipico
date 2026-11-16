@@ -84,17 +84,46 @@ BEGIN
          OR (r.cseu IS NOT NULL AND UPPER(TRIM(d.cliente_nombre)) = UPPER(TRIM(r.cseu)));
     END IF;
 
-    -- 2. Cálculo carrera a carrera con Cruces y Devolución sobre Monto Decidido
-    WITH jugadas_carrera AS (
+    -- 2. Cálculo carrera a carrera con Cruces estrictamente en Bolsa A (Tercios/Puestos)
+    -- y Bolsa B (Marcas, Tablas Fijas, Remates, Pollas, Dupletas) liquidada por separado sin cruce
+    WITH jugadas_clasificadas AS (
+      SELECT
+        t.*,
+        (
+          UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) LIKE 'MARCA%'
+          OR UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) LIKE 'TABLA%'
+          OR UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) LIKE 'TF%'
+          OR UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) LIKE 'REMATE%'
+          OR UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) LIKE 'POLLA%'
+          OR UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) LIKE 'DUPLETA%'
+          OR UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) LIKE 'WPS%'
+          OR UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) LIKE 'WIN%'
+          OR UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) LIKE 'PLACE%'
+          OR UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) LIKE 'SHOW%'
+          OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) IN ('MARCAS', 'TF', 'REMATE', 'POLLAS', 'POLLA', 'DUPLETA', 'TABLAS_FIJAS')
+          OR UPPER(TRIM(COALESCE(t.nota_auditoria->>'origen', ''))) IN ('MARCAS', 'TABLAS_FIJAS', 'TF', 'REMATE', 'POLLA', 'POLLAS', 'DUPLETA')
+        ) AS es_bolsa_b
+      FROM public.tickets_apuestas t
+      WHERE COALESCE(t.anulada, FALSE) = FALSE
+        AND UPPER(TRIM(COALESCE(t.estado, ''))) IN ('GANADOR', 'GANO', 'PERDEDOR', 'PERDIO', 'SOLUCIONADO')
+        AND (
+          t.cliente_juega_id::TEXT = r.cid::TEXT 
+          OR UPPER(TRIM(COALESCE(t.cliente_juega_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+          OR t.cliente_consigue_id::TEXT = r.cid::TEXT
+          OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+          OR UPPER(TRIM(COALESCE(t.banquero_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+        )
+    ),
+    jugadas_carrera AS (
       SELECT
         COALESCE(t.fecha_carrera, t.fecha_registro::DATE, NOW()::DATE) AS fecha,
         UPPER(TRIM(t.hipodromo)) AS hipodromo,
         t.carrera,
-        -- Ganado bruto desde perspectiva del cliente (premio menos lo apostado)
+        -- ACUMULADOR 1 (BOLSA A - Tercios/Puestos): único elegible para cruce
         SUM(
           CASE
-            -- Cliente juega y gana
-            WHEN (
+            WHEN NOT t.es_bolsa_b
+                 AND (
                   t.cliente_juega_id::TEXT = r.cid::TEXT 
                   OR UPPER(TRIM(COALESCE(t.cliente_juega_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
                  )
@@ -109,8 +138,8 @@ BEGIN
                   GREATEST(0.00, t.premio_pagar - t.monto_jugado + t.comision_pagada)
                 ELSE COALESCE(t.monto_jugado, 0.00)
               END
-            -- Cliente da (consigue) y el apostador pierde -> cliente gana el monto apostado
-            WHEN (
+            WHEN NOT t.es_bolsa_b
+                 AND (
                   t.cliente_consigue_id::TEXT = r.cid::TEXT 
                   OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
                   OR UPPER(TRIM(COALESCE(t.banquero_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
@@ -124,11 +153,10 @@ BEGIN
             ELSE 0.00
           END
         ) AS ganado_bruto,
-        -- Perdido bruto desde perspectiva del cliente
         SUM(
           CASE
-            -- Cliente juega y pierde
-            WHEN (
+            WHEN NOT t.es_bolsa_b
+                 AND (
                   t.cliente_juega_id::TEXT = r.cid::TEXT 
                   OR UPPER(TRIM(COALESCE(t.cliente_juega_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
                  )
@@ -138,8 +166,8 @@ BEGIN
                   (t.monto_jugado - t.premio_pagar)
                 ELSE COALESCE(t.monto_decidido, t.monto_jugado, 0.00)
               END
-            -- Cliente da (consigue) y el apostador gana -> cliente pierde la ganancia otorgada
-            WHEN (
+            WHEN NOT t.es_bolsa_b
+                 AND (
                   t.cliente_consigue_id::TEXT = r.cid::TEXT 
                   OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
                   OR UPPER(TRIM(COALESCE(t.banquero_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
@@ -158,46 +186,88 @@ BEGIN
             ELSE 0.00
           END
         ) AS perdido_bruto,
-        -- Indicador de si contiene jugadas de puestos para derecho a devolución/incentivo
-        BOOL_OR(
-          UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) NOT LIKE 'TABLA%'
-          AND UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) NOT LIKE 'TF%'
-          AND UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) NOT LIKE 'MARCA%'
-          AND UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) NOT LIKE 'DUPLETA%'
-          AND UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) NOT LIKE 'POLLA%'
-          AND UPPER(TRIM(COALESCE(t.nombre_jugada, ''))) NOT LIKE 'REMATE%'
-        ) AS es_puesto
-      FROM public.tickets_apuestas t
-      WHERE COALESCE(t.anulada, FALSE) = FALSE
-        AND UPPER(TRIM(COALESCE(t.estado, ''))) IN ('GANADOR', 'GANO', 'PERDEDOR', 'PERDIO', 'SOLUCIONADO')
-        AND (
-          t.cliente_juega_id::TEXT = r.cid::TEXT 
-          OR UPPER(TRIM(COALESCE(t.cliente_juega_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
-          OR t.cliente_consigue_id::TEXT = r.cid::TEXT
-          OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
-          OR UPPER(TRIM(COALESCE(t.banquero_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
-        )
+        -- ACUMULADOR 2 (BOLSA B - Marcas, Tablas Fijas, Remates, Pollas, Dupletas): sin cruce
+        SUM(
+          CASE
+            WHEN t.es_bolsa_b
+                 AND (
+                  t.cliente_juega_id::TEXT = r.cid::TEXT 
+                  OR UPPER(TRIM(COALESCE(t.cliente_juega_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                 ) THEN
+              CASE
+                WHEN UPPER(TRIM(COALESCE(t.estado, ''))) IN ('GANADOR', 'GANO', 'SOLUCIONADO') THEN
+                  CASE
+                    WHEN COALESCE(t.premio_pagar, 0.00) > COALESCE(t.monto_jugado, 0.00) THEN
+                      (t.premio_pagar - t.monto_jugado)
+                    WHEN COALESCE(t.monto_decidido, 0.00) > COALESCE(t.monto_jugado, 0.00) THEN
+                      ROUND((t.monto_decidido - t.monto_jugado) * (1.0 - r.com_pct / 100.0), 2)
+                    WHEN COALESCE(t.monto_decidido, 0.00) > 0 THEN
+                      ROUND(t.monto_decidido * (1.0 - r.com_pct / 100.0), 2)
+                    ELSE ROUND(COALESCE(t.monto_jugado, 0.00) * (1.0 - r.com_pct / 100.0), 2)
+                  END
+                WHEN UPPER(TRIM(COALESCE(t.estado, ''))) IN ('PERDEDOR', 'PERDIO') THEN
+                  -1.0 * CASE 
+                    WHEN COALESCE(t.premio_pagar, 0.00) > 0 AND COALESCE(t.premio_pagar, 0.00) < COALESCE(t.monto_jugado, 0.00) THEN
+                      (t.monto_jugado - t.premio_pagar)
+                    ELSE COALESCE(t.monto_decidido, t.monto_jugado, 0.00)
+                  END
+                ELSE 0.00
+              END
+            WHEN t.es_bolsa_b
+                 AND (
+                  t.cliente_consigue_id::TEXT = r.cid::TEXT 
+                  OR UPPER(TRIM(COALESCE(t.cliente_consigue_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                  OR UPPER(TRIM(COALESCE(t.banquero_nombre, ''))) IN (UPPER(TRIM(r.cnom)), UPPER(TRIM(COALESCE(r.cseu, ''))))
+                 ) THEN
+              CASE
+                WHEN UPPER(TRIM(COALESCE(t.estado, ''))) IN ('PERDEDOR', 'PERDIO') THEN
+                  CASE 
+                    WHEN COALESCE(t.premio_pagar, 0.00) > 0 AND COALESCE(t.premio_pagar, 0.00) < COALESCE(t.monto_jugado, 0.00) THEN
+                      (t.monto_jugado - t.premio_pagar)
+                    ELSE COALESCE(t.monto_decidido, t.monto_jugado, 0.00)
+                  END
+                WHEN UPPER(TRIM(COALESCE(t.estado, ''))) IN ('GANADOR', 'GANO', 'SOLUCIONADO') THEN
+                  -1.0 * CASE
+                    WHEN COALESCE(t.premio_pagar, 0.00) > COALESCE(t.monto_jugado, 0.00) THEN
+                      (t.premio_pagar - t.monto_jugado) + COALESCE(t.comision_pagada, 0.00)
+                    WHEN COALESCE(t.monto_decidido, 0.00) > COALESCE(t.monto_jugado, 0.00) THEN
+                      (t.monto_decidido - t.monto_jugado)
+                    WHEN COALESCE(t.monto_decidido, 0.00) > 0 THEN t.monto_decidido
+                    ELSE COALESCE(t.monto_jugado, 0.00)
+                  END
+                ELSE 0.00
+              END
+            ELSE 0.00
+          END
+        ) AS neto_bolsa_b,
+        -- Indicador de si contiene jugadas de puestos (Bolsa A) para derecho a devolución/incentivo
+        BOOL_OR(NOT t.es_bolsa_b) AS es_puesto
+      FROM jugadas_clasificadas t
       GROUP BY 1, 2, 3
     ),
     carrera_liquidada AS (
       SELECT
         ganado_bruto,
         perdido_bruto,
+        neto_bolsa_b,
         (ganado_bruto - perdido_bruto) AS dif_bruta,
         ABS(ganado_bruto - perdido_bruto) AS monto_decidido,
-        -- Comisión de la casa: SOLO se cobra si la diferencia neta de la carrera es positiva
+        -- Comisión de la casa: SOLO sobre cruce positivo de Bolsa A (Tercios/Puestos)
         CASE 
           WHEN (ganado_bruto - perdido_bruto) > 0 THEN 
             ROUND((ganado_bruto - perdido_bruto) * (r.com_pct / 100.0), 2)
           ELSE 0.00 
         END AS comision_casa,
-        -- Resultado neto de jugadas de la carrera
-        CASE 
-          WHEN (ganado_bruto - perdido_bruto) > 0 THEN 
-            (ganado_bruto - perdido_bruto) - ROUND((ganado_bruto - perdido_bruto) * (r.com_pct / 100.0), 2)
-          ELSE (ganado_bruto - perdido_bruto)
-        END AS neto_carrera,
-        -- Devolución oficial: en base al monto decidido SIN comisión (gane o pierda)
+        -- Resultado neto de jugadas de la carrera = Neto Bolsa A (cruzada) + Neto Bolsa B (independiente)
+        (
+          CASE 
+            WHEN (ganado_bruto - perdido_bruto) > 0 THEN 
+              (ganado_bruto - perdido_bruto) - ROUND((ganado_bruto - perdido_bruto) * (r.com_pct / 100.0), 2)
+            ELSE (ganado_bruto - perdido_bruto)
+          END
+          + neto_bolsa_b
+        ) AS neto_carrera,
+        -- Devolución oficial: en base al monto decidido de Bolsa A (Puestos) SIN comisión (gane o pierda)
         CASE 
           WHEN es_puesto AND r.dev_pct > 0 THEN
             ROUND(ABS(ganado_bruto - perdido_bruto) * (r.dev_pct / 100.0), 2)

@@ -180,6 +180,51 @@ function de<T>(data: Record<string, unknown> | undefined, clave: string): T | un
  */
 type Cache = { cliente: ClienteRow; token: string; id: string | number; ip?: string };
 
+let cacheMemoria: Cache | null = null;
+
+const CLAVES_PERSISTENTES_PROHIBIDAS = [
+  CACHE_KEY,
+  "portal_token",
+  "portal_clave",
+  "pin_acceso",
+  "cliente_id",
+  "portal_cliente_id",
+  "sala_portal_token",
+  "sala_cliente_id",
+];
+
+export function limpiarAlmacenamientoPortal(): void {
+  if (typeof window === "undefined") return;
+  try {
+    for (const k of CLAVES_PERSISTENTES_PROHIBIDAS) {
+      window.localStorage.removeItem(k);
+      window.sessionStorage.removeItem(k);
+    }
+    for (let i = window.localStorage.length - 1; i >= 0; i--) {
+      const key = window.localStorage.key(i);
+      if (key && (key.startsWith("portal.") || key.startsWith("portal_") || key === "pin_acceso" || key === "cliente_id")) {
+        window.localStorage.removeItem(key);
+      }
+    }
+    for (let i = window.sessionStorage.length - 1; i >= 0; i--) {
+      const key = window.sessionStorage.key(i);
+      if (key && (key.startsWith("portal.") || key.startsWith("portal_") || key === "pin_acceso" || key === "cliente_id")) {
+        window.sessionStorage.removeItem(key);
+      }
+    }
+    if (typeof document !== "undefined" && document.cookie) {
+      for (const par of document.cookie.split(";")) {
+        const nombre = par.split("=")[0]?.trim();
+        if (nombre && /^(portal|pin_acceso|cliente_id)/i.test(nombre)) {
+          document.cookie = `${nombre}=; Max-Age=0; path=/`;
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export function tokenSesionGuardada(): string {
   return cacheGuardada()?.token ?? "";
 }
@@ -189,41 +234,27 @@ export function ipSesionGuardada(): string {
 }
 
 export function sesionGuardada(): ClienteRow | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const c = JSON.parse(raw) as Cache;
-    return c?.cliente ?? null;
-  } catch {
-    return null;
-  }
+  return cacheMemoria?.cliente ?? null;
 }
 
 function cacheGuardada(): Cache | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const c = JSON.parse(raw) as Cache;
-    return c?.token ? c : null;
-  } catch {
-    return null;
-  }
+  return cacheMemoria?.token ? cacheMemoria : null;
 }
 
 function actualizarIpCache(ip: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    const c = cacheGuardada();
-    if (c) window.localStorage.setItem(CACHE_KEY, JSON.stringify({ ...c, ip }));
-  } catch {
-    /* ignore */
+  if (cacheMemoria) {
+    cacheMemoria = { ...cacheMemoria, ip };
   }
 }
 
 export function cerrarSesion(): void {
-  if (typeof window !== "undefined") window.localStorage.removeItem(CACHE_KEY);
+  cacheMemoria = null;
+  limpiarAlmacenamientoPortal();
+  try {
+    void supabase?.removeAllChannels();
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
@@ -482,18 +513,10 @@ export async function entrarPortal(opts: {
     }
   }
 
-  // La caché se escribe ANTES de `construirSesion`, porque esa función pide los
-  // tickets con `accionPortal("datos")`, y `accionPortal` lee el token de la
-  // caché. Si se guardara después, la primera carga pediría datos sin token,
-  // saldría con cero tickets, y el resumen aparecería en 0 hasta el refresh.
-  if (typeof window !== "undefined") {
-    // Se guarda el cliente que devolvió la función, que ya vino sin
-    // `portal_clave` ni `portal_token`. Junto va el token que la función
-    // necesita para resolver la sesión en los llamados siguientes.
-    const creds = credencialesPortalPorDefecto(cliente);
-    const token = opts.linkToken ?? opts.token ?? creds.portal_token;
-    window.localStorage.setItem(CACHE_KEY, JSON.stringify({ cliente, token, id: cliente.id, ip: ipActual }));
-  }
+  limpiarAlmacenamientoPortal();
+  const creds = credencialesPortalPorDefecto(cliente);
+  const token = opts.linkToken ?? opts.token ?? creds.portal_token;
+  cacheMemoria = { cliente, token, id: cliente.id, ip: ipActual };
 
   const sesion = await construirSesion(cliente);
   if (!sesion) {
@@ -555,26 +578,35 @@ async function construirSesion(clienteParam: ClienteRow): Promise<SesionPortal |
     devolucionPct: pct,
     devolucionIncentivo: arbolTickets.dec,
     libre: false,
-    movimientos: tickets.map((t) => ({
-      id: t.id,
-      cliente_juega_id: t.cliente_juega_id ?? null,
-      cliente_juega_nombre: t.cliente_juega_nombre ?? "",
-      cliente_consigue_id: t.cliente_consigue_id ?? t.banquero_cliente_id ?? null,
-      cliente_consigue_nombre: t.banquero_nombre ?? t.cliente_consigue_nombre ?? "",
-      hipodromo: t.hipodromo,
-      carrera: t.carrera,
-      fecha_carrera: t.fecha_carrera,
-      fecha_registro: t.fecha_registro,
-      nombre_jugada: t.nombre_jugada,
-      caballo: t.caballo,
-      monto_jugado: t.monto_jugado,
-      monto_decidido: t.monto_decidido,
-      premio_pagar: t.premio_pagar,
-      comision_porcentaje: t.comision_porcentaje,
-      comision_pagada: t.comision_pagada,
-      estado: t.estado,
-      anulada: t.anulada,
-    })),
+    movimientos: tickets.map((t) => {
+      const tRec = t as unknown as Record<string, unknown>;
+      return {
+        id: t.id,
+        cliente_juega_id: t.cliente_juega_id ?? null,
+        cliente_juega_nombre: t.cliente_juega_nombre ?? "",
+        cliente_consigue_id: t.cliente_consigue_id ?? t.banquero_cliente_id ?? null,
+        cliente_consigue_nombre: t.banquero_nombre ?? t.cliente_consigue_nombre ?? "",
+        banquero_nombre: t.banquero_nombre ?? null,
+        hipodromo: t.hipodromo,
+        carrera: t.carrera,
+        fecha_carrera: t.fecha_carrera,
+        fecha_registro: t.fecha_registro,
+        nombre_jugada: t.nombre_jugada,
+        tipo_jugada: (tRec.tipo_jugada as string | null | undefined) ?? null,
+        modalidad: (tRec.modalidad as string | null | undefined) ?? null,
+        origen: (tRec.origen as string | null | undefined) ?? null,
+        nota_auditoria: tRec.nota_auditoria ?? null,
+        es_cruzable: (tRec.es_cruzable as boolean | null | undefined) ?? null,
+        caballo: t.caballo,
+        monto_jugado: t.monto_jugado,
+        monto_decidido: t.monto_decidido,
+        premio_pagar: t.premio_pagar,
+        comision_porcentaje: t.comision_porcentaje,
+        comision_pagada: t.comision_pagada,
+        estado: t.estado,
+        anulada: t.anulada,
+      };
+    }),
   };
   const estadoCentral = calcularEstadoCuentaCliente(paramsContables);
   const fichaUnificada = construirFichaEstadoCuentaUnificada(paramsContables);
@@ -588,19 +620,9 @@ async function construirSesion(clienteParam: ClienteRow): Promise<SesionPortal |
     saldo_actual: estadoCentral.fueSaneado ? estadoCentral.saldoContable : cliente.saldo_actual,
   };
 
-  // Refrescar caché local con los datos saneados
-  if (typeof window !== "undefined") {
-    try {
-      const cGuardada = cacheGuardada();
-      if (cGuardada) {
-        window.localStorage.setItem(
-          CACHE_KEY,
-          JSON.stringify({ ...cGuardada, cliente: clienteFinal })
-        );
-      }
-    } catch {
-      /* best-effort */
-    }
+  // Refrescar sesión en memoria con los datos saneados
+  if (cacheMemoria) {
+    cacheMemoria = { ...cacheMemoria, cliente: clienteFinal };
   }
 
   return {
@@ -1295,9 +1317,8 @@ export async function actualizarDatosCliente(
         .maybeSingle();
       if (!error) {
         const clienteNuevo = (actualizado as ClienteRow | null) ?? { ...cliente, ...patch };
-        const c = cacheGuardada();
-        if (c && typeof window !== "undefined") {
-          window.localStorage.setItem(CACHE_KEY, JSON.stringify({ ...c, cliente: clienteNuevo }));
+        if (cacheMemoria) {
+          cacheMemoria = { ...cacheMemoria, cliente: clienteNuevo };
         }
         await supabase
           .from("notificaciones")

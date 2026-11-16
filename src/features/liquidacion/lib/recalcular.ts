@@ -31,7 +31,7 @@ import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { filtroDiaJornada } from "@/features/liquidacion/lib/fecha";
 import { CAMPOS_POSICION, dividendosDePizarra } from "@/features/liquidacion/lib/posiciones";
 import { aplicarLiquidacionSaldos, creditoDeTicket, decidirTickets } from "@/features/liquidacion/lib/saldos";
-import { esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
+import { esJugadaDePuestos, esTicketBolsaBNoCruzable } from "@/features/betting/lib/bettingEngine";
 import { liquidarJugadasDeCarrera, type ResumenJugadas } from "@/features/liquidacion/lib/pagarYCerrar";
 import { leerResultadoOficial } from "@/features/carreras/lib/carreras-dia";
 import { claveHipodromo } from "@/features/carreras/lib/claves";
@@ -353,6 +353,7 @@ export async function revertirLiquidacionCarrera(opts: {
         let perdidoBruto = 0;
         let ganadoBrutoSoloJuega = 0;
         let perdidoBrutoSoloJuega = 0;
+        let saldoBolsaB = 0;
         const tasa = Number(opts.tasaComision ?? 5);
 
         for (const d of decisiones) {
@@ -367,6 +368,38 @@ export async function revertirLiquidacionCarrera(opts: {
           const cNom = String(f.cliente_consigue_nombre ?? "").trim().toUpperCase();
           const esJuega = (cliIdStr && jId === cliIdStr) || (cliNom && jNom === cliNom) || (cliSeu && jNom === cliSeu);
           const esConsigue = (cliIdStr && cId === cliIdStr) || (cliNom && cNom === cliNom) || (cliSeu && cNom === cliSeu);
+
+          if (esTicketBolsaBNoCruzable(f)) {
+            const pctRawB = f.comision_porcentaje != null && String(f.comision_porcentaje).trim() !== ""
+              ? Number(f.comision_porcentaje)
+              : tasa;
+            const tasaTicketB = Number.isFinite(pctRawB) && pctRawB >= 0 ? pctRawB : tasa;
+            if (esJuega) {
+              if (r.ok) {
+                saldoBolsaB = sumarDinero(saldoBolsaB, Math.max(0, restarDinero(r.totalClienteNeto, m)));
+              } else {
+                const empateTotal = m > 0 && Math.abs(r.totalClienteNeto - m) < 0.01;
+                if (!empateTotal) {
+                  const p = r.totalClienteNeto > 0 ? restarDinero(m, r.totalClienteNeto) : m;
+                  saldoBolsaB = restarDinero(saldoBolsaB, p);
+                }
+              }
+            }
+            if (esConsigue) {
+              if (r.ok) {
+                saldoBolsaB = restarDinero(saldoBolsaB, Math.max(0, restarDinero(r.totalClienteNeto + r.gananciaCasa, m)));
+              } else {
+                const empateTotal = m > 0 && Math.abs(r.totalClienteNeto - m) < 0.01;
+                if (!empateTotal) {
+                  const gananciaBrutaConsB = Math.max(0, restarDinero(m, r.totalClienteNeto));
+                  const comConsB = calcularComisionExacta(gananciaBrutaConsB, tasaTicketB);
+                  saldoBolsaB = sumarDinero(saldoBolsaB, restarDinero(gananciaBrutaConsB, comConsB));
+                }
+              }
+            }
+            continue;
+          }
+
           const elegibleIncentivo = esJugadaPuestosParaIncentivo(
             String(f.nombre_jugada ?? f.tipo_jugada ?? ""),
             f.modalidad as string | null | undefined,
@@ -404,7 +437,7 @@ export async function revertirLiquidacionCarrera(opts: {
           }
         }
 
-        if (ganadoBruto === 0 && perdidoBruto === 0) continue;
+        if (ganadoBruto === 0 && perdidoBruto === 0 && saldoBolsaB === 0) continue;
         const dif = restarDinero(ganadoBruto, perdidoBruto);
         const hayCruce = ganadoBruto > 0 && perdidoBruto > 0;
         const baseDecididaIncentivo = hayCruce
@@ -414,7 +447,7 @@ export async function revertirLiquidacionCarrera(opts: {
         const saldoNetoJugadas = restarDinero(dif, comision);
         const incPct = Math.max(0, Number(cli.incentivo_pct ?? cli.devolucion) || 0);
         const montoIncentivo = incPct > 0 && baseDecididaIncentivo > 0 ? calcularComisionExacta(baseDecididaIncentivo, incPct) : 0;
-        const impactoTotalSaldo = sumarDinero(saldoNetoJugadas, montoIncentivo);
+        const impactoTotalSaldo = sumarDinero(sumarDinero(saldoNetoJugadas, saldoBolsaB), montoIncentivo);
 
         if (impactoTotalSaldo !== 0) {
           const { data: cActual } = await sdb.from("clientes").select("saldo_actual").eq("id", cli.id as never).maybeSingle();

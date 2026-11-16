@@ -126,19 +126,39 @@ const MAX_MESSAGES_PER_WINDOW = 5;
 
 function normalizarParadaPremio(raw) {
   if (typeof raw !== "string" || !raw) return "";
-  return raw.replace(
-    /(?:^|(?<=[\s,(\[]))(?:10)?[aª@\/](\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/gi,
-    "10/$1"
-  );
+  return raw
+    .replace(
+      /(?:^|(?<=[\s,(\[]))(?:10)?[aª@\/](\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/gi,
+      "10/$1"
+    )
+    .replace(
+      /(?:^|(?<=[\s,(\[]))10-(\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/gi,
+      "10/$1"
+    );
+}
+
+function normalizarTelefonoCompleto(codigoPais, telefono) {
+  const cp = String(codigoPais || "").replace(/\D/g, "");
+  const tel = String(telefono || "").replace(/\D/g, "").replace(/^0+/, "");
+  if (!tel) return cp;
+  if (!cp) return tel;
+  if (tel.startsWith(cp)) return tel;
+  return `${cp}${tel}`;
 }
 
 const sanitizarTexto = (str) => {
   if (typeof str !== "string") return "";
   const conPremio = normalizarParadaPremio(str);
   return conPremio
-    .replace(/[^\w\s.,!¡?¿$*+=\-()\[\]/@ªáéíóúÁÉÍÓÚñÑ]/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/[^\w\s.,!¡?¿$*+=\-()\[\]/@ªáéíóúÁÉÍÓÚñÑ]/gi, "")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter(Boolean)
+    .join("\n");
 };
 
 async function verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado) {
@@ -364,11 +384,23 @@ function aJidPrivado(telefonoOjid) {
   return digitos ? `${digitos}@s.whatsapp.net` : "";
 }
 
-async function buscarClienteEnGrupo(grupoId, pJid, pAlt, telR) {
+async function buscarClienteEnGrupo(grupoId, pJid, pAlt, telR, pushName = "") {
   if (!supabase || !grupoId) return null;
-  const cacheKey = `${grupoId}:${pJid || pAlt || telR}`;
+  const pushNameNorm = String(pushName || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+  const pushNameValido =
+    pushNameNorm &&
+    !["USUARIO", "JUGADOR", "OPERADOR", "OPERADOR (TELEFONO)", "ADMIN"].includes(pushNameNorm)
+      ? pushNameNorm
+      : "";
+  const cacheKey = `${grupoId}:${pJid || pAlt || telR || pushNameValido}`;
   const cached = clientesCacheMap.get(cacheKey);
   if (cached && Date.now() < cached.exp) return cached.cliente;
+
+  const CAMPOS_CLIENTE =
+    "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, codigo_pais, telefono, telefono_normalizado";
 
   const condicionesOr = [];
   if (pJid) condicionesOr.push(`whatsapp_jid.eq.${pJid}`);
@@ -378,9 +410,7 @@ async function buscarClienteEnGrupo(grupoId, pJid, pAlt, telR) {
   if (condicionesOr.length > 0) {
     const { data: clExacto } = await supabase
       .from("clientes")
-      .select(
-        "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
-      )
+      .select(CAMPOS_CLIENTE)
       .eq("grupo_id", grupoId)
       .or(condicionesOr.join(","))
       .order("saldo_actual", { ascending: false })
@@ -394,12 +424,31 @@ async function buscarClienteEnGrupo(grupoId, pJid, pAlt, telR) {
   }
 
   if (telR && telR.length >= 7) {
+    const sufijo9 = telR.slice(-9);
+    const { data: candidatosTel } = await supabase
+      .from("clientes")
+      .select(CAMPOS_CLIENTE)
+      .eq("grupo_id", grupoId);
+
+    if (Array.isArray(candidatosTel) && candidatosTel.length > 0) {
+      const clCompuesto = candidatosTel.find((c) => {
+        const comp = normalizarTelefonoCompleto(c.codigo_pais, c.telefono);
+        const norm = normalizarTelefono(c.telefono_normalizado || c.telefono);
+        return (
+          (comp && (comp === telR || (sufijo9.length >= 9 && comp.endsWith(sufijo9)))) ||
+          (norm && (norm === telR || (sufijo9.length >= 9 && norm.endsWith(sufijo9))))
+        );
+      });
+      if (clCompuesto) {
+        clientesCacheMap.set(cacheKey, { cliente: clCompuesto, exp: Date.now() + 120000 });
+        return clCompuesto;
+      }
+    }
+
     const sufijo8 = telR.slice(-8);
     const { data: clParcial } = await supabase
       .from("clientes")
-      .select(
-        "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
-      )
+      .select(CAMPOS_CLIENTE)
       .eq("grupo_id", grupoId)
       .ilike("telefono", `%${sufijo8}%`)
       .order("saldo_actual", { ascending: false })
@@ -410,6 +459,103 @@ async function buscarClienteEnGrupo(grupoId, pJid, pAlt, telR) {
       clientesCacheMap.set(cacheKey, { cliente: clParcial, exp: Date.now() + 120000 });
       return clParcial;
     }
+  }
+
+  // Búsqueda por UPPER(TRIM(nombre)) / UPPER(TRIM(seudonimo)) = UPPER(TRIM(pushName)) dentro de `grupoId`
+  if (pushNameValido) {
+    const { data: candidatosGrupo } = await supabase
+      .from("clientes")
+      .select(CAMPOS_CLIENTE)
+      .eq("grupo_id", grupoId);
+
+    if (Array.isArray(candidatosGrupo) && candidatosGrupo.length > 0) {
+      const clPorNombre = candidatosGrupo.find((c) => {
+        const nom = String(c.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
+        const seu = String(c.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
+        return nom === pushNameValido || (seu && seu === pushNameValido);
+      });
+      if (clPorNombre) {
+        clientesCacheMap.set(cacheKey, { cliente: clPorNombre, exp: Date.now() + 120000 });
+        return clPorNombre;
+      }
+    }
+  }
+
+  // Pista multi-grupo: si el jugador tiene otra fila en otro grupo con el mismo whatsapp_jid/teléfono,
+  // usar su teléfono/nombre/seudónimo para localizar su fila independiente en `grupoId`.
+  if (condicionesOr.length > 0) {
+    const { data: filasOtroGrupo } = await supabase
+      .from("clientes")
+      .select("nombre, seudonimo, telefono, telefono_normalizado")
+      .or(condicionesOr.join(","))
+      .limit(5);
+
+    if (Array.isArray(filasOtroGrupo) && filasOtroGrupo.length > 0) {
+      const { data: candidatosGrupo } = await supabase
+        .from("clientes")
+        .select(CAMPOS_CLIENTE)
+        .eq("grupo_id", grupoId);
+
+      if (Array.isArray(candidatosGrupo) && candidatosGrupo.length > 0) {
+        for (const pista of filasOtroGrupo) {
+          const telP = normalizarTelefono(pista.telefono_normalizado || pista.telefono);
+          const sufP = telP.length >= 7 ? telP.slice(-8) : "";
+          const nomP = String(pista.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
+          const seuP = String(pista.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
+
+          const encontrado = candidatosGrupo.find((c) => {
+            const telC = normalizarTelefono(c.telefono_normalizado || c.telefono);
+            if (telP && telC && (telC === telP || (sufP && telC.endsWith(sufP)))) return true;
+            const nomC = String(c.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
+            const seuC = String(c.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
+            if (nomP && (nomC === nomP || seuC === nomP)) return true;
+            if (seuP && (nomC === seuP || seuC === seuP)) return true;
+            return false;
+          });
+
+          if (encontrado) {
+            clientesCacheMap.set(cacheKey, { cliente: encontrado, exp: Date.now() + 120000 });
+            return encontrado;
+          }
+        }
+      }
+    }
+  }
+
+  // Fallback a `clientes_grupos` donde `grupo_id = grupoId`
+  try {
+    const { data: membresias } = await supabase
+      .from("clientes_grupos")
+      .select("cliente_id")
+      .eq("grupo_id", grupoId);
+
+    const idsMem = (membresias || []).map((m) => m?.cliente_id).filter(Boolean);
+    if (idsMem.length > 0) {
+      const { data: candidatosMem } = await supabase
+        .from("clientes")
+        .select(CAMPOS_CLIENTE)
+        .in("id", idsMem);
+
+      if (Array.isArray(candidatosMem) && candidatosMem.length > 0) {
+        const suf8 = telR && telR.length >= 7 ? telR.slice(-8) : "";
+        const matchMem = candidatosMem.find((c) => {
+          if (pJid && c.whatsapp_jid === pJid) return true;
+          if (pAlt && c.whatsapp_jid === pAlt) return true;
+          const telC = normalizarTelefono(c.telefono_normalizado || c.telefono);
+          if (telR && telC && (telC === telR || (suf8 && telC.endsWith(suf8)))) return true;
+          const nomC = String(c.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
+          const seuC = String(c.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
+          if (pushNameValido && (nomC === pushNameValido || seuC === pushNameValido)) return true;
+          return false;
+        });
+        if (matchMem) {
+          clientesCacheMap.set(cacheKey, { cliente: matchMem, exp: Date.now() + 120000 });
+          return matchMem;
+        }
+      }
+    }
+  } catch {
+    // clientes_grupos opcional
   }
 
   return null;
@@ -1181,12 +1327,18 @@ async function manejarMensajeEntrante(msg) {
     const clientesPorSalaId = new Map();
     for (const salaDest of salasDestino) {
       if (salaDest?.grupo_id) {
-        const cl = await buscarClienteEnGrupo(salaDest.grupo_id, participantJid, participantAlt, telReal);
+        const cl = await buscarClienteEnGrupo(
+          salaDest.grupo_id,
+          participantJid,
+          participantAlt,
+          telReal,
+          senderNombre
+        );
         if (cl) {
           clientesPorSalaId.set(salaDest.id, cl);
           if (participantJid && cl.whatsapp_jid !== participantJid) {
             try {
-              await supabase
+              let qUpd = supabase
                 .from("clientes")
                 .update({
                   whatsapp_jid: participantJid,
@@ -1195,9 +1347,13 @@ async function manejarMensajeEntrante(msg) {
                   updated_at: new Date().toISOString(),
                 })
                 .eq("id", cl.id);
+              if (cl.grupo_id) {
+                qUpd = qUpd.eq("grupo_id", cl.grupo_id);
+              }
+              await qUpd;
               cl.whatsapp_jid = participantJid;
               if (telReal) cl.telefono_normalizado = telReal;
-              console.log(`[Bot WhatsApp] 🔗 Auto-guardado whatsapp_jid (${participantJid}) en ficha de "${cl.nombre}" (${cl.id})`);
+              console.log(`[Bot WhatsApp] 🔗 Auto-guardado whatsapp_jid (${participantJid}) en ficha de "${cl.nombre}" (${cl.id}) en grupo ${salaDest.grupo_id}`);
             } catch (errVinculo) {
               console.warn("[Bot WhatsApp] Aviso al auto-guardar whatsapp_jid:", errVinculo?.message);
             }
@@ -1604,6 +1760,53 @@ const server = http.createServer(async (req, res) => {
 
       salasCacheMap.clear();
 
+      if (groupJid) {
+        // Regla 1 a 1: Un Grupo de WhatsApp = Una Sala
+        const { data: otraSala } = await supabase
+          .from("salas_juego")
+          .select("id, nombre_sala")
+          .eq("whatsapp_group_jid", groupJid)
+          .eq("activa", true)
+          .neq("id", salaId)
+          .limit(1)
+          .maybeSingle();
+
+        if (otraSala) {
+          return responderJson(res, 409, {
+            ok: false,
+            error: `Este grupo de WhatsApp ya está vinculado a otra sala (${otraSala.nombre_sala || otraSala.id}).`,
+          });
+        }
+
+        const { data: otroVinc } = await supabase
+          .from("salas_whatsapp_grupos")
+          .select("sala_id")
+          .eq("whatsapp_group_jid", groupJid)
+          .eq("activo", true)
+          .neq("sala_id", salaId)
+          .limit(1)
+          .maybeSingle();
+
+        if (otroVinc) {
+          return responderJson(res, 409, {
+            ok: false,
+            error: "Este grupo de WhatsApp ya está vinculado a otra sala activa (Regla 1 a 1).",
+          });
+        }
+
+        // Mantener 1 único grupo por sala
+        await supabase
+          .from("salas_whatsapp_grupos")
+          .delete()
+          .eq("sala_id", salaId)
+          .neq("whatsapp_group_jid", groupJid);
+      } else {
+        await supabase
+          .from("salas_whatsapp_grupos")
+          .delete()
+          .eq("sala_id", salaId);
+      }
+
       const updates = {
         whatsapp_group_jid: groupJid || null,
         whatsapp_group_nombre: groupNombre || null,
@@ -1883,6 +2086,46 @@ const server = http.createServer(async (req, res) => {
           if (salaRow?.grupo_id) grupoIdFinal = salaRow.grupo_id;
         }
 
+        // Regla 1 a 1: Un Grupo de WhatsApp = Una Sala
+        const { data: otraSala } = await supabase
+          .from("salas_juego")
+          .select("id, nombre_sala")
+          .eq("whatsapp_group_jid", groupJid)
+          .eq("activa", true)
+          .neq("id", salaId)
+          .limit(1)
+          .maybeSingle();
+
+        if (otraSala) {
+          return responderJson(res, 200, {
+            ok: false,
+            motivo: `Este grupo de WhatsApp ya está vinculado a otra sala (${otraSala.nombre_sala || otraSala.id}). Regla 1 a 1.`,
+          });
+        }
+
+        const { data: otroVinc } = await supabase
+          .from("salas_whatsapp_grupos")
+          .select("sala_id")
+          .eq("whatsapp_group_jid", groupJid)
+          .eq("activo", true)
+          .neq("sala_id", salaId)
+          .limit(1)
+          .maybeSingle();
+
+        if (otroVinc) {
+          return responderJson(res, 200, {
+            ok: false,
+            motivo: "Este grupo de WhatsApp ya está conectado a otra sala activa (Regla 1 a 1).",
+          });
+        }
+
+        // Asegurar que la sala solo tenga 1 grupo vinculado
+        await supabase
+          .from("salas_whatsapp_grupos")
+          .delete()
+          .eq("sala_id", salaId)
+          .neq("whatsapp_group_jid", groupJid);
+
         const { error: errUpsert } = await supabase
           .from("salas_whatsapp_grupos")
           .upsert(
@@ -2104,6 +2347,110 @@ const server = http.createServer(async (req, res) => {
       const jidDestino = groupJid || sala.whatsapp_group_jid;
       const resultado = await ejecutarSentenciaPizarra(sala, jidDestino, pizarra);
       return responderJson(res, 200, resultado);
+    }
+
+    // 7. POST /disconnect (Cerrar sesión WhatsApp y regenerar QR)
+    if (req.method === "POST" && pathname === "/disconnect") {
+      try {
+        if (sock) {
+          try {
+            await sock.logout();
+          } catch {
+            try {
+              sock.end(undefined);
+            } catch {}
+          }
+        }
+      } catch {}
+
+      sock = null;
+      conectado = false;
+      qrDataUrl = null;
+      numeroVinculado = null;
+      gruposCache = [];
+
+      try {
+        if (fs.existsSync(AUTH_DIR)) {
+          const entries = fs.readdirSync(AUTH_DIR);
+          for (const entry of entries) {
+            if (entry === "salas_desconectadas.json") continue;
+            fs.rmSync(path.join(AUTH_DIR, entry), { recursive: true, force: true });
+          }
+        }
+      } catch {}
+
+      setTimeout(() => {
+        try {
+          iniciarConexionBaileys();
+        } catch {}
+      }, 800);
+
+      return responderJson(res, 200, {
+        ok: true,
+        motivo: "Sesión de WhatsApp cerrada. Generando nuevo QR...",
+      });
+    }
+
+    // 8. POST /difundir-grupos (Difusión TEXTO / IMAGEN / NOTA_VOZ a 1 o varios grupos)
+    if (req.method === "POST" && pathname === "/difundir-grupos") {
+      const body = await leerBodyJson(req);
+      const groupJids = Array.isArray(body.groupJids) ? body.groupJids.filter(Boolean) : [];
+      const tipo = String(body.tipo || "TEXTO").toUpperCase();
+      const texto = String(body.texto || body.caption || "").trim();
+      const mediaBase64 = String(body.mediaBase64 || "").trim();
+      const mimetype = String(body.mimetype || "").trim();
+
+      if (!sock || !conectado) {
+        return responderJson(res, 200, {
+          ok: false,
+          motivo: "Bot desconectado de WhatsApp",
+        });
+      }
+      if (groupJids.length === 0) {
+        return responderJson(res, 400, {
+          ok: false,
+          motivo: "Selecciona al menos un grupo de WhatsApp",
+        });
+      }
+
+      const enviados = [];
+      const fallidos = [];
+      let bufferMedia = null;
+      if (mediaBase64) {
+        const cleanB64 = mediaBase64.replace(/^data:[^;]+;base64,/, "");
+        bufferMedia = Buffer.from(cleanB64, "base64");
+      }
+
+      for (const jid of groupJids) {
+        try {
+          if (tipo === "IMAGEN" && bufferMedia) {
+            await sock.sendMessage(jid, {
+              image: bufferMedia,
+              caption: texto || undefined,
+              mimetype: mimetype || "image/jpeg",
+            });
+          } else if (tipo === "NOTA_VOZ" && bufferMedia) {
+            await sock.sendMessage(jid, {
+              audio: bufferMedia,
+              mimetype: mimetype || "audio/ogg; codecs=opus",
+              ptt: true,
+            });
+          } else {
+            if (!texto) throw new Error("Texto requerido para difusión");
+            await sock.sendMessage(jid, { text: texto });
+          }
+          enviados.push(jid);
+        } catch (errEnv) {
+          fallidos.push({ jid, error: errEnv?.message || "Error enviando" });
+        }
+      }
+
+      return responderJson(res, 200, {
+        ok: enviados.length > 0,
+        enviados,
+        fallidos,
+        motivo: `Difusión enviada a ${enviados.length}/${groupJids.length} grupo(s)`,
+      });
     }
 
     return responderJson(res, 404, { ok: false, error: "Ruta no encontrada" });

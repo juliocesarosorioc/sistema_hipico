@@ -98,18 +98,51 @@ async function resolverClienteDeRecarga(
     return { ok: false, status: 404, error: "Cliente no encontrado." };
   }
 
-  const cl = cliente as Record<string, any>;
+  let cl = cliente as Record<string, any>;
   if (cl.activo === false) {
     return { ok: false, status: 403, error: "El cliente está inactivo." };
   }
+  let clienteIdFinal = String(cl.id);
   const grupoCliente = String(cl.grupo_id ?? cl.grupo_cobro_id ?? "");
   if (grupoCliente !== grupoId) {
-    return { ok: false, status: 403, error: "El cliente no pertenece al grupo de la sala." };
+    // Si tiene una fila independiente con el mismo nombre/seudónimo en `grupoId`, resolver la fila de `grupoId`
+    const nomUpper = String(cl.nombre || "").trim().toUpperCase();
+    const seuUpper = String(cl.seudonimo || "").trim().toUpperCase();
+    const { data: cands } = await supabaseAdmin
+      .from("clientes")
+      .select("id, nombre, seudonimo, grupo_id, activo, saldo_actual, saldo_disponible")
+      .eq("grupo_id", grupoId);
+    const matchGrupo = (cands ?? []).find((x: any) => {
+      if (x.activo === false) return false;
+      const xn = String(x.nombre || "").trim().toUpperCase();
+      const xs = String(x.seudonimo || "").trim().toUpperCase();
+      return (nomUpper && (xn === nomUpper || xs === nomUpper)) || (seuUpper && (xn === seuUpper || xs === seuUpper));
+    });
+    if (matchGrupo) {
+      cl = matchGrupo;
+      clienteIdFinal = String(matchGrupo.id);
+    } else {
+      let tieneMembresia = false;
+      try {
+        const { data: mem } = await supabaseAdmin
+          .from("clientes_grupos")
+          .select("cliente_id")
+          .eq("grupo_id", grupoId)
+          .eq("cliente_id", clienteId)
+          .maybeSingle();
+        if (mem) tieneMembresia = true;
+      } catch {
+        /* opcional */
+      }
+      if (!tieneMembresia) {
+        return { ok: false, status: 403, error: "El cliente no pertenece al grupo de la sala." };
+      }
+    }
   }
 
   return {
     ok: true,
-    clienteId,
+    clienteId: clienteIdFinal,
     clienteNombre: String(cl.seudonimo || cl.nombre || identidad.nombre || "Cliente"),
   };
 }

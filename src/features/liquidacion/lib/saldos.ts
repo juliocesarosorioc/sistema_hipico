@@ -21,7 +21,15 @@ import { supabase } from "@/core/supabase";
 import { liquidarOficial } from "@/features/motores/lib/oficiales";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { filtroDiaJornada, jornadasDesalineadas } from "@/features/liquidacion/lib/fecha";
-import { parsearNini, netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem, esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
+import {
+  parsearNini,
+  netearComisionCruce,
+  claveCruceFinanciero,
+  type NeteoCruceItem,
+  esJugadaDePuestos,
+  esTicketBolsaBNoCruzable,
+  esTicketCruzableBolsaA,
+} from "@/features/betting/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import {
@@ -194,10 +202,9 @@ export function decidirTickets(
   // Mismo neteo que pagarYCerrar: la comisión y las devoluciones se calculan
   // SOLO sobre la ganancia neta del cliente por ejemplar en la carrera.
   const usaModalidadesPuestos = input.crucesPuestos !== undefined;
-  const esPuestos = (i: number) =>
-    esJugadaDePuestos(String(decisiones[i].fila.nombre_jugada ?? decisiones[i].fila.tipo_jugada ?? ""));
+  const esPuestos = (i: number) => esTicketCruzableBolsaA(decisiones[i].fila);
   const items: NeteoCruceItem[] = decisiones
-    .filter((_, i) => !usaModalidadesPuestos || !esPuestos(i))
+    .filter((_, i) => !usaModalidadesPuestos && esPuestos(i))
     .filter(({ fila, res }) => {
       const m = NUM(fila.monto_jugado);
       // Empate NINI (devuelve capital: !ok && totalClienteNeto === monto) no es pérdida para el cruce
@@ -225,7 +232,7 @@ export function decidirTickets(
   if (gruposNeteo.size > 0) {
     const gruposIdx = new Map<string, number[]>();
     for (let i = 0; i < decisiones.length; i++) {
-      if (usaModalidadesPuestos && esPuestos(i)) continue;
+      if (usaModalidadesPuestos || !esPuestos(i)) continue;
       const cliente = String(decisiones[i].fila.cliente_juega_id ?? "").trim();
       const caballo = String(decisiones[i].fila.caballo ?? "").trim();
       if (!cliente || (!caballo && (input.agruparPorClientePuestos === true || input.permiteCruces !== false))) {
@@ -1030,6 +1037,7 @@ export async function aplicarLiquidacionSaldos(
       let perdidoBrutoCarrera = 0;
       let ganadoBrutoSoloJuega = 0;
       let perdidoBrutoSoloJuega = 0;
+      let saldoBolsaB = 0;
       let tasaComision = input.tasaComision ?? 5;
       const entradasCruceCli: EntradaCrucePuestos[] = [];
       const grupoClienteCanonico = String(cli.grupo_id ?? contexto.grupoId ?? "").trim();
@@ -1038,6 +1046,38 @@ export async function aplicarLiquidacionSaldos(
         const fila = d.fila;
         const res = d.res;
         const m = NUM(fila.monto_jugado);
+        const esBolsaB = esTicketBolsaBNoCruzable(fila);
+
+        if (esBolsaB) {
+          const tasaTicketB = tasaComisionDeFila(fila, input.tasaComision);
+          if (esClienteJuega(fila)) {
+            if (res.ok) {
+              const gananciaNetaB = Math.max(0, restarDinero(res.totalClienteNeto, m));
+              saldoBolsaB = sumarDinero(saldoBolsaB, gananciaNetaB);
+            } else {
+              const empateTotal = m > 0 && Math.abs(res.totalClienteNeto - m) < 0.01;
+              if (!empateTotal) {
+                const perdidaB = res.totalClienteNeto > 0 ? restarDinero(m, res.totalClienteNeto) : m;
+                saldoBolsaB = restarDinero(saldoBolsaB, perdidaB);
+              }
+            }
+          }
+          if (esClienteConsigue(fila)) {
+            if (res.ok) {
+              const perdidaConsB = Math.max(0, restarDinero(res.totalClienteNeto + res.gananciaCasa, m));
+              saldoBolsaB = restarDinero(saldoBolsaB, perdidaConsB);
+            } else {
+              const empateTotal = m > 0 && Math.abs(res.totalClienteNeto - m) < 0.01;
+              if (!empateTotal) {
+                const gananciaBrutaConsB = Math.max(0, restarDinero(m, res.totalClienteNeto));
+                const comConsB = calcularComisionExacta(gananciaBrutaConsB, tasaTicketB);
+                saldoBolsaB = sumarDinero(saldoBolsaB, restarDinero(gananciaBrutaConsB, comConsB));
+              }
+            }
+          }
+          continue;
+        }
+
         const grupoFila =
           grupoClienteCanonico ||
           grupoDeCuenta(
@@ -1142,7 +1182,7 @@ export async function aplicarLiquidacionSaldos(
       }
 
       // Si el cliente no tuvo movimiento en esta carrera, saltar
-      if (ganadoBrutoCarrera === 0 && perdidoBrutoCarrera === 0) continue;
+      if (ganadoBrutoCarrera === 0 && perdidoBrutoCarrera === 0 && saldoBolsaB === 0) continue;
 
       // ── REGLA CANÓNICA DE CRUCES Y DEVOLUCIONES SOBRE MONTO DECIDIDO ──
       // - Las devoluciones son en base al monto decidido de la carrera SIN la comisión (gane o pierda).
@@ -1187,8 +1227,8 @@ export async function aplicarLiquidacionSaldos(
         montoIncentivo = calcularComisionExacta(baseDecididaIncentivoCarrera, incPct);
       }
 
-      // Impacto total en el saldo del cliente por la carrera
-      const impactoTotalSaldo = sumarDinero(saldoNetoJugadas, montoIncentivo);
+      // Impacto total en el saldo del cliente por la carrera (Bolsa A cruzada + Bolsa B autónoma + Incentivo)
+      const impactoTotalSaldo = sumarDinero(sumarDinero(saldoNetoJugadas, saldoBolsaB), montoIncentivo);
 
       if (impactoTotalSaldo !== 0 || montoIncentivo > 0) {
         const actual = NUM(cli.saldo_actual);

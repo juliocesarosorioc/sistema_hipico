@@ -163,10 +163,17 @@ export function ModalMarcas({ carrera, fecha, onCerrar, onToast, onCambio }: Mod
     })();
   }, []);
 
-  // Al cambiar de grupo se limpia el cliente: si se queda el anterior, la venta
-  // es de un cliente que no pertenece al grupo elegido.
+  // Al cambiar de grupo se limpia el cliente y se recarga el catálogo aislado del grupo elegido
   useEffect(() => {
     setClienteId("");
+    if (!grupoId) return;
+    let vivo = true;
+    void listarClientesVenta(true, grupoId).then((c) => {
+      if (vivo) setClientes(c);
+    });
+    return () => {
+      vivo = false;
+    };
   }, [grupoId]);
 
   const clientesFiltrados = useMemo(() => clientesDelGrupo(clientes, grupoId), [clientes, grupoId]);

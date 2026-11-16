@@ -509,7 +509,13 @@ export function GruposModule() {
 
 
 
-  const gruposActivos = useMemo(() => grupos.filter((g) => g.activo !== false), [grupos]);
+  const gruposActivos = useMemo(
+    () =>
+      grupos.filter(
+        (g) => g.activo !== false && String(g.estatus ?? "Activo").toLowerCase() !== "inactivo"
+      ),
+    [grupos]
+  );
 
 
 
@@ -674,17 +680,34 @@ export function GruposModule() {
 
 
   const toggleGrupo = async (g: GrupoRow) => {
+    const esActivoActual = g.activo !== false && String(g.estatus ?? "Activo").toLowerCase() !== "inactivo";
+    const nuevo = !esActivoActual;
 
-    const nuevo = g.activo !== true;
+    // Actualización optimista inmediata
+    setGrupos((prev) =>
+      prev.map((item) =>
+        String(item.id) === String(g.id)
+          ? { ...item, activo: nuevo, estatus: nuevo ? "Activo" : "Inactivo" }
+          : item
+      )
+    );
 
     const r = await toggleGrupoActivo(g.id, nuevo);
 
-    if (!r.ok) return toast(r.error ?? "Error al cambiar estado.", "error");
+    if (!r.ok) {
+      // Revertir optimismo si Supabase devuelve error
+      setGrupos((prev) =>
+        prev.map((item) =>
+          String(item.id) === String(g.id)
+            ? { ...item, activo: esActivoActual, estatus: esActivoActual ? "Activo" : "Inactivo" }
+            : item
+        )
+      );
+      return toast(r.error ?? "Error al cambiar estado.", "error");
+    }
 
-    toast(`Grupo "${g.nombre}" ${nuevo ? "activo" : "desactivado"}.`, nuevo ? "success" : "warning");
-
+    toast(`Grupo "${g.nombre}" ${nuevo ? "activo" : "inactivo"}.`, nuevo ? "success" : "warning");
     void recargar();
-
   };
 
 
@@ -1526,7 +1549,7 @@ export function GruposModule() {
 
                 Total: <span className="text-amber-600">{grupos.length}</span> · Activos:{" "}
 
-                <span className="text-emerald-600">{grupos.filter((g) => g.activo !== false).length}</span>
+                <span className="text-emerald-600">{gruposActivos.length}</span>
 
               </span>
 
@@ -1556,6 +1579,7 @@ export function GruposModule() {
 
                 visiblesGrupos.map((g) => {
 
+                  const esActivo = g.activo !== false && String(g.estatus ?? "Activo").toLowerCase() !== "inactivo";
                   const esVes = String(g.moneda ?? "").toUpperCase() === "VES";
                   const conCrucesGrupo = Boolean(g.cruce_mismo_ejemplar || g.cruce_diferente_ejemplar || g.permite_cruces !== false);
                   const incentivoGrupo = strNum((g as unknown as Record<string, unknown>).devolucion_porcentaje as string | number | null | undefined) || "0";
@@ -1566,7 +1590,9 @@ export function GruposModule() {
                     <div
                       key={String(g.id)}
                       data-row-legacy="flex items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-line bg-slate-50"
-                      className="grid grid-cols-1 lg:grid-cols-12 items-center gap-3 lg:gap-4 rounded-xl border border-slate-200/90 bg-slate-50/90 px-3 py-2.5 transition-colors hover:bg-white hover:shadow-sm"
+                      className={`grid grid-cols-1 lg:grid-cols-12 items-center gap-3 lg:gap-4 rounded-xl border border-slate-200/90 px-3 py-2.5 transition-all hover:bg-white hover:shadow-sm ${
+                        esActivo ? "bg-slate-50/90" : "bg-slate-100/60 opacity-70"
+                      }`}
                     >
                       {/* Columna 1: Nombre del Grupo / Convenio y Estado */}
                       <div className="lg:col-span-3 flex min-w-0 items-center gap-2">
@@ -1579,8 +1605,24 @@ export function GruposModule() {
                             ) : null}
                           </div>
                           <div className="mt-0.5 flex items-center gap-1.5 text-[9px] font-bold">
-                            <span className={g.activo !== false ? "text-emerald-700" : "text-rose-600"}>
-                              {g.activo !== false ? "● Activo" : "○ Inactivo"}
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[9px] font-black tracking-wide ${
+                                esActivo
+                                  ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-400/40"
+                                  : "bg-red-50 text-red-600 ring-1 ring-red-400/40"
+                              }`}
+                            >
+                              <span className="relative flex h-2 w-2">
+                                {esActivo && (
+                                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                                )}
+                                <span
+                                  className={`relative inline-flex h-2 w-2 rounded-full ${
+                                    esActivo ? "bg-emerald-500" : "bg-red-500"
+                                  }`}
+                                ></span>
+                              </span>
+                              {esActivo ? "ACTIVO" : "INACTIVO"}
                             </span>
                             <span className="text-slate-400">·</span>
                             <span className="text-slate-500">
@@ -1736,15 +1778,19 @@ export function GruposModule() {
 
                         <button
 
-                          className={`rounded px-1.5 py-1 text-[11px] font-bold ${g.activo !== false ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
+                          className={`rounded px-2 py-1 text-[11px] font-bold transition-colors ${
+                            esActivo
+                              ? "border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                              : "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                          }`}
 
                           onClick={() => void toggleGrupo(g)}
 
-                          title={g.activo !== false ? "Desactivar" : "Activar"}
+                          title={esActivo ? "Inactivar grupo" : "Activar grupo"}
 
                         >
 
-                          <span>{g.activo !== false ? "\u{1F7E2}" : "\u26AA"}</span>
+                          <span>{esActivo ? "Inactivar" : "Activar"}</span>
 
                         </button>
 

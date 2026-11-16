@@ -55,9 +55,48 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const accion = String(body.accion || body.action || "");
 
-    // 1. Vincular grupo a sala
+    // 1. Vincular grupo a sala (Regla 1 a 1)
     if (accion === "vincular_grupo_sala" || accion === "vincular-grupo-sala") {
       const { grupoId, salaId, groupJid } = body;
+      if (salaId && groupJid) {
+        const { data: otraSala } = await supabaseAdmin
+          .from("salas_juego")
+          .select("id, nombre_sala")
+          .eq("whatsapp_group_jid", groupJid)
+          .eq("activa", true)
+          .neq("id", salaId)
+          .limit(1)
+          .maybeSingle();
+
+        if (otraSala) {
+          return NextResponse.json(
+            {
+              ok: false,
+              motivo: `Este grupo de WhatsApp ya está vinculado a otra sala (${otraSala.nombre_sala || otraSala.id}). Regla 1 a 1.`,
+            },
+            { status: 200 }
+          );
+        }
+
+        const { data: otroVinc } = await supabaseAdmin
+          .from("salas_whatsapp_grupos")
+          .select("sala_id")
+          .eq("whatsapp_group_jid", groupJid)
+          .eq("activo", true)
+          .neq("sala_id", salaId)
+          .limit(1)
+          .maybeSingle();
+
+        if (otroVinc) {
+          return NextResponse.json(
+            {
+              ok: false,
+              motivo: "Este grupo de WhatsApp ya está vinculado a otra sala activa (Regla 1 a 1).",
+            },
+            { status: 200 }
+          );
+        }
+      }
       try {
         const resBot = await fetch(`${BOT_DAEMON_URL}/verificar-y-vincular`, {
           method: "POST",
@@ -251,6 +290,82 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({ ok: true, sala: updated }, { status: 200 });
+    }
+
+    // 4.2 Difusión multimedia a 1 o varios grupos seleccionados por ícono
+    if (accion === "difundir_grupos" || accion === "difundir-grupos") {
+      const { groupJids, tipo, texto, mediaBase64, mimetype } = body;
+      try {
+        const resBot = await fetch(`${BOT_DAEMON_URL}/difundir-grupos`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({ groupJids, tipo, texto, mediaBase64, mimetype }),
+        });
+        const json = await resBot.json().catch(() => null);
+        return NextResponse.json(
+          json || { ok: false, motivo: "Respuesta inválida del demonio Baileys" },
+          { status: 200 }
+        );
+      } catch {
+        return NextResponse.json(
+          { ok: false, motivo: "Bot Baileys en puerto 3005 apagado o reiniciando" },
+          { status: 200 }
+        );
+      }
+    }
+
+    // 4.3 Limpiar imágenes y audios de WhatsApp por rango de fechas
+    if (accion === "limpiar_multimedia" || accion === "limpiar-multimedia") {
+      const { fechaInicio, fechaFin } = body;
+      if (!fechaInicio || !fechaFin) {
+        return NextResponse.json(
+          { ok: false, motivo: "fechaInicio y fechaFin son requeridos" },
+          { status: 200 }
+        );
+      }
+
+      const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc(
+        "limpiar_multimedia_whatsapp_por_fechas",
+        {
+          p_fecha_inicio: fechaInicio,
+          p_fecha_fin: fechaFin,
+        }
+      );
+
+      if (!rpcErr) {
+        return NextResponse.json(
+          {
+            ok: true,
+            eliminados: typeof rpcData === "number" ? rpcData : (rpcData as any)?.eliminados ?? 0,
+            motivo: "Limpieza multimedia ejecutada correctamente",
+          },
+          { status: 200 }
+        );
+      }
+
+      // Fallback si la RPC no está desplegada aún
+      const { data: borrados, error: errDel } = await supabaseAdmin
+        .from("chat_mensajes")
+        .delete()
+        .in("tipo_mensaje", ["IMAGEN", "AUDIO", "NOTA_VOZ", "imagen", "audio", "nota_voz"])
+        .gte("created_at", `${fechaInicio}T00:00:00.000Z`)
+        .lte("created_at", `${fechaFin}T23:59:59.999Z`)
+        .select("id");
+
+      if (errDel) {
+        return NextResponse.json({ ok: false, motivo: errDel.message }, { status: 200 });
+      }
+      return NextResponse.json(
+        {
+          ok: true,
+          eliminados: borrados?.length || 0,
+          motivo: `Limpieza multimedia completada (${borrados?.length || 0} registros)`,
+        },
+        { status: 200 }
+      );
     }
 
     // 5. Proxy fallback seguro a http://127.0.0.1:3005

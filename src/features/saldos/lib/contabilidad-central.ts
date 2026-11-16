@@ -32,7 +32,11 @@ import {
   resolverContraparteModalidad,
   USUARIOS_SISTEMA_MODALIDADES,
 } from "@/features/liquidacion/lib/etiquetas-reporte";
-import { esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
+import {
+  esJugadaDePuestos,
+  esTicketBolsaBNoCruzable,
+  esTicketCruzableBolsaA,
+} from "@/features/betting/lib/bettingEngine";
 import { calcularBaseDecididaCarrera } from "@/features/liquidacion/lib/devoluciones-cruce";
 import {
   calcularComisionesSocioPorClientes,
@@ -199,6 +203,7 @@ export function esJugadaPuestosParaIncentivo(
   const ori = String(origen ?? "").trim().toUpperCase();
 
   if (!nom && !mod) return false;
+  if (esTicketBolsaBNoCruzable({ nombreJugada: nom, modalidad: mod, origen: ori })) return false;
 
   // Exclusiones explícitas
   if (/TABLA\s*FIJA|\bTF\b|\bTABLA\b/i.test(nom)) return false;
@@ -377,6 +382,7 @@ export function calcularResumenContableCliente(params: {
     }
     const esTablaFija = /^TABLA\s+FIJA\b|^TF\b|^TABLA$/i.test(nombreJugRaw);
     const esMarca = /^MARCAS?\b/i.test(nombreJugRaw);
+    const esBolsaB = esTablaFija || esMarca || esTicketBolsaBNoCruzable(t as Record<string, unknown>);
 
     if (est === "GANADOR" || est === "GANO" || est === "SOLUCIONADO") {
       if (esTablaFija) {
@@ -388,22 +394,11 @@ export function calcularResumenContableCliente(params: {
         const baseDecididaTF = decRaw > 0 ? decRaw : pagoTabla;
         if (esJugador) {
           ganadasBrutoCentavos += aCentavos(pagoTabla);
-          const arr = lineasPorCarrera.get(raceKey) ?? [];
-          arr.push({
-            cliente: params.nombre,
-            brutoGanado: pagoTabla,
-            brutoPerdido: 0,
-            comisionCobrada: 0,
-          });
-          lineasPorCarrera.set(raceKey, arr);
         }
         if (esDador) {
           const comTabla = calcularComisionExacta(baseDecididaTF, comPct);
           const perdidaTf = sumarDinero(pagoTabla, comTabla);
           perdidasCentavos += aCentavos(perdidaTf);
-          const arr = lineasPorCarrera.get(raceKey) ?? [];
-          arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaTf });
-          lineasPorCarrera.set(raceKey, arr);
         }
         continue;
       }
@@ -413,29 +408,18 @@ export function calcularResumenContableCliente(params: {
         const baseDecididaMarca = decRaw > 0 ? decRaw : pagoMarca;
         if (esJugador) {
           ganadasBrutoCentavos += aCentavos(pagoMarca);
-          const arr = lineasPorCarrera.get(raceKey) ?? [];
-          arr.push({
-            cliente: params.nombre,
-            brutoGanado: pagoMarca,
-            brutoPerdido: 0,
-            comisionCobrada: 0,
-          });
-          lineasPorCarrera.set(raceKey, arr);
         }
         if (esDador) {
           const comMarca = calcularComisionExacta(baseDecididaMarca, comPct);
           const perdidaMarca = sumarDinero(pagoMarca, comMarca);
           perdidasCentavos += aCentavos(perdidaMarca);
-          const arr = lineasPorCarrera.get(raceKey) ?? [];
-          arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaMarca });
-          lineasPorCarrera.set(raceKey, arr);
         }
         continue;
       }
       // Ganó el lado Juega
       const premioTotal = redondearCentavos(t.premio_pagar ?? t.monto_decidido ?? monto * 2);
       const gananciaBrutaJuega = Math.max(0, restarDinero(premioTotal, monto));
-      const crucesActivos = modCruces === true || modCruces === "con_cruces";
+      const crucesActivos = !esBolsaB && (modCruces === true || modCruces === "con_cruces");
       const comisionRegistrada =
         t.comision_pagada == null || String(t.comision_pagada).trim() === ""
           ? Number.NaN
@@ -449,22 +433,26 @@ export function calcularResumenContableCliente(params: {
       if (esJugador) {
         ganadasBrutoCentavos += aCentavos(gananciaBrutaJuega);
         comisionesBrutasCentavos += aCentavos(comisionJuega);
-        const arr = lineasPorCarrera.get(raceKey) ?? [];
-        arr.push({
-          cliente: params.nombre,
-          brutoGanado: gananciaBrutaJuega,
-          brutoPerdido: 0,
-          comisionCobrada: comisionJuega,
-          rol: "Juega",
-        });
-        lineasPorCarrera.set(raceKey, arr);
+        if (!esBolsaB) {
+          const arr = lineasPorCarrera.get(raceKey) ?? [];
+          arr.push({
+            cliente: params.nombre,
+            brutoGanado: gananciaBrutaJuega,
+            brutoPerdido: 0,
+            comisionCobrada: comisionJuega,
+            rol: "Juega",
+          });
+          lineasPorCarrera.set(raceKey, arr);
+        }
       }
       if (esDador) {
         const perdidaDador = gananciaBrutaJuega > 0 ? gananciaBrutaJuega : monto;
         perdidasCentavos += aCentavos(perdidaDador);
-        const arr = lineasPorCarrera.get(raceKey) ?? [];
-        arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaDador, rol: "Consigue" });
-        lineasPorCarrera.set(raceKey, arr);
+        if (!esBolsaB) {
+          const arr = lineasPorCarrera.get(raceKey) ?? [];
+          arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaDador, rol: "Consigue" });
+          lineasPorCarrera.set(raceKey, arr);
+        }
       }
     } else if (est === "PERDEDOR" || est === "PERDIO") {
       // Corrección de causa raíz: Empate NINI (2N en 2°, 3N en 3°, 4N en 4°, 5N en 5°)
@@ -480,24 +468,28 @@ export function calcularResumenContableCliente(params: {
       // Perdió el lado Juega (ganó el lado Da/Consigue)
       if (esJugador) {
         perdidasCentavos += aCentavos(perdidaEfectiva);
-        const arr = lineasPorCarrera.get(raceKey) ?? [];
-        arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaEfectiva, rol: "Juega" });
-        lineasPorCarrera.set(raceKey, arr);
+        if (!esBolsaB) {
+          const arr = lineasPorCarrera.get(raceKey) ?? [];
+          arr.push({ cliente: params.nombre, brutoGanado: 0, brutoPerdido: perdidaEfectiva, rol: "Juega" });
+          lineasPorCarrera.set(raceKey, arr);
+        }
       }
       if (esDador) {
         const gananciaBrutaDador = perdidaEfectiva;
         const comisionDador = calcularComisionExacta(gananciaBrutaDador, comPct);
         ganadasBrutoCentavos += aCentavos(gananciaBrutaDador);
         comisionesBrutasCentavos += aCentavos(comisionDador);
-        const arr = lineasPorCarrera.get(raceKey) ?? [];
-        arr.push({
-          cliente: params.nombre,
-          brutoGanado: gananciaBrutaDador,
-          brutoPerdido: 0,
-          comisionCobrada: comisionDador,
-          rol: "Consigue",
-        });
-        lineasPorCarrera.set(raceKey, arr);
+        if (!esBolsaB) {
+          const arr = lineasPorCarrera.get(raceKey) ?? [];
+          arr.push({
+            cliente: params.nombre,
+            brutoGanado: gananciaBrutaDador,
+            brutoPerdido: 0,
+            comisionCobrada: comisionDador,
+            rol: "Consigue",
+          });
+          lineasPorCarrera.set(raceKey, arr);
+        }
       }
     } else if (est === "PENDIENTE" || est === "ACTIVA" || est === "ABIERTA" || est === "") {
       // Carrera abierta: va al simulador de riesgo por clusters de caballos

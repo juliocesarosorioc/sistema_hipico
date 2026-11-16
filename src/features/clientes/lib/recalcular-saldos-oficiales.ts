@@ -1,6 +1,7 @@
 import { supabase } from "@/core/supabase";
-import { redondearCentavos, sumarDinero, restarDinero } from "@/shared/lib/dinero";
+import { calcularComisionExacta, redondearCentavos, sumarDinero, restarDinero } from "@/shared/lib/dinero";
 import { normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
+import { esTicketBolsaBNoCruzable } from "@/features/betting/lib/bettingEngine";
 import { emitirToast } from "@/shared/lib/mensajeria";
 import {
   resolverComisionTicket,
@@ -101,7 +102,7 @@ export async function recalcularYActualizarSaldosOficiales(
     // 4. Cargar tickets de apuestas decididos
     let qTickets = supabase
       .from("tickets_apuestas")
-      .select("id, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, banquero_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, monto_jugado, premio_pagar, monto_decidido, comision_pagada, estado, anulada")
+      .select("id, grupo_cobro_id, cliente_juega_id, cliente_juega_nombre, cliente_consigue_id, cliente_consigue_nombre, banquero_nombre, hipodromo, carrera, fecha_carrera, fecha_registro, nombre_jugada, monto_jugado, premio_pagar, monto_decidido, comision_pagada, nota_auditoria, estado, anulada")
       .or("anulada.is.null,anulada.eq.false")
       .limit(10000);
     if (grupoId) {
@@ -165,9 +166,14 @@ export async function recalcularYActualizarSaldosOficiales(
       let totalDevoluciones = 0;
 
       for (const listT of carrerasMap.values()) {
-        let ganadoBruto = 0;
-        let perdidoBruto = 0;
+        // Acumulador 1 (terciosCruzables / Bolsa A): únicamente puestos y tercios entre jugadores
+        let ganadoBrutoTercios = 0;
+        let perdidoBrutoTercios = 0;
         let esPuestos = false;
+        const tasasTercios: number[] = [];
+
+        // Acumulador 2 (fueraDeCruce / Bolsa B): Marcas, Tablas Fijas, Remates, Pollas, Dupletas, WPS
+        let saldoBolsaB = 0;
 
         for (const t of listT) {
           const m = Number(t.monto_jugado) || 0;
@@ -181,54 +187,96 @@ export async function recalcularYActualizarSaldosOficiales(
           const jNom = normalizarNombreCliente(t.cliente_juega_nombre ?? "");
           const esJuega = (cid && jId === cid) || (cnomNorm && jNom === cnomNorm) || (cseuNorm && jNom === cseuNorm);
 
-          const nj = String(t.nombre_jugada ?? "").toUpperCase();
-          if (!nj.includes("TABLA") && !nj.includes("MARCA") && !nj.includes("DUPLETA") && !nj.includes("POLLA") && !nj.includes("REMATE")) {
-            esPuestos = true;
+          const tRec = t as Record<string, unknown>;
+          const esBolsaB = esTicketBolsaBNoCruzable({
+            nombre_jugada: t.nombre_jugada,
+            cliente_consigue_nombre: t.cliente_consigue_nombre ?? t.banquero_nombre,
+            nota_auditoria: tRec.nota_auditoria,
+            origen: tRec.origen as string | null | undefined,
+            modalidad: tRec.modalidad as string | null | undefined,
+            es_cruzable: tRec.es_cruzable as boolean | null | undefined,
+          });
+
+          const perdidaBruta = prem > 0 && prem < m ? m - prem : mDec > 0 && mDec <= m ? mDec : m;
+
+          if (esBolsaB) {
+            const comPctB = resolverComisionTicket(grpCli, tRec, comPctDefault);
+            if (esJuega) {
+              if (esG) {
+                const netGanB =
+                  prem > m
+                    ? restarDinero(prem, m)
+                    : mDec > m
+                      ? restarDinero(restarDinero(mDec, m), comPag)
+                      : mDec > 0
+                        ? restarDinero(mDec, comPag)
+                        : restarDinero(m, comPag);
+                saldoBolsaB = sumarDinero(saldoBolsaB, Math.max(0, netGanB));
+              } else {
+                saldoBolsaB = restarDinero(saldoBolsaB, perdidaBruta);
+              }
+            } else {
+              // Consigue en Bolsa B: se liquida aparte sin cruzar con Tercios
+              if (esG) {
+                const perdConsB =
+                  prem > m
+                    ? sumarDinero(restarDinero(prem, m), comPag)
+                    : mDec > m
+                      ? restarDinero(mDec, m)
+                      : mDec > 0
+                        ? mDec
+                        : m;
+                saldoBolsaB = restarDinero(saldoBolsaB, Math.max(0, perdConsB));
+              } else {
+                const comConsB = comPag > 0 ? comPag : calcularComisionExacta(perdidaBruta, comPctB);
+                saldoBolsaB = sumarDinero(saldoBolsaB, Math.max(0, restarDinero(perdidaBruta, comConsB)));
+              }
+            }
+            continue;
           }
 
-          // Ganancia bruta SIN comisión: prem ya es bruto cuando supera m
+          esPuestos = true;
+          tasasTercios.push(resolverComisionTicket(grpCli, tRec, comPctDefault));
+
+          // Ganancia bruta SIN comisión en Tercios: reconstruir bruto si premio_pagar ya viene neto + comision_pagada
           const gananciaBruta = prem > m
-            ? restarDinero(prem, m)
+            ? sumarDinero(restarDinero(prem, m), comPag)
             : mDec > m
               ? restarDinero(mDec, m)
               : mDec > 0
                 ? mDec
                 : m;
-          const perdidaBruta = prem > 0 && prem < m ? m - prem : mDec > 0 && mDec <= m ? mDec : m;
 
           if (esJuega) {
             if (esG) {
-              ganadoBruto = sumarDinero(ganadoBruto, gananciaBruta);
+              ganadoBrutoTercios = sumarDinero(ganadoBrutoTercios, gananciaBruta);
             } else {
-              perdidoBruto = sumarDinero(perdidoBruto, perdidaBruta);
+              perdidoBrutoTercios = sumarDinero(perdidoBrutoTercios, perdidaBruta);
             }
           } else {
-            // Consigue
+            // Consigue en Tercios
             if (esG) {
-              perdidoBruto = sumarDinero(perdidoBruto, gananciaBruta);
+              perdidoBrutoTercios = sumarDinero(perdidoBrutoTercios, gananciaBruta);
             } else {
-              ganadoBruto = sumarDinero(ganadoBruto, perdidaBruta);
+              ganadoBrutoTercios = sumarDinero(ganadoBrutoTercios, perdidaBruta);
             }
           }
         }
 
-        // Regla oficial de cruce por carrera:
-        // Monto decidido = |ganadoBruto - perdidoBruto| sin comisión
-        const difBruta = restarDinero(ganadoBruto, perdidoBruto);
+        // Regla oficial de cruce por carrera (EXCLUSIVO Acumulador 1 terciosCruzables):
+        // Monto decidido = |ganadoBrutoTercios - perdidoBrutoTercios| sin comisión
+        const difBruta = restarDinero(ganadoBrutoTercios, perdidoBrutoTercios);
         const montoDecidido = Math.abs(difBruta);
-
-        // Obtener la tasa de comisión correspondiente al tipo de jugada de la carrera
-        const tasasTickets = listT.map((t) => resolverComisionTicket(grpCli, t as Record<string, unknown>, comPctDefault));
-        const comPctCarrera = tasasTickets.length > 0 ? tasasTickets[0] : comPctDefault;
+        const comPctCarrera = tasasTercios.length > 0 ? tasasTercios[0] : comPctDefault;
 
         let comisionCasa = 0;
-        let netoCarrera = 0;
+        let netoTercios = 0;
 
         if (difBruta > 0) {
           comisionCasa = redondearCentavos(difBruta * (comPctCarrera / 100));
-          netoCarrera = restarDinero(difBruta, comisionCasa);
+          netoTercios = restarDinero(difBruta, comisionCasa);
         } else {
-          netoCarrera = difBruta;
+          netoTercios = difBruta;
         }
 
         let devCarrera = 0;
@@ -236,7 +284,7 @@ export async function recalcularYActualizarSaldosOficiales(
           devCarrera = redondearCentavos(montoDecidido * (devPct / 100));
         }
 
-        netoTotalJugadas = sumarDinero(netoTotalJugadas, netoCarrera);
+        netoTotalJugadas = sumarDinero(netoTotalJugadas, sumarDinero(netoTercios, saldoBolsaB));
         totalDevoluciones = sumarDinero(totalDevoluciones, devCarrera);
       }
 

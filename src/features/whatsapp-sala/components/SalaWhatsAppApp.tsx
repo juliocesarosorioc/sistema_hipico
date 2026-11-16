@@ -100,17 +100,45 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
   const [clientesDisponibles, setClientesDisponibles] = useState<any[]>([]);
   const [busquedaCliente, setBusquedaCliente] = useState("");
 
-  const cargarListaClientes = useCallback(async () => {
+  const cargarListaClientes = useCallback(async (grupoFiltroId?: string | null) => {
     if (!supabase) return;
     try {
-      const { data: clis } = await supabase
+      let q = supabase
         .from("clientes")
         .select("id, nombre, seudonimo, telefono, saldo_actual, aval, libre, modo_juego, grupo_id")
-        .order("nombre", { ascending: true })
-        .limit(100);
-
-      if (clis && clis.length > 0) {
-        setClientesDisponibles(clis);
+        .order("nombre", { ascending: true });
+      if (grupoFiltroId) {
+        q = q.eq("grupo_id", grupoFiltroId);
+      } else {
+        q = q.limit(200);
+      }
+      const { data: clis } = await q;
+      const lista = [...(clis ?? [])];
+      if (grupoFiltroId) {
+        try {
+          const { data: mems } = await supabase
+            .from("clientes_grupos")
+            .select("cliente_id")
+            .eq("grupo_id", grupoFiltroId);
+          const yaIds = new Set(lista.map((x: any) => String(x.id)));
+          const faltantes = (mems ?? [])
+            .map((m: any) => String(m.cliente_id || ""))
+            .filter((id) => id && !yaIds.has(id));
+          if (faltantes.length > 0) {
+            const { data: extras } = await supabase
+              .from("clientes")
+              .select("id, nombre, seudonimo, telefono, saldo_actual, aval, libre, modo_juego, grupo_id")
+              .in("id", faltantes);
+            if (Array.isArray(extras) && extras.length > 0) {
+              lista.push(...extras);
+            }
+          }
+        } catch {
+          /* clientes_grupos opcional */
+        }
+      }
+      if (lista.length > 0 || grupoFiltroId) {
+        setClientesDisponibles(lista);
       }
     } catch {
       /* ignore */
@@ -438,9 +466,10 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
     cargarGruposVenta();
   }, [sesion?.grupo_id]);
 
-  // 4b. Sincronizar las salas exclusivas del grupo seleccionado ("cada grupo tiene sus propias salas")
+  // 4b. Sincronizar las salas y los clientes exclusivos del grupo seleccionado ("cada grupo tiene sus propias salas")
   useEffect(() => {
     if (!grupoSeleccionadoId) return;
+    void cargarListaClientes(grupoSeleccionadoId);
     const gObj = gruposVenta.find((g) => String(g.id) === String(grupoSeleccionadoId));
     const nombreG = gObj?.nombre;
 

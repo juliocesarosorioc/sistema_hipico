@@ -124,13 +124,93 @@ const BADGE: Record<string, string> = {
   "SIN DECISIÓN": "bg-amber-100 text-amber-800",
 };
 
+const TIEMPO_ADVERTENCIA_INACTIVIDAD_MS = 240_000; // 4:00 min
+const TIEMPO_CIERRE_INACTIVIDAD_MS = 300_000; // 5:00 min
+
+function useInactividadPortal(activo: boolean, onCerrarPorInactividad: () => void) {
+  const [mostrarAdvertencia, setMostrarAdvertencia] = useState(false);
+  const [segundosRestantes, setSegundosRestantes] = useState(60);
+  const ultimaActividadRef = useRef<number>(Date.now());
+  const advertenciaActivaRef = useRef<boolean>(false);
+  const cerradoRef = useRef<boolean>(false);
+  const onCerrarRef = useRef(onCerrarPorInactividad);
+  onCerrarRef.current = onCerrarPorInactividad;
+
+  const continuarActivo = () => {
+    ultimaActividadRef.current = Date.now();
+    advertenciaActivaRef.current = false;
+    setMostrarAdvertencia(false);
+    setSegundosRestantes(60);
+  };
+
+  useEffect(() => {
+    if (!activo) {
+      setMostrarAdvertencia(false);
+      advertenciaActivaRef.current = false;
+      cerradoRef.current = false;
+      return;
+    }
+
+    ultimaActividadRef.current = Date.now();
+    advertenciaActivaRef.current = false;
+    cerradoRef.current = false;
+
+    const registrarActividad = () => {
+      if (advertenciaActivaRef.current) return;
+      ultimaActividadRef.current = Date.now();
+    };
+
+    const eventos: Array<keyof WindowEventMap> = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "touchstart",
+      "scroll",
+    ];
+
+    eventos.forEach((ev) => window.addEventListener(ev, registrarActividad, { passive: true }));
+
+    const intervalo = window.setInterval(() => {
+      if (cerradoRef.current) return;
+      const inactivoMs = Date.now() - ultimaActividadRef.current;
+
+      if (inactivoMs >= TIEMPO_CIERRE_INACTIVIDAD_MS) {
+        cerradoRef.current = true;
+        advertenciaActivaRef.current = false;
+        setMostrarAdvertencia(false);
+        onCerrarRef.current();
+        return;
+      }
+
+      if (inactivoMs >= TIEMPO_ADVERTENCIA_INACTIVIDAD_MS) {
+        const restantes = Math.max(1, Math.ceil((TIEMPO_CIERRE_INACTIVIDAD_MS - inactivoMs) / 1000));
+        setSegundosRestantes(restantes);
+        if (!advertenciaActivaRef.current) {
+          advertenciaActivaRef.current = true;
+          setMostrarAdvertencia(true);
+        }
+      } else if (advertenciaActivaRef.current) {
+        advertenciaActivaRef.current = false;
+        setMostrarAdvertencia(false);
+      }
+    }, 1000);
+
+    return () => {
+      eventos.forEach((ev) => window.removeEventListener(ev, registrarActividad));
+      window.clearInterval(intervalo);
+    };
+  }, [activo]);
+
+  return { mostrarAdvertencia, segundosRestantes, continuarActivo };
+}
+
 /**
  * PortalModule — Portal de Consulta del Cliente (clon de js/portal.js).
  * Ruta externa /portal (AppShell la renderiza standalone, sin menú admin).
  */
 export function PortalModule() {
   const [sesion, setSesion] = useState<SesionPortal | null>(null);
-  const [cargando, setCargando] = useState(true);
+  const [cargando, setCargando] = useState(false);
 
   useEffect(() => {
     activarProteccionAntiClonacion();
@@ -143,56 +223,24 @@ export function PortalModule() {
   const [token, setToken] = useState("");
   const [clave, setClave] = useState("");
   const [errorLogin, setErrorLogin] = useState("");
+  const [avisoInactividad, setAvisoInactividad] = useState("");
 
   useEffect(() => {
-    let vivo = true;
-    const cargar = async () => {
-      setCargando(true);
-      const limite = setTimeout(() => {
-        if (vivo) {
-          setCargando(false);
-          setErrorLogin("El portal tardó demasiado en cargar. Probá recargar la página.");
-        }
-      }, 10000);
-      try {
-        const qs = new URLSearchParams(window.location.search);
-        const c = qs.get("c") ?? "";
-        const k = qs.get("k") ?? "";
-        // 1) Entrada automática vía enlace del admin (?c=&k=)
-        if (c && k) {
-          const r = await entrarPortal({ linkId: c, linkToken: k });
-          if (r.ok && r.sesion) {
-            if (vivo) {
-              setSesion(r.sesion!);
-              return;
-            }
-          }
-          if (vivo) {
-            setAutoId(c);
-            setAutoToken(k);
-          }
-        }
-        // 2) Sesión guardada (recargas)
-        const re = await reanudarSesion();
-        if (re && vivo) {
-          setSesion(re);
-          return;
-        }
-      } catch (e) {
-        if (vivo) setErrorLogin(e instanceof Error ? e.message : "No se pudo cargar el portal.");
-      } finally {
-        clearTimeout(limite);
-        if (vivo) setCargando(false);
-      }
-    };
-    void cargar();
-    return () => {
-      vivo = false;
-    };
+    // Login obligatorio en cada carga: limpia inmediatamente localStorage/sessionStorage
+    // y mantiene la sesión exclusivamente en memoria (sesion = null).
+    cerrarSesion();
+    setSesion(null);
+    setCargando(false);
+    try {
+      window.history.replaceState({}, "", window.location.pathname);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const loguear = async () => {
     setErrorLogin("");
+    setAvisoInactividad("");
     try {
       if (autoId && autoToken) {
         const r = await entrarPortal({ linkId: autoId, linkToken: autoToken });
@@ -213,6 +261,7 @@ export function PortalModule() {
   const aplicarLogin = (ok: boolean, error?: string, s?: SesionPortal) => {
     if (!ok || !s) return setErrorLogin(error ?? "No se pudo iniciar sesión.");
     setErrorLogin("");
+    setAvisoInactividad("");
     setSesion(s);
     toast("¡Bienvenido a tu Portal! ", "success");
   };
@@ -227,18 +276,25 @@ export function PortalModule() {
     setAutoToken("");
   };
 
+  const cerrarPorInactividad = () => {
+    cerrarSesion();
+    try {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    } catch {
+      /* ignore */
+    }
+    setSesion(null);
+    setUsuario("");
+    setToken("");
+    setClave("");
+    setAutoId("");
+    setAutoToken("");
+    setAvisoInactividad("🔒 Sesión cerrada automáticamente por 5 minutos de inactividad.");
+    toast("🔒 Sesión cerrada automáticamente por 5 minutos de inactividad.", "warning");
+  };
+
   useEffect(() => {
-    // Limpia la barra de direcciones: el enlace del admin trae las credenciales
-    // en la query (`?c=...&k=...`) y no deben quedar visibles ni en el historial
-    // una vez consumidas. Se quita SOLO la query.
-    //
-    // OJO: antes decía `replaceState({}, "", "/portal")`, una ruta ABSOLUTA sin
-    // el basePath. En GitHub Pages la app se sirve bajo `/sistema_hipico`, así
-    // que ese literal saltaba a la RAÍZ del dominio (`/portal`, donde no hay
-    // nada → 404). Peor: el guard de rutas públicas ya había dejado pasar la
-    // página, y el navegador terminaba en una URL inexistente. Se conserva la
-    // ruta ACTUAL —que ya incluye el prefijo— y se descarta únicamente el `?`.
-    // `pathname` preserva el subpath y `search: ""` borra la query.
     window.history.replaceState({}, "", window.location.pathname);
   }, [sesion]);
 
@@ -254,10 +310,28 @@ export function PortalModule() {
   }
 
   if (!sesion) {
-    return <PantallaLogin />;
+    return (
+      <PantallaLogin
+        modoPortal
+        avisoExterno={avisoInactividad || errorLogin}
+        onLoginPortalExitoso={(s) => {
+          setAvisoInactividad("");
+          setErrorLogin("");
+          setSesion(s);
+          toast("¡Bienvenido a tu Portal! ", "success");
+        }}
+      />
+    );
   }
 
-  return <SesionView sesion={sesion} onActualizar={(s) => setSesion(s)} onSalir={salir} />;
+  return (
+    <SesionView
+      sesion={sesion}
+      onActualizar={(s) => setSesion(s)}
+      onSalir={salir}
+      onCerrarPorInactividad={cerrarPorInactividad}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -309,10 +383,10 @@ function LoginScreen(props: {
 
         <div className="space-y-3 rounded-2xl bg-white/95 p-4 shadow-2xl backdrop-blur sm:p-6">
           <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Seudónimo / Nombre</label>
-          <input value={props.usuario} onChange={(e) => props.setUsuario(e.target.value.toUpperCase())} className={inp} placeholder="ej. EL MAGO" />
+          <input value={props.usuario} onChange={(e) => props.setUsuario(e.target.value.toUpperCase())} className={inp} placeholder="ej. EL MAGO" autoComplete="off" />
 
           <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Código del enlace (te lo dio el administrador)</label>
-          <input value={props.token} onChange={(e) => props.setToken(e.target.value.toUpperCase())} className={inp} placeholder="XXXXXX" maxLength={MAX_TOKEN} />
+          <input value={props.token} onChange={(e) => props.setToken(e.target.value.toUpperCase())} className={inp} placeholder="XXXXXX" maxLength={MAX_TOKEN} autoComplete="off" />
 
           {/*
             SIN maxLength: el campo de contraseña NO se recorta.
@@ -323,7 +397,7 @@ function LoginScreen(props: {
             errores indescifrables; el largo lo valida la función del servidor.
           */}
           <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Contraseña</label>
-          <input value={props.clave} onChange={(e) => props.setClave(e.target.value.toUpperCase())} className={inp} placeholder="XXXX" maxLength={MAX_CLAVE} autoComplete="current-password" />
+          <input value={props.clave} onChange={(e) => props.setClave(e.target.value.toUpperCase())} className={inp} placeholder="XXXX" maxLength={MAX_CLAVE} autoComplete="off" />
 
           {props.error ? (
             <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs font-bold text-red-600">
@@ -408,7 +482,21 @@ const OPCIONES_MENU_PORTAL: { key: TabPortal; icono: string; label: string; badg
   { key: "tickets", icono: "🛟", label: "Mis tickets" },
 ];
 
-function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; onActualizar: (s: SesionPortal) => void; onSalir: () => void }) {
+function SesionView({
+  sesion,
+  onActualizar,
+  onSalir,
+  onCerrarPorInactividad,
+}: {
+  sesion: SesionPortal;
+  onActualizar: (s: SesionPortal) => void;
+  onSalir: () => void;
+  onCerrarPorInactividad: () => void;
+}) {
+  const { mostrarAdvertencia, segundosRestantes, continuarActivo } = useInactividadPortal(
+    true,
+    onCerrarPorInactividad
+  );
   // 1ra pestaña por defecto: Reporte del Día
   const [tab, setTab] = useState<TabPortal>("reporte");
   // Ciclo y opciones de semanas para el portal (Semana actual por defecto + semanas anteriores)
@@ -462,31 +550,8 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
   // 🎓 Guía Interactiva del Jugador
   const [guiaAbierta, setGuiaAbierta] = useState(false);
 
-  useEffect(() => {
-    try {
-      const c = sesion.cliente;
-      const idClave = c?.id || c?.seudonimo || "";
-      if (idClave && typeof window !== "undefined") {
-        const yaCompletada = localStorage.getItem(`portal_guia_completada_${idClave}`);
-        if (!yaCompletada) {
-          setGuiaAbierta(true);
-        }
-      }
-    } catch {
-      /* sinop */
-    }
-  }, [sesion.cliente]);
-
-  // Verificación obligatoria de teléfono y correo para la primera vez o jugadores sin datos mínimos
-  const [contactoActualizadoLocal, setContactoActualizadoLocal] = useState<boolean>(() => {
-    try {
-      const c = sesion.cliente;
-      const idClave = c?.id || c?.seudonimo || "";
-      return typeof window !== "undefined" && Boolean(idClave) && localStorage.getItem(`portal_contacto_verificado_${idClave}`) === "1";
-    } catch {
-      return false;
-    }
-  });
+  // Verificación obligatoria de teléfono y correo (en memoria de sesión)
+  const [contactoActualizadoLocal, setContactoActualizadoLocal] = useState<boolean>(false);
 
   const requiereActualizarContacto = useMemo(() => {
     const c = sesion.cliente;
@@ -890,19 +955,39 @@ function SesionView({ sesion, onActualizar, onSalir }: { sesion: SesionPortal; o
           cliente={sesion.cliente}
           nombreGrupo={nombreGrupoActivo}
           onGuardado={(c) => {
-            try {
-              const idClave = c.id || c.seudonimo || "";
-              if (idClave) {
-                localStorage.setItem(`portal_contacto_verificado_${idClave}`, "1");
-              }
-            } catch {
-              /* sinop */
-            }
             setContactoActualizadoLocal(true);
             onActualizar({ ...sesion, cliente: c });
           }}
         />
       )}
+
+      {/* ⚠️ Modal de advertencia previa de cierre por inactividad (4:00 min) */}
+      {mostrarAdvertencia ? (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
+        >
+          <div className="w-full max-w-md rounded-2xl border-2 border-amber-400 bg-white p-6 text-center shadow-2xl space-y-4">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-2xl font-black text-amber-700 font-mono">
+              {segundosRestantes}s
+            </div>
+            <p className="text-sm font-black text-slate-900">
+              ⚠️ Por inactividad su sesión será cerrada en {segundosRestantes} segundos.
+            </p>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={continuarActivo}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black"
+              >
+                Continuar activo
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* 💬 Acceso flotante y destacado a la Sala de Jugadas tipo WhatsApp */}
       <button

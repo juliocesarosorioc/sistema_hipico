@@ -22,6 +22,7 @@ import { resolverContraparteModalidad } from "@/features/liquidacion/lib/etiquet
 import { redondearCentavos, restarDinero, sumarDinero } from "@/shared/lib/dinero";
 import {
   _reembolsosCruce,
+  esTicketBolsaBNoCruzable,
   normalizarNombreCliente,
   type ModalidadCruceCarrera,
 } from "@/features/taquilla/lib/cruces-y-tapas";
@@ -361,6 +362,8 @@ export function armarReporteCarrera(
     otras: [],
   };
   const netoPorCliente = new Map<string, number>();
+  const netoTerciosPorCliente = new Map<string, number>();
+  const netoFueraDeCrucePorCliente = new Map<string, number>();
   const riesgoPorCliente = new Map<string, number>();
   const nombreVisiblePorClave = new Map<string, string>();
   const identidadPorNombre = new Map<string, string>();
@@ -371,6 +374,9 @@ export function armarReporteCarrera(
     resultado: number;
     comisionCobrada?: number;
     comisionPct?: number;
+    rol?: string;
+    tipoJugada?: string | null;
+    jugada?: string | null;
   }> = [];
   const observacionesOrdenExceso: ObservacionOrdenExceso[] = [];
   const usadoProgresivoPorCliente = new Map<string, number>();
@@ -513,23 +519,49 @@ export function armarReporteCarrera(
       }
     }
 
+    const esFilaBolsaB =
+      Boolean(f.esBolsaB) ||
+      esTicketBolsaBNoCruzable({
+        jugada: f.jugada,
+        tipoJugada: f.tipoJugada,
+        da: f.rol === "Consigue" ? f.cliente : f.clienteConsigue,
+        nota_auditoria: f.notaAuditoria,
+        origen: f.origen,
+      });
+
     if (claveCliente) {
       riesgoPorCliente.set(claveCliente, sumarDinero(riesgoPorCliente.get(claveCliente) ?? 0, riesgoDeFila(f)));
 
       if (resultado !== null) {
-        netoPorCliente.set(claveCliente, sumarDinero(netoPorCliente.get(claveCliente) ?? 0, resultado));
-        lineasCruce.push({
-          cliente: nombreVisiblePorClave.get(claveCliente) ?? f.cliente,
-          ...(f.clienteId ? { clienteId: f.clienteId } : {}),
-          resultado,
-          comisionCobrada: f.comisionCobrada,
-          comisionPct: opciones?.comisionPct,
-        });
+        if (esFilaBolsaB) {
+          // Acumulador 2 (fueraDeCruce): Marcas, Tablas Fijas, TF, Remates, Pollas, Dupletas
+          // nunca entran al cruce de tercios y conservan su resultado individual íntegro.
+          netoFueraDeCrucePorCliente.set(
+            claveCliente,
+            sumarDinero(netoFueraDeCrucePorCliente.get(claveCliente) ?? 0, resultado)
+          );
+        } else {
+          // Acumulador 1 (terciosCruzables): exclusivamente puestos/tercios entre jugadores.
+          netoTerciosPorCliente.set(
+            claveCliente,
+            sumarDinero(netoTerciosPorCliente.get(claveCliente) ?? 0, resultado)
+          );
+          lineasCruce.push({
+            cliente: nombreVisiblePorClave.get(claveCliente) ?? f.cliente,
+            ...(f.clienteId ? { clienteId: f.clienteId } : {}),
+            resultado,
+            comisionCobrada: f.comisionCobrada,
+            comisionPct: opciones?.comisionPct,
+            rol: f.rol,
+            tipoJugada: f.tipoJugada,
+            jugada: f.jugada,
+          });
+        }
       }
     }
   }
 
-  // Asiento contable interno por carrera: "Bono por Cruce de jugadas".
+  // Asiento contable interno por carrera: "Bono por Cruce de jugadas" (solo Acumulador 1: Bolsa A).
   // Habilitado por defecto salvo que explícitamente se indique `modalidadCruce: "sin_cruces"` o `false`.
   const conCruces = opciones?.modalidadCruce !== "sin_cruces" && opciones?.modalidadCruce !== false;
   const asientosBonoCruce: AsientoBonoCruceCarrera[] = [];
@@ -539,15 +571,15 @@ export function armarReporteCarrera(
     for (const [claveCruce, info] of porCliente) {
       if (info.reembolsoCruce > 0) {
         // El reembolso reduce la comisión efectiva: se acredita una sola vez al
-        // neto consolidado, además de conservarse como asiento auditable.
+        // neto consolidado de Tercios (Bolsa A), además de conservarse como asiento auditable.
         const claveIdentidad =
           (info.clienteId ? identidadPorId.get(info.clienteId.toUpperCase()) : undefined) ??
           identidadPorNombre.get(normalizarNombreCliente(info.cliente)) ??
           identidadPorNombre.get(normalizarNombreCliente(claveCruce));
         const destino = claveIdentidad ?? `nombre:${claveCruce}`;
-        netoPorCliente.set(
+        netoTerciosPorCliente.set(
           destino,
-          sumarDinero(netoPorCliente.get(destino) ?? 0, info.reembolsoCruce)
+          sumarDinero(netoTerciosPorCliente.get(destino) ?? 0, info.reembolsoCruce)
         );
         asientosBonoCruce.push({
           concepto: "Bono por Cruce de jugadas",
@@ -559,6 +591,13 @@ export function armarReporteCarrera(
         });
       }
     }
+  }
+
+  for (const [clave, montoTercios] of netoTerciosPorCliente) {
+    netoPorCliente.set(clave, sumarDinero(netoPorCliente.get(clave) ?? 0, montoTercios));
+  }
+  for (const [clave, montoFuera] of netoFueraDeCrucePorCliente) {
+    netoPorCliente.set(clave, sumarDinero(netoPorCliente.get(clave) ?? 0, montoFuera));
   }
 
   const notaExcedidos: NotaExcedido[] = [];

@@ -406,7 +406,7 @@ export default function ModalEditarJugadasCarrera({
             Solo vigentes (oculta anuladas)
           </label>
           <span className="rounded-full bg-slate-200 px-2 py-0.5 font-bold text-slate-700">
-            {visibles.length} jugada(s) · {money(totalVigente, "VES")}
+            {visibles.length} jugada(s) · {money(totalVigente, visibles.find((j) => j.moneda)?.moneda ?? "VES")}
           </span>
           <Button variant="ghost" size="sm" className="ml-auto" onClick={() => void cargar()} disabled={cargando || ocupado}>
             {cargando ? "Cargando…" : "↻ Refrescar"}

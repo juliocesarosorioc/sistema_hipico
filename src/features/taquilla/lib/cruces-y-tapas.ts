@@ -37,8 +37,11 @@ import {
   type Nomenclatura,
 } from "@/features/motores/lib/puestos";
 import { resolverSeudonimoClienteSync } from "@/features/clientes/lib/clientes";
+import { esTicketBolsaBNoCruzable, esTicketCruzableBolsaA } from "@/features/betting/lib/bettingEngine";
 
 export {
+  esTicketBolsaBNoCruzable,
+  esTicketCruzableBolsaA,
   normalizarJugadaPremio,
   getMejorPos,
   extraerEjemplaresMultiples,
@@ -74,6 +77,10 @@ export type JugadaActivaSimulacion = {
   estado?: string | null;
   anulada?: boolean | null;
   esAdelantada?: boolean | null;
+  origen?: string | null;
+  modalidad?: string | null;
+  nota_auditoria?: unknown;
+  es_cruzable?: boolean | null;
 };
 
 /**
@@ -394,28 +401,42 @@ export function _comprometidoSimuladoCli(
     const evaluarMapa = (mapa: Map<string, number>) => {
       let netoAcumuladoCentavos = 0;
       if (permiteCruces) {
-        let brutoGanadoCentavos = 0;
-        let brutoPerdidoCentavos = 0;
+        let brutoGanadoTerciosCentavos = 0;
+        let brutoPerdidoTerciosCentavos = 0;
+        let netoFueraDeCruceCentavos = 0;
         for (const jug of jugadasCluster) {
           const ev = evaluarJugadaEnEscenario(jug, mapa, comisionPctDefault);
           const esJ1 = normalizarNombreCliente(jug.jugador) === target;
           const esJ2 = normalizarNombreCliente(jug.tercio) === target;
-          if (esJ1) {
-            brutoGanadoCentavos += aCentavos(ev.brutoGanadoJuega);
-            brutoPerdidoCentavos += aCentavos(ev.brutoPerdidoJuega);
-          }
-          if (esJ2) {
-            brutoGanadoCentavos += aCentavos(ev.brutoGanadoDa);
-            brutoPerdidoCentavos += aCentavos(ev.brutoPerdidoDa);
+          const esBolsaB = esTicketBolsaBNoCruzable({
+            jugada: jug.jugada,
+            da: jug.tercio,
+            origen: jug.origen,
+            modalidad: jug.modalidad,
+            nota_auditoria: jug.nota_auditoria,
+            es_cruzable: jug.es_cruzable,
+          });
+          if (esBolsaB) {
+            if (esJ1) netoFueraDeCruceCentavos += aCentavos(ev.netoJuega);
+            if (esJ2) netoFueraDeCruceCentavos += aCentavos(ev.netoDa);
+          } else {
+            if (esJ1) {
+              brutoGanadoTerciosCentavos += aCentavos(ev.brutoGanadoJuega);
+              brutoPerdidoTerciosCentavos += aCentavos(ev.brutoPerdidoJuega);
+            }
+            if (esJ2) {
+              brutoGanadoTerciosCentavos += aCentavos(ev.brutoGanadoDa);
+              brutoPerdidoTerciosCentavos += aCentavos(ev.brutoPerdidoDa);
+            }
           }
         }
-        const netoBrutoCentavos = brutoGanadoCentavos - brutoPerdidoCentavos;
-        if (netoBrutoCentavos > 0) {
-          const com = calcularComisionExacta(deCentavos(netoBrutoCentavos), comisionPctDefault);
-          netoAcumuladoCentavos = netoBrutoCentavos - aCentavos(com);
-        } else {
-          netoAcumuladoCentavos = netoBrutoCentavos;
+        const netoBrutoTerciosCentavos = brutoGanadoTerciosCentavos - brutoPerdidoTerciosCentavos;
+        let netoTerciosCentavos = netoBrutoTerciosCentavos;
+        if (netoBrutoTerciosCentavos > 0) {
+          const com = calcularComisionExacta(deCentavos(netoBrutoTerciosCentavos), comisionPctDefault);
+          netoTerciosCentavos = netoBrutoTerciosCentavos - aCentavos(com);
         }
+        netoAcumuladoCentavos = netoTerciosCentavos + netoFueraDeCruceCentavos;
       } else {
         for (const jug of jugadasCluster) {
           const ev = evaluarJugadaEnEscenario(jug, mapa, comisionPctDefault);
@@ -490,6 +511,16 @@ export type LineaResultadoParaCruce = {
   comisionCobrada?: number;
   comisionPct?: number;
   rol?: string | null;
+  tipoJugada?: string | null;
+  jugada?: string | null;
+  nombre_jugada?: string | null;
+  cliente_consigue_nombre?: string | null;
+  clienteConsigue?: string | null;
+  da?: string | null;
+  origen?: string | null;
+  modalidad?: string | null;
+  nota_auditoria?: unknown;
+  es_cruzable?: boolean | null;
 };
 
 export type ReembolsoCruceCliente = {
@@ -568,6 +599,7 @@ export function calcularReembolsosCruce(
   };
 
   for (const l of lineas) {
+    if (esTicketBolsaBNoCruzable(l)) continue;
     // Regla de cruce: las líneas en rol Consigue (dador) también participan.
     // Si el cliente gana y pierde en la carrera (como Juega o como Consigue),
     // se reembolsa la comisión de la parte cruzada y queda solo la diferencia.
@@ -661,27 +693,42 @@ export function _reembolsosCruce(
     comisionCobrada?: number;
     comisionPct?: number;
     rol?: string | null;
+    tipoJugada?: string | null;
+    jugada?: string | null;
+    nombre_jugada?: string | null;
+    cliente_consigue_nombre?: string | null;
+    clienteConsigue?: string | null;
+    da?: string | null;
+    origen?: string | null;
+    modalidad?: string | null;
+    nota_auditoria?: unknown;
+    es_cruzable?: boolean | null;
+    esAdelantada?: boolean | null;
   }>,
   modalidad: ModalidadCruceCarrera | boolean = "con_cruces",
   comisionPct = 5
 ) {
   const normalizadas: LineaResultadoParaCruce[] = lineas
+    .filter((l) => !esTicketBolsaBNoCruzable(l))
     .map((l) => {
     let brutoGanado = Number(l.brutoGanado ?? 0);
     let brutoPerdido = Number(l.brutoPerdido ?? 0);
     let comisionCobrada = l.comisionCobrada;
     if (brutoGanado === 0 && brutoPerdido === 0 && typeof l.resultado === "number") {
       if (l.resultado > 0) {
-        if (l.comisionCobrada != null && Number(l.comisionCobrada) > 0) {
-          brutoGanado = redondearCentavos(l.resultado + Math.max(0, Number(l.comisionCobrada)));
+        if (
+          l.comisionCobrada !== undefined &&
+          l.comisionCobrada !== null &&
+          Number.isFinite(Number(l.comisionCobrada))
+        ) {
+          const comExacta = Math.max(0, redondearCentavos(Number(l.comisionCobrada)));
+          brutoGanado = redondearCentavos(l.resultado + comExacta);
+          comisionCobrada = comExacta;
         } else {
-          const pct = l.comisionPct ?? comisionPct;
-          const factorNeto = 1 - Math.max(0, Number(pct)) / 100;
-          brutoGanado =
-            factorNeto > 0
-              ? redondearCentavos(l.resultado / factorNeto)
-              : redondearCentavos(l.resultado);
-          comisionCobrada = Math.max(0, redondearCentavos(brutoGanado - l.resultado));
+          const pct = Math.max(0, Number(l.comisionPct ?? comisionPct));
+          const comLineal = redondearCentavos(l.resultado * (pct / 100));
+          brutoGanado = redondearCentavos(l.resultado + comLineal);
+          comisionCobrada = comLineal;
         }
       } else if (l.resultado < 0) {
         brutoPerdido = redondearCentavos(Math.abs(l.resultado));

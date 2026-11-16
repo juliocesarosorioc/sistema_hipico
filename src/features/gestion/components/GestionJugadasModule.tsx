@@ -164,8 +164,6 @@ type EdicionPreview = {
 const toastPreview = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   emitirToast(msg, tipo);
 
-const MONEDA = "VES";
-
 /**
  * Botón de la barra flotante de Gestión de Jugadas. TODOS comparten alto,
  * padding, tipografía y `flex-1`: así la fila reparte el ancho en partes
@@ -480,16 +478,16 @@ export function GestionJugadasModule() {
   const recargarClientes = useCallback(async () => {
     try {
       limpiarCacheClientesVenta();
-      const c = await listarClientesVenta();
+      const c = await listarClientesVenta(true, grupoSesion);
       setClientes(c);
     } catch {
       /* sin conexión: se conserva el catálogo actual */
     }
-  }, []);
+  }, [grupoSesion]);
 
   useEffect(() => {
     void recargarClientes();
-  }, [grupoActivo, recargarClientes]);
+  }, [grupoActivo, grupoSesion, recargarClientes]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -717,7 +715,6 @@ export function GestionJugadasModule() {
   const [textoVisorWhatsapp, setTextoVisorWhatsapp] = useState("");
   const [filtroSaldosWsp, setFiltroSaldosWsp] = useState<FiltroSaldosWhatsapp>("todos");
   const [separarSaldosWsp, setSepararSaldosWsp] = useState(true);
-  const [acuseReciboOperador, setAcuseReciboOperador] = useState(false);
   const [comandoPizarraInput, setComandoPizarraInput] = useState("");
   const [respuestaAgentePizarra, setRespuestaAgentePizarra] = useState<string | null>(null);
   const [copiadoReporteAgente, setCopiadoReporteAgente] = useState(false);
@@ -893,7 +890,9 @@ const hipodromosDelDia = useMemo(() => {
   useEffect(() => {
     if (!jugadorCruce) return;
     const clave = jugadorCruce.trim().toUpperCase();
-    const cliente = clientes.find((c) => c.nombre.trim().toUpperCase() === clave);
+    const cliente =
+      clientesDelGrupo.find((c) => c.nombre.trim().toUpperCase() === clave) ??
+      clientes.find((c) => c.nombre.trim().toUpperCase() === clave);
     const porJugador = crucesOverrideCarrera.porJugador?.[clave];
     const todos = crucesOverrideCarrera.todos;
     const permanenteMismo = cliente
@@ -910,7 +909,7 @@ const hipodromosDelDia = useMemo(() => {
         ? permanenteDiferente ?? grupoReglasCruce.diferenteEjemplar
         : porJugador?.diferenteEjemplar ?? todos?.diferenteEjemplar ?? permanenteDiferente ?? grupoReglasCruce.diferenteEjemplar,
     });
-  }, [alcanceCruce, crucesOverrideCarrera, grupoReglasCruce, jugadorCruce, clientes]);
+  }, [alcanceCruce, crucesOverrideCarrera, grupoReglasCruce, jugadorCruce, clientesDelGrupo, clientes]);
 
   const guardarOverrideActual = useCallback(async (override: CrucesCarreraOverride) => {
     if (!grupoSesion) {
@@ -930,10 +929,15 @@ const hipodromosDelDia = useMemo(() => {
     const clave = jugadorCruce.trim().toUpperCase();
     if (!clave) return;
     if (alcanceCruce === "carrera") {
-      const cliente = clientes.find((c) =>
-        [c.nombre, c.nombre_real, c.seudonimo]
-          .some((nombre) => String(nombre ?? "").trim().toUpperCase() === clave)
-      );
+      const cliente =
+        clientesDelGrupo.find((c) =>
+          [c.nombre, c.nombre_real, c.seudonimo]
+            .some((nombre) => String(nombre ?? "").trim().toUpperCase() === clave)
+        ) ??
+        clientes.find((c) =>
+          [c.nombre, c.nombre_real, c.seudonimo]
+            .some((nombre) => String(nombre ?? "").trim().toUpperCase() === clave)
+        );
       if (!cliente) {
         emitirToast("Seleccione un jugador válido para guardar la excepción de esta carrera.", "error");
         return;
@@ -953,10 +957,15 @@ const hipodromosDelDia = useMemo(() => {
       }
       return;
     }
-    const cliente = clientes.find((c) =>
-      [c.nombre, c.nombre_real, c.seudonimo]
-        .some((nombre) => String(nombre ?? "").trim().toUpperCase() === clave)
-    );
+    const cliente =
+      clientesDelGrupo.find((c) =>
+        [c.nombre, c.nombre_real, c.seudonimo]
+          .some((nombre) => String(nombre ?? "").trim().toUpperCase() === clave)
+      ) ??
+      clientes.find((c) =>
+        [c.nombre, c.nombre_real, c.seudonimo]
+          .some((nombre) => String(nombre ?? "").trim().toUpperCase() === clave)
+      );
     if (!cliente) {
       emitirToast("No se encontró el jugador para actualizar su ficha permanente.", "error");
       return;
@@ -1089,8 +1098,16 @@ const hipodromosDelDia = useMemo(() => {
     return base;
   }, [tablaDeCarrera, centralDeCarrera]);
 
+  const monedaGrupo = useMemo(
+    () =>
+      String(gruposVenta.find((g) => String(g.id) === String(grupoSesion))?.moneda ?? "VES")
+        .trim()
+        .toUpperCase() || "VES",
+    [gruposVenta, grupoSesion]
+  );
+
   const monedaFmt = (n: number): string =>
-    fmtMoney(Number.isFinite(n) ? n : 0, MONEDA);
+    fmtMoney(Number.isFinite(n) ? n : 0, monedaGrupo);
 
   /* ⚡ Normalizador difuso de Carga Rápida: contexto = catálogo de clientes +
      padrón de la carrera. La vista previa en vivo del modal y el poblar tabla
@@ -1175,10 +1192,11 @@ const hipodromosDelDia = useMemo(() => {
     return porPrefijo.length === 1 ? porPrefijo[0] : null;
   };
 
-  /** Detecta si un nombre tipeado coincide con un cliente registrado en OTRO grupo. */
+  /** Detecta si un nombre tipeado coincide únicamente con un cliente registrado en OTRO grupo (nunca si existe en el grupo activo). */
   const clienteEnOtroGrupo = (texto: string): ClienteVenta | null => {
     const t = texto.trim().toLowerCase();
     if (!t || t === "banca" || t === "casa") return null;
+    if (saldoCliente(texto)) return null;
     const match = clientes.find(
       (c) =>
         c.nombre.toLowerCase() === t ||
@@ -1484,11 +1502,21 @@ const hipodromosDelDia = useMemo(() => {
     const buscarCliente = (valor: string) => {
       const k = valor.trim().toUpperCase();
       if (!k) return undefined;
-      return clientes.find(
-        (x) =>
-          (x.nombre && x.nombre.toUpperCase() === k) ||
-          (x.seudonimo && x.seudonimo.toUpperCase() === k) ||
-          String(x.id).toUpperCase() === k
+      return (
+        clientesDelGrupo.find(
+          (x) =>
+            (x.nombre && x.nombre.toUpperCase() === k) ||
+            (x.seudonimo && x.seudonimo.toUpperCase() === k) ||
+            (x.nombre_real && x.nombre_real.toUpperCase() === k) ||
+            String(x.id).toUpperCase() === k
+        ) ??
+        clientes.find(
+          (x) =>
+            (x.nombre && x.nombre.toUpperCase() === k) ||
+            (x.seudonimo && x.seudonimo.toUpperCase() === k) ||
+            (x.nombre_real && x.nombre_real.toUpperCase() === k) ||
+            String(x.id).toUpperCase() === k
+        )
       );
     };
     if (accion.modo === "editar") {
@@ -3368,7 +3396,6 @@ const hipodromosDelDia = useMemo(() => {
       setMensajeWhatsapp(res.mensajeWhatsapp);
       setVisorWhatsappTipo("resultados");
       setTextoVisorWhatsapp(res.mensajeWhatsapp);
-      setAcuseReciboOperador(true);
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("agente-ia-reporte-generado", {
@@ -5159,7 +5186,6 @@ const hipodromosDelDia = useMemo(() => {
                 });
                 setVisorWhatsappTipo("prejugadas");
                 setTextoVisorWhatsapp(txt);
-                setAcuseReciboOperador(false);
               }}
               className="shrink-0 whitespace-nowrap rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-[11px] font-black text-indigo-800 hover:bg-indigo-100"
             >
@@ -5180,7 +5206,6 @@ const hipodromosDelDia = useMemo(() => {
                 }
                 setVisorWhatsappTipo("resultados");
                 setTextoVisorWhatsapp(txt);
-                setAcuseReciboOperador(false);
               }}
               className="shrink-0 whitespace-nowrap rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-black text-emerald-800 hover:bg-emerald-100"
             >
@@ -5209,7 +5234,6 @@ const hipodromosDelDia = useMemo(() => {
                 });
                 setVisorWhatsappTipo("saldos");
                 setTextoVisorWhatsapp(txt);
-                setAcuseReciboOperador(false);
               }}
               className="shrink-0 whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] font-black text-amber-900 hover:bg-amber-100"
             >
@@ -5341,20 +5365,10 @@ const hipodromosDelDia = useMemo(() => {
                 rows={10}
                 className="w-full rounded-lg border border-slate-300 bg-slate-50 p-2.5 font-mono text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={acuseReciboOperador}
-                    onChange={(e) => setAcuseReciboOperador(e.target.checked)}
-                    className="h-4 w-4 accent-emerald-600"
-                  />
-                  ✅ Acuse de Recibo: Confirmo lectura y verificación del reporte antes de enviar
-                </label>
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    disabled={!acuseReciboOperador}
                     onClick={async () => {
                       try {
                         await navigator.clipboard.writeText(textoVisorWhatsapp);
@@ -5363,18 +5377,17 @@ const hipodromosDelDia = useMemo(() => {
                         emitirToast("No se pudo copiar al portapapeles.", "error");
                       }
                     }}
-                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-black text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-black text-white hover:bg-emerald-500"
                   >
                     📋 Copiar para WhatsApp
                   </button>
                   <button
                     type="button"
-                    disabled={!acuseReciboOperador}
                     onClick={() => {
                       const url = `https://wa.me/?text=${encodeURIComponent(textoVisorWhatsapp)}`;
                       window.open(url, "_blank", "noopener,noreferrer");
                     }}
-                    className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-black text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-black text-white hover:bg-green-600"
                   >
                     📲 Abrir en WhatsApp
                   </button>
@@ -6595,22 +6608,22 @@ const hipodromosDelDia = useMemo(() => {
 
       {/* Carga Rápida (texto libre) — pegar bloque y poblar tabla */}
       {modalCargaRapida && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-line bg-white shadow-2xl">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-slate-800 px-4 py-3 text-white">
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/60 p-4 py-6 sm:items-center">
+          <div className="flex max-h-[calc(100dvh-3rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-2xl">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-line bg-slate-800 px-4 py-3 text-white">
               <h3 className="text-xs font-black uppercase">⚡ Carga Rápida — <span className="normal-case">{nombreHipodromo}</span> C{carrera}</h3>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => setModalCargaRapida(false)} className="text-slate-300 hover:text-white">✕</button>
               </div>
             </div>
-            <div className="space-y-3 p-4">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
               <textarea
                 value={textoCargaRapida}
                 onChange={(e) => setTextoCargaRapida(e.target.value)}
-                rows={14}
+                rows={10}
                 spellCheck={false}
                 placeholder={"Pegá el bloque de jugadas (1 por línea, CUALQUIER orden):\n\n3y3 9 40 emy mar\n2p 1 100 Perrito molinas\nJuega Lolo 2p (1) con 300 da Mar\n1/2 y 2n 7 100 Eddie Manuel\n2x3 10/8 2 100 Juan Pedro\nWalcot 2y3-3n 4 astronauta 400"}
-                className="w-full resize-y rounded-xl border border-line bg-white p-3 font-mono text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                className="max-h-[35vh] w-full resize-y rounded-xl border border-line bg-white p-3 font-mono text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               />
               {incoherenciasCargaRapida.length > 0 && (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-2">
@@ -6724,7 +6737,7 @@ const hipodromosDelDia = useMemo(() => {
                 resto del bloque.
               </p>
             </div>
-            <div className="flex justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
+            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-line bg-gray-50 px-4 py-3">
               <Button variant="ghost" size="sm" onClick={() => { setTextoCargaRapida(""); setModalCargaRapida(false); }}>
                 Cancelar
               </Button>

@@ -67,14 +67,6 @@ export function ModalActualizacionObligatoriaContacto({
         return;
       }
 
-      // Marcar en almacenamiento local para no volver a exigir de inmediato
-      try {
-        const idClave = cliente.id || cliente.seudonimo || "cliente";
-        localStorage.setItem(`portal_contacto_verificado_${idClave}`, "1");
-      } catch {
-        /* sinop */
-      }
-
       const clienteActualizado = res.cliente ?? {
         ...cliente,
         codigo_pais: codigoPais,

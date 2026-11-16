@@ -93,19 +93,31 @@ export function BetSlip() {
   const [clientes, setClientes] = useState<ClienteVenta[]>([]);
   const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
 
+  const grupoActivo = useAuthStore((s) => s.grupoActivo);
+  const miGrupoId = useAuthStore((s) => s.grupoId);
+
+  const grupoSesion = useMemo(() => {
+    if (grupoActivo && grupoActivo !== "null" && String(grupoActivo).trim() !== "") {
+      return String(grupoActivo).trim();
+    }
+    if (miGrupoId && miGrupoId !== "null" && String(miGrupoId).trim() !== "") {
+      return String(miGrupoId).trim();
+    }
+    return null;
+  }, [grupoActivo, miGrupoId]);
+
   useEffect(() => {
     let vivo = true;
-    listarClientesVenta().then((c) => {
+    listarClientesVenta(true, grupoSesion).then((c) => {
       if (vivo) setClientes(c);
     });
-    // La comisión de las jugadas entre tercios sale del grupo (comision_default).
     listarGruposVenta().then((g) => {
       if (vivo) setGrupos(g);
     });
     return () => {
       vivo = false;
     };
-  }, []);
+  }, [grupoSesion]);
 
   const opcionesHipodromos = useMemo(
     () => hipodromos.map((h) => ({ value: String(h.value), label: String(h.label) })),
@@ -122,19 +134,6 @@ export function BetSlip() {
     const lista = nums.length ? nums : Array.from({ length: 12 }, (_, i) => i + 1);
     return lista.map((n) => ({ value: String(n), label: `Carrera ${n}` }));
   }, [carrerasDe, hipodromo]);
-
-  const grupoActivo = useAuthStore((s) => s.grupoActivo);
-  const miGrupoId = useAuthStore((s) => s.grupoId);
-
-  const grupoSesion = useMemo(() => {
-    if (grupoActivo && grupoActivo !== "null" && String(grupoActivo).trim() !== "") {
-      return String(grupoActivo).trim();
-    }
-    if (miGrupoId && miGrupoId !== "null" && String(miGrupoId).trim() !== "") {
-      return String(miGrupoId).trim();
-    }
-    return null;
-  }, [grupoActivo, miGrupoId]);
 
   const nombreGrupoSesion = useMemo(() => {
     if (!grupoSesion) return "";

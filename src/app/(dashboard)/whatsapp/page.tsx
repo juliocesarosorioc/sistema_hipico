@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuthStore } from "@/shared/store/useAuthStore";
+import { esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
 
 // ============================================================================
 // TIPOS
@@ -139,6 +141,13 @@ function nombreGrupo(
 // ============================================================================
 
 export default function WhatsappPage() {
+  const perfiles = useAuthStore((s) => s.perfiles);
+  const esPrincipal = useAuthStore((s) => s.esPrincipal);
+  const storeGrupoId = useAuthStore((s) => s.grupoId);
+  const esOperador = !esPrincipal && esRolOperadorExclusivo(perfiles);
+  const grupoUsuarioId = storeGrupoId ? String(storeGrupoId) : "";
+  const esSuperAdmin = !esOperador;
+
   const [status, setStatus] = useState<StatusResponse>({
     conectado: false,
     qrDataUrl: null,
@@ -172,6 +181,18 @@ export default function WhatsappPage() {
   const [confTopeNac, setConfTopeNac] = useState<string>("5");
   const [confTopeInt, setConfTopeInt] = useState<string>("4");
   const [guardandoParametros, setGuardandoParametros] = useState<boolean>(false);
+  const [gruposDifusionSeleccionados, setGruposDifusionSeleccionados] = useState<string[]>([]);
+  const [tipoDifusion, setTipoDifusion] = useState<"TEXTO" | "IMAGEN" | "NOTA_VOZ">("TEXTO");
+  const [textoDifusion, setTextoDifusion] = useState<string>("");
+  const [mediaBase64, setMediaBase64] = useState<string>("");
+  const [mediaMimetype, setMediaMimetype] = useState<string>("");
+  const [mediaNombre, setMediaNombre] = useState<string>("");
+  const [fechaLimpiezaInicio, setFechaLimpiezaInicio] = useState<string>(
+    () => new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
+  );
+  const [fechaLimpiezaFin, setFechaLimpiezaFin] = useState<string>(
+    () => new Date().toISOString().slice(0, 10)
+  );
 
   const abrirConfigSala = (sala: SalaJuego) => {
     setSalaConfigurando(sala);
@@ -328,15 +349,24 @@ export default function WhatsappPage() {
 
   const cargarSalasGrupos = useCallback(async (gId?: string) => {
     try {
-      const targetGrupo = gId !== undefined ? gId : grupoFiltroId;
+      const targetGrupo = esOperador && grupoUsuarioId
+        ? grupoUsuarioId
+        : gId !== undefined
+        ? gId
+        : grupoFiltroId;
       const qs = targetGrupo ? `?grupoId=${encodeURIComponent(targetGrupo)}` : "";
       const res = await fetch(`/api/whatsapp-sala/salas-grupos${qs}`, { cache: "no-store" });
       if (!res.ok) return;
       const json = await res.json();
       if (Array.isArray(json.gruposSistema)) {
-        setGruposSistema(json.gruposSistema);
-        if (!grupoFiltroId && !gId && json.gruposSistema.length > 0) {
-          setGrupoFiltroId(json.gruposSistema[0].id);
+        const listaGrupos = esOperador && grupoUsuarioId
+          ? json.gruposSistema.filter((g: GrupoSistemaItem) => String(g.id) === grupoUsuarioId)
+          : json.gruposSistema;
+        setGruposSistema(listaGrupos);
+        if (esOperador && grupoUsuarioId && grupoFiltroId !== grupoUsuarioId) {
+          setGrupoFiltroId(grupoUsuarioId);
+        } else if (!grupoFiltroId && !gId && listaGrupos.length > 0) {
+          setGrupoFiltroId(listaGrupos[0].id);
         }
       }
       if (Array.isArray(json.vinculosGlobales)) {
@@ -382,8 +412,16 @@ export default function WhatsappPage() {
   }, [consultarEstado, cargarSalasGrupos]);
 
   const agregarSalaAlGrupo = async () => {
-    const gId = grupoFiltroId || salas[0]?.grupo_id || gruposSistema[0]?.id;
+    const gId = (esOperador && grupoUsuarioId) ? grupoUsuarioId : (grupoFiltroId || salas[0]?.grupo_id || gruposSistema[0]?.id);
     if (!gId) return;
+    const salasDelGrupo = salas.filter((s) => String(s.grupo_id) === String(gId));
+    if (salasDelGrupo.length >= 2) {
+      setFeedback({
+        tipo: "error",
+        texto: "❌ Límite estricto: Máximo 2 salas simultáneas permitidas por sesión/grupo.",
+      });
+      return;
+    }
     setProcesandoAccion("crear-sala");
     try {
       const res = await fetch("/api/whatsapp-sala/admin", {
@@ -581,6 +619,132 @@ export default function WhatsappPage() {
       }));
     } finally {
       setHaciendoPing((p) => ({ ...p, [salaId]: false }));
+    }
+  };
+
+  const desconectarSesion = async () => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("¿Desconectar la sesión actual de WhatsApp (sock.logout) y generar un nuevo QR?")
+    ) {
+      return;
+    }
+    setProcesandoAccion("desconectar-sesion");
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/whatsapp/disconnect", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json?.ok) {
+        setFeedback({
+          tipo: "ok",
+          texto: json?.motivo || "Sesión de WhatsApp desconectada. Escanea el nuevo QR.",
+        });
+        await consultarEstado(false, true);
+      } else {
+        setFeedback({
+          tipo: "error",
+          texto: json?.motivo || "No se pudo desconectar la sesión de WhatsApp.",
+        });
+      }
+    } catch (err: unknown) {
+      setFeedback({
+        tipo: "error",
+        texto: mensajeDeError(err, "Error de red al desconectar la sesión."),
+      });
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
+  const toggleGrupoDifusion = (jid: string) => {
+    setGruposDifusionSeleccionados((prev) =>
+      prev.includes(jid) ? prev.filter((item) => item !== jid) : [...prev, jid]
+    );
+  };
+
+  const cargarArchivoDifusion = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setMediaNombre(file.name);
+    setMediaMimetype(file.type || (tipoDifusion === "IMAGEN" ? "image/jpeg" : "audio/ogg"));
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setMediaBase64(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const enviarDifusionMultimedia = async () => {
+    if (!esSuperAdmin) {
+      setFeedback({ tipo: "error", texto: "Solo Super Admin puede difundir a múltiples grupos." });
+      return;
+    }
+    if (gruposDifusionSeleccionados.length === 0) {
+      setFeedback({ tipo: "error", texto: "Haz clic en el ícono de al menos 1 grupo de WhatsApp para difundir." });
+      return;
+    }
+    if (tipoDifusion === "TEXTO" && !textoDifusion.trim()) {
+      setFeedback({ tipo: "error", texto: "Escribe el texto a difundir." });
+      return;
+    }
+    if ((tipoDifusion === "IMAGEN" || tipoDifusion === "NOTA_VOZ") && !mediaBase64) {
+      setFeedback({ tipo: "error", texto: "Adjunta el archivo de imagen o nota de voz." });
+      return;
+    }
+
+    setProcesandoAccion("difundir-multimedia");
+    setFeedback(null);
+    try {
+      const { json } = await ejecutarAdmin({
+        accion: "difundir_grupos",
+        groupJids: gruposDifusionSeleccionados,
+        tipo: tipoDifusion,
+        texto: textoDifusion.trim(),
+        mediaBase64,
+        mimetype: mediaMimetype,
+      });
+      if (json?.ok) {
+        setFeedback({ tipo: "ok", texto: `✅ ${json.motivo || "Difusión enviada."}` });
+        setTextoDifusion("");
+        setMediaBase64("");
+        setMediaNombre("");
+      } else {
+        setFeedback({ tipo: "error", texto: json?.motivo || "No se pudo enviar la difusión." });
+      }
+    } catch (err: unknown) {
+      setFeedback({ tipo: "error", texto: mensajeDeError(err, "Error al difundir.") });
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
+  const limpiarMultimediaPorFechas = async () => {
+    if (!fechaLimpiezaInicio || !fechaLimpiezaFin) {
+      setFeedback({ tipo: "error", texto: "Selecciona fecha de inicio y fecha fin." });
+      return;
+    }
+    setProcesandoAccion("limpiar-multimedia");
+    setFeedback(null);
+    try {
+      const { json } = await ejecutarAdmin({
+        accion: "limpiar_multimedia",
+        fechaInicio: fechaLimpiezaInicio,
+        fechaFin: fechaLimpiezaFin,
+      });
+      if (json?.ok) {
+        setFeedback({
+          tipo: "ok",
+          texto: `🧹 ${json.motivo || `Limpieza completada (${json.eliminados ?? 0} registros)`}`,
+        });
+      } else {
+        setFeedback({ tipo: "error", texto: json?.motivo || "No se pudo limpiar multimedia." });
+      }
+    } catch (err: unknown) {
+      setFeedback({ tipo: "error", texto: mensajeDeError(err, "Error al limpiar multimedia.") });
+    } finally {
+      setProcesandoAccion(null);
     }
   };
 
@@ -1017,19 +1181,25 @@ export default function WhatsappPage() {
               className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-black ${
                 status.conectado
                   ? "border-emerald-500/40 bg-emerald-950/70 text-emerald-300"
-                  : "border-amber-500/40 bg-amber-950/60 text-amber-300"
+                  : status.qrDataUrl
+                  ? "border-amber-500/40 bg-amber-950/60 text-amber-300"
+                  : "border-rose-500/40 bg-rose-950/60 text-rose-300"
               }`}
             >
               <span
-                className={`h-2 w-2 rounded-full ${
-                  status.conectado ? "bg-emerald-400" : "bg-amber-400 animate-pulse"
+                className={`h-2.5 w-2.5 rounded-full ${
+                  status.conectado
+                    ? "bg-emerald-400"
+                    : status.qrDataUrl
+                    ? "bg-amber-400 animate-pulse"
+                    : "bg-rose-500"
                 }`}
               />
               {status.conectado
-                ? `Conectado${status.numeroVinculado ? ` · +${status.numeroVinculado}` : ""}`
+                ? `🟢 Conectado${status.numeroVinculado ? ` · +${status.numeroVinculado}` : ""}`
                 : status.qrDataUrl
-                ? "Esperando escaneo QR"
-                : "Bot desconectado"}
+                ? "🟡 QR Pendiente"
+                : "🔴 Desconectado"}
             </span>
 
             <span
@@ -1111,6 +1281,14 @@ export default function WhatsappPage() {
                   </code>
                   . Si el servidor se reinicia, se reconecta solo.
                 </p>
+                <button
+                  type="button"
+                  onClick={desconectarSesion}
+                  disabled={ocupado}
+                  className="mt-1 rounded-xl border border-rose-500/50 bg-rose-950/60 px-4 py-2 text-[11px] font-black text-rose-200 transition hover:bg-rose-900/70 disabled:opacity-40"
+                >
+                  {procesandoAccion === "desconectar-sesion" ? "Desconectando…" : "🔌 Desconectar Sesión"}
+                </button>
               </div>
             ) : status.qrDataUrl ? (
               <div className="flex flex-col items-center gap-3">
@@ -1190,25 +1368,47 @@ export default function WhatsappPage() {
           {/* Selector de Grupo del Sistema + Agregar Sala (máx. 2 por grupo) */}
           <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <span className="text-xs font-black text-slate-300 shrink-0">Grupo:</span>
-                <select
-                  value={grupoFiltroId}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setGrupoFiltroId(val);
-                    void cargarSalasGrupos(val);
-                  }}
-                  className="min-w-0 flex-1 max-w-xs rounded-xl border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold text-white outline-none focus:border-emerald-500"
-                >
-                  <option value="">Todos los grupos ({gruposSistema.length})</option>
-                  {gruposSistema.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.conectado ? "🟢 " : "⚪ "}
-                      {g.nombre} {g.conectado ? "(Conectado)" : "(Sin WhatsApp)"}
-                    </option>
-                  ))}
-                </select>
+              <div className="flex flex-wrap items-center gap-1.5 min-w-0 flex-1">
+                <span className="text-xs font-black text-slate-300 shrink-0 mr-1">Grupo:</span>
+                {esSuperAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGrupoFiltroId("");
+                      void cargarSalasGrupos("");
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-black transition ${
+                      grupoFiltroId === ""
+                        ? "border-emerald-500/60 bg-emerald-950/70 text-emerald-300"
+                        : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600"
+                    }`}
+                  >
+                    <span>🗂️</span>
+                    <span>Todos ({gruposSistema.length})</span>
+                  </button>
+                )}
+                {gruposSistema.map((g) => {
+                  const seleccionado = grupoFiltroId === g.id;
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => {
+                        if (esOperador && grupoUsuarioId && g.id !== grupoUsuarioId) return;
+                        setGrupoFiltroId(g.id);
+                        void cargarSalasGrupos(g.id);
+                      }}
+                      className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-bold transition ${
+                        seleccionado
+                          ? "border-emerald-500/70 bg-emerald-950/70 text-emerald-200 ring-1 ring-emerald-500/40"
+                          : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600"
+                      }`}
+                    >
+                      <span>{g.conectado ? "🟢" : "⚪"}</span>
+                      <span>{g.nombre}</span>
+                    </button>
+                  );
+                })}
               </div>
               {grupoFiltroId &&
                 salas.filter((s) => !grupoFiltroId || s.grupo_id === grupoFiltroId).length < 2 && (
@@ -1503,21 +1703,8 @@ export default function WhatsappPage() {
                         />
                       </div>
                     )}
-                    <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
-                      <select
-                        value={jidActual}
-                        onChange={(e) => {
-                          const nuevo = e.target.value;
-                          setSeleccionGrupoPorSala((prev) => ({
-                            ...prev,
-                            [sala.id]: nuevo,
-                          }));
-                        }}
-                        disabled={ocupado}
-                        className="w-full min-w-0 max-w-full flex-1 truncate rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none transition focus:border-emerald-500 disabled:opacity-50"
-                        aria-label={`Grupo de WhatsApp para ${sala.nombre_sala}`}
-                      >
-                        <option value="">— Seleccionar grupo de WhatsApp —</option>
+                    <div className="mt-2 space-y-2">
+                      <div className="grid max-h-44 grid-cols-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
                         {status.grupos
                           .filter(
                             (g) =>
@@ -1527,35 +1714,93 @@ export default function WhatsappPage() {
                           )
                           .map((g) => {
                             const conectado = Boolean(g.conectado);
-                            const esEstaSala = vinculosEstaSala.some(v => v.whatsapp_group_jid === g.jid) || g.jid === jidEfectivo;
-                            const estadoTxt = conectado
-                              ? esEstaSala
-                                ? " · [🟢 Conectado a esta sala]"
-                                : ` · [🟢 Conectado a ${g.salaNombre || 'otra sala'}${g.grupoNombre ? ` (${g.grupoNombre})` : ''}]`
-                              : " · [⚪ Disponible]";
+                            const esEstaSala =
+                              vinculosEstaSala.some((v) => v.whatsapp_group_jid === g.jid) ||
+                              g.jid === jidEfectivo;
+                            const ocupadoOtraSala = conectado && !esEstaSala;
+                            const seleccionado = jidActual === g.jid;
+
                             return (
-                              <option key={g.jid} value={g.jid}>
-                                {conectado ? "🟢 " : "⚪ "}
-                                {g.nombre.length > 36 ? `${g.nombre.slice(0, 36)}…` : g.nombre}
-                                {estadoTxt}
-                              </option>
+                              <div
+                                key={g.jid}
+                                className={`flex items-center justify-between gap-2 rounded-xl border px-2.5 py-2 transition ${
+                                  esEstaSala
+                                    ? "border-emerald-500/60 bg-emerald-950/50"
+                                    : seleccionado
+                                    ? "border-sky-500/60 bg-sky-950/40"
+                                    : ocupadoOtraSala
+                                    ? "border-slate-800/80 bg-slate-900/40 opacity-55"
+                                    : "border-slate-800 bg-slate-950 hover:border-slate-700"
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  disabled={ocupado || ocupadoOtraSala}
+                                  onClick={() => {
+                                    setSeleccionGrupoPorSala((prev) => ({
+                                      ...prev,
+                                      [sala.id]: g.jid,
+                                    }));
+                                  }}
+                                  className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
+                                  title={
+                                    ocupadoOtraSala
+                                      ? `Ocupado por ${g.salaNombre || "otra sala"} (Regla 1 a 1)`
+                                      : `Seleccionar ${g.nombre}`
+                                  }
+                                >
+                                  <span
+                                    className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg border text-xs ${
+                                      esEstaSala
+                                        ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-300"
+                                        : seleccionado
+                                        ? "border-sky-400/60 bg-sky-500/20 text-sky-300"
+                                        : "border-slate-700 bg-slate-900 text-slate-300"
+                                    }`}
+                                  >
+                                    {esEstaSala ? "🟢" : ocupadoOtraSala ? "🔒" : "💬"}
+                                  </span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-[11px] font-black text-white">
+                                      {g.nombre}
+                                    </span>
+                                    <span className="block truncate text-[9px] text-slate-400">
+                                      {esEstaSala
+                                        ? "Conectado a esta sala"
+                                        : ocupadoOtraSala
+                                        ? `En ${g.salaNombre || "otra sala"}`
+                                        : "Disponible"}
+                                    </span>
+                                  </span>
+                                </button>
+
+                                {esEstaSala ? (
+                                  <button
+                                    type="button"
+                                    disabled={ocupado}
+                                    onClick={() =>
+                                      void desvincularMultiGrupo(undefined, sala.id, g.jid)
+                                    }
+                                    className="shrink-0 rounded-lg border border-rose-500/40 bg-rose-950/60 px-2 py-1 text-[10px] font-black text-rose-200 hover:bg-rose-900/70"
+                                  >
+                                    Desconectar
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={ocupado || ocupadoOtraSala}
+                                    onClick={() => void vincularMultiGrupo(sala, g.jid)}
+                                    className="shrink-0 rounded-lg bg-emerald-600 px-2 py-1 text-[10px] font-black text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    {procesandoAccion === `vincular-multi-${sala.id}`
+                                      ? "…"
+                                      : "Conectar"}
+                                  </button>
+                                )}
+                              </div>
                             );
                           })}
-                        {jidActual && !status.grupos.some((g) => g.jid === jidActual) && (
-                          <option value={jidActual}>
-                            Grupo guardado ({nombreEfectivo || jidActual})
-                          </option>
-                        )}
-                      </select>
-
-                      <button
-                        type="button"
-                        onClick={() => void vincularMultiGrupo(sala, jidActual)}
-                        disabled={ocupado || !jidActual}
-                        className="shrink-0 rounded-xl bg-emerald-600 px-4 py-2 text-[11px] font-black text-white shadow transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {procesandoAccion === `vincular-multi-${sala.id}` ? "Verificando…" : "🔗 Verificar y Agregar"}
-                      </button>
+                      </div>
                     </div>
 
                     {(vinculosPorSala[sala.id] || []).length > 0 && (
@@ -1772,30 +2017,53 @@ export default function WhatsappPage() {
           ) : (
             gruposDirectorioFiltrados.map((g) => {
               const estaConectado = Boolean(g.conectado);
+              const seleccionadoDifusion = gruposDifusionSeleccionados.includes(g.jid);
               return (
                 <div
                   key={g.jid}
                   className={`p-3 rounded-2xl border transition-all ${
-                    estaConectado
+                    seleccionadoDifusion
+                      ? "border-sky-400/70 bg-gradient-to-br from-sky-950/50 to-slate-900/80 ring-1 ring-sky-400/40"
+                      : estaConectado
                       ? "border-emerald-500/30 bg-gradient-to-br from-emerald-950/30 to-slate-900/60 shadow-sm shadow-emerald-950/20"
                       : "border-slate-800 bg-slate-900/40 hover:border-slate-700"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className={`h-2 w-2 rounded-full shrink-0 ${
-                            estaConectado ? "bg-emerald-400 animate-pulse" : "bg-slate-500"
+                    <div className="flex min-w-0 flex-1 items-start gap-2">
+                      {esSuperAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => toggleGrupoDifusion(g.jid)}
+                          title={
+                            seleccionadoDifusion
+                              ? "Quitar de selección para difusión"
+                              : "Seleccionar grupo para difusión"
+                          }
+                          className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl border text-sm transition ${
+                            seleccionadoDifusion
+                              ? "border-sky-400 bg-sky-500/25 text-sky-200 shadow"
+                              : "border-slate-700 bg-slate-950 text-slate-400 hover:border-sky-500/60 hover:text-sky-300"
                           }`}
-                        />
-                        <h4 className="truncate text-xs font-black text-white" title={g.nombre}>
-                          {g.nombre}
-                        </h4>
+                        >
+                          {seleccionadoDifusion ? "☑️" : "💬"}
+                        </button>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`h-2 w-2 rounded-full shrink-0 ${
+                              estaConectado ? "bg-emerald-400 animate-pulse" : "bg-slate-500"
+                            }`}
+                          />
+                          <h4 className="truncate text-xs font-black text-white" title={g.nombre}>
+                            {g.nombre}
+                          </h4>
+                        </div>
+                        <p className="mt-0.5 truncate font-mono text-[9px] text-slate-500" title={g.jid}>
+                          {g.jid}
+                        </p>
                       </div>
-                      <p className="mt-0.5 truncate font-mono text-[9px] text-slate-500" title={g.jid}>
-                        {g.jid}
-                      </p>
                     </div>
                     <span
                       className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase shrink-0 border ${
@@ -1830,6 +2098,139 @@ export default function WhatsappPage() {
               );
             })
           )}
+        </div>
+
+        {/* Difusión Multimedia (Super Admin) + Limpiador por Rango de Fechas */}
+        <div className="mt-4 grid grid-cols-1 gap-4 border-t border-slate-800 pt-4 lg:grid-cols-2">
+          {esSuperAdmin && (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-sky-300">
+                    📣 Difusión Multimedia a Grupos Seleccionados ({gruposDifusionSeleccionados.length})
+                  </h4>
+                  <p className="text-[10px] text-slate-400">
+                    Haz clic en el ícono 💬/☑️ de 1 o varios grupos arriba para enviar Texto, Imagen o Nota de Voz.
+                  </p>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setGruposDifusionSeleccionados(gruposDirectorioFiltrados.map((g) => g.jid))
+                    }
+                    className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] font-bold text-slate-300 hover:border-sky-500"
+                  >
+                    Todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGruposDifusionSeleccionados([])}
+                    className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] font-bold text-slate-400 hover:border-rose-500"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-1.5">
+                {(["TEXTO", "IMAGEN", "NOTA_VOZ"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTipoDifusion(t)}
+                    className={`rounded-xl border px-3 py-1.5 text-[11px] font-black transition ${
+                      tipoDifusion === t
+                        ? "border-sky-400 bg-sky-950/70 text-sky-200"
+                        : "border-slate-700 bg-slate-950 text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    {t === "TEXTO" ? "📝 Texto" : t === "IMAGEN" ? "🖼️ Imagen" : "🎙️ Nota de Voz"}
+                  </button>
+                ))}
+              </div>
+
+              {tipoDifusion !== "NOTA_VOZ" && (
+                <textarea
+                  rows={2}
+                  value={textoDifusion}
+                  onChange={(e) => setTextoDifusion(e.target.value)}
+                  placeholder={
+                    tipoDifusion === "IMAGEN"
+                      ? "Descripción / pie de foto opcional..."
+                      : "Escribe el mensaje a difundir..."
+                  }
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-sky-500"
+                />
+              )}
+
+              {(tipoDifusion === "IMAGEN" || tipoDifusion === "NOTA_VOZ") && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="file"
+                    accept={tipoDifusion === "IMAGEN" ? "image/*" : "audio/*"}
+                    onChange={cargarArchivoDifusion}
+                    className="text-[11px] text-slate-300 file:mr-2 file:rounded-lg file:border-0 file:bg-sky-600 file:px-3 file:py-1 file:text-[11px] file:font-black file:text-white hover:file:bg-sky-500"
+                  />
+                  {mediaNombre && (
+                    <span className="text-[10px] font-bold text-emerald-300">📎 {mediaNombre}</span>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={enviarDifusionMultimedia}
+                disabled={ocupado || gruposDifusionSeleccionados.length === 0}
+                className="w-full rounded-xl bg-sky-600 px-4 py-2 text-xs font-black text-white shadow transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {procesandoAccion === "difundir-multimedia"
+                  ? "Enviando difusión…"
+                  : `🚀 Enviar ${tipoDifusion} a ${gruposDifusionSeleccionados.length} grupo(s)`}
+              </button>
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+            <div>
+              <h4 className="text-xs font-black uppercase tracking-wider text-amber-300">
+                🧹 Limpiador de Multimedia por Rango de Fechas
+              </h4>
+              <p className="text-[10px] text-slate-400">
+                Elimina imágenes y notas de voz antiguas de WhatsApp para liberar espacio en base de datos.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-1">Desde</label>
+                <input
+                  type="date"
+                  value={fechaLimpiezaInicio}
+                  onChange={(e) => setFechaLimpiezaInicio(e.target.value)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-1">Hasta</label>
+                <input
+                  type="date"
+                  value={fechaLimpiezaFin}
+                  onChange={(e) => setFechaLimpiezaFin(e.target.value)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-500"
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={limpiarMultimediaPorFechas}
+              disabled={ocupado}
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-950/60 px-4 py-2 text-xs font-black text-amber-200 transition hover:bg-amber-900/70 disabled:opacity-40"
+            >
+              {procesandoAccion === "limpiar-multimedia"
+                ? "Limpiando…"
+                : "🗑️ Limpiar Imágenes y Audios"}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -1980,40 +2381,38 @@ export default function WhatsappPage() {
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
                 + Vincular otro grupo a esta sala
               </h4>
-              <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
-                <select
-                  value={grupoParaVincularEnModal}
-                  onChange={(e) => setGrupoParaVincularEnModal(e.target.value)}
-                  disabled={ocupado}
-                  className="flex-1 truncate rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none focus:border-emerald-500"
-                >
-                  <option value="">— Seleccionar grupo de WhatsApp —</option>
-                  {status.grupos
-                    .filter(
-                      (g) =>
-                        !(vinculosPorSala[salaConfigurando.id] || []).some(
-                          (v) => v.whatsapp_group_jid === g.jid
-                        )
-                    )
-                    .map((g) => (
-                      <option key={g.jid} value={g.jid}>
-                        {g.conectado ? "🟢 " : "⚪ "} {g.nombre}
-                      </option>
-                    ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (grupoParaVincularEnModal) {
-                      void vincularMultiGrupo(salaConfigurando, grupoParaVincularEnModal);
-                      setGrupoParaVincularEnModal("");
-                    }
-                  }}
-                  disabled={ocupado || !grupoParaVincularEnModal}
-                  className="shrink-0 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white shadow transition hover:bg-emerald-500 disabled:opacity-40"
-                >
-                  🔗 Vincular
-                </button>
+              <div className="mt-2.5 grid max-h-40 grid-cols-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
+                {status.grupos
+                  .filter(
+                    (g) =>
+                      !g.conectado &&
+                      !(vinculosPorSala[salaConfigurando.id] || []).some(
+                        (v) => v.whatsapp_group_jid === g.jid
+                      )
+                  )
+                  .map((g) => {
+                    const sel = grupoParaVincularEnModal === g.jid;
+                    return (
+                      <button
+                        key={g.jid}
+                        type="button"
+                        disabled={ocupado}
+                        onClick={() => {
+                          setGrupoParaVincularEnModal(g.jid);
+                          void vincularMultiGrupo(salaConfigurando, g.jid);
+                        }}
+                        className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold transition ${
+                          sel
+                            ? "border-emerald-500 bg-emerald-950/60 text-emerald-200"
+                            : "border-slate-700 bg-slate-950 text-white hover:border-emerald-500/60"
+                        }`}
+                      >
+                        <span>💬</span>
+                        <span className="truncate flex-1">{g.nombre}</span>
+                        <span className="text-[10px] font-black text-emerald-400">Conectar</span>
+                      </button>
+                    );
+                  })}
               </div>
             </div>
 

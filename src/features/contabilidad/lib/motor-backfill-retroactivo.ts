@@ -16,6 +16,7 @@
 
 import { supabase } from "@/core/supabase";
 import { redondearCentavos, sumarDinero, restarDinero } from "@/shared/lib/dinero";
+import { esTicketBolsaBNoCruzable } from "@/features/betting/lib/bettingEngine";
 import { emitirMensajePaso } from "@/features/liquidacion/lib/liquidacion-incentivos-socios";
 import {
   generarAsientoPartidaDoble,
@@ -454,25 +455,28 @@ export async function sincronizarYAuditarContabilidadCompleta(params?: {
 
           const acumularComisionModalidad = (comMonto: number) => {
             if (comMonto <= 0) return;
-            if (mod === "TABLA FIJA" || mod === "TABLAS FIJAS") {
+            if (/^(?:TABLA(?:\s+FIJA)?|TF)\b/i.test(mod)) {
               comisionesMod.tablasFijas = redondearCentavos(comisionesMod.tablasFijas + comMonto);
-            } else if (mod === "MARCA" || mod === "MARCAS") {
+            } else if (/^MARCAS?\b/i.test(mod)) {
               comisionesMod.marcas = redondearCentavos(comisionesMod.marcas + comMonto);
-            } else if (mod.startsWith("DUPLETA")) {
+            } else if (/^DUPLETAS?\b/i.test(mod)) {
               comisionesMod.dupletas = redondearCentavos(comisionesMod.dupletas + comMonto);
-            } else if (mod === "WIN" || mod === "PLACE" || mod === "SHOW" || mod === "WPS") {
+            } else if (/^(?:WIN|PLACE|SHOW|WPS)\b/i.test(mod)) {
               comisionesMod.wps = redondearCentavos(comisionesMod.wps + comMonto);
             } else {
               comisionesMod.entreTercios = redondearCentavos(comisionesMod.entreTercios + comMonto);
             }
           };
 
-          const esTercios =
-            mod !== "TABLA FIJA" &&
-            mod !== "TABLAS FIJAS" &&
-            mod !== "MARCA" &&
-            mod !== "MARCAS" &&
-            !mod.startsWith("DUPLETA");
+          // Acumulador 1 estricto: SOLO jugadas de puestos/tercios elegibles para cruce
+          const esTercios = !esTicketBolsaBNoCruzable({
+            nombre_jugada: mod,
+            modalidad: t.modalidad as string | null | undefined,
+            origen: t.origen as string | null | undefined,
+            cliente_consigue_nombre: cliConsigueNom,
+            nota_auditoria: t.nota_auditoria,
+            es_cruzable: t.es_cruzable as boolean | null | undefined,
+          });
 
           if ((est === "GANADOR" || est === "GANO") && monto > 0) {
             const ganBruto = premio > monto ? redondearCentavos(premio - monto) : monto;

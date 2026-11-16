@@ -223,6 +223,39 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Regla 1 a 1: Un Grupo de WhatsApp = Una Sala
+      const { data: otraSala } = await supabaseAdmin
+        .from("salas_juego")
+        .select("id, nombre_sala")
+        .eq("whatsapp_group_jid", groupJid)
+        .eq("activa", true)
+        .neq("id", salaId)
+        .limit(1)
+        .maybeSingle();
+
+      if (otraSala) {
+        return NextResponse.json({
+          ok: false,
+          motivo: `Este grupo de WhatsApp ya está vinculado a otra sala (${otraSala.nombre_sala || otraSala.id}). Regla 1 a 1.`,
+        });
+      }
+
+      const { data: otroVinc } = await supabaseAdmin
+        .from("salas_whatsapp_grupos")
+        .select("sala_id")
+        .eq("whatsapp_group_jid", groupJid)
+        .eq("activo", true)
+        .neq("sala_id", salaId)
+        .limit(1)
+        .maybeSingle();
+
+      if (otroVinc) {
+        return NextResponse.json({
+          ok: false,
+          motivo: "Este grupo de WhatsApp ya está conectado a otra sala activa (Regla 1 a 1).",
+        });
+      }
+
       try {
         const resBot = await fetch(`${BOT_DAEMON_URL}/verificar-y-vincular`, {
           method: "POST",
@@ -235,6 +268,12 @@ export async function POST(req: NextRequest) {
         });
         const json = await resBot.json().catch(() => ({}));
         if (json?.ok) {
+          await supabaseAdmin
+            .from("salas_whatsapp_grupos")
+            .delete()
+            .eq("sala_id", salaId)
+            .neq("whatsapp_group_jid", groupJid);
+
           await supabaseAdmin
             .from("salas_whatsapp_grupos")
             .upsert(

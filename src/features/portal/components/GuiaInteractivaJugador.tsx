@@ -216,37 +216,12 @@ export function GuiaInteractivaJugador({ abierto, onCerrar, clienteId, nombreJug
   const totalPasos = PASOS_GUIA.length;
   const progresoPct = Math.round(((pasoIndex + 1) / totalPasos) * 100);
 
-  // Cargar estado previo de comprensión de localStorage
-  useEffect(() => {
-    if (!clienteId) return;
-    try {
-      const guardado = localStorage.getItem(`portal_guia_aceptaciones_${clienteId}`);
-      if (guardado) {
-        const parsed = JSON.parse(guardado);
-        setAceptados(parsed);
-      }
-      const yaCompletada = localStorage.getItem(`portal_guia_completada_${clienteId}`);
-      if (yaCompletada === "true") {
-        setCompletado(true);
-      }
-    } catch {
-      /* sinop */
-    }
-  }, [clienteId]);
-
   if (!abierto) return null;
 
   const alternarAceptacion = () => {
     const nuevoEstado = !estaAceptado;
     const nuevoMapa = { ...aceptados, [pasoActual.id]: nuevoEstado };
     setAceptados(nuevoMapa);
-    if (clienteId) {
-      try {
-        localStorage.setItem(`portal_guia_aceptaciones_${clienteId}`, JSON.stringify(nuevoMapa));
-      } catch {
-        /* sinop */
-      }
-    }
   };
 
   const avanzar = () => {
@@ -256,13 +231,6 @@ export function GuiaInteractivaJugador({ abierto, onCerrar, clienteId, nombreJug
     } else {
       // Finalización
       setCompletado(true);
-      if (clienteId) {
-        try {
-          localStorage.setItem(`portal_guia_completada_${clienteId}`, "true");
-        } catch {
-          /* sinop */
-        }
-      }
     }
   };
 

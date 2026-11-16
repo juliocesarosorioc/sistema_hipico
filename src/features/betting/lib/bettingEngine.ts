@@ -180,6 +180,194 @@ export function claveCruceFinanciero(carrera: string | number, cliente: string, 
 }
 
 /**
+ * Clasificación estricta Bolsa B (`es_cruzable = false`):
+ * Excluye del motor de cruces (netting) cualquier ticket de:
+ *  - Marcas / Marcas Adelantadas (`origen === 'MARCAS'`, `MARCA%`, `cliente_consigue === 'MARCAS'`)
+ *  - Tablas Fijas (`origen === 'TABLAS_FIJAS'`, `TABLA%` / `TF`, `cliente_consigue === 'TF'`)
+ *  - Remates (`origen === 'REMATE'`, `REMATE%`, `cliente_consigue === 'REMATE'`)
+ *  - Pollas (`origen === 'POLLA'`, `POLLA%`, `cliente_consigue === 'POLLAS'`)
+ *  - Dupletas (`origen === 'DUPLETA'`, `DUPLETA%`, `cliente_consigue === 'DUPLETA'`)
+ */
+export function esTicketBolsaBNoCruzable(
+  input:
+    | {
+        nombre_jugada?: unknown;
+        nombreJugada?: unknown;
+        jugada?: unknown;
+        tipo_jugada?: unknown;
+        tipoJugada?: unknown;
+        cliente_consigue_nombre?: unknown;
+        clienteConsigue?: unknown;
+        cliente2?: unknown;
+        da?: unknown;
+        tercio?: unknown;
+        contraparte?: unknown;
+        origen?: unknown;
+        modalidad?: unknown;
+        nota_auditoria?: unknown;
+        es_cruzable?: boolean | null;
+      }
+    | string
+    | null
+    | undefined
+): boolean {
+  if (!input) return false;
+  if (typeof input === "string") {
+    const s = input.trim().toUpperCase();
+    return /^(?:MARCAS?|TABLA(?:\s+FIJA)?|TF|REMATES?|POLLAS?|DUPLETAS?|WPS|WIN|PLACE|SHOW)\b/i.test(s);
+  }
+  if (input.es_cruzable === false) return true;
+
+  const nom = String(
+    input.nombre_jugada ??
+      input.nombreJugada ??
+      input.jugada ??
+      input.tipo_jugada ??
+      input.tipoJugada ??
+      ""
+  )
+    .trim()
+    .toUpperCase();
+  if (
+    /^(?:MARCAS?|TABLA(?:\s+FIJA)?|TF|REMATES?|POLLAS?|DUPLETAS?|WPS|WIN|PLACE|SHOW)\b/i.test(nom)
+  ) {
+    return true;
+  }
+
+  const cons = String(
+    input.cliente_consigue_nombre ??
+      input.clienteConsigue ??
+      input.cliente2 ??
+      input.da ??
+      input.tercio ??
+      input.contraparte ??
+      ""
+  )
+    .trim()
+    .toUpperCase();
+  if (
+    cons === "MARCAS" ||
+    cons === "MARCA" ||
+    cons === "TF" ||
+    cons === "TABLA" ||
+    cons === "TABLAS" ||
+    cons === "TABLA FIJA" ||
+    cons === "TABLAS FIJAS" ||
+    cons === "REMATE" ||
+    cons === "REMATES" ||
+    cons === "POLLA" ||
+    cons === "POLLAS" ||
+    cons === "DUPLETA" ||
+    cons === "DUPLETAS"
+  ) {
+    return true;
+  }
+
+  let origen = String(input.origen ?? "").trim().toUpperCase();
+  let modalidad = String(input.modalidad ?? input.tipoJugada ?? "").trim().toUpperCase();
+  if (input.nota_auditoria) {
+    try {
+      const nota =
+        typeof input.nota_auditoria === "string"
+          ? JSON.parse(input.nota_auditoria)
+          : input.nota_auditoria;
+      if (nota && typeof nota === "object") {
+        const nRec = nota as Record<string, unknown>;
+        if (!origen && nRec.origen) origen = String(nRec.origen).trim().toUpperCase();
+        if (!modalidad && nRec.modalidad) modalidad = String(nRec.modalidad).trim().toUpperCase();
+      }
+    } catch {
+      /* ignore invalid JSON */
+    }
+  }
+
+  const origenesBolsaB = new Set([
+    "MARCAS",
+    "MARCA",
+    "TABLAS_FIJAS",
+    "TABLA_FIJA",
+    "TABLA",
+    "TABLAS",
+    "REMATE",
+    "REMATES",
+    "POLLA",
+    "POLLAS",
+    "DUPLETA",
+    "DUPLETAS",
+    "WPS",
+    "AMERICANAS",
+  ]);
+  if (origenesBolsaB.has(origen) || origenesBolsaB.has(modalidad)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Clasificación estricta Bolsa A (`es_cruzable = true`):
+ * Únicamente jugadas entre tercios o jugadas de puestos (`PUESTOS`, `NINIS`,
+ * `EMPAREJAMIENTOS`, `CRUCES` / paradas `10/X`, `GANADOR` entre tercios).
+ */
+export function esTicketCruzableBolsaA(
+  input: Parameters<typeof esTicketBolsaBNoCruzable>[0]
+): boolean {
+  if (!input) return false;
+  if (esTicketBolsaBNoCruzable(input)) return false;
+  if (typeof input === "string") {
+    return esJugadaDePuestos(input);
+  }
+  if (input.es_cruzable === true) return true;
+
+  const nom = String(
+    input.nombre_jugada ??
+      input.nombreJugada ??
+      input.jugada ??
+      input.tipo_jugada ??
+      input.tipoJugada ??
+      ""
+  )
+    .trim()
+    .toUpperCase();
+
+  let modalidad = String(input.modalidad ?? "").trim().toUpperCase();
+  if (!modalidad && input.nota_auditoria) {
+    try {
+      const nota =
+        typeof input.nota_auditoria === "string"
+          ? JSON.parse(input.nota_auditoria)
+          : input.nota_auditoria;
+      if (nota && typeof nota === "object" && (nota as Record<string, unknown>).modalidad) {
+        modalidad = String((nota as Record<string, unknown>).modalidad).trim().toUpperCase();
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (
+    modalidad === "PUESTOS" ||
+    modalidad === "NINIS" ||
+    modalidad === "EMPAREJAMIENTOS" ||
+    modalidad === "CRUCES"
+  ) {
+    return true;
+  }
+
+  if (!nom) return false;
+  if (esJugadaDePuestos(nom)) return true;
+  if (
+    /\b(?:PUESTOS?|[1-8]P|PP|[1-8]N|\d+\s*[Y\/]\s*\d+N?|10\s*[\/Aª@]\s*\d+(?:[.,]\d+)?|\d+\s*[\/Aª@]\s*\d+|GANADOR)\b/i.test(
+      nom
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * ¿Este ticket es una JUGADA DE PUESTOS (la única que puede cruzar)?
  *
  * El cruce financiero es EXCLUSIVO de Puestos: el cliente arriesga contra la
@@ -195,7 +383,9 @@ export function claveCruceFinanciero(carrera: string | number, cliente: string, 
  * ese parser no entiende NO es de puestos.
  */
 export function esJugadaDePuestos(tipoJugada: string | null | undefined): boolean {
-  return parsearNomenclatura(String(tipoJugada ?? "")) != null;
+  const s = String(tipoJugada ?? "").trim();
+  if (!s || esTicketBolsaBNoCruzable(s)) return false;
+  return parsearNomenclatura(s) != null;
 }
 
 /**

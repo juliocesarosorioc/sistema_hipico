@@ -39,7 +39,7 @@ import {
   leerPizarrasPorFechas,
   type PizarraCarrera,
 } from "@/features/liquidacion/lib/reportes";
-import { _reembolsosCruce } from "@/features/taquilla/lib/cruces-y-tapas";
+import { _reembolsosCruce, esTicketBolsaBNoCruzable } from "@/features/taquilla/lib/cruces-y-tapas";
 import {
   aplicarDevolucionIncentivoAFavor,
   calcularResumenContableCliente,
@@ -68,6 +68,12 @@ export type DetalleJugadaReporteDiario = {
   comisionDevuelta: number;
   comisionCobrada?: number;
   estado: string;
+  esBolsaB?: boolean;
+  clienteConsigue?: string | null;
+  origen?: string | null;
+  modalidad?: string | null;
+  nota_auditoria?: unknown;
+  es_cruzable?: boolean | null;
 };
 
 /** Una jugada ya normalizada, lista para sumar. */
@@ -95,6 +101,12 @@ export type JugadaReporte = {
   comisionCobrada?: number;
   /** true si la jugada fue anulada: no cuenta como jugado ni como ticket. */
   anulada: boolean;
+  esBolsaB?: boolean;
+  clienteConsigue?: string | null;
+  origen?: string | null;
+  modalidad?: string | null;
+  nota_auditoria?: unknown;
+  es_cruzable?: boolean | null;
 };
 
 /** Una fila de la tabla: una carrera (por hipódromo + número). */
@@ -266,6 +278,12 @@ export function armarReporteDiario(jugadas: JugadaReporte[]): ReporteDiario {
       comisionDevuelta: centavos(Number(j.comisionDevuelta) || 0),
       ...(j.comisionCobrada != null ? { comisionCobrada: centavos(j.comisionCobrada) } : {}),
       estado,
+      ...(j.esBolsaB !== undefined ? { esBolsaB: j.esBolsaB } : {}),
+      ...(j.clienteConsigue !== undefined ? { clienteConsigue: j.clienteConsigue } : {}),
+      ...(j.origen !== undefined ? { origen: j.origen } : {}),
+      ...(j.modalidad !== undefined ? { modalidad: j.modalidad } : {}),
+      ...(j.nota_auditoria !== undefined ? { nota_auditoria: j.nota_auditoria } : {}),
+      ...(j.es_cruzable !== undefined ? { es_cruzable: j.es_cruzable } : {}),
     };
 
     let fila = mapa.get(key);
@@ -321,12 +339,26 @@ export function armarReporteDiario(jugadas: JugadaReporte[]): ReporteDiario {
   const calcularCruceCarrera = (f: FilaReporteDiario) => {
     const dets = f.jugadasDetalle ?? [];
     const lineas = dets
-      .filter((d) => !d.jugada.includes("Cruce") && d.resultadoNeto !== 0)
+      .filter(
+        (d) =>
+          !d.jugada.includes("Cruce") &&
+          !d.esBolsaB &&
+          !esTicketBolsaBNoCruzable({
+            jugada: d.jugada,
+            cliente_consigue_nombre: d.clienteConsigue,
+            origen: d.origen,
+            modalidad: d.modalidad,
+            nota_auditoria: d.nota_auditoria,
+            es_cruzable: d.es_cruzable,
+          }) &&
+          d.resultadoNeto !== 0
+      )
       .map((d) => ({
         cliente: d.cliente,
         resultado: d.resultadoNeto,
         comisionCobrada: d.comisionCobrada,
         rol: d.rol,
+        jugada: d.jugada,
       }));
     const { porCliente, totalReembolsado } = _reembolsosCruce(lineas, "con_cruces", 5);
     if (totalReembolsado > 0) {
@@ -545,6 +577,7 @@ export function normalizarTickets(
           (t as Record<string, unknown>).modalidad as string,
           (t as Record<string, unknown>).origen as string
         );
+      const tRec = t as Record<string, unknown>;
       return {
         id: t.id ?? `tk-${idx}`,
         fecha,
@@ -559,6 +592,19 @@ export function normalizarTickets(
         premio,
         devolucion: aplicaIncentivo ? base * (pct / 100) : 0,
         anulada,
+        esBolsaB: esTicketBolsaBNoCruzable({
+          nombre_jugada: nombreJug,
+          cliente_consigue_nombre: t.cliente_consigue_nombre || tRec.banquero_nombre,
+          origen: tRec.origen,
+          modalidad: tRec.modalidad,
+          nota_auditoria: tRec.nota_auditoria,
+          es_cruzable: typeof tRec.es_cruzable === "boolean" ? tRec.es_cruzable : undefined,
+        }),
+        clienteConsigue: (t.cliente_consigue_nombre as string | null | undefined) ?? null,
+        origen: (tRec.origen as string | null | undefined) ?? null,
+        modalidad: (tRec.modalidad as string | null | undefined) ?? null,
+        nota_auditoria: tRec.nota_auditoria,
+        es_cruzable: typeof tRec.es_cruzable === "boolean" ? tRec.es_cruzable : null,
       };
     });
   }
@@ -629,6 +675,15 @@ export function normalizarTickets(
         devolucion: aplicaIncJ ? base * (pctJ / 100) : 0,
         comisionCobrada: juega.comisionCobrada,
         anulada: juega.anulada,
+        esBolsaB: juega.esBolsaB,
+        clienteConsigue: juega.clienteConsigue ?? consigue?.clienteNombre ?? null,
+        origen: juega.origen ?? ((t as Record<string, unknown>).origen as string | null | undefined) ?? null,
+        modalidad: ((t as Record<string, unknown>).modalidad as string | null | undefined) ?? null,
+        nota_auditoria: juega.notaAuditoria ?? (t as Record<string, unknown>).nota_auditoria,
+        es_cruzable:
+          typeof (t as Record<string, unknown>).es_cruzable === "boolean"
+            ? ((t as Record<string, unknown>).es_cruzable as boolean)
+            : null,
       });
     }
 
@@ -669,6 +724,15 @@ export function normalizarTickets(
         devolucion: 0, // Consigue es el dador/contraparte: nunca recibe devolución de apostador
         comisionCobrada: consigue.comisionCobrada,
         anulada: consigue.anulada,
+        esBolsaB: consigue.esBolsaB,
+        clienteConsigue: consigue.clienteConsigue ?? consigue.clienteNombre,
+        origen: consigue.origen ?? ((t as Record<string, unknown>).origen as string | null | undefined) ?? null,
+        modalidad: ((t as Record<string, unknown>).modalidad as string | null | undefined) ?? null,
+        nota_auditoria: consigue.notaAuditoria ?? (t as Record<string, unknown>).nota_auditoria,
+        es_cruzable:
+          typeof (t as Record<string, unknown>).es_cruzable === "boolean"
+            ? ((t as Record<string, unknown>).es_cruzable as boolean)
+            : null,
       });
     }
   });

@@ -5,6 +5,8 @@ import path from "path";
 import { supabaseAdmin } from "@/core/supabase-admin";
 import {
   analizarYEstandarizarJugada,
+  analizarBloqueJugadas,
+  calcularRiesgoReal,
   evaluarMensajePedagogico,
   evaluarConcrecionEstricta,
   analizarComandoRetiro,
@@ -19,9 +21,24 @@ export const dynamic = "force-dynamic";
 function sanitizarTexto(str: unknown): string {
   if (typeof str !== "string") return "";
   return str
-    .replace(/[^\w\s.,!¡?¿$*+=\-()\[\]/@ªáéíóúÁÉÍÓÚñÑ]/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/[^\w\s.,!¡?¿$*+=\-()\[\]/@ªáéíóúÁÉÍÓÚñÑ]/gi, "")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter(Boolean)
+    .join("\n");
+}
+
+function normalizarTelefonoCompleto(codigoPais?: string | null, telefono?: string | null): string {
+  const cp = String(codigoPais || "").replace(/\D/g, "");
+  const tel = String(telefono || "").replace(/\D/g, "").replace(/^0+/, "");
+  if (!tel) return cp;
+  if (!cp) return tel;
+  if (tel.startsWith(cp)) return tel;
+  return `${cp}${tel}`;
 }
 
 const BOT_DAEMON_URL = process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
@@ -1324,9 +1341,18 @@ export async function POST(req: Request) {
       });
     }
 
-    // 2. Identificar al jugador estrictamente en `public.clientes` del `grupo_id` de la sala (SIN pushName ni auto-creación)
+    // 2. Identificar al jugador estrictamente en `public.clientes` del `grupo_id` de la sala
     const participantAlt = String(body.participantAlt || "");
     const telefonoRealProp = String(body.telefonoReal || "");
+    const pushNameLimpio = String(body.pushName || body.senderNombre || "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toUpperCase();
+    const pushNameValido =
+      pushNameLimpio &&
+      !["USUARIO", "JUGADOR", "OPERADOR", "OPERADOR (TELEFONO)", "ADMIN"].includes(pushNameLimpio)
+        ? pushNameLimpio
+        : "";
 
     const telAlt = normalizarTelefono(participantAlt);
     let telReal = normalizarTelefono(telefonoRealProp);
@@ -1343,15 +1369,18 @@ export async function POST(req: Request) {
       }
     }
 
+    const CAMPOS_CLIENTE_SALA =
+      "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, codigo_pais, telefono, telefono_normalizado";
+
     let cliente: any =
       body.clientePreviamenteIdentificado?.id &&
-      body.clientePreviamenteIdentificado?.grupo_id === grupoId
+      String(body.clientePreviamenteIdentificado?.grupo_id || "") === String(grupoId)
         ? body.clientePreviamenteIdentificado
         : null;
 
-    // A. Búsqueda exacta por JID o teléfono normalizado dentro del grupo_id
+    // A. Búsqueda en `clientes` donde `grupo_id = sala.grupo_id` por JID o teléfono normalizado
     if (!cliente && (participantJid || participantAlt || telReal)) {
-      const orConds = [];
+      const orConds: string[] = [];
       if (participantJid) orConds.push(`whatsapp_jid.eq.${participantJid}`);
       if (participantAlt && participantAlt !== participantJid) orConds.push(`whatsapp_jid.eq.${participantAlt}`);
       if (telReal && telReal.length >= 7) orConds.push(`telefono_normalizado.eq.${telReal}`);
@@ -1360,9 +1389,7 @@ export async function POST(req: Request) {
       if (orConds.length > 0) {
         const { data: clPorJidOTel } = await supabaseAdmin
           .from("clientes")
-          .select(
-            "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
-          )
+          .select(CAMPOS_CLIENTE_SALA)
           .eq("grupo_id", grupoId)
           .or(orConds.join(","))
           .order("saldo_actual", { ascending: false })
@@ -1375,22 +1402,152 @@ export async function POST(req: Request) {
       }
     }
 
-    // B. Búsqueda por sufijo numérico (últimos 8 dígitos de teléfono real) dentro del grupo_id
+    // B. Búsqueda por teléfono compuesto (codigo_pais + telefono) y últimos 9/8 dígitos dentro del grupo_id
     if (!cliente && telReal && telReal.length >= 7) {
-      const sufijo8 = telReal.slice(-8);
-      const { data: clPorSufijo } = await supabaseAdmin
+      const sufijo9 = telReal.slice(-9);
+      const { data: candidatosTel } = await supabaseAdmin
         .from("clientes")
-        .select(
-          "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
-        )
-        .eq("grupo_id", grupoId)
-        .ilike("telefono", `%${sufijo8}%`)
-        .order("saldo_actual", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .select(CAMPOS_CLIENTE_SALA)
+        .eq("grupo_id", grupoId);
 
-      if (clPorSufijo) {
-        cliente = clPorSufijo;
+      if (Array.isArray(candidatosTel) && candidatosTel.length > 0) {
+        const clCompuesto = candidatosTel.find((c: any) => {
+          const comp = normalizarTelefonoCompleto(c.codigo_pais, c.telefono);
+          const norm = normalizarTelefono(c.telefono_normalizado || c.telefono);
+          return (
+            (comp && (comp === telReal || comp === telAlt || (sufijo9.length >= 9 && comp.endsWith(sufijo9)))) ||
+            (norm && (norm === telReal || norm === telAlt || (sufijo9.length >= 9 && norm.endsWith(sufijo9))))
+          );
+        });
+        if (clCompuesto) {
+          cliente = clCompuesto;
+        }
+      }
+
+      if (!cliente) {
+        const sufijo8 = telReal.slice(-8);
+        const { data: clPorSufijo } = await supabaseAdmin
+          .from("clientes")
+          .select(CAMPOS_CLIENTE_SALA)
+          .eq("grupo_id", grupoId)
+          .ilike("telefono", `%${sufijo8}%`)
+          .order("saldo_actual", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (clPorSufijo) {
+          cliente = clPorSufijo;
+        }
+      }
+    }
+
+    // C. Búsqueda en `clientes` donde `grupo_id = sala.grupo_id` por UPPER(TRIM(nombre)) o UPPER(TRIM(seudonimo)) = UPPER(TRIM(pushName))
+    if (!cliente && pushNameValido) {
+      const { data: candidatosGrupo } = await supabaseAdmin
+        .from("clientes")
+        .select(CAMPOS_CLIENTE_SALA)
+        .eq("grupo_id", grupoId);
+
+      if (Array.isArray(candidatosGrupo) && candidatosGrupo.length > 0) {
+        const matchNombre = candidatosGrupo.find((c: any) => {
+          const nom = String(c.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
+          const seu = String(c.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
+          return nom === pushNameValido || (seu && seu === pushNameValido);
+        });
+        if (matchNombre) {
+          cliente = matchNombre;
+        }
+      }
+    }
+
+    // D. Si el jugador está registrado en múltiples grupos y su fila en `sala.grupo_id` aún tiene `whatsapp_jid = null`,
+    // pero otra fila en otro grupo ya tiene ese `whatsapp_jid` o `telefono_normalizado`, usar esa pista (teléfono/nombre/seudónimo)
+    // para localizar su fila independiente dentro de `sala.grupo_id`.
+    if (!cliente && (participantJid || participantAlt || telReal)) {
+      const orPista: string[] = [];
+      if (participantJid) orPista.push(`whatsapp_jid.eq.${participantJid}`);
+      if (participantAlt && participantAlt !== participantJid) orPista.push(`whatsapp_jid.eq.${participantAlt}`);
+      if (telReal && telReal.length >= 7) orPista.push(`telefono_normalizado.eq.${telReal}`);
+
+      if (orPista.length > 0) {
+        const { data: filasOtroGrupo } = await supabaseAdmin
+          .from("clientes")
+          .select("nombre, seudonimo, telefono, telefono_normalizado")
+          .or(orPista.join(","))
+          .limit(5);
+
+        if (Array.isArray(filasOtroGrupo) && filasOtroGrupo.length > 0) {
+          const { data: candidatosGrupo } = await supabaseAdmin
+            .from("clientes")
+            .select(CAMPOS_CLIENTE_SALA)
+            .eq("grupo_id", grupoId);
+
+          if (Array.isArray(candidatosGrupo) && candidatosGrupo.length > 0) {
+            for (const pista of filasOtroGrupo) {
+              const telPista = normalizarTelefono(pista.telefono_normalizado || pista.telefono);
+              const sufijoPista = telPista.length >= 7 ? telPista.slice(-8) : "";
+              const nomPista = String(pista.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
+              const seuPista = String(pista.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
+
+              const encontrado = candidatosGrupo.find((c: any) => {
+                const telC = normalizarTelefono(c.telefono_normalizado || c.telefono);
+                if (telPista && telC && (telC === telPista || (sufijoPista && telC.endsWith(sufijoPista)))) {
+                  return true;
+                }
+                const nomC = String(c.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
+                const seuC = String(c.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
+                if (nomPista && (nomC === nomPista || seuC === nomPista)) return true;
+                if (seuPista && (nomC === seuPista || seuC === seuPista)) return true;
+                return false;
+              });
+
+              if (encontrado) {
+                cliente = encontrado;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // E. Fallback a `clientes_grupos` donde `grupo_id = sala.grupo_id`
+    if (!cliente) {
+      try {
+        const { data: membresias } = await supabaseAdmin
+          .from("clientes_grupos")
+          .select("cliente_id")
+          .eq("grupo_id", grupoId);
+
+        const idsMembresia = (membresias || [])
+          .map((m: any) => m?.cliente_id)
+          .filter(Boolean);
+
+        if (idsMembresia.length > 0) {
+          const { data: candidatosMembresia } = await supabaseAdmin
+            .from("clientes")
+            .select(CAMPOS_CLIENTE_SALA)
+            .in("id", idsMembresia);
+
+          if (Array.isArray(candidatosMembresia) && candidatosMembresia.length > 0) {
+            const sufijo8 = telReal && telReal.length >= 7 ? telReal.slice(-8) : "";
+            const matchMem = candidatosMembresia.find((c: any) => {
+              if (participantJid && c.whatsapp_jid === participantJid) return true;
+              if (participantAlt && c.whatsapp_jid === participantAlt) return true;
+              const telC = normalizarTelefono(c.telefono_normalizado || c.telefono);
+              if (telReal && telC && (telC === telReal || (sufijo8 && telC.endsWith(sufijo8)))) return true;
+              const nomC = String(c.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
+              const seuC = String(c.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
+              if (pushNameValido && (nomC === pushNameValido || seuC === pushNameValido)) return true;
+              return false;
+            });
+            if (matchMem) {
+              cliente = matchMem;
+            }
+          }
+        }
+      } catch {
+        // Tabla clientes_grupos opcional
       }
     }
 
@@ -1406,7 +1563,7 @@ export async function POST(req: Request) {
 
     const nombreJugador = cliente.seudonimo || cliente.nombre;
 
-    // Vincular automáticamente el whatsapp_jid (@lid o jid actual) en la ficha del cliente para consultas instantáneas futuras
+    // Auto-vincular el whatsapp_jid en la fila de `sala.grupo_id` filtrando por `id` y `grupo_id`
     const updatesCl: Record<string, any> = {};
     if (participantJid && cliente.whatsapp_jid !== participantJid) {
       updatesCl.whatsapp_jid = participantJid;
@@ -1417,14 +1574,22 @@ export async function POST(req: Request) {
     }
     if (Object.keys(updatesCl).length > 0) {
       updatesCl.updated_at = new Date().toISOString();
-      await supabaseAdmin.from("clientes").update(updatesCl).eq("id", cliente.id);
+      let qUpd = supabaseAdmin.from("clientes").update(updatesCl).eq("id", cliente.id);
+      if (cliente.grupo_id) {
+        qUpd = qUpd.eq("grupo_id", cliente.grupo_id);
+      }
+      await qUpd;
       cliente.whatsapp_jid = participantJid;
       if (telReal) cliente.telefono_normalizado = telReal;
     }
 
     const saldoDisponible = calcularSaldoDisponible(cliente);
     if (!cliente.libre && (cliente.saldo_disponible == null || Number(cliente.saldo_disponible) !== saldoDisponible)) {
-      await supabaseAdmin.from("clientes").update({ saldo_disponible: saldoDisponible }).eq("id", cliente.id);
+      let qDisp = supabaseAdmin.from("clientes").update({ saldo_disponible: saldoDisponible }).eq("id", cliente.id);
+      if (cliente.grupo_id) {
+        qDisp = qDisp.eq("grupo_id", cliente.grupo_id);
+      }
+      await qDisp;
       cliente.saldo_disponible = saldoDisponible;
     }
 
@@ -1862,8 +2027,10 @@ export async function POST(req: Request) {
           return NextResponse.json({
             ok: false,
             tipo: "SIN_SALDO",
-            respuestaGrupo: `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`,
+            respuestaGrupo: `🚫 *Nada Aquí* — ${nombreJugador}: Disponible 0`,
             mensajePrivadoAutor: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
+            clienteTelefono: telefonoClienteCompleto,
+            senderJid: participantJid,
           });
         }
 
@@ -1888,8 +2055,10 @@ export async function POST(req: Request) {
             return NextResponse.json({
               ok: false,
               tipo: "SIN_SALDO",
-              respuestaGrupo: `${nombreJugador} solo dispone de $0 para esta jugada.`,
+              respuestaGrupo: `🚫 *Nada Aquí* — ${nombreJugador}: Disponible 0`,
               mensajePrivadoAutor: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
+              clienteTelefono: telefonoClienteCompleto,
+              senderJid: participantJid,
             });
           }
 
@@ -2247,8 +2416,151 @@ export async function POST(req: Request) {
       // Resiliente
     }
 
-    // Analizar con `evaluarMensajePedagogico`
+    // Analizar en bloque (multilínea o múltiples caballos separados por coma: "Juego 2p 3,5,8 con 100")
     const retirados = Array.isArray(sala.retirados) ? sala.retirados : [];
+    const telefonoClienteCompleto =
+      normalizarTelefonoCompleto(cliente.codigo_pais, cliente.telefono) ||
+      cliente?.telefono_normalizado ||
+      (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null);
+
+    const bloqueItems = analizarBloqueJugadas(
+      texto,
+      saldoDisponible,
+      retirados,
+      16,
+      nombreJugador
+    );
+    const bloquesValidos = bloqueItems.filter((b) => b.esIntencionDeJugada && b.valido);
+
+    if (bloquesValidos.length > 1) {
+      if (!carreraAbierta) {
+        const msgCerrada = `⛔ La carrera está ${String(sala.estado_carrera || "CERRADA").toUpperCase()}. No se reciben nuevas propuestas.`;
+        return NextResponse.json({
+          ok: false,
+          tipo: "CARRERA_CERRADA",
+          respuestaGrupo: msgCerrada,
+          msg_publico: msgCerrada,
+          msg_publico_bot: msgCerrada,
+          respuestaPublica: msgCerrada,
+          clienteTelefono: telefonoClienteCompleto,
+          senderJid: participantJid,
+        });
+      }
+
+      if (saldoDisponible <= 0 && !cliente.libre) {
+        const msgSinSaldo = `🚫 *Nada Aquí* — ${nombreJugador}: Disponible 0`;
+        const msgPrivSinSaldo = '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo';
+        return NextResponse.json({
+          ok: false,
+          tipo: "SIN_SALDO",
+          respuestaGrupo: msgSinSaldo,
+          msg_publico: msgSinSaldo,
+          msg_publico_bot: msgSinSaldo,
+          respuestaPublica: msgSinSaldo,
+          mensajePrivadoAutor: msgPrivSinSaldo,
+          msg_privado_bot: msgPrivSinSaldo,
+          alertaPrivada: msgPrivSinSaldo,
+          notificaciones_privadas: [],
+          clienteTelefono: telefonoClienteCompleto,
+          senderJid: participantJid,
+        });
+      }
+
+      const pPropuestas = bloquesValidos.map((b) => ({
+        accion: b.accionProponente,
+        es_match: b.esMatch,
+        modalidad: b.modalidad,
+        caballos_a: b.caballosBandoA,
+        caballos_b: b.caballosBandoB,
+        ejemplar_texto: b.ejemplarTexto,
+        proporcion: b.proporcion || "1x1",
+        monto_solicitado: b.montoDisponibleValido ?? b.monto,
+        texto_estandarizado: b.jugadaEstandarizada,
+      }));
+
+      let propIdsBloque: string[] = [];
+      let excedioSaldoBloque = bloquesValidos.some((b) => Boolean(b.excedioSaldo));
+
+      try {
+        const { data: rpcBlk, error: errBlk } = await supabaseAdmin.rpc(
+          "publicar_bloque_propuestas_atomica",
+          {
+            p_grupo_id: grupoId,
+            p_sala_id: salaId,
+            p_carrera_id: sala.carrera_activa_id || "00000000-0000-0000-2026-111400000001",
+            p_jugador_id: cliente.id,
+            p_propuestas: pPropuestas,
+            p_whatsapp_msg_id: whatsappMsgId || null,
+          }
+        );
+        if (!errBlk && rpcBlk && Array.isArray((rpcBlk as any).propuestas_ids)) {
+          propIdsBloque = (rpcBlk as any).propuestas_ids;
+        }
+      } catch {
+        // Fallback secuencial si la RPC de bloque no está en BD
+      }
+
+      if (propIdsBloque.length === 0) {
+        for (const p of pPropuestas) {
+          if ((p.monto_solicitado || 0) <= 0) continue;
+          const { data: rpcInd } = await supabaseAdmin.rpc("publicar_propuesta_atomica", {
+            p_grupo_id: grupoId,
+            p_sala_id: salaId,
+            p_carrera_id: sala.carrera_activa_id || "00000000-0000-0000-2026-111400000001",
+            p_jugador_id: cliente.id,
+            p_accion: p.accion,
+            p_es_match: p.es_match,
+            p_modalidad: p.modalidad,
+            p_caballos_a: p.caballos_a,
+            p_caballos_b: p.caballos_b,
+            p_ejemplar_texto: p.ejemplar_texto,
+            p_proporcion: p.proporcion,
+            p_monto_solicitado: p.monto_solicitado,
+            p_texto_estandarizado: p.texto_estandarizado,
+          });
+          if ((rpcInd as any)?.propuesta_id) {
+            propIdsBloque.push((rpcInd as any).propuesta_id);
+          }
+        }
+      }
+
+      if (propIdsBloque.length > 0) {
+        await supabaseAdmin
+          .from("chat_mensajes")
+          .update({
+            whatsapp_msg_id: whatsappMsgId,
+            whatsapp_group_jid: groupJid,
+            whatsapp_group_nombre: whatsappGroupNombre,
+            origen_canal: "WHATSAPP",
+          })
+          .in("id", propIdsBloque);
+        await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+      }
+
+      const msgPubBlk = excedioSaldoBloque
+        ? `⚠️ *${nombreJugador}*: Disponible $${formatearMontoRegional(saldoDisponible)}`
+        : null;
+      const msgPrivBlk = excedioSaldoBloque
+        ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
+        : null;
+
+      return NextResponse.json({
+        ok: propIdsBloque.length > 0,
+        tipo: "PROPUESTA_BLOQUE",
+        propuestasIds: propIdsBloque,
+        reaccionEmoji: "🏇",
+        respuestaGrupo: msgPubBlk,
+        msg_publico: msgPubBlk,
+        msg_publico_bot: msgPubBlk,
+        respuestaPublica: msgPubBlk,
+        mensajePrivadoAutor: msgPrivBlk,
+        msg_privado_bot: msgPrivBlk,
+        clienteTelefono: telefonoClienteCompleto,
+        senderJid: participantJid,
+      });
+    }
+
+    // Analizar con `evaluarMensajePedagogico`
     let analisis = evaluarMensajePedagogico(
       texto,
       saldoDisponible,
@@ -2412,7 +2724,7 @@ export async function POST(req: Request) {
 
     // Bloqueo estricto: Si el cliente no posee saldo disponible
     if (saldoDisponible <= 0 && !cliente.libre) {
-      const msgSinSaldo = `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`;
+      const msgSinSaldo = `🚫 *Nada Aquí* — ${nombreJugador}: Disponible 0`;
       const msgPrivSinSaldo = '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo';
       return NextResponse.json({
         ok: false,
@@ -2425,7 +2737,7 @@ export async function POST(req: Request) {
         msg_privado_bot: msgPrivSinSaldo,
         alertaPrivada: msgPrivSinSaldo,
         notificaciones_privadas: [],
-        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+        clienteTelefono: telefonoClienteCompleto,
         senderJid: participantJid,
       });
     }
@@ -2456,14 +2768,16 @@ export async function POST(req: Request) {
         msg_publico_bot: msgMinimoBot,
         respuestaPublica: msgMinimoBot,
         mensajePrivadoAutor: `El monto mínimo para publicar es $${apuestaMinima.toFixed(2)}.`,
+        clienteTelefono: telefonoClienteCompleto,
         senderJid: participantJid,
       });
     }
 
-    // Determinar monto a publicar (topado a saldoDisponible si excedió su saldo)
-    const excedioSaldo = Boolean(analisis.excedioSaldo || analisis.monto > saldoDisponible);
+    // Determinar monto a publicar (topado según riesgo real 10/X vs saldoDisponible)
+    const riesgoReal = calcularRiesgoReal(analisis.monto, analisis.proporcion, analisis.accionProponente);
+    const excedioSaldo = Boolean(analisis.excedioSaldo || riesgoReal > saldoDisponible);
     const montoAPublicar = excedioSaldo
-      ? Math.max(0, Number(saldoDisponible.toFixed(2)))
+      ? Math.max(0, Number((analisis.montoDisponibleValido ?? saldoDisponible).toFixed(2)))
       : Number(analisis.monto);
 
     let propId: string | null = null;

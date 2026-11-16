@@ -87,12 +87,37 @@ export function extraerMontoNumerico(rawInput: string): { monto: number; montoTe
 
 /**
  * Normaliza cualquier variante de proporción o parada a premio al estándar interno 10/X:
- * Formatos: 10ª5, 10@5, A5, @5, 10/5, a5, 10a5 -> 10/5
+ * Formatos: 10ª5, 10@5, A5, @5, 10/5, a5, 10a5, 10-5 -> 10/5
  * (Cuando se omite el 10 inicial como en A5 o @5, asume base 10 automáticamente: ^(?:10)?[aª@\/](\d+)$ -> 10/$1)
  */
 export function normalizarParadaPremio(texto: string): string {
   if (!texto) return texto;
-  return texto.replace(/(?:^|(?<=[\s,(\[]))(?:10)?[aª@\/](\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/gi, "10/$1");
+  return texto
+    .replace(/(?:^|(?<=[\s,(\[]))(?:10)?[aª@\/](\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/gi, "10/$1")
+    .replace(/(?:^|(?<=[\s,(\[]))10-(\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/gi, "10/$1");
+}
+
+/**
+ * Calcula el riesgo real según proporción 10/X y lado:
+ * - Lado del 10 (CONSIGUE / dador): arriesga M
+ * - Lado del X (JUEGA recibiendo 10aX): arriesga ROUND(M * (X / 10), 2)
+ */
+export function calcularRiesgoReal(
+  monto: number,
+  proporcion?: string,
+  accion: 'JUEGA' | 'CONSIGUE' = 'JUEGA'
+): number {
+  const m = Number(monto || 0);
+  if (!Number.isFinite(m) || m <= 0) return 0;
+  const prop = String(proporcion || '1x1').replace(',', '.').trim();
+  const match = /^10\/(\d+(?:\.\d+)?)$/.exec(prop);
+  if (!match) return Math.round(m * 100) / 100;
+  const x = parseFloat(match[1]);
+  if (!Number.isFinite(x) || x <= 0) return Math.round(m * 100) / 100;
+  if (accion === 'CONSIGUE') {
+    return Math.round(m * 100) / 100;
+  }
+  return Math.round(m * (x / 10) * 100) / 100;
 }
 
 /**
@@ -252,7 +277,7 @@ export function analizarYEstandarizarJugada(
   const proporcionDetectada = matchGabela ? matchGabela[1].replace(',', '.') : '1x1';
 
   // 1. Detectar si el mensaje tiene intención de jugada
-  const patronIntencion = /\b(juego|jugo|jugó|jugue|jugué|j|consigo|doy|voy|ponte|copiado|pago|[1-9]p|10p|[1-9]n|10n|[1-5]y[1-5]n?|[1-5]\/[1-5]n?|10\/\d+|x|contra)\b/i;
+  const patronIntencion = /\b(juego|jugo|jugó|jugue|jugué|j|consigo|doy|pido|voy|ponte|copiado|pago|ganador|win|a\s+ganador|g|[1-6]p|[2-6]n|1n|[1-5]y[1-5][pn]?|[1-5]\/[1-5]n?|10\/\d+|x|contra)\b/i;
   if (!patronIntencion.test(texto) && !/^[0-9kK\.,]+\s+(?:al?|del?|el)\s+\d{1,2}$/i.test(texto)) {
     return {
       esIntencionDeJugada: false,
@@ -271,14 +296,20 @@ export function analizarYEstandarizarJugada(
     };
   }
 
-  // Determinar verbo inicial (Juego vs Consigo/Doy)
-  const esConsigue = /^(consigo|doy)\b/i.test(texto);
-  const verboEstandar = /^doy\b/i.test(texto) ? 'Doy' : esConsigue ? 'Consigo' : 'Juego';
+  // Determinar verbo inicial (Juego vs Consigo/Doy/Pido)
+  const esConsigue = /^(consigo|doy|pido)\b/i.test(texto);
+  const verboEstandar = /^doy\b/i.test(texto)
+    ? 'Doy'
+    : /^pido\b/i.test(texto)
+    ? 'Pido'
+    : esConsigue
+    ? 'Consigo'
+    : 'Juego';
   const accionProponente: 'JUEGA' | 'CONSIGUE' = esConsigue ? 'CONSIGUE' : 'JUEGA';
 
-  // 2. CASO A: JUGADA DE MATCH CON "x" O "contra"
-  // Ejemplos: "Juego 1x4 50", "Juego 1x4 5k", "Juego 1.6 x 4.5 10.000", "Juego la 15 x 46 con 20.000"
-  const regexMatch = /^(?:(juego|consigo|doy)\s+)?(?:de\s+la\s+|la\s+|del\s+|el\s+)?([0-9A-Za-z\.\-,\s]+?)\s*(?:x|vs|contra)\s*(?:de\s+la\s+|la\s+|del\s+|el\s+)?([0-9A-Za-z\.\-,\s]+?)\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+)$/i;
+  // 2. CASO A: JUGADA DE MATCH CON "x" O "contra" (soporta proporción opcional 10/X)
+  // Ejemplos: "Juego 1x4 50", "Juego 3x5 10/8 con 100", "Consigo 3x5 10/8 con 100", "Juego 1-2x4-6 10/8 con 100"
+  const regexMatch = /^(?:(juego|jugo|jugó|consigo|doy|pido)\s+)?(?:de\s+la\s+|la\s+|del\s+|el\s+)?([0-9A-Za-z\.\-,\s]+?)\s*(?:x|vs|contra)\s*(?:de\s+la\s+|la\s+|del\s+|el\s+)?([0-9A-Za-z\.\-,]+(?:\s+[0-9A-Za-z\.\-,]+)*?)(?:\s+(10\/\d+(?:[.,]\d+)?))?\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+)$/i;
   const matchVs = texto.match(regexMatch);
 
   if (matchVs) {
@@ -289,8 +320,9 @@ export function analizarYEstandarizarJugada(
 
     const bandoA = normalizarBandoCaballos(matchVs[2], maxEjemplarCarrera, esDuplaA);
     const bandoB = normalizarBandoCaballos(matchVs[3], maxEjemplarCarrera, esDuplaB);
+    const propMatch = matchVs[4] ? matchVs[4].replace(',', '.') : proporcionDetectada;
 
-    const { monto, montoTexto } = extraerMontoNumerico(matchVs[4]);
+    const { monto, montoTexto } = extraerMontoNumerico(matchVs[5]);
 
     if (bandoA.length > 0 && bandoB.length > 0 && monto > 0) {
       // Verificar retirados en cualquiera de los dos bandos
@@ -309,6 +341,7 @@ export function analizarYEstandarizarJugada(
           ejemplarTexto: `${bandoA.join('-')} x ${bandoB.join('-')}`,
           monto,
           montoTexto,
+          proporcion: propMatch,
           jugadaEstandarizada: '',
           confianza: 1.0,
           requiereOperador: false,
@@ -316,9 +349,10 @@ export function analizarYEstandarizarJugada(
         };
       }
 
-      // Verificar saldo disponible
-      const excedioSaldoMatch = monto > saldoDisponible;
-      if (excedioSaldoMatch && saldoDisponible <= 0) {
+      // Verificar saldo disponible según riesgo real (10/X)
+      const riesgoMatch = calcularRiesgoReal(monto, propMatch, accionProponente);
+      const excedioSaldoMatch = riesgoMatch > saldoDisponible;
+      if (saldoDisponible <= 0) {
         return {
           esIntencionDeJugada: true,
           valido: false,
@@ -330,24 +364,30 @@ export function analizarYEstandarizarJugada(
           ejemplarTexto: `${bandoA.join('-')} x ${bandoB.join('-')}`,
           monto,
           montoTexto,
+          proporcion: propMatch,
           jugadaEstandarizada: '',
           confianza: 1.0,
           requiereOperador: false,
           excedioSaldo: true,
           montoDisponibleValido: 0,
           mensajePedagogicoPrivado: `🔒 Saldo insuficiente (${prefijo}${formatearMontoRegional(saldoDisponible)}). Debes recargar saldo antes de publicar jugadas.`,
-          msgPublicoBot: `${nombreUsuario || 'El jugador'} no dispone de saldo suficiente para esta jugada.`,
+          msgPublicoBot: `🚫 *Nada Aquí* — ${nombreUsuario || 'Jugador'}: Disponible 0`,
           msgPrivadoBot: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
         };
       }
 
-      const jugadaEstandarizada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')} ${montoTexto}`;
+      const jugadaEstandarizada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')}${propMatch !== '1x1' ? ` ${propMatch}` : ''} ${montoTexto}`;
       const msgPublicoBotMatch = excedioSaldoMatch
         ? `⚠️ *${nombreUsuario || 'Jugador'}*: Disponible ${prefijo}${formatearMontoRegional(saldoDisponible)}`
         : undefined;
       const msgPrivadoBotMatch = excedioSaldoMatch
         ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
         : undefined;
+
+      const factorRiesgo = riesgoMatch > 0 ? monto / riesgoMatch : 1;
+      const montoRecortado = excedioSaldoMatch
+        ? Math.round(saldoDisponible * factorRiesgo * 100) / 100
+        : monto;
 
       return {
         esIntencionDeJugada: true,
@@ -360,41 +400,64 @@ export function analizarYEstandarizarJugada(
         ejemplarTexto: `${bandoA.join('-')} x ${bandoB.join('-')}`,
         monto,
         montoTexto,
-        proporcion: proporcionDetectada,
+        proporcion: propMatch,
         jugadaEstandarizada,
         confianza: 0.99,
         requiereOperador: false,
         excedioSaldo: excedioSaldoMatch,
-        montoDisponibleValido: excedioSaldoMatch ? saldoDisponible : monto,
+        montoDisponibleValido: montoRecortado,
         msgPublicoBot: msgPublicoBotMatch,
         msgPrivadoBot: msgPrivadoBotMatch,
       };
     }
   }
 
-  // 3. CASO B: JUGADAS DE PUESTOS, LLAVES Y CABALLOS CON NÚMERO Y/O NOMBRE
-  // Ejemplos reales:
-  // - "Juego 1P 5 500", "Juego 2N 5 100", "Juego 2y2 5 100", "Juego 6p 100"
-  // - "JUEGO A 6 AMOR PROHIBIDO 500", "JUEGO A 5 ALANA 500"
-  // - "JUEGO 2Y2 DE MAHOMES 500", "JUEGO 2N DE BROTHER WILL 500"
-  // - "JUGO 2N DE FOUR PALMS QUEEN 500", "JUEGO 3N DE ROSE SENSATION 500"
-  // - "JUEGO 4P DE LITTLE VALERY 500", "Juego 5p special one 100", "Juego 6p gold rock 100"
-  // - "Juego 5 5k", "Juego al 7 10.000", "Consigo 8 50"
-  const regexPuestosYCaballos = /^(?:(juego|jugo|jugó|consigo|doy|voy)\s+)?(?:([1-9]p|10p|[1-9]n|10n|[1-5]y[1-5]n?|[1-5]\/[1-5]n?|10\/\d+(?:[\.,]\d+)?|a|al)\s+)?(?:de\s+la\s+|del\s+|de\s+|la\s+|el\s+|a\s+|al\s+|#)?([0-9A-Za-z\.\-,\s']+?)\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+)$/i;
+  // 3. CASO B: JUGADAS DE PUESTOS, NINIS, GANADOR, PROPORCIONES Y CABALLOS
+  // Soporta: G, GANADOR, WIN, A GANADOR, 1P..6P, 1Y2P..4Y5P, 2N..6N, 1/2N, 2/3N, 3/4N,
+  // 1Y2N..4Y5N, 2Y2N..4Y4N, 1P Y 2N, 2N Y 2Y2N, 2Y3N Y 3N, 3N Y 3Y3N, 1Y2N Y 2N, 10/X
+  const MODS_COMPUESTAS_RE =
+    "1P\\s+Y\\s+2N|2N\\s+Y\\s+2Y2N|2Y3N\\s+Y\\s+3N|3N\\s+Y\\s+3Y3N|1Y2N\\s+Y\\s+2N|A\\s+GANADOR|GANADOR|WIN|G|[1-5]Y[1-5][PN]?|[1-5]\\/[1-5]N?|[1-9]P|10P|[1-9]N|10N|10\\/\\d+(?:[\\.,]\\d+)?|A|AL";
+  const regexPuestosYCaballos = new RegExp(
+    `^(?:(juego|jugo|jugó|consigo|doy|pido|voy)\\s+)?(?:(${MODS_COMPUESTAS_RE})\\s+)?(?:de\\s+la\\s+|del\\s+|de\\s+|la\\s+|el\\s+|a\\s+|al\\s+|#)?([0-9A-Za-z\\.\\-,\\s']+?)\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?([0-9kK\\.,]+)$`,
+    "i"
+  );
   const matchPuesto = texto.match(regexPuestosYCaballos);
 
   if (matchPuesto) {
-    const rawMod = (matchPuesto[2] || "").trim().toUpperCase();
+    const rawMod = (matchPuesto[2] || "").trim().toUpperCase().replace(/\s+/g, " ");
     let modLimpia = "1P";
     if (rawMod && rawMod !== "A" && rawMod !== "AL") {
-      if (rawMod.startsWith("10/")) {
+      if (rawMod === "G" || rawMod === "GANADOR" || rawMod === "WIN" || rawMod === "A GANADOR") {
+        modLimpia = "1P";
+      } else if (rawMod.startsWith("10/")) {
         modLimpia = rawMod.replace(",", ".");
       } else {
         modLimpia = rawMod.replace(/\s*-\s*/g, "-").replace(/\s+/g, " ");
-        modLimpia = modLimpia.replace(/^([1-5]\/[1-5])(?=-)/, "$1N");
+        modLimpia = modLimpia.replace(/^([1-5]\/[1-5])(?=-|$)/, "$1N");
       }
     } else if (proporcionDetectada !== "1x1") {
       modLimpia = proporcionDetectada;
+    }
+
+    // Prohibición estricta de 1N (Primer Nini no existe)
+    if (/\b1N\b/i.test(modLimpia) || /\b1\/1N?\b/i.test(modLimpia)) {
+      return {
+        esIntencionDeJugada: true,
+        valido: false,
+        accionProponente,
+        esMatch: false,
+        modalidad: modLimpia,
+        caballosBandoA: [],
+        caballosBandoB: [],
+        ejemplarTexto: "",
+        monto: 0,
+        jugadaEstandarizada: "",
+        confianza: 1.0,
+        requiereOperador: false,
+        mensajePedagogicoPrivado:
+          "🚫 La modalidad '1N' no existe (Principio de Riesgo Bilateral). Usa '1P' (Ganador) o '2N' / '1Y2N'.",
+        msgPublicoBot: "🚫 Modalidad '1N' inválida. Usa 1P, 2N o 1Y2N.",
+      };
     }
 
     const rawEjemplar = (matchPuesto[3] || "").trim();
@@ -437,8 +500,10 @@ export function analizarYEstandarizarJugada(
         };
       }
 
-      const excedioSaldoPuesto = monto > saldoDisponible;
-      if (excedioSaldoPuesto && saldoDisponible <= 0) {
+      const propFinal = rawMod.startsWith('10/') ? rawMod.replace(',', '.') : proporcionDetectada;
+      const riesgoPuesto = calcularRiesgoReal(monto, propFinal, accionProponente);
+      const excedioSaldoPuesto = riesgoPuesto > saldoDisponible;
+      if (saldoDisponible <= 0) {
         return {
           esIntencionDeJugada: true,
           valido: false,
@@ -456,7 +521,7 @@ export function analizarYEstandarizarJugada(
           excedioSaldo: true,
           montoDisponibleValido: 0,
           mensajePedagogicoPrivado: `🔒 Saldo insuficiente (${prefijo}${formatearMontoRegional(saldoDisponible)}). Debes recargar saldo antes de publicar jugadas.`,
-          msgPublicoBot: `${nombreUsuario || 'El jugador'} no dispone de saldo suficiente para esta jugada.`,
+          msgPublicoBot: `🚫 *Nada Aquí* — ${nombreUsuario || 'Jugador'}: Disponible 0`,
           msgPrivadoBot: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
         };
       }
@@ -469,6 +534,11 @@ export function analizarYEstandarizarJugada(
         ? `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
         : undefined;
 
+      const factorRiesgo = riesgoPuesto > 0 ? monto / riesgoPuesto : 1;
+      const montoRecortado = excedioSaldoPuesto
+        ? Math.round(saldoDisponible * factorRiesgo * 100) / 100
+        : monto;
+
       return {
         esIntencionDeJugada: true,
         valido: true,
@@ -480,12 +550,12 @@ export function analizarYEstandarizarJugada(
         ejemplarTexto,
         monto,
         montoTexto,
-        proporcion: rawMod.startsWith('10/') ? rawMod : proporcionDetectada,
+        proporcion: propFinal,
         jugadaEstandarizada,
         confianza: 0.99,
         requiereOperador: false,
         excedioSaldo: excedioSaldoPuesto,
-        montoDisponibleValido: excedioSaldoPuesto ? saldoDisponible : monto,
+        montoDisponibleValido: montoRecortado,
         msgPublicoBot: msgPublicoBotPuesto,
         msgPrivadoBot: msgPrivadoBotPuesto,
       };
@@ -545,7 +615,7 @@ export function analizarYEstandarizarJugada(
           excedioSaldo: true,
           montoDisponibleValido: 0,
           mensajePedagogicoPrivado: `🔒 Saldo insuficiente (${prefijo}${formatearMontoRegional(saldoDisponible)}). Debes recargar saldo antes de publicar jugadas.`,
-          msgPublicoBot: `${nombreUsuario || 'El jugador'} no dispone de saldo suficiente para esta jugada.`,
+          msgPublicoBot: `🚫 *Nada Aquí* — ${nombreUsuario || 'Jugador'}: Disponible 0`,
           msgPrivadoBot: `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`,
         };
       }
@@ -697,4 +767,86 @@ export function evaluarAmpliacionPropuesta(textoInput: string): ResultadoAmpliac
   }
 
   return { esAmpliacion: false, modo: null, nuevoTope: null };
+}
+
+/**
+ * Desglosa un mensaje en múltiples jugadas cuando viene en bloque:
+ * - Multilínea (\n)
+ * - Múltiples caballos separados por coma en jugadas no-match (ej. "Juego 2p 3,5,8 con 100")
+ */
+export function analizarBloqueJugadas(
+  textoUsuario: string,
+  saldoDisponible: number,
+  ejemplaresRetirados: string[] = [],
+  maxEjemplarCarrera = 16,
+  nombreUsuario?: string,
+  moneda?: string
+): ResultadoAnalisisJugada[] {
+  if (!textoUsuario || typeof textoUsuario !== 'string') return [];
+
+  const lineasRaw = textoUsuario
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (lineasRaw.length === 0) return [];
+
+  const resultados: ResultadoAnalisisJugada[] = [];
+  let saldoRestante = Number(saldoDisponible || 0);
+
+  for (const linea of lineasRaw) {
+    const analizado = analizarYEstandarizarJugada(
+      linea,
+      saldoRestante,
+      ejemplaresRetirados,
+      maxEjemplarCarrera,
+      nombreUsuario,
+      moneda
+    );
+
+    // Si es no-match con múltiples caballos (ej: "Juego 2p 3,5,8 con 100")
+    if (
+      analizado.esIntencionDeJugada &&
+      analizado.valido &&
+      !analizado.esMatch &&
+      analizado.caballosBandoA.length > 1 &&
+      /,/.test(linea)
+    ) {
+      const verbo =
+        analizado.accionProponente === 'CONSIGUE'
+          ? /^doy\b/i.test(linea)
+            ? 'Doy'
+            : /^pido\b/i.test(linea)
+            ? 'Pido'
+            : 'Consigo'
+          : 'Juego';
+      for (const cab of analizado.caballosBandoA) {
+        const subLinea = `${verbo} ${analizado.modalidad} ${cab} ${analizado.montoTexto || analizado.monto}`;
+        const subRes = analizarYEstandarizarJugada(
+          subLinea,
+          saldoRestante,
+          ejemplaresRetirados,
+          maxEjemplarCarrera,
+          nombreUsuario,
+          moneda
+        );
+        resultados.push(subRes);
+        if (subRes.valido) {
+          const montoUsado = subRes.montoDisponibleValido ?? subRes.monto;
+          const riesgo = calcularRiesgoReal(montoUsado, subRes.proporcion, subRes.accionProponente);
+          saldoRestante = Math.max(0, Math.round((saldoRestante - riesgo) * 100) / 100);
+        }
+      }
+      continue;
+    }
+
+    resultados.push(analizado);
+    if (analizado.esIntencionDeJugada && analizado.valido) {
+      const montoUsado = analizado.montoDisponibleValido ?? analizado.monto;
+      const riesgo = calcularRiesgoReal(montoUsado, analizado.proporcion, analizado.accionProponente);
+      saldoRestante = Math.max(0, Math.round((saldoRestante - riesgo) * 100) / 100);
+    }
+  }
+
+  return resultados;
 }

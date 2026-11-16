@@ -15,7 +15,14 @@ import {
 } from "@/features/seguridad/lib/seguimiento-usuarios";
 import { obtenerIpCliente } from "@/shared/lib/ip-detector";
 import { ModalRegistroUsuario } from "@/features/auth/components/ModalRegistroUsuario";
+import { limpiarAlmacenamientoPortal, type SesionPortal } from "@/features/portal/lib/portal";
 import Link from "next/link";
+
+export type PantallaLoginProps = {
+  modoPortal?: boolean;
+  avisoExterno?: string | null;
+  onLoginPortalExitoso?: (sesion: SesionPortal) => void;
+};
 
 /**
  * Módulo de inicio de sesión.
@@ -26,7 +33,8 @@ import Link from "next/link";
  *  - El bloqueo se registra en Supabase para alerta al administrador.
  *  - El administrador principal (josorioc) NUNCA es bloqueado por intentos.
  */
-export default function PantallaLogin() {
+export default function PantallaLogin(props: PantallaLoginProps = {}) {
+  const { modoPortal = false, avisoExterno = null, onLoginPortalExitoso } = props;
   const router = useRouter();
   const iniciarSesion = useAuthStore((s) => s.iniciarSesion);
   const modoOperador = useAuthStore((s) => s.modoOperador);
@@ -124,7 +132,8 @@ export default function PantallaLogin() {
   // re-renderizaba el formulario sin parar y dejaba los campos imposibles de
   // seleccionar. La puerta no tiene que desloguear a nadie.
   useEffect(() => {
-    if (!inicializada) return;
+    limpiarAlmacenamientoPortal();
+    if (!inicializada || modoPortal) return;
     if (usuarioActual && (perfiles.length > 0 || esPrincipal)) {
       if (yaNavegandoRef.current) return;
       yaNavegandoRef.current = true;
@@ -137,24 +146,7 @@ export default function PantallaLogin() {
       router.replace(esOp ? "/apuestas" : "/inicio");
       return;
     }
-
-    // Si ya existe sesión activa de cliente en este navegador, dirigir al portal
-    if (typeof window !== "undefined" && !usuarioActual) {
-      try {
-        const raw = window.localStorage.getItem("portal.cliente");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed?.cliente?.id) {
-            if (yaNavegandoRef.current) return;
-            yaNavegandoRef.current = true;
-            router.replace("/portal");
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-  }, [inicializada, usuarioActual, perfiles, esPrincipal, modoOperador, router]);
+  }, [inicializada, modoPortal, usuarioActual, perfiles, esPrincipal, modoOperador, router]);
 
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
@@ -213,26 +205,28 @@ export default function PantallaLogin() {
 
     setIngresando(true);
     try {
-      // 1. Intentar inicio de sesión como Administrador u Operador del Sistema
-      const ok = await iniciarSesion(usuarioSanitizado, clave);
-      if (ok) {
-        if (!esAdminPrincipal) {
-          limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
+      // 1. Intentar inicio de sesión como Administrador u Operador del Sistema (solo fuera de /portal)
+      if (!modoPortal) {
+        const ok = await iniciarSesion(usuarioSanitizado, clave);
+        if (ok) {
+          if (!esAdminPrincipal) {
+            limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
+          }
+          if (!yaNavegandoRef.current) {
+            yaNavegandoRef.current = true;
+            const st = useAuthStore.getState();
+            const esOp =
+              st.modoOperador ||
+              (st.perfiles.length > 0 &&
+                st.perfiles.every((p) => p.toLowerCase().includes("operador")) &&
+                !st.esPrincipal);
+            window.location.href = esOp ? "/apuestas" : "/inicio";
+          }
+          return;
         }
-        if (!yaNavegandoRef.current) {
-          yaNavegandoRef.current = true;
-          const st = useAuthStore.getState();
-          const esOp =
-            st.modoOperador ||
-            (st.perfiles.length > 0 &&
-              st.perfiles.every((p) => p.toLowerCase().includes("operador")) &&
-              !st.esPrincipal);
-          window.location.href = esOp ? "/apuestas" : "/inicio";
-        }
-        return;
       }
 
-      // 2. Si no es staff, comprobar si es un CLIENTE / JUGADOR del portal
+      // 2. Comprobar si es un CLIENTE / JUGADOR del portal
       try {
         const { entrarPortal } = await import("@/features/portal/lib/portal");
         const resPortal = await entrarPortal({ usuario: usuarioSanitizado, clave });
@@ -241,9 +235,14 @@ export default function PantallaLogin() {
           if (!esAdminPrincipal) {
             limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
           }
+          if (onLoginPortalExitoso) {
+            setIngresando(false);
+            onLoginPortalExitoso(resPortal.sesion);
+            return;
+          }
           if (!yaNavegandoRef.current) {
             yaNavegandoRef.current = true;
-            window.location.href = "/portal";
+            router.push("/portal");
           }
           return;
         }
@@ -322,7 +321,7 @@ export default function PantallaLogin() {
           </div>
         </div>
 
-        <form onSubmit={enviar} className="space-y-5" noValidate>
+        <form onSubmit={enviar} className="space-y-5" noValidate autoComplete="off">
           {/* Honeypot anti-bot */}
           <input
             ref={honeypotRef}
@@ -378,7 +377,7 @@ export default function PantallaLogin() {
                 id="clave"
                 name="password"
                 type={verClave ? "text" : "password"}
-                autoComplete="current-password"
+                autoComplete="off"
                 required
                 value={clave}
                 onChange={(e) => setClave(e.target.value)}
@@ -438,6 +437,15 @@ export default function PantallaLogin() {
                 . El administrador ha sido notificado.
               </span>
             </div>
+          ) : null}
+
+          {avisoExterno && bloqueadoSegundos <= 0 ? (
+            <p
+              role="alert"
+              className="rounded border border-amber-300 bg-amber-50 p-2.5 text-center text-xs font-bold text-amber-800"
+            >
+              {avisoExterno}
+            </p>
           ) : null}
 
           {errorLogin && !avisoSinAcceso && bloqueadoSegundos <= 0 ? (

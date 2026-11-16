@@ -117,7 +117,8 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
   }
   const dadorResuelto = resolverContraparteModalidad(v.jugada, v.clienteDador, v.modalidad);
 
-  // Aislamiento estricto de grupo: el jugador no puede registrar en otro grupo
+  // Aislamiento estricto de grupo: resolver siempre la fila del cliente en `grupoEfectivo`
+  let clienteIdEfectivo = v.clienteId;
   let cRowData: { id: string; nombre: string; seudonimo?: string | null } | null = v.clienteRow
     ? {
         id: String(v.clienteRow.id),
@@ -139,12 +140,54 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
         .from("clientes")
         .select("id, nombre, seudonimo, grupo_id")
         .eq("id", v.clienteId)
+        .eq("grupo_id", grupoEfectivo)
         .maybeSingle();
-      cRow = data;
+      if (data) {
+        cRow = data;
+      } else {
+        const { data: dataCualquiera } = await supabase
+          .from("clientes")
+          .select("id, nombre, seudonimo, grupo_id")
+          .eq("id", v.clienteId)
+          .maybeSingle();
+        cRow = dataCualquiera;
+      }
     }
     if (cRow) {
+      let pertenece = cRow.grupo_id != null && String(cRow.grupo_id) === String(grupoEfectivo);
+      if (!pertenece) {
+        // Si el cliente tiene otra fila independiente con el mismo nombre/seudónimo en `grupoEfectivo`, resolver esa fila
+        const nomUpper = String(cRow.nombre || "").trim().toUpperCase();
+        const seuUpper = String(cRow.seudonimo || "").trim().toUpperCase();
+        const { data: homonimosGrupo } = await supabase
+          .from("clientes")
+          .select("id, nombre, seudonimo, grupo_id")
+          .eq("grupo_id", grupoEfectivo);
+        const matchMismoGrupo = (homonimosGrupo ?? []).find((h: any) => {
+          const hn = String(h.nombre || "").trim().toUpperCase();
+          const hs = String(h.seudonimo || "").trim().toUpperCase();
+          return (nomUpper && (hn === nomUpper || hs === nomUpper)) || (seuUpper && (hn === seuUpper || hs === seuUpper));
+        });
+        if (matchMismoGrupo) {
+          cRow = matchMismoGrupo;
+          clienteIdEfectivo = String(matchMismoGrupo.id);
+          pertenece = true;
+        } else {
+          // Fallback a clientes_grupos donde grupo_id = grupoEfectivo
+          try {
+            const { data: mem } = await supabase
+              .from("clientes_grupos")
+              .select("cliente_id")
+              .eq("grupo_id", grupoEfectivo)
+              .eq("cliente_id", cRow.id)
+              .maybeSingle();
+            if (mem) pertenece = true;
+          } catch {
+            /* opcional */
+          }
+        }
+      }
       cRowData = cRow;
-      const pertenece = cRow.grupo_id != null && String(cRow.grupo_id) === String(grupoEfectivo);
       if (!pertenece) {
         return {
           ok: false,
@@ -154,10 +197,10 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     }
   }
 
-  // Aislamiento estricto de grupo: prohibido que jugadores de distintos grupos interactúen
+  // Aislamiento estricto de grupo: resolver siempre la fila del dador en `grupoEfectivo`
   const dadorTexto = String(dadorResuelto || v.clienteDador || "").trim();
   let dadorCliData: { id: string; nombre: string; seudonimo?: string | null; grupo_id?: string | null } | null =
-    v.clienteDadorRow
+    v.clienteDadorRow && String(v.clienteDadorRow.grupo_id ?? "") === String(grupoEfectivo ?? "")
       ? {
           id: String(v.clienteDadorRow.id),
           nombre: v.clienteDadorRow.nombre,
@@ -175,6 +218,18 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
         .limit(1);
       if (dadorRows && dadorRows.length > 0) {
         dadorCliData = dadorRows[0];
+      } else {
+        const dUpper = dadorTexto.toUpperCase();
+        const { data: todosGrupo } = await supabase
+          .from("clientes")
+          .select("id, nombre, seudonimo, grupo_id")
+          .eq("grupo_id", grupoEfectivo);
+        const exactoDador = (todosGrupo ?? []).find((x: any) => {
+          const xn = String(x.nombre || "").trim().toUpperCase();
+          const xs = String(x.seudonimo || "").trim().toUpperCase();
+          return xn === dUpper || xs === dUpper;
+        });
+        if (exactoDador) dadorCliData = exactoDador;
       }
     }
     if (dadorCliData) {
@@ -189,13 +244,14 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
   }
 
   let saldoAntesVenta: number | null = null;
-  if (v.clienteId) {
+  if (clienteIdEfectivo) {
     try {
-      const { data: preCli } = await supabase
+      let qPre = supabase
         .from("clientes")
         .select("saldo_actual")
-        .eq("id", v.clienteId)
-        .maybeSingle();
+        .eq("id", clienteIdEfectivo);
+      if (grupoEfectivo) qPre = qPre.eq("grupo_id", grupoEfectivo);
+      const { data: preCli } = await qPre.maybeSingle();
       if (preCli && preCli.saldo_actual != null) {
         saldoAntesVenta = Number(preCli.saldo_actual);
       }
@@ -211,7 +267,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     p_jugada: String(v.jugada ?? "").trim(),
     p_caballo: caballoLimpio,
     p_monto: Number(v.monto) || 0,
-    p_cliente_id: v.clienteId,
+    p_cliente_id: clienteIdEfectivo,
     p_grupo_id: grupoEfectivo,
     p_cliente_dador: dadorResuelto || v.clienteDador || null,
     p_moneda: v.moneda ?? null,
@@ -276,10 +332,12 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
         saldoRpc != null &&
         Math.abs(saldoRpc - (saldoAntesVenta - montoNum)) < 0.02;
       if (rpcDesconto && saldoAntesVenta != null) {
-        await supabase
+        let qUpdCli = supabase
           .from("clientes")
           .update({ saldo_actual: saldoAntesVenta })
-          .eq("id", v.clienteId);
+          .eq("id", clienteIdEfectivo);
+        if (grupoEfectivo) qUpdCli = qUpdCli.eq("grupo_id", grupoEfectivo);
+        await qUpdCli;
         r.saldo_restante = saldoAntesVenta;
       }
     } catch (e) {

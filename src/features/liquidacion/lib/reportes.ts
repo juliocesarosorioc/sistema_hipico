@@ -31,7 +31,11 @@ import { rivalesDeNota } from "@/features/marcas/lib/reporte-marcas-nucleo";
 import { calcularEstadoCuentaCliente, aplicarDevolucionIncentivoAFavor } from "@/features/saldos/lib/contabilidad-central";
 
 export { calcularEstadoCuentaCliente, aplicarDevolucionIncentivoAFavor };
-import { _reembolsosCruce, normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
+import {
+  _reembolsosCruce,
+  esTicketBolsaBNoCruzable,
+  normalizarNombreCliente,
+} from "@/features/taquilla/lib/cruces-y-tapas";
 import { liquidarOficial, puestosDesdeOrdenLlegada } from "@/features/motores/lib/oficiales";
 import { calcularRiesgoCliente2 } from "@/features/motores/lib/puestos";
 import {
@@ -100,6 +104,10 @@ export type FilaReporte = {
   esRetirado?: boolean;
   /** Hora de carga de la jugada en formato HH:mm (extraída de fecha_registro). */
   horaCarga?: string | null;
+  esBolsaB?: boolean;
+  clienteConsigue?: string;
+  notaAuditoria?: unknown;
+  origen?: string;
 };
 
 export type CarreraReporte = {
@@ -1587,6 +1595,10 @@ export type FilaTicketUnificada = {
   comisionCobrada: number;
   estado: string;
   anulada: boolean;
+  esBolsaB?: boolean;
+  clienteConsigue?: string;
+  notaAuditoria?: unknown;
+  origen?: string;
 };
 
 /**
@@ -1702,6 +1714,17 @@ export function desglosarTicketEnFilasUnificadas(
           ? monto
           : 0;
 
+  const esBolsaBTicket = esTicketBolsaBNoCruzable({
+    tipo_jugada: f.tipo_jugada ?? desglose.tipo,
+    nombre_jugada: f.nombre_jugada ?? desglose.jugada,
+    cliente_consigue_nombre: clienteConsigueNombre || clienteConsigueRaw,
+    modalidad: f.modalidad,
+    origen: f.origen,
+    nota_auditoria: f.nota_auditoria,
+    es_cruzable: typeof f.es_cruzable === "boolean" ? f.es_cruzable : undefined,
+  });
+  const origenTicket = txt(f.origen) || undefined;
+
   const filaJuega: FilaTicketUnificada = {
     id: `${idBase}-j`,
     ticketId: idBase,
@@ -1729,6 +1752,10 @@ export function desglosarTicketEnFilasUnificadas(
         : 0,
     estado: estadoJuega,
     anulada,
+    esBolsaB: esBolsaBTicket,
+    ...(clienteConsigueNombre ? { clienteConsigue: clienteConsigueNombre } : {}),
+    ...(f.nota_auditoria !== undefined ? { notaAuditoria: f.nota_auditoria } : {}),
+    ...(origenTicket ? { origen: origenTicket } : {}),
   };
 
   let filaConsigue: FilaTicketUnificada | null = null;
@@ -1768,6 +1795,10 @@ export function desglosarTicketEnFilasUnificadas(
           : 0,
       estado: estadoConsigue,
       anulada,
+      esBolsaB: esBolsaBTicket,
+      clienteConsigue: clienteConsigueNombre,
+      ...(f.nota_auditoria !== undefined ? { notaAuditoria: f.nota_auditoria } : {}),
+      ...(origenTicket ? { origen: origenTicket } : {}),
     };
   }
 
@@ -1872,6 +1903,17 @@ async function carreraReporte(
     const adelantada = esAdelantadaDe(f);
     const horaCarga = formatearHoraCarga(f);
     const precioTabla = desglose.tipo === "TABLA" ? extraerPrecioUnitarioTabla(f) : undefined;
+    const fRec = f as Record<string, unknown>;
+    const esBolsaBTicket = esTicketBolsaBNoCruzable({
+      tipo_jugada: fRec.tipo_jugada ?? desglose.tipo,
+      nombre_jugada: fRec.nombre_jugada ?? desglose.jugada,
+      cliente_consigue_nombre: clienteConsigueNombre || clienteConsigueRaw,
+      modalidad: fRec.modalidad,
+      origen: fRec.origen,
+      nota_auditoria: fRec.nota_auditoria,
+      es_cruzable: typeof fRec.es_cruzable === "boolean" ? fRec.es_cruzable : undefined,
+    });
+    const origenTicket = txt(fRec.origen) || undefined;
     filas.push({
       id: `${fecha}-${hipodromo}-${numero}-j-${i}`,
       rol: "Juega",
@@ -1895,6 +1937,10 @@ async function carreraReporte(
       esAdelantada: adelantada,
       ...(esRetiro ? { esRetirado: true } : {}),
       horaCarga,
+      esBolsaB: esBolsaBTicket,
+      ...(clienteConsigueNombre ? { clienteConsigue: clienteConsigueNombre } : {}),
+      ...(fRec.nota_auditoria !== undefined ? { notaAuditoria: fRec.nota_auditoria } : {}),
+      ...(origenTicket ? { origen: origenTicket } : {}),
     });
 
     if (clienteConsigueNombre) {
@@ -1920,14 +1966,19 @@ async function carreraReporte(
         esAdelantada: adelantada,
         ...(esRetiro ? { esRetirado: true } : {}),
         horaCarga,
+        esBolsaB: esBolsaBTicket,
+        clienteConsigue: clienteConsigueNombre,
+        ...(fRec.nota_auditoria !== undefined ? { notaAuditoria: fRec.nota_auditoria } : {}),
+        ...(origenTicket ? { origen: origenTicket } : {}),
       });
     }
 
     // Bruto ANTES de comisión (como en pagarYCerrar): neto + comisión casa.
-    // Excluir empates Nini (donde bruto + comision === monto) para que no se
-    // cuenten como pérdidas en el neteo de cruces.
+    // Excluir empates Nini (donde bruto + comision === monto) y toda jugada de Bolsa B
+    // (Marcas, Tablas Fijas, Remates, Pollas, Dupletas) para que no se crucen con Bolsa A.
     const esEmpateNini = ev.ok === false && Math.abs(ev.bruto + ev.comision - monto) < 0.01;
-    if (!esEmpateNini) {
+    const esModalidadSeparada = esBolsaBTicket;
+    if (!esEmpateNini && !esModalidadSeparada) {
       const montoEfectivo =
         ev.ok === false && ev.bruto > 0 && ev.bruto < monto
           ? Math.round((monto - ev.bruto) * 100) / 100
@@ -1966,11 +2017,19 @@ async function carreraReporte(
     });
   }
 
-  // 🔀 ASIENTO CONTABLE INTERNO: "Bono por Cruce de jugadas" por carrera y cliente.
+  // 🔀 ASIENTO CONTABLE INTERNO: "Bono por Cruce de jugadas" por carrera y cliente (solo Bolsa A).
   const lineasCruceCarrera = filas
     .filter(
       (f) =>
         (f.rol === "Juega" || f.rol === "Consigue") &&
+        !f.esBolsaB &&
+        !esTicketBolsaBNoCruzable({
+          tipoJugada: f.tipoJugada,
+          jugada: f.jugada,
+          da: f.rol === "Consigue" ? f.cliente : f.clienteConsigue,
+          nota_auditoria: f.notaAuditoria,
+          origen: f.origen,
+        }) &&
         f.resultado !== null &&
         Number.isFinite(f.resultado)
     )
@@ -1981,6 +2040,8 @@ async function carreraReporte(
       comisionCobrada: f.comisionCobrada,
       comisionPct: tasaComision ?? 5,
       rol: f.rol,
+      tipoJugada: f.tipoJugada,
+      jugada: f.jugada,
     }));
   const { porCliente: reembolsosCrucePorCliente } = _reembolsosCruce(
     lineasCruceCarrera,

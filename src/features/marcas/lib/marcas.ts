@@ -17,7 +17,13 @@ import {
   grupoVigente,
   veTodosLosGruposVigente,
 } from "@/features/seguridad/lib/vigente";
-import { listarClientesVenta, listarGruposVenta, type ClienteVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
+import {
+  listarClientesVenta,
+  listarGruposVenta,
+  clientePerteneceAGrupo,
+  type ClienteVenta,
+  type GrupoVenta,
+} from "@/features/grupos/lib/grupos";
 import { listarCarrerasCentrales, type CarreraCentral, type EjemplarCarreraCentral } from "@/features/carreras/lib/central";
 import {
   faltantesEnOrden,
@@ -946,5 +952,5 @@ export async function listarPizarraMarcas(filtros: {
 /** Clientes de un grupo, para el filtro en cascada del modal. */
 export function clientesDelGrupo(clientes: ClienteVenta[], grupoId: string): ClienteVenta[] {
   if (!grupoId) return [];
-  return clientes.filter((c) => c.grupo_id != null && String(c.grupo_id) === String(grupoId));
+  return clientes.filter((c) => clientePerteneceAGrupo(c, grupoId));
 }

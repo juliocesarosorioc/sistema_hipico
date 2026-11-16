@@ -31,6 +31,7 @@
 
 import { redondearCentavos } from "@/shared/lib/dinero";
 import { esJugadaPuestosParaIncentivo } from "@/features/saldos/lib/contabilidad-central";
+import { esTicketBolsaBNoCruzable } from "@/features/betting/lib/bettingEngine";
 
 export interface JugadaEntradaBaseDecidida {
   id?: string | number;
@@ -89,6 +90,9 @@ function esJugadaElegibleIgnorandoRol(j: JugadaEntradaBaseDecidida): boolean {
   const nom = String(j.nombreJugada ?? j.jugada ?? "").trim();
   const mod = String(j.modalidad ?? j.tipoJugada ?? "").trim();
   const ori = String(j.origen ?? "").trim();
+  if (esTicketBolsaBNoCruzable({ nombreJugada: nom, modalidad: mod, origen: ori })) {
+    return false;
+  }
   return esJugadaPuestosParaIncentivo(nom, mod, ori);
 }
 
@@ -146,10 +150,6 @@ function ganadoPerdidoJugada(j: JugadaEntradaBaseDecidida): { ganado: number; pe
     if (j.resultado > 0) {
       if (comision > 0) {
         return { ganado: redondearCentavos(j.resultado + comision), perdido: 0 };
-      }
-      // Si el resultado neto corresponde a un ticket donde se cobró 5% de comisión (ej. 47.50 sobre 50 apostados)
-      if (monto > 0 && j.resultado < monto && Math.abs(j.resultado - monto * 0.95) < 0.05) {
-        return { ganado: monto, perdido: 0 };
       }
       return { ganado: j.resultado, perdido: 0 };
     }

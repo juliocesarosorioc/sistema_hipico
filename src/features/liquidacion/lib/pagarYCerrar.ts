@@ -5,7 +5,14 @@ import { upsertResultadoCentral } from "@/features/carreras/lib/carreras-dia";
 import { leerRetirosCarrera, jugadaInvolucraRetirado, normalizarRetirados } from "@/features/carreras/lib/retiros";
 import { ordenLlegadaDePizarra, posicionesDePizarra } from "@/features/liquidacion/lib/posiciones";
 import { useTablasFijasStore } from "@/shared/store/useTablasFijasStore";
-import { netearComisionCruce, claveCruceFinanciero, type NeteoCruceItem, esJugadaDePuestos } from "@/features/betting/lib/bettingEngine";
+import {
+  netearComisionCruce,
+  claveCruceFinanciero,
+  type NeteoCruceItem,
+  esJugadaDePuestos,
+  esTicketBolsaBNoCruzable,
+  esTicketCruzableBolsaA,
+} from "@/features/betting/lib/bettingEngine";
 import type { TicketMotor, ResultadoMotor } from "@/features/betting/lib/bettingEngine";
 import type { PizarraCarrera } from "@/features/liquidacion/lib/liquidacion";
 import { supabase } from "@/core/supabase";
@@ -77,6 +84,10 @@ export type TicketPagar = {
    *  false ⇒ el cruce financiero NO recibe descuento de comisión neta
    *  (factura comisión por ticket). undefined ⇒ se permite el neteo. */
   permiteCruces?: boolean;
+  origen?: string | null;
+  modalidad?: string | null;
+  nota_auditoria?: unknown;
+  es_cruzable?: boolean | null;
 };
 
 function identidadCruceTicket(ticket: Pick<TicketPagar, "cliente1" | "cliente1Id">): string {
@@ -326,6 +337,10 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     caballo: string;
     monto: number;
     tipo: string;
+    origen?: string | null;
+    modalidad?: string | null;
+    nota_auditoria?: unknown;
+    es_cruzable?: boolean | null;
   }> = [];
   let totalInvertido = 0;
 
@@ -374,6 +389,10 @@ export async function liquidarCarreraYCerrarTabla(opts: {
       caballo: String(t.caballo ?? "").trim(),
       monto,
       tipo,
+      origen: t.origen,
+      modalidad: t.modalidad,
+      nota_auditoria: t.nota_auditoria,
+      es_cruzable: t.es_cruzable,
     });
     totalInvertido += monto;
   }
@@ -386,9 +405,18 @@ export async function liquidarCarreraYCerrarTabla(opts: {
     typeof opts.permiteCruces === "boolean" ? opts.permiteCruces : true;
   let neteados = 0;
   const usaModalidadesPuestos = crucesPuestos !== undefined;
+  const esIndiceBolsaA = (i: number) =>
+    esTicketCruzableBolsaA({
+      tipo_jugada: metadatos[i].tipo,
+      cliente2: metadatos[i].cliente2,
+      origen: metadatos[i].origen,
+      modalidad: metadatos[i].modalidad,
+      nota_auditoria: metadatos[i].nota_auditoria,
+      es_cruzable: metadatos[i].es_cruzable,
+    });
   const indicesLegados = procesados
     .map((_, i) => i)
-    .filter((i) => !usaModalidadesPuestos || !esJugadaDePuestos(metadatos[i].tipo))
+    .filter((i) => !usaModalidadesPuestos && esIndiceBolsaA(i))
     .filter((i) => {
       const r = procesados[i].resultado;
       // Empate NINI (devuelve capital: !ok && totalClienteNeto === monto) no es pérdida para el cruce
@@ -412,7 +440,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   });
   const gruposIdx = new Map<string, number[]>();
   for (let i = 0; i < procesados.length; i++) {
-    if (usaModalidadesPuestos && esJugadaDePuestos(metadatos[i].tipo)) continue;
+    if (usaModalidadesPuestos || !esIndiceBolsaA(i)) continue;
     const t = tickets[i];
     const identidad = identidadCruceTicket(t);
     if (!identidad || (!(t.caballo ?? "").trim() && !(agruparPorCliente !== false))) continue;
@@ -447,7 +475,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
   if (usaModalidadesPuestos && crucesPuestos) {
     const indicesPorJugador = new Map<string, number[]>();
     for (let i = 0; i < procesados.length; i++) {
-      if (!esJugadaDePuestos(metadatos[i].tipo)) continue;
+      if (!esIndiceBolsaA(i)) continue;
       const identidad = identidadCruceTicket(metadatos[i]).trim().toUpperCase();
       if (!identidad) continue;
       const grupoId = String(metadatos[i].grupoId ?? "").trim();
@@ -493,7 +521,7 @@ export async function liquidarCarreraYCerrarTabla(opts: {
         .toUpperCase();
       if (nombreJugador || aliasJugador) {
         for (let i = 0; i < procesados.length; i++) {
-          if (idxs.includes(i) || !esJugadaDePuestos(metadatos[i].tipo)) continue;
+          if (idxs.includes(i) || !esIndiceBolsaA(i) || !esJugadaDePuestos(metadatos[i].tipo)) continue;
           const c2Raw = String(metadatos[i].cliente2 ?? "").trim().toUpperCase();
           if (!c2Raw) continue;
           const c2Alias = (resolverSeudonimoClienteSync(c2Raw) || c2Raw).trim().toUpperCase();

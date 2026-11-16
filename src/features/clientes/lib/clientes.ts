@@ -13,7 +13,7 @@ import { resumenDatosPago, type DatosPago } from "@/shared/lib/vzla";
 import { exigirCapacidad, esPrincipalVigente, grupoActivoVigente, grupoVigente } from "@/features/seguridad/lib/vigente";
 import { resumenFormasPago, type FormaPago } from "@/features/clientes/lib/formasPago";
 import { redondearCentavos } from "@/shared/lib/dinero";
-import { _reembolsosCruce } from "@/features/taquilla/lib/cruces-y-tapas";
+import { _reembolsosCruce, esTicketBolsaBNoCruzable } from "@/features/taquilla/lib/cruces-y-tapas";
 import {
   calcularLiquidacionConIncentivosYSocios,
   emitirMensajePaso,
@@ -507,7 +507,7 @@ export async function listarClientes(force = false, grupoIdOverride?: string | n
         /* best-effort */
       }
 
-      // Filtrar estrictamente por grupo_id en la base de datos (sin puente clientes_grupos)
+      // Filtrar estrictamente por grupo_id en la base de datos (+ fallback a clientes_grupos)
       const uuidsObjetivo = [...idsObjetivo].filter((x) =>
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x)
       );
@@ -522,9 +522,39 @@ export async function listarClientes(force = false, grupoIdOverride?: string | n
       const { data, error } = await q;
       if (error) throw error;
 
-      // Aislamiento ESTRICTO en memoria: solo clientes que pertenezcan única y exclusivamente a este grupo
-      const candidatos = ((data ?? []) as ClienteRow[]);
+      const candidatos = [...((data ?? []) as ClienteRow[])];
+      const idsYaCargados = new Set(candidatos.map((c) => String(c.id)));
+      const idsMembresiaGrupo = new Set<string>();
+      if (uuidsObjetivo.length > 0) {
+        try {
+          const { data: memRows } = await supabase
+            .from("clientes_grupos")
+            .select("cliente_id")
+            .in("grupo_id", uuidsObjetivo);
+          const faltantes: string[] = [];
+          for (const m of memRows ?? []) {
+            const cId = String((m as any).cliente_id ?? "").trim();
+            if (!cId) continue;
+            idsMembresiaGrupo.add(cId);
+            if (!idsYaCargados.has(cId)) {
+              faltantes.push(cId);
+              idsYaCargados.add(cId);
+            }
+          }
+          if (faltantes.length > 0) {
+            const { data: dMem } = await supabase.from("clientes").select("*").in("id", faltantes);
+            if (Array.isArray(dMem) && dMem.length > 0) {
+              candidatos.push(...(dMem as ClienteRow[]));
+            }
+          }
+        } catch {
+          /* clientes_grupos opcional */
+        }
+      }
+
+      // Aislamiento ESTRICTO en memoria: solo clientes que pertenezcan a este grupo
       const filtradosPorGrupo = candidatos.filter((c) => {
+        if (idsMembresiaGrupo.has(String(c.id))) return true;
         const gCli = c.grupo_id != null ? String(c.grupo_id).trim() : "";
         return Boolean(gCli && (idsObjetivo.has(gCli) || idsObjetivo.has(gCli.toUpperCase())));
       });
@@ -685,10 +715,13 @@ export async function crearCliente(payload: Partial<ClienteRow>): Promise<{ ok: 
     if (!nombreNorm) {
       return { ok: false, error: "El nombre del cliente es obligatorio." };
     }
-    const grupoDestino = procesado.grupo_id != null ? String(procesado.grupo_id) : (grupoActivoVigente() || grupoVigente() || null);
+    const grupoDestino = procesado.grupo_id != null ? String(procesado.grupo_id).trim() : (grupoActivoVigente() || grupoVigente() || null);
+    if (!grupoDestino) {
+      return { ok: false, error: "Debe seleccionar un grupo activo para registrar al cliente." };
+    }
     const existentes = await listarClientes(true, grupoDestino);
     const duplicado = existentes.find((c) => {
-      const mismoGrupo = !grupoDestino || !c.grupo_id || String(c.grupo_id) === String(grupoDestino);
+      const mismoGrupo = c.grupo_id != null && String(c.grupo_id).trim() === String(grupoDestino).trim();
       if (!mismoGrupo) return false;
       return String(c.nombre ?? "").trim().toUpperCase() === nombreNorm;
     });
@@ -708,7 +741,7 @@ export async function crearCliente(payload: Partial<ClienteRow>): Promise<{ ok: 
     }
     const { data, error } = await supabase
       .from("clientes")
-      .insert([{ ...procesado, nombre: nombreNorm }])
+      .insert([{ ...procesado, nombre: nombreNorm, grupo_id: grupoDestino }])
       .select("id")
       .maybeSingle();
     if (error) {
@@ -783,18 +816,19 @@ export async function actualizarCliente(
       limpiarCachéClientesTodo();
       return { ok: true };
     }
+    const grupoObjetivoUpdate =
+      (fila?.grupo_id != null ? String(fila.grupo_id).trim() : null) ||
+      (seguro.grupo_id != null ? String(seguro.grupo_id).trim() : null) ||
+      grupoActivoVigente() ||
+      grupoVigente() ||
+      null;
     if ("nombre" in seguro && seguro.nombre) {
       const nombreNorm = String(seguro.nombre).trim().toUpperCase();
-      const grupoDestino =
-        (seguro.grupo_id != null ? String(seguro.grupo_id) : null) ||
-        (fila?.grupo_id != null ? String(fila.grupo_id) : null) ||
-        grupoActivoVigente() ||
-        grupoVigente() ||
-        null;
+      const grupoDestino = grupoObjetivoUpdate;
       const existentes = await listarClientes(true, grupoDestino);
       const duplicado = existentes.find((c) => {
         if (String(c.id) === String(id)) return false;
-        const mismoGrupo = !grupoDestino || !c.grupo_id || String(c.grupo_id) === String(grupoDestino);
+        const mismoGrupo = Boolean(grupoDestino && c.grupo_id != null && String(c.grupo_id).trim() === String(grupoDestino).trim());
         if (!mismoGrupo) return false;
         return String(c.nombre ?? "").trim().toUpperCase() === nombreNorm;
       });
@@ -813,7 +847,11 @@ export async function actualizarCliente(
       const libre = Boolean(seguro.libre ?? fila?.libre);
       seguro.saldo_disponible = libre ? 999999 : Math.max(0, Number((saldoNum + avalNum - retNum).toFixed(2)));
     }
-    const { data, error } = await supabase.from("clientes").update(seguro).eq("id", id).select("id");
+    let qUpdate = supabase.from("clientes").update(seguro).eq("id", id);
+    if (fila?.grupo_id != null && String(fila.grupo_id).trim() !== "") {
+      qUpdate = qUpdate.eq("grupo_id", fila.grupo_id);
+    }
+    const { data, error } = await qUpdate.select("id");
     if (error) return { ok: false, error: error.message };
     if (!data || data.length === 0) {
       return { ok: false, error: "No se actualizó ninguna fila. Posible: otro grupo, permisos insuficientes o RLS bloqueando." };
@@ -825,11 +863,19 @@ export async function actualizarCliente(
   }
 }
 
-export async function eliminarCliente(id: string | number): Promise<{ ok: boolean; error?: string }> {
+export async function eliminarCliente(
+  id: string | number,
+  grupoId?: string | number | null
+): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Sin conexión a Supabase" };
   try {
     exigirCapacidad("clientes:fn_eliminar_cliente");
-    const { data, error } = await supabase.from("clientes").delete().eq("id", id).select("id");
+    let qDel = supabase.from("clientes").delete().eq("id", id);
+    const gid = grupoId != null && String(grupoId).trim() !== "" ? String(grupoId).trim() : null;
+    if (gid) {
+      qDel = qDel.eq("grupo_id", gid);
+    }
+    const { data, error } = await qDel.select("id");
     if (error) return { ok: false, error: error.message };
     if (!data || data.length === 0) {
       return { ok: false, error: "No se eliminó ninguna fila. Posible: otro grupo, permisos insuficientes o RLS bloqueando." };
@@ -871,9 +917,15 @@ export async function convertirSocio(nombre: string): Promise<{ ok: boolean; err
       (existente.find((c) => c.grupo_id != null)?.grupo_id
         ? String(existente.find((c) => c.grupo_id != null)!.grupo_id)
         : null);
-    const ya = existente.find((c) => String(c.nombre).toUpperCase() === nombre);
+    const ya = existente.find(
+      (c) =>
+        String(c.nombre).toUpperCase() === nombre &&
+        (!gid || (c.grupo_id != null && String(c.grupo_id) === String(gid)))
+    );
     if (ya) {
-      const { error } = await supabase.from("clientes").update({ es_socio: true }).eq("id", ya.id);
+      let qSoc = supabase.from("clientes").update({ es_socio: true }).eq("id", ya.id);
+      if (ya.grupo_id != null) qSoc = qSoc.eq("grupo_id", ya.grupo_id);
+      const { error } = await qSoc;
       if (error) return { ok: false, error: error.message };
     } else {
       if (!gid) {
@@ -1033,8 +1085,12 @@ export async function guardarPortal(
     return { ok: false, error: `Faltan columnas del portal (${faltan.join(", ")}). Ejecute sql/portal_cuadre.sql.` };
   }
   try {
-      exigirCapacidad("clientes:fn_guardar_cliente");
-    const { error } = await supabase.from("clientes").update(payload).eq("id", id);
+    exigirCapacidad("clientes:fn_guardar_cliente");
+    let qPort = supabase.from("clientes").update(payload).eq("id", id);
+    if (fila?.grupo_id != null && String(fila.grupo_id).trim() !== "") {
+      qPort = qPort.eq("grupo_id", fila.grupo_id);
+    }
+    const { error } = await qPort;
     if (error) return { ok: false, error: error.message };
     limpiarCachéClientesTodo();
     return { ok: true };
@@ -1223,10 +1279,14 @@ export async function aplicarNotificacion(n: NotificacionRow, atendidaPor: strin
   if (Array.isArray(d.formas_pago)) payload.formas_pago = d.formas_pago;
   try {
     const fila = (await listarClientes(true)).find((c) => String(c.id) === String(n.cliente_id)) ?? null;
-    const { error } = await supabase
+    let qNotif = supabase
       .from("clientes")
       .update(soloColumnasExistentes(payload, fila))
       .eq("id", n.cliente_id as string);
+    if (fila?.grupo_id != null && String(fila.grupo_id).trim() !== "") {
+      qNotif = qNotif.eq("grupo_id", fila.grupo_id);
+    }
+    const { error } = await qNotif;
     if (error) return { ok: false, error: error.message };
     await supabase
       .from("notificaciones")
@@ -1489,6 +1549,10 @@ export type JugadaItem = {
   esAsientoCruce?: boolean;
   /** Monto base de dinero cruzado / netting en la carrera. */
   baseCruce?: number;
+  esBolsaB?: boolean;
+  clienteConsigue?: string;
+  notaAuditoria?: unknown;
+  origen?: string;
 };
 
 export type NivelAcordeon = { titulo: string; subtitulo?: string; monto: number; dec: number; hijos: NivelAcordeon[]; jugadas: JugadaItem[] };
@@ -1673,6 +1737,17 @@ export function construirEstadoCuenta(
       const idJugada = lados.length > 1 ? `${t.id}-${fila.rol === "Consigue" ? "c" : "j"}` : String(t.id);
       const decFila = fila.rol === "Juega" ? dec : 0;
       const resultadoNetoFila = fila.resultado ?? 0;
+      const jugadaNom = fila.jugada || t.nombre_jugada || "Jugada";
+      const contraNodo = String(t.cliente_consigue_nombre ?? "").trim().toUpperCase();
+      const origenNodo = typeof rec.origen === "string" ? rec.origen : undefined;
+      const esBolsaBNodo =
+        Boolean(fila.esBolsaB) ||
+        esTicketBolsaBNoCruzable({
+          jugada: jugadaNom,
+          da: contraNodo,
+          nota_auditoria: rec.nota_auditoria,
+          origen: origenNodo,
+        });
       const jugada: JugadaItem = {
         id: idJugada,
         fecha: t.fecha_registro ?? isoCarrera ?? null,
@@ -1686,7 +1761,7 @@ export function construirEstadoCuenta(
         semana,
         dia,
         caballo: fila.caballo || t.caballo || "—",
-        jugada: fila.jugada || t.nombre_jugada || "Jugada",
+        jugada: jugadaNom,
         montoJugado: fila.monto,
         montoDecidido: baseVigente,
         premio: fila.premio,
@@ -1695,17 +1770,44 @@ export function construirEstadoCuenta(
         estado: fila.estado,
         devolucion: decFila,
         comisionCobrada: fila.comisionCobrada,
+        esBolsaB: esBolsaBNodo,
+        ...(contraNodo ? { clienteConsigue: contraNodo } : {}),
+        ...(rec.nota_auditoria !== undefined ? { notaAuditoria: rec.nota_auditoria } : {}),
+        ...(origenNodo ? { origen: origenNodo } : {}),
       };
 
       const g = get(construir.grupos, grupo, grupo);
       const s = get(construir.semanas, `${grupo}|${semana}`, semana, "Semana");
       const d = get(construir.dias, `${grupo}|${semana}|${dia}`, dia, "Día");
       const h = get(construir.hipodromos, `${grupo}|${semana}|${dia}|${hipodromo}`, hipodromo);
-      const cKey = `${grupo}|${semana}|${dia}|${hipodromo}|${carrera}`;
+      let sufijoNodo = "";
+      let tituloNodo = `Carrera ${carrera}`;
+      if (esBolsaBNodo) {
+        if (/^MARCAS?\b/i.test(jugadaNom) || contraNodo === "MARCAS" || contraNodo === "MARCA") {
+          sufijoNodo = "|MARCAS";
+          tituloNodo = `Marcas C${carrera}`;
+        } else if (/^TABLA\b|^TF\b/i.test(jugadaNom) || contraNodo === "TF" || contraNodo === "TABLAS_FIJAS") {
+          sufijoNodo = "|TABLAS_FIJAS";
+          tituloNodo = `Tablas Fijas C${carrera}`;
+        } else if (/^REMATES?\b/i.test(jugadaNom) || contraNodo === "REMATE" || contraNodo === "REMATES") {
+          sufijoNodo = "|REMATE";
+          tituloNodo = `Remate C${carrera}`;
+        } else if (/^POLLAS?\b/i.test(jugadaNom) || contraNodo === "POLLA" || contraNodo === "POLLAS") {
+          sufijoNodo = "|POLLA";
+          tituloNodo = `Polla C${carrera}`;
+        } else if (/^DUPLETAS?\b/i.test(jugadaNom) || contraNodo === "DUPLETA" || contraNodo === "DUPLETAS") {
+          sufijoNodo = "|DUPLETA";
+          tituloNodo = `Dupleta C${carrera}`;
+        } else {
+          sufijoNodo = "|MODALIDAD";
+          tituloNodo = `Modalidad C${carrera}`;
+        }
+      }
+      const cKey = `${grupo}|${semana}|${dia}|${hipodromo}|${carrera}${sufijoNodo}`;
       const c = get(
         construir.carreras,
         cKey,
-        `Carrera ${carrera}`,
+        tituloNodo,
         hipodromo
       );
       if (!padresCarrera.has(cKey)) {
@@ -1738,7 +1840,20 @@ export function construirEstadoCuenta(
   if (permiteCruces) {
     for (const [, { c, h, d, s, g }] of padresCarrera) {
       const lineasCruce = c.jugadas
-        .filter((j) => !j.esAsientoCruce && String(j.estado).toUpperCase() !== "ANULADA" && j.resultadoNeto !== undefined && j.resultadoNeto !== 0)
+        .filter(
+          (j) =>
+            !j.esAsientoCruce &&
+            !j.esBolsaB &&
+            !esTicketBolsaBNoCruzable({
+              jugada: j.jugada,
+              da: j.clienteConsigue,
+              nota_auditoria: j.notaAuditoria,
+              origen: j.origen,
+            }) &&
+            String(j.estado).toUpperCase() !== "ANULADA" &&
+            j.resultadoNeto !== undefined &&
+            j.resultadoNeto !== 0
+        )
         .map((j) => ({
           cliente: cliId || clienteActual?.nombre || clienteActual?.seudonimo || "CLIENTE",
           clienteId: cliId || undefined,
@@ -1746,6 +1861,7 @@ export function construirEstadoCuenta(
           comisionCobrada: j.comisionCobrada,
           comisionPct: tasaComisionCliente ?? 5,
           rol: j.rol,
+          jugada: j.jugada,
         }));
       if (lineasCruce.length >= 2) {
         const resCruce = _reembolsosCruce(lineasCruce, "con_cruces", tasaComisionCliente ?? 5);

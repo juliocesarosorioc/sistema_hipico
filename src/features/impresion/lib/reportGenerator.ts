@@ -27,7 +27,11 @@ import {
   resolverContraparteModalidad,
 } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { esAdelantadaDe } from "@/features/jugadas/lib/modalidad-tiempo";
-import { _reembolsosCruce, normalizarNombreCliente } from "@/features/taquilla/lib/cruces-y-tapas";
+import {
+  _reembolsosCruce,
+  esTicketBolsaBNoCruzable,
+  normalizarNombreCliente,
+} from "@/features/taquilla/lib/cruces-y-tapas";
 import { calcularEstadoCuentaCliente } from "@/features/saldos/lib/contabilidad-central";
 import { cargarMapaSeudonimosClientes } from "@/features/clientes/lib/clientes";
 import {
@@ -567,6 +571,14 @@ export function relacionResultados(
     const nombreJug = String(j.jugada ?? "").trim().toUpperCase();
     const esJugTablaFija = /^TABLA\s*FIJA\b|^TF\b|^TABLA$/i.test(nombreJug);
     const esJugMarca = /^MARCAS?\b/i.test(nombreJug);
+    const esJugBolsaB =
+      esJugTablaFija ||
+      esJugMarca ||
+      esTicketBolsaBNoCruzable({
+        jugada: j.jugada,
+        modalidad: j.modalidad,
+        clienteConsigue: j.clienteConsigue,
+      });
     const esAdelantada = Boolean(j.esAdelantada);
     const destino = esAdelantada ? cuerpoAdelantadas : cuerpoEnVivo;
     const numOrden = esAdelantada ? ++idxAdelantada : ++idxEnVivo;
@@ -646,19 +658,15 @@ export function relacionResultados(
           : j.ganador === true;
       if (ganoTabla) {
         destino.push(`Juega ${j.clienteJuega} $ +${fmtMonto(pagoTabla)}`);
-        acumular(j.clienteJuega, pagoTabla);
         if (beneficiario) {
           const perdidaDa = round2(pagoTabla + (pagoTabla * tasa) / 100);
           destino.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
-          acumular(beneficiario, -perdidaDa);
         }
       } else {
         destino.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
-        acumular(j.clienteJuega, -perdida);
         if (beneficiario) {
           const netoDa = round2(perdida - (perdida * tasa) / 100);
           destino.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
-          acumular(beneficiario, netoDa);
         }
       }
       return;
@@ -689,19 +697,15 @@ export function relacionResultados(
       }
       if (ganoMarca) {
         destino.push(`Juega ${j.clienteJuega} $ +${fmtMonto(pagoMarca)}`);
-        acumular(j.clienteJuega, pagoMarca);
         if (beneficiario) {
           const perdidaDa = round2(pagoMarca + (pagoMarca * tasa) / 100);
           destino.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
-          acumular(beneficiario, -perdidaDa);
         }
       } else {
         destino.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
-        acumular(j.clienteJuega, -perdida);
         if (beneficiario) {
           const netoDa = round2(perdida - (perdida * tasa) / 100);
           destino.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
-          acumular(beneficiario, netoDa);
         }
       }
       return;
@@ -715,16 +719,16 @@ export function relacionResultados(
       // Acertó el que JUEGA → cobra la ganancia neta; el "da" entrega SU riesgo,
       // que es el BRUTO de la jugada: el monto a la par, y 8/10·monto en "10a8".
       destino.push(`Juega ${j.clienteJuega} $ +${fmtMonto(b.gananciaNeta)}`);
-      acumular(j.clienteJuega, round2(b.gananciaBruta));
+      if (!esJugBolsaB) acumular(j.clienteJuega, round2(b.gananciaBruta));
       if (beneficiario) {
         const perdidaDa = round2(b.gananciaBruta);
         destino.push(`Da ${beneficiario} $ -${fmtMonto(perdidaDa)}`);
-        acumular(beneficiario, -perdidaDa);
+        if (!esJugBolsaB) acumular(beneficiario, -perdidaDa);
       }
     } else if (j.modalidad === "NINI") {
       // Falló el NINI (el caballo figuró) → pierde el que JUEGA; el "da" cobra la paridad neta.
       destino.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
-      acumular(j.clienteJuega, -perdida);
+      if (!esJugBolsaB) acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
         const porUno = Number(meta.dividendos?.nini);
         const mult = Number.isFinite(porUno) && porUno >= 1 ? porUno : 2;
@@ -733,19 +737,19 @@ export function relacionResultados(
         const com2 = round2((premioNini - perdida) * (tasa / 100));
         const netoC2 = round2(premioNini - perdida);
         destino.push(`Da ${beneficiario} $ +${fmtMonto(netoC2)}`);
-        acumular(beneficiario, netoC2);
+        if (!esJugBolsaB) acumular(beneficiario, netoC2);
       }
     } else {
       // Jugada genérica fallida → pierde el que JUEGA; el "da" (banquero) cobra
       // la PARIDAD NETA, igual que un NINI fallido, sin importar la modalidad
       // (suma cero: lo que pierde el que JUEGA menos la comisión de la casa).
       destino.push(`Juega ${j.clienteJuega} $ -${fmtMonto(perdida)}`);
-      acumular(j.clienteJuega, -perdida);
+      if (!esJugBolsaB) acumular(j.clienteJuega, -perdida);
       if (beneficiario) {
         const tasa = tasaDeJugada(j.comisionPct);
         const netoDa = round2(perdida);
         destino.push(`Da ${beneficiario} $ +${fmtMonto(netoDa)}`);
-        acumular(beneficiario, netoDa);
+        if (!esJugBolsaB) acumular(beneficiario, netoDa);
       }
     }
   });
