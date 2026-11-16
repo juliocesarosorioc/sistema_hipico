@@ -91,14 +91,16 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const vinculosGlobales = (todosVinculosRaw || []).map((v: any) => {
-      const sInfo = salaInfoPorId.get(String(v.sala_id));
-      return {
-        ...v,
-        sala_nombre: sInfo?.nombre_sala || null,
-        grupo_nombre: sInfo?.grupo_nombre || grupoNombrePorId.get(String(v.grupo_id)) || null,
-      };
-    });
+    const vinculosGlobales = (todosVinculosRaw || [])
+      .filter((v: any) => salaInfoPorId.has(String(v.sala_id)))
+      .map((v: any) => {
+        const sInfo = salaInfoPorId.get(String(v.sala_id));
+        return {
+          ...v,
+          sala_nombre: sInfo?.nombre_sala || null,
+          grupo_nombre: sInfo?.grupo_nombre || grupoNombrePorId.get(String(v.grupo_id)) || null,
+        };
+      });
 
     const vinculosPorGrupoId = new Map<string, any[]>();
     for (const v of vinculosGlobales) {
@@ -121,7 +123,7 @@ export async function GET(req: NextRequest) {
         ...g,
         totalSalas: salasDelG.length,
         salasConectadas: salasConectadasCount,
-        conectado: vG.length > 0 || salasConectadasCount > 0,
+        conectado: salasConectadasCount > 0,
         gruposWhatsappNombres: nombresWa,
       };
     });

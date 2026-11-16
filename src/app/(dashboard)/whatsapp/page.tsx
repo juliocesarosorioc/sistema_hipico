@@ -978,6 +978,39 @@ export default function WhatsappPage() {
     }
   };
 
+  const desvincularGrupoDirecto = async (groupJid: string, groupNombre?: string) => {
+    if (!groupJid) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(`¿Desconectar y desvincular "${groupNombre || groupJid}" de todas las salas?`)
+    ) {
+      return;
+    }
+    setProcesandoAccion(`desvincular-dir-${groupJid}`);
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/whatsapp-sala/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accion: "desconectar_grupo_jid",
+          groupJid,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (json?.ok) {
+        setFeedback({ tipo: "ok", texto: `✅ Grupo "${groupNombre || groupJid}" desconectado con éxito.` });
+        await Promise.all([consultarEstado(true, true), cargarSalasGrupos()]);
+      } else {
+        setFeedback({ tipo: "error", texto: json?.motivo || "No se pudo desconectar el grupo." });
+      }
+    } catch (err: any) {
+      setFeedback({ tipo: "error", texto: err?.message || "Error al desconectar el grupo." });
+    } finally {
+      setProcesandoAccion(null);
+    }
+  };
+
   const abrirCarrera = async (sala: SalaJuego) => {
     const hipodromo = (hipodromoPorSala[sala.id] || sala.hipodromo_activo || "LA RINCONADA")
       .trim()
@@ -1968,7 +2001,7 @@ export default function WhatsappPage() {
                   </div>
 
                   {estaConectado ? (
-                    <div className="mt-2 text-[10px] bg-slate-950/60 rounded-xl p-2 border border-slate-800/80 space-y-0.5">
+                    <div className="mt-2 text-[10px] bg-slate-950/60 rounded-xl p-2 border border-slate-800/80 space-y-1">
                       <div className="flex items-center justify-between text-slate-400">
                         <span>Sala vinculada:</span>
                         <span className="font-bold text-emerald-300">{g.salaNombre || "Sala"}</span>
@@ -1979,6 +2012,19 @@ export default function WhatsappPage() {
                           <span className="font-bold text-sky-300">{g.grupoNombre}</span>
                         </div>
                       ) : null}
+                      <div className="pt-1 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            desvincularGrupoDirecto(g.jid, g.nombre);
+                          }}
+                          disabled={procesandoAccion === `desvincular-dir-${g.jid}`}
+                          className="px-2 py-0.5 bg-rose-950/70 hover:bg-rose-900 border border-rose-800/70 text-rose-300 text-[10px] font-bold rounded-lg transition-colors flex items-center gap-1 shadow-sm disabled:opacity-50"
+                        >
+                          {procesandoAccion === `desvincular-dir-${g.jid}` ? "⏳ Desconectando..." : "🔌 Desconectar Grupo"}
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="mt-2 text-[10px] text-slate-500 italic bg-slate-950/40 rounded-xl p-2 border border-slate-800/40">

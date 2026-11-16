@@ -13,12 +13,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const body = await req.json().catch(() => ({}));
     const res = await fetch(`${BOT_DAEMON_URL}/disconnect`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-internal-bot-secret": INTERNAL_BOT_SECRET,
       },
+      body: JSON.stringify(body),
       cache: "no-store",
     });
 

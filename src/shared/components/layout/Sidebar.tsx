@@ -150,6 +150,8 @@ export const CATEGORIAS: Categoria[] = [
       { href: "/hipodromos", emoji: "🗺️", txt: "Hipódromos" },
       { href: "/tickets", emoji: "🛟", txt: "Tickets / Reclamos" },
       { href: "/whatsapp", emoji: "💬", txt: "Bot de WhatsApp" },
+      { href: "/admin/whatsapp", emoji: "📲", txt: "Conectar Bot Operador" },
+      { href: "/superadmin/monitor", emoji: "🌐", txt: "Monitor Global SaaS" },
       { href: "/seguridad", emoji: "🛡️", txt: "Matriz de Seguridad" },
       { href: "/diagnostico", emoji: "🩺", txt: "Diagnóstico" },
     ],

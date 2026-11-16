@@ -2244,40 +2244,56 @@ const server = http.createServer(async (req, res) => {
       if (!supabase) {
         return responderJson(res, 500, { ok: false, motivo: "Supabase no configurado" });
       }
-      if (!salaId || !groupJid) {
+      if (!groupJid) {
         return responderJson(res, 400, {
           ok: false,
-          motivo: "salaId y groupJid son requeridos",
+          motivo: "groupJid es requerido",
         });
       }
 
-      const { error: errDel } = await supabase
+      let qDel = supabase
         .from("salas_whatsapp_grupos")
         .delete()
-        .eq("sala_id", salaId)
         .eq("whatsapp_group_jid", groupJid);
+
+      if (salaId) {
+        qDel = qDel.eq("sala_id", salaId);
+      }
+
+      const { error: errDel } = await qDel;
 
       if (errDel) {
         return responderJson(res, 500, { ok: false, motivo: errDel.message });
       }
 
       try {
-        const { data: otros } = await supabase
-          .from("salas_whatsapp_grupos")
-          .select("whatsapp_group_jid, whatsapp_group_nombre")
-          .eq("sala_id", salaId)
-          .eq("activo", true)
-          .order("updated_at", { ascending: false });
+        if (salaId) {
+          const { data: otros } = await supabase
+            .from("salas_whatsapp_grupos")
+            .select("whatsapp_group_jid, whatsapp_group_nombre")
+            .eq("sala_id", salaId)
+            .eq("activo", true)
+            .order("updated_at", { ascending: false });
 
-        const siguiente = (otros || [])[0] || null;
-        await supabase
-          .from("salas_juego")
-          .update({
-            whatsapp_group_jid: siguiente ? siguiente.whatsapp_group_jid : null,
-            whatsapp_group_nombre: siguiente ? siguiente.whatsapp_group_nombre : null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", salaId);
+          const siguiente = (otros || [])[0] || null;
+          await supabase
+            .from("salas_juego")
+            .update({
+              whatsapp_group_jid: siguiente ? siguiente.whatsapp_group_jid : null,
+              whatsapp_group_nombre: siguiente ? siguiente.whatsapp_group_nombre : null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", salaId);
+        } else {
+          await supabase
+            .from("salas_juego")
+            .update({
+              whatsapp_group_jid: null,
+              whatsapp_group_nombre: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("whatsapp_group_jid", groupJid);
+        }
       } catch {
         // No bloqueante
       }

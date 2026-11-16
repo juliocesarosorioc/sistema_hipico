@@ -128,6 +128,26 @@ export async function POST(req: NextRequest) {
     if (accion === "desvincular_grupo_sala" || accion === "desvincular-grupo-sala") {
       const { salaId, groupJid } = body;
       try {
+        if (salaId) {
+          await supabaseAdmin
+            .from("salas_juego")
+            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+            .eq("id", salaId);
+          await supabaseAdmin
+            .from("salas_whatsapp_grupos")
+            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+            .eq("sala_id", salaId);
+        } else if (groupJid) {
+          await supabaseAdmin
+            .from("salas_juego")
+            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+            .eq("whatsapp_group_jid", groupJid);
+          await supabaseAdmin
+            .from("salas_whatsapp_grupos")
+            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+            .eq("whatsapp_group_jid", groupJid);
+        }
+
         const resBot = await fetch(`${BOT_DAEMON_URL}/desvincular-grupo`, {
           method: "POST",
           headers: {
@@ -138,20 +158,202 @@ export async function POST(req: NextRequest) {
         });
         const json = await resBot.json().catch(() => null);
         return NextResponse.json(
-          json || { ok: false, motivo: "Respuesta inválida del demonio Baileys" },
+          json || { ok: true, motivo: "Grupo desvinculado correctamente" },
           { status: 200 }
         );
       } catch {
         return NextResponse.json(
-          {
-            ok: false,
-            conectado: false,
-            grupos: [],
-            motivo: "Bot Baileys en puerto 3005 apagado o reiniciando",
-          },
+          { ok: true, motivo: "Grupo desvinculado en base de datos" },
           { status: 200 }
         );
       }
+    }
+
+    // 2.b Desconectar sala (Pausar WhatsApp en la sala)
+    if (accion === "desconectar-sala" || accion === "desconectar_sala") {
+      const { salaId } = body;
+      if (!salaId) {
+        return NextResponse.json({ ok: false, motivo: "salaId es requerido" }, { status: 200 });
+      }
+
+      const { data: salaPrev } = await supabaseAdmin
+        .from("salas_juego")
+        .select("id, whatsapp_group_jid, whatsapp_group_nombre")
+        .eq("id", salaId)
+        .maybeSingle();
+
+      const jidPrev = salaPrev?.whatsapp_group_jid || null;
+
+      await supabaseAdmin
+        .from("salas_juego")
+        .update({
+          whatsapp_group_jid: null,
+          whatsapp_group_nombre: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", salaId);
+
+      await supabaseAdmin
+        .from("salas_whatsapp_grupos")
+        .update({
+          activo: false,
+          estado_conexion: "pausado",
+          motivo_estado: "Desconectado manualmente",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("sala_id", salaId);
+
+      try {
+        await fetch(`${BOT_DAEMON_URL}/desconectar-sala`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({ salaId }),
+        });
+      } catch {}
+
+      return NextResponse.json({
+        ok: true,
+        salaId,
+        desconectado: true,
+        groupJid: jidPrev,
+        groupNombre: salaPrev?.whatsapp_group_nombre || null,
+        motivo: "Sala desconectada correctamente de WhatsApp",
+      });
+    }
+
+    // 2.c Reconectar sala (Restaurar WhatsApp en la sala)
+    if (accion === "reconectar-sala" || accion === "reconectar_sala") {
+      const { salaId, groupJid, groupNombre } = body;
+      if (!salaId) {
+        return NextResponse.json({ ok: false, motivo: "salaId es requerido" }, { status: 200 });
+      }
+
+      if (groupJid) {
+        await supabaseAdmin
+          .from("salas_juego")
+          .update({
+            whatsapp_group_jid: groupJid,
+            whatsapp_group_nombre: groupNombre || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", salaId);
+
+        const { data: sActual } = await supabaseAdmin
+          .from("salas_juego")
+          .select("grupo_id")
+          .eq("id", salaId)
+          .maybeSingle();
+
+        await supabaseAdmin
+          .from("salas_whatsapp_grupos")
+          .upsert(
+            {
+              sala_id: salaId,
+              grupo_id: sActual?.grupo_id || null,
+              whatsapp_group_jid: groupJid,
+              whatsapp_group_nombre: groupNombre || null,
+              activo: true,
+              estado_conexion: "conectado",
+              motivo_estado: "Reconectado",
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "sala_id,whatsapp_group_jid" }
+          );
+      }
+
+      try {
+        await fetch(`${BOT_DAEMON_URL}/reconectar-sala`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({ salaId, groupJid, groupNombre }),
+        });
+      } catch {}
+
+      return NextResponse.json({
+        ok: true,
+        salaId,
+        groupJid,
+        groupNombre,
+        motivo: "Sala reconectada correctamente",
+      });
+    }
+
+    // 2.d Desconectar grupo por JID directo (desde la lista de grupos de WhatsApp)
+    if (
+      accion === "desconectar_grupo_jid" ||
+      accion === "desconectar-grupo-jid" ||
+      accion === "desvincular_grupo_directo" ||
+      accion === "desvincular-grupo-directo"
+    ) {
+      const { groupJid } = body;
+      if (!groupJid) {
+        return NextResponse.json({ ok: false, motivo: "groupJid es requerido" }, { status: 200 });
+      }
+
+      await supabaseAdmin
+        .from("salas_whatsapp_grupos")
+        .update({
+          activo: false,
+          estado_conexion: "desconectado",
+          motivo_estado: "Desconectado por el usuario",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("whatsapp_group_jid", groupJid);
+
+      await supabaseAdmin
+        .from("salas_juego")
+        .update({
+          whatsapp_group_jid: null,
+          whatsapp_group_nombre: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("whatsapp_group_jid", groupJid);
+
+      try {
+        await fetch(`${BOT_DAEMON_URL}/desvincular-grupo`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({ groupJid }),
+        });
+      } catch {}
+
+      return NextResponse.json({
+        ok: true,
+        groupJid,
+        motivo: "Grupo de WhatsApp desconectado y desvinculado con éxito",
+      });
+    }
+
+    // 2.e Desconectar todas las salas
+    if (accion === "desconectar_todas_las_salas" || accion === "desconectar-todas-salas") {
+      const { grupoId } = body;
+      let qSalas = supabaseAdmin.from("salas_juego").update({
+        whatsapp_group_jid: null,
+        whatsapp_group_nombre: null,
+        updated_at: new Date().toISOString(),
+      });
+      if (grupoId) qSalas = qSalas.eq("grupo_id", grupoId);
+      await qSalas;
+
+      let qVinc = supabaseAdmin.from("salas_whatsapp_grupos").update({
+        activo: false,
+        estado_conexion: "pausado",
+        motivo_estado: "Desconectado masivo",
+        updated_at: new Date().toISOString(),
+      });
+      if (grupoId) qVinc = qVinc.eq("grupo_id", grupoId);
+      await qVinc;
+
+      return NextResponse.json({ ok: true, motivo: "Todas las salas desconectadas exitosamente" });
     }
 
     // 3. Crear sala (máximo 2 salas por grupo_id)
