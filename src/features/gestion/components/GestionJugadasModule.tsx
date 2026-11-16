@@ -5125,7 +5125,7 @@ const hipodromosDelDia = useMemo(() => {
           );
         })()}
 
-        {/* Visor Interactivo de Reportes WhatsApp (#reporteArea) + Acuse de Recibo */}
+        {/* Visor Interactivo de Reportes WhatsApp (#reporteArea) */}
         <div id="reporteArea" className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div className="flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap py-1 scrollbar-thin">
             <button
