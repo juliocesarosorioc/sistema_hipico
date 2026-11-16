@@ -3426,6 +3426,66 @@ export async function POST(req: Request) {
       rpcPublicado = false;
     }
 
+    // Fallback resiliente: inserción directa en chat_mensajes si el RPC falla
+    if (!rpcPublicado || !propId) {
+      try {
+        if (!cliente.libre) {
+          const saldoRetenidoActual = Number(cliente.saldo_retenido || 0);
+          const nuevoRetenido = Number((saldoRetenidoActual + montoAPublicar).toFixed(2));
+          await supabaseAdmin
+            .from("clientes")
+            .update({
+              saldo_retenido: nuevoRetenido,
+              saldo_disponible: Math.max(0, Number((Number(cliente.saldo_actual || 0) + Number(cliente.aval || 0) - nuevoRetenido).toFixed(2))),
+            })
+            .eq("id", cliente.id);
+        }
+
+        const rawFirma = `PROPUESTA_WA:${salaId}:${cliente.id}:${montoAPublicar}:${Date.now()}`;
+        const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
+
+        const { data: nuevaPropuesta, error: errInsert } = await supabaseAdmin
+          .from("chat_mensajes")
+          .insert({
+            grupo_id: grupoId,
+            sala_id: salaId,
+            remitente_id: cliente.id,
+            remitente_nombre: nombreJugador,
+            es_operador: false,
+            tipo_mensaje: "propuesta_jugada",
+            contenido: analisis.jugadaEstandarizada,
+            carrera_id: sala.carrera_activa_id || null,
+            accion_proponente: analisis.accionProponente || "JUEGA",
+            es_match: Boolean(analisis.esMatch),
+            modalidad_jugada: analisis.modalidad,
+            ejemplar_numero: analisis.ejemplarTexto,
+            caballos_bando_a: analisis.caballosBandoA || (analisis.ejemplarTexto ? [analisis.ejemplarTexto] : []),
+            caballos_bando_b: analisis.caballosBandoB || [],
+            jugada_estandarizada: analisis.jugadaEstandarizada,
+            monto_original: montoAPublicar,
+            monto_disponible: montoAPublicar,
+            estado_propuesta: "abierta",
+            proporcion_premio: analisis.proporcion || "1x1",
+            firma_sha256: firma,
+            whatsapp_msg_id: whatsappMsgId || null,
+            whatsapp_group_jid: groupJid || null,
+            whatsapp_group_nombre: whatsappGroupNombre || null,
+            origen_canal: "WHATSAPP",
+          })
+          .select()
+          .single();
+
+        if (!errInsert && nuevaPropuesta?.id) {
+          propId = nuevaPropuesta.id;
+          rpcPublicado = true;
+        } else if (errInsert) {
+          console.error("[procesar] Fallback inserción directa error:", errInsert);
+        }
+      } catch (errFb) {
+        console.error("[procesar] Error en bloque fallback propuesta:", errFb);
+      }
+    }
+
     if (!rpcPublicado || !propId) {
       const msgErrPriv =
         `⚠️ Hola *${nombreJugador}*, tu mensaje "${texto}" no pudo procesarse porque ocurrió un problema registrando tu propuesta.\n\n✅ *Ejemplo correcto:* "Juego 1P 5 20.000" o "Juego 3x5 10a8 100".`;
