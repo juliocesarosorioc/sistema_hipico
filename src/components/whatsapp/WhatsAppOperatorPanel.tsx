@@ -249,7 +249,13 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
         body: JSON.stringify({ session_id: grupo_id, forzar_limpieza: true }),
       }).catch(() => {});
 
-      setFeedbackSuccess("Sesión huérfana limpiada correctamente. Generando nuevo QR limpio (Regla 1 a 1).");
+      await fetch("/api/whatsapp-sala/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "limpiar_vinculos_huerfanos", grupoId: grupo_id }),
+      }).catch(() => {});
+
+      setFeedbackSuccess("Sesión huérfana y vínculos 1 a 1 limpiados correctamente. Listo para vincular.");
       setTimeout(() => setFeedbackSuccess(null), 5000);
       setStatus("disconnected");
       setQrValue(null);

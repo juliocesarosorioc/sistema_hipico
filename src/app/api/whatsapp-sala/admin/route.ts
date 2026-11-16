@@ -69,13 +69,15 @@ export async function POST(req: NextRequest) {
           .maybeSingle();
 
         if (otraSala) {
-          return NextResponse.json(
-            {
-              ok: false,
-              motivo: `Este grupo de WhatsApp ya está vinculado a otra sala (${otraSala.nombre_sala || otraSala.id}). Regla 1 a 1.`,
-            },
-            { status: 200 }
-          );
+          // Desvincular automáticamente de la sala anterior para transferir a la nueva cumpliendo Regla 1 a 1
+          await supabaseAdmin
+            .from("salas_juego")
+            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+            .eq("id", otraSala.id);
+          await supabaseAdmin
+            .from("salas_whatsapp_grupos")
+            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+            .eq("sala_id", otraSala.id);
         }
 
         const { data: otroVinc } = await supabaseAdmin
@@ -88,13 +90,15 @@ export async function POST(req: NextRequest) {
           .maybeSingle();
 
         if (otroVinc) {
-          return NextResponse.json(
-            {
-              ok: false,
-              motivo: "Este grupo de WhatsApp ya está vinculado a otra sala activa (Regla 1 a 1).",
-            },
-            { status: 200 }
-          );
+          // Limpiar vínculo huérfano o transferir de la sala previa
+          await supabaseAdmin
+            .from("salas_whatsapp_grupos")
+            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+            .eq("sala_id", otroVinc.sala_id);
+          await supabaseAdmin
+            .from("salas_juego")
+            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+            .eq("id", otroVinc.sala_id);
         }
       }
       try {
@@ -166,6 +170,40 @@ export async function POST(req: NextRequest) {
           { ok: true, motivo: "Grupo desvinculado en base de datos" },
           { status: 200 }
         );
+      }
+    }
+
+    // 2.a Limpieza de vínculos huérfanos / zombies
+    if (accion === "limpiar_vinculos_huerfanos" || accion === "limpiar-vinculos-huerfanos") {
+      try {
+        const { data: vinculosActivos } = await supabaseAdmin
+          .from("salas_whatsapp_grupos")
+          .select("id, sala_id, whatsapp_group_jid")
+          .eq("activo", true);
+
+        if (vinculosActivos && vinculosActivos.length > 0) {
+          for (const v of vinculosActivos) {
+            const { data: salaRow } = await supabaseAdmin
+              .from("salas_juego")
+              .select("id, activa")
+              .eq("id", v.sala_id)
+              .maybeSingle();
+
+            if (!salaRow || salaRow.activa === false) {
+              await supabaseAdmin
+                .from("salas_whatsapp_grupos")
+                .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+                .eq("id", v.id);
+              await supabaseAdmin
+                .from("salas_juego")
+                .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+                .eq("id", v.sala_id);
+            }
+          }
+        }
+        return NextResponse.json({ ok: true, motivo: "Vínculos huérfanos depurados con éxito" });
+      } catch (err: any) {
+        return NextResponse.json({ ok: false, error: err?.message || err }, { status: 500 });
       }
     }
 

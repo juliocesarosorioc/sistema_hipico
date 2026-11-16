@@ -2324,10 +2324,15 @@ const server = http.createServer(async (req, res) => {
           .maybeSingle();
 
         if (otraSala) {
-          return responderJson(res, 409, {
-            ok: false,
-            error: `Este grupo de WhatsApp ya está vinculado a otra sala (${otraSala.nombre_sala || otraSala.id}).`,
-          });
+          // Desvincular de la sala previa para reasignar a la nueva sala (Regla 1 a 1)
+          await supabase
+            .from("salas_juego")
+            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+            .eq("id", otraSala.id);
+          await supabase
+            .from("salas_whatsapp_grupos")
+            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+            .eq("sala_id", otraSala.id);
         }
 
         const { data: otroVinc } = await supabase
@@ -2340,10 +2345,15 @@ const server = http.createServer(async (req, res) => {
           .maybeSingle();
 
         if (otroVinc) {
-          return responderJson(res, 409, {
-            ok: false,
-            error: "Este grupo de WhatsApp ya está vinculado a otra sala activa (Regla 1 a 1).",
-          });
+          // Limpiar vínculo huérfano o transferir de la sala previa
+          await supabase
+            .from("salas_whatsapp_grupos")
+            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+            .eq("sala_id", otroVinc.sala_id);
+          await supabase
+            .from("salas_juego")
+            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+            .eq("id", otroVinc.sala_id);
         }
 
         // Mantener 1 único grupo por sala
@@ -2649,10 +2659,15 @@ const server = http.createServer(async (req, res) => {
           .maybeSingle();
 
         if (otraSala) {
-          return responderJson(res, 200, {
-            ok: false,
-            motivo: `Este grupo de WhatsApp ya está vinculado a otra sala (${otraSala.nombre_sala || otraSala.id}). Regla 1 a 1.`,
-          });
+          // Desvincular de la sala previa para reasignar a la nueva sala (Regla 1 a 1)
+          await supabase
+            .from("salas_juego")
+            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+            .eq("id", otraSala.id);
+          await supabase
+            .from("salas_whatsapp_grupos")
+            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+            .eq("sala_id", otraSala.id);
         }
 
         const { data: otroVinc } = await supabase
@@ -2665,10 +2680,15 @@ const server = http.createServer(async (req, res) => {
           .maybeSingle();
 
         if (otroVinc) {
-          return responderJson(res, 200, {
-            ok: false,
-            motivo: "Este grupo de WhatsApp ya está conectado a otra sala activa (Regla 1 a 1).",
-          });
+          // Limpiar vínculo huérfano o transferir de la sala previa
+          await supabase
+            .from("salas_whatsapp_grupos")
+            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+            .eq("sala_id", otroVinc.sala_id);
+          await supabase
+            .from("salas_juego")
+            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+            .eq("id", otroVinc.sala_id);
         }
 
         // Asegurar que la sala solo tenga 1 grupo vinculado
