@@ -563,6 +563,31 @@ async function buscarClienteEnGrupo(grupoId, pJid, pAlt, telR, pushName = "") {
   return null;
 }
 
+function parsearMontoFlexible(montoRaw) {
+  if (typeof montoRaw === "number") return Math.max(0, montoRaw);
+  if (!montoRaw) return 0;
+  let s = String(montoRaw).trim().toUpperCase();
+  if (s.endsWith("K")) {
+    const base = parseFloat(s.slice(0, -1).replace(/\./g, "").replace(",", ".")) || 0;
+    return base * 1000;
+  }
+  if (s.includes(".") && s.includes(",")) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else if (s.includes(".")) {
+    if (/\.\d{3}$/.test(s)) {
+      s = s.replace(/\./g, "");
+    }
+  } else if (s.includes(",")) {
+    if (/,\d{3}$/.test(s)) {
+      s = s.replace(/,/g, "");
+    } else {
+      s = s.replace(",", ".");
+    }
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : Math.max(0, n);
+}
+
 function formatearMonto(n) {
   const num = Number(n || 0);
   return num.toLocaleString("es-VE", {
@@ -688,10 +713,19 @@ async function registrarMensajeEnChatWeb(sala, groupJid, texto, tipo = "sistema"
   }
 }
 
+export function normalizarHipodromo(str) {
+  const s = String(str || "").toUpperCase().trim();
+  if (s === "LR" || s === "RINCONADA" || s === "LA RINCONADA") return "LA RINCONADA";
+  if (s === "GP" || s === "GULFSTREAM" || s === "GULFSTREAM PARK") return "GULFSTREAM PARK";
+  if (s === "TAM" || s === "TAMPA" || s === "TAMPA BAY") return "TAMPA BAY DOWNS";
+  if (s === "AQU" || s === "AQUEDUCT") return "AQUEDUCT";
+  return s || "LA RINCONADA";
+}
+
 export async function ejecutarAperturaCarrera(sala, groupJid, hipodromoArg, carreraArg) {
   if (!supabase) throw new Error("Supabase no configurado");
 
-  const hipoLimpio = String(hipodromoArg || sala.hipodromo_activo || "LA RINCONADA").toUpperCase().trim();
+  const hipoLimpio = normalizarHipodromo(hipodromoArg || sala.hipodromo_activo || "LA RINCONADA");
   const numCarrera = parseInt(carreraArg, 10) || 1;
 
   // Actualizar sala en Supabase
@@ -705,9 +739,7 @@ export async function ejecutarAperturaCarrera(sala, groupJid, hipodromoArg, carr
     })
     .eq("id", sala.id);
 
-  // Formatear ordinal y mensaje oficial
-  const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
-  const textoApertura = `🏆🏇${hipoLimpio}, ${ord} Carrera🏆🏇\nCARRERA ABIERTA Y EN JUEGO\nMucha suerte a todos.`;
+  const textoApertura = `🟢 *${hipoLimpio} CARRERA ${numCarrera} ABIERTA* — Hagan sus jugadas.`;
 
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoApertura);
@@ -731,9 +763,8 @@ export async function ejecutarCierreCarrera(sala, groupJid) {
 
   const hipo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
   const numCarrera = sala.numero_carrera_activa || 1;
-  const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
 
-  const textoCierre = `${hipo}, ${ord} Carrera\nCARRERA CERRADA\n\nPUEDE ESCRIBIR LA PIZARRA: LLEGADA: 1RO.2DO.3RO.4TO.5TO`;
+  const textoCierre = `🔒 *${hipo} CARRERA ${numCarrera} CERRADA* — No más jugadas. Suerte a todos.`;
 
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoCierre);
@@ -780,20 +811,48 @@ export async function construirYPublicarPlano(sala, groupJid) {
           .join("\n")
       : "_No hay jugadas activas pactadas en esta carrera._";
 
+  let qProps = supabase
+    .from("chat_mensajes")
+    .select("remitente_nombre, jugada_estandarizada, contenido, monto_disponible, modalidad_propuesta, ejemplar_texto, es_match, caballos_bando_a, caballos_bando_b")
+    .eq("sala_id", sala.id)
+    .in("tipo_mensaje", ["propuesta_jugada", "PROPUESTA"])
+    .in("estado_propuesta", ["abierta", "parcial"])
+    .gt("monto_disponible", 0)
+    .order("created_at", { ascending: true });
+
+  if (carreraId) {
+    qProps = qProps.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+  }
+  const { data: propsAbiertas } = await qProps;
+  const listaProps = propsAbiertas || [];
+  const lineasProps =
+    listaProps.length > 0
+      ? listaProps
+          .map((p) => {
+            const detalle = p.jugada_estandarizada || p.contenido || "Propuesta";
+            return `• *${p.remitente_nombre}*: ${detalle} (Disp: *$${formatearMonto(p.monto_disponible)}*)`;
+          })
+          .join("\n")
+      : "_No hay propuestas abiertas en cola._";
+
   const textoPlano =
     `📋 *PLANO DE JUGADAS / PREJUGADAS*\n` +
     `🏇 *${hipodromo}* — Carrera #${numCarrera}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `🤝 *JUGADAS CASADAS (${lista.length}):*\n` +
     `${lineas}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💰 *Total Jugado:* $${formatearMonto(totalPactado)} (${lista.length} tickets)`;
+    `⏳ *PROPUESTAS ABIERTAS (${listaProps.length}):*\n` +
+    `${lineasProps}\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `💰 *Total Jugado Casado:* $${formatearMonto(totalPactado)} (${lista.length} tickets)`;
 
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoPlano);
   }
   await registrarMensajeEnChatWeb(sala, groupJid, textoPlano, "sistema");
 
-  return { ok: true, textoPlano, totalTickets: lista.length, totalPactado };
+  return { ok: true, textoPlano, totalTickets: lista.length, totalPactado, totalPropuestas: listaProps.length };
 }
 
 export async function ejecutarAnulacionORetiro(sala, groupJid, comando, argumento) {
@@ -936,11 +995,11 @@ export async function ejecutarAnulacionORetiro(sala, groupJid, comando, argument
   return { ok: true, mensaje: textoAnulacion };
 }
 
-export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw) {
+export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw, esRectificacion = false) {
   if (!supabase) throw new Error("Supabase no configurado");
   const numeros = String(pizarraRaw || "").match(/\b\d+[A-Za-z]?\b/g) || [];
   if (numeros.length === 0) {
-    const msgError = "⚠️ Formato de sentencia inválido. Uso: *!sentenciar 10.5.1.2.7*";
+    const msgError = "⚠️ Formato de sentencia inválido. Uso: *!sentenciar 10.5.1.2.7* o *!pizarra 10-5-1-2-7*";
     if (groupJid && conectado) await enviarMensajeGrupo(groupJid, msgError);
     return { ok: false, mensaje: msgError };
   }
@@ -1088,6 +1147,37 @@ export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw) {
               saldo_disponible: cl.libre ? 999999 : Math.max(0, nuevoSaldo + Number(cl.aval || 0) - nuevoRet),
             })
             .eq("id", jugadorId);
+
+          if (neto > 0) {
+            await supabase.from("libro_mayor_clientes").insert({
+              cliente_id: jugadorId,
+              cliente_nombre: b.nombre,
+              grupo_id: sala.grupo_id,
+              tipo_movimiento: "JUGADA_GANADA_NETO",
+              monto_centavos: Math.round(neto * 100),
+              monto: neto,
+              hipodromo,
+              carrera: numCarrera,
+              fecha_carrera: new Date().toISOString().split("T")[0],
+              observacion: `Liquidación Sala ${sala.nombre_sala}`,
+              creado_por: "OPERADOR_WHATSAPP",
+            });
+          } else if (neto < 0) {
+            const montoAbs = Math.abs(neto);
+            await supabase.from("libro_mayor_clientes").insert({
+              cliente_id: jugadorId,
+              cliente_nombre: b.nombre,
+              grupo_id: sala.grupo_id,
+              tipo_movimiento: "JUGADA_PERDIDA",
+              monto_centavos: Math.round(montoAbs * 100),
+              monto: montoAbs,
+              hipodromo,
+              carrera: numCarrera,
+              fecha_carrera: new Date().toISOString().split("T")[0],
+              observacion: `Liquidación Sala ${sala.nombre_sala}`,
+              creado_por: "OPERADOR_WHATSAPP",
+            });
+          }
         }
       }
 
@@ -1141,8 +1231,9 @@ export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw) {
       : "_Sin jugadas concretadas en esta carrera._";
 
   const pizarraFormateada = numeros.map((n, i) => `${i + 1}º: #${n}`).join(" · ");
+  const prefijoTitulo = esRectificacion ? "🔄 *PIZARRA RECTIFICADA OFICIALMENTE*\n\n" : "";
   const textoResultado =
-    `🏁 *LLEGADA OFICIAL — ${hipodromo} C${numCarrera}*\n` +
+    `${prefijoTitulo}🏁 *LLEGADA OFICIAL — ${hipodromo} C${numCarrera}*\n` +
     `📊 *Pizarra:* ${pizarraFormateada}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
     `📋 *TODAS LAS JUGADAS (${listaJugadas.length}):*\n` +
@@ -1168,6 +1259,157 @@ export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw) {
   };
 }
 
+export async function ejecutarRectificacionPizarra(sala, groupJid, pizarraRaw) {
+  if (!supabase) throw new Error("Supabase no configurado");
+  const hipo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
+  const numCarrera = sala.numero_carrera_activa || 1;
+  const carreraId = sala.carrera_recien_cerrada_id || sala.carrera_activa_id;
+
+  // 1. Revertir movimientos previos en libro_mayor_clientes
+  try {
+    const { data: movimientos } = await supabase
+      .from("libro_mayor_clientes")
+      .select("*")
+      .eq("grupo_id", sala.grupo_id)
+      .eq("hipodromo", hipo)
+      .eq("carrera", numCarrera)
+      .in("tipo_movimiento", ["JUGADA_GANADA_NETO", "JUGADA_PERDIDA"]);
+
+    for (const mov of movimientos || []) {
+      const { data: cl } = await supabase
+        .from("clientes")
+        .select("saldo_actual, saldo_retenido, libre, aval")
+        .eq("id", mov.cliente_id)
+        .single();
+
+      if (cl) {
+        let ajusteSaldo = 0;
+        if (mov.tipo_movimiento === "JUGADA_GANADA_NETO") {
+          ajusteSaldo = -Number(mov.monto || 0);
+        } else if (mov.tipo_movimiento === "JUGADA_PERDIDA") {
+          ajusteSaldo = Number(mov.monto || 0);
+        }
+
+        const nuevoSaldo = Number(((cl.saldo_actual || 0) + ajusteSaldo).toFixed(2));
+        await supabase
+          .from("clientes")
+          .update({
+            saldo_actual: nuevoSaldo,
+            saldo_disponible: cl.libre ? 999999 : Math.max(0, Number((nuevoSaldo + (cl.aval || 0) - Number(cl.saldo_retenido || 0)).toFixed(2))),
+          })
+          .eq("id", mov.cliente_id);
+
+        await supabase.from("libro_mayor_clientes").insert({
+          cliente_id: mov.cliente_id,
+          cliente_nombre: mov.cliente_nombre,
+          grupo_id: sala.grupo_id,
+          tipo_movimiento: "REVERSION_LIQUIDACION",
+          monto_centavos: Math.round(Math.abs(ajusteSaldo) * 100),
+          monto: Math.abs(ajusteSaldo),
+          hipodromo: hipo,
+          carrera: numCarrera,
+          fecha_carrera: new Date().toISOString().split("T")[0],
+          observacion: `Reversión por Rectificación de Pizarra Carrera ${hipo} C${numCarrera}`,
+          creado_por: "OPERADOR_WHATSAPP",
+        });
+      }
+    }
+
+    // Restablecer tickets a ACTIVO
+    let qTickets = supabase
+      .from("chat_tickets_fifo")
+      .select("*")
+      .eq("sala_id", sala.id)
+      .in("estado", ["GANADOR_PROPONENTE", "GANADOR_ACEPTANTE", "EMPATE"]);
+    if (carreraId) {
+      qTickets = qTickets.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+    }
+    const { data: ticketsLiquidados } = await qTickets;
+    for (const t of ticketsLiquidados || []) {
+      await supabase.from("chat_tickets_fifo").update({ estado: "ACTIVO" }).eq("id", t.id);
+      for (const jId of [t.proponente_id, t.aceptante_id]) {
+        const { data: cl } = await supabase.from("clientes").select("saldo_retenido, libre, saldo_actual, aval").eq("id", jId).single();
+        if (cl && !cl.libre) {
+          const ret = Number(((cl.saldo_retenido || 0) + Number(t.monto_concretado || 0)).toFixed(2));
+          await supabase.from("clientes").update({
+            saldo_retenido: ret,
+            saldo_disponible: Math.max(0, Number(((cl.saldo_actual || 0) + (cl.aval || 0) - ret).toFixed(2))),
+          }).eq("id", jId);
+        }
+      }
+    }
+  } catch (errRev) {
+    console.error("[Bot WhatsApp] Error en reversión previa a rectificación:", errRev);
+  }
+
+  // 2. Liquidar con la nueva pizarra indicando esRectificacion = true
+  return await ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw, true);
+}
+
+export async function ejecutarAjusteOperador(sala, groupJid, targetNombre, signo, monto, operadorNombre) {
+  if (!supabase) throw new Error("Supabase no configurado");
+  const { data: candidatos } = await supabase
+    .from("clientes")
+    .select("id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
+    .eq("grupo_id", sala.grupo_id);
+
+  const targetLimpio = String(targetNombre).trim().toUpperCase();
+  const match = (candidatos || []).find((c) => {
+    const n = String(c.nombre || "").trim().toUpperCase();
+    const s = String(c.seudonimo || "").trim().toUpperCase();
+    return n === targetLimpio || s === targetLimpio || n.includes(targetLimpio) || (s && s.includes(targetLimpio));
+  });
+
+  if (!match) {
+    const msgError = `⚠️ Jugador "${targetNombre}" no encontrado en este grupo.`;
+    if (groupJid && conectado) await enviarMensajeGrupo(groupJid, msgError);
+    return { ok: false, mensaje: msgError };
+  }
+
+  const montoNum = Number(monto);
+  const saldoActual = Number(match.saldo_actual || 0);
+  const delta = signo === "+" ? montoNum : -montoNum;
+  const nuevoSaldo = Number((saldoActual + delta).toFixed(2));
+  const nuevoDisponible = match.libre ? 999999 : Math.max(0, Number((nuevoSaldo + Number(match.aval || 0) - Number(match.saldo_retenido || 0)).toFixed(2)));
+
+  await supabase
+    .from("clientes")
+    .update({
+      saldo_actual: nuevoSaldo,
+      saldo_disponible: nuevoDisponible,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", match.id);
+
+  await supabase.from("libro_mayor_clientes").insert({
+    cliente_id: match.id,
+    cliente_nombre: match.nombre,
+    grupo_id: sala.grupo_id,
+    tipo_movimiento: signo === "+" ? "DEPOSITO" : "RETIRO",
+    monto_centavos: Math.round(montoNum * 100),
+    monto: montoNum,
+    observacion: "Ajuste operador WhatsApp",
+    creado_por: operadorNombre || "OPERADOR_WHATSAPP",
+    fecha_carrera: new Date().toISOString().split("T")[0],
+  });
+
+  const nombreFinal = match.seudonimo || match.nombre;
+  const msgPublico = `✅ Saldo actualizado para *${nombreFinal}*: Nuevo saldo $${formatearMonto(nuevoSaldo)}`;
+  const msgPrivado = `💰 Tu cuenta ha sido ${signo === "+" ? "acreditada" : "debitada"} con $${formatearMonto(montoNum)}. Tu nuevo saldo disponible es $${formatearMonto(nuevoDisponible)}.`;
+
+  if (groupJid && conectado) {
+    await enviarMensajeGrupo(groupJid, msgPublico);
+  }
+  await registrarMensajeEnChatWeb(sala, groupJid, msgPublico, "sistema");
+
+  const jidTarget = match.whatsapp_jid || (match.telefono_normalizado ? `${match.telefono_normalizado}@s.whatsapp.net` : null);
+  if (jidTarget && conectado) {
+    await enviarMensajePrivado(jidTarget, msgPrivado);
+  }
+
+  return { ok: true, nuevoSaldo, nuevoDisponible, msgPublico, msgPrivado };
+}
+
 // ============================================================================
 // PROCESAMIENTO EN VIVO DE MENSAJES ENTRANTES DE WHATSAPP
 // ============================================================================
@@ -1191,7 +1433,9 @@ async function manejarMensajeEntrante(msg) {
     }
 
     const remoteJid = msg.key.remoteJid || "";
-    if (!remoteJid.endsWith("@g.us")) return;
+    const esGrupo = remoteJid.endsWith("@g.us");
+    const esPrivado = remoteJid.endsWith("@s.whatsapp.net");
+    if (!esGrupo && !esPrivado) return;
 
     guardarMensajeEnCache(msg);
 
@@ -1204,6 +1448,110 @@ async function manejarMensajeEntrante(msg) {
 
     const textoLimpio = sanitizarTexto(String(texto || ""));
     if (!textoLimpio) return;
+
+    // Manejo de Mensajes Privados Directos (DM) al Bot
+    if (esPrivado) {
+      const myPhone = sock?.user?.id ? normalizarTelefono(sock.user.id) : "";
+      const senderNombre = sanitizarTexto(msg.pushName) || (esFromMe ? "Operador" : "Usuario");
+      const telReal = normalizarTelefono(remoteJid);
+
+      let clienteDm = null;
+      let usuarioOp = null;
+      let grupoIdDm = null;
+      let salaDm = null;
+
+      if (telReal && telReal.length >= 7) {
+        const suf8 = telReal.slice(-8);
+        const { data: clList } = await supabase
+          .from("clientes")
+          .select("id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
+          .or(`whatsapp_jid.eq.${remoteJid},telefono_normalizado.eq.${telReal},telefono.ilike.%${suf8}%`)
+          .limit(1);
+        clienteDm = clList?.[0] || null;
+
+        if (clienteDm?.grupo_id) {
+          grupoIdDm = clienteDm.grupo_id;
+        }
+
+        const { data: opList } = await supabase
+          .from("usuario_sistema")
+          .select("id, nombre, activo, es_principal, grupo_id, telefono")
+          .ilike("telefono", `%${suf8}%`)
+          .limit(1);
+        usuarioOp = opList?.[0] || null;
+        if (!grupoIdDm && usuarioOp?.grupo_id) {
+          grupoIdDm = usuarioOp.grupo_id;
+        }
+      }
+
+      if (grupoIdDm) {
+        const { data: salas } = await supabase
+          .from("salas_juego")
+          .select("*")
+          .eq("grupo_id", grupoIdDm)
+          .order("created_at", { ascending: false });
+        salaDm = salas?.find((s) => s.estado_carrera === "abierta") || salas?.[0] || null;
+      }
+
+      const esOp = esFromMe || Boolean(usuarioOp && usuarioOp.activo !== false && (usuarioOp.es_principal || usuarioOp.grupo_id));
+
+      // 1. Ajuste de Saldo por Operador en DM: "Pedro +500", "Carlos -150"
+      const matchAjusteDm = textoLimpio.match(/^(?:!)?(?:(?:recargar?|abonar?|ajuste|cargar?)\s+)?([a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s._-]+?)\s*([+-])\s*([0-9kK.,]+)$/i);
+      if (matchAjusteDm && esOp && salaDm) {
+        const monto = parsearMontoFlexible(matchAjusteDm[3]);
+        if (monto > 0) {
+          const resAjuste = await ejecutarAjusteOperador(salaDm, null, matchAjusteDm[1].trim(), matchAjusteDm[2], monto, senderNombre);
+          if (resAjuste?.msgPublico) {
+            await enviarMensajePrivado(remoteJid, resAjuste.msgPublico);
+          }
+          return;
+        }
+      }
+
+      // 2. Consulta de Saldo o Solicitud de Cajero en DM
+      try {
+        const r = await fetch(`${NEXT_API_BASE}/api/whatsapp-sala/procesar`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({
+            salaId: salaDm?.id || null,
+            grupoId: grupoIdDm || null,
+            groupJid: remoteJid,
+            senderJid: remoteJid,
+            participantJid: remoteJid,
+            telefonoReal: telReal,
+            pushName: senderNombre,
+            senderNombre: senderNombre || clienteDm?.seudonimo || clienteDm?.nombre || "Jugador",
+            clientePreviamenteIdentificado: clienteDm,
+            esMensajePropioTelefono: esFromMe,
+            texto: textoLimpio,
+            whatsappMsgId,
+            quotedMsgId: null,
+          }),
+        });
+        const data = await r.json().catch(() => null);
+        if (data) {
+          const msgPrivado = data.mensajePrivadoAutor || data.msg_privado_bot || data.alertaPrivada;
+          if (msgPrivado) {
+            await enviarMensajePrivado(remoteJid, msgPrivado);
+          }
+          const notifs = data.notificaciones_privadas || data.notificacionesPrivadas || [];
+          for (const n of notifs) {
+            const txt = typeof n === "string" ? n : n?.mensaje || n?.msg;
+            const dest = typeof n === "object" ? (n.whatsapp_jid || (n.telefono ? `${normalizarTelefono(n.telefono)}@s.whatsapp.net` : null)) : null;
+            if (txt && dest) {
+              await enviarMensajePrivado(dest, txt).catch(() => {});
+            }
+          }
+        }
+      } catch (errDm) {
+        console.warn("[Bot WhatsApp] Error procesando DM privado:", errDm?.message || errDm);
+      }
+      return;
+    }
 
     // Cierre VULN-14: Soporte para JIDs @lid, participantAlt y cuenta propia del teléfono
     const myPhone = sock?.user?.id ? normalizarTelefono(sock.user.id) : "";
@@ -1278,6 +1626,20 @@ async function manejarMensajeEntrante(msg) {
     // - !plano o !prejugadas
     // - !anular o !retirar
 
+    // Detección de Rectificación de Pizarra: !rectificar [pizarra] o "rectificar: [pizarra]"
+    const matchRectificar = textoLimpio.match(/^(?:!)?rectificar(?:\s+pizarra)?\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
+    if (matchRectificar) {
+      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
+      if (!esOp) {
+        console.warn(`[Bot WhatsApp] ⛔ Comando rectificar rechazado: ${participantJid} no es operador.`);
+        await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para rectificar resultados oficiales.");
+        return;
+      }
+      console.log(`[Bot WhatsApp] 🔄 Rectificando sentencia de pizarra: ${matchRectificar[1]}`);
+      await ejecutarRectificacionPizarra(sala, remoteJid, matchRectificar[1]);
+      return;
+    }
+
     // Detección de LLEGADA: A.B.C.D.E (con o sin '!')
     const matchLlegada = textoLimpio.match(/^(?:!)?(?:llegada|sentenciar|pizarra)\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
     if (matchLlegada) {
@@ -1293,7 +1655,7 @@ async function manejarMensajeEntrante(msg) {
     }
 
     // Detección de Apertura: !abrir [hipodromo] [carrera] o "abrir [hipodromo] [carrera]"
-    const matchAbrir = textoLimpio.match(/^(?:!)?(?:abrir|abierta|abrir\s+carrera)\s*(.+?)?(?:\s+(?:c(?:arrera)?\s*)?(\d{1,2}))?$/i);
+    const matchAbrir = textoLimpio.match(/^(?:!)?(?:abrir|abierta)(?:\s+carrera)?(?:\s+(.+?))?(?:\s+(?:c(?:arrera)?\s*|#\s*)?(\d{1,2}))?$/i);
     if (matchAbrir && (/^(?:!)?abrir/i.test(textoLimpio) || /^(?:!)?abierta/i.test(textoLimpio))) {
       const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
       if (!esOp) {
@@ -1301,15 +1663,21 @@ async function manejarMensajeEntrante(msg) {
         await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para abrir carreras en la sala.");
         return;
       }
-      const posibleHipo = (matchAbrir[1] || "").trim() || sala.hipodromo_activo || "LA RINCONADA";
-      const posibleCarrera = matchAbrir[2] || sala.numero_carrera_activa || "1";
+      let posibleHipo = (matchAbrir[1] || "").trim();
+      let posibleCarrera = (matchAbrir[2] || "").trim();
+      if (!posibleCarrera && /^\d{1,2}$/.test(posibleHipo)) {
+        posibleCarrera = posibleHipo;
+        posibleHipo = "";
+      }
+      posibleHipo = posibleHipo || sala.hipodromo_activo || "LA RINCONADA";
+      posibleCarrera = posibleCarrera || sala.numero_carrera_activa || "1";
       console.log(`[Bot WhatsApp] 🏆 Abriendo carrera: ${posibleHipo} #${posibleCarrera}`);
       await ejecutarAperturaCarrera(sala, remoteJid, posibleHipo, posibleCarrera);
       return;
     }
 
-    // Detección de Cierre: !cerrar o "cerrada"
-    if (/^(?:!)?(?:cerrar|cerrada|no va mas|no va más|carrera cerrada)$/i.test(textoLimpio)) {
+    // Detección de Cierre: !cerrar, "cerrar carrera", "trancar"
+    if (/^(?:!)?(?:cerrar(?:\s+carrera)?|cerrada|trancar|no\s+va\s+m[aá]s)$/i.test(textoLimpio)) {
       const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
       if (!esOp) {
         console.warn(`[Bot WhatsApp] ⛔ Comando cerrar rechazado: ${participantJid} no es operador.`);
@@ -1325,6 +1693,34 @@ async function manejarMensajeEntrante(msg) {
     if (/^(?:!)?(?:plano|prejugadas)$/i.test(textoLimpio)) {
       console.log(`[Bot WhatsApp] 📋 Publicando plano de jugadas en "${sala.nombre_sala}"`);
       await construirYPublicarPlano(sala, remoteJid);
+      return;
+    }
+
+    // Detección de Ajuste Operador (+ / -): ej. "Pedro +400", "Carlos -150", "Juan +20.000"
+    const matchAjusteOperador = textoLimpio.match(/^(?:!)?(?:(?:recargar?|abonar?|ajuste|cargar?)\s+)?([a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s._-]+?)\s*([+-])\s*([0-9kK.,]+)$/i);
+    if (matchAjusteOperador) {
+      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
+      if (esOp) {
+        const monto = parsearMontoFlexible(matchAjusteOperador[3]);
+        if (monto > 0) {
+          console.log(`[Bot WhatsApp] 💰 Ejecutando ajuste operador: ${matchAjusteOperador[1]} ${matchAjusteOperador[2]} ${monto}`);
+          await ejecutarAjusteOperador(sala, remoteJid, matchAjusteOperador[1].trim(), matchAjusteOperador[2], monto, senderNombre);
+          return;
+        }
+      }
+    }
+
+    // Cita Directa Obligatoria para Concreción FIFO:
+    // Si escribe "J", "Voy", "Ponte", "Juego", etc. SIN CITAR mensaje
+    const esAceptacionSinCita = !quotedMsgId && /^(?:j|voy|ponte|juego|jugamos|jugue|jugué|copiado|pago|entro)(?:\s+(?:con\s+|por\s+|\$)?([0-9kK.,]+))?$/i.test(textoLimpio);
+    if (esAceptacionSinCita) {
+      if (conectado) {
+        await enviarMensajeGrupo(remoteJid, "Nada aquí, verifique", whatsappMsgId);
+        const dmDest = (telReal ? `${telReal}@s.whatsapp.net` : null) || participantJid;
+        if (dmDest) {
+          await enviarMensajePrivado(dmDest, "⚠️ Para aceptar una jugada debes citar (responder directamente) la propuesta original.");
+        }
+      }
       return;
     }
 

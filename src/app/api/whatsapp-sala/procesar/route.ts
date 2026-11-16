@@ -12,6 +12,7 @@ import {
   analizarComandoRetiro,
   evaluarAmpliacionPropuesta,
   normalizarParadaPremio,
+  extraerMontoNumerico,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
 import { formatearMontoRegional } from "@/shared/lib/dinero";
 import { sincronizarTicketsPropuestaATaquilla } from "@/features/whatsapp-sala/lib/sincronizar-tickets-sala";
@@ -159,6 +160,276 @@ async function emitirBroadcastSala(salaId: string, evento: string, payload: any)
   } catch {
     // No bloqueante
   }
+}
+
+async function construirResumenEstadoCuentaCliente(cliente: any, grupoId: string): Promise<string> {
+  const nombreJugador = cliente.seudonimo || cliente.nombre || "Jugador";
+  const saldoActual = Number(cliente.saldo_actual || 0);
+  const aval = Number(cliente.aval || cliente.limite_credito || 0);
+  const retenido = Number(cliente.saldo_retenido || 0);
+  const disponible = cliente.libre ? 999999 : Math.max(0, Number((saldoActual + aval - retenido).toFixed(2)));
+
+  const hoyStr = new Date().toISOString().split("T")[0];
+  const inicioDia = `${hoyStr}T00:00:00.000Z`;
+
+  const { data: ticketsHoy } = await supabaseAdmin
+    .from("chat_tickets_fifo")
+    .select("*")
+    .eq("grupo_id", grupoId)
+    .or(`proponente_id.eq.${cliente.id},aceptante_id.eq.${cliente.id}`)
+    .gte("created_at", inicioDia);
+
+  const lista = ticketsHoy || [];
+  let ganadas = 0;
+  let perdidas = 0;
+  let empatadas = 0;
+  let netoDia = 0;
+  let vivasRiesgo = 0;
+  let montoEnRiesgo = 0;
+
+  for (const t of lista) {
+    const estado = String(t.estado || "").toUpperCase();
+    const esProponente = String(t.proponente_id) === String(cliente.id);
+    const monto = Number(t.monto_concretado || 0);
+
+    if (["PENDIENTE", "ACTIVO", "ABIERTO"].includes(estado)) {
+      vivasRiesgo++;
+      montoEnRiesgo += monto;
+    } else if (estado === "GANADOR_PROPONENTE") {
+      if (esProponente) {
+        ganadas++;
+        netoDia += monto;
+      } else {
+        perdidas++;
+        netoDia -= monto;
+      }
+    } else if (estado === "GANADOR_ACEPTANTE") {
+      if (!esProponente) {
+        ganadas++;
+        netoDia += monto;
+      } else {
+        perdidas++;
+        netoDia -= monto;
+      }
+    } else if (estado === "EMPATE") {
+      empatadas++;
+    }
+  }
+
+  netoDia = Number(netoDia.toFixed(2));
+  const signoNeto = netoDia >= 0 ? `+$${formatearMontoRegional(netoDia)}` : `-$${formatearMontoRegional(Math.abs(netoDia))}`;
+
+  return (
+    `💰 *ESTADO DE CUENTA ACTUAL*\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `👤 *Jugador:* ${nombreJugador}\n` +
+    `💵 *Saldo Actual:* $${formatearMontoRegional(saldoActual)}\n` +
+    `🛡️ *Aval / Crédito:* $${formatearMontoRegional(aval)}\n` +
+    `⏳ *Retenido:* $${formatearMontoRegional(retenido)}\n` +
+    `🟢 *Saldo Disponible:* $${formatearMontoRegional(disponible)}\n\n` +
+    `📊 *RESUMEN DE OPERACIONES DEL DÍA*\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `🎯 *Jugadas Casadas Hoy:* ${lista.length}\n` +
+    `🏆 *Ganadas:* ${ganadas}\n` +
+    `❌ *Perdidas:* ${perdidas}\n` +
+    `🤝 *Empatadas:* ${empatadas}\n` +
+    `⚖️ *Neto del Día:* ${signoNeto}\n` +
+    `⚠️ *Jugadas Vivas en Riesgo:* ${vivasRiesgo} ($${formatearMontoRegional(montoEnRiesgo)})`
+  );
+}
+
+async function verificarEsOperador(clienteId?: string | null, telefono?: string | null, grupoId?: string | null): Promise<boolean> {
+  if (!telefono && !clienteId) return false;
+  try {
+    if (telefono) {
+      const telClean = String(telefono).replace(/\D/g, "");
+      const sufijo8 = telClean.slice(-8);
+      const { data: usuario } = await supabaseAdmin
+        .from("usuario_sistema")
+        .select("id, activo, es_principal, grupo_id")
+        .ilike("telefono", `%${sufijo8}%`)
+        .limit(1)
+        .maybeSingle();
+      if (usuario && usuario.activo !== false) {
+        if (usuario.es_principal) return true;
+        if (grupoId && String(usuario.grupo_id) === String(grupoId)) return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+async function intentarCruceAutomatico(params: {
+  sala: any;
+  grupoId: string;
+  nuevaPropuestaId: string;
+  nuevoCliente: any;
+  analisis: any;
+  groupJid?: string | null;
+  whatsappGroupNombre?: string | null;
+  whatsappMsgId?: string | null;
+}) {
+  const { sala, grupoId, nuevaPropuestaId, nuevoCliente, analisis, groupJid, whatsappGroupNombre, whatsappMsgId } = params;
+
+  let queryInversas = supabaseAdmin
+    .from("chat_mensajes")
+    .select("*")
+    .eq("sala_id", sala.id)
+    .in("tipo_mensaje", ["propuesta_jugada", "PROPUESTA"])
+    .in("estado_propuesta", ["abierta", "parcial"])
+    .gt("monto_disponible", 0)
+    .neq("remitente_id", nuevoCliente.id)
+    .neq("id", nuevaPropuestaId)
+    .order("created_at", { ascending: true })
+    .limit(10);
+
+  if (sala.carrera_activa_id) {
+    queryInversas = queryInversas.or(`carrera_id.eq.${sala.carrera_activa_id},carrera_id.is.null`);
+  }
+
+  const { data: candidatas } = await queryInversas;
+  if (!candidatas || candidatas.length === 0) return null;
+
+  for (const cand of candidatas) {
+    const candAccion = String(cand.accion_proponente || "").toUpperCase();
+    const nuevaAccion = String(analisis.accionProponente || "").toUpperCase();
+    let esCalce = false;
+
+    if (analisis.esMatch && cand.es_match) {
+      const candA = (cand.caballos_bando_a || []).join("-");
+      const candB = (cand.caballos_bando_b || []).join("-");
+      const nuevoA = (analisis.caballosBandoA || []).join("-");
+      const nuevoB = (analisis.caballosBandoB || []).join("-");
+
+      if (candA === nuevoB && candB === nuevoA && candAccion === nuevaAccion) {
+        esCalce = true;
+      } else if (candA === nuevoA && candB === nuevoB && candAccion !== nuevaAccion) {
+        esCalce = true;
+      }
+    } else if (!analisis.esMatch && !cand.es_match) {
+      const modCand = String(cand.modalidad_propuesta || cand.modalidad || "1P").toUpperCase();
+      const modNueva = String(analisis.modalidad || "1P").toUpperCase();
+      const ejCand = String(cand.ejemplar_texto || (cand.caballos_bando_a || [])[0] || "").trim();
+      const ejNuevo = String(analisis.ejemplarTexto || (analisis.caballosBandoA || [])[0] || "").trim();
+
+      if (modCand === modNueva && ejCand === ejNuevo && candAccion !== nuevaAccion) {
+        esCalce = true;
+      }
+    }
+
+    if (esCalce) {
+      const montoDisponibleCand = Number(cand.monto_disponible || 0);
+      const montoNuevo = Number(analisis.montoDisponibleValido || analisis.monto || 0);
+      const montoACruzar = Math.min(montoDisponibleCand, montoNuevo);
+
+      if (montoACruzar <= 0) continue;
+
+      const { data: resCruce, error: errCruce } = await supabaseAdmin.rpc("concretar_jugada_fifo_atomica", {
+        p_grupo_id: grupoId,
+        p_sala_id: sala.id,
+        p_propuesta_msg_id: cand.id,
+        p_aceptante_id: nuevoCliente.id,
+        p_monto_pedido: montoACruzar,
+      });
+
+      if (!errCruce && resCruce && (resCruce as any).ok !== false && !(resCruce as any).nada_aqui) {
+        await sincronizarTicketsPropuestaATaquilla(supabaseAdmin, {
+          propuestaMsgId: cand.id,
+          sala,
+          grupoId,
+          condicionProponente: cand.condicion_proponente,
+        });
+
+        const nuevoRemanenteNueva = Math.max(0, montoNuevo - montoACruzar);
+        await supabaseAdmin
+          .from("chat_mensajes")
+          .update({
+            monto_disponible: nuevoRemanenteNueva,
+            estado_propuesta: nuevoRemanenteNueva <= 0 ? "agotada" : "parcial",
+          })
+          .eq("id", nuevaPropuestaId);
+
+        let nombreJuega = "";
+        let nombreDa = "";
+        if (candAccion === "CONSIGUE") {
+          nombreDa = cand.remitente_nombre || "Proponente";
+          nombreJuega = nuevoCliente.seudonimo || nuevoCliente.nombre;
+        } else {
+          nombreJuega = cand.remitente_nombre || "Proponente";
+          nombreDa = nuevoCliente.seudonimo || nuevoCliente.nombre;
+        }
+
+        let modCab = "";
+        if (cand.es_match) {
+          const bA = (cand.caballos_bando_a || []).join("-");
+          const bB = (cand.caballos_bando_b || []).join("-");
+          modCab = `Match (${bA}x${bB})`;
+        } else {
+          const m = cand.modalidad_propuesta || cand.modalidad || "1P";
+          const e = cand.ejemplar_texto || (cand.caballos_bando_a || [])[0] || "";
+          modCab = `${m} (${e})`.trim();
+        }
+
+        let pRaw = String(cand.proporcion_premio || cand.proporcion || "1x1").trim();
+        pRaw = pRaw.replace(/\/>/g, "a").replace(/\//g, "a").replace(/@/g, "a");
+        const pTexto = pRaw && pRaw !== "1x1" && pRaw !== "10a10" ? `[${pRaw}] ` : "";
+
+        const rJuega = Math.round(calcularRiesgoReal(montoACruzar, cand.proporcion_premio || cand.proporcion, "JUEGA") * 100) / 100;
+        const rDa = Math.round(calcularRiesgoReal(montoACruzar, cand.proporcion_premio || cand.proporcion, "CONSIGUE") * 100) / 100;
+
+        const montoBaseFmt = Number(montoACruzar).toFixed(montoACruzar % 1 === 0 ? 0 : 2);
+        const rJuegaFmt = rJuega.toFixed(2);
+        const rDaFmt = rDa.toFixed(2);
+
+        const msgCruce =
+          `✅ Jugaron: *${nombreJuega} Juega ${modCab} ${pTexto}da ${nombreDa} $${montoBaseFmt}*\n` +
+          `🔹 Juega: ${nombreJuega} (Riesgo $${rJuegaFmt})\n` +
+          `🔸 Da: ${nombreDa} (Riesgo $${rDaFmt})`;
+
+        await supabaseAdmin.from("chat_mensajes").insert({
+          grupo_id: grupoId,
+          sala_id: sala.id,
+          remitente_id: nuevoCliente.id,
+          remitente_nombre: nuevoCliente.seudonimo || nuevoCliente.nombre,
+          es_operador: false,
+          tipo_mensaje: "CONCRECION",
+          contenido: msgCruce,
+          reply_to_msg_id: cand.id,
+          whatsapp_msg_id: whatsappMsgId || null,
+          whatsapp_group_jid: groupJid || null,
+          whatsapp_group_nombre: whatsappGroupNombre || null,
+          origen_canal: "WHATSAPP",
+          carrera_id: cand.carrera_id || sala.carrera_activa_id,
+        });
+
+        await emitirBroadcastSala(sala.id, "nuevo_mensaje", { salaId: sala.id });
+
+        if (groupJid) {
+          try {
+            await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+              },
+              body: JSON.stringify({
+                groupJid,
+                texto: msgCruce,
+              }),
+            });
+          } catch {}
+        }
+
+        return {
+          cruzado: true,
+          montoCruzado: montoACruzar,
+          msgCruce,
+        };
+      }
+    }
+  }
+
+  return null;
 }
 
 async function asegurarDosSalasPrincipales() {
@@ -896,13 +1167,41 @@ export async function POST(req: Request) {
               .join("\n")
           : "_No hay jugadas activas pactadas en esta carrera._";
 
+      let qProps = supabaseAdmin
+        .from("chat_mensajes")
+        .select("remitente_nombre, jugada_estandarizada, contenido, monto_disponible, modalidad_propuesta, ejemplar_texto, es_match, caballos_bando_a, caballos_bando_b")
+        .eq("sala_id", sala.id)
+        .in("tipo_mensaje", ["propuesta_jugada", "PROPUESTA"])
+        .in("estado_propuesta", ["abierta", "parcial"])
+        .gt("monto_disponible", 0)
+        .order("created_at", { ascending: true });
+
+      if (carreraId) {
+        qProps = qProps.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+      }
+      const { data: propsAbiertas } = await qProps;
+      const listaProps = propsAbiertas || [];
+      const lineasProps =
+        listaProps.length > 0
+          ? listaProps
+              .map((p: any) => {
+                const detalle = p.jugada_estandarizada || p.contenido || "Propuesta";
+                return `• *${p.remitente_nombre}*: ${detalle} (Disp: *$${formatearMontoRegional(Number(p.monto_disponible || 0))}*)`;
+              })
+              .join("\n")
+          : "_No hay propuestas abiertas en cola._";
+
       const textoPlano =
         `📋 *PLANO DE JUGADAS / PREJUGADAS*\n` +
         `🏇 *${hipodromo}* — Carrera #${numCarrera}\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🤝 *JUGADAS CASADAS (${lista.length}):*\n` +
         `${lineas}\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `💰 *Total Jugado:* $${formatearMontoRegional(totalPactado)} (${lista.length} tickets)`;
+        `⏳ *PROPUESTAS ABIERTAS (${listaProps.length}):*\n` +
+        `${lineasProps}\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `💰 *Total Jugado Casado:* $${formatearMontoRegional(totalPactado)} (${lista.length} tickets)`;
 
       let enviadoWhatsApp = false;
       if (sala.whatsapp_group_jid) {
@@ -1133,6 +1432,37 @@ export async function POST(req: Request) {
                     : Math.max(0, nuevoSaldo + Number(cl.aval || 0) - nuevoRet),
                 })
                 .eq("id", jugadorId);
+
+              if (neto > 0) {
+                await supabaseAdmin.from("libro_mayor_clientes").insert({
+                  cliente_id: jugadorId,
+                  cliente_nombre: b.nombre,
+                  grupo_id: sala.grupo_id,
+                  tipo_movimiento: "JUGADA_GANADA_NETO",
+                  monto_centavos: Math.round(neto * 100),
+                  monto: neto,
+                  hipodromo,
+                  carrera: numCarrera,
+                  fecha_carrera: new Date().toISOString().split("T")[0],
+                  observacion: `Liquidación Sala ${sala.nombre_sala}`,
+                  creado_por: "OPERADOR_SALA",
+                });
+              } else if (neto < 0) {
+                const montoAbs = Math.abs(neto);
+                await supabaseAdmin.from("libro_mayor_clientes").insert({
+                  cliente_id: jugadorId,
+                  cliente_nombre: b.nombre,
+                  grupo_id: sala.grupo_id,
+                  tipo_movimiento: "JUGADA_PERDIDA",
+                  monto_centavos: Math.round(montoAbs * 100),
+                  monto: montoAbs,
+                  hipodromo,
+                  carrera: numCarrera,
+                  fecha_carrera: new Date().toISOString().split("T")[0],
+                  observacion: `Liquidación Sala ${sala.nombre_sala}`,
+                  creado_por: "OPERADOR_SALA",
+                });
+              }
             }
           }
 
@@ -1186,8 +1516,9 @@ export async function POST(req: Request) {
           : "_Sin jugadas concretadas en esta carrera._";
 
       const pizarraFormateada = numeros.map((n, i) => `${i + 1}º: #${n}`).join(" · ");
+      const prefijoRectificado = body.esRectificacion ? "🔄 *PIZARRA RECTIFICADA OFICIALMENTE*\n\n" : "";
       const textoResultado =
-        `🏁 *SENTENCIA OFICIAL — ${hipodromo} C${numCarrera}*\n` +
+        `${prefijoRectificado}🏁 *SENTENCIA OFICIAL — ${hipodromo} C${numCarrera}*\n` +
         `📊 *Pizarra Oficial:* ${pizarraFormateada}\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
         `📋 *TODAS LAS JUGADAS (${listaJugadas.length}):*\n` +
@@ -1199,13 +1530,94 @@ export async function POST(req: Request) {
         `${negativos.length > 0 ? negativos.join("\n") : "_Sin saldos negativos en esta carrera_"}\n` +
         `━━━━━━━━━━━━━━━━━━━━━━`;
 
+      if (sala.whatsapp_group_jid) {
+        try {
+          await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            },
+            body: JSON.stringify({
+              groupJid: sala.whatsapp_group_jid,
+              texto: textoResultado,
+            }),
+          });
+        } catch {}
+      }
+
       return NextResponse.json({
         ok: true,
         textoResultado,
         positivos,
         negativos,
         pizarra: numeros,
-        enviadoWhatsApp: false,
+        enviadoWhatsApp: Boolean(sala.whatsapp_group_jid),
+      });
+    }
+
+    if (body.accion === "ajuste-saldo-operador") {
+      const { grupoId, targetNombre, signo, monto, operadorNombre } = body;
+      if (!grupoId || !targetNombre || !signo || !monto) {
+        return NextResponse.json({ ok: false, error: "Datos incompletos para ajuste" }, { status: 400 });
+      }
+
+      const { data: candidatos } = await supabaseAdmin
+        .from("clientes")
+        .select("id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
+        .eq("grupo_id", grupoId);
+
+      const targetLimpio = String(targetNombre).trim().toUpperCase();
+      const match = (candidatos || []).find((c: any) => {
+        const n = String(c.nombre || "").trim().toUpperCase();
+        const s = String(c.seudonimo || "").trim().toUpperCase();
+        return n === targetLimpio || s === targetLimpio || n.includes(targetLimpio) || (s && s.includes(targetLimpio));
+      });
+
+      if (!match) {
+        return NextResponse.json({ ok: false, error: `Jugador "${targetNombre}" no encontrado en este grupo.` }, { status: 404 });
+      }
+
+      const montoNum = Number(monto);
+      const saldoActual = Number(match.saldo_actual || 0);
+      const delta = signo === "+" ? montoNum : -montoNum;
+      const nuevoSaldo = Number((saldoActual + delta).toFixed(2));
+      const nuevoDisponible = match.libre ? 999999 : Math.max(0, Number((nuevoSaldo + Number(match.aval || 0) - Number(match.saldo_retenido || 0)).toFixed(2)));
+
+      await supabaseAdmin
+        .from("clientes")
+        .update({
+          saldo_actual: nuevoSaldo,
+          saldo_disponible: nuevoDisponible,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", match.id);
+
+      await supabaseAdmin.from("libro_mayor_clientes").insert({
+        cliente_id: match.id,
+        cliente_nombre: match.nombre,
+        grupo_id: grupoId,
+        tipo_movimiento: signo === "+" ? "DEPOSITO" : "RETIRO",
+        monto_centavos: Math.round(montoNum * 100),
+        monto: montoNum,
+        observacion: "Ajuste operador WhatsApp",
+        creado_por: operadorNombre || "OPERADOR_WHATSAPP",
+        fecha_carrera: new Date().toISOString().split("T")[0],
+      });
+
+      const nombreFinal = match.seudonimo || match.nombre;
+      const msgPublico = `✅ Saldo actualizado para *${nombreFinal}*: Nuevo saldo $${formatearMontoRegional(nuevoSaldo)}`;
+      const msgPrivado = `💰 Tu cuenta ha sido ${signo === "+" ? "acreditada" : "debitada"} con $${formatearMontoRegional(montoNum)}. Tu nuevo saldo disponible es $${formatearMontoRegional(nuevoDisponible)}.`;
+
+      return NextResponse.json({
+        ok: true,
+        clienteId: match.id,
+        nombre: nombreFinal,
+        nuevoSaldo,
+        nuevoDisponible,
+        msgPublico,
+        msgPrivado,
+        clienteJid: match.whatsapp_jid || (match.telefono_normalizado ? `${match.telefono_normalizado}@s.whatsapp.net` : null),
       });
     }
 
@@ -1309,7 +1721,12 @@ export async function POST(req: Request) {
     const esComandoOp = textoUsuarioLimpio.startsWith("!");
     const cmdRetiroPre = analizarComandoRetiro(textoUsuarioLimpio);
     const esAmpliacionPre = evaluarAmpliacionPropuesta(textoUsuarioLimpio).esAmpliacion;
-    const esConsultaSaldo = /^(?:!?(?:saldo|cuenta|mi saldo|ver saldo))\b/i.test(textoUsuarioLimpio);
+    const esConsultaSaldo = /^(?:!?(?:saldo|mi\s+saldo|cuenta|mi\s+cuenta|resumen|mi\s+resumen|estado\s+de\s+cuenta|ver\s+saldo))\b/i.test(textoUsuarioLimpio);
+    const esSolicitudCajero = /^(?:!?(?:deposito|depósito|reportar\s+pago|retiro|solicito\s+retiro|quiero\s+retirar|recarga|solicito\s+recarga))\b/i.test(textoUsuarioLimpio);
+    const esAceptacionSinCita = !quotedMsgId && /^(?:j|voy|ponte|juego|jugamos|jugue|jugué|copiado|pago|entro)(?:\s+(?:con\s+|por\s+|\$)?([0-9kK.,]+))?$/i.test(textoUsuarioLimpio);
+    const matchAjusteOperador = textoUsuarioLimpio.match(
+      /^(?:!)?(?:(?:recargar?|abonar?|ajuste|cargar?)\s+)?([a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s._-]+?)\s*([+-])\s*([0-9kK.,]+)$/i
+    );
     const preAnalisis = analizarYEstandarizarJugada(textoUsuarioLimpio, 999999);
 
     const esAccionOJugada =
@@ -1318,6 +1735,9 @@ export async function POST(req: Request) {
       cmdRetiroPre.esComandoRetiro ||
       esAmpliacionPre ||
       esConsultaSaldo ||
+      esSolicitudCajero ||
+      esAceptacionSinCita ||
+      Boolean(matchAjusteOperador) ||
       preAnalisis.esIntencionDeJugada;
 
     if (!esAccionOJugada) {
@@ -1653,11 +2073,93 @@ export async function POST(req: Request) {
         console.warn("[procesar] Aviso evaluar_respuesta_entrenada_sala:", errRpcEntrenada);
       }
 
-    // Consulta directa de saldo de cliente si el RPC entrenado no respondió
-    if (esConsultaSaldo) {
-      const disp = formatearMontoRegional(saldoDisponible);
-      const msgPubSaldo = `💰 *${nombreJugador}*: Saldo disponible $${disp}`;
-      const msgPrivSaldo = `📊 *Tu Saldo* (${nombreJugador}):\n• Actual: $${formatearMontoRegional(cliente.saldo_actual || 0)}\n• Aval / Crédito: $${formatearMontoRegional(cliente.aval || cliente.limite_credito || 0)}\n• Retenido: $${formatearMontoRegional(cliente.saldo_retenido || 0)}\n• Disponible para jugar: $${disp}`;
+    if (matchAjusteOperador) {
+      const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
+      if (esOp) {
+        const targetNombre = matchAjusteOperador[1].trim();
+        const signo = matchAjusteOperador[2];
+        const montoRaw = matchAjusteOperador[3];
+        const { monto } = extraerMontoNumerico(montoRaw);
+
+        if (monto > 0) {
+          const { data: candidatos } = await supabaseAdmin
+            .from("clientes")
+            .select(CAMPOS_CLIENTE_SALA)
+            .eq("grupo_id", grupoId);
+
+          const targetLimpio = targetNombre.toUpperCase();
+          const targetCliente = (candidatos || []).find((c: any) => {
+            const n = String(c.nombre || "").trim().toUpperCase();
+            const s = String(c.seudonimo || "").trim().toUpperCase();
+            return n === targetLimpio || s === targetLimpio || n.includes(targetLimpio) || (s && s.includes(targetLimpio));
+          });
+
+          if (targetCliente) {
+            const saldoActual = Number(targetCliente.saldo_actual || 0);
+            const delta = signo === "+" ? monto : -monto;
+            const nuevoSaldo = Number((saldoActual + delta).toFixed(2));
+            const nuevoDisponible = targetCliente.libre ? 999999 : Math.max(0, Number((nuevoSaldo + Number(targetCliente.aval || 0) - Number(targetCliente.saldo_retenido || 0)).toFixed(2)));
+
+            await supabaseAdmin
+              .from("clientes")
+              .update({
+                saldo_actual: nuevoSaldo,
+                saldo_disponible: nuevoDisponible,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", targetCliente.id);
+
+            await supabaseAdmin.from("libro_mayor_clientes").insert({
+              cliente_id: targetCliente.id,
+              cliente_nombre: targetCliente.nombre,
+              grupo_id: grupoId,
+              tipo_movimiento: signo === "+" ? "DEPOSITO" : "RETIRO",
+              monto_centavos: Math.round(monto * 100),
+              monto: monto,
+              observacion: "Ajuste operador WhatsApp",
+              creado_por: body.pushName || "OPERADOR_WHATSAPP",
+              fecha_carrera: new Date().toISOString().split("T")[0],
+            });
+
+            const nombreFinal = targetCliente.seudonimo || targetCliente.nombre;
+            const msgPublico = `✅ Saldo actualizado para *${nombreFinal}*: Nuevo saldo $${formatearMontoRegional(nuevoSaldo)}`;
+            const msgPrivado = `💰 Tu cuenta ha sido ${signo === "+" ? "acreditada" : "debitada"} con $${formatearMontoRegional(monto)}. Tu nuevo saldo disponible es $${formatearMontoRegional(nuevoDisponible)}.`;
+
+            await supabaseAdmin.from("chat_mensajes").insert({
+              grupo_id: grupoId,
+              sala_id: salaId,
+              remitente_nombre: "🤖 ASISTENTE DE SALA",
+              es_operador: true,
+              tipo_mensaje: "sistema",
+              contenido: msgPublico,
+              whatsapp_msg_id: whatsappMsgId || null,
+              whatsapp_group_jid: groupJid || null,
+              whatsapp_group_nombre: whatsappGroupNombre || null,
+              origen_canal: "WHATSAPP",
+            });
+            await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+            const jidTarget = targetCliente.whatsapp_jid || (targetCliente.telefono_normalizado ? `${targetCliente.telefono_normalizado}@s.whatsapp.net` : null);
+
+            return NextResponse.json({
+              ok: true,
+              tipo: "AJUSTE_SALDO_OPERADOR",
+              respuestaGrupo: msgPublico,
+              msg_publico: msgPublico,
+              msg_publico_bot: msgPublico,
+              respuestaPublica: msgPublico,
+              mensajePrivadoAutor: null,
+              notificaciones_privadas: jidTarget ? [{ whatsapp_jid: jidTarget, mensaje: msgPrivado }] : [],
+              senderJid: participantJid,
+            });
+          }
+        }
+      }
+    }
+
+    if (esAceptacionSinCita) {
+      const msgPubNada = "Nada aquí, verifique";
+      const msgPrivNada = "⚠️ Para aceptar una jugada debes citar (responder directamente) la propuesta original.";
 
       await supabaseAdmin.from("chat_mensajes").insert({
         grupo_id: grupoId,
@@ -1666,7 +2168,7 @@ export async function POST(req: Request) {
         es_operador: true,
         es_bot: true,
         tipo_mensaje: "sistema",
-        contenido: msgPubSaldo,
+        contenido: msgPubNada,
         whatsapp_msg_id: whatsappMsgId || null,
         whatsapp_group_jid: groupJid || null,
         whatsapp_group_nombre: whatsappGroupNombre || null,
@@ -1675,14 +2177,52 @@ export async function POST(req: Request) {
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
       return NextResponse.json({
+        ok: false,
+        tipo: "ACEPTACION_SIN_CITA",
+        nada_aqui: true,
+        respuestaGrupo: msgPubNada,
+        msg_publico: msgPubNada,
+        msg_publico_bot: msgPubNada,
+        respuestaPublica: msgPubNada,
+        mensajePrivadoAutor: msgPrivNada,
+        msg_privado_bot: msgPrivNada,
+        senderJid: participantJid,
+      });
+    }
+
+    if (esSolicitudCajero) {
+      const esRetiro = /retiro|quiero\s+retirar|solicito\s+retiro/i.test(textoUsuarioLimpio);
+      const tipoOp = esRetiro ? "Retiro" : "Depósito";
+      const msgPriv = esRetiro
+        ? `🏧 *Solicitud de Retiro*\n\nHola *${nombreJugador}*, tu solicitud de retiro ha sido notificada al operador.\nTu saldo disponible actual es *$${formatearMontoRegional(saldoDisponible)}*.\nEl operador se comunicará contigo a la brevedad.`
+        : `🏦 *Solicitud de Recarga / Depósito*\n\nHola *${nombreJugador}*, hemos recibido tu solicitud. Por favor envía el comprobante de pago o capture por este medio.\nEl operador revisará y acreditará tu saldo a la brevedad.`;
+
+      const notifOp = `🔔 *Solicitud de ${tipoOp} de Jugador:*\n👤 *${nombreJugador}* (${cliente.telefono || "Sin teléfono"})\n💰 Saldo Disponible: $${formatearMontoRegional(saldoDisponible)}\nPara procesar escribe: *${nombreJugador} +[MONTO]* o *${nombreJugador} -[MONTO]*`;
+
+      return NextResponse.json({
+        ok: true,
+        tipo: "SOLICITUD_CAJERO",
+        respuestaGrupo: null,
+        msg_publico: null,
+        mensajePrivadoAutor: msgPriv,
+        msg_privado_bot: msgPriv,
+        notificaciones_privadas: [{ tipo: "operador", mensaje: notifOp }],
+        senderJid: participantJid,
+      });
+    }
+
+    if (esConsultaSaldo) {
+      const resumenDm = await construirResumenEstadoCuentaCliente(cliente, grupoId);
+
+      return NextResponse.json({
         ok: true,
         tipo: "CONSULTA_SALDO",
-        respuestaGrupo: msgPubSaldo,
-        msg_publico: msgPubSaldo,
-        msg_publico_bot: msgPubSaldo,
-        respuestaPublica: msgPubSaldo,
-        mensajePrivadoAutor: msgPrivSaldo,
-        msg_privado_bot: msgPrivSaldo,
+        respuestaGrupo: null,
+        msg_publico: null,
+        msg_publico_bot: null,
+        respuestaPublica: null,
+        mensajePrivadoAutor: resumenDm,
+        msg_privado_bot: resumenDm,
         alertaPrivada: null,
         notificaciones_privadas: [],
         senderJid: participantJid,
@@ -2887,20 +3427,20 @@ export async function POST(req: Request) {
     }
 
     if (!rpcPublicado || !propId) {
-      const msgErrPub = (rpcResFinal as any)?.msg_publico || (rpcResFinal as any)?.msg_publico_bot || "🚫 *Error al publicar propuesta* — Intente nuevamente.";
-      const msgErrPriv = (rpcResFinal as any)?.msg_privado_proponente || (rpcResFinal as any)?.msg_privado_bot || (rpcResFinal as any)?.alertaPrivada || "La propuesta no pudo ser registrada de forma atómica.";
+      const msgErrPriv =
+        `⚠️ Hola *${nombreJugador}*, tu mensaje "${texto}" no pudo procesarse porque ocurrió un problema registrando tu propuesta.\n\n✅ *Ejemplo correcto:* "Juego 1P 5 20.000" o "Juego 3x5 10a8 100".`;
       return NextResponse.json({
         ok: false,
         tipo: "PROPUESTA_ERROR",
-        respuestaGrupo: msgErrPub,
-        msg_publico: msgErrPub,
-        msg_publico_bot: msgErrPub,
-        respuestaPublica: msgErrPub,
+        respuestaGrupo: null,
+        msg_publico: null,
+        msg_publico_bot: null,
+        respuestaPublica: null,
         mensajePrivadoAutor: msgErrPriv,
         msg_privado_bot: msgErrPriv,
         msg_privado_proponente: msgErrPriv,
-        alertaPrivada: (rpcResFinal as any)?.alertaPrivada || null,
-        notificaciones_privadas: (rpcResFinal as any)?.notificaciones_privadas || [],
+        alertaPrivada: null,
+        notificaciones_privadas: [],
         clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
         senderJid: participantJid,
       });
@@ -2945,6 +3485,45 @@ export async function POST(req: Request) {
     // Propuesta Exitosa con Saldo: SILENCIO en grupo público.
     // Cuando un jugador publica una jugada (ej. Juego 3x5 10a8 100) y tiene saldo,
     // el bot NO responde nada en el grupo público. Solo la registra en la memoria interna (BD).
+    let resCruceAuto: any = null;
+    if (sala.grupo_id) {
+      const { data: gCruces } = await supabaseAdmin
+        .from("grupos_venta")
+        .select("permite_cruces")
+        .eq("id", sala.grupo_id)
+        .maybeSingle();
+
+      if (gCruces?.permite_cruces) {
+        resCruceAuto = await intentarCruceAutomatico({
+          sala,
+          grupoId,
+          nuevaPropuestaId: propId,
+          nuevoCliente: cliente,
+          analisis,
+          groupJid,
+          whatsappGroupNombre,
+          whatsappMsgId,
+        });
+      }
+    }
+
+    if (resCruceAuto?.cruzado) {
+      return NextResponse.json({
+        ok: true,
+        tipo: "PROPUESTA_CON_CRUCE",
+        propuestaId: propId,
+        jugadaEstandarizada: analisis.jugadaEstandarizada,
+        montoPublicado: montoAPublicar,
+        reaccionEmoji: "🏇",
+        respuestaGrupo: resCruceAuto.msgCruce,
+        msg_publico: resCruceAuto.msgCruce,
+        msg_publico_bot: resCruceAuto.msgCruce,
+        respuestaPublica: resCruceAuto.msgCruce,
+        mensajePrivadoAutor: null,
+        senderJid: participantJid,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       tipo: "PROPUESTA",
