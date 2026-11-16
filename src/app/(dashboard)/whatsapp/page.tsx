@@ -168,7 +168,20 @@ export default function WhatsappPage() {
   const [procesandoAccion, setProcesandoAccion] = useState<string | null>(null);
   const [filtroGrupo, setFiltroGrupo] = useState("");
   const [gruposSistema, setGruposSistema] = useState<GrupoSistemaItem[]>([]);
-  const [grupoFiltroId, setGrupoFiltroId] = useState<string>("");
+  const [gruposFiltroIds, setGruposFiltroIds] = useState<string[]>([]);
+
+  const toggleGrupoFiltro = (id: string) => {
+    if (esOperador && grupoUsuarioId && id !== grupoUsuarioId) return;
+    setGruposFiltroIds((prev) => {
+      if (prev.length === 0) {
+        return [id];
+      }
+      if (prev.includes(id)) {
+        return prev.filter((item) => item !== id);
+      }
+      return [...prev, id];
+    });
+  };
   const [vinculosPorSala, setVinculosPorSala] = useState<Record<string, NonNullable<SalaJuego["grupos_whatsapp"]>>>({});
   const [vinculosGlobales, setVinculosGlobales] = useState<any[]>([]);
   const [filtroEstadoGrupo, setFiltroEstadoGrupo] = useState<"todos" | "conectados" | "desconectados">("todos");
@@ -353,7 +366,7 @@ export default function WhatsappPage() {
         ? grupoUsuarioId
         : gId !== undefined
         ? gId
-        : grupoFiltroId;
+        : "";
       const qs = targetGrupo ? `?grupoId=${encodeURIComponent(targetGrupo)}` : "";
       const res = await fetch(`/api/whatsapp-sala/salas-grupos${qs}`, { cache: "no-store" });
       if (!res.ok) return;
@@ -363,10 +376,8 @@ export default function WhatsappPage() {
           ? json.gruposSistema.filter((g: GrupoSistemaItem) => String(g.id) === grupoUsuarioId)
           : json.gruposSistema;
         setGruposSistema(listaGrupos);
-        if (esOperador && grupoUsuarioId && grupoFiltroId !== grupoUsuarioId) {
-          setGrupoFiltroId(grupoUsuarioId);
-        } else if (!grupoFiltroId && !gId && listaGrupos.length > 0) {
-          setGrupoFiltroId(listaGrupos[0].id);
+        if (esOperador && grupoUsuarioId) {
+          setGruposFiltroIds((prev) => (prev.length === 1 && prev[0] === grupoUsuarioId ? prev : [grupoUsuarioId]));
         }
       }
       if (Array.isArray(json.vinculosGlobales)) {
@@ -399,7 +410,7 @@ export default function WhatsappPage() {
     } catch {
       // No bloqueante
     }
-  }, [grupoFiltroId]);
+  }, [esOperador, grupoUsuarioId]);
 
   useEffect(() => {
     consultarEstado(false);
@@ -411,8 +422,10 @@ export default function WhatsappPage() {
     return () => clearInterval(timer);
   }, [consultarEstado, cargarSalasGrupos]);
 
-  const agregarSalaAlGrupo = async () => {
-    const gId = (esOperador && grupoUsuarioId) ? grupoUsuarioId : (grupoFiltroId || salas[0]?.grupo_id || gruposSistema[0]?.id);
+  const agregarSalaAlGrupo = async (grupoEspecificoId?: string) => {
+    const gId = (esOperador && grupoUsuarioId)
+      ? grupoUsuarioId
+      : (grupoEspecificoId || (gruposFiltroIds.length === 1 ? gruposFiltroIds[0] : null) || salas[0]?.grupo_id || gruposSistema[0]?.id);
     if (!gId) return;
     const salasDelGrupo = salas.filter((s) => String(s.grupo_id) === String(gId));
     if (salasDelGrupo.length >= 2) {
@@ -432,7 +445,7 @@ export default function WhatsappPage() {
       const json = await res.json();
       if (json.ok) {
         setFeedback({ tipo: "ok", texto: `✅ ${json.motivo || "Sala agregada exitosamente"}` });
-        await Promise.all([consultarEstado(true), cargarSalasGrupos(gId)]);
+        await Promise.all([consultarEstado(true), cargarSalasGrupos()]);
       } else {
         setFeedback({ tipo: "error", texto: `❌ ${json.motivo || "No se pudo agregar la sala"}` });
       }
@@ -470,7 +483,7 @@ export default function WhatsappPage() {
     if (!groupJid) return;
     setProcesandoAccion(`vincular-multi-${sala.id}`);
     try {
-      const gId = sala.grupo_id || grupoFiltroId;
+      const gId = sala.grupo_id || (gruposFiltroIds[0] ?? "");
       const res = await fetch("/api/whatsapp-sala/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -552,7 +565,7 @@ export default function WhatsappPage() {
           })
         );
         setFeedback({ tipo: "ok", texto: `✅ Grupo desvinculado correctamente` });
-        await Promise.all([consultarEstado(true), cargarSalasGrupos(grupoFiltroId)]);
+        await Promise.all([consultarEstado(true), cargarSalasGrupos()]);
       } else {
         setFeedback({ tipo: "error", texto: `❌ ${json.motivo || "No se pudo desvincular"}` });
       }
@@ -1373,14 +1386,11 @@ export default function WhatsappPage() {
                 {esSuperAdmin && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setGrupoFiltroId("");
-                      void cargarSalasGrupos("");
-                    }}
+                    onClick={() => setGruposFiltroIds([])}
                     className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-black transition ${
-                      grupoFiltroId === ""
-                        ? "border-emerald-500/60 bg-emerald-950/70 text-emerald-300"
-                        : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600"
+                      gruposFiltroIds.length === 0
+                        ? "border-emerald-500 bg-emerald-950/80 text-emerald-200 ring-1 ring-emerald-500/40 shadow-sm"
+                        : "border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-slate-200"
                     }`}
                   >
                     <span>🗂️</span>
@@ -1388,88 +1398,39 @@ export default function WhatsappPage() {
                   </button>
                 )}
                 {gruposSistema.map((g) => {
-                  const seleccionado = grupoFiltroId === g.id;
+                  const seleccionado = gruposFiltroIds.includes(g.id);
                   return (
                     <button
                       key={g.id}
                       type="button"
-                      onClick={() => {
-                        if (esOperador && grupoUsuarioId && g.id !== grupoUsuarioId) return;
-                        setGrupoFiltroId(g.id);
-                        void cargarSalasGrupos(g.id);
-                      }}
+                      onClick={() => toggleGrupoFiltro(g.id)}
                       className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-bold transition ${
                         seleccionado
-                          ? "border-emerald-500/70 bg-emerald-950/70 text-emerald-200 ring-1 ring-emerald-500/40"
-                          : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600"
+                          ? "border-emerald-500 bg-emerald-950/80 text-emerald-200 ring-1 ring-emerald-500/40 shadow-sm font-black"
+                          : "border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-slate-200"
                       }`}
                     >
-                      <span>{g.conectado ? "🟢" : "⚪"}</span>
+                      {seleccionado && <span className="text-[10px] text-emerald-400 font-black">✓</span>}
                       <span>{g.nombre}</span>
                     </button>
                   );
                 })}
               </div>
-              {grupoFiltroId &&
-                salas.filter((s) => !grupoFiltroId || s.grupo_id === grupoFiltroId).length < 2 && (
+              {gruposFiltroIds.length === 1 &&
+                salas.filter((s) => s.grupo_id === gruposFiltroIds[0]).length < 2 && (
                   <button
                     type="button"
-                    onClick={() => void agregarSalaAlGrupo()}
+                    onClick={() => void agregarSalaAlGrupo(gruposFiltroIds[0])}
                     disabled={ocupado}
-                    className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-black text-white shadow transition hover:bg-emerald-500 disabled:opacity-40"
+                    className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-black text-white shadow transition hover:bg-emerald-500 disabled:opacity-40 shrink-0"
                   >
                     {procesandoAccion === "crear-sala" ? "Creando…" : "+ Agregar Sala (máx. 2)"}
                   </button>
                 )}
             </div>
-
-            {/* Accesos rápidos de grupos del sistema con indicador en vivo */}
-            {gruposSistema.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2.5 border-t border-slate-800/80">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGrupoFiltroId("");
-                    void cargarSalasGrupos("");
-                  }}
-                  className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition ${
-                    !grupoFiltroId
-                      ? "bg-slate-800 text-white border border-slate-600 shadow-sm"
-                      : "bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800"
-                  }`}
-                >
-                  Todos ({gruposSistema.length})
-                </button>
-                {gruposSistema.map((g) => {
-                  const seleccionado = grupoFiltroId === g.id;
-                  const conectado = Boolean(g.conectado);
-                  return (
-                    <button
-                      key={g.id}
-                      type="button"
-                      onClick={() => {
-                        setGrupoFiltroId(g.id);
-                        void cargarSalasGrupos(g.id);
-                      }}
-                      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-black transition border ${
-                        seleccionado
-                          ? "border-emerald-400 bg-emerald-950 text-white shadow-md shadow-emerald-950/40"
-                          : conectado
-                          ? "border-emerald-500/40 bg-slate-900 text-emerald-300 hover:bg-slate-800"
-                          : "border-slate-800 bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-white"
-                      }`}
-                      title={conectado ? `Grupo ${g.nombre}: Conectado a WhatsApp (${g.salasConectadas || 1} sala activa)` : `Grupo ${g.nombre}: Sin WhatsApp conectado`}
-                    >
-                      <span className={`h-2 w-2 rounded-full shrink-0 ${conectado ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
-                      <span>{g.nombre}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
           </div>
 
-          {salas.filter((s) => !grupoFiltroId || s.grupo_id === grupoFiltroId).length === 0 ? (
+          {salas.filter((s) => gruposFiltroIds.length === 0 || (s.grupo_id && gruposFiltroIds.includes(String(s.grupo_id)))).length === 0 ? (
             <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/60 p-10 text-center text-slate-400">
               <p className="text-2xl">🏇</p>
               <p className="mt-2 text-sm font-bold text-slate-200">
@@ -1481,8 +1442,7 @@ export default function WhatsappPage() {
             </div>
           ) : (
             salas
-              .filter((s) => !grupoFiltroId || s.grupo_id === grupoFiltroId)
-              .slice(0, grupoFiltroId ? 2 : undefined)
+              .filter((s) => gruposFiltroIds.length === 0 || (s.grupo_id && gruposFiltroIds.includes(String(s.grupo_id))))
               .map((sala, index) => {
               const vinculosEstaSala = vinculosPorSala[sala.id] || sala.grupos_whatsapp || [];
               const primerVinculo = vinculosEstaSala[0];

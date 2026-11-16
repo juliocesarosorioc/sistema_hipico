@@ -25,7 +25,12 @@ export async function GET(req: NextRequest) {
       .order("orden_sala", { ascending: true });
 
     if (grupoId) {
-      qSalas = qSalas.eq("grupo_id", grupoId).limit(2);
+      const gIds = grupoId.split(",").map((x) => x.trim()).filter(Boolean);
+      if (gIds.length === 1) {
+        qSalas = qSalas.eq("grupo_id", gIds[0]).limit(2);
+      } else if (gIds.length > 1) {
+        qSalas = qSalas.in("grupo_id", gIds);
+      }
     }
     if (salaId) {
       qSalas = qSalas.eq("id", salaId);
