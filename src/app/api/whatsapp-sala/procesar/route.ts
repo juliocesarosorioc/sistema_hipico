@@ -238,6 +238,79 @@ async function construirResumenEstadoCuentaCliente(cliente: any, grupoId: string
   );
 }
 
+function generarTextoPlanoOficial(
+  sala: any,
+  tickets: any[],
+  propsAbiertas: any[] = [],
+  retirados: string[] = []
+): string {
+  const diasSemana = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  const meses = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+  ];
+  const now = new Date();
+  const fechaStr = `${diasSemana[now.getDay()]}, ${now.getDate()} de ${meses[now.getMonth()]} de ${now.getFullYear()}`;
+
+  const hipo = String(sala.hipodromo_activo || "La Rinconada").trim();
+  const numCarrera = sala.numero_carrera_activa || 1;
+  const ordCarrera =
+    numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
+
+  const retiradosStr =
+    Array.isArray(retirados) && retirados.length > 0
+      ? retirados.map((r) => `#${String(r).replace(/^#/, "")}`).join(", ")
+      : "";
+
+  const listaCasadas = (tickets || [])
+    .map((t, idx) => {
+      const proponente = t.proponente_nombre || "Jugador A";
+      const aceptante = t.aceptante_nombre || "Jugador B";
+      let jugadaDetalle = "";
+      if (t.es_match) {
+        jugadaDetalle = `Match ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`;
+      } else {
+        const mod = t.modalidad || "1P";
+        const ej = t.ejemplar_numero || (t.caballos_bando_a || []).join("-");
+        jugadaDetalle = `${mod} del ${ej}`;
+      }
+      const monto = formatearMontoRegional(Number(t.monto_concretado || 0));
+      return `${idx + 1}) ${proponente} juega ${jugadaDetalle} con ${aceptante} $${monto}`;
+    })
+    .join("\n");
+
+  const lineasCasadas = listaCasadas || "_No hay jugadas concretadas en esta carrera._";
+
+  let textoFinal =
+    `🏇🏻Administración Hípica🏇🏻\n` +
+    `${fechaStr}\n` +
+    `${hipo}, ${ordCarrera} Carrera\n` +
+    `Retirado: ${retiradosStr}\n\n` +
+    `[Listado de jugadas y propuestas concretadas]\n` +
+    `${lineasCasadas}`;
+
+  if (propsAbiertas && propsAbiertas.length > 0) {
+    const lineasProps = propsAbiertas
+      .map((p) => {
+        const det = p.jugada_estandarizada || p.contenido || "Propuesta";
+        const disp = formatearMontoRegional(Number(p.monto_disponible || 0));
+        return `• ${p.remitente_nombre}: ${det} (Disp: $${disp})`;
+      })
+      .join("\n");
+    textoFinal += `\n\n[Propuestas abiertas en cola]\n${lineasProps}`;
+  }
+
+  const totalPactado = (tickets || []).reduce(
+    (acc, t) => acc + Number(t.monto_concretado || 0),
+    0
+  );
+  if (tickets && tickets.length > 0) {
+    textoFinal += `\n\n💰 Total Casado: $${formatearMontoRegional(totalPactado)} (${tickets.length} tickets)`;
+  }
+
+  return textoFinal;
+}
+
 async function verificarEsOperador(clienteId?: string | null, telefono?: string | null, grupoId?: string | null): Promise<boolean> {
   if (!telefono && !clienteId) return false;
   try {
@@ -1154,19 +1227,6 @@ export async function POST(req: Request) {
       const lista = tickets || [];
       const totalPactado = lista.reduce((acc, t) => acc + Number(t.monto_concretado || 0), 0);
 
-      const lineas =
-        lista.length > 0
-          ? lista
-              .map((t, idx) => {
-                const codigo = (t.codigo_ticket || String(t.id || "").slice(0, 6)).toUpperCase();
-                const detalle = t.es_match
-                  ? `Match ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`
-                  : `${t.modalidad || "1P"} #${t.ejemplar_numero || (t.caballos_bando_a || []).join("-")}`;
-                return `${idx + 1}. [${codigo}] *${t.proponente_nombre}* vs *${t.aceptante_nombre}* — ${detalle} por *$${formatearMontoRegional(Number(t.monto_concretado || 0))}*`;
-              })
-              .join("\n")
-          : "_No hay jugadas activas pactadas en esta carrera._";
-
       let qProps = supabaseAdmin
         .from("chat_mensajes")
         .select("remitente_nombre, jugada_estandarizada, contenido, monto_disponible, modalidad_propuesta, ejemplar_texto, es_match, caballos_bando_a, caballos_bando_b")
@@ -1181,27 +1241,18 @@ export async function POST(req: Request) {
       }
       const { data: propsAbiertas } = await qProps;
       const listaProps = propsAbiertas || [];
-      const lineasProps =
-        listaProps.length > 0
-          ? listaProps
-              .map((p: any) => {
-                const detalle = p.jugada_estandarizada || p.contenido || "Propuesta";
-                return `• *${p.remitente_nombre}*: ${detalle} (Disp: *$${formatearMontoRegional(Number(p.monto_disponible || 0))}*)`;
-              })
-              .join("\n")
-          : "_No hay propuestas abiertas en cola._";
 
-      const textoPlano =
-        `📋 *PLANO DE JUGADAS / PREJUGADAS*\n` +
-        `🏇 *${hipodromo}* — Carrera #${numCarrera}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `🤝 *JUGADAS CASADAS (${lista.length}):*\n` +
-        `${lineas}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `⏳ *PROPUESTAS ABIERTAS (${listaProps.length}):*\n` +
-        `${lineasProps}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `💰 *Total Jugado Casado:* $${formatearMontoRegional(totalPactado)} (${lista.length} tickets)`;
+      let retiradosLista: string[] = [];
+      if (carreraId) {
+        try {
+          const { data: cRow } = await supabaseAdmin.from("carreras").select("ejemplares_retirados").eq("id", carreraId).maybeSingle();
+          if (cRow?.ejemplares_retirados && Array.isArray(cRow.ejemplares_retirados)) {
+            retiradosLista = cRow.ejemplares_retirados;
+          }
+        } catch {}
+      }
+
+      const textoPlano = generarTextoPlanoOficial(sala, lista, listaProps, retiradosLista);
 
       let enviadoWhatsApp = false;
       if (sala.whatsapp_group_jid) {
@@ -1721,7 +1772,14 @@ export async function POST(req: Request) {
     const esComandoOp = textoUsuarioLimpio.startsWith("!");
     const cmdRetiroPre = analizarComandoRetiro(textoUsuarioLimpio);
     const esAmpliacionPre = evaluarAmpliacionPropuesta(textoUsuarioLimpio).esAmpliacion;
-    const esConsultaSaldo = /^(?:!?(?:saldo|mi\s+saldo|cuenta|mi\s+cuenta|resumen|mi\s+resumen|estado\s+de\s+cuenta|ver\s+saldo))\b/i.test(textoUsuarioLimpio);
+    const esConsultaSaldo = /^(?:!?(?:saldo|mi\s+saldo|ver\s+saldo))$/i.test(textoUsuarioLimpio);
+    const esConsultaCuenta = /^(?:!?(?:cuenta|mi\s+cuenta|resumen|mi\s+resumen|estado\s+de\s+cuenta))$/i.test(textoUsuarioLimpio);
+    const esComandoSaldosAdmin = /^(?:!?(?:saldos|ver\s+saldos|lista\s+saldos|todos\s+los\s+saldos))$/i.test(textoUsuarioLimpio);
+    const esComandoPlano = /^(?:!?(?:plano|prejugadas))$/i.test(textoUsuarioLimpio);
+    const esComandoCerrar = /^(?:!?(?:cerrar(?:\s+carrera)?|cerrada|cerrado|trancar|no\s+va\s+m[aá]s))$/i.test(textoUsuarioLimpio);
+    const matchAbrirComando = textoUsuarioLimpio.match(/^(?:!)?(?:abrir|abierta)(?:\s+carrera)?(?:\s+(.+?))?(?:\s+(?:c(?:arrera)?\s*|#\s*)?(\d{1,2}))?$/i);
+    const matchPizarraComando = textoUsuarioLimpio.match(/^(?:!)?(?:llegada|sentenciar|pizarra)\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
+    const matchRectificarComando = textoUsuarioLimpio.match(/^(?:!)?rectificar(?:\s+pizarra)?\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
     const esSolicitudCajero = /^(?:!?(?:deposito|depósito|reportar\s+pago|retiro|solicito\s+retiro|quiero\s+retirar|recarga|solicito\s+recarga))\b/i.test(textoUsuarioLimpio);
     const esAceptacionSinCita = !quotedMsgId && /^(?:j|voy|ponte|juego|jugamos|jugue|jugué|copiado|pago|entro)(?:\s+(?:con\s+|por\s+|\$)?([0-9kK.,]+))?$/i.test(textoUsuarioLimpio);
     const matchAjusteOperador = textoUsuarioLimpio.match(
@@ -1735,6 +1793,13 @@ export async function POST(req: Request) {
       cmdRetiroPre.esComandoRetiro ||
       esAmpliacionPre ||
       esConsultaSaldo ||
+      esConsultaCuenta ||
+      esComandoSaldosAdmin ||
+      esComandoPlano ||
+      esComandoCerrar ||
+      Boolean(matchAbrirComando) ||
+      Boolean(matchPizarraComando) ||
+      Boolean(matchRectificarComando) ||
       esSolicitudCajero ||
       esAceptacionSinCita ||
       Boolean(matchAjusteOperador) ||
@@ -2211,12 +2276,240 @@ export async function POST(req: Request) {
       });
     }
 
+    if (esComandoSaldosAdmin) {
+      const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
+      if (esOp) {
+        const { data: listaCl } = await supabaseAdmin
+          .from("clientes")
+          .select("id, nombre, seudonimo, saldo_actual, saldo_disponible, libre")
+          .eq("grupo_id", grupoId)
+          .order("nombre", { ascending: true });
+
+        const lineas = (listaCl || []).map((c) => {
+          const nom = c.seudonimo || c.nombre || "Jugador";
+          const actual = formatearMontoRegional(Number(c.saldo_actual || 0));
+          const disp = formatearMontoRegional(Number(c.saldo_disponible || 0));
+          return `• *${nom}*: $${actual} ${c.libre ? "(Libre)" : `(Disp: $${disp})`}`;
+        }).join("\n");
+
+        const msgSaldos = `📊 *LISTADO OFICIAL DE SALDOS*\n━━━━━━━━━━━━━━━━━━━━━━\n${lineas || "_No hay jugadores registrados en este grupo._"}`;
+
+        await supabaseAdmin.from("chat_mensajes").insert({
+          grupo_id: grupoId,
+          sala_id: salaId,
+          remitente_nombre: "🤖 ASISTENTE DE SALA",
+          es_operador: true,
+          tipo_mensaje: "sistema",
+          contenido: msgSaldos,
+          whatsapp_msg_id: whatsappMsgId || null,
+          whatsapp_group_jid: groupJid || null,
+          whatsapp_group_nombre: whatsappGroupNombre || null,
+          origen_canal: "WHATSAPP",
+        });
+        await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+        return NextResponse.json({
+          ok: true,
+          tipo: "LISTADO_SALDOS",
+          respuestaGrupo: msgSaldos,
+          msg_publico: msgSaldos,
+          msg_publico_bot: msgSaldos,
+          respuestaPublica: msgSaldos,
+          mensajePrivadoAutor: null,
+          senderJid: participantJid,
+        });
+      }
+    }
+
+    if (esComandoPlano) {
+      const { data: ticketsPlano } = await supabaseAdmin
+        .from("chat_tickets_fifo")
+        .select("*")
+        .eq("sala_id", salaId)
+        .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"])
+        .order("created_at", { ascending: true });
+
+      const { data: propsPlano } = await supabaseAdmin
+        .from("chat_mensajes")
+        .select("remitente_nombre, jugada_estandarizada, contenido, monto_disponible")
+        .eq("sala_id", salaId)
+        .in("tipo_mensaje", ["propuesta_jugada", "PROPUESTA"])
+        .in("estado_propuesta", ["abierta", "parcial"])
+        .gt("monto_disponible", 0)
+        .order("created_at", { ascending: true });
+
+      let retiradosLista: string[] = [];
+      if (sala.carrera_activa_id) {
+        try {
+          const { data: cRow } = await supabaseAdmin
+            .from("carreras")
+            .select("ejemplares_retirados")
+            .eq("id", sala.carrera_activa_id)
+            .maybeSingle();
+          if (cRow?.ejemplares_retirados && Array.isArray(cRow.ejemplares_retirados)) {
+            retiradosLista = cRow.ejemplares_retirados;
+          }
+        } catch {}
+      }
+
+      const planoTexto = generarTextoPlanoOficial(sala, ticketsPlano || [], propsPlano || [], retiradosLista);
+
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_nombre: "🤖 ASISTENTE DE SALA",
+        es_operador: true,
+        tipo_mensaje: "sistema",
+        contenido: planoTexto,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "WHATSAPP",
+      });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+      return NextResponse.json({
+        ok: true,
+        tipo: "PLANO_OFICIAL",
+        respuestaGrupo: planoTexto,
+        msg_publico: planoTexto,
+        msg_publico_bot: planoTexto,
+        respuestaPublica: planoTexto,
+        mensajePrivadoAutor: null,
+        senderJid: participantJid,
+      });
+    }
+
+    if (esComandoCerrar) {
+      const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
+      if (esOp) {
+        await supabaseAdmin
+          .from("salas_juego")
+          .update({
+            estado_carrera: "cerrada",
+            carrera_recien_cerrada_id: sala.carrera_activa_id || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", salaId);
+
+        const hipo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
+        const numCarrera = sala.numero_carrera_activa || 1;
+        const msgCierre = `🔒 *${hipo} CARRERA ${numCarrera} CERRADA* — No más jugadas. Suerte a todos.`;
+
+        await supabaseAdmin.from("chat_mensajes").insert({
+          grupo_id: grupoId,
+          sala_id: salaId,
+          remitente_nombre: "🤖 ASISTENTE DE SALA",
+          es_operador: true,
+          tipo_mensaje: "sistema",
+          contenido: msgCierre,
+          whatsapp_msg_id: whatsappMsgId || null,
+          whatsapp_group_jid: groupJid || null,
+          whatsapp_group_nombre: whatsappGroupNombre || null,
+          origen_canal: "WHATSAPP",
+        });
+        await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+        return NextResponse.json({
+          ok: true,
+          tipo: "CIERRE_CARRERA",
+          respuestaGrupo: msgCierre,
+          msg_publico: msgCierre,
+          msg_publico_bot: msgCierre,
+          respuestaPublica: msgCierre,
+          mensajePrivadoAutor: null,
+          senderJid: participantJid,
+        });
+      }
+    }
+
+    if (matchAbrirComando && (/^(?:!)?abrir/i.test(textoUsuarioLimpio) || /^(?:!)?abierta/i.test(textoUsuarioLimpio))) {
+      const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
+      if (esOp) {
+        let posibleHipo = (matchAbrirComando[1] || "").trim();
+        let posibleCarrera = (matchAbrirComando[2] || "").trim();
+        if (!posibleCarrera && /^\d{1,2}$/.test(posibleHipo)) {
+          posibleCarrera = posibleHipo;
+          posibleHipo = "";
+        }
+        const hipoLimpio = String(posibleHipo || sala.hipodromo_activo || "LA RINCONADA").toUpperCase();
+        const numCarrera = parseInt(posibleCarrera, 10) || parseInt(sala.numero_carrera_activa, 10) || 1;
+
+        await supabaseAdmin
+          .from("salas_juego")
+          .update({
+            hipodromo_activo: hipoLimpio,
+            numero_carrera_activa: numCarrera,
+            estado_carrera: "abierta",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", salaId);
+
+        const msgAbrir = `🟢 *${hipoLimpio} CARRERA ${numCarrera} ABIERTA* — Hagan sus jugadas.`;
+
+        await supabaseAdmin.from("chat_mensajes").insert({
+          grupo_id: grupoId,
+          sala_id: salaId,
+          remitente_nombre: "🤖 ASISTENTE DE SALA",
+          es_operador: true,
+          tipo_mensaje: "sistema",
+          contenido: msgAbrir,
+          whatsapp_msg_id: whatsappMsgId || null,
+          whatsapp_group_jid: groupJid || null,
+          whatsapp_group_nombre: whatsappGroupNombre || null,
+          origen_canal: "WHATSAPP",
+        });
+        await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+        return NextResponse.json({
+          ok: true,
+          tipo: "APERTURA_CARRERA",
+          respuestaGrupo: msgAbrir,
+          msg_publico: msgAbrir,
+          msg_publico_bot: msgAbrir,
+          respuestaPublica: msgAbrir,
+          mensajePrivadoAutor: null,
+          senderJid: participantJid,
+        });
+      }
+    }
+
     if (esConsultaSaldo) {
-      const resumenDm = await construirResumenEstadoCuentaCliente(cliente, grupoId);
+      const saldoActualFmt = formatearMontoRegional(Number(cliente.saldo_actual || 0));
+      const avalFmt = formatearMontoRegional(Number(cliente.aval || cliente.limite_credito || 0));
+      const retenidoFmt = formatearMontoRegional(Number(cliente.saldo_retenido || 0));
+      const dispFmt = formatearMontoRegional(cliente.libre ? 999999 : Number(cliente.saldo_disponible || 0));
+
+      const msgSaldoDm =
+        `💰 *CONSULTA DE SALDO*\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `👤 *Jugador:* ${nombreJugador}\n` +
+        `💵 *Saldo Actual:* $${saldoActualFmt}\n` +
+        `🛡️ *Aval / Crédito:* $${avalFmt}\n` +
+        `⏳ *Retenido:* $${retenidoFmt}\n` +
+        `🟢 *Saldo Disponible:* $${dispFmt}`;
 
       return NextResponse.json({
         ok: true,
         tipo: "CONSULTA_SALDO",
+        respuestaGrupo: null,
+        msg_publico: null,
+        msg_publico_bot: null,
+        respuestaPublica: null,
+        mensajePrivadoAutor: msgSaldoDm,
+        msg_privado_bot: msgSaldoDm,
+        alertaPrivada: null,
+        notificaciones_privadas: [],
+        senderJid: participantJid,
+      });
+    }
+
+    if (esConsultaCuenta) {
+      const resumenDm = await construirResumenEstadoCuentaCliente(cliente, grupoId);
+
+      return NextResponse.json({
+        ok: true,
+        tipo: "CONSULTA_CUENTA",
         respuestaGrupo: null,
         msg_publico: null,
         msg_publico_bot: null,
@@ -2824,7 +3117,7 @@ export async function POST(req: Request) {
         const riesgoDaFmt = riesgoDa.toFixed(2);
 
         const msgPublicoFinal =
-          `✅ Jugaron: *${nombreJuega} Juega ${modalidadCaballos} ${propTexto} da ${nombreDa} $${montoBaseFmt}*\n` +
+          `✅ Aquí jugaron: *${nombreJuega} Juega ${modalidadCaballos} ${propTexto} da ${nombreDa} $${montoBaseFmt}*\n` +
           `🔹 Juega: ${nombreJuega} (Riesgo $${riesgoJuegaFmt})\n` +
           `🔸 Da: ${nombreDa} (Riesgo $${riesgoDaFmt})`;
 
@@ -3521,8 +3814,8 @@ export async function POST(req: Request) {
     // Si publicó por encima de su saldo_disponible, devolver los textos exactos requeridos
     if (excedioSaldo) {
       const saldoFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
-      const msgPubRecorte = `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`;
-      const msgPrivRecorte = `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`;
+      const msgPubRecorte = `⚠️ *${nombreJugador}* dispone de $${saldoFmt} para jugar`;
+      const msgPrivRecorte = `⚠️ Hola ${nombreJugador}, tu jugada se procesó por $${formatearMontoRegional(montoAPublicar)} ya que es lo que dispones para realizarla. Tu saldo actual es $${saldoFmt}.\n\nTe invitamos a jugar hasta el tope exacto de tu saldo disponible ($${saldoFmt}).`;
       return NextResponse.json({
         ok: true,
         excedio_saldo: true,

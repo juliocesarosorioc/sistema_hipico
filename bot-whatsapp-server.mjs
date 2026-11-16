@@ -777,9 +777,18 @@ export async function ejecutarCierreCarrera(sala, groupJid) {
 export async function construirYPublicarPlano(sala, groupJid) {
   if (!supabase) throw new Error("Supabase no configurado en bot-whatsapp-server");
 
-  const hipodromo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
+  const hipodromo = String(sala.hipodromo_activo || "La Rinconada").trim();
   const numCarrera = sala.numero_carrera_activa || 1;
+  const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
   const carreraId = sala.carrera_activa_id || null;
+
+  const diasSemana = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  const meses = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+  ];
+  const now = new Date();
+  const fechaStr = `${diasSemana[now.getDay()]}, ${now.getDate()} de ${meses[now.getMonth()]} de ${now.getFullYear()}`;
 
   let query = supabase
     .from("chat_tickets_fifo")
@@ -798,18 +807,27 @@ export async function construirYPublicarPlano(sala, groupJid) {
   const lista = tickets || [];
   const totalPactado = lista.reduce((acc, t) => acc + Number(t.monto_concretado || 0), 0);
 
+  let retiradosStr = "";
+  if (carreraId) {
+    try {
+      const { data: cRow } = await supabase.from("carreras").select("ejemplares_retirados").eq("id", carreraId).maybeSingle();
+      if (cRow?.ejemplares_retirados && Array.isArray(cRow.ejemplares_retirados) && cRow.ejemplares_retirados.length > 0) {
+        retiradosStr = cRow.ejemplares_retirados.map((r) => `#${String(r).replace(/^#/, "")}`).join(", ");
+      }
+    } catch {}
+  }
+
   const lineas =
     lista.length > 0
       ? lista
           .map((t, idx) => {
-            const codigo = (t.codigo_ticket || String(t.id || "").slice(0, 6)).toUpperCase();
             const detalleJugada = t.es_match
               ? `Match ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`
-              : `${t.modalidad || "1P"} #${t.ejemplar_numero || (t.caballos_bando_a || []).join("-")}`;
-            return `${idx + 1}. [${codigo}] *${t.proponente_nombre}* vs *${t.aceptante_nombre}* — ${detalleJugada} por *$${formatearMonto(t.monto_concretado)}*`;
+              : `${t.modalidad || "1P"} del ${t.ejemplar_numero || (t.caballos_bando_a || []).join("-")}`;
+            return `${idx + 1}) ${t.proponente_nombre} juega ${detalleJugada} con ${t.aceptante_nombre} $${formatearMonto(t.monto_concretado)}`;
           })
           .join("\n")
-      : "_No hay jugadas activas pactadas en esta carrera._";
+      : "_No hay jugadas concretadas en esta carrera._";
 
   let qProps = supabase
     .from("chat_mensajes")
@@ -835,17 +853,19 @@ export async function construirYPublicarPlano(sala, groupJid) {
           .join("\n")
       : "_No hay propuestas abiertas en cola._";
 
-  const textoPlano =
-    `📋 *PLANO DE JUGADAS / PREJUGADAS*\n` +
-    `🏇 *${hipodromo}* — Carrera #${numCarrera}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `🤝 *JUGADAS CASADAS (${lista.length}):*\n` +
-    `${lineas}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `⏳ *PROPUESTAS ABIERTAS (${listaProps.length}):*\n` +
-    `${lineasProps}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💰 *Total Jugado Casado:* $${formatearMonto(totalPactado)} (${lista.length} tickets)`;
+  let textoPlano =
+    `🏇🏻Administración Hípica🏇🏻\n` +
+    `${fechaStr}\n` +
+    `${hipodromo}, ${ord} Carrera\n` +
+    `Retirado: ${retiradosStr}\n\n` +
+    `[Listado de jugadas y propuestas concretadas]\n` +
+    `${lineas}`;
+
+  if (listaProps.length > 0) {
+    textoPlano += `\n\n[Propuestas abiertas en cola]\n${lineasProps}`;
+  }
+
+  textoPlano += `\n\n💰 Total Jugado Casado: $${formatearMonto(totalPactado)} (${lista.length} tickets)`;
 
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoPlano);
@@ -1676,8 +1696,8 @@ async function manejarMensajeEntrante(msg) {
       return;
     }
 
-    // Detección de Cierre: !cerrar, "cerrar carrera", "trancar"
-    if (/^(?:!)?(?:cerrar(?:\s+carrera)?|cerrada|trancar|no\s+va\s+m[aá]s)$/i.test(textoLimpio)) {
+    // Detección de Cierre: !cerrar, "cerrar carrera", "cerrado", "cerrada", "trancar"
+    if (/^(?:!)?(?:cerrar(?:\s+carrera)?|cerrada|cerrado|trancar|no\s+va\s+m[aá]s)$/i.test(textoLimpio)) {
       const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
       if (!esOp) {
         console.warn(`[Bot WhatsApp] ⛔ Comando cerrar rechazado: ${participantJid} no es operador.`);
@@ -1687,6 +1707,31 @@ async function manejarMensajeEntrante(msg) {
       console.log(`[Bot WhatsApp] 🔒 Cerrando carrera en sala "${sala.nombre_sala}"`);
       await ejecutarCierreCarrera(sala, remoteJid);
       return;
+    }
+
+    // Detección de Saldos Globales de la Sala (Comando Exclusivo de Operador)
+    if (/^(?:!)?(?:saldos|ver\s+saldos|lista\s+saldos)$/i.test(textoLimpio)) {
+      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
+      if (esOp && sala.grupo_id) {
+        console.log(`[Bot WhatsApp] 📊 Publicando listado oficial de saldos en "${sala.nombre_sala}"`);
+        const { data: listaCl } = await supabase
+          .from("clientes")
+          .select("id, nombre, seudonimo, saldo_actual, saldo_disponible, libre")
+          .eq("grupo_id", sala.grupo_id)
+          .order("nombre", { ascending: true });
+
+        const lineas = (listaCl || []).map((c) => {
+          const nom = c.seudonimo || c.nombre || "Jugador";
+          const actual = formatearMonto(c.saldo_actual);
+          const disp = formatearMonto(c.saldo_disponible);
+          return `• *${nom}*: $${actual} ${c.libre ? "(Libre)" : `(Disp: $${disp})`}`;
+        }).join("\n");
+
+        const msgSaldos = `📊 *LISTADO OFICIAL DE SALDOS*\n━━━━━━━━━━━━━━━━━━━━━━\n${lineas || "_No hay jugadores registrados en este grupo._"}`;
+        await enviarMensajeGrupo(remoteJid, msgSaldos);
+        await registrarMensajeEnChatWeb(sala, remoteJid, msgSaldos, "sistema");
+        return;
+      }
     }
 
     // Detección de Plano / Prejugadas: !plano o plano

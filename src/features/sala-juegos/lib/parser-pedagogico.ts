@@ -40,19 +40,23 @@ export interface ResultadoConcrecionEstricta {
 }
 
 /**
- * Extrae y normaliza el monto desde una cadena, soportando sufijo k/K (miles):
- * - "5k" o "5K" -> 5000 (monto: 5000, montoTexto: "5000")
- * - "5.5k" o "5,5K" -> 5500 (monto: 5500, montoTexto: "5500")
- * - "10.000" -> 10000 (monto: 10000, montoTexto: "10000")
- * - "100" -> 100 (monto: 100, montoTexto: "100")
+ * Extrae y normaliza el monto desde una cadena:
+ * - Soporta montos con puntos de miles (ej. "20.000" -> 20000, "1.500" -> 1500)
+ * - Soporta decimales con coma (ej. "20.000,50" -> 20000.5, "10,5" -> 10.5)
+ * - Elimina ceros flotantes de formato ("00"): "20,00" -> 20, "20.00" -> 20, "20.000,00" -> 20000
+ * - Soporta sufijo k/K (miles): "5k" -> 5000, "5.5k" -> 5500
  */
 export function extraerMontoNumerico(rawInput: string): { monto: number; montoTexto: string; esKilo: boolean } {
   if (!rawInput) return { monto: 0, montoTexto: "0", esKilo: false };
-  const limpio = rawInput.trim().replace(/^[\$Bs\.\s]+/i, "").replace(/\.(?=\d{3})/g, "").trim();
-  if (!limpio) return { monto: 0, montoTexto: "0", esKilo: false };
+  let str = String(rawInput).trim();
+  // Eliminar prefijos de moneda o espacios
+  str = str.replace(/^[\$Bs\.\s]+/i, "").trim();
+  // Eliminar ceros flotantes de formato final (,00 o .00 o 00 final)
+  str = str.replace(/[,.]00(?!\d)/g, "").replace(/\s+00$/g, "").trim();
+  if (!str) return { monto: 0, montoTexto: "0", esKilo: false };
 
-  // 1. Detectar explícitamente sufijo k / K (enteros o decimales: 5k, 5.5k, 5,5k, 10k, 20k)
-  const matchK = /^(\d+(?:[\.,]\d+)?)\s*k$/i.exec(limpio);
+  // 1. Detectar explícitamente sufijo k / K (ej. 5k, 5.5k, 5,5k, 10k, 20k)
+  const matchK = /^(\d+(?:[\.,]\d+)?)\s*k$/i.exec(str);
   if (matchK) {
     const base = parseFloat(matchK[1].replace(",", "."));
     if (Number.isFinite(base) && base > 0) {
@@ -65,18 +69,56 @@ export function extraerMontoNumerico(rawInput: string): { monto: number; montoTe
     }
   }
 
-  // 2. Usar parsearMontoConK para formatos de miles con puntos y comas
-  const parsed = parsearMontoConK(limpio);
-  if (parsed && parsed.monto > 0) {
-    return {
-      monto: parsed.monto,
-      montoTexto: String(parsed.monto),
-      esKilo: parsed.esKilo,
-    };
+  // 2. Formato con puntos de miles y coma decimal (ej. "20.000,50" o "10.424,50")
+  if (str.includes(".") && str.includes(",")) {
+    const lastComma = str.lastIndexOf(",");
+    const lastDot = str.lastIndexOf(".");
+    let numStr = str;
+    if (lastComma > lastDot) {
+      numStr = str.replace(/\./g, "").replace(",", ".");
+    } else {
+      numStr = str.replace(/,/g, "");
+    }
+    const monto = parseFloat(numStr);
+    if (Number.isFinite(monto) && monto > 0) {
+      const rounded = Math.round(monto * 100) / 100;
+      return {
+        monto: rounded,
+        montoTexto: String(rounded),
+        esKilo: false,
+      };
+    }
   }
 
-  // 3. Fallback numérico estándar
-  const f = parseFloat(limpio.replace(",", "."));
+  // 3. Puntos de miles solos (ej: "5.000", "10.000", "20.000", "50.000", "100.000", "1.500")
+  if (/^\d{1,3}(?:\.\d{3})+$/.test(str) || /^\d+\.\d{3}$/.test(str)) {
+    const monto = parseFloat(str.replace(/\./g, ""));
+    if (Number.isFinite(monto) && monto > 0) {
+      const rounded = Math.round(monto * 100) / 100;
+      return {
+        monto: rounded,
+        montoTexto: String(rounded),
+        esKilo: false,
+      };
+    }
+  }
+
+  // 4. Coma decimal sola (ej: "43,50", "100,5")
+  if (/^\d+,\d+$/.test(str)) {
+    const monto = parseFloat(str.replace(",", "."));
+    if (Number.isFinite(monto) && monto > 0) {
+      const rounded = Math.round(monto * 100) / 100;
+      return {
+        monto: rounded,
+        montoTexto: String(rounded),
+        esKilo: false,
+      };
+    }
+  }
+
+  // 5. Número estándar
+  const limpioSinPuntos = str.replace(/\.(?=\d{3})/g, "");
+  const f = parseFloat(limpioSinPuntos);
   const m = Number.isFinite(f) && f > 0 ? Math.round(f * 100) / 100 : 0;
   return {
     monto: m,
@@ -87,14 +129,30 @@ export function extraerMontoNumerico(rawInput: string): { monto: number; montoTe
 
 /**
  * Normaliza cualquier variante de proporción o parada a premio al estándar interno 10/X:
- * Formatos: 10ª5, 10@5, A5, @5, 10/5, a5, 10a5, 10-5 -> 10/5
- * (Cuando se omite el 10 inicial como en A5 o @5, asume base 10 automáticamente: ^(?:10)?[aª@\/](\d+)$ -> 10/$1)
+ * Formatos: 10@7, 10a7, 10/7, 10A7, 10 a 7, 10 A 7, 10 @ 7, 10 / 7, 10-7, @7, a7, A7
  */
 export function normalizarParadaPremio(texto: string): string {
   if (!texto) return texto;
   return texto
-    .replace(/(?:^|(?<=[\s,(\[]))(?:10)?[aª@\/](\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/gi, "10/$1")
-    .replace(/(?:^|(?<=[\s,(\[]))10-(\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/gi, "10/$1");
+    .replace(/(?:^|(?<=[\s,(\[]))10\s*[@aªA\/\-]\s*(\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/g, "10/$1")
+    .replace(/(?:^|(?<=[\s,(\[]))[@aªA\/]\s*(\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/g, "10/$1");
+}
+
+/**
+ * Valida que ninguna proporción supere la paridad máxima de 10 a 10 (PP / parejo).
+ */
+export function validarParidadProporcion(proporcion?: string): { valido: boolean; motivo?: string } {
+  if (!proporcion || proporcion === "1x1" || proporcion === "PP") return { valido: true };
+  const m = /^10\/(\d+(?:\.\d+)?)$/i.exec(proporcion.trim().replace(",", "."));
+  if (!m) return { valido: true };
+  const x = parseFloat(m[1]);
+  if (x > 10) {
+    return {
+      valido: false,
+      motivo: `🚫 La proporción ${proporcion} supera la paridad máxima permitida de 10 a 10 (PP).`,
+    };
+  }
+  return { valido: true };
 }
 
 /**
@@ -197,8 +255,9 @@ export function evaluarConcrecionEstricta(
   const prefijo = prefijoMonedaGrupo(moneda);
 
   if (excedioSaldo) {
-    msgPublicoBot = `Esta jugada solo por ${prefijo}${formatearMontoRegional(topeSaldo)}`;
-    msgPrivadoBot = `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
+    const saldoFmt = formatearMontoRegional(topeSaldo);
+    msgPublicoBot = `⚠️ *${nombreAceptante || 'Jugador'}* dispone de $${saldoFmt} para jugar`;
+    msgPrivadoBot = `⚠️ Hola ${nombreAceptante || 'Jugador'}, tu jugada se procesó por $${formatearMontoRegional(montoEfectivo)} ya que es lo que dispones para realizarla. Tu saldo actual es $${saldoFmt}.\n\nTe invitamos a jugar hasta el tope exacto de tu saldo disponible ($${saldoFmt}).`;
   }
 
   return {
@@ -349,9 +408,34 @@ export function analizarYEstandarizarJugada(
         };
       }
 
+      // Validar paridad máxima 10 a 10 (PP)
+      const valParidadMatch = validarParidadProporcion(propMatch);
+      if (!valParidadMatch.valido) {
+        return {
+          esIntencionDeJugada: true,
+          valido: false,
+          accionProponente,
+          esMatch: true,
+          modalidad: 'MATCH',
+          caballosBandoA: bandoA,
+          caballosBandoB: bandoB,
+          ejemplarTexto: `${bandoA.join('-')} x ${bandoB.join('-')}`,
+          monto,
+          montoTexto,
+          proporcion: propMatch,
+          jugadaEstandarizada: '',
+          confianza: 1.0,
+          requiereOperador: false,
+          mensajePedagogicoPrivado: valParidadMatch.motivo,
+          msgPrivadoBot: valParidadMatch.motivo,
+        };
+      }
+
       // Verificar saldo disponible según riesgo real (10/X)
       const riesgoMatch = calcularRiesgoReal(monto, propMatch, accionProponente);
       const excedioSaldoMatch = riesgoMatch > saldoDisponible;
+      const saldoFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
+
       if (saldoDisponible <= 0) {
         return {
           esIntencionDeJugada: true,
@@ -370,24 +454,24 @@ export function analizarYEstandarizarJugada(
           requiereOperador: false,
           excedioSaldo: true,
           montoDisponibleValido: 0,
-          mensajePedagogicoPrivado: `🔒 Saldo insuficiente (${prefijo}${formatearMontoRegional(saldoDisponible)}). Debes recargar saldo antes de publicar jugadas.`,
-          msgPublicoBot: `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${formatearMontoRegional(Math.max(0, saldoDisponible))}`,
-          msgPrivadoBot: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
+          mensajePedagogicoPrivado: `🔒 Saldo insuficiente ($${saldoFmt}). Debes recargar saldo antes de publicar jugadas.`,
+          msgPublicoBot: `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $0,00 para jugar`,
+          msgPrivadoBot: `⚠️ Hola ${nombreUsuario || 'Jugador'}, no dispones de saldo para realizar jugadas. Tu saldo disponible es $0,00. Por favor realiza una recarga para continuar jugando.`,
         };
       }
-
-      const jugadaEstandarizada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')}${propMatch !== '1x1' ? ` ${propMatch}` : ''} ${montoTexto}`;
-      const msgPublicoBotMatch = excedioSaldoMatch
-        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${formatearMontoRegional(Math.max(0, saldoDisponible))}`
-        : undefined;
-      const msgPrivadoBotMatch = excedioSaldoMatch
-        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`
-        : undefined;
 
       const factorRiesgo = riesgoMatch > 0 ? monto / riesgoMatch : 1;
       const montoRecortado = excedioSaldoMatch
         ? Math.round(saldoDisponible * factorRiesgo * 100) / 100
         : monto;
+
+      const jugadaEstandarizada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')}${propMatch !== '1x1' ? ` ${propMatch}` : ''} ${montoTexto}`;
+      const msgPublicoBotMatch = excedioSaldoMatch
+        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${saldoFmt} para jugar`
+        : undefined;
+      const msgPrivadoBotMatch = excedioSaldoMatch
+        ? `⚠️ Hola ${nombreUsuario || 'Jugador'}, tu jugada se procesó por $${formatearMontoRegional(montoRecortado)} ya que es lo que dispones para realizarla. Tu saldo actual es $${saldoFmt}.\n\nTe invitamos a jugar hasta el tope exacto de tu saldo disponible ($${saldoFmt}).`
+        : undefined;
 
       return {
         esIntencionDeJugada: true,
@@ -460,7 +544,10 @@ export function analizarYEstandarizarJugada(
       };
     }
 
-    const rawEjemplar = (matchPuesto[3] || "").trim();
+    const rawEjemplar = (matchPuesto[3] || "")
+      .replace(/\b(de\s+la|del|de|la|el|al?|con|por|#)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
     const { monto, montoTexto } = extraerMontoNumerico(matchPuesto[4]);
 
     if (rawEjemplar && monto > 0) {
@@ -473,7 +560,6 @@ export function analizarYEstandarizarJugada(
       // Formatear texto limpio del ejemplar
       let ejemplarTexto = rawEjemplar.toUpperCase();
       if (numMatch && !/^\d+$/.test(rawEjemplar)) {
-        // Ejemplo: "6 AMOR PROHIBIDO" -> "#6 AMOR PROHIBIDO"
         ejemplarTexto = `#${rawEjemplar.toUpperCase()}`;
       }
 
@@ -501,8 +587,33 @@ export function analizarYEstandarizarJugada(
       }
 
       const propFinal = rawMod.startsWith('10/') ? rawMod.replace(',', '.') : proporcionDetectada;
+
+      // Validar paridad máxima 10 a 10 (PP)
+      const valParidadPuesto = validarParidadProporcion(propFinal);
+      if (!valParidadPuesto.valido) {
+        return {
+          esIntencionDeJugada: true,
+          valido: false,
+          accionProponente,
+          esMatch: false,
+          modalidad: modLimpia,
+          caballosBandoA,
+          caballosBandoB: [],
+          ejemplarTexto,
+          monto,
+          montoTexto,
+          jugadaEstandarizada: '',
+          confianza: 1.0,
+          requiereOperador: false,
+          mensajePedagogicoPrivado: valParidadPuesto.motivo,
+          msgPrivadoBot: valParidadPuesto.motivo,
+        };
+      }
+
       const riesgoPuesto = calcularRiesgoReal(monto, propFinal, accionProponente);
       const excedioSaldoPuesto = riesgoPuesto > saldoDisponible;
+      const saldoFmtPuesto = formatearMontoRegional(Math.max(0, saldoDisponible));
+
       if (saldoDisponible <= 0) {
         return {
           esIntencionDeJugada: true,
@@ -520,24 +631,24 @@ export function analizarYEstandarizarJugada(
           requiereOperador: false,
           excedioSaldo: true,
           montoDisponibleValido: 0,
-          mensajePedagogicoPrivado: `🔒 Saldo insuficiente (${prefijo}${formatearMontoRegional(saldoDisponible)}). Debes recargar saldo antes de publicar jugadas.`,
-          msgPublicoBot: `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${formatearMontoRegional(Math.max(0, saldoDisponible))}`,
-          msgPrivadoBot: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
+          mensajePedagogicoPrivado: `🔒 Saldo insuficiente ($${saldoFmtPuesto}). Debes recargar saldo antes de publicar jugadas.`,
+          msgPublicoBot: `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $0,00 para jugar`,
+          msgPrivadoBot: `⚠️ Hola ${nombreUsuario || 'Jugador'}, no dispones de saldo para realizar jugadas. Tu saldo disponible es $0,00. Por favor realiza una recarga para continuar jugando.`,
         };
       }
-
-      const jugadaEstandarizada = `${verboEstandar} ${modLimpia} ${ejemplarTexto} ${montoTexto}`;
-      const msgPublicoBotPuesto = excedioSaldoPuesto
-        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${formatearMontoRegional(Math.max(0, saldoDisponible))}`
-        : undefined;
-      const msgPrivadoBotPuesto = excedioSaldoPuesto
-        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`
-        : undefined;
 
       const factorRiesgo = riesgoPuesto > 0 ? monto / riesgoPuesto : 1;
       const montoRecortado = excedioSaldoPuesto
         ? Math.round(saldoDisponible * factorRiesgo * 100) / 100
         : monto;
+
+      const jugadaEstandarizada = `${verboEstandar} ${modLimpia} ${ejemplarTexto} ${montoTexto}`;
+      const msgPublicoBotPuesto = excedioSaldoPuesto
+        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${saldoFmtPuesto} para jugar`
+        : undefined;
+      const msgPrivadoBotPuesto = excedioSaldoPuesto
+        ? `⚠️ Hola ${nombreUsuario || 'Jugador'}, tu jugada se procesó por $${formatearMontoRegional(montoRecortado)} ya que es lo que dispones para realizarla. Tu saldo actual es $${saldoFmtPuesto}.\n\nTe invitamos a jugar hasta el tope exacto de tu saldo disponible ($${saldoFmtPuesto}).`
+        : undefined;
 
       return {
         esIntencionDeJugada: true,
