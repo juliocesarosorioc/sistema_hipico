@@ -608,37 +608,299 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5. Proxy fallback seguro a http://127.0.0.1:3005
-    try {
-      const endpoint = body.endpoint ? String(body.endpoint) : "/status";
-      const method = body.method ? String(body.method) : "POST";
-      const resBot = await fetch(
-        `${BOT_DAEMON_URL}${endpoint.startsWith("/") ? endpoint : "/" + endpoint}`,
-        {
+    // 4.4 Abrir carrera y anunciar en el grupo
+    if (accion === "abrir-carrera" || accion === "abrir_carrera") {
+      const { salaId, hipodromo, carrera } = body;
+      if (!salaId) {
+        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+      }
+
+      const hipoLimpio = String(hipodromo || "LA RINCONADA").toUpperCase().trim();
+      const numCarrera = parseInt(carrera, 10) || 1;
+      const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
+
+      const { data: salaActualizada, error } = await supabaseAdmin
+        .from("salas_juego")
+        .update({
+          hipodromo_activo: hipoLimpio,
+          numero_carrera_activa: numCarrera,
+          estado_carrera: "abierta",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", salaId)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      }
+
+      const textoApertura = `🏆🏇${hipoLimpio}, ${ord} Carrera🏆🏇\nCARRERA ABIERTA Y EN JUEGO\nMucha suerte a todos.`;
+
+      let enviadoWhatsApp = false;
+      if (salaActualizada?.whatsapp_group_jid) {
+        try {
+          const rBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            },
+            body: JSON.stringify({
+              groupJid: salaActualizada.whatsapp_group_jid,
+              texto: textoApertura,
+            }),
+          });
+          enviadoWhatsApp = rBot.ok;
+        } catch {
+          enviadoWhatsApp = false;
+        }
+      }
+
+      return NextResponse.json({
+        ok: true,
+        sala: salaActualizada,
+        textoApertura,
+        enviadoWhatsApp,
+      });
+    }
+
+    // 4.5 Cerrar carrera y anunciar en el grupo
+    if (accion === "cerrar-carrera" || accion === "cerrar_carrera") {
+      const { salaId } = body;
+      if (!salaId) {
+        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+      }
+
+      const { data: salaPrevia } = await supabaseAdmin
+        .from("salas_juego")
+        .select("*")
+        .eq("id", salaId)
+        .maybeSingle();
+
+      const { data: salaActualizada, error } = await supabaseAdmin
+        .from("salas_juego")
+        .update({
+          estado_carrera: "cerrada",
+          carrera_recien_cerrada_id: salaPrevia?.carrera_activa_id || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", salaId)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      }
+
+      const hipo = String(salaActualizada?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
+      const numCarrera = salaActualizada?.numero_carrera_activa || 1;
+      const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
+      const textoCierre = `${hipo}, ${ord} Carrera\nCARRERA CERRADA\n\nPUEDE ESCRIBIR LA PIZARRA: LLEGADA: 1RO.2DO.3RO.4TO.5TO`;
+
+      let enviadoWhatsApp = false;
+      if (salaActualizada?.whatsapp_group_jid) {
+        try {
+          const rBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            },
+            body: JSON.stringify({
+              groupJid: salaActualizada.whatsapp_group_jid,
+              texto: textoCierre,
+            }),
+          });
+          enviadoWhatsApp = rBot.ok;
+        } catch {
+          enviadoWhatsApp = false;
+        }
+      }
+
+      return NextResponse.json({
+        ok: true,
+        sala: salaActualizada,
+        textoCierre,
+        enviadoWhatsApp,
+      });
+    }
+
+    // 4.6 Publicar plano oficial de jugadas en el grupo
+    if (accion === "publicar-plano" || accion === "publicar_plano") {
+      const { salaId, groupJid } = body;
+      if (!salaId) {
+        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+      }
+
+      try {
+        const resBot = await fetch(`${BOT_DAEMON_URL}/publicar-plano`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({ salaId, groupJid }),
+        });
+        const json = await resBot.json().catch(() => null);
+        if (json && json.ok) {
+          return NextResponse.json({ ...json, enviadoWhatsApp: true });
+        }
+      } catch {}
+
+      return NextResponse.json({
+        ok: false,
+        error: "Daemon Baileys en puerto 3005 no pudo generar y publicar el plano",
+      });
+    }
+
+    // 4.7 Publicar sentencia y liquidar pizarra
+    if (accion === "publicar-sentencia" || accion === "publicar_sentencia") {
+      const { salaId, pizarra, groupJid } = body;
+      if (!salaId || !pizarra) {
+        return NextResponse.json({ ok: false, error: "salaId y pizarra son requeridos" }, { status: 400 });
+      }
+
+      try {
+        const resBot = await fetch(`${BOT_DAEMON_URL}/publicar-sentencia`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({ salaId, pizarra, groupJid }),
+        });
+        const json = await resBot.json().catch(() => null);
+        if (json && json.ok) {
+          return NextResponse.json({ ...json, enviadoWhatsApp: true });
+        }
+        return NextResponse.json(json || { ok: false, error: "Error al publicar sentencia" });
+      } catch (err: any) {
+        return NextResponse.json({
+          ok: false,
+          error: err?.message || "Daemon Baileys en puerto 3005 no respondió",
+        });
+      }
+    }
+
+    // 4.8 Ping de latencia y estado a un grupo
+    if (accion === "ping-grupo" || accion === "ping_grupo") {
+      const groupJid = body.groupJid || body.whatsapp_group_jid;
+      if (!groupJid) {
+        return NextResponse.json({ ok: false, error: "groupJid es requerido" }, { status: 400 });
+      }
+      try {
+        const rBot = await fetch(
+          `${BOT_DAEMON_URL}/ping-grupo?groupJid=${encodeURIComponent(groupJid)}`,
+          {
+            method: "GET",
+            headers: { "x-internal-bot-secret": INTERNAL_BOT_SECRET },
+            signal: AbortSignal.timeout(6000),
+          }
+        );
+        const json = await rBot.json().catch(() => ({}));
+        return NextResponse.json(json, { status: rBot.status || 200 });
+      } catch (errPing: any) {
+        return NextResponse.json({
+          ok: false,
+          conectado: false,
+          latenciaMs: 0,
+          error: errPing?.message || "Daemon offline o no respondió",
+        });
+      }
+    }
+
+    // 4.9 Acciones directas de sesión Baileys: status, connect, disconnect
+    if (accion === "status") {
+      try {
+        const resBot = await fetch(`${BOT_DAEMON_URL}/status`, {
+          method: "GET",
+          headers: { "x-internal-bot-secret": INTERNAL_BOT_SECRET },
+        });
+        const json = await resBot.json().catch(() => ({}));
+        return NextResponse.json(json, { status: 200 });
+      } catch {
+        return NextResponse.json({ ok: false, conectado: false, grupos: [], motivo: "Daemon Baileys apagado" }, { status: 200 });
+      }
+    }
+
+    if (accion === "connect") {
+      try {
+        const resBot = await fetch(`${BOT_DAEMON_URL}/connect`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify(body),
+        });
+        const json = await resBot.json().catch(() => ({}));
+        return NextResponse.json(json, { status: 200 });
+      } catch {
+        return NextResponse.json({ ok: false, motivo: "Daemon Baileys apagado" }, { status: 200 });
+      }
+    }
+
+    if (accion === "disconnect") {
+      try {
+        const resBot = await fetch(`${BOT_DAEMON_URL}/disconnect`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify(body),
+        });
+        const json = await resBot.json().catch(() => ({}));
+        return NextResponse.json(json, { status: 200 });
+      } catch {
+        return NextResponse.json({ ok: false, motivo: "Daemon Baileys apagado" }, { status: 200 });
+      }
+    }
+
+    // 5. Proxy fallback seguro a http://127.0.0.1:3005 solo si se especifica endpoint explícito
+    if (body.endpoint) {
+      try {
+        const endpoint = String(body.endpoint).trim();
+        const cleanEndpoint = endpoint.startsWith("/") ? endpoint : "/" + endpoint;
+        const method = (
+          body.method
+            ? String(body.method)
+            : cleanEndpoint.includes("/status")
+            ? "GET"
+            : "POST"
+        ).toUpperCase();
+
+        const resBot = await fetch(`${BOT_DAEMON_URL}${cleanEndpoint}`, {
           method,
           headers: {
             "Content-Type": "application/json",
             "x-internal-bot-secret": INTERNAL_BOT_SECRET,
           },
           body: method !== "GET" ? JSON.stringify(body) : undefined,
-        }
-      );
-      const json = await resBot.json().catch(() => null);
-      return NextResponse.json(
-        json || { ok: false, motivo: "Respuesta sin contenido" },
-        { status: 200 }
-      );
-    } catch {
-      return NextResponse.json(
-        {
-          ok: false,
-          conectado: false,
-          grupos: [],
-          motivo: "Bot Baileys en puerto 3005 apagado o reiniciando",
-        },
-        { status: 200 }
-      );
+        });
+        const json = await resBot.json().catch(() => null);
+        return NextResponse.json(
+          json || { ok: false, motivo: "Respuesta sin contenido del demonio Baileys" },
+          { status: 200 }
+        );
+      } catch {
+        return NextResponse.json(
+          {
+            ok: false,
+            conectado: false,
+            grupos: [],
+            motivo: "Bot Baileys en puerto 3005 apagado o reiniciando",
+          },
+          { status: 200 }
+        );
+      }
     }
+
+    return NextResponse.json(
+      { ok: false, error: `Acción o endpoint no reconocido: ${accion || "(ninguno)"}` },
+      { status: 400 }
+    );
   } catch {
     return NextResponse.json(
       {

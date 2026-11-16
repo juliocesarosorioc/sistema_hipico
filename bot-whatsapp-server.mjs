@@ -2184,16 +2184,20 @@ const server = http.createServer(async (req, res) => {
   }
 
   const url = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
-  const pathname = url.pathname;
+  const pathname = (url.pathname || "/").replace(/\/+$/, "") || "/";
+  console.log(`[Bot HTTP] ${req.method} ${pathname}`);
 
-  // Blindaje SecOps Parche 1: Secreto interno obligatorio para todas las acciones excepto status/connect/disconnect
+  // Blindaje SecOps Parche 1: Secreto interno obligatorio para todas las acciones excepto status/connect/disconnect/health/root
   const esRutaPublicaLocal =
+    pathname === "/" ||
     pathname === "/status" ||
     pathname === "/api/whatsapp/status" ||
     pathname === "/connect" ||
     pathname === "/api/whatsapp/connect" ||
     pathname === "/disconnect" ||
-    pathname === "/api/whatsapp/disconnect";
+    pathname === "/api/whatsapp/disconnect" ||
+    pathname === "/health" ||
+    pathname === "/api/health";
 
   if (!esRutaPublicaLocal) {
     const authHeader = req.headers["x-internal-bot-secret"];
@@ -2206,10 +2210,24 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    // 1. GET /status y GET /api/whatsapp/status (Soporta ?session_id= y ?force=true)
-    if (req.method === "GET" && (pathname === "/status" || pathname === "/api/whatsapp/status")) {
-      const sessionId = url.searchParams.get("session_id") || "";
-      const forzarRefresco = url.searchParams.get("force") === "true";
+    // 0. GET/POST / y /health (Sonda de salud)
+    if (pathname === "/" || pathname === "/health" || pathname === "/api/health") {
+      return responderJson(res, 200, {
+        ok: true,
+        servicio: "bot-whatsapp",
+        version: "1.0.0",
+        status: conectado ? "connected" : qrRaw || qrDataUrl ? "qr" : "ready",
+        conectado,
+        numero: numeroVinculado,
+        timestamp: Date.now(),
+      });
+    }
+
+    // 1. GET/POST /status y /api/whatsapp/status (Soporta ?session_id= y ?force=true o por body)
+    if ((req.method === "GET" || req.method === "POST") && (pathname === "/status" || pathname === "/api/whatsapp/status")) {
+      const body = req.method === "POST" ? await leerBodyJson(req).catch(() => ({})) : {};
+      const sessionId = url.searchParams.get("session_id") || body?.session_id || "";
+      const forzarRefresco = url.searchParams.get("force") === "true" || body?.force === true;
       if (conectado && (gruposCache.length === 0 || forzarRefresco)) {
         await refrescarGruposParticipantes();
       }
@@ -2235,10 +2253,10 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 1.c POST /connect y POST /api/whatsapp/connect (Inicia conexión Baileys)
-    if (req.method === "POST" && (pathname === "/connect" || pathname === "/api/whatsapp/connect")) {
-      const body = await leerBodyJson(req);
-      const sessionId = body?.session_id || "";
+    // 1.c GET/POST /connect y /api/whatsapp/connect (Inicia conexión Baileys)
+    if ((req.method === "GET" || req.method === "POST") && (pathname === "/connect" || pathname === "/api/whatsapp/connect")) {
+      const body = req.method === "POST" ? await leerBodyJson(req).catch(() => ({})) : {};
+      const sessionId = body?.session_id || url.searchParams.get("session_id") || "";
 
       if (!conectado && !sock && !reconectando) {
         iniciarConexionBaileys();
@@ -2262,9 +2280,10 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 1.b GET /ping-grupo (Medición de latencia y verificación de conexión con el grupo en vivo)
-    if (req.method === "GET" && pathname === "/ping-grupo") {
-      const groupJid = url.searchParams.get("groupJid");
+    // 1.b GET/POST /ping-grupo (Medición de latencia y verificación de conexión con el grupo en vivo)
+    if ((req.method === "GET" || req.method === "POST") && pathname === "/ping-grupo") {
+      const body = req.method === "POST" ? await leerBodyJson(req).catch(() => ({})) : {};
+      const groupJid = url.searchParams.get("groupJid") || body?.groupJid || body?.whatsapp_group_jid || null;
       if (!groupJid) {
         return responderJson(res, 400, { ok: false, error: "groupJid es requerido" });
       }
@@ -2962,8 +2981,8 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 7. POST /disconnect y POST /api/whatsapp/disconnect (Cerrar sesión WhatsApp y regenerar QR)
-    if (req.method === "POST" && (pathname === "/disconnect" || pathname === "/api/whatsapp/disconnect")) {
+    // 7. GET/POST /disconnect y /api/whatsapp/disconnect (Cerrar sesión WhatsApp y regenerar QR)
+    if ((req.method === "POST" || req.method === "GET") && (pathname === "/disconnect" || pathname === "/api/whatsapp/disconnect")) {
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
@@ -3077,7 +3096,13 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    return responderJson(res, 404, { ok: false, error: "Ruta no encontrada" });
+    console.warn(`[Bot HTTP 404] Ruta no encontrada: ${req.method} ${pathname}`);
+    return responderJson(res, 404, {
+      ok: false,
+      error: "Ruta no encontrada",
+      metodo: req.method,
+      ruta: pathname,
+    });
   } catch (err) {
     return responderJson(res, 500, {
       ok: false,
