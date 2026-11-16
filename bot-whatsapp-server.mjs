@@ -237,6 +237,7 @@ let qrDataUrl = null;
 let numeroVinculado = null;
 let gruposCache = [];
 let reconectando = false;
+let reconnectTimer = null;
 
 // Caché de mensajes recientes por ID para poder construir el objeto `quoted` en Baileys
 const mensajesRecientesCache = new Map();
@@ -584,16 +585,32 @@ async function convertirQrADataUrl(qrTexto) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(qrTexto)}`;
 }
 
-async function refrescarGruposParticipantes() {
+let ultimoRefrescoGrupos = 0;
+async function refrescarGruposParticipantes(forzar = false) {
   if (!sock || !conectado) return gruposCache;
+  const ahora = Date.now();
+  if (!forzar && ahora - ultimoRefrescoGrupos < 60000 && gruposCache.length > 0) {
+    return gruposCache;
+  }
   try {
     const participando = await sock.groupFetchAllParticipating();
     gruposCache = Object.values(participando || {}).map((g) => ({
       jid: g.id,
+      id: g.id,
       nombre: g.subject || g.id,
+      subject: g.subject || g.id,
+      participantes: g.participants?.length || 0,
+      totalParticipantes: g.participants?.length || 0,
+      participantesLista: (g.participants || []).map((p) => ({
+        jid: p.id,
+        esAdmin: Boolean(p.admin || p.isAdmin || p.isSuperAdmin),
+      })),
+      icono: null,
     }));
+    ultimoRefrescoGrupos = ahora;
+    console.log(`[Bot WhatsApp] 📋 Grupos participantes refrescados (${gruposCache.length})`);
   } catch (err) {
-    console.error("[Bot WhatsApp] Error al listar grupos:", err?.message || err);
+    console.warn("[Bot WhatsApp] Error al listar grupos:", err?.message || err);
   }
   return gruposCache;
 }
@@ -1160,8 +1177,12 @@ async function manejarMensajeEntrante(msg) {
     if (!msg?.key) return;
 
     const whatsappMsgId = msg.key.id || null;
-    if (msg.key.fromMe) return;
-    const esFromMe = false;
+    const esFromMe = Boolean(msg.key.fromMe);
+
+    // Evitar procesar mensajes que el propio bot envió automáticamente vía sock.sendMessage
+    if (whatsappMsgId && mensajesEnviadosPorBot.has(whatsappMsgId)) {
+      return;
+    }
 
     // Cierre VULN-15: Descartar mensajes duplicados / reintentos en < 1ms
     if (whatsappMsgId && esMensajeDuplicado(whatsappMsgId)) {
@@ -1185,14 +1206,15 @@ async function manejarMensajeEntrante(msg) {
     if (!textoLimpio) return;
 
     // Cierre VULN-14: Soporte para JIDs @lid, participantAlt y cuenta propia del teléfono
+    const myPhone = sock?.user?.id ? normalizarTelefono(sock.user.id) : "";
     const participantJid =
       msg.key.participant ||
       msg.participant ||
-      (esFromMe ? (sock?.user?.id ? `${normalizarTelefono(sock.user.id)}@s.whatsapp.net` : "") : "");
+      (esFromMe ? (myPhone ? `${myPhone}@s.whatsapp.net` : "") : "");
     const participantAlt = msg.key.participantAlt || msg.participantAlt || "";
     const senderNombre = sanitizarTexto(msg.pushName) || (esFromMe ? "Operador (Telefono)" : "Usuario");
 
-    const senderJid = participantJid || participantAlt || "";
+    const senderJid = participantJid || participantAlt || (esFromMe ? (myPhone ? `${myPhone}@s.whatsapp.net` : "") : "");
 
     // Rate Limiter Anti-Spam: silenciar usuarios que exceden el límite de mensajes
     if (senderJid && mutedJids.has(senderJid)) {
@@ -1523,8 +1545,23 @@ async function manejarMensajeEntrante(msg) {
 // ============================================================================
 
 async function iniciarConexionBaileys() {
+  if (conectado && sock) return;
   if (reconectando) return;
   reconectando = true;
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  // Si existía un socket anterior, asegurar limpieza total de listeners y cierre del socket
+  if (sock) {
+    try {
+      sock.ev?.removeAllListeners();
+      sock.end?.(undefined);
+    } catch {}
+    sock = null;
+  }
 
   try {
     // Cierre VULN-16: Permisos restringidos 700 para proteger las llaves de sesión
@@ -1590,11 +1627,16 @@ async function iniciarConexionBaileys() {
 
       if (connection === "open") {
         conectado = true;
+        reconectando = false;
         qrRaw = null;
         qrDataUrl = null;
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
         numeroVinculado = normalizarTelefono(sock?.user?.id) || sock?.user?.id || "Conectado";
         console.log(`[Bot WhatsApp] 🟢 Conectado exitosamente como +${numeroVinculado}`);
-        await refrescarGruposParticipantes();
+        await refrescarGruposParticipantes(true);
       }
 
       if (connection === "close") {
@@ -1607,7 +1649,14 @@ async function iniciarConexionBaileys() {
 
         console.warn(`[Bot WhatsApp] Conexión cerrada (código ${statusCode}). Logout: ${fueLogout}`);
 
+        try {
+          sock?.ev?.removeAllListeners();
+          sock?.end?.(undefined);
+        } catch {}
+        sock = null;
+
         if (fueLogout) {
+          reconectando = false;
           numeroVinculado = null;
           qrRaw = null;
           qrDataUrl = null;
@@ -1616,12 +1665,21 @@ async function iniciarConexionBaileys() {
           } catch {
             // Ignorar
           }
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(() => {
+            reconectando = false;
+            iniciarConexionBaileys();
+          }, 2000);
+          return;
         }
 
-        setTimeout(() => {
+        // Si statusCode === 440 (connectionReplaced), esperar 15s para no competir en loop
+        const delayMs = statusCode === 440 ? 15000 : 4000;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
           reconectando = false;
           iniciarConexionBaileys();
-        }, 3500);
+        }, delayMs);
       }
     });
 
@@ -1636,12 +1694,11 @@ async function iniciarConexionBaileys() {
       "[Bot WhatsApp] Aviso al inicializar @whiskeysockets/baileys:",
       err?.message || err
     );
-    setTimeout(() => {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
       reconectando = false;
       iniciarConexionBaileys();
     }, 10000);
-  } finally {
-    reconectando = false;
   }
 }
 
@@ -2419,15 +2476,47 @@ const server = http.createServer(async (req, res) => {
       return responderJson(res, 200, resultado);
     }
 
+    // 6.b POST /desvincular-grupo y POST /desconectar-grupo
+    if (req.method === "POST" && (pathname === "/desvincular-grupo" || pathname === "/desconectar-grupo")) {
+      const body = await leerBodyJson(req);
+      const groupJid = body.groupJid || body.whatsapp_group_jid || body.whatsapp_group_id || null;
+      const salaId = body.salaId || body.sala_id || null;
+
+      salasCacheMap.clear();
+
+      if (groupJid) {
+        salasDesconectadas[groupJid] = {
+          desconectado_en: new Date().toISOString(),
+          sala_id: salaId || null,
+        };
+        persistirSalasDesconectadas();
+      }
+
+      console.log(`[Bot WhatsApp] 🔌 Grupo desvinculado en demonio: ${groupJid || "todos"} (sala ${salaId || "todas"})`);
+      return responderJson(res, 200, {
+        ok: true,
+        motivo: "Grupo desvinculado en demonio de WhatsApp",
+        groupJid,
+        salaId,
+      });
+    }
+
     // 7. POST /disconnect y POST /api/whatsapp/disconnect (Cerrar sesión WhatsApp y regenerar QR)
     if (req.method === "POST" && (pathname === "/disconnect" || pathname === "/api/whatsapp/disconnect")) {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      reconectando = false;
+
       try {
         if (sock) {
           try {
+            sock.ev?.removeAllListeners();
             await sock.logout();
           } catch {
             try {
-              sock.end(undefined);
+              sock.end?.(undefined);
             } catch {}
           }
         }
@@ -2452,9 +2541,10 @@ const server = http.createServer(async (req, res) => {
 
       setTimeout(() => {
         try {
+          reconectando = false;
           iniciarConexionBaileys();
         } catch {}
-      }, 800);
+      }, 1200);
 
       return responderJson(res, 200, {
         ok: true,
@@ -2494,22 +2584,24 @@ const server = http.createServer(async (req, res) => {
 
       for (const jid of groupJids) {
         try {
+          let resSend = null;
           if (tipo === "IMAGEN" && bufferMedia) {
-            await sock.sendMessage(jid, {
+            resSend = await sock.sendMessage(jid, {
               image: bufferMedia,
               caption: texto || undefined,
               mimetype: mimetype || "image/jpeg",
             });
           } else if (tipo === "NOTA_VOZ" && bufferMedia) {
-            await sock.sendMessage(jid, {
+            resSend = await sock.sendMessage(jid, {
               audio: bufferMedia,
               mimetype: mimetype || "audio/ogg; codecs=opus",
               ptt: true,
             });
           } else {
             if (!texto) throw new Error("Texto requerido para difusión");
-            await sock.sendMessage(jid, { text: texto });
+            resSend = await sock.sendMessage(jid, { text: texto });
           }
+          if (resSend) registrarMensajeEnviadoPorBot(resSend);
           enviados.push(jid);
         } catch (errEnv) {
           fallidos.push({ jid, error: errEnv?.message || "Error enviando" });

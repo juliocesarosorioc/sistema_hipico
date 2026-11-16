@@ -324,10 +324,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (accion === "desvincular-grupo") {
+    if (accion === "desvincular-grupo" || accion === "desconectar_grupo_jid") {
       const { id, salaId, groupJid } = body;
       try {
-        const resBot = await fetch(`${BOT_DAEMON_URL}/desvincular-grupo`, {
+        await fetch(`${BOT_DAEMON_URL}/desvincular-grupo`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -335,11 +335,8 @@ export async function POST(req: NextRequest) {
           },
           body: JSON.stringify({ id, salaId, groupJid }),
           cache: "no-store",
-        });
-        const json = await resBot.json().catch(() => ({}));
-        if (resBot.ok && json?.ok) {
-          return NextResponse.json({ ok: true, motivo: json?.motivo || "Desvinculado" });
-        }
+          signal: AbortSignal.timeout(3000),
+        }).catch(() => {});
       } catch {
         // Fallback directo a Supabase si el daemon está offline
       }
@@ -349,8 +346,12 @@ export async function POST(req: NextRequest) {
         qDel = qDel.eq("id", id);
       } else if (salaId && groupJid) {
         qDel = qDel.eq("sala_id", salaId).eq("whatsapp_group_jid", groupJid);
+      } else if (groupJid) {
+        qDel = qDel.eq("whatsapp_group_jid", groupJid);
+      } else if (salaId) {
+        qDel = qDel.eq("sala_id", salaId);
       } else {
-        return NextResponse.json({ ok: false, motivo: "id o salaId/groupJid requeridos" }, { status: 400 });
+        return NextResponse.json({ ok: false, motivo: "id, salaId o groupJid son requeridos" }, { status: 400 });
       }
       const { error } = await qDel;
       if (error) {
@@ -373,6 +374,23 @@ export async function POST(req: NextRequest) {
             updated_at: new Date().toISOString(),
           })
           .eq("id", salaId);
+      } else if (groupJid) {
+        await supabaseAdmin
+          .from("salas_juego")
+          .update({
+            whatsapp_group_jid: null,
+            whatsapp_group_nombre: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("whatsapp_group_jid", groupJid);
+
+        await supabaseAdmin
+          .from("grupos")
+          .update({
+            whatsapp_group_id: null,
+            whatsapp_group_nombre: null,
+          })
+          .eq("whatsapp_group_id", groupJid);
       }
       return NextResponse.json({ ok: true, motivo: "Grupo desvinculado correctamente" });
     }

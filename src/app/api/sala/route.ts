@@ -62,15 +62,17 @@ async function publicarEnWhatsAppSala(salaId: string, texto: string, quotedMsgId
       if (vinculo?.whatsapp_group_jid) groupJid = vinculo.whatsapp_group_jid;
     }
     if (!groupJid && sala?.grupo_id) {
-      const { data: grp } = await supabaseAdmin
-        .from("grupos")
-        .select("whatsapp_group_id")
-        .eq("id", sala.grupo_id)
-        .maybeSingle();
-      if (grp?.whatsapp_group_id) groupJid = grp.whatsapp_group_id;
+      try {
+        const { data: grp } = await supabaseAdmin
+          .from("grupos_venta")
+          .select("whatsapp_group_id")
+          .eq("id", sala.grupo_id)
+          .maybeSingle();
+        if (grp?.whatsapp_group_id) groupJid = grp.whatsapp_group_id;
+      } catch {}
     }
 
-    await fetch(`${BOT_DAEMON_URL}/send-group-message`, {
+    const res = await fetch(`${BOT_DAEMON_URL}/send-group-message`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -84,10 +86,13 @@ async function publicarEnWhatsAppSala(salaId: string, texto: string, quotedMsgId
         message: texto,
         quotedMsgId: quotedMsgId || null,
       }),
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(5000),
     });
-  } catch {
-    // No bloqueante si el daemon está offline
+    if (!res.ok) {
+      console.warn(`[Sala API] Error al publicar en WhatsApp (${res.status}):`, await res.text().catch(() => ""));
+    }
+  } catch (err: any) {
+    console.warn("[Sala API] Aviso al publicar en WhatsApp:", err?.message || err);
   }
 }
 
@@ -111,6 +116,11 @@ async function emitirBroadcast(salaId: string, evento: string, payload: any) {
         messages: [
           {
             topic: `realtime:sala:${salaId}`,
+            event: evento,
+            payload,
+          },
+          {
+            topic: `realtime:sala-${salaId}`,
             event: evento,
             payload,
           },

@@ -150,7 +150,10 @@ async function emitirBroadcastSala(salaId: string, evento: string, payload: any)
         Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
-        messages: [{ topic: `realtime:sala:${salaId}`, event: evento, payload }],
+        messages: [
+          { topic: `realtime:sala:${salaId}`, event: evento, payload },
+          { topic: `realtime:sala-${salaId}`, event: evento, payload },
+        ],
       }),
     }).catch(() => {});
   } catch {
