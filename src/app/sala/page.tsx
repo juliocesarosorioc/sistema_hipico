@@ -57,7 +57,12 @@ function SalaContenido() {
   const grupoId = params.get("grupo") || params.get("grupoId") || grupoStore || undefined;
   const clienteId = params.get("clienteId") || params.get("cliente_id") || undefined;
   const portalToken = params.get("token") || params.get("portalToken") || params.get("portal_token") || undefined;
-  const staffToken = params.get("staffToken") || params.get("staff_token") || undefined;
+  const staffTokenParam = params.get("staffToken") || params.get("staff_token") || undefined;
+  const staffTokenStored =
+    typeof window !== "undefined"
+      ? sessionStorage.getItem("sala_staff_token") || localStorage.getItem("sala_staff_token") || undefined
+      : undefined;
+  const staffToken = staffTokenParam || staffTokenStored;
   const ui = (params.get("ui") || params.get("vista") || "").toLowerCase();
 
   // El tablero WhatsApp conectado comparte exactamente la misma sesión real

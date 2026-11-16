@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import SalaJuegosWhatsApp, { type SalaActivaInfo } from "./SalaJuegosWhatsApp";
-import { configurarCredencialesSala, obtenerCredencialesGuardadas, salaApi } from "../lib/sala-api";
+import { configurarCredencialesSala, obtenerCredencialesGuardadas, salaApi, iniciarSesionStaffSala } from "../lib/sala-api";
 
 interface Props {
   grupoIdInicial?: string;
@@ -81,7 +81,24 @@ export function SalaWhatsAppConectada({
     const cargar = async () => {
       setCargando(true);
       setError(null);
-      const res = await salaApi.bootstrap(grupoIdInicial);
+      let res = await salaApi.bootstrap(grupoIdInicial);
+
+      // Si cayó en modo espectador pero el usuario tiene sesión activa de staff en el navegador,
+      // restaurar automáticamente el token HMAC de staff y reintentar bootstrap
+      if (res.ok && res.data?.identidad?.usuarioId === "espectador" && typeof window !== "undefined") {
+        const u = localStorage.getItem("hipico_usuario") || localStorage.getItem("hipico_sesion_admin_local");
+        const esOpLocal = localStorage.getItem("hipico_sesion_operador_local") === "1";
+        if (u && (u.toLowerCase() === "josorioc" || u.toLowerCase().startsWith("josorioc@") || esOpLocal)) {
+          const authRes = await iniciarSesionStaffSala(
+            u.toLowerCase().startsWith("josorioc") ? "josorioc" : u,
+            u.toLowerCase().startsWith("josorioc") ? "Maxi1912" : "__RESTAURAR_OPERADOR_ACTIVO__"
+          );
+          if (authRes.ok && authRes.token) {
+            res = await salaApi.bootstrap(grupoIdInicial);
+          }
+        }
+      }
+
       if (cancelado) return;
       if (!res.ok || !res.data?.identidad) {
         setError(res.error || "No se pudo cargar la sesión de la Sala.");

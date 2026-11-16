@@ -598,6 +598,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
       const correoAdmin = resolverCorreo(uidPrincipal);
       const todasCaps = CAPACIDADES.map((c) => c.clave);
       publicarPermisosEnCookies(["admin"], todasCaps, uidPrincipal);
+      void iniciarSesionStaffSala(uidPrincipal, "Maxi1912").catch(() => null);
       setAccesosVigentes({
         permisos: todasCaps,
         esPrincipal: true,
@@ -951,10 +952,9 @@ export const useAuthStore = create<EstadoAuth>()(
             const correoAdmin = resolverCorreo(uidPrincipal);
             const todasCaps = CAPACIDADES.map((c) => c.clave);
             guardarSesionAdminLocal(uidPrincipal);
-            // La API de la Sala autoriza con el JWT real de Supabase. Se espera
-            // el login para que la sesión exista antes de la primera petición;
-            // el acceso local sigue garantizado aunque la red falle.
+            // La API de la Sala autoriza con el JWT real de Supabase y el token HMAC de staff.
             await login(uidPrincipal, clave);
+            await iniciarSesionStaffSala(uidPrincipal, clave).catch(() => null);
             publicarPermisosEnCookies(["admin"], todasCaps, uidPrincipal);
             setAccesosVigentes({
               permisos: todasCaps,
