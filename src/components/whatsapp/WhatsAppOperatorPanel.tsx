@@ -10,6 +10,9 @@ export interface WhatsAppOperatorPanelProps {
 
 type BotStatus = "connected" | "qr" | "disconnected" | "loading";
 
+const CONTABO_IP = "80.190.77.210";
+const BOT_SERVER_URL = process.env.NEXT_PUBLIC_BOT_URL || `http://${CONTABO_IP}:3005`;
+
 export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: WhatsAppOperatorPanelProps) {
   const [status, setStatus] = useState<BotStatus>("loading");
   const [qrValue, setQrValue] = useState<string | null>(null);
@@ -18,18 +21,18 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const isMounted = useRef<boolean>(true);
 
-  // Consulta de estado con polling cada 3 segundos
+  // Consulta de estado con polling cada 3 segundos a http://80.190.77.210:3005/api/whatsapp/status?session_id={grupo_id}
   const consultarEstado = useCallback(async () => {
     if (!grupo_id) return;
     try {
       let res: Response | null = null;
-      // Intento directo a http://localhost:3005/api/whatsapp/status?session_id={grupo_id}
+      // Intento directo a http://80.190.77.210:3005/api/whatsapp/status?session_id={grupo_id}
       try {
-        res = await fetch(`http://localhost:3005/api/whatsapp/status?session_id=${encodeURIComponent(grupo_id)}`, {
+        res = await fetch(`${BOT_SERVER_URL}/api/whatsapp/status?session_id=${encodeURIComponent(grupo_id)}`, {
           cache: "no-store",
         });
       } catch {
-        // Fallback al proxy Next.js /api/whatsapp/status si localhost:3005 no es alcanzable desde el cliente (ej. acceso remoto)
+        // Fallback al proxy Next.js /api/whatsapp/status
         res = await fetch(`/api/whatsapp/status?session_id=${encodeURIComponent(grupo_id)}`, {
           cache: "no-store",
         });
@@ -81,14 +84,14 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
     };
   }, [consultarEstado]);
 
-  // Conectar bot: POST a http://localhost:3005/api/whatsapp/connect con { session_id: grupo_id }
+  // Conectar bot: POST a http://80.190.77.210:3005/api/whatsapp/connect con { session_id: grupo_id }
   const conectarBot = async () => {
     setProcesando(true);
     setErrorMsg(null);
     try {
       let res: Response | null = null;
       try {
-        res = await fetch("http://localhost:3005/api/whatsapp/connect", {
+        res = await fetch(`${BOT_SERVER_URL}/api/whatsapp/connect`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: grupo_id }),
@@ -133,7 +136,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
           body: JSON.stringify({ session_id: grupo_id }),
         });
       } catch {
-        res = await fetch("http://localhost:3005/disconnect", {
+        res = await fetch(`${BOT_SERVER_URL}/disconnect`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: grupo_id }),
@@ -225,8 +228,12 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
               </svg>
             </div>
 
-            <div>
-              <p className="text-sm font-black text-emerald-400">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 px-3 py-0.5 text-xs font-black text-emerald-300">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Online</span>
+              </div>
+              <p className="mt-1 text-sm font-black text-emerald-400">
                 ✅ Bot de WhatsApp Conectado
               </p>
               {numero && (
@@ -235,7 +242,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                 </p>
               )}
               <p className="mt-1 max-w-xs text-[11px] leading-relaxed text-slate-400">
-                Tu bot se encuentra activo y listo para publicar y escuchar jugadas en los grupos.
+                Tu bot se encuentra activo y listo para publicar y procesar jugadas.
               </p>
             </div>
 
