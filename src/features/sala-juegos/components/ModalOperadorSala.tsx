@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { salaApi } from "../lib/sala-api";
 import { colorDeNumero, textoDeNumero } from "@/features/tablas/lib/tipos";
 import { getHorseColor } from "@/shared/lib/horseColors";
@@ -119,6 +119,9 @@ export function ModalOperadorSala({
   const [pubContenido, setPubContenido] = useState("");
   const [pubEnlace, setPubEnlace] = useState("");
   const [pubFijado, setPubFijado] = useState(false);
+  const [publicidades, setPublicidades] = useState<any[]>([]);
+  const [cargandoPublicidad, setCargandoPublicidad] = useState(false);
+  const [eliminandoPublicidadId, setEliminandoPublicidadId] = useState<string | null>(null);
 
   // Consultar si la plataforma ya tiene resultado cargado para esta carrera
   useEffect(() => {
@@ -236,23 +239,63 @@ export function ModalOperadorSala({
     }
   };
 
+  const cargarPublicidades = useCallback(async () => {
+    setCargandoPublicidad(true);
+    try {
+      const res = await salaApi.getPublicidad(grupoId);
+      setPublicidades(Array.isArray(res?.data?.publicidad) ? res.data.publicidad : []);
+    } catch {
+      setPublicidades([]);
+    } finally {
+      setCargandoPublicidad(false);
+    }
+  }, [grupoId]);
+
+  useEffect(() => {
+    if (tab === "publicidad") void cargarPublicidades();
+  }, [tab, cargarPublicidades]);
+
+  const eliminarPublicidad = async (publicidadId: string) => {
+    if (!publicidadId) return;
+    setEliminandoPublicidadId(publicidadId);
+    setMsgFeedback(null);
+    try {
+      const res = await salaApi.accionOperador("publicidad-eliminar", {
+        salaId: sala.id,
+        grupoId,
+        publicidadId,
+      });
+      if (!res.ok) {
+        setMsgFeedback(`❌ No se pudo eliminar la promoción: ${res.error || "Operación fallida"}`);
+        return;
+      }
+      setMsgFeedback("✅ Promoción eliminada correctamente.");
+      await cargarPublicidades();
+      onActualizado();
+    } catch (err: any) {
+      setMsgFeedback(`❌ Error de conexión: ${err?.message || err}`);
+    } finally {
+      setEliminandoPublicidadId(null);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xs p-2 sm:p-4">
-      <div className="bg-[#111b21] border border-[#202c33] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-200/70 backdrop-blur-xs p-2 sm:p-4">
+      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
         {/* Header Compacto UX/UI */}
-        <div className="px-3.5 py-2.5 border-b border-[#202c33] flex items-center justify-between bg-[#202c33]/50">
+        <div className="px-3.5 py-2.5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div>
-            <h3 className="text-sm font-black text-white flex items-center gap-1.5 leading-tight">
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5 leading-tight">
               <span>🛠️</span> Control de Operador
             </h3>
-            <p className="text-[11px] text-gray-400 leading-none mt-0.5">
-              Sala: <span className="text-white font-bold">{sala.nombre_sala}</span> | Grupo:{" "}
-              <span className="text-emerald-400 font-semibold">{grupoNombre}</span>
+            <p className="text-[11px] text-slate-500 leading-none mt-0.5">
+              Sala: <span className="text-slate-900 font-bold">{sala.nombre_sala}</span> | Grupo:{" "}
+              <span className="text-emerald-700 font-semibold">{grupoNombre}</span>
             </p>
           </div>
           <button
             onClick={onCerrar}
-            className="text-gray-400 hover:text-white px-2 py-1 text-sm rounded transition hover:bg-white/10"
+            className="text-slate-500 hover:text-slate-900 px-2 py-1 text-sm rounded transition hover:bg-slate-100"
             title="Cerrar modal"
           >
             ✕
@@ -260,11 +303,11 @@ export function ModalOperadorSala({
         </div>
 
         {/* Tabs Compactas */}
-        <div className="flex border-b border-[#202c33] bg-[#0b141a] px-2 pt-1.5 gap-1 text-[11px] font-bold">
+        <div className="flex border-b border-slate-200 bg-white px-2 pt-1.5 gap-1 text-[11px] font-bold">
           <button
             onClick={() => setTab("carrera")}
             className={`px-2.5 py-1.5 rounded-t-lg transition flex items-center gap-1 ${
-              tab === "carrera" ? "bg-[#111b21] text-emerald-400 border-t-2 border-emerald-500" : "text-gray-400 hover:text-white"
+              tab === "carrera" ? "bg-white text-emerald-700 border-t-2 border-emerald-500" : "text-slate-500 hover:text-slate-900"
             }`}
           >
             <span>🏇</span>
@@ -273,7 +316,7 @@ export function ModalOperadorSala({
           <button
             onClick={() => setTab("retirados")}
             className={`px-2.5 py-1.5 rounded-t-lg transition flex items-center gap-1 ${
-              tab === "retirados" ? "bg-[#111b21] text-emerald-400 border-t-2 border-emerald-500" : "text-gray-400 hover:text-white"
+              tab === "retirados" ? "bg-white text-emerald-700 border-t-2 border-emerald-500" : "text-slate-500 hover:text-slate-900"
             }`}
           >
             <span>🚫</span>
@@ -282,7 +325,7 @@ export function ModalOperadorSala({
           <button
             onClick={() => setTab("liquidacion")}
             className={`px-2.5 py-1.5 rounded-t-lg transition flex items-center gap-1 ${
-              tab === "liquidacion" ? "bg-[#111b21] text-emerald-400 border-t-2 border-emerald-500" : "text-gray-400 hover:text-white"
+              tab === "liquidacion" ? "bg-white text-emerald-700 border-t-2 border-emerald-500" : "text-slate-500 hover:text-slate-900"
             }`}
           >
             <span>🏁</span>
@@ -291,7 +334,7 @@ export function ModalOperadorSala({
           <button
             onClick={() => setTab("publicidad")}
             className={`px-2.5 py-1.5 rounded-t-lg transition flex items-center gap-1 ${
-              tab === "publicidad" ? "bg-[#111b21] text-emerald-400 border-t-2 border-emerald-500" : "text-gray-400 hover:text-white"
+              tab === "publicidad" ? "bg-white text-emerald-700 border-t-2 border-emerald-500" : "text-slate-500 hover:text-slate-900"
             }`}
           >
             <span>📢</span>
@@ -301,7 +344,7 @@ export function ModalOperadorSala({
 
         {/* Feedback message */}
         {msgFeedback && (
-          <div className="mx-3 mt-2.5 p-2 bg-emerald-950/70 border border-emerald-700/60 rounded-lg text-[11px] font-mono text-emerald-300 whitespace-pre-wrap">
+          <div className="mx-3 mt-2.5 p-2 bg-emerald-950/70 border border-emerald-700/60 rounded-lg text-[11px] font-mono text-emerald-700 whitespace-pre-wrap">
             {msgFeedback}
           </div>
         )}
@@ -311,13 +354,13 @@ export function ModalOperadorSala({
           {tab === "carrera" && (
             <div className="space-y-3">
               {/* Tarjeta de Estado Actual */}
-              <div className="bg-[#0b141a] p-2.5 rounded-xl border border-gray-800 flex items-center justify-between">
+              <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
                 <div>
-                  <span className="text-gray-400 text-[10px] uppercase font-bold block">Estado en Sala</span>
+                  <span className="text-slate-500 text-[10px] uppercase font-bold block">Estado en Sala</span>
                   <span
                     className={`font-black text-xs uppercase flex items-center gap-1 ${
                       sala.estado_carrera === "abierta"
-                        ? "text-emerald-400"
+                        ? "text-emerald-700"
                         : sala.estado_carrera === "cerrada"
                         ? "text-amber-400"
                         : "text-blue-400"
@@ -330,7 +373,7 @@ export function ModalOperadorSala({
                 <button
                   type="button"
                   onClick={onAbrirPrejugadas}
-                  className="bg-[#202c33] hover:bg-[#2a3942] border border-gray-700 text-amber-300 px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 shadow-xs"
+                  className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-amber-700 px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 shadow-xs"
                 >
                   <span>📋</span>
                   <span>Prejugadas (PNG)</span>
@@ -340,14 +383,14 @@ export function ModalOperadorSala({
               {/* Selector de Hipódromo y Carrera (Sin campo de distancia, optimizado a 2 columnas) */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2">
-                  <label className="block text-gray-300 font-bold text-[11px] mb-1">
+                  <label className="block text-slate-600 font-bold text-[11px] mb-1">
                     Hipódromo {esVenezuela ? "(Venezuela)" : esAmericanas ? "(Americanas)" : ""}
                   </label>
                   {esVenezuela ? (
                     <select
                       value={hipodromo}
                       onChange={(e) => setHipodromo(e.target.value)}
-                      className="w-full bg-[#0b141a] border border-emerald-500/80 rounded-lg px-2.5 py-2 text-white font-bold text-xs"
+                      className="w-full bg-white border border-emerald-500/80 rounded-lg px-2.5 py-2 text-slate-900 font-bold text-xs"
                     >
                       <option value="LA RINCONADA">LA RINCONADA</option>
                       <option value="VALENCIA">VALENCIA</option>
@@ -360,7 +403,7 @@ export function ModalOperadorSala({
                         value={hipodromo}
                         onChange={(e) => setHipodromo(e.target.value.toUpperCase())}
                         placeholder="GULFSTREAM PARK"
-                        className="w-full bg-[#0b141a] border border-blue-500/80 rounded-lg px-2.5 py-2 text-white font-bold text-xs"
+                        className="w-full bg-white border border-blue-500/80 rounded-lg px-2.5 py-2 text-slate-900 font-bold text-xs"
                       />
                       <datalist id="hipodromos-americanos-list">
                         {HIPODROMOS_AMERICANOS_COMUNES.map((h) => (
@@ -374,11 +417,11 @@ export function ModalOperadorSala({
                       value={hipodromo}
                       onChange={(e) => setHipodromo(e.target.value.toUpperCase())}
                       placeholder="HIPÓDROMO"
-                      className="w-full bg-[#0b141a] border border-gray-700 rounded-lg px-2.5 py-2 text-white font-bold text-xs"
+                      className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-slate-900 font-bold text-xs"
                     >
                     </input>
                   )}
-                  <p className="mt-0.5 text-[9px] text-gray-400">
+                  <p className="mt-0.5 text-[9px] text-slate-500">
                     {esVenezuela
                       ? "🇻🇪 Solo La Rinconada o Valencia."
                       : esAmericanas
@@ -388,14 +431,14 @@ export function ModalOperadorSala({
                 </div>
 
                 <div>
-                  <label className="block text-gray-300 font-bold text-[11px] mb-1">Nº Carrera</label>
+                  <label className="block text-slate-600 font-bold text-[11px] mb-1">Nº Carrera</label>
                   <input
                     type="number"
                     min="1"
                     max="20"
                     value={numeroCarrera}
                     onChange={(e) => setNumeroCarrera(parseInt(e.target.value, 10) || 1)}
-                    className="w-full bg-[#0b141a] border border-gray-700 rounded-lg px-2.5 py-2 text-white font-bold text-xs text-center"
+                    className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-slate-900 font-bold text-xs text-center"
                   />
                 </div>
               </div>
@@ -409,7 +452,7 @@ export function ModalOperadorSala({
                       type="button"
                       disabled={cargando}
                       onClick={() => ejecutarAccion("cerrar-carrera")}
-                      className="w-full bg-amber-500 hover:bg-amber-400 text-black font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
+                      className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
                     >
                       <span>🔒</span>
                       <span>Cerrar Carrera</span>
@@ -441,7 +484,7 @@ export function ModalOperadorSala({
                     type="button"
                     disabled={cargando}
                     onClick={() => ejecutarAccion("reabrir-carrera")}
-                    className="w-full bg-[#00a884] hover:bg-emerald-500 text-black font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
                   >
                     <span>🔓</span>
                     <span>Reabrir Carrera</span>
@@ -450,10 +493,10 @@ export function ModalOperadorSala({
                   // Caso 3: La carrera está LIQUIDADA -> Bloqueado todo excepto Reversar Liquidación
                   <div className="space-y-2">
                     <div className="rounded-xl border border-blue-900/60 bg-blue-950/40 p-2.5 text-center space-y-1">
-                      <span className="text-blue-300 font-bold text-xs block">
+                      <span className="text-blue-700 font-bold text-xs block">
                         🏁 Esta carrera ya fue liquidada
                       </span>
-                      <span className="text-gray-400 text-[10px] block leading-relaxed">
+                      <span className="text-slate-500 text-[10px] block leading-relaxed">
                         Todas las opciones para esta carrera están bloqueadas. Para modificarla debes reversar la liquidación o seleccionar otra carrera arriba.
                       </span>
                     </div>
@@ -496,7 +539,7 @@ export function ModalOperadorSala({
                         distancia: 1200,
                       });
                     }}
-                    className="w-full bg-[#00a884] hover:bg-emerald-500 text-black font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
                   >
                     <span>🟢</span>
                     <span>Abrir Carrera</span>
@@ -508,9 +551,9 @@ export function ModalOperadorSala({
 
           {tab === "retirados" && (
             <div className="space-y-3">
-              <div className="bg-[#0b141a] p-2.5 rounded-xl border border-gray-800">
-                <h4 className="font-bold text-white text-xs mb-0.5">Retirado Oficial en Vivo</h4>
-                <p className="text-gray-400 text-[10px] leading-relaxed">
+              <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                <h4 className="font-bold text-slate-900 text-xs mb-0.5">Retirado Oficial en Vivo</h4>
+                <p className="text-slate-500 text-[10px] leading-relaxed">
                   Al procesar un retirado se anulan automáticamente las jugadas comprometidas con ese ejemplar y se devuelve el saldo.
                 </p>
               </div>
@@ -522,14 +565,14 @@ export function ModalOperadorSala({
               )}
 
               <div>
-                <label className="block text-gray-300 font-bold text-[11px] mb-1">Número de Ejemplar Retirado</label>
+                <label className="block text-slate-600 font-bold text-[11px] mb-1">Número de Ejemplar Retirado</label>
                 <input
                   type="text"
                   disabled={estadoCarreraActual === "liquidada"}
                   value={ejemplarRetirado}
                   onChange={(e) => setEjemplarRetirado(e.target.value.toUpperCase())}
                   placeholder="Ej. 5"
-                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg p-2 text-white font-bold text-sm text-center disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2 text-slate-900 font-bold text-sm text-center disabled:opacity-40 disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -550,14 +593,14 @@ export function ModalOperadorSala({
 
           {tab === "liquidacion" && (
             <div className="space-y-3">
-              <div className="bg-[#0b141a] p-2.5 rounded-xl border border-gray-800 flex items-center justify-between">
+              <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
                 <div>
-                  <h4 className="font-bold text-white text-xs">Pizarra Oficial de Liquidación</h4>
-                  <span className="text-[10px] text-gray-400">
+                  <h4 className="font-bold text-slate-900 text-xs">Pizarra Oficial de Liquidación</h4>
+                  <span className="text-[10px] text-slate-500">
                     Posiciones de llegada y empates (Dead Heat)
                   </span>
                 </div>
-                <span className="text-[10px] text-emerald-400 font-black uppercase">
+                <span className="text-[10px] text-emerald-700 font-black uppercase">
                   {sala.hipodromo_activo || hipodromo} C{sala.numero_carrera_activa || numeroCarrera}
                 </span>
               </div>
@@ -572,17 +615,17 @@ export function ModalOperadorSala({
               {plataformaResultado && estadoCarreraActual !== "liquidada" && (
                 <div className="bg-emerald-950/40 border border-emerald-600/50 rounded-xl p-2.5 flex items-center justify-between gap-2">
                   <div className="truncate">
-                    <span className="text-[9px] uppercase font-black text-emerald-400 block">
+                    <span className="text-[9px] uppercase font-black text-emerald-700 block">
                       ✅ Pizarra oficial en plataforma
                     </span>
-                    <span className="text-white font-mono text-[11px] font-bold truncate block">
+                    <span className="text-slate-900 font-mono text-[11px] font-bold truncate block">
                       Llegada: {plataformaResultado.ganadores.map((n) => `#${n}`).join(" - ")}
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={tomarResultadoDePlataforma}
-                    className="shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg transition shadow"
+                    className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg transition shadow"
                   >
                     📥 Tomar
                   </button>
@@ -590,8 +633,8 @@ export function ModalOperadorSala({
               )}
 
               {/* Filas compactas de posiciones de llegada */}
-              <div className="space-y-1.5 bg-[#0b141a] p-2.5 rounded-xl border border-gray-800">
-                <div className="text-[10px] font-bold text-gray-400 pb-0.5 flex items-center justify-between">
+              <div className="space-y-1.5 bg-white p-2.5 rounded-xl border border-slate-200">
+                <div className="text-[10px] font-bold text-slate-500 pb-0.5 flex items-center justify-between">
                   <span>Posición y Ejemplar</span>
                   <span>Empate (Dead Heat)</span>
                 </div>
@@ -601,7 +644,7 @@ export function ModalOperadorSala({
                   return (
                     <div
                       key={idx}
-                      className="flex items-center justify-between gap-2 p-1 rounded-lg bg-[#111b21] border border-gray-800"
+                      className="flex items-center justify-between gap-2 p-1 rounded-lg bg-white border border-slate-200"
                     >
                       <div className="flex items-center gap-1.5">
                         <span
@@ -615,7 +658,7 @@ export function ModalOperadorSala({
                           {numLimpio || idx + 1}
                         </span>
 
-                        <span className="w-6 font-bold text-gray-300 text-[11px]">{idx + 1}º</span>
+                        <span className="w-6 font-bold text-slate-600 text-[11px]">{idx + 1}º</span>
 
                         <input
                           type="text"
@@ -629,11 +672,11 @@ export function ModalOperadorSala({
                               prev.map((row, i) => (i === idx ? { ...row, numero: val } : row))
                             );
                           }}
-                          className="w-14 h-7 bg-[#0b141a] border border-gray-700 focus:border-emerald-500 rounded p-1 text-center text-white font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="w-14 h-7 bg-white border border-slate-300 focus:border-emerald-500 rounded p-1 text-center text-slate-900 font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed"
                         />
                       </div>
 
-                      <label className={`flex items-center gap-1 text-gray-300 font-medium text-[11px] ${estadoCarreraActual === "liquidada" ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}>
+                      <label className={`flex items-center gap-1 text-slate-600 font-medium text-[11px] ${estadoCarreraActual === "liquidada" ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}>
                         <input
                           type="checkbox"
                           disabled={estadoCarreraActual === "liquidada"}
@@ -657,7 +700,7 @@ export function ModalOperadorSala({
                     type="button"
                     disabled={estadoCarreraActual === "liquidada" || filasLlegada.length <= 1}
                     onClick={() => setFilasLlegada((prev) => prev.slice(0, -1))}
-                    className="flex-1 bg-[#202c33] hover:bg-[#2a3942] disabled:opacity-40 disabled:cursor-not-allowed text-gray-300 font-bold py-1 rounded text-[11px] transition"
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600 font-bold py-1 rounded text-[11px] transition"
                   >
                     − Quitar {filasLlegada.length}°
                   </button>
@@ -668,7 +711,7 @@ export function ModalOperadorSala({
                     onClick={() =>
                       setFilasLlegada((prev) => [...prev, { numero: "", empate: false }])
                     }
-                    className="flex-1 bg-emerald-950/60 hover:bg-emerald-900/60 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-600/50 text-emerald-300 font-bold py-1 rounded text-[11px] transition"
+                    className="flex-1 bg-emerald-950/60 hover:bg-emerald-900/60 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-600/50 text-emerald-700 font-bold py-1 rounded text-[11px] transition"
                   >
                     ＋ Añadir {filasLlegada.length + 1}°
                   </button>
@@ -676,7 +719,7 @@ export function ModalOperadorSala({
               </div>
 
               {validacionPizarra.error && estadoCarreraActual !== "liquidada" && (
-                <div className="p-2 rounded-lg bg-amber-950/50 border border-amber-600/50 text-amber-300 text-[11px]">
+                <div className="p-2 rounded-lg bg-amber-950/50 border border-amber-600/50 text-amber-700 text-[11px]">
                   ⚠️ {validacionPizarra.error}
                 </div>
               )}
@@ -721,7 +764,7 @@ export function ModalOperadorSala({
                       },
                     });
                   }}
-                  className="w-full bg-[#00a884] hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-400 text-black font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
                 >
                   <span>🏁</span>
                   <span>Liquidar Carrera y Publicar</span>
@@ -734,14 +777,14 @@ export function ModalOperadorSala({
             <div className="space-y-2.5">
               {/* Accesos Rápidos a Promociones de Modalidades */}
               <div>
-                <label className="block text-gray-400 font-bold text-[10px] uppercase mb-1">
+                <label className="block text-slate-500 font-bold text-[10px] uppercase mb-1">
                   Promocionar Modalidad (Click directo en el Banner)
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   <button
                     type="button"
                     onClick={() => aplicarPresetPublicidad("tablas")}
-                    className="bg-[#202c33] hover:bg-[#2a3942] border border-emerald-500/40 text-emerald-300 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
+                    className="bg-slate-100 hover:bg-slate-200 border border-emerald-500/40 text-emerald-700 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
                   >
                     <span>📊</span>
                     <span>Tablas Fijas</span>
@@ -749,7 +792,7 @@ export function ModalOperadorSala({
                   <button
                     type="button"
                     onClick={() => aplicarPresetPublicidad("remates")}
-                    className="bg-[#202c33] hover:bg-[#2a3942] border border-amber-500/40 text-amber-300 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
+                    className="bg-slate-100 hover:bg-slate-200 border border-amber-500/40 text-amber-700 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
                   >
                     <span>🔨</span>
                     <span>Remates</span>
@@ -757,7 +800,7 @@ export function ModalOperadorSala({
                   <button
                     type="button"
                     onClick={() => aplicarPresetPublicidad("marcas")}
-                    className="bg-[#202c33] hover:bg-[#2a3942] border border-blue-500/40 text-blue-300 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
+                    className="bg-slate-100 hover:bg-slate-200 border border-blue-500/40 text-blue-700 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
                   >
                     <span>⭐</span>
                     <span>Marcas</span>
@@ -765,7 +808,7 @@ export function ModalOperadorSala({
                   <button
                     type="button"
                     onClick={() => aplicarPresetPublicidad("pollas")}
-                    className="bg-[#202c33] hover:bg-[#2a3942] border border-purple-500/40 text-purple-300 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
+                    className="bg-slate-100 hover:bg-slate-200 border border-purple-500/40 text-purple-700 font-bold py-1.5 px-2 rounded-lg text-[10px] transition flex items-center justify-center gap-1"
                   >
                     <span>🎟️</span>
                     <span>Polla</span>
@@ -774,29 +817,29 @@ export function ModalOperadorSala({
               </div>
 
               <div>
-                <label className="block text-gray-300 font-bold text-[11px] mb-0.5">Título del Anuncio</label>
+                <label className="block text-slate-600 font-bold text-[11px] mb-0.5">Título del Anuncio</label>
                 <input
                   type="text"
                   value={pubTitulo}
                   onChange={(e) => setPubTitulo(e.target.value)}
                   placeholder="Ej. ¡Tablas Fijas Activas!"
-                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-white text-xs font-bold"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 text-xs font-bold"
                 />
               </div>
 
               <div>
-                <label className="block text-gray-300 font-bold text-[11px] mb-0.5">Texto del Mensaje</label>
+                <label className="block text-slate-600 font-bold text-[11px] mb-0.5">Texto del Mensaje</label>
                 <textarea
                   value={pubContenido}
                   onChange={(e) => setPubContenido(e.target.value)}
                   placeholder="Mensaje a transmitir en el banner..."
                   rows={2}
-                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-white text-xs leading-tight"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 text-xs leading-tight"
                 />
               </div>
 
               <div>
-                <label className="block text-gray-300 font-bold text-[11px] mb-0.5">
+                <label className="block text-slate-600 font-bold text-[11px] mb-0.5">
                   Enlace al hacer click (Ruta interna ej. /tablas-fijas o URL)
                 </label>
                 <input
@@ -804,7 +847,7 @@ export function ModalOperadorSala({
                   value={pubEnlace}
                   onChange={(e) => setPubEnlace(e.target.value)}
                   placeholder="/tablas-fijas, /remates o https://..."
-                  className="w-full bg-[#0b141a] border border-gray-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 font-mono text-xs"
                 />
               </div>
 
@@ -816,7 +859,7 @@ export function ModalOperadorSala({
                   onChange={(e) => setPubFijado(e.target.checked)}
                   className="rounded text-emerald-500 accent-emerald-500 h-3.5 w-3.5"
                 />
-                <label htmlFor="pubFijado" className="text-gray-300 cursor-pointer text-[11px]">
+                <label htmlFor="pubFijado" className="text-slate-600 cursor-pointer text-[11px]">
                   Fijar en el tope de la sala (Banner destacado permanente)
                 </label>
               </div>
@@ -831,14 +874,76 @@ export function ModalOperadorSala({
                     enlace: pubEnlace.trim() || null,
                     fijado: pubFijado,
                   });
+                  void cargarPublicidades();
                   setPubTitulo("");
                   setPubContenido("");
                   setPubEnlace("");
                 }}
-                className="w-full bg-[#00a884] hover:bg-emerald-500 text-black font-black py-2.5 rounded-xl transition text-xs shadow-md"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-xl transition text-xs shadow-md"
               >
                 📢 Publicar Promoción
               </button>
+
+              <div className="mt-3 border-t border-slate-200 pt-2.5">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+                    Promociones activas ({publicidades.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void cargarPublicidades()}
+                    disabled={cargandoPublicidad}
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    {cargandoPublicidad ? "⏳" : "🔄 Actualizar"}
+                  </button>
+                </div>
+
+                {cargandoPublicidad && publicidades.length === 0 ? (
+                  <p className="rounded-lg bg-slate-50 p-2 text-center text-[11px] text-slate-500">
+                    Cargando promociones...
+                  </p>
+                ) : publicidades.length === 0 ? (
+                  <p className="rounded-lg bg-slate-50 p-2 text-center text-[11px] text-slate-500">
+                    No hay promociones activas en esta sala.
+                  </p>
+                ) : (
+                  <ul className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
+                    {publicidades.map((p) => {
+                      const id = String(p.id);
+                      return (
+                        <li
+                          key={id}
+                          className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[11px] font-black text-slate-900">
+                              {p.titulo || "Sin título"}
+                            </p>
+                            <p className="truncate text-[10px] text-slate-600">
+                              {p.contenido_texto || ""}
+                            </p>
+                            {p.fijado_en_tope && (
+                              <span className="mt-0.5 inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-700">
+                                📌 Fijada
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={eliminandoPublicidadId === id}
+                            onClick={() => void eliminarPublicidad(id)}
+                            title="Eliminar promoción"
+                            className="shrink-0 rounded-lg border border-rose-200 bg-white px-2 py-1 text-[10px] font-black text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {eliminandoPublicidadId === id ? "⏳" : "🗑️ Eliminar"}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -2222,7 +2222,15 @@ export async function POST(req: Request) {
       // 4.g ELIMINAR PUBLICIDAD
       if (subaccion === "publicidad-eliminar") {
         const { publicidadId } = body;
-        await supabaseAdmin.from("publicidad_sala").update({ activo: false }).eq("id", publicidadId);
+        if (!publicidadId) {
+          return NextResponse.json({ ok: false, error: "publicidadId es requerido" }, { status: 400 });
+        }
+        const { error } = await supabaseAdmin
+          .from("publicidad_sala")
+          .update({ activo: false })
+          .eq("id", publicidadId)
+          .eq("grupo_id", grupoId);
+        if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
         await emitirBroadcast(salaId, "publicidad_actualizada", { grupoId });
         return NextResponse.json({ ok: true });
       }
