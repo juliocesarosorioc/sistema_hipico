@@ -74,7 +74,10 @@ const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
 const ES_SALA = (p: string) => p === "/sala" || p.startsWith("/sala/");
 const ES_API_SALA = (p: string) => p === "/api/sala" || p.startsWith("/api/sala/");
 const ES_API_RECARGAS = (p: string) => p === "/api/recargas/validar" || p.startsWith("/api/recargas/");
-const ES_WEBHOOK_WHATSAPP = (p: string) => p === "/api/whatsapp-sala" || p.startsWith("/api/whatsapp-sala/");
+const ES_WEBHOOK_WHATSAPP = (p: string) =>
+  p === "/api/whatsapp-sala" ||
+  p.startsWith("/api/whatsapp-sala/") ||
+  p === "/api/whatsapp/upload";
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
