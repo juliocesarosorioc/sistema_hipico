@@ -256,8 +256,8 @@ export function evaluarConcrecionEstricta(
 
   if (excedioSaldo) {
     const saldoFmt = formatearMontoRegional(topeSaldo);
-    msgPublicoBot = `⚠️ *${nombreAceptante || 'Jugador'}* dispone de $${saldoFmt} para jugar`;
-    msgPrivadoBot = `⚠️ Hola ${nombreAceptante || 'Jugador'}, tu jugada se procesó por $${formatearMontoRegional(montoEfectivo)} ya que es lo que dispones para realizarla. Tu saldo actual es $${saldoFmt}.\n\nTe invitamos a jugar hasta el tope exacto de tu saldo disponible ($${saldoFmt}).`;
+    msgPublicoBot = `⚠️ *${nombreAceptante || 'Jugador'}* dispone de $${saldoFmt} para esta jugada.`;
+    msgPrivadoBot = `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de $${saldoFmt}. Muchas gracias.`;
   }
 
   return {
@@ -467,10 +467,10 @@ export function analizarYEstandarizarJugada(
 
       const jugadaEstandarizada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')}${propMatch !== '1x1' ? ` ${propMatch}` : ''} ${montoTexto}`;
       const msgPublicoBotMatch = excedioSaldoMatch
-        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${saldoFmt} para jugar`
+        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${saldoFmt} para esta jugada.`
         : undefined;
       const msgPrivadoBotMatch = excedioSaldoMatch
-        ? `⚠️ Hola ${nombreUsuario || 'Jugador'}, tu jugada se procesó por $${formatearMontoRegional(montoRecortado)} ya que es lo que dispones para realizarla. Tu saldo actual es $${saldoFmt}.\n\nTe invitamos a jugar hasta el tope exacto de tu saldo disponible ($${saldoFmt}).`
+        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de $${saldoFmt}. Muchas gracias.`
         : undefined;
 
       return {
@@ -586,7 +586,49 @@ export function analizarYEstandarizarJugada(
         };
       }
 
-      const propFinal = rawMod.startsWith('10/') ? rawMod.replace(',', '.') : proporcionDetectada;
+      // Regla Oficial: Puestos y Ninis son SIEMPRE a paridad (1x1). Prohibido ponerles proporción.
+      const esPuestoONini =
+        /^[1-6]P$/i.test(modLimpia) ||
+        /^[2-6]N$/i.test(modLimpia) ||
+        /^[1-5]Y[1-5][PN]?$/i.test(modLimpia) ||
+        /^[1-5]\/[1-5]N?$/i.test(modLimpia) ||
+        modLimpia === "1P" ||
+        modLimpia === "2N" ||
+        modLimpia === "3N" ||
+        modLimpia === "4N" ||
+        modLimpia === "5N" ||
+        modLimpia === "1Y2N" ||
+        modLimpia === "2/3N" ||
+        modLimpia === "3/4N" ||
+        modLimpia === "4/5N";
+
+      const tieneProporcionEnTexto =
+        matchGabela !== null ||
+        /\b10\s*[@aªA\/\-]\s*\d+/i.test(texto) ||
+        /\b[@aªA\/]\s*\d+/i.test(texto);
+
+      if (esPuestoONini && tieneProporcionEnTexto) {
+        return {
+          esIntencionDeJugada: true,
+          valido: false,
+          accionProponente,
+          esMatch: false,
+          modalidad: modLimpia,
+          caballosBandoA,
+          caballosBandoB: [],
+          ejemplarTexto,
+          monto,
+          montoTexto,
+          jugadaEstandarizada: "",
+          confianza: 1.0,
+          requiereOperador: false,
+          msgPublicoBot: "⚠️¡Por favor, verificar redacción! ¡Gracias!",
+          mensajePedagogicoPrivado: `⚠️ Hola ${nombreUsuario || "Jugador"}, los puestos y ninis son jugadas a paridad. No se les puede colocar proporción o gabela (ej. 10a8). ✅ Ejemplo correcto: "Juego ${modLimpia} ${ejemplarTexto || "5"} ${montoTexto || "100"}".`,
+          msgPrivadoBot: `⚠️ Hola ${nombreUsuario || "Jugador"}, los puestos y ninis son jugadas a paridad. No se les puede colocar proporción o gabela (ej. 10a8). ✅ Ejemplo correcto: "Juego ${modLimpia} ${ejemplarTexto || "5"} ${montoTexto || "100"}".`,
+        };
+      }
+
+      const propFinal = esPuestoONini ? "1x1" : (rawMod.startsWith('10/') ? rawMod.replace(',', '.') : proporcionDetectada);
 
       // Validar paridad máxima 10 a 10 (PP)
       const valParidadPuesto = validarParidadProporcion(propFinal);
@@ -644,10 +686,10 @@ export function analizarYEstandarizarJugada(
 
       const jugadaEstandarizada = `${verboEstandar} ${modLimpia} ${ejemplarTexto} ${montoTexto}`;
       const msgPublicoBotPuesto = excedioSaldoPuesto
-        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${saldoFmtPuesto} para jugar`
+        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${saldoFmtPuesto} para esta jugada.`
         : undefined;
       const msgPrivadoBotPuesto = excedioSaldoPuesto
-        ? `⚠️ Hola ${nombreUsuario || 'Jugador'}, tu jugada se procesó por $${formatearMontoRegional(montoRecortado)} ya que es lo que dispones para realizarla. Tu saldo actual es $${saldoFmtPuesto}.\n\nTe invitamos a jugar hasta el tope exacto de tu saldo disponible ($${saldoFmtPuesto}).`
+        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de $${saldoFmtPuesto}. Muchas gracias.`
         : undefined;
 
       return {
@@ -781,18 +823,21 @@ export function analizarYEstandarizarJugada(
     jugadaEstandarizada: '',
     confianza: 0.45,
     requiereOperador: true,
+    msgPublicoBot: "⚠️¡Por favor, verificar redacción! ¡Gracias!",
     mensajePedagogicoPrivado:
-      `🤖 Corrección Pedagógica: No pude procesar tu jugada "${texto}". Así debes escribirla:\n` +
-      `• Para jugar Puesto: Juego 1P ${ej1} ${montoEj} (o Consigo 1P ${ej1} ${montoEj})\n` +
-      `• Para jugar Llave/Dupla: Juego 1P ${ej1}-${ej2} ${montoEj}\n` +
-      `• Para jugar Match (Caballo vs Caballo): Juego ${ej1} x ${ej2} ${montoEj}\n` +
-      `Se ha notificado también al operador por si requieres atención personalizada.`,
+      `⚠️ Hola ${nombreUsuario || "Jugador"}, tu mensaje "${texto}" no pudo procesarse por error de redacción o sintaxis.\n\n` +
+      `✅ Ejemplos correctos según las reglas de la sala:\n` +
+      `• Puesto (Ganador): "Juego 1P ${ej1} ${montoEj}" (o "Consigo 1P ${ej1} ${montoEj}")\n` +
+      `• Nini / Puestos Múltiples: "Juego 2N ${ej1} ${montoEj}" o "Juego 1y2N ${ej1} ${montoEj}"\n` +
+      `• Mano a Mano: "Juego ${ej1}x${ej2} 10a8 ${montoEj}" o "Juego ${ej1}x${ej2} ${montoEj}"\n\n` +
+      `Los puestos y ninis no admiten gabela o proporción.`,
     msgPrivadoBot:
-      `🤖 Corrección Pedagógica: No pude procesar tu jugada "${texto}". Así debes escribirla:\n` +
-      `• Para jugar Puesto: Juego 1P ${ej1} ${montoEj} (o Consigo 1P ${ej1} ${montoEj})\n` +
-      `• Para jugar Llave/Dupla: Juego 1P ${ej1}-${ej2} ${montoEj}\n` +
-      `• Para jugar Match (Caballo vs Caballo): Juego ${ej1} x ${ej2} ${montoEj}\n` +
-      `Se ha notificado también al operador por si requieres atención personalizada.`,
+      `⚠️ Hola ${nombreUsuario || "Jugador"}, tu mensaje "${texto}" no pudo procesarse por error de redacción o sintaxis.\n\n` +
+      `✅ Ejemplos correctos según las reglas de la sala:\n` +
+      `• Puesto (Ganador): "Juego 1P ${ej1} ${montoEj}" (o "Consigo 1P ${ej1} ${montoEj}")\n` +
+      `• Nini / Puestos Múltiples: "Juego 2N ${ej1} ${montoEj}" o "Juego 1y2N ${ej1} ${montoEj}"\n` +
+      `• Mano a Mano: "Juego ${ej1}x${ej2} 10a8 ${montoEj}" o "Juego ${ej1}x${ej2} ${montoEj}"\n\n` +
+      `Los puestos y ninis no admiten gabela o proporción.`,
     sugerenciasUnClic: [
       `Juego 1P ${ej1} ${montoEj}`,
       `Consigo 1P ${ej1} ${montoEj}`,

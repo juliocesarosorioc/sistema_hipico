@@ -255,6 +255,12 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
         body: JSON.stringify({ accion: "limpiar_vinculos_huerfanos", grupoId: grupo_id }),
       }).catch(() => {});
 
+      await fetch("/api/whatsapp-sala/salas-grupos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "limpiar-huerfanos", grupoId: grupo_id }),
+      }).catch(() => {});
+
       setFeedbackSuccess("Sesión huérfana y vínculos 1 a 1 limpiados correctamente. Listo para vincular.");
       setTimeout(() => setFeedbackSuccess(null), 5000);
       setStatus("disconnected");
@@ -827,9 +833,21 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                         })
                       }
                       disabled={Boolean(accionEnCurso) || !pizarraInput.trim()}
-                      className="rounded-xl bg-amber-600 px-4 py-1.5 text-xs font-black text-white hover:bg-amber-500 transition disabled:opacity-40"
+                      className="rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-black text-white hover:bg-amber-500 transition disabled:opacity-40"
                     >
                       🏁 Liquidar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        ejecutarAccionCarrera("rectificar-pizarra", {
+                          pizarra: pizarraInput,
+                        })
+                      }
+                      disabled={Boolean(accionEnCurso) || !pizarraInput.trim()}
+                      className="rounded-xl border border-amber-500/50 bg-amber-950/60 px-3 py-1.5 text-xs font-black text-amber-200 hover:bg-amber-900/60 transition disabled:opacity-40"
+                    >
+                      🔄 Rectificar
                     </button>
                   </div>
                 </div>

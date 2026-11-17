@@ -162,7 +162,9 @@ export function formatearMontoRegional(
   opciones?: { ocultarCerosEnteros?: boolean }
 ): string {
   const exacto = redondearCentavos(v);
-  if (opciones?.ocultarCerosEnteros && Number.isInteger(exacto)) {
+  // Regla Regional Venezuela: Prohibido imprimir .00 o ,00 en números enteros
+  const ocultarCeros = opciones?.ocultarCerosEnteros !== false;
+  if (ocultarCeros && Number.isInteger(exacto)) {
     return FMT_ES_VE_0.format(exacto);
   }
   return FMT_ES_VE_2.format(exacto);

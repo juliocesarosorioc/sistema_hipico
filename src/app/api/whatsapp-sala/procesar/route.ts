@@ -254,8 +254,7 @@ function generarTextoPlanoOficial(
 
   const hipo = String(sala.hipodromo_activo || "La Rinconada").trim();
   const numCarrera = sala.numero_carrera_activa || 1;
-  const ordCarrera =
-    numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
+  const ordCarrera = `${numCarrera}era`;
 
   const retiradosStr =
     Array.isArray(retirados) && retirados.length > 0
@@ -268,11 +267,18 @@ function generarTextoPlanoOficial(
       const aceptante = t.aceptante_nombre || "Jugador B";
       let jugadaDetalle = "";
       if (t.es_match) {
-        jugadaDetalle = `Match ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`;
+        const bA = (t.caballos_bando_a || []).join("-");
+        const bB = (t.caballos_bando_b || []).join("-");
+        const prop = String(t.proporcion_premio || t.proporcion || "").trim();
+        let propStr = "";
+        if (prop && !["1x1", "pp", "10/10", "10a10", "10@10"].includes(prop.toLowerCase())) {
+          propStr = ` [${prop.replace("@", "/").replace(/a/i, "/")}]`;
+        }
+        jugadaDetalle = `(${bA}x${bB})${propStr}`;
       } else {
         const mod = t.modalidad || "1P";
         const ej = t.ejemplar_numero || (t.caballos_bando_a || []).join("-");
-        jugadaDetalle = `${mod} del ${ej}`;
+        jugadaDetalle = `${mod} ${ej}`;
       }
       const monto = formatearMontoRegional(Number(t.monto_concretado || 0));
       return `${idx + 1}) ${proponente} juega ${jugadaDetalle} con ${aceptante} $${monto}`;
@@ -391,114 +397,41 @@ async function intentarCruceAutomatico(params: {
     }
 
     if (esCalce) {
-      const montoDisponibleCand = Number(cand.monto_disponible || 0);
-      const montoNuevo = Number(analisis.montoDisponibleValido || analisis.monto || 0);
-      const montoACruzar = Math.min(montoDisponibleCand, montoNuevo);
+      let modalidadStr = "";
+      if (cand.es_match) {
+        const bA = (cand.caballos_bando_a || []).join("-");
+        const bB = (cand.caballos_bando_b || []).join("-");
+        modalidadStr = `(${bA}x${bB})`;
+      } else {
+        const m = cand.modalidad_propuesta || cand.modalidad || "1P";
+        const e = cand.ejemplar_texto || (cand.caballos_bando_a || [])[0] || "";
+        modalidadStr = `${m} (${e})`.trim();
+      }
 
-      if (montoACruzar <= 0) continue;
+      const j1 = cand.remitente_nombre || "Jugador 1";
+      const j2 = nuevoCliente.seudonimo || nuevoCliente.nombre || "Jugador 2";
+      const msgSugerencia = `⚠️ *${j1} y ${j2} pueden jugar ${modalidadStr} si se concretan.*`;
 
-      const { data: resCruce, error: errCruce } = await supabaseAdmin.rpc("concretar_jugada_fifo_atomica", {
-        p_grupo_id: grupoId,
-        p_sala_id: sala.id,
-        p_propuesta_msg_id: cand.id,
-        p_aceptante_id: nuevoCliente.id,
-        p_monto_pedido: montoACruzar,
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: sala.id,
+        remitente_nombre: "🤖 ASISTENTE DE SALA",
+        es_operador: true,
+        tipo_mensaje: "sugerencia_cruce",
+        contenido: msgSugerencia,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "WHATSAPP",
       });
 
-      if (!errCruce && resCruce && (resCruce as any).ok !== false && !(resCruce as any).nada_aqui) {
-        await sincronizarTicketsPropuestaATaquilla(supabaseAdmin, {
-          propuestaMsgId: cand.id,
-          sala,
-          grupoId,
-          condicionProponente: cand.condicion_proponente,
-        });
+      await emitirBroadcastSala(sala.id, "nuevo_mensaje", { salaId: sala.id });
 
-        const nuevoRemanenteNueva = Math.max(0, montoNuevo - montoACruzar);
-        await supabaseAdmin
-          .from("chat_mensajes")
-          .update({
-            monto_disponible: nuevoRemanenteNueva,
-            estado_propuesta: nuevoRemanenteNueva <= 0 ? "agotada" : "parcial",
-          })
-          .eq("id", nuevaPropuestaId);
-
-        let nombreJuega = "";
-        let nombreDa = "";
-        if (candAccion === "CONSIGUE") {
-          nombreDa = cand.remitente_nombre || "Proponente";
-          nombreJuega = nuevoCliente.seudonimo || nuevoCliente.nombre;
-        } else {
-          nombreJuega = cand.remitente_nombre || "Proponente";
-          nombreDa = nuevoCliente.seudonimo || nuevoCliente.nombre;
-        }
-
-        let modCab = "";
-        if (cand.es_match) {
-          const bA = (cand.caballos_bando_a || []).join("-");
-          const bB = (cand.caballos_bando_b || []).join("-");
-          modCab = `Match (${bA}x${bB})`;
-        } else {
-          const m = cand.modalidad_propuesta || cand.modalidad || "1P";
-          const e = cand.ejemplar_texto || (cand.caballos_bando_a || [])[0] || "";
-          modCab = `${m} (${e})`.trim();
-        }
-
-        let pRaw = String(cand.proporcion_premio || cand.proporcion || "1x1").trim();
-        pRaw = pRaw.replace(/\/>/g, "a").replace(/\//g, "a").replace(/@/g, "a");
-        const pTexto = pRaw && pRaw !== "1x1" && pRaw !== "10a10" ? `[${pRaw}] ` : "";
-
-        const rJuega = Math.round(calcularRiesgoReal(montoACruzar, cand.proporcion_premio || cand.proporcion, "JUEGA") * 100) / 100;
-        const rDa = Math.round(calcularRiesgoReal(montoACruzar, cand.proporcion_premio || cand.proporcion, "CONSIGUE") * 100) / 100;
-
-        const montoBaseFmt = Number(montoACruzar).toFixed(montoACruzar % 1 === 0 ? 0 : 2);
-        const rJuegaFmt = rJuega.toFixed(2);
-        const rDaFmt = rDa.toFixed(2);
-
-        const msgCruce =
-          `✅ Jugaron: *${nombreJuega} Juega ${modCab} ${pTexto}da ${nombreDa} $${montoBaseFmt}*\n` +
-          `🔹 Juega: ${nombreJuega} (Riesgo $${rJuegaFmt})\n` +
-          `🔸 Da: ${nombreDa} (Riesgo $${rDaFmt})`;
-
-        await supabaseAdmin.from("chat_mensajes").insert({
-          grupo_id: grupoId,
-          sala_id: sala.id,
-          remitente_id: nuevoCliente.id,
-          remitente_nombre: nuevoCliente.seudonimo || nuevoCliente.nombre,
-          es_operador: false,
-          tipo_mensaje: "CONCRECION",
-          contenido: msgCruce,
-          reply_to_msg_id: cand.id,
-          whatsapp_msg_id: whatsappMsgId || null,
-          whatsapp_group_jid: groupJid || null,
-          whatsapp_group_nombre: whatsappGroupNombre || null,
-          origen_canal: "WHATSAPP",
-          carrera_id: cand.carrera_id || sala.carrera_activa_id,
-        });
-
-        await emitirBroadcastSala(sala.id, "nuevo_mensaje", { salaId: sala.id });
-
-        if (groupJid) {
-          try {
-            await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "x-internal-bot-secret": INTERNAL_BOT_SECRET,
-              },
-              body: JSON.stringify({
-                groupJid,
-                texto: msgCruce,
-              }),
-            });
-          } catch {}
-        }
-
-        return {
-          cruzado: true,
-          montoCruzado: montoACruzar,
-          msgCruce,
-        };
-      }
+      return {
+        ok: true,
+        esSugerencia: true,
+        msgPublico: msgSugerencia,
+      };
     }
   }
 
@@ -748,6 +681,331 @@ export async function GET(req: Request) {
     metricasGrupos,
     salas,
   });
+}
+
+async function liquidarYSentenciarCarreraPlataforma(params: {
+  sala: any;
+  pizarra: string;
+  esRectificacion?: boolean;
+  operadorNombre?: string;
+  origenMsgId?: string | null;
+}): Promise<{
+  ok: boolean;
+  textoResultado: string;
+  positivos: string[];
+  negativos: string[];
+  pizarra: string[];
+  enviadoWhatsApp: boolean;
+  error?: string;
+}> {
+  const { sala, pizarra, esRectificacion = false, operadorNombre = "Operador", origenMsgId = null } = params;
+  const numeros = String(pizarra).match(/\b\d+[A-Za-z]?\b/g) || [];
+  if (numeros.length === 0) {
+    return {
+      ok: false,
+      textoResultado: "",
+      positivos: [],
+      negativos: [],
+      pizarra: [],
+      enviadoWhatsApp: false,
+      error: "Formato de pizarra inválido (ej. 10.5.1.2.7)",
+    };
+  }
+
+  const [p1, p2 = null, p3 = null, p4 = null, p5 = null] = numeros;
+  const hipodromo = String(sala.hipodromo_activo || "La Rinconada").trim();
+  const numCarrera = sala.numero_carrera_activa || 1;
+  const ordCarrera = `${numCarrera}era`;
+  const carreraId = sala.carrera_activa_id || sala.carrera_recien_cerrada_id || null;
+
+  const diasSemana = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  const meses = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+  ];
+  const now = new Date();
+  const fechaStr = `${diasSemana[now.getDay()]}, ${now.getDate()} de ${meses[now.getMonth()]} de ${now.getFullYear()}`;
+
+  let retiradosStr = "";
+  if (carreraId) {
+    try {
+      const { data: cRow } = await supabaseAdmin
+        .from("carreras")
+        .select("ejemplares_retirados")
+        .eq("id", carreraId)
+        .maybeSingle();
+      if (cRow?.ejemplares_retirados && Array.isArray(cRow.ejemplares_retirados) && cRow.ejemplares_retirados.length > 0) {
+        retiradosStr = cRow.ejemplares_retirados.map((r: any) => `#${String(r).replace(/^#/, "")}`).join(", ");
+      }
+    } catch {}
+  }
+
+  const { data: grupo } = await supabaseAdmin
+    .from("grupos_venta")
+    .select("permite_cruces, comision_default")
+    .eq("id", sala.grupo_id)
+    .maybeSingle();
+
+  const permiteCruces = grupo?.permite_cruces ?? true;
+  const porcComision = Number(grupo?.comision_default ?? 5) / 100;
+
+  let queryTickets = supabaseAdmin
+    .from("chat_tickets_fifo")
+    .select("*")
+    .eq("sala_id", sala.id)
+    .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO", "GANADOR_PROPONENTE", "GANADOR_ACEPTANTE", "EMPATE"]);
+
+  if (carreraId) {
+    queryTickets = queryTickets.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+  }
+
+  const { data: tickets } = await queryTickets;
+  const listaTickets = tickets || [];
+
+  const balance: Record<
+    string,
+    { nombre: string; ganancias: number; perdidas: number; comisionInd: number; stake: number }
+  > = {};
+
+  const asegurar = (id: string, nombre: string) => {
+    if (!balance[id]) {
+      balance[id] = {
+        nombre: nombre || "Jugador",
+        ganancias: 0,
+        perdidas: 0,
+        comisionInd: 0,
+        stake: 0,
+      };
+    }
+  };
+
+  for (const t of listaTickets) {
+    asegurar(t.proponente_id, t.proponente_nombre);
+    asegurar(t.aceptante_id, t.aceptante_nombre);
+
+    const monto = Number(t.monto_concretado || 0);
+    balance[t.proponente_id].stake += monto;
+    balance[t.aceptante_id].stake += monto;
+
+    const { data: evalData, error: evalErr } = await supabaseAdmin.rpc(
+      "evaluar_jugada_universal",
+      {
+        p_es_match: Boolean(t.es_match),
+        p_accion_proponente: t.accion_proponente || "JUEGA",
+        p_modalidad: t.modalidad || "1P",
+        p_caballos_a: t.caballos_bando_a || (t.ejemplar_numero ? [t.ejemplar_numero] : []),
+        p_caballos_b: t.caballos_bando_b || [],
+        p_p1: p1,
+        p_p2: p2,
+        p_p3: p3,
+        p_p4: p4,
+        p_p5: p5,
+      }
+    );
+
+    const factor = evalErr ? 0 : Number(evalData || 0);
+    let nuevoEstado = "EMPATE";
+
+    if (factor > 0) {
+      nuevoEstado = "GANADOR_PROPONENTE";
+      balance[t.proponente_id].ganancias += monto;
+      balance[t.aceptante_id].perdidas += monto;
+      balance[t.proponente_id].comisionInd += monto * porcComision;
+    } else if (factor < 0) {
+      nuevoEstado = "GANADOR_ACEPTANTE";
+      balance[t.aceptante_id].ganancias += monto;
+      balance[t.proponente_id].perdidas += monto;
+      balance[t.aceptante_id].comisionInd += monto * porcComision;
+    }
+
+    t.estado = nuevoEstado;
+    await supabaseAdmin
+      .from("chat_tickets_fifo")
+      .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
+      .eq("id", t.id);
+  }
+
+  const positivos: string[] = [];
+  const negativos: string[] = [];
+
+  for (const [jugadorId, b] of Object.entries(balance)) {
+    let neto = 0;
+    if (permiteCruces) {
+      const bruto = b.ganancias - b.perdidas;
+      neto = bruto > 0 ? bruto - bruto * porcComision : bruto;
+    } else {
+      neto = b.ganancias - b.comisionInd - b.perdidas;
+    }
+    neto = Number(neto.toFixed(2));
+
+    if (jugadorId) {
+      const { data: cl } = await supabaseAdmin
+        .from("clientes")
+        .select("saldo_actual, saldo_retenido, libre, aval")
+        .eq("id", jugadorId)
+        .maybeSingle();
+
+      if (cl) {
+        const nuevoSaldo = Number((Number(cl.saldo_actual || 0) + neto).toFixed(2));
+        const nuevoRet = Math.max(0, Number((Number(cl.saldo_retenido || 0) - b.stake).toFixed(2)));
+        await supabaseAdmin
+          .from("clientes")
+          .update({
+            saldo_actual: nuevoSaldo,
+            saldo_retenido: nuevoRet,
+            saldo_disponible: cl.libre ? 999999 : Math.max(0, nuevoSaldo + Number(cl.aval || 0) - nuevoRet),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", jugadorId);
+
+        if (neto > 0) {
+          await supabaseAdmin.from("libro_mayor_clientes").insert({
+            cliente_id: jugadorId,
+            cliente_nombre: b.nombre,
+            grupo_id: sala.grupo_id,
+            tipo_movimiento: "JUGADA_GANADA_NETO",
+            monto_centavos: Math.round(neto * 100),
+            monto: neto,
+            hipodromo,
+            carrera: numCarrera,
+            fecha_carrera: new Date().toISOString().split("T")[0],
+            observacion: `Sentencia Oficial Sala ${sala.nombre_sala}`,
+            creado_por: operadorNombre,
+          });
+        } else if (neto < 0) {
+          const montoAbs = Math.abs(neto);
+          await supabaseAdmin.from("libro_mayor_clientes").insert({
+            cliente_id: jugadorId,
+            cliente_nombre: b.nombre,
+            grupo_id: sala.grupo_id,
+            tipo_movimiento: "JUGADA_PERDIDA",
+            monto_centavos: Math.round(montoAbs * 100),
+            monto: montoAbs,
+            hipodromo,
+            carrera: numCarrera,
+            fecha_carrera: new Date().toISOString().split("T")[0],
+            observacion: `Sentencia Oficial Sala ${sala.nombre_sala}`,
+            creado_por: operadorNombre,
+          });
+        }
+      }
+    }
+
+    if (neto > 0) {
+      positivos.push(`${b.nombre}: +$${formatearMontoRegional(neto)}`);
+    } else if (neto < 0) {
+      negativos.push(`${b.nombre}: -$${formatearMontoRegional(Math.abs(neto))}`);
+    }
+  }
+
+  await supabaseAdmin
+    .from("salas_juego")
+    .update({
+      estado_carrera: "liquidada",
+      carrera_recien_cerrada_id: carreraId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sala.id);
+
+  const bloqueResumenJugadas =
+    listaTickets.length > 0
+      ? listaTickets
+          .map((t: any, idx: number) => {
+            let detalle = "";
+            if (t.es_match) {
+              const bA = (t.caballos_bando_a || []).join("-");
+              const bB = (t.caballos_bando_b || []).join("-");
+              const prop = String(t.proporcion_premio || t.proporcion || "").trim();
+              let propStr = "";
+              if (prop && !["1x1", "pp", "10/10", "10a10", "10@10"].includes(prop.toLowerCase())) {
+                propStr = ` [${prop.replace("@", "/").replace(/a/i, "/")}]`;
+              }
+              detalle = `(${bA}x${bB})${propStr}`;
+            } else {
+              const mod = t.modalidad || "1P";
+              const ej = t.ejemplar_numero || (t.caballos_bando_a || []).join("-");
+              detalle = `${mod} ${ej}`;
+            }
+            const montoStr = `$${formatearMontoRegional(Number(t.monto_concretado || 0))}`;
+            const ganador =
+              t.estado === "GANADOR_PROPONENTE"
+                ? `✅ Gana ${t.proponente_nombre}`
+                : t.estado === "GANADOR_ACEPTANTE"
+                ? `✅ Gana ${t.aceptante_nombre}`
+                : "🤝 Empate";
+            return `${idx + 1}) *${t.proponente_nombre}* vs *${t.aceptante_nombre}* · ${detalle} · *${montoStr}* (${ganador})`;
+          })
+          .join("\n")
+      : "_Sin jugadas concretadas en esta carrera._";
+
+  const pizarraFormateada = numeros.map((n, i) => `${i + 1}º: #${n}`).join(" · ");
+  const prefijoRectificado = esRectificacion ? "🔄 *PIZARRA RECTIFICADA OFICIALMENTE*\n\n" : "";
+
+  const lineasPositivos = positivos.length > 0 ? positivos.join("\n") : "_Sin saldos positivos en esta carrera_";
+  const lineasNegativos = negativos.length > 0 ? negativos.join("\n") : "_Sin saldos negativos en esta carrera_";
+
+  const textoResultado =
+    `${prefijoRectificado}🏆 RESULTADO Y LIQUIDACIÓN OFICIAL\n` +
+    `🏇🏻Administración Hípica🏇🏻\n` +
+    `${fechaStr}\n` +
+    `${hipodromo}, ${ordCarrera} Carrera\n` +
+    `Retirado: ${retiradosStr}\n` +
+    `📊 Pizarra Oficial: *${pizarraFormateada}*\n\n` +
+    `📑 RESUMEN DE LIQUIDACIÓN (${listaTickets.length} JUGADAS):\n` +
+    `${bloqueResumenJugadas}\n\n` +
+    `🔄BALANCE TOTAL (Compensando Ganancias vs. Pérdidas antes de con cruces el monto total):\n` +
+    `POSITIVOS\n` +
+    `${lineasPositivos}\n` +
+    `NEGATIVOS\n` +
+    `${lineasNegativos}`;
+
+  await supabaseAdmin.from("chat_mensajes").insert({
+    grupo_id: sala.grupo_id,
+    sala_id: sala.id,
+    remitente_nombre: "🤖 ASISTENTE DE SALA",
+    es_operador: true,
+    tipo_mensaje: "sistema",
+    contenido: textoResultado,
+    whatsapp_msg_id: origenMsgId || null,
+    whatsapp_group_jid: sala.whatsapp_group_jid || null,
+    whatsapp_group_nombre: sala.whatsapp_group_nombre || null,
+    origen_canal: "WHATSAPP",
+  });
+
+  await emitirBroadcastSala(sala.id, "sentencia_oficial", {
+    salaId: sala.id,
+    pizarra: numeros,
+    textoResultado,
+  });
+
+  let enviadoWhatsApp = false;
+  if (sala.whatsapp_group_jid) {
+    try {
+      const rBot = await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+        },
+        body: JSON.stringify({
+          groupJid: sala.whatsapp_group_jid,
+          texto: textoResultado,
+        }),
+      });
+      enviadoWhatsApp = rBot.ok;
+    } catch {
+      enviadoWhatsApp = false;
+    }
+  }
+
+  return {
+    ok: true,
+    textoResultado,
+    positivos,
+    negativos,
+    pizarra: numeros,
+    enviadoWhatsApp,
+  };
 }
 
 // ============================================================================
@@ -1284,8 +1542,9 @@ export async function POST(req: Request) {
       });
     }
 
-    if (body.accion === "publicar-sentencia") {
+    if (body.accion === "publicar-sentencia" || body.accion === "liquidar-pizarra" || body.accion === "rectificar-pizarra") {
       const { salaId, pizarra } = body;
+      const esRectificacion = body.accion === "rectificar-pizarra" || Boolean(body.esRectificacion);
       if (!salaId || !pizarra) {
         return NextResponse.json(
           { ok: false, error: "salaId y pizarra son requeridos" },
@@ -1303,308 +1562,18 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: "Sala no encontrada" }, { status: 404 });
       }
 
-      const numeros = String(pizarra).match(/\b\d+[A-Za-z]?\b/g) || [];
-      if (numeros.length === 0) {
-        return NextResponse.json(
-          { ok: false, error: "Formato de pizarra inválido (ej. 10.5.1.2.7)" },
-          { status: 400 }
-        );
-      }
-
-      // Intentar delegar al demonio si está en línea, o liquidar directamente desde aquí
-      try {
-        const rDaemon = await fetch(`${BOT_DAEMON_URL}/publicar-sentencia`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
-          },
-          body: JSON.stringify({
-            salaId,
-            groupJid: sala.whatsapp_group_jid,
-            pizarra,
-          }),
-        });
-        if (rDaemon.ok) {
-          const jsonDaemon = await rDaemon.json();
-          return NextResponse.json({ ...jsonDaemon, enviadoWhatsApp: true });
-        }
-      } catch {
-        // Fallback local si el demonio no está activo
-      }
-
-      const [p1, p2 = null, p3 = null, p4 = null, p5 = null] = numeros;
-      const hipodromo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
-      const numCarrera = sala.numero_carrera_activa || 1;
-      const carreraId = sala.carrera_activa_id || sala.carrera_recien_cerrada_id || null;
-
-      let positivos: string[] = [];
-      let negativos: string[] = [];
-      let rpcLiquidado = false;
-
-      try {
-        const { data: resRpc, error: errRpc } = await supabaseAdmin.rpc(
-          "liquidar_carrera_sala_oficial",
-          {
-            p_grupo_id: sala.grupo_id,
-            p_sala_id: sala.id,
-            p_carrera_id: carreraId,
-            p_p1: p1,
-            p_p2: p2,
-            p_p3: p3,
-            p_p4: p4,
-            p_p5: p5,
-          }
-        );
-        if (!errRpc && resRpc) {
-          rpcLiquidado = true;
-          if (Array.isArray((resRpc as any).positivos)) positivos = (resRpc as any).positivos;
-          if (Array.isArray((resRpc as any).negativos)) negativos = (resRpc as any).negativos;
-        }
-      } catch {
-        rpcLiquidado = false;
-      }
-
-      if (!rpcLiquidado || (positivos.length === 0 && negativos.length === 0)) {
-        const { data: grupo } = await supabaseAdmin
-          .from("grupos_venta")
-          .select("permite_cruces, comision_default")
-          .eq("id", sala.grupo_id)
-          .maybeSingle();
-
-        const permiteCruces = grupo?.permite_cruces ?? true;
-        const porcComision = Number(grupo?.comision_default ?? 5) / 100;
-
-        let queryTickets = supabaseAdmin
-          .from("chat_tickets_fifo")
-          .select("*")
-          .eq("sala_id", sala.id)
-          .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"]);
-
-        if (carreraId) {
-          queryTickets = queryTickets.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
-        }
-
-        const { data: tickets } = await queryTickets;
-        const balance: Record<
-          string,
-          { nombre: string; ganancias: number; perdidas: number; comisionInd: number; stake: number }
-        > = {};
-
-        const asegurar = (id: string, nombre: string) => {
-          if (!balance[id]) {
-            balance[id] = {
-              nombre: nombre || "Jugador",
-              ganancias: 0,
-              perdidas: 0,
-              comisionInd: 0,
-              stake: 0,
-            };
-          }
-        };
-
-        for (const t of tickets || []) {
-          asegurar(t.proponente_id, t.proponente_nombre);
-          asegurar(t.aceptante_id, t.aceptante_nombre);
-
-          const monto = Number(t.monto_concretado || 0);
-          balance[t.proponente_id].stake += monto;
-          balance[t.aceptante_id].stake += monto;
-
-          const { data: evalData, error: evalErr } = await supabaseAdmin.rpc(
-            "evaluar_jugada_universal",
-            {
-              p_es_match: Boolean(t.es_match),
-              p_accion_proponente: t.accion_proponente || "JUEGA",
-              p_modalidad: t.modalidad || "1P",
-              p_caballos_a: t.caballos_bando_a || (t.ejemplar_numero ? [t.ejemplar_numero] : []),
-              p_caballos_b: t.caballos_bando_b || [],
-              p_p1: p1,
-              p_p2: p2,
-              p_p3: p3,
-              p_p4: p4,
-              p_p5: p5,
-            }
-          );
-
-          const factor = evalErr ? 0 : Number(evalData || 0);
-          let nuevoEstado = "EMPATE";
-
-          if (factor > 0) {
-            nuevoEstado = "GANADOR_PROPONENTE";
-            balance[t.proponente_id].ganancias += monto;
-            balance[t.aceptante_id].perdidas += monto;
-            balance[t.proponente_id].comisionInd += monto * porcComision;
-          } else if (factor < 0) {
-            nuevoEstado = "GANADOR_ACEPTANTE";
-            balance[t.aceptante_id].ganancias += monto;
-            balance[t.proponente_id].perdidas += monto;
-            balance[t.aceptante_id].comisionInd += monto * porcComision;
-          }
-
-          if (!rpcLiquidado) {
-            await supabaseAdmin
-              .from("chat_tickets_fifo")
-              .update({ estado: nuevoEstado })
-              .eq("id", t.id);
-          }
-        }
-
-        for (const [jugadorId, b] of Object.entries(balance)) {
-          let neto = 0;
-          if (permiteCruces) {
-            const bruto = b.ganancias - b.perdidas;
-            neto = bruto > 0 ? bruto - bruto * porcComision : bruto;
-          } else {
-            neto = b.ganancias - b.comisionInd - b.perdidas;
-          }
-          neto = Number(neto.toFixed(2));
-
-          if (!rpcLiquidado && jugadorId) {
-            const { data: cl } = await supabaseAdmin
-              .from("clientes")
-              .select("saldo_actual, saldo_retenido, libre, aval")
-              .eq("id", jugadorId)
-              .maybeSingle();
-
-            if (cl) {
-              const nuevoSaldo = Number((Number(cl.saldo_actual || 0) + neto).toFixed(2));
-              const nuevoRet = Math.max(
-                0,
-                Number((Number(cl.saldo_retenido || 0) - b.stake).toFixed(2))
-              );
-              await supabaseAdmin
-                .from("clientes")
-                .update({
-                  saldo_actual: nuevoSaldo,
-                  saldo_retenido: nuevoRet,
-                  saldo_disponible: cl.libre
-                    ? 999999
-                    : Math.max(0, nuevoSaldo + Number(cl.aval || 0) - nuevoRet),
-                })
-                .eq("id", jugadorId);
-
-              if (neto > 0) {
-                await supabaseAdmin.from("libro_mayor_clientes").insert({
-                  cliente_id: jugadorId,
-                  cliente_nombre: b.nombre,
-                  grupo_id: sala.grupo_id,
-                  tipo_movimiento: "JUGADA_GANADA_NETO",
-                  monto_centavos: Math.round(neto * 100),
-                  monto: neto,
-                  hipodromo,
-                  carrera: numCarrera,
-                  fecha_carrera: new Date().toISOString().split("T")[0],
-                  observacion: `Liquidación Sala ${sala.nombre_sala}`,
-                  creado_por: "OPERADOR_SALA",
-                });
-              } else if (neto < 0) {
-                const montoAbs = Math.abs(neto);
-                await supabaseAdmin.from("libro_mayor_clientes").insert({
-                  cliente_id: jugadorId,
-                  cliente_nombre: b.nombre,
-                  grupo_id: sala.grupo_id,
-                  tipo_movimiento: "JUGADA_PERDIDA",
-                  monto_centavos: Math.round(montoAbs * 100),
-                  monto: montoAbs,
-                  hipodromo,
-                  carrera: numCarrera,
-                  fecha_carrera: new Date().toISOString().split("T")[0],
-                  observacion: `Liquidación Sala ${sala.nombre_sala}`,
-                  creado_por: "OPERADOR_SALA",
-                });
-              }
-            }
-          }
-
-          if (neto > 0) {
-            positivos.push(`🟢 *${b.nombre}*: +$${formatearMontoRegional(neto)}`);
-          } else if (neto < 0) {
-            negativos.push(`🔴 *${b.nombre}*: -$${formatearMontoRegional(Math.abs(neto))}`);
-          }
-        }
-
-        await supabaseAdmin
-          .from("salas_juego")
-          .update({
-            estado_carrera: "liquidada",
-            carrera_recien_cerrada_id: carreraId,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", sala.id);
-      }
-
-      let qJugadas = supabaseAdmin
-        .from("chat_tickets_fifo")
-        .select("*")
-        .eq("sala_id", sala.id)
-        .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO", "GANADOR_PROPONENTE", "GANADOR_ACEPTANTE", "EMPATE"])
-        .order("created_at", { ascending: true });
-      if (carreraId) {
-        qJugadas = qJugadas.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
-      }
-      const { data: jugadasCarrera } = await qJugadas;
-      const listaJugadas = jugadasCarrera || [];
-      const bloqueJugadas =
-        listaJugadas.length > 0
-          ? listaJugadas
-              .map((t: any, idx: number) => {
-                const detalle = t.es_match
-                  ? `Match ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`
-                  : `${t.modalidad || "1P"} #${t.ejemplar_numero || (t.caballos_bando_a || []).join("-")}`;
-                const montoStr = `$${formatearMontoRegional(Number(t.monto_concretado || 0))}`;
-                const estadoEmoji =
-                  t.estado === "GANADOR_PROPONENTE"
-                    ? `✅ Gana ${t.proponente_nombre}`
-                    : t.estado === "GANADOR_ACEPTANTE"
-                    ? `✅ Gana ${t.aceptante_nombre}`
-                    : t.estado === "EMPATE"
-                    ? "🤝 Empate"
-                    : "";
-                return `${idx + 1}) *${t.proponente_nombre}* vs *${t.aceptante_nombre}* · ${detalle} · *${montoStr}*${estadoEmoji ? ` (${estadoEmoji})` : ""}`;
-              })
-              .join("\n")
-          : "_Sin jugadas concretadas en esta carrera._";
-
-      const pizarraFormateada = numeros.map((n, i) => `${i + 1}º: #${n}`).join(" · ");
-      const prefijoRectificado = body.esRectificacion ? "🔄 *PIZARRA RECTIFICADA OFICIALMENTE*\n\n" : "";
-      const textoResultado =
-        `${prefijoRectificado}🏁 *SENTENCIA OFICIAL — ${hipodromo} C${numCarrera}*\n` +
-        `📊 *Pizarra Oficial:* ${pizarraFormateada}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `📋 *TODAS LAS JUGADAS (${listaJugadas.length}):*\n` +
-        `${bloqueJugadas}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `📈 *POSITIVOS (+):*\n` +
-        `${positivos.length > 0 ? positivos.join("\n") : "_Sin saldos positivos en esta carrera_"}\n\n` +
-        `📉 *NEGATIVOS (-):*\n` +
-        `${negativos.length > 0 ? negativos.join("\n") : "_Sin saldos negativos en esta carrera_"}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━`;
-
-      if (sala.whatsapp_group_jid) {
-        try {
-          await fetch(`${BOT_DAEMON_URL}/publicar-grupo`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-internal-bot-secret": INTERNAL_BOT_SECRET,
-            },
-            body: JSON.stringify({
-              groupJid: sala.whatsapp_group_jid,
-              texto: textoResultado,
-            }),
-          });
-        } catch {}
-      }
-
-      return NextResponse.json({
-        ok: true,
-        textoResultado,
-        positivos,
-        negativos,
-        pizarra: numeros,
-        enviadoWhatsApp: Boolean(sala.whatsapp_group_jid),
+      const resSentencia = await liquidarYSentenciarCarreraPlataforma({
+        sala,
+        pizarra,
+        esRectificacion: Boolean(esRectificacion),
+        operadorNombre: body.operadorNombre || "OPERADOR_WEB",
       });
+
+      if (!resSentencia.ok) {
+        return NextResponse.json({ ok: false, error: resSentencia.error }, { status: 400 });
+      }
+
+      return NextResponse.json(resSentencia);
     }
 
     if (body.accion === "ajuste-saldo-operador") {
@@ -2474,6 +2443,51 @@ export async function POST(req: Request) {
       }
     }
 
+    if (matchPizarraComando || matchRectificarComando) {
+      const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
+      if (!esOp) {
+        return NextResponse.json({
+          ok: false,
+          tipo: "NO_AUTORIZADO",
+          respuestaGrupo: null,
+          mensajePrivadoAutor: "⚠️ No está autorizado para sentenciar o rectificar resultados oficiales.",
+          senderJid: participantJid,
+        });
+      }
+
+      const esRectificacion = Boolean(matchRectificarComando);
+      const pizarraRaw = (matchPizarraComando?.[1] || matchRectificarComando?.[1] || "").trim();
+
+      const resSentencia = await liquidarYSentenciarCarreraPlataforma({
+        sala,
+        pizarra: pizarraRaw,
+        esRectificacion,
+        operadorNombre: String(body.senderNombre || body.pushName || nombreJugador || "OPERADOR_WHATSAPP"),
+        origenMsgId: whatsappMsgId || null,
+      });
+
+      if (!resSentencia.ok) {
+        return NextResponse.json({
+          ok: false,
+          tipo: "ERROR_PIZARRA",
+          respuestaGrupo: `⚠️ ${resSentencia.error || "Formato de pizarra inválido"}`,
+          mensajePrivadoAutor: null,
+          senderJid: participantJid,
+        });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        tipo: esRectificacion ? "RECTIFICACION_PIZARRA" : "SENTENCIA_PIZARRA",
+        respuestaGrupo: resSentencia.textoResultado,
+        msg_publico: resSentencia.textoResultado,
+        msg_publico_bot: resSentencia.textoResultado,
+        respuestaPublica: resSentencia.textoResultado,
+        mensajePrivadoAutor: null,
+        senderJid: participantJid,
+      });
+    }
+
     if (esConsultaSaldo) {
       const saldoActualFmt = formatearMontoRegional(Number(cliente.saldo_actual || 0));
       const avalFmt = formatearMontoRegional(Number(cliente.aval || cliente.limite_credito || 0));
@@ -3073,8 +3087,9 @@ export async function POST(req: Request) {
           nombreDa = nombreJugador;
         }
 
-        // Modalidad / Caballos
-        let modalidadCaballos = "";
+        // Modalidad / Caballos y Proporción
+        let detalleJugada = "";
+        const propRaw = String(propFresca.proporcion_premio || propFresca.proporcion || "1x1").trim();
         if (propFresca.es_match) {
           const bA = Array.isArray(propFresca.caballos_bando_a)
             ? propFresca.caballos_bando_a.join("-")
@@ -3082,23 +3097,20 @@ export async function POST(req: Request) {
           const bB = Array.isArray(propFresca.caballos_bando_b)
             ? propFresca.caballos_bando_b.join("-")
             : String(propFresca.caballos_bando_b || "");
-          if (bA && bB) {
-            modalidadCaballos = `${bA}x${bB}`;
-          } else {
-            modalidadCaballos = propFresca.ejemplar_texto || propFresca.modalidad_propuesta || "MATCH";
+          let propTexto = "";
+          if (propRaw && !["1x1", "pp", "10/10", "10a10", "10@10"].includes(propRaw.toLowerCase())) {
+            propTexto = ` [${propRaw.replace("@", "/").replace(/a/i, "/")}]`;
           }
+          detalleJugada = `(${bA}x${bB})${propTexto}`;
         } else {
           const mod = propFresca.modalidad_propuesta || propFresca.modalidad || "";
           const ej =
             propFresca.ejemplar_texto ||
             (Array.isArray(propFresca.caballos_bando_a) ? propFresca.caballos_bando_a.join("-") : "") ||
             "";
-          modalidadCaballos = `${mod} ${ej}`.trim() || propFresca.jugada_estandarizada || "JUGADA";
+          detalleJugada = `${mod} ${ej}`.trim() || propFresca.jugada_estandarizada || "JUGADA";
+          // Puestos y ninis: NUNCA imprimen proporción
         }
-
-        // Proporción
-        const propRaw = String(propFresca.proporcion_premio || propFresca.proporcion || "1x1").trim();
-        const propTexto = propRaw.includes("/") ? propRaw.replace("/", "a") : propRaw;
 
         // Riesgos
         const matchProp = /^10[x\/\-a@ª](\d+(?:\.\d+)?)$/i.exec(propRaw.replace(',', '.'));
@@ -3112,24 +3124,24 @@ export async function POST(req: Request) {
           }
         }
 
-        const montoBaseFmt = Number(montoEfectivo).toFixed(montoEfectivo % 1 === 0 ? 0 : 2);
-        const riesgoJuegaFmt = riesgoJuega.toFixed(2);
-        const riesgoDaFmt = riesgoDa.toFixed(2);
+        const montoBaseFmt = formatearMontoRegional(montoEfectivo);
+        const riesgoJuegaFmt = formatearMontoRegional(riesgoJuega);
+        const riesgoDaFmt = formatearMontoRegional(riesgoDa);
 
         const msgPublicoFinal =
-          `✅ Aquí jugaron: *${nombreJuega} Juega ${modalidadCaballos} ${propTexto} da ${nombreDa} $${montoBaseFmt}*\n` +
+          `✅ Aquí jugaron: *${nombreJuega} Juega ${detalleJugada} da ${nombreDa} $${montoBaseFmt}*\n` +
           `🔹 Juega: ${nombreJuega} (Riesgo $${riesgoJuegaFmt})\n` +
           `🔸 Da: ${nombreDa} (Riesgo $${riesgoDaFmt})`;
 
         const msgPrivAceptante = evalConcrecion.excedioSaldo
-          ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`
+          ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de $${formatearMontoRegional(evalConcrecion.montoEfectivo)}. Muchas gracias.`
           : `✅ *Confirmación de Jugada*:\n` +
-            `Pactaste con *${propFresca.remitente_nombre}* en *${modalidadCaballos} ${propTexto}* por *$${montoBaseFmt}*.\n` +
+            `Pactaste con *${propFresca.remitente_nombre}* en *${detalleJugada}* por *$${montoBaseFmt}*.\n` +
             `Tu rol: *${nombreJugador === nombreJuega ? "Juega" : "Da"}* (Riesgo: $${nombreJugador === nombreJuega ? riesgoJuegaFmt : riesgoDaFmt}).`;
 
         const msgPrivProponente =
           `🔔 *Confirmación de Jugada*:\n` +
-          `*${nombreJugador}* aceptó tu jugada en *${modalidadCaballos} ${propTexto}* por *$${montoBaseFmt}*.\n` +
+          `*${nombreJugador}* aceptó tu jugada en *${detalleJugada}* por *$${montoBaseFmt}*.\n` +
           `Tu rol: *${propFresca.remitente_nombre === nombreJuega ? "Juega" : "Da"}* (Riesgo: $${propFresca.remitente_nombre === nombreJuega ? riesgoJuegaFmt : riesgoDaFmt}).` +
           (nuevoRemanente > 0 ? `\n⏳ Quedan *$${formatearMontoRegional(nuevoRemanente)}* disponibles en tu propuesta.` : "");
 
@@ -3422,7 +3434,7 @@ export async function POST(req: Request) {
         ok: propIdsBloque.length > 0,
         tipo: "PROPUESTA_BLOQUE",
         propuestasIds: propIdsBloque,
-        reaccionEmoji: "🏇",
+        reaccionEmoji: null,
         respuestaGrupo: msgPubBlk,
         msg_publico: msgPubBlk,
         msg_publico_bot: msgPubBlk,
@@ -3867,7 +3879,7 @@ export async function POST(req: Request) {
         propuestaId: propId,
         jugadaEstandarizada: analisis.jugadaEstandarizada,
         montoPublicado: montoAPublicar,
-        reaccionEmoji: "🏇",
+        reaccionEmoji: null,
         respuestaGrupo: resCruceAuto.msgCruce,
         msg_publico: resCruceAuto.msgCruce,
         msg_publico_bot: resCruceAuto.msgCruce,
@@ -3883,7 +3895,7 @@ export async function POST(req: Request) {
       propuestaId: propId,
       jugadaEstandarizada: analisis.jugadaEstandarizada,
       montoPublicado: montoAPublicar,
-      reaccionEmoji: "🏇",
+      reaccionEmoji: null,
       respuestaGrupo: null,
       msg_publico: null,
       msg_publico_bot: null,

@@ -221,6 +221,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, motivo: "Sala eliminada correctamente" });
     }
 
+    if (accion === "limpiar-huerfanos") {
+      const { salaId } = body;
+      await supabaseAdmin
+        .from("salas_whatsapp_grupos")
+        .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+        .eq("estado_conexion", "desconectado");
+
+      if (salaId) {
+        await supabaseAdmin
+          .from("salas_whatsapp_grupos")
+          .delete()
+          .eq("sala_id", salaId);
+        await supabaseAdmin
+          .from("salas_juego")
+          .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+          .eq("id", salaId);
+      }
+
+      try {
+        await fetch(`${BOT_DAEMON_URL}/limpiar-huerfanos`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({ salaId }),
+        });
+      } catch {}
+
+      return NextResponse.json({ ok: true, motivo: "Vínculos huérfanos liberados exitosamente." });
+    }
+
     if (accion === "verificar-y-vincular") {
       const { grupoId, salaId, groupJid } = body;
       if (!salaId || !groupJid) {
@@ -230,37 +262,40 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Regla 1 a 1: Un Grupo de WhatsApp = Una Sala
+      // Regla 1 a 1: Si este grupo estaba vinculado a otra sala, desvincularla para reasignar limpiamente
       const { data: otraSala } = await supabaseAdmin
         .from("salas_juego")
         .select("id, nombre_sala")
         .eq("whatsapp_group_jid", groupJid)
-        .eq("activa", true)
         .neq("id", salaId)
         .limit(1)
         .maybeSingle();
 
       if (otraSala) {
-        return NextResponse.json({
-          ok: false,
-          motivo: `Este grupo de WhatsApp ya está vinculado a otra sala (${otraSala.nombre_sala || otraSala.id}). Regla 1 a 1.`,
-        });
+        await supabaseAdmin
+          .from("salas_juego")
+          .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+          .eq("id", otraSala.id);
+        await supabaseAdmin
+          .from("salas_whatsapp_grupos")
+          .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+          .eq("sala_id", otraSala.id);
       }
 
       const { data: otroVinc } = await supabaseAdmin
         .from("salas_whatsapp_grupos")
         .select("sala_id")
         .eq("whatsapp_group_jid", groupJid)
-        .eq("activo", true)
         .neq("sala_id", salaId)
         .limit(1)
         .maybeSingle();
 
       if (otroVinc) {
-        return NextResponse.json({
-          ok: false,
-          motivo: "Este grupo de WhatsApp ya está conectado a otra sala activa (Regla 1 a 1).",
-        });
+        await supabaseAdmin
+          .from("salas_whatsapp_grupos")
+          .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+          .eq("whatsapp_group_jid", groupJid)
+          .neq("sala_id", salaId);
       }
 
       try {

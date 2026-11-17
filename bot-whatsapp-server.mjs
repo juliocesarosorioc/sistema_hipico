@@ -101,6 +101,32 @@ function persistirSalasDesconectadas() {
 
 salasDesconectadas = cargarSalasDesconectadas();
 
+async function liberarVinculosHuerfanos(salaId = null) {
+  try {
+    salasCacheMap.clear();
+    if (supabase) {
+      if (salaId) {
+        await supabase
+          .from("salas_whatsapp_grupos")
+          .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+          .eq("sala_id", salaId);
+        await supabase
+          .from("salas_juego")
+          .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+          .eq("id", salaId);
+      } else {
+        await supabase
+          .from("salas_whatsapp_grupos")
+          .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
+          .eq("estado_conexion", "desconectado");
+      }
+    }
+    console.log(`[Bot WhatsApp] 🧹 Vínculos huérfanos liberados en BD y memoria.`);
+  } catch (err) {
+    console.warn("[Bot WhatsApp] Aviso liberando vínculos huérfanos:", err?.message || err);
+  }
+}
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_SERVICE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -1446,9 +1472,8 @@ async function manejarMensajeEntrante(msg) {
       return;
     }
 
-    // Cierre VULN-15: Descartar mensajes duplicados / reintentos en < 1ms
+    // Descartar mensajes duplicados / reintentos
     if (whatsappMsgId && esMensajeDuplicado(whatsappMsgId)) {
-      console.log(`[Bot WhatsApp] ⏩ [Idempotencia] Reintento descartado: ${whatsappMsgId}`);
       return;
     }
 
@@ -1469,125 +1494,31 @@ async function manejarMensajeEntrante(msg) {
     const textoLimpio = sanitizarTexto(String(texto || ""));
     if (!textoLimpio) return;
 
-    // Manejo de Mensajes Privados Directos (DM) al Bot
-    if (esPrivado) {
-      const myPhone = sock?.user?.id ? normalizarTelefono(sock.user.id) : "";
-      const senderNombre = sanitizarTexto(msg.pushName) || (esFromMe ? "Operador" : "Usuario");
-      const telReal = normalizarTelefono(remoteJid);
-
-      let clienteDm = null;
-      let usuarioOp = null;
-      let grupoIdDm = null;
-      let salaDm = null;
-
-      if (telReal && telReal.length >= 7) {
-        const suf8 = telReal.slice(-8);
-        const { data: clList } = await supabase
-          .from("clientes")
-          .select("id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, telefono, telefono_normalizado")
-          .or(`whatsapp_jid.eq.${remoteJid},telefono_normalizado.eq.${telReal},telefono.ilike.%${suf8}%`)
-          .limit(1);
-        clienteDm = clList?.[0] || null;
-
-        if (clienteDm?.grupo_id) {
-          grupoIdDm = clienteDm.grupo_id;
-        }
-
-        const { data: opList } = await supabase
-          .from("usuario_sistema")
-          .select("id, nombre, activo, es_principal, grupo_id, telefono")
-          .ilike("telefono", `%${suf8}%`)
-          .limit(1);
-        usuarioOp = opList?.[0] || null;
-        if (!grupoIdDm && usuarioOp?.grupo_id) {
-          grupoIdDm = usuarioOp.grupo_id;
-        }
-      }
-
-      if (grupoIdDm) {
-        const { data: salas } = await supabase
-          .from("salas_juego")
-          .select("*")
-          .eq("grupo_id", grupoIdDm)
-          .order("created_at", { ascending: false });
-        salaDm = salas?.find((s) => s.estado_carrera === "abierta") || salas?.[0] || null;
-      }
-
-      const esOp = esFromMe || Boolean(usuarioOp && usuarioOp.activo !== false && (usuarioOp.es_principal || usuarioOp.grupo_id));
-
-      // 1. Ajuste de Saldo por Operador en DM: "Pedro +500", "Carlos -150"
-      const matchAjusteDm = textoLimpio.match(/^(?:!)?(?:(?:recargar?|abonar?|ajuste|cargar?)\s+)?([a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s._-]+?)\s*([+-])\s*([0-9kK.,]+)$/i);
-      if (matchAjusteDm && esOp && salaDm) {
-        const monto = parsearMontoFlexible(matchAjusteDm[3]);
-        if (monto > 0) {
-          const resAjuste = await ejecutarAjusteOperador(salaDm, null, matchAjusteDm[1].trim(), matchAjusteDm[2], monto, senderNombre);
-          if (resAjuste?.msgPublico) {
-            await enviarMensajePrivado(remoteJid, resAjuste.msgPublico);
-          }
-          return;
-        }
-      }
-
-      // 2. Consulta de Saldo o Solicitud de Cajero en DM
-      try {
-        const r = await fetch(`${NEXT_API_BASE}/api/whatsapp-sala/procesar`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
-          },
-          body: JSON.stringify({
-            salaId: salaDm?.id || null,
-            grupoId: grupoIdDm || null,
-            groupJid: remoteJid,
-            senderJid: remoteJid,
-            participantJid: remoteJid,
-            telefonoReal: telReal,
-            pushName: senderNombre,
-            senderNombre: senderNombre || clienteDm?.seudonimo || clienteDm?.nombre || "Jugador",
-            clientePreviamenteIdentificado: clienteDm,
-            esMensajePropioTelefono: esFromMe,
-            texto: textoLimpio,
-            whatsappMsgId,
-            quotedMsgId: null,
-          }),
-        });
-        const data = await r.json().catch(() => null);
-        if (data) {
-          const msgPrivado = data.mensajePrivadoAutor || data.msg_privado_bot || data.alertaPrivada;
-          if (msgPrivado) {
-            await enviarMensajePrivado(remoteJid, msgPrivado);
-          }
-          const notifs = data.notificaciones_privadas || data.notificacionesPrivadas || [];
-          for (const n of notifs) {
-            const txt = typeof n === "string" ? n : n?.mensaje || n?.msg;
-            const dest = typeof n === "object" ? (n.whatsapp_jid || (n.telefono ? `${normalizarTelefono(n.telefono)}@s.whatsapp.net` : null)) : null;
-            if (txt && dest) {
-              await enviarMensajePrivado(dest, txt).catch(() => {});
-            }
-          }
-        }
-      } catch (errDm) {
-        console.warn("[Bot WhatsApp] Error procesando DM privado:", errDm?.message || errDm);
-      }
-      return;
-    }
-
-    // Cierre VULN-14: Soporte para JIDs @lid, participantAlt y cuenta propia del teléfono
+    // Extracción estricta del remitente real:
+    // En grupos (@g.us), NUNCA usar remoteJid como remitente; extraer msg.key.participant || msg.participant
     const myPhone = sock?.user?.id ? normalizarTelefono(sock.user.id) : "";
-    const participantJid =
-      msg.key.participant ||
-      msg.participant ||
-      (esFromMe ? (myPhone ? `${myPhone}@s.whatsapp.net` : "") : "");
+    const participantJid = esGrupo
+      ? (msg.key.participant || msg.participant || (esFromMe && myPhone ? `${myPhone}@s.whatsapp.net` : ""))
+      : remoteJid;
     const participantAlt = msg.key.participantAlt || msg.participantAlt || "";
-    const senderNombre = sanitizarTexto(msg.pushName) || (esFromMe ? "Operador (Telefono)" : "Usuario");
+    const quotedMsgId =
+      msg.message?.extendedTextMessage?.contextInfo?.stanzaId ||
+      msg.message?.contextInfo?.stanzaId ||
+      null;
 
-    const senderJid = participantJid || participantAlt || (esFromMe ? (myPhone ? `${myPhone}@s.whatsapp.net` : "") : "");
+    const senderNombre = sanitizarTexto(msg.pushName) || (esFromMe ? "Operador" : "Usuario");
+    const telPrincipal = normalizarTelefono(participantJid);
+    const telAlt = normalizarTelefono(participantAlt);
+    const telReal =
+      participantAlt && participantAlt.endsWith("@s.whatsapp.net")
+        ? telAlt
+        : telPrincipal && telPrincipal.length >= 7
+        ? telPrincipal
+        : telAlt || null;
 
-    // Rate Limiter Anti-Spam: silenciar usuarios que exceden el límite de mensajes
-    if (senderJid && mutedJids.has(senderJid)) {
-      return;
-    }
+    // Rate Limiter Anti-Spam
+    const senderJid = participantJid || remoteJid;
+    if (senderJid && mutedJids.has(senderJid)) return;
     if (senderJid) {
       const now = Date.now();
       const userTimes = messageTimestamps.get(senderJid) || [];
@@ -1598,9 +1529,7 @@ async function manejarMensajeEntrante(msg) {
           await sock.sendMessage(remoteJid, {
             text: "⚠️ [SISTEMA] Usuario silenciado por Spam/Flooding.",
           });
-        } catch {
-          /* no bloqueante */
-        }
+        } catch {}
         setTimeout(() => {
           mutedJids.delete(senderJid);
           messageTimestamps.delete(senderJid);
@@ -1611,365 +1540,150 @@ async function manejarMensajeEntrante(msg) {
       messageTimestamps.set(senderJid, recentTimes);
     }
 
-    const telPrincipal = normalizarTelefono(participantJid);
-    const telAlt = normalizarTelefono(participantAlt);
-
-    // En WhatsApp Multi-Device / Baileys, participantJid suele ser un LID (@lid) y participantAlt contiene el número real (@s.whatsapp.net).
-    let telReal = "";
-    if (participantAlt && participantAlt.endsWith("@s.whatsapp.net")) {
-      telReal = telAlt;
-    } else if (participantJid && participantJid.endsWith("@s.whatsapp.net")) {
-      telReal = telPrincipal;
-    } else if (telAlt && telAlt.length >= 7 && telAlt.length <= 15) {
-      telReal = telAlt;
-    } else if (!participantJid.endsWith("@lid") && telPrincipal && telPrincipal.length >= 7) {
-      telReal = telPrincipal;
-    }
-    const telNormalizado = telReal || telAlt || telPrincipal;
-
-    console.log(`[Bot WhatsApp] 📩 [${remoteJid}] (${senderNombre}${esFromMe ? " [PROPIO]" : ""} / ${participantJid}${participantAlt ? ` / alt:${participantAlt}` : ""}): "${textoLimpio}"`);
-
-    // Obtener todas las Salas vinculadas a este groupJid usando caché ultra-rápido (0ms)
-    const salasDestino = await obtenerSalasPorGroupJid(remoteJid);
-    const sala = salasDestino[0] || null;
-    if (!sala) {
-      return;
-    }
-
-    const quotedMsgId =
-      msg.message?.extendedTextMessage?.contextInfo?.stanzaId || null;
-
-    // 1. Comandos de Operador desde WhatsApp:
-    // - !abrir [hipodromo] [carrera] (o "abrir la rinconada 1")
-    // - !cerrar
-    // - LLEGADA: A.B.C.D.E (o !llegada, !sentenciar, !pizarra)
-    // - !plano o !prejugadas
-    // - !anular o !retirar
-
-    // Detección de Rectificación de Pizarra: !rectificar [pizarra] o "rectificar: [pizarra]"
-    const matchRectificar = textoLimpio.match(/^(?:!)?rectificar(?:\s+pizarra)?\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
-    if (matchRectificar) {
-      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
-      if (!esOp) {
-        console.warn(`[Bot WhatsApp] ⛔ Comando rectificar rechazado: ${participantJid} no es operador.`);
-        await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para rectificar resultados oficiales.");
-        return;
-      }
-      console.log(`[Bot WhatsApp] 🔄 Rectificando sentencia de pizarra: ${matchRectificar[1]}`);
-      await ejecutarRectificacionPizarra(sala, remoteJid, matchRectificar[1]);
-      return;
-    }
-
-    // Detección de LLEGADA: A.B.C.D.E (con o sin '!')
-    const matchLlegada = textoLimpio.match(/^(?:!)?(?:llegada|sentenciar|pizarra)\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
-    if (matchLlegada) {
-      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
-      if (!esOp) {
-        console.warn(`[Bot WhatsApp] ⛔ Comando sentenciar rechazado: ${participantJid} no es operador.`);
-        await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para sentenciar o publicar resultados oficiales.");
-        return;
-      }
-      console.log(`[Bot WhatsApp] 🏁 Ejecutando sentencia de pizarra: ${matchLlegada[1]}`);
-      await ejecutarSentenciaPizarra(sala, remoteJid, matchLlegada[1]);
-      return;
-    }
-
-    // Detección de Apertura: !abrir [hipodromo] [carrera] o "abrir [hipodromo] [carrera]"
-    const matchAbrir = textoLimpio.match(/^(?:!)?(?:abrir|abierta)(?:\s+carrera)?(?:\s+(.+?))?(?:\s+(?:c(?:arrera)?\s*|#\s*)?(\d{1,2}))?$/i);
-    if (matchAbrir && (/^(?:!)?abrir/i.test(textoLimpio) || /^(?:!)?abierta/i.test(textoLimpio))) {
-      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
-      if (!esOp) {
-        console.warn(`[Bot WhatsApp] ⛔ Comando abrir rechazado: ${participantJid} no es operador.`);
-        await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para abrir carreras en la sala.");
-        return;
-      }
-      let posibleHipo = (matchAbrir[1] || "").trim();
-      let posibleCarrera = (matchAbrir[2] || "").trim();
-      if (!posibleCarrera && /^\d{1,2}$/.test(posibleHipo)) {
-        posibleCarrera = posibleHipo;
-        posibleHipo = "";
-      }
-      posibleHipo = posibleHipo || sala.hipodromo_activo || "LA RINCONADA";
-      posibleCarrera = posibleCarrera || sala.numero_carrera_activa || "1";
-      console.log(`[Bot WhatsApp] 🏆 Abriendo carrera: ${posibleHipo} #${posibleCarrera}`);
-      await ejecutarAperturaCarrera(sala, remoteJid, posibleHipo, posibleCarrera);
-      return;
-    }
-
-    // Detección de Cierre: !cerrar, "cerrar carrera", "cerrado", "cerrada", "trancar"
-    if (/^(?:!)?(?:cerrar(?:\s+carrera)?|cerrada|cerrado|trancar|no\s+va\s+m[aá]s)$/i.test(textoLimpio)) {
-      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
-      if (!esOp) {
-        console.warn(`[Bot WhatsApp] ⛔ Comando cerrar rechazado: ${participantJid} no es operador.`);
-        await enviarMensajePrivado(participantJid, "⚠️ No está autorizado para cerrar carreras en la sala.");
-        return;
-      }
-      console.log(`[Bot WhatsApp] 🔒 Cerrando carrera en sala "${sala.nombre_sala}"`);
-      await ejecutarCierreCarrera(sala, remoteJid);
-      return;
-    }
-
-    // Detección de Saldos Globales de la Sala (Comando Exclusivo de Operador)
-    if (/^(?:!)?(?:saldos|ver\s+saldos|lista\s+saldos)$/i.test(textoLimpio)) {
-      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
-      if (esOp && sala.grupo_id) {
-        console.log(`[Bot WhatsApp] 📊 Publicando listado oficial de saldos en "${sala.nombre_sala}"`);
-        const { data: listaCl } = await supabase
+    // Resolución de sala(s) vinculadas
+    let salasDestino = [];
+    if (esGrupo) {
+      salasDestino = await obtenerSalasPorGroupJid(remoteJid);
+      if (salasDestino.length === 0) return;
+    } else {
+      // En DM privado, buscar sala por grupo_id del cliente
+      if (telReal && supabase) {
+        const suf8 = telReal.slice(-8);
+        const { data: clList } = await supabase
           .from("clientes")
-          .select("id, nombre, seudonimo, saldo_actual, saldo_disponible, libre")
-          .eq("grupo_id", sala.grupo_id)
-          .order("nombre", { ascending: true });
-
-        const lineas = (listaCl || []).map((c) => {
-          const nom = c.seudonimo || c.nombre || "Jugador";
-          const actual = formatearMonto(c.saldo_actual);
-          const disp = formatearMonto(c.saldo_disponible);
-          return `• *${nom}*: $${actual} ${c.libre ? "(Libre)" : `(Disp: $${disp})`}`;
-        }).join("\n");
-
-        const msgSaldos = `📊 *LISTADO OFICIAL DE SALDOS*\n━━━━━━━━━━━━━━━━━━━━━━\n${lineas || "_No hay jugadores registrados en este grupo._"}`;
-        await enviarMensajeGrupo(remoteJid, msgSaldos);
-        await registrarMensajeEnChatWeb(sala, remoteJid, msgSaldos, "sistema");
-        return;
-      }
-    }
-
-    // Detección de Plano / Prejugadas: !plano o plano
-    if (/^(?:!)?(?:plano|prejugadas)$/i.test(textoLimpio)) {
-      console.log(`[Bot WhatsApp] 📋 Publicando plano de jugadas en "${sala.nombre_sala}"`);
-      await construirYPublicarPlano(sala, remoteJid);
-      return;
-    }
-
-    // Detección de Ajuste Operador (+ / -): ej. "Pedro +400", "Carlos -150", "Juan +20.000"
-    const matchAjusteOperador = textoLimpio.match(/^(?:!)?(?:(?:recargar?|abonar?|ajuste|cargar?)\s+)?([a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s._-]+?)\s*([+-])\s*([0-9kK.,]+)$/i);
-    if (matchAjusteOperador) {
-      const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
-      if (esOp) {
-        const monto = parsearMontoFlexible(matchAjusteOperador[3]);
-        if (monto > 0) {
-          console.log(`[Bot WhatsApp] 💰 Ejecutando ajuste operador: ${matchAjusteOperador[1]} ${matchAjusteOperador[2]} ${monto}`);
-          await ejecutarAjusteOperador(sala, remoteJid, matchAjusteOperador[1].trim(), matchAjusteOperador[2], monto, senderNombre);
-          return;
+          .select("id, grupo_id, nombre, seudonimo, telefono, telefono_normalizado")
+          .or(`whatsapp_jid.eq.${remoteJid},telefono_normalizado.eq.${telReal},telefono.ilike.%${suf8}%`)
+          .limit(1);
+        const clDm = clList?.[0] || null;
+        if (clDm?.grupo_id) {
+          const { data: salas } = await supabase
+            .from("salas_juego")
+            .select("*")
+            .eq("grupo_id", clDm.grupo_id)
+            .order("created_at", { ascending: false });
+          const salaDm = salas?.find((s) => s.estado_carrera === "abierta") || salas?.[0] || null;
+          if (salaDm) salasDestino = [salaDm];
         }
       }
-    }
-
-    // Cita Directa Obligatoria para Concreción FIFO:
-    // Si escribe "J", "Voy", "Ponte", "Juego", etc. SIN CITAR mensaje
-    const esAceptacionSinCita = !quotedMsgId && /^(?:j|voy|ponte|juego|jugamos|jugue|jugué|copiado|pago|entro)(?:\s+(?:con\s+|por\s+|\$)?([0-9kK.,]+))?$/i.test(textoLimpio);
-    if (esAceptacionSinCita) {
-      if (conectado) {
-        await enviarMensajeGrupo(remoteJid, "Nada aquí, verifique", whatsappMsgId);
-        const dmDest = (telReal ? `${telReal}@s.whatsapp.net` : null) || participantJid;
-        if (dmDest) {
-          await enviarMensajePrivado(dmDest, "⚠️ Para aceptar una jugada debes citar (responder directamente) la propuesta original.");
-        }
-      }
-      return;
-    }
-
-    if (textoLimpio.startsWith("!")) {
-      const partes = textoLimpio.slice(1).trim().split(/\s+/);
-      const cmd = (partes[0] || "").toLowerCase();
-      const resto = partes.slice(1).join(" ").trim();
-
-      if (cmd === "anular" || cmd === "retirar") {
-        const esOp = esFromMe || (await verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado));
-        if (!esOp) {
-          console.warn(`[Bot WhatsApp] ⛔ Comando ${cmd} rechazado: ${participantJid} no es operador.`);
-          await enviarMensajePrivado(participantJid, `⚠️ No está autorizado para ejecutar el comando !${cmd}.`);
-          return;
-        }
-        console.log(`[Bot WhatsApp] 🚫 Ejecutando ${cmd}: ${resto}`);
-        await ejecutarAnulacionORetiro(sala, remoteJid, cmd, resto);
-        return;
+      if (salasDestino.length === 0) {
+        salasDestino = [{}];
       }
     }
 
-    // 2. Cruzar remitente estrictamente con public.clientes para cada grupo_id de las salas vinculadas
-    const clientesPorSalaId = new Map();
-    for (const salaDest of salasDestino) {
-      if (salaDest?.grupo_id) {
-        const cl = await buscarClienteEnGrupo(
-          salaDest.grupo_id,
-          participantJid,
-          participantAlt,
-          telReal,
-          senderNombre
-        );
-        if (cl) {
-          clientesPorSalaId.set(salaDest.id, cl);
-          if (participantJid && cl.whatsapp_jid !== participantJid) {
-            try {
-              let qUpd = supabase
-                .from("clientes")
-                .update({
-                  whatsapp_jid: participantJid,
-                  whatsapp_vinculado: true,
-                  telefono_normalizado: telReal || cl.telefono_normalizado,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq("id", cl.id);
-              if (cl.grupo_id) {
-                qUpd = qUpd.eq("grupo_id", cl.grupo_id);
-              }
-              await qUpd;
-              cl.whatsapp_jid = participantJid;
-              if (telReal) cl.telefono_normalizado = telReal;
-              console.log(`[Bot WhatsApp] 🔗 Auto-guardado whatsapp_jid (${participantJid}) en ficha de "${cl.nombre}" (${cl.id}) en grupo ${salaDest.grupo_id}`);
-            } catch (errVinculo) {
-              console.warn("[Bot WhatsApp] Aviso al auto-guardar whatsapp_jid:", errVinculo?.message);
-            }
-          }
-        }
-      }
-    }
-
-    // 3 y 4. Delegar a http://127.0.0.1:3000/api/whatsapp-sala/procesar para todas las salas vinculadas
     const nombreGrupoOrigen =
-      sala._whatsapp_group_nombre ||
+      salasDestino[0]?._whatsapp_group_nombre ||
       gruposCacheLista.find((g) => g.jid === remoteJid)?.nombre ||
       null;
 
+    console.log(
+      `[Bot WhatsApp] 📩 [${remoteJid}] (${senderNombre}${esFromMe ? " [PROPIO]" : ""} / ${participantJid}): "${textoLimpio}"`
+    );
+
+    // Bot 100% Pasivo: Delegar cálculo y validación a la plataforma Next.js
     const respuestasProcesar = await Promise.all(
       salasDestino.map(async (salaDest) => {
-        const clienteEstaSala = clientesPorSalaId.get(salaDest.id) || null;
-        const r = await fetch(`${NEXT_API_BASE}/api/whatsapp-sala/procesar`, {
+        const payload = {
+          salaId: salaDest.id || null,
+          grupoId: salaDest.grupo_id || null,
+          groupJid: remoteJid,
+          groupNombre: salaDest._whatsapp_group_nombre || nombreGrupoOrigen,
+          whatsappGroupNombre: salaDest._whatsapp_group_nombre || nombreGrupoOrigen,
+          senderJid: participantJid,
+          participantJid,
+          participantAlt: participantAlt || null,
+          telefonoReal: telReal,
+          pushName: senderNombre,
+          senderNombre,
+          esMensajePropioTelefono: esFromMe,
+          texto: textoLimpio,
+          whatsappMsgId,
+          quotedMsgId,
+        };
+
+        const r = await fetch(`${NEXT_API_BASE}/api/whatsapp-sala/procesar-unificado`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "x-internal-bot-secret": INTERNAL_BOT_SECRET,
           },
-          body: JSON.stringify({
-            salaId: salaDest.id,
-            grupoId: salaDest.grupo_id,
-            groupJid: remoteJid,
-            groupNombre: salaDest._whatsapp_group_nombre || nombreGrupoOrigen,
-            whatsappGroupNombre: salaDest._whatsapp_group_nombre || nombreGrupoOrigen,
-            senderJid: participantJid,
-            participantJid,
-            participantAlt: participantAlt || null,
-            telefonoReal: telReal || null,
-            pushName: senderNombre,
-            senderNombre: senderNombre || clienteEstaSala?.seudonimo || clienteEstaSala?.nombre || "Jugador",
-            clientePreviamenteIdentificado: clienteEstaSala || null,
-            esMensajePropioTelefono: esFromMe,
-            texto: textoLimpio,
-            whatsappMsgId,
-            quotedMsgId: quotedMsgId || null,
-          }),
+          body: JSON.stringify(payload),
         });
         return r.json().catch(() => null);
       })
     );
 
-    // Priorizar respuesta exitosa si alguna sala vinculada aceptó la jugada
     const data = respuestasProcesar.find((r) => r && r.ok) || respuestasProcesar.find(Boolean) || null;
     if (!data) return;
 
-    console.log(`[Bot WhatsApp] 🤖 Respuesta del procesador:`, JSON.stringify({ ok: data.ok, tipo: data.tipo, respuestaGrupo: data.respuestaGrupo, reaccionEmoji: data.reaccionEmoji }));
-
-    // Despacho ultra-rápido concurrente en paralelo (de >1200ms a <80ms)
     const envios = [];
-    if (data.reaccionEmoji && sock && msg.key) {
-      envios.push(
-        sock.sendMessage(remoteJid, {
-          react: { text: data.reaccionEmoji, key: msg.key },
-        }).then(registrarMensajeEnviadoPorBot).catch((errReact) => console.warn("[Bot WhatsApp] Aviso enviando reacción:", errReact?.message || errReact))
-      );
-    }
 
-    // 1. Respuesta al Grupo WA (con reply/quoted al whatsappMsgId original)
-    // Despacho obligatorio SIEMPRE que venga mensaje público (incluso con excedio_saldo o rechazo)
-    const respuestaGrupo =
+    // 1. Despacho reply_public (al grupo)
+    const replyPublic =
+      data.reply_public ||
+      data.respuestaGrupo ||
       data.msg_publico_bot ||
       data.msg_publico ||
-      data.respuestaPublica ||
-      data.respuestaGrupo ||
-      data.acciones?.responderEnGrupo ||
-      data.data?.msg_publico_bot ||
-      data.data?.msg_publico ||
-      data.data?.respuestaPublica;
+      data.respuestaPublica;
 
-    if (respuestaGrupo && sock) {
+    if (replyPublic && esGrupo && sock) {
       envios.push(
-        enviarMensajeGrupo(remoteJid, respuestaGrupo, whatsappMsgId)
-          .catch((errG) => console.warn("[Bot WhatsApp] Aviso enviando respuesta de grupo:", errG?.message || errG))
+        enviarMensajeGrupo(remoteJid, replyPublic, whatsappMsgId).catch((errG) =>
+          console.warn("[Bot WhatsApp] Aviso enviando respuesta de grupo:", errG?.message || errG)
+        )
       );
     }
 
-    // 2. Respuesta al Privado WA: remitente/autor
-    // Despacho obligatorio al JID privado del remitente
-    const mensajePrivadoAutor =
+    // 2. Despacho reply_private (al DM del jugador)
+    const replyPrivate =
+      data.reply_private ||
+      data.mensajePrivadoAutor ||
       data.msg_privado_bot ||
       data.alertaPrivada ||
-      data.msg_privado_aceptante ||
-      data.mensajePrivadoAutor ||
-      data.acciones?.enviarPrivadoJugador ||
-      data.data?.msg_privado_bot ||
-      data.data?.alertaPrivada ||
-      data.data?.msg_privado_aceptante;
+      data.msg_privado_aceptante;
 
-    const clienteEstaSala = clientesPorSalaId.get(sala.id) || Array.from(clientesPorSalaId.values())[0] || null;
-    const telClienteDb = String(
-      data.clienteTelefono ||
-      clienteEstaSala?.telefono_normalizado ||
-      clienteEstaSala?.telefono ||
-      ""
-    ).replace(/\D/g, "");
-
-    const senderPnJid =
-      (telClienteDb ? `${telClienteDb}@s.whatsapp.net` : null) ||
-      (participantAlt && participantAlt.endsWith("@s.whatsapp.net") ? participantAlt : null) ||
+    const dmDest =
       (telReal ? `${telReal}@s.whatsapp.net` : null) ||
-      (telNormalizado ? `${telNormalizado}@s.whatsapp.net` : null) ||
-      (data.senderJid && data.senderJid.endsWith("@s.whatsapp.net") ? data.senderJid : null);
+      (participantJid && participantJid.endsWith("@s.whatsapp.net") ? participantJid : null) ||
+      (esPrivado ? remoteJid : null);
 
-    const dmJid = senderPnJid || participantJid || data.senderJid;
-
-    if (mensajePrivadoAutor && dmJid && sock) {
+    if (replyPrivate && dmDest && dmDest.endsWith("@s.whatsapp.net") && sock) {
       envios.push(
-        enviarMensajePrivado(dmJid, mensajePrivadoAutor)
-          .catch((errPriv) => console.warn("[Bot WhatsApp] Aviso enviando privado autor:", errPriv?.message || errPriv))
+        enviarMensajePrivado(dmDest, replyPrivate).catch((errPriv) =>
+          console.warn("[Bot WhatsApp] Aviso enviando privado autor:", errPriv?.message || errPriv)
+        )
       );
     }
 
-    // 3. Respuesta al Privado WA: proponente
-    const mensajePrivadoProponente =
-      data.msg_privado_proponente ||
-      data.mensajePrivadoProponente ||
-      data.acciones?.enviarPrivadoProponente ||
-      data.data?.msg_privado_proponente;
-
-    const proponenteDestino =
+    // 3. Despacho mensaje proponente (si difiere del aceptante)
+    const replyProponente = data.msg_privado_proponente || data.mensajePrivadoProponente;
+    const propDest =
       data.proponenteJid ||
-      data.proponenteTelefono ||
-      (data.proponenteTelefonoNormalizado ? `${data.proponenteTelefonoNormalizado}@s.whatsapp.net` : null);
+      (data.proponenteTelefono ? `${normalizarTelefono(data.proponenteTelefono)}@s.whatsapp.net` : null);
 
-    if (mensajePrivadoProponente && proponenteDestino) {
+    if (replyProponente && propDest && propDest.endsWith("@s.whatsapp.net") && sock) {
       envios.push(
-        enviarMensajePrivado(proponenteDestino, mensajePrivadoProponente)
-          .catch((errProp) => console.warn("[Bot WhatsApp] Aviso enviando privado proponente:", errProp?.message || errProp))
+        enviarMensajePrivado(propDest, replyProponente).catch((errProp) =>
+          console.warn("[Bot WhatsApp] Aviso enviando privado proponente:", errProp?.message || errProp)
+        )
       );
     }
 
-    // 4. Notificaciones privadas en lote (array notificaciones_privadas)
-    const notifs =
-      data.notificaciones_privadas ||
-      data.notificacionesPrivadas ||
-      data.data?.notificaciones_privadas ||
-      [];
-
-    if (Array.isArray(notifs) && notifs.length > 0) {
+    // 4. Despacho notificaciones privadas adicionales
+    const notifs = data.notificaciones_privadas || data.notificacionesPrivadas || [];
+    if (Array.isArray(notifs) && notifs.length > 0 && sock) {
       for (const notif of notifs) {
-        const txt = typeof notif === "string" ? notif : (notif?.mensaje || notif?.msg || notif?.texto || notif?.contenido);
-        const jidN = typeof notif === "object" ? (notif?.whatsapp_jid || notif?.jid || (notif?.telefono ? `${normalizarTelefono(notif.telefono)}@s.whatsapp.net` : null)) : null;
-        const destino = jidN || jidPrivadoAutor;
-        if (txt && destino) {
+        const txt = typeof notif === "string" ? notif : notif?.mensaje || notif?.msg || notif?.texto;
+        const dest =
+          typeof notif === "object"
+            ? notif?.whatsapp_jid ||
+              notif?.jid ||
+              (notif?.telefono ? `${normalizarTelefono(notif.telefono)}@s.whatsapp.net` : null)
+            : null;
+        if (txt && dest && dest.endsWith("@s.whatsapp.net")) {
           envios.push(
-            enviarMensajePrivado(destino, txt)
-              .catch((errN) => console.warn("[Bot WhatsApp] Aviso enviando notif privada:", errN?.message || errN))
+            enviarMensajePrivado(dest, txt).catch((errN) =>
+              console.warn("[Bot WhatsApp] Aviso enviando notif privada:", errN?.message || errN)
+            )
           );
         }
       }
@@ -1977,7 +1691,7 @@ async function manejarMensajeEntrante(msg) {
 
     await Promise.allSettled(envios);
   } catch (err) {
-    console.error("[Bot WhatsApp] Error procesando mensaje en vivo:", err?.message || err);
+    console.error("[Bot WhatsApp] Error en bot pasivo:", err?.message || err);
   }
 }
 
@@ -2082,6 +1796,7 @@ async function iniciarConexionBaileys() {
 
       if (connection === "close") {
         conectado = false;
+        await liberarVinculosHuerfanos();
         const statusCode =
           lastDisconnect?.error?.output?.statusCode ||
           lastDisconnect?.error?.statusCode ||
@@ -2981,6 +2696,13 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // 6.c POST /limpiar-huerfanos
+    if (req.method === "POST" && pathname === "/limpiar-huerfanos") {
+      const body = await leerBodyJson(req);
+      await liberarVinculosHuerfanos(body?.salaId || null);
+      return responderJson(res, 200, { ok: true, motivo: "Vínculos huérfanos liberados exitosamente" });
+    }
+
     // 7. GET/POST /disconnect y /api/whatsapp/disconnect (Cerrar sesión WhatsApp y regenerar QR)
     if ((req.method === "POST" || req.method === "GET") && (pathname === "/disconnect" || pathname === "/api/whatsapp/disconnect")) {
       if (reconnectTimer) {
@@ -2988,6 +2710,7 @@ const server = http.createServer(async (req, res) => {
         reconnectTimer = null;
       }
       reconectando = false;
+      await liberarVinculosHuerfanos();
 
       try {
         if (sock) {
