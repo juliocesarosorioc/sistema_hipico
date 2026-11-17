@@ -382,23 +382,20 @@ export function ChatSalaPanel({
     enviarMensaje(sug);
   };
 
-  /** Ctrl+V / botón Adjuntar → Supabase Storage `whatsapp_media` → URL pública. */
+  /** Ctrl+V / botón Adjuntar → /api/whatsapp/upload (service_role) → URL pública. */
   const subirImagenAdjunta = async (file: File) => {
     if (!file.type.startsWith("image/")) return;
-    if (!supabase) return;
     setSubiendoImagen(true);
     try {
-      const extension = (file.name.split(".").pop() || "jpg").replace(/[^a-zA-Z0-9]/g, "").toLowerCase() || "jpg";
-      const ruta = `${grupoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
-      const { error } = await supabase.storage.from("whatsapp_media").upload(ruta, file, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: file.type,
-      });
-      if (error) throw error;
-      const { data } = supabase.storage.from("whatsapp_media").getPublicUrl(ruta);
-      if (!data?.publicUrl) throw new Error("No se obtuvo URL pública del archivo");
-      setImagenAdjunta({ url: data.publicUrl, path: ruta });
+      const form = new FormData();
+      form.append("file", file);
+      form.append("grupoId", grupoId);
+      const res = await fetch("/api/whatsapp/upload", { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      const url = String(data.publicUrl || data.media_url || "");
+      if (!url) throw new Error("No se obtuvo URL pública del archivo");
+      setImagenAdjunta({ url, path: String(data.path || "") });
     } catch (err: any) {
       console.warn("Error subiendo imagen adjunta:", err);
       alert(`No se pudo adjuntar la imagen: ${err?.message || "error desconocido"}`);
