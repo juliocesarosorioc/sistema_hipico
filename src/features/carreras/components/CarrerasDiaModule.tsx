@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/Button";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { BuscadorJornada } from "@/shared/components/ui/BuscadorJornada";
+import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { listarHipodromos } from "@/features/hipodromos/lib/servicio";
 import type { Hipodromo } from "@/features/hipodromos/lib/tipos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
@@ -286,6 +287,12 @@ export function CarrerasDiaModule() {
     const hipoObj = (modal.hipodromo || hipodromo).trim().toUpperCase();
     if (!fechaObj) return toast("Seleccione primero una fecha en el buscador.", "warning");
     if (!hipoObj) return toast("Elija un hipódromo para registrar la carrera (arriba, en el filtro).", "warning");
+    // Prohibición estricta: solo se pueden registrar carreras de hipódromos que
+    // existen en la tabla `hipodromos`. El selector no permite texto libre, pero
+    // esta guardia cubre también valores heredados de una carrera editada.
+    if (!hipodromos.some((h) => String(h.value).trim().toUpperCase() === hipoObj)) {
+      return toast(`El hipódromo "${hipoObj}" no existe en la base de datos. Seleccione uno del listado.`, "error");
+    }
     if (!num) return toast("Nº de carrera requerido.", "warning");
 
     const textoEj = modal.ejemplares.trim();
@@ -1089,14 +1096,17 @@ export function CarrerasDiaModule() {
                     className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm font-black text-indigo-700"
                   />
                 </label>
-                <label className="block">
+                <div className="block min-w-0">
                   <span className={inputLbl}>Hipódromo</span>
-                  <input
-                    value={modal.hipodromo || hipodromo}
-                    onChange={(e) => setModal((m) => ({ ...m, hipodromo: e.target.value }))}
-                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm font-black text-slate-900 uppercase"
+                  <SearchableSelect
+                    options={hipodromos.map((h) => ({ value: h.value, label: h.label }))}
+                    value={(modal.hipodromo || hipodromo).trim().toUpperCase()}
+                    onChange={(value) => setModal((m) => ({ ...m, hipodromo: value }))}
+                    placeholder="Buscar hipódromo…"
+                    allowCustom={false}
+                    inputClassName="w-full min-w-0 rounded-lg border border-line bg-white px-2 py-1.5 text-sm font-black text-slate-900 placeholder:font-normal uppercase focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
                   />
-                </label>
+                </div>
                 <label className="block">
                   <span className={inputLbl}>Fecha Jornada</span>
                   <input

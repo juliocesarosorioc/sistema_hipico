@@ -25,7 +25,7 @@ class SalaErrorBoundary extends React.Component<
   override render() {
     if (this.state.hasError) {
       return (
-        <div className="flex h-full w-full flex-col items-center justify-center bg-[#efeae2] text-[#111b21] p-6 text-center gap-3">
+        <div className="flex h-full w-full flex-col items-center justify-center bg-white text-slate-900 p-6 text-center gap-3">
           <span className="text-4xl">🏇</span>
           <h2 className="text-base font-black text-[#008069]">No se pudo mostrar la Sala</h2>
           <p className="text-xs text-slate-600 max-w-md">{this.state.mensaje}</p>
@@ -33,13 +33,13 @@ class SalaErrorBoundary extends React.Component<
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="bg-[#008069] hover:bg-[#017561] text-white font-bold text-xs px-4 py-2 rounded-lg shadow-xs"
+              className="bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-xs px-4 py-2 rounded-lg shadow-xs"
             >
               Recargar Sala
             </button>
             <a
               href="/inicio"
-              className="bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs px-4 py-2 rounded-lg"
+              className="bg-slate-200 hover:bg-slate-300 text-emerald-900 font-bold text-xs px-4 py-2 rounded-lg"
             >
               Volver al Inicio
             </a>
@@ -95,11 +95,11 @@ function SalaContenido() {
  */
 export default function SalaJuegosPage() {
   return (
-    <main className="min-h-[100dvh] h-[100dvh] w-full max-w-full overflow-hidden bg-[#efeae2] dark:bg-[#0b141a]">
+    <main className="min-h-[100dvh] h-[100dvh] w-full max-w-full overflow-hidden bg-white">
       <SalaErrorBoundary>
         <Suspense
           fallback={
-            <div className="flex h-full w-full flex-col items-center justify-center bg-[#efeae2] dark:bg-[#0b141a] text-[#008069] gap-3 select-none">
+            <div className="flex h-full w-full flex-col items-center justify-center bg-white text-[#008069] gap-3 select-none">
               <div className="w-10 h-10 border-4 border-[#008069] border-t-transparent rounded-full animate-spin" />
               <span className="font-extrabold text-sm tracking-wide text-[#008069]">
                 Conectando a la Sala de Juegos…

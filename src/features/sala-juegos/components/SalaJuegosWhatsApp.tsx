@@ -136,6 +136,10 @@ export default function SalaJuegosWhatsApp({
 
   const [ocultarSaldo, setOcultarSaldo] = useState<boolean>(false);
   const [textoInput, setTextoInput] = useState<string>('');
+  // Adjuntos de imagen (Ctrl+V / botón Adjuntar) → bucket `whatsapp_media`.
+  const [imagenAdjunta, setImagenAdjunta] = useState<{ url: string; path: string } | null>(null);
+  const [subiendoImagen, setSubiendoImagen] = useState<boolean>(false);
+  const inputImagenRef = useRef<HTMLInputElement | null>(null);
   const [modalPrejugadasAbierto, setModalPrejugadasAbierto] = useState<boolean>(false);
   const [modalRecargaAbierto, setModalRecargaAbierto] = useState<boolean>(false);
   const [modalEntrenadorAbierto, setModalEntrenadorAbierto] = useState<boolean>(false);
@@ -982,6 +986,78 @@ export default function SalaJuegosWhatsApp({
     setTextoInput('');
   };
 
+  // 2.b IMÁGENES EN EL CHAT: Ctrl+V / botón Adjuntar → Supabase Storage
+  // `whatsapp_media` → URL pública → POST /api/whatsapp/send → imageMessage.
+  const subirImagenAdjunta = async (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    if (!supabase) return;
+    setSubiendoImagen(true);
+    try {
+      const extension = (file.name.split('.').pop() || 'jpg').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'jpg';
+      const ruta = `${grupoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+      const { error } = await supabase.storage.from('whatsapp_media').upload(ruta, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type,
+      });
+      if (error) throw error;
+      const { data } = supabase.storage.from('whatsapp_media').getPublicUrl(ruta);
+      if (!data?.publicUrl) throw new Error('No se obtuvo URL pública del archivo');
+      setImagenAdjunta({ url: data.publicUrl, path: ruta });
+    } catch (err: any) {
+      console.warn('Error subiendo imagen adjunta:', err);
+      alert(`No se pudo adjuntar la imagen: ${err?.message || 'error desconocido'}`);
+    } finally {
+      setSubiendoImagen(false);
+    }
+  };
+
+  const manejarPasteImagen = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const archivo = Array.from(e.clipboardData?.items || [])
+      .find((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      ?.getAsFile();
+    if (archivo) {
+      e.preventDefault();
+      void subirImagenAdjunta(archivo);
+    }
+  };
+
+  const enviarImagenAdjunta = async () => {
+    const sala =
+      salas.find((s) => s.id === salaSeleccionadaId) || salas[0];
+    const jid =
+      sala?.whatsappGroupJid ||
+      (sala?.id ? gruposWaPorSala[sala.id]?.[0]?.whatsapp_group_jid : null);
+    if (!imagenAdjunta || !sala || !jid) {
+      alert('Esta sala no tiene un grupo de WhatsApp vinculado para enviar la imagen.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: 'default',
+          to_jid: jid,
+          message_text: textoInput.trim(),
+          media_url: imagenAdjunta.url,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!json?.ok) throw new Error(json?.error || 'Baileys rechazó el envío');
+      agregarMensajeLocal(sala.id, {
+        remitente: usuarioActual.nombre,
+        esBot: false,
+        tipo: 'texto',
+        contenido: `${textoInput.trim() ? textoInput.trim() + '\n' : ''}🖼️ Imagen enviada al grupo de WhatsApp`,
+      });
+      setTextoInput('');
+      setImagenAdjunta(null);
+    } catch (err: any) {
+      alert(`No se pudo enviar la imagen: ${err?.message || 'error desconocido'}`);
+    }
+  };
+
   // 3. DESCARGAR IMAGEN PNG DEL REPORTE DE PREJUGADAS (CANVAS NATIVO)
   const descargarImagenPrejugadas = () => {
     const jugadas = mensajesSala.filter((m) => m.tipo === 'propuesta_jugada');
@@ -992,21 +1068,21 @@ export default function SalaJuegosWhatsApp({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.fillStyle = '#0b141a';
+    ctx.fillStyle = '#f8fafc';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#00a884';
     ctx.font = 'bold 22px monospace';
     ctx.fillText(`📋 REPORTE DE PREJUGADAS — ${salaActiva.hipodromoActivo} C${salaActiva.numeroCarreraActiva}`, 30, 45);
-    ctx.fillStyle = '#e9edef';
+    ctx.fillStyle = '#334155';
     ctx.font = '16px monospace';
     ctx.fillText(`Grupo: ${grupoNombre} | Moneda: ${prefijo.trim()} | Sello E2EE Verificado`, 30, 75);
 
     jugadas.forEach((j, idx) => {
-      ctx.fillStyle = '#ffd279';
+      ctx.fillStyle = '#92400e';
       ctx.fillText(`${idx + 1}) ${j.remitente}: ${j.contenido} [Hash: ${j.firmaSha256}]`, 30, 130 + idx * 36);
     });
 
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#065f46';
     ctx.font = 'bold 16px monospace';
     ctx.fillText(`TOTAL PACTADO: ${prefijo}${formatearMontoRegional(totalPactado)}`, 30, 130 + jugadas.length * 36 + 30);
 
@@ -1131,35 +1207,35 @@ export default function SalaJuegosWhatsApp({
                 key={m.id}
                 className={`max-w-xl rounded-2xl p-3 shadow-md ${
                   m.tipo === 'apertura_vista_2'
-                    ? 'bg-emerald-950/90 border-2 border-emerald-500 text-center mx-auto font-bold text-emerald-200 whitespace-pre-line'
+                    ? 'bg-emerald-50 border-2 border-emerald-500 text-center mx-auto font-bold text-emerald-800 whitespace-pre-line'
                     : m.esBot
-                    ? 'bg-[#1f2c34] border-l-4 border-amber-400 text-gray-100 whitespace-pre-line mr-auto'
+                    ? 'bg-slate-50 border-l-4 border-amber-400 text-slate-800 whitespace-pre-line mr-auto'
                     : esMio
-                    ? 'bg-[#005c4b] ml-auto text-white rounded-tr-xs'
-                    : 'bg-[#202c33] mr-auto text-gray-100 rounded-tl-xs border border-gray-700/50'
+                    ? 'bg-emerald-100 ml-auto text-slate-900 rounded-tr-xs'
+                    : 'bg-slate-50 mr-auto text-slate-800 rounded-tl-xs border border-slate-200'
                 }`}
               >
                 <div className="flex justify-between items-center text-[11px] mb-1 font-mono gap-2">
-                  <span className={`font-semibold ${esMio ? 'text-emerald-200' : 'text-emerald-400'}`}>
+                  <span className={`font-semibold ${esMio ? 'text-emerald-800' : 'text-emerald-700'}`}>
                     {esMio ? 'Tú' : m.remitente}
                     {(m.whatsapp_msg_id || m.whatsapp_group_nombre) && (
-                      <span className="ml-1 text-[10px] text-emerald-400 font-semibold">
+                      <span className="ml-1 text-[10px] text-emerald-700 font-semibold">
                         🟩 WA · {m.whatsapp_group_nombre || 'WhatsApp'}
                       </span>
                     )}
                   </span>
-                  <span className="text-[10px] text-gray-400">
+                  <span className="text-[10px] text-slate-500">
                     {m.hora} {m.firmaSha256 ? `🔒#${m.firmaSha256}` : ''}
                   </span>
                 </div>
 
                 {/* Mensaje citado si existe */}
                 {m.propuestaCitada && (
-                  <div className="mb-2 p-2 rounded-lg bg-black/30 border-l-4 border-emerald-400 text-[11px]">
-                    <span className="font-bold text-emerald-300 block text-[10px]">
+                  <div className="mb-2 p-2 rounded-lg bg-slate-100 border-l-4 border-emerald-400 text-[11px]">
+                    <span className="font-bold text-emerald-700 block text-[10px]">
                       ↩️ {m.propuestaCitada.remitente}
                     </span>
-                    <p className="text-gray-300 truncate font-mono text-[11px]">
+                    <p className="text-slate-700 truncate font-mono text-[11px]">
                       {m.propuestaCitada.contenido}
                     </p>
                   </div>
@@ -1169,11 +1245,11 @@ export default function SalaJuegosWhatsApp({
 
                 {/* SELECCIÓN Y BARRA EN VIVO PARA PROPUESTAS DE JUGADA */}
                 {esPropuesta && (
-                  <div className="mt-2.5 pt-2 border-t border-gray-700/60 font-sans">
+                  <div className="mt-2.5 pt-2 border-t border-slate-200 font-sans">
                     <div className="flex justify-between items-center text-[11px] mb-1 font-mono gap-2">
-                      <span className="text-gray-400">Estado de Parada:</span>
+                      <span className="text-slate-500">Estado de Parada:</span>
                       <div className="flex items-center gap-1.5">
-                        <span className={`font-bold ${tieneDisponible ? 'text-emerald-400' : 'text-gray-500 line-through'}`}>
+                        <span className={`font-bold ${tieneDisponible ? 'text-emerald-700' : 'text-gray-500 line-through'}`}>
                           Disponible: {prefijo}{formatearMontoRegional(montoDisp)} de {prefijo}{formatearMontoRegional(montoOrig)}
                         </span>
                         {esMio && tieneDisponible && (
@@ -1195,7 +1271,7 @@ export default function SalaJuegosWhatsApp({
                         )}
                       </div>
                     </div>
-                    <div className="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                    <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
                       <div
                         className="bg-emerald-500 h-1.5 rounded-full transition-all"
                         style={{ width: `${montoOrig > 0 ? (montoDisp / montoOrig) * 100 : 0}%` }}
@@ -1203,12 +1279,12 @@ export default function SalaJuegosWhatsApp({
                     </div>
 
                     {Array.isArray(m.desgloseJugaron) && m.desgloseJugaron.length > 0 && (
-                      <div className="mt-2 rounded-lg bg-black/30 border border-emerald-500/30 px-2.5 py-1.5 text-[11px] space-y-0.5">
-                        <div className="font-bold text-emerald-400">
+                      <div className="mt-2 rounded-lg bg-slate-100 border border-emerald-500/30 px-2.5 py-1.5 text-[11px] space-y-0.5">
+                        <div className="font-bold text-emerald-700">
                           🤝 Van jugando por {prefijo}{formatearMontoRegional(Number(m.montoJugadoTotal ?? (montoOrig - montoDisp)))}
                         </div>
                         {m.desgloseJugaron.map((item: { jugador: string; monto: number }, idx: number) => (
-                          <div key={idx} className="text-gray-200 font-medium">
+                          <div key={idx} className="text-slate-700 font-medium">
                             • <span className="font-bold">{item.jugador}</span> jugó{' '}
                             <span className="font-mono font-bold">{prefijo}{formatearMontoRegional(item.monto)}</span>
                           </div>
@@ -1225,7 +1301,7 @@ export default function SalaJuegosWhatsApp({
                             setReplyToPropuesta(m);
                             manejarEnvioMensaje(esJuego ? `Consigo ${montoDisp}` : `Juego ${montoDisp}`, sala.id);
                           }}
-                          className="w-full bg-[#00a884] hover:bg-emerald-400 text-black text-xs font-black py-1.5 px-3 rounded-lg flex items-center justify-center gap-1 transition shadow-sm"
+                          className="w-full bg-[#00a884] hover:bg-emerald-400 text-white text-xs font-black py-1.5 px-3 rounded-lg flex items-center justify-center gap-1 transition shadow-sm"
                         >
                           ⚡ Tomar Jugada Total ({prefijo}{formatearMontoRegional(montoDisp)})
                         </button>
@@ -1236,7 +1312,7 @@ export default function SalaJuegosWhatsApp({
                               setTomandoParteId(tomandoParteId === m.id ? null : m.id);
                               setMontoParcialInput('');
                             }}
-                            className="bg-[#111b21] hover:bg-[#2a3942] border border-gray-600 text-gray-200 font-bold py-1 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                            className="bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold py-1 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
                           >
                             ✂️ Tomar una parte
                           </button>
@@ -1247,17 +1323,17 @@ export default function SalaJuegosWhatsApp({
                               const esJuego = (m.accionProponente || (m.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA';
                               setTextoInput(esJuego ? 'Consigo ' : 'Juego ');
                             }}
-                            className="bg-[#111b21] hover:bg-[#2a3942] border border-emerald-600/50 text-emerald-300 font-bold py-1 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
+                            className="bg-white hover:bg-slate-100 border border-emerald-600/50 text-emerald-700 font-bold py-1 px-2 rounded-md text-[11px] transition flex items-center justify-center gap-1"
                           >
                             ↩️ Responder WA
                           </button>
                         </div>
 
                         {tomandoParteId === m.id && (
-                          <div className="p-2 bg-[#111b21] rounded-lg border border-emerald-500/40 space-y-2 mt-1">
-                            <div className="text-[10px] text-gray-300 font-semibold flex items-center justify-between">
+                          <div className="p-2 bg-white rounded-lg border border-emerald-500/40 space-y-2 mt-1">
+                            <div className="text-[10px] text-slate-700 font-semibold flex items-center justify-between">
                               <span>Monto a tomar (Máx: {prefijo}{formatearMontoRegional(montoDisp)}):</span>
-                              <button onClick={() => setTomandoParteId(null)} className="text-gray-400 hover:text-white text-xs font-bold">
+                              <button onClick={() => setTomandoParteId(null)} className="text-slate-500 hover:text-slate-900 text-xs font-bold">
                                 ✕
                               </button>
                             </div>
@@ -1272,7 +1348,7 @@ export default function SalaJuegosWhatsApp({
                                     setTomandoParteId(null);
                                     manejarEnvioMensaje(esJuego ? `Consigo ${val}` : `Juego ${val}`, sala.id);
                                   }}
-                                  className="bg-[#202c33] hover:bg-emerald-600 hover:text-black text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-xs font-mono font-bold"
+                                  className="bg-slate-50 hover:bg-emerald-600 hover:text-slate-900 text-emerald-700 border border-emerald-500/40 px-2 py-0.5 rounded text-xs font-mono font-bold"
                                 >
                                   Tomar {prefijo}{formatearMontoRegional(val)}
                                 </button>
@@ -1286,7 +1362,7 @@ export default function SalaJuegosWhatsApp({
                                 value={montoParcialInput}
                                 onChange={(e) => setMontoParcialInput(e.target.value)}
                                 placeholder={`Monto (1 - ${prefijo}${formatearMontoRegional(montoDisp)})`}
-                                className="flex-1 bg-[#202c33] text-white text-xs px-2.5 py-1.5 rounded border border-gray-700 outline-none focus:border-emerald-400 font-mono"
+                                className="flex-1 bg-slate-50 text-slate-900 text-xs px-2.5 py-1.5 rounded border border-slate-200 outline-none focus:border-emerald-400 font-mono"
                               />
                               <button
                                 onClick={() => {
@@ -1302,7 +1378,7 @@ export default function SalaJuegosWhatsApp({
                                   setMontoParcialInput('');
                                   manejarEnvioMensaje(esJuego ? `Consigo ${n}` : `Juego ${n}`, sala.id);
                                 }}
-                                className="bg-emerald-500 hover:bg-emerald-400 text-black font-black px-3 py-1.5 rounded text-xs"
+                                className="bg-emerald-500 hover:bg-emerald-400 text-white font-black px-3 py-1.5 rounded text-xs"
                               >
                                 ✓ Tomar
                               </button>
@@ -1323,17 +1399,17 @@ export default function SalaJuegosWhatsApp({
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#0b141a] text-[#e9edef] select-none">
+    <div className="flex flex-col h-screen bg-white text-slate-900 select-none">
       {/* SECCIÓN DE PUBLICIDAD EN TOPE DE SALA */}
-      <div className="bg-gradient-to-r from-emerald-950 via-[#111b21] to-emerald-950 border-b border-emerald-800/40 px-4 py-1.5 flex items-center justify-between text-xs">
-        <span className="truncate font-medium text-emerald-300">
+      <div className="bg-gradient-to-r from-emerald-50 via-emerald-50 to-emerald-50 border-b border-emerald-200 px-4 py-1.5 flex items-center justify-between text-xs">
+        <span className="truncate font-medium text-emerald-700">
           📢 <strong>PUBLICIDAD OFICIAL ({grupoNombre}):</strong> Juega Puestos, Llaves y Match en vivo con liquidación instantánea y seguridad E2EE.
         </span>
-        <span className="text-[11px] text-emerald-400 font-mono hidden sm:inline">🔒 E2EE SHA-256 Activo</span>
+        <span className="text-[11px] text-emerald-700 font-mono hidden sm:inline">🔒 E2EE SHA-256 Activo</span>
       </div>
 
       {/* CABECERA ESTILO WHATSAPP WEB + BOTÓN SALIR A LA PLATAFORMA + SELECTOR DE HASTA 2 SALAS ACTIVAS + BILLETERA PRIVADA */}
-      <div className="bg-[#008069] text-white px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-1.5 border-b border-[#016b58]">
+      <div className="bg-emerald-100 text-slate-900 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-1.5 border-b border-[#016b58]">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -1342,18 +1418,18 @@ export default function SalaJuegosWhatsApp({
                 window.location.href = usuarioActual.esOperador ? '/inicio' : '/portal';
               }
             }}
-            className="bg-white/15 hover:bg-white/25 text-white border border-white/25 px-2.5 py-1 rounded-lg text-xs font-extrabold transition"
+            className="bg-emerald-100 hover:bg-emerald-200 text-slate-900 border border-emerald-200 px-2.5 py-1 rounded-lg text-xs font-extrabold transition"
           >
             ← Salir a la Plataforma
           </button>
-          <span className="font-bold text-white text-sm">{grupoNombre}</span>
+          <span className="font-bold text-slate-900 text-sm">{grupoNombre}</span>
           {(() => {
             const vinculados = gruposWaPorSala[salaActiva?.id || ''] || [];
             if (vinculados.length > 0) {
               return vinculados.map((gw) => (
                 <span
                   key={gw.id || gw.whatsapp_group_jid}
-                  className="rounded-full bg-emerald-950/80 border border-emerald-400/60 px-2.5 py-0.5 text-[10px] font-black text-emerald-200 inline-flex items-center gap-1 shadow-sm"
+                  className="rounded-full bg-emerald-50 border border-emerald-400/60 px-2.5 py-0.5 text-[10px] font-black text-emerald-800 inline-flex items-center gap-1 shadow-sm"
                   title={`Grupo de WhatsApp: ${gw.whatsapp_group_nombre || gw.whatsapp_group_jid}`}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -1365,7 +1441,7 @@ export default function SalaJuegosWhatsApp({
             if (nomDirecto) {
               return (
                 <span
-                  className="rounded-full bg-emerald-950/80 border border-emerald-400/60 px-2.5 py-0.5 text-[10px] font-black text-emerald-200 inline-flex items-center gap-1 shadow-sm"
+                  className="rounded-full bg-emerald-50 border border-emerald-400/60 px-2.5 py-0.5 text-[10px] font-black text-emerald-800 inline-flex items-center gap-1 shadow-sm"
                   title={`Grupo de WhatsApp: ${nomDirecto}`}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -1374,13 +1450,13 @@ export default function SalaJuegosWhatsApp({
               );
             }
             return (
-              <span className="rounded-full bg-black/30 border border-white/20 px-2.5 py-0.5 text-[10px] text-white/80 inline-flex items-center gap-1">
+              <span className="rounded-full bg-slate-100 border border-emerald-200 px-2.5 py-0.5 text-[10px] text-slate-600 inline-flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
                 <span>⚪ Sin WhatsApp</span>
               </span>
             );
           })()}
-          <div className="flex bg-[#016b58] rounded-lg p-0.5">
+          <div className="flex bg-emerald-200 rounded-lg p-0.5">
             {salas.map((s) => {
               const vinculadosS = gruposWaPorSala[s.id] || [];
               const tieneWa = vinculadosS.length > 0 || Boolean(s.whatsappGroupNombre) || Boolean(s.whatsappGroupJid);
@@ -1390,13 +1466,13 @@ export default function SalaJuegosWhatsApp({
                   key={s.id}
                   onClick={() => setSalaSeleccionadaId(s.id)}
                   className={`px-2.5 py-0.5 rounded-md text-xs font-semibold transition inline-flex items-center gap-1.5 ${
-                    activo ? 'bg-white text-[#008069] font-bold shadow-sm' : 'text-white/80 hover:text-white'
+                    activo ? 'bg-white text-[#008069] font-bold shadow-sm' : 'text-slate-600 hover:text-slate-900'
                   }`}
                   title={tieneWa ? 'Sala conectada a grupo de WhatsApp' : 'Sala sin grupo de WhatsApp'}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${tieneWa ? (activo ? 'bg-[#008069]' : 'bg-emerald-400') : 'bg-white/40'}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${tieneWa ? (activo ? 'bg-emerald-100' : 'bg-emerald-400') : 'bg-slate-300'}`} />
                   <span>{s.nombreSala} ({s.hipodromoActivo} C{s.numeroCarreraActiva})</span>
-                  <span className={`text-[10px] ${tieneWa ? (activo ? 'text-[#008069]' : 'text-emerald-300 font-bold') : 'opacity-60'}`}>
+                  <span className={`text-[10px] ${tieneWa ? (activo ? 'text-[#008069]' : 'text-emerald-700 font-bold') : 'opacity-60'}`}>
                     {tieneWa ? '🟢' : '⚪'}
                   </span>
                 </button>
@@ -1416,7 +1492,7 @@ export default function SalaJuegosWhatsApp({
           {salas.length >= 2 && (
             <button
               onClick={() => setVistaDualEscritorio(!vistaDualEscritorio)}
-              className="text-xs bg-gray-800 hover:bg-gray-700 px-2.5 py-1 rounded text-gray-200 font-semibold"
+              className="text-xs bg-slate-200 hover:bg-slate-200 px-2.5 py-1 rounded text-slate-700 font-semibold"
             >
               {vistaDualEscritorio ? '1 Sala' : 'Vista Dual (2 Salas)'}
             </button>
@@ -1444,35 +1520,35 @@ export default function SalaJuegosWhatsApp({
             📋 Ver Reporte de Prejugadas (Preliminar WhatsApp + Imagen)
           </button>
 
-          <div className="flex items-center bg-[#111b21] px-2.5 py-1 rounded border border-gray-700 text-xs font-mono tabular-nums">
-            <span className="text-gray-400 mr-1">🔒 Saldo:</span>
-            <span className="text-emerald-400 font-bold">
+          <div className="flex items-center bg-white px-2.5 py-1 rounded border border-slate-200 text-xs font-mono tabular-nums">
+            <span className="text-slate-500 mr-1">🔒 Saldo:</span>
+            <span className="text-emerald-700 font-bold">
               {ocultarSaldo ? `${prefijo} ••••` : `${prefijo}${formatearMontoRegional(usuarioActual.saldoDisponible)}`}
             </span>
-            <button onClick={() => setOcultarSaldo(!ocultarSaldo)} className="ml-2 text-gray-400 hover:text-white">
+            <button onClick={() => setOcultarSaldo(!ocultarSaldo)} className="ml-2 text-slate-500 hover:text-slate-900">
               👁️
             </button>
           </div>
 
           <button
             onClick={() => setModalRecargaAbierto(true)}
-            className="bg-[#00a884] hover:bg-emerald-500 text-black font-bold px-2.5 py-1 rounded text-xs"
+            className="bg-[#00a884] hover:bg-emerald-500 text-white font-bold px-2.5 py-1 rounded text-xs"
           >
             ➕ Recargar
           </button>
 
-          <div className="flex items-center gap-1 bg-[#111b21] px-2 py-1 rounded text-xs border border-gray-700/60 font-mono">
+          <div className="flex items-center gap-1 bg-white px-2 py-1 rounded text-xs border border-slate-200 font-mono">
             <button
               onClick={() => cambiarTamanoLetra(tamanoLetra - 1)}
-              className="px-1.5 py-0.5 rounded hover:bg-white/10 text-gray-200 hover:text-emerald-400 font-bold"
+              className="px-1.5 py-0.5 rounded hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 font-bold"
               title="Reducir tamaño de letra"
             >
               A-
             </button>
-            <span className="text-[10px] text-gray-400 font-bold min-w-[28px] text-center">{tamanoLetra}px</span>
+            <span className="text-[10px] text-slate-500 font-bold min-w-[28px] text-center">{tamanoLetra}px</span>
             <button
               onClick={() => cambiarTamanoLetra(tamanoLetra + 1)}
-              className="px-1.5 py-0.5 rounded hover:bg-white/10 text-gray-200 hover:text-emerald-400 font-bold"
+              className="px-1.5 py-0.5 rounded hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 font-bold"
               title="Aumentar tamaño de letra"
             >
               A+
@@ -1491,9 +1567,9 @@ export default function SalaJuegosWhatsApp({
                 salaSeleccionadaId === s.id ? 'ring-2 ring-inset ring-emerald-500/70' : ''
               }`}
             >
-              <div className="px-3 py-1.5 bg-[#111b21] border-b border-gray-700 flex items-center justify-between text-[11px]">
-                <span className="font-bold text-emerald-300 truncate">{s.nombreSala}</span>
-                <span className="text-gray-400 font-mono">{s.hipodromoActivo} C{s.numeroCarreraActiva}</span>
+              <div className="px-3 py-1.5 bg-white border-b border-slate-200 flex items-center justify-between text-[11px]">
+                <span className="font-bold text-emerald-700 truncate">{s.nombreSala}</span>
+                <span className="text-slate-500 font-mono">{s.hipodromoActivo} C{s.numeroCarreraActiva}</span>
               </div>
               {renderFeedSala(s)}
             </div>
@@ -1505,7 +1581,7 @@ export default function SalaJuegosWhatsApp({
 
       {/* BURBUJA PRIVADA DE CORRECCIÓN PEDAGÓGICA (SOLO VISIBLE PARA EL JUGADOR) */}
       {sugerenciaPedagogica && (
-        <div className="bg-[#1f2c34] border-t-2 border-amber-500 px-4 py-3 text-xs">
+        <div className="bg-slate-50 border-t-2 border-amber-500 px-4 py-3 text-xs">
           <div className="text-amber-300 font-semibold whitespace-pre-line mb-2">
             {sugerenciaPedagogica.mensaje}
           </div>
@@ -1514,12 +1590,12 @@ export default function SalaJuegosWhatsApp({
               <button
                 key={op}
                 onClick={() => manejarEnvioMensaje(op)}
-                className="bg-[#00a884] text-black font-bold px-3 py-1 rounded hover:bg-emerald-400"
+                className="bg-[#00a884] text-white font-bold px-3 py-1 rounded hover:bg-emerald-400"
               >
                 ✅ Enviar: {op}
               </button>
             ))}
-            <button onClick={() => setSugerenciaPedagogica(null)} className="text-gray-400 underline ml-2">
+            <button onClick={() => setSugerenciaPedagogica(null)} className="text-slate-500 underline ml-2">
               Cerrar
             </button>
           </div>
@@ -1528,19 +1604,19 @@ export default function SalaJuegosWhatsApp({
 
       {/* BANNER DE CITACIÓN AL RESPONDER / CONCRETAR PROPUESTA */}
       {replyToPropuesta && (
-        <div className="bg-[#182229] border-t border-[#00a884]/40 px-3 py-2 flex items-center justify-between text-xs animate-in fade-in">
+        <div className="bg-slate-50 border-t border-[#00a884]/40 px-3 py-2 flex items-center justify-between text-xs animate-in fade-in">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-emerald-400 text-sm">↩️</span>
+            <span className="text-emerald-700 text-sm">↩️</span>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold text-emerald-400 truncate">
+              <p className="text-[11px] font-bold text-emerald-700 truncate">
                 Respondiendo a {replyToPropuesta.remitente} (Disponible: {prefijo}{formatearMontoRegional(Number(replyToPropuesta.montoDisponible ?? replyToPropuesta.monto ?? 0))})
               </p>
-              <p className="text-[11px] text-gray-300 font-mono truncate">{replyToPropuesta.contenido}</p>
+              <p className="text-[11px] text-slate-700 font-mono truncate">{replyToPropuesta.contenido}</p>
             </div>
           </div>
           <button
             onClick={() => setReplyToPropuesta(null)}
-            className="text-gray-400 hover:text-white px-2 py-1 font-bold text-xs"
+            className="text-slate-500 hover:text-slate-900 px-2 py-1 font-bold text-xs"
             title="Cancelar respuesta"
           >
             ✕ Cancelar
@@ -1549,7 +1625,7 @@ export default function SalaJuegosWhatsApp({
       )}
 
       {/* BARRA INFERIOR DE ESCRITURA ESTILO WHATSAPP */}
-      <div className="bg-[#202c33] p-3 space-y-2">
+      <div className="bg-slate-50 p-3 space-y-2">
         {replyToPropuesta ? (
           <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px]">
             {((replyToPropuesta.accionProponente || (replyToPropuesta.contenido.startsWith('Juego') ? 'JUEGA' : 'CONSIGUE')) === 'JUEGA'
@@ -1559,7 +1635,7 @@ export default function SalaJuegosWhatsApp({
               <button
                 key={verbo}
                 onClick={() => setTextoInput(`${verbo} `)}
-                className="bg-[#111b21] hover:bg-emerald-950/80 text-emerald-300 border border-emerald-600/40 px-2.5 py-0.5 rounded font-mono text-xs font-bold"
+                className="bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 px-2.5 py-0.5 rounded font-mono text-xs font-bold"
               >
                 + {verbo}
               </button>
@@ -1569,19 +1645,19 @@ export default function SalaJuegosWhatsApp({
           <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px]">
             <button
               onClick={() => setTextoInput('Juego 1P ')}
-              className="bg-[#111b21] hover:bg-gray-800 text-gray-300 border border-gray-700 px-2 py-0.5 rounded font-mono text-xs"
+              className="bg-white hover:bg-slate-200 text-slate-700 border border-slate-200 px-2 py-0.5 rounded font-mono text-xs"
             >
               + Juego 1P
             </button>
             <button
               onClick={() => setTextoInput('Consigo 1P ')}
-              className="bg-[#111b21] hover:bg-gray-800 text-gray-300 border border-gray-700 px-2 py-0.5 rounded font-mono text-xs"
+              className="bg-white hover:bg-slate-200 text-slate-700 border border-slate-200 px-2 py-0.5 rounded font-mono text-xs"
             >
               + Consigo 1P
             </button>
             <button
               onClick={() => setTextoInput('Juego 1x4 50')}
-              className="bg-[#111b21] hover:bg-gray-800 text-gray-300 border border-gray-700 px-2 py-0.5 rounded font-mono text-xs"
+              className="bg-white hover:bg-slate-200 text-slate-700 border border-slate-200 px-2 py-0.5 rounded font-mono text-xs"
             >
               + Match
             </button>
@@ -1595,51 +1671,95 @@ export default function SalaJuegosWhatsApp({
           </div>
         )}
 
-        <div className="flex items-center gap-2">
-          {usuarioActual.esOperador && (
-            <button
-              onClick={() =>
-                abrirCarreraOperador(
-                  salaActiva,
-                  salaActiva.hipodromoActivo || (salaActiva.nombreSala?.toUpperCase().includes('AMERICANA') ? 'GULFSTREAM PARK' : 'LA RINCONADA'),
-                  salaActiva.numeroCarreraActiva || 5,
-                  salaActiva.distanciaActiva || 1200
-                )
-              }
-              className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2.5 rounded-lg shrink-0"
-            >
-              🏇 Abrir Carrera
-            </button>
+        <div className="w-full space-y-2">
+          {imagenAdjunta && (
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imagenAdjunta.url}
+                alt="Imagen adjunta"
+                className="h-12 w-12 shrink-0 rounded border border-emerald-300 object-cover"
+              />
+              <span className="min-w-0 flex-1 truncate text-[11px] font-bold text-emerald-800">
+                🖼️ Imagen lista para enviar al grupo
+              </span>
+              <button
+                type="button"
+                onClick={() => setImagenAdjunta(null)}
+                className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700"
+              >
+                ✕ Quitar
+              </button>
+            </div>
           )}
           <input
-            type="text"
-            value={textoInput}
-            onChange={(e) => setTextoInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && manejarEnvioMensaje()}
-            placeholder={
-              replyToPropuesta
-                ? `Concretar jugada de ${replyToPropuesta.remitente} (Ej: Consigo ${replyToPropuesta.montoDisponible ?? replyToPropuesta.monto})...`
-                : 'Escribe tu jugada (Ej: Juego 1p del 5 con 100 | Juego la 15 x 46 con 100)...'
-            }
-            className="flex-1 bg-[#2a3942] text-white rounded-lg px-4 py-2.5 text-sm focus:outline-none"
+            ref={inputImagenRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void subirImagenAdjunta(file);
+              e.target.value = '';
+            }}
           />
-          <button
-            onClick={() => manejarEnvioMensaje()}
-            className="bg-[#00a884] hover:bg-emerald-500 text-black font-bold px-5 py-2.5 rounded-lg text-sm shrink-0"
-          >
-            Enviar
-          </button>
+          <div className="flex items-center gap-2">
+            {usuarioActual.esOperador && (
+              <button
+                onClick={() =>
+                  abrirCarreraOperador(
+                    salaActiva,
+                    salaActiva.hipodromoActivo || (salaActiva.nombreSala?.toUpperCase().includes('AMERICANA') ? 'GULFSTREAM PARK' : 'LA RINCONADA'),
+                    salaActiva.numeroCarreraActiva || 5,
+                    salaActiva.distanciaActiva || 1200
+                  )
+                }
+                className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2.5 rounded-lg shrink-0"
+              >
+                🏇 Abrir Carrera
+              </button>
+            )}
+            <button
+              type="button"
+              title="Adjuntar imagen (también puedes pegar con Ctrl+V)"
+              disabled={subiendoImagen}
+              onClick={() => inputImagenRef.current?.click()}
+              className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              {subiendoImagen ? '⏳' : '📎 Adjuntar'}
+            </button>
+            <input
+              type="text"
+              value={textoInput}
+              onChange={(e) => setTextoInput(e.target.value)}
+              onPaste={manejarPasteImagen}
+              onKeyDown={(e) => e.key === 'Enter' && (imagenAdjunta ? void enviarImagenAdjunta() : manejarEnvioMensaje())}
+              placeholder={
+                replyToPropuesta
+                  ? `Concretar jugada de ${replyToPropuesta.remitente} (Ej: Consigo ${replyToPropuesta.montoDisponible ?? replyToPropuesta.monto})...`
+                  : 'Escribe tu jugada o pega una imagen (Ctrl+V)...'
+              }
+              className="min-w-0 flex-1 bg-slate-100 text-slate-900 rounded-lg px-4 py-2.5 text-sm focus:outline-none"
+            />
+            <button
+              onClick={() => (imagenAdjunta ? void enviarImagenAdjunta() : manejarEnvioMensaje())}
+              disabled={subiendoImagen}
+              className="bg-[#00a884] hover:bg-emerald-500 text-white font-bold px-5 py-2.5 rounded-lg text-sm shrink-0 disabled:opacity-50"
+            >
+              {imagenAdjunta ? 'Enviar 🖼️' : 'Enviar'}
+            </button>
+          </div>
         </div>
       </div>
 
       {/* MODAL DE REPORTE DE PREJUGADAS (WHATSAPP + IMAGEN PNG) */}
       {modalPrejugadasAbierto && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-          <div className="bg-[#202c33] rounded-xl max-w-lg w-full p-5 border border-gray-700">
-            <h3 className="font-bold text-emerald-400 text-base mb-3">
+        <div className="fixed inset-0 bg-slate-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-50 rounded-xl max-w-lg w-full p-5 border border-slate-200">
+            <h3 className="font-bold text-emerald-700 text-base mb-3">
               📋 Reporte Preliminar de Prejugadas — {salaActiva?.hipodromoActivo} C{salaActiva?.numeroCarreraActiva}
             </h3>
-            <pre className="bg-[#111b21] p-3 rounded text-xs font-mono overflow-y-auto max-h-60 whitespace-pre-wrap">
+            <pre className="bg-white p-3 rounded text-xs font-mono overflow-y-auto max-h-60 whitespace-pre-wrap">
               {(mensajesSala
                 .filter((m) => m.tipo === 'propuesta_jugada')
                 .map((m, i) => `${i + 1}) ${m.remitente}: ${m.contenido}`)
@@ -1653,13 +1773,13 @@ export default function SalaJuegosWhatsApp({
             <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={descargarImagenPrejugadas}
-                className="bg-[#00a884] text-black font-bold px-4 py-2 rounded text-xs"
+                className="bg-[#00a884] text-white font-bold px-4 py-2 rounded text-xs"
               >
                 🖼️ Descargar Imagen PNG
               </button>
               <button
                 onClick={() => setModalPrejugadasAbierto(false)}
-                className="bg-gray-700 text-white px-4 py-2 rounded text-xs"
+                className="bg-slate-200 text-slate-900 px-4 py-2 rounded text-xs"
               >
                 Cerrar
               </button>
@@ -1670,13 +1790,13 @@ export default function SalaJuegosWhatsApp({
 
       {/* MODAL DE AUTO-INCREMENTO DE SALDO BLINDADO */}
       {modalRecargaAbierto && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-          <form onSubmit={procesarRecargaBlindada} className="bg-[#202c33] rounded-xl max-w-md w-full p-5 border border-gray-700 space-y-3">
-            <h3 className="font-bold text-emerald-400 text-base">🏦 Auto-Recarga de Saldo (Validación IA + Bóveda)</h3>
+        <div className="fixed inset-0 bg-slate-50 flex items-center justify-center p-4 z-50">
+          <form onSubmit={procesarRecargaBlindada} className="bg-slate-50 rounded-xl max-w-md w-full p-5 border border-slate-200 space-y-3">
+            <h3 className="font-bold text-emerald-700 text-base">🏦 Auto-Recarga de Saldo (Validación IA + Bóveda)</h3>
             <select
               value={metodoRecarga}
               onChange={(e) => setMetodoRecarga(e.target.value)}
-              className="w-full bg-[#111b21] p-2 rounded text-sm"
+              className="w-full bg-white p-2 rounded text-sm"
             >
               <option value="PAGO_MOVIL">Pago Móvil</option>
               <option value="ZELLE">Zelle</option>
@@ -1688,7 +1808,7 @@ export default function SalaJuegosWhatsApp({
               placeholder="Banco de origen"
               value={bancoRecarga}
               onChange={(e) => setBancoRecarga(e.target.value)}
-              className="w-full bg-[#111b21] p-2 rounded text-sm"
+              className="w-full bg-white p-2 rounded text-sm"
               required
             />
             <input
@@ -1696,7 +1816,7 @@ export default function SalaJuegosWhatsApp({
               placeholder="Número de Referencia (Últimos 6 o completa)"
               value={referenciaRecarga}
               onChange={(e) => setReferenciaRecarga(e.target.value)}
-              className="w-full bg-[#111b21] p-2 rounded text-sm font-mono"
+              className="w-full bg-white p-2 rounded text-sm font-mono"
               required
             />
             <input
@@ -1705,22 +1825,22 @@ export default function SalaJuegosWhatsApp({
               placeholder="Monto exacto (moneda del grupo)"
               value={montoRecarga}
               onChange={(e) => setMontoRecarga(e.target.value)}
-              className="w-full bg-[#111b21] p-2 rounded text-sm font-mono"
+              className="w-full bg-white p-2 rounded text-sm font-mono"
               required
             />
             <input
               type="file"
               accept="image/*"
               onChange={(e) => setArchivoComprobante(e.target.files?.[0] || null)}
-              className="w-full text-xs text-gray-300"
+              className="w-full text-xs text-slate-700"
               required
             />
             {estadoRecargaMsg && <p className="text-xs text-amber-300 font-mono">{estadoRecargaMsg}</p>}
             <div className="flex justify-end gap-2 pt-2">
-              <button type="submit" className="bg-[#00a884] text-black font-bold px-4 py-2 rounded text-xs">
+              <button type="submit" className="bg-[#00a884] text-white font-bold px-4 py-2 rounded text-xs">
                 Validar y Acreditar Saldo
               </button>
-              <button type="button" onClick={() => setModalRecargaAbierto(false)} className="bg-gray-700 px-4 py-2 rounded text-xs">
+              <button type="button" onClick={() => setModalRecargaAbierto(false)} className="bg-slate-200 px-4 py-2 rounded text-xs">
                 Cerrar
               </button>
             </div>
@@ -1730,34 +1850,34 @@ export default function SalaJuegosWhatsApp({
 
       {/* MODAL ENTRENADOR DE RESPUESTAS AUTOMÁTICAS Y REGLAS */}
       {modalEntrenadorAbierto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full max-w-2xl rounded-3xl border border-slate-700 bg-slate-950 p-6 text-white shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-50 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-2xl rounded-3xl border border-slate-700 bg-white p-6 text-slate-900 shadow-2xl">
             <div className="flex items-start justify-between border-b border-slate-800 pb-3">
               <div>
                 <span className="rounded-md border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-indigo-300">
                   Entrenador de Sala & WhatsApp
                 </span>
-                <h3 className="mt-1 text-base font-black text-white">
+                <h3 className="mt-1 text-base font-black text-slate-900">
                   Respuestas Automáticas y Reglas Entrenadas
                 </h3>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-500">
                   Aprende frases de los jugadores para responder al instante en el Grupo de WhatsApp y en la Sala Web.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setModalEntrenadorAbierto(false)}
-                className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-bold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+                className="rounded-xl border border-slate-700 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
               >
                 ✕ Cerrar
               </button>
             </div>
 
             {/* Formulario para agregar / editar regla */}
-            <form onSubmit={guardarReglaEntrenada} className="mt-4 space-y-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
+            <form onSubmit={guardarReglaEntrenada} className="mt-4 space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-800">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div className="sm:col-span-2">
-                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
                     Frase Disparadora (Mensaje del Jugador)
                   </label>
                   <input
@@ -1765,18 +1885,18 @@ export default function SalaJuegosWhatsApp({
                     value={fraseDisparadora}
                     onChange={(e) => setFraseDisparadora(e.target.value)}
                     placeholder="Ej: saldo, como jugar, horario, banco..."
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none focus:border-indigo-500"
+                    className="w-full rounded-xl border border-slate-700 bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none focus:border-indigo-500"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
                     Tipo Coincidencia
                   </label>
                   <select
                     value={tipoCoincidencia}
                     onChange={(e) => setTipoCoincidencia(e.target.value as 'exacta' | 'contiene')}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none focus:border-indigo-500"
+                    className="w-full rounded-xl border border-slate-700 bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none focus:border-indigo-500"
                   >
                     <option value="contiene">Contiene frase</option>
                     <option value="exacta">Exacta</option>
@@ -1785,7 +1905,7 @@ export default function SalaJuegosWhatsApp({
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
                   Respuesta Pública (Grupo de WhatsApp y Sala de Juegos)
                 </label>
                 <input
@@ -1793,12 +1913,12 @@ export default function SalaJuegosWhatsApp({
                   value={respuestaPublica}
                   onChange={(e) => setRespuestaPublica(e.target.value)}
                   placeholder="Mensaje que saldrá en el grupo de WhatsApp (opcional)"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"
+                  className="w-full rounded-xl border border-slate-700 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-indigo-500"
                 />
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
                   Respuesta Privada (Privado del Jugador en WhatsApp)
                 </label>
                 <input
@@ -1806,7 +1926,7 @@ export default function SalaJuegosWhatsApp({
                   value={respuestaPrivada}
                   onChange={(e) => setRespuestaPrivada(e.target.value)}
                   placeholder="Mensaje que llegará directo al privado del jugador (opcional)"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"
+                  className="w-full rounded-xl border border-slate-700 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -1823,7 +1943,7 @@ export default function SalaJuegosWhatsApp({
 
             {/* Lista de reglas existentes */}
             <div className="mt-4">
-              <h4 className="text-[11px] font-bold uppercase text-slate-400 mb-2">
+              <h4 className="text-[11px] font-bold uppercase text-slate-500 mb-2">
                 Reglas Entrenadas ({reglasEntrenadas.length})
               </h4>
               <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
@@ -1836,20 +1956,20 @@ export default function SalaJuegosWhatsApp({
                     <div
                       key={r.id}
                       className={`flex items-start justify-between p-3 rounded-xl border ${
-                        r.activo ? "border-slate-800 bg-slate-900/60" : "border-slate-800/40 bg-slate-950/40 opacity-50"
+                        r.activo ? "border-slate-800 bg-slate-50" : "border-slate-800/40 bg-slate-300 opacity-50"
                       }`}
                     >
                       <div className="min-w-0 pr-2">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs text-white">
+                          <span className="font-bold text-xs text-slate-900">
                             &quot;{r.frase_disparadora}&quot;
                           </span>
-                          <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-mono">
+                          <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-mono">
                             {r.tipo_coincidencia}
                           </span>
                         </div>
                         {r.respuesta_publica && (
-                          <p className="text-[11px] text-emerald-300 mt-1 truncate">
+                          <p className="text-[11px] text-emerald-700 mt-1 truncate">
                             📢 Grupo: {r.respuesta_publica}
                           </p>
                         )}
@@ -1864,8 +1984,8 @@ export default function SalaJuegosWhatsApp({
                         onClick={() => alternarReglaActiva(r.id, r.activo)}
                         className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition ${
                           r.activo
-                            ? "border-emerald-600/40 bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900"
-                            : "border-slate-700 bg-slate-800 text-slate-400 hover:bg-slate-700"
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-900"
+                            : "border-slate-700 bg-slate-100 text-slate-500 hover:bg-slate-200"
                         }`}
                       >
                         {r.activo ? "Activa" : "Inactiva"}

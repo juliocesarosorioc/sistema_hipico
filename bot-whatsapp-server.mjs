@@ -1589,6 +1589,30 @@ async function manejarMensajeEntrante(msg) {
       gruposCacheLista.find((g) => g.jid === remoteJid)?.nombre ||
       null;
 
+    // ───────────────────────────────────────────────────────────────────────
+    // INMUNIDAD DEL OPERADOR / ADMIN
+    // Texto libre del oficial se descarta en el demonio (ni siquiera se
+    // reenvía a /procesar-unificado). Solo comandos exactos de control pasan.
+    // ───────────────────────────────────────────────────────────────────────
+    const COMANDOS_OPERADOR_EXACTOS = /^!(?:abrir|cerrar|pizarra|rectificar|plano)(?:\s|$)/i;
+    let esOperadorMensaje = esFromMe;
+    if (!esOperadorMensaje && telReal) {
+      try {
+        esOperadorMensaje = await verificarEsOperadorAutorizado(
+          salasDestino[0] || null,
+          remoteJid,
+          participantJid,
+          telReal
+        );
+      } catch {
+        esOperadorMensaje = false;
+      }
+    }
+    if (esOperadorMensaje && !COMANDOS_OPERADOR_EXACTOS.test(textoLimpio)) {
+      console.log(`[Bot WhatsApp] 🔇 Operador ignorado (texto libre): ${senderNombre}`);
+      return;
+    }
+
     console.log(
       `[Bot WhatsApp] 📩 [${remoteJid}] (${senderNombre}${esFromMe ? " [PROPIO]" : ""} / ${participantJid}): "${textoLimpio}"`
     );

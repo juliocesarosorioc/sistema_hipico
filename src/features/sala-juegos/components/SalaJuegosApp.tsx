@@ -75,7 +75,7 @@ export function SalaJuegosApp({
       }
       const savedTema = window.localStorage.getItem("hipico_sala_tema_v1") as TemaSala | null;
       if (savedTema === "claro" || savedTema === "oscuro") {
-        setTema(savedTema);
+        void savedTema; setTema("claro");
       }
     } catch {
       /* ignore */
@@ -205,7 +205,7 @@ export function SalaJuegosApp({
     }
   };
 
-  const esClaro = tema === "claro";
+  const esClaro = true; // Tema claro estricto: sin modo oscuro
   const fontFamilyCss = FAMILIAS_FUENTE_SALA[fuenteId]?.css || FAMILIAS_FUENTE_SALA.whatsapp.css;
 
   const salaActiva = salas.find((s) => s.id === salaSeleccionadaId) || salas[0];
@@ -250,7 +250,7 @@ export function SalaJuegosApp({
       <div
         style={{ fontFamily: fontFamilyCss }}
         className={`h-full w-full flex flex-col items-center justify-center p-6 space-y-3 ${
-          esClaro ? "bg-[#efeae2] text-[#111b21]" : "bg-[#0b141a] text-white"
+          esClaro ? "bg-white text-slate-900" : "bg-white text-slate-900"
         }`}
       >
         <div className="w-9 h-9 border-4 border-[#008069] border-t-transparent rounded-full animate-spin" />
@@ -265,7 +265,7 @@ export function SalaJuegosApp({
       <div
         style={{ fontFamily: fontFamilyCss }}
         className={`h-full w-full flex flex-col items-center justify-center p-6 space-y-3 text-center ${
-          esClaro ? "bg-[#efeae2] text-[#111b21]" : "bg-[#0b141a] text-white"
+          esClaro ? "bg-white text-slate-900" : "bg-white text-slate-900"
         }`}
       >
         <span className="text-4xl">🔒</span>
@@ -274,13 +274,13 @@ export function SalaJuegosApp({
         <div className="flex items-center gap-2 mt-3">
           <button
             onClick={salirALaPlataforma}
-            className="bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs px-4 py-2 rounded-lg"
+            className="bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold text-xs px-4 py-2 rounded-lg"
           >
             ← Salir a la Plataforma
           </button>
           <button
             onClick={() => cargarBootstrap()}
-            className="bg-[#008069] hover:bg-[#017561] text-white font-bold text-xs px-4 py-2 rounded-lg"
+            className="bg-emerald-100 hover:bg-emerald-200 text-slate-900 font-bold text-xs px-4 py-2 rounded-lg"
           >
             Reintentar Conexión
           </button>
@@ -299,7 +299,7 @@ export function SalaJuegosApp({
       style={{ fontFamily: fontFamilyCss }}
       onClick={() => setMenuFuenteAbierto(false)}
       className={`flex flex-col select-none overflow-hidden ${
-        esClaro ? "bg-[#efeae2] text-[#111b21]" : "bg-[#0b141a] text-[#e9edef]"
+        esClaro ? "bg-white text-slate-900" : "bg-white text-slate-900"
       } ${esEmbebido ? "h-full w-full" : "min-h-[100dvh] h-[100dvh] w-full max-w-full"}`}
     >
       {/* 1. SECCIÓN DE PUBLICIDAD DESTACADA Y CLICKEABLE HACIA MODALIDADES (ALTA UX/UI) */}
@@ -315,7 +315,7 @@ export function SalaJuegosApp({
           } ${
             esClaro
               ? "bg-gradient-to-r from-emerald-100 via-amber-50 to-emerald-100 border-emerald-300 text-slate-900 shadow-xs"
-              : "bg-gradient-to-r from-emerald-950 via-[#111b21] to-amber-950/70 border-emerald-600/40 text-white shadow-sm"
+              : "bg-gradient-to-r from-emerald-50 via-emerald-50 to-amber-100 border-emerald-300 text-slate-900 shadow-sm"
           }`}
         >
           <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -348,7 +348,7 @@ export function SalaJuegosApp({
                 setBannerDescartadoId(String(pubActiva.id));
               }}
               title="Ocultar anuncio"
-              className="text-gray-400 hover:text-white text-xs px-1 hover:bg-white/10 rounded transition"
+              className="text-slate-500 hover:text-slate-900 text-xs px-1 hover:bg-emerald-50 rounded transition"
             >
               ✕
             </button>
@@ -360,8 +360,8 @@ export function SalaJuegosApp({
       <div
         className={`flex sm:hidden px-2 py-1.5 items-center justify-between gap-1.5 border-b shadow-xs relative z-30 select-none ${
           esClaro
-            ? "bg-[#008069] text-white border-[#016b58]"
-            : "bg-[#202c33] text-[#e9edef] border-[#2a3942]"
+            ? "bg-emerald-100 text-slate-900 border-[#016b58]"
+            : "bg-slate-50 text-slate-900 border-slate-200"
         }`}
       >
         {/* Lado izquierdo: Botón Volver + Avatar 🏇 + Título Sala */}
@@ -369,18 +369,18 @@ export function SalaJuegosApp({
           <button
             type="button"
             onClick={salirALaPlataforma}
-            className="w-8 h-8 rounded-full flex items-center justify-center bg-white/15 active:bg-white/30 text-white text-sm font-black transition shrink-0"
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-emerald-100 active:bg-emerald-200 text-slate-900 text-sm font-black transition shrink-0"
             title="Salir a la Plataforma"
           >
             ←
           </button>
 
-          <div className="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center text-sm font-bold shrink-0 shadow-xs">
+          <div className="w-8 h-8 rounded-full bg-emerald-100 text-slate-900 flex items-center justify-center text-sm font-bold shrink-0 shadow-xs">
             🏇
           </div>
 
           <div className="min-w-0 flex-1 leading-tight">
-            <h3 className="font-black text-xs text-white truncate">
+            <h3 className="font-black text-xs text-slate-900 truncate">
               {grupoActivo?.nombre || "SALA OFICIAL"}
             </h3>
             <button
@@ -417,8 +417,8 @@ export function SalaJuegosApp({
               identidad?.esOperador
                 ? "bg-amber-400 text-slate-950 border border-amber-300 shadow-2xs font-sans"
                 : esClaro
-                  ? "bg-[#016b58] text-white border border-white/20"
-                  : "bg-[#111b21] text-emerald-400 border border-gray-700"
+                  ? "bg-emerald-200 text-slate-900 border border-emerald-200"
+                  : "bg-white text-emerald-700 border border-slate-200"
             }`}
           >
             {identidad?.esOperador
@@ -437,7 +437,7 @@ export function SalaJuegosApp({
             <button
               type="button"
               onClick={() => abrirOperadorConTab("carrera")}
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] px-2 py-1 rounded-lg shadow-xs transition active:scale-95 flex items-center gap-0.5"
+              className="bg-emerald-500 hover:bg-emerald-400 text-white font-black text-[11px] px-2 py-1 rounded-lg shadow-xs transition active:scale-95 flex items-center gap-0.5"
               title="Panel de Control de Operador"
             >
               <span>⚙️</span>
@@ -446,7 +446,7 @@ export function SalaJuegosApp({
             <button
               type="button"
               onClick={() => setModalLoginEspectadorAbierto(true)}
-              className="bg-[#25d366] active:bg-[#20bd5a] text-[#111b21] font-black text-[11px] px-2 py-1 rounded-lg shadow-xs transition"
+              className="bg-[#25d366] active:bg-[#20bd5a] text-slate-900 font-black text-[11px] px-2 py-1 rounded-lg shadow-xs transition"
             >
               Entrar
             </button>
@@ -454,7 +454,7 @@ export function SalaJuegosApp({
             <button
               type="button"
               onClick={() => setModalRecargaAbierto(true)}
-              className="bg-[#25d366] active:bg-[#20bd5a] text-[#111b21] font-black text-[11px] px-2 py-1 rounded-lg shadow-xs transition"
+              className="bg-[#25d366] active:bg-[#20bd5a] text-slate-900 font-black text-[11px] px-2 py-1 rounded-lg shadow-xs transition"
             >
               +
             </button>
@@ -464,7 +464,7 @@ export function SalaJuegosApp({
           <button
             type="button"
             onClick={() => setMenuMovilAbierto(true)}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-base font-black hover:bg-white/15 active:bg-white/25 transition"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-900 text-base font-black hover:bg-emerald-100 active:bg-emerald-200 transition"
             title="Opciones de la sala"
           >
             ⋮
@@ -476,8 +476,8 @@ export function SalaJuegosApp({
       <div
         className={`hidden sm:flex px-2.5 py-1 items-center justify-between gap-1 border-b shadow-xs relative z-30 ${
           esClaro
-            ? "bg-[#008069] text-white border-[#016b58]"
-            : "bg-[#202c33] text-[#e9edef] border-[#2a3942]"
+            ? "bg-emerald-100 text-slate-900 border-[#016b58]"
+            : "bg-slate-50 text-slate-900 border-slate-200"
         }`}
       >
         {/* Lado izquierdo: Botón Salir a la Plataforma + Grupo + Selector de salas */}
@@ -488,8 +488,8 @@ export function SalaJuegosApp({
             title="Salir de la Sala y volver a la Plataforma"
             className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-extrabold transition shadow-xs ${
               esClaro
-                ? "bg-white/15 hover:bg-white/25 text-white border border-white/25"
-                : "bg-[#111b21] hover:bg-gray-800 text-emerald-400 border border-emerald-600/40"
+                ? "bg-emerald-100 hover:bg-emerald-200 text-slate-900 border border-emerald-200"
+                : "bg-white hover:bg-slate-200 text-emerald-700 border border-emerald-300"
             }`}
           >
             <span>←</span>
@@ -502,12 +502,12 @@ export function SalaJuegosApp({
               onChange={(e) => cargarBootstrap(e.target.value)}
               className={`font-bold text-xs rounded-lg px-2 py-1 outline-none max-w-[180px] truncate ${
                 esClaro
-                  ? "bg-[#016b58] border border-white/25 text-white"
-                  : "bg-[#111b21] border border-emerald-600/60 text-emerald-400"
+                  ? "bg-emerald-200 border border-emerald-200 text-slate-900"
+                  : "bg-white border border-emerald-300 text-emerald-700"
               }`}
             >
               {grupos.map((g) => (
-                <option key={g.id} value={g.id} className="text-black bg-white">
+                <option key={g.id} value={g.id} className="text-slate-900 bg-white">
                   {g.nombre}
                 </option>
               ))}
@@ -521,7 +521,7 @@ export function SalaJuegosApp({
           {/* Switcher de hasta 2 salas activas */}
           <div
             className={`flex rounded-lg p-0.5 ${
-              esClaro ? "bg-[#016b58]" : "bg-[#111b21] border border-gray-800"
+              esClaro ? "bg-emerald-200" : "bg-white border border-slate-200"
             }`}
           >
             {salas.slice(0, 2).map((s) => (
@@ -532,8 +532,8 @@ export function SalaJuegosApp({
                   salaActiva?.id === s.id
                     ? esClaro
                       ? "bg-white text-[#008069] shadow-xs"
-                      : "bg-[#00a884] text-black shadow-xs"
-                    : "text-white/80 hover:text-white"
+                      : "bg-[#00a884] text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 {s.nombre_sala}
@@ -547,8 +547,8 @@ export function SalaJuegosApp({
               onClick={() => setVistaDual(!vistaDual)}
               className={`hidden lg:inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-lg font-bold transition ${
                 esClaro
-                  ? "bg-white/15 hover:bg-white/25 text-white border border-white/20"
-                  : "bg-[#111b21] hover:bg-gray-800 border border-gray-700 text-gray-200"
+                  ? "bg-emerald-100 hover:bg-emerald-200 text-slate-900 border border-emerald-200"
+                  : "bg-white hover:bg-slate-200 border border-slate-200 text-slate-700"
               }`}
             >
               <span>{vistaDual ? "🔲 1 Sala" : "👥 2 Salas"}</span>
@@ -564,8 +564,8 @@ export function SalaJuegosApp({
               identidad?.esOperador
                 ? "bg-amber-400 text-slate-950 border border-amber-300 font-sans shadow-2xs"
                 : esClaro
-                  ? "bg-[#016b58] text-white border border-white/20"
-                  : "bg-[#111b21] text-emerald-400 border border-gray-700"
+                  ? "bg-emerald-200 text-slate-900 border border-emerald-200"
+                  : "bg-white text-emerald-700 border border-slate-200"
             }`}
           >
             {identidad?.esOperador ? (
@@ -600,7 +600,7 @@ export function SalaJuegosApp({
           {identidad?.esOperador ? (
             <button
               onClick={() => abrirOperadorConTab("carrera")}
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs px-3 py-1 rounded-lg transition shadow-xs flex items-center gap-1 active:scale-95"
+              className="bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xs px-3 py-1 rounded-lg transition shadow-xs flex items-center gap-1 active:scale-95"
               title="Panel de Control de Operador"
             >
               <span>⚙️</span>
@@ -609,7 +609,7 @@ export function SalaJuegosApp({
           ) : esEspectador ? (
             <button
               onClick={() => setModalLoginEspectadorAbierto(true)}
-              className="bg-[#25d366] hover:bg-[#20bd5a] text-[#111b21] font-black text-xs px-3 py-1 rounded-lg transition shadow-xs"
+              className="bg-[#25d366] hover:bg-[#20bd5a] text-slate-900 font-black text-xs px-3 py-1 rounded-lg transition shadow-xs"
             >
               🔑 Iniciar Sesión
             </button>
@@ -618,8 +618,8 @@ export function SalaJuegosApp({
               onClick={() => setModalRecargaAbierto(true)}
               className={`font-black text-xs px-2.5 py-1 rounded-lg transition shadow-xs ${
                 esClaro
-                  ? "bg-[#25d366] hover:bg-[#20bd5a] text-[#111b21]"
-                  : "bg-[#00a884] hover:bg-emerald-400 text-black"
+                  ? "bg-[#25d366] hover:bg-[#20bd5a] text-slate-900"
+                  : "bg-[#00a884] hover:bg-emerald-400 text-white"
               }`}
             >
               + Recargar
@@ -637,7 +637,7 @@ export function SalaJuegosApp({
               }
               className={`font-bold text-xs px-2.5 py-1 rounded-lg transition flex items-center gap-1.5 ${
                 salaActiva?.whatsapp_group_jid
-                  ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40"
+                  ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-800 border border-emerald-400/40"
                   : "bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40"
               }`}
             >
@@ -656,8 +656,8 @@ export function SalaJuegosApp({
             title="Ver reporte preliminar de jugadas pactadas"
             className={`font-bold text-xs px-2.5 py-1 rounded-lg transition ${
               esClaro
-                ? "bg-white/15 hover:bg-white/25 text-white border border-white/20"
-                : "bg-[#202c33] hover:bg-[#2a3942] border border-amber-500/40 text-amber-300"
+                ? "bg-emerald-100 hover:bg-emerald-200 text-slate-900 border border-emerald-200"
+                : "bg-slate-50 hover:bg-slate-100 border border-amber-500/40 text-amber-300"
             }`}
           >
             📋 Prejugadas
@@ -671,8 +671,8 @@ export function SalaJuegosApp({
               title="Configurar fuente, tamaño de letra y tema del chat"
               className={`px-2 py-1 rounded-lg text-xs font-black transition flex items-center gap-1 ${
                 esClaro
-                  ? "bg-white/15 hover:bg-white/25 text-white border border-white/25"
-                  : "bg-[#111b21] hover:bg-gray-800 text-emerald-400 border border-gray-700"
+                  ? "bg-emerald-100 hover:bg-emerald-200 text-slate-900 border border-emerald-200"
+                  : "bg-white hover:bg-slate-200 text-emerald-700 border border-slate-200"
               }`}
             >
               <span>Aa</span>
@@ -683,8 +683,8 @@ export function SalaJuegosApp({
               <div
                 className={`absolute right-0 mt-1.5 w-64 rounded-xl shadow-2xl border p-3 z-50 space-y-2.5 text-xs ${
                   esClaro
-                    ? "bg-white border-gray-200 text-[#111b21]"
-                    : "bg-[#202c33] border-[#2a3942] text-[#e9edef]"
+                    ? "bg-white border-gray-200 text-slate-900"
+                    : "bg-slate-50 border-slate-200 text-slate-900"
                 }`}
               >
                 <div className="flex items-center justify-between border-b pb-1.5 border-current/10">
@@ -703,17 +703,9 @@ export function SalaJuegosApp({
                 {/* Tema Claro Hípico vs Oscuro */}
                 <div className="flex items-center justify-between gap-1">
                   <span className="text-[11px] font-semibold">Tema visual:</span>
-                  <button
-                    type="button"
-                    onClick={alternarTema}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${
-                      esClaro
-                        ? "bg-[#efeae2] border-[#008069] text-[#008069]"
-                        : "bg-[#111b21] border-emerald-500 text-emerald-400"
-                    }`}
-                  >
-                    {esClaro ? "☀️ Claro Hípico (Activo)" : "🌙 Oscuro WhatsApp"}
-                  </button>
+                  <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                    ☀️ Claro Hípico (Activo)
+                  </span>
                 </div>
 
                 {/* Tamaño de letra */}
@@ -726,7 +718,7 @@ export function SalaJuegosApp({
                     <button
                       type="button"
                       onClick={() => cambiarTamanoLetra(tamanoLetra - 1)}
-                      className="px-2.5 py-1 rounded border border-current/20 font-bold text-xs hover:bg-[#008069]/10"
+                      className="px-2.5 py-1 rounded border border-current/20 font-bold text-xs hover:bg-emerald-50"
                     >
                       A-
                     </button>
@@ -741,7 +733,7 @@ export function SalaJuegosApp({
                     <button
                       type="button"
                       onClick={() => cambiarTamanoLetra(tamanoLetra + 1)}
-                      className="px-2.5 py-1 rounded border border-current/20 font-bold text-xs hover:bg-[#008069]/10"
+                      className="px-2.5 py-1 rounded border border-current/20 font-bold text-xs hover:bg-emerald-50"
                     >
                       A+
                     </button>
@@ -763,10 +755,10 @@ export function SalaJuegosApp({
                           style={{ fontFamily: item.css }}
                           className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition ${
                             activa
-                              ? "bg-[#d9fdd3] text-[#111b21] font-bold border border-[#008069]/40"
+                              ? "bg-[#d9fdd3] text-slate-900 font-bold border border-[#008069]/40"
                               : esClaro
                                 ? "hover:bg-gray-100 text-gray-800"
-                                : "hover:bg-[#111b21] text-gray-200"
+                                : "hover:bg-white text-slate-700"
                           }`}
                         >
                           <span>{item.nombre}</span>
@@ -793,7 +785,7 @@ export function SalaJuegosApp({
               identidad={identidad}
               tamanoLetra={tamanoLetra}
               fuenteId={fuenteId}
-              tema={tema}
+              tema="claro"
               moneda={grupoActivo?.moneda || "USD"}
               onActualizarSaldo={refrescarSaldo}
               onSalirPlataforma={salirALaPlataforma}
@@ -813,7 +805,7 @@ export function SalaJuegosApp({
               identidad={identidad}
               tamanoLetra={tamanoLetra}
               fuenteId={fuenteId}
-              tema={tema}
+              tema="claro"
               moneda={grupoActivo?.moneda || "USD"}
               onActualizarSaldo={refrescarSaldo}
               onSalirPlataforma={salirALaPlataforma}
@@ -835,7 +827,7 @@ export function SalaJuegosApp({
             identidad={identidad}
             tamanoLetra={tamanoLetra}
             fuenteId={fuenteId}
-            tema={tema}
+            tema="claro"
             moneda={grupoActivo?.moneda || "USD"}
             onActualizarSaldo={refrescarSaldo}
             onSalirPlataforma={salirALaPlataforma}
@@ -851,7 +843,7 @@ export function SalaJuegosApp({
             </p>
             <button
               onClick={() => cargarBootstrap(grupoActivo?.id)}
-              className="px-4 py-2 bg-[#008069] text-white rounded-lg text-xs font-bold shadow hover:bg-[#017561] active:scale-95 transition"
+              className="px-4 py-2 bg-emerald-100 text-slate-900 rounded-lg text-xs font-bold shadow hover:bg-emerald-200 active:scale-95 transition"
             >
               Reintentar Conexión
             </button>
@@ -897,19 +889,19 @@ export function SalaJuegosApp({
       {/* Menú Desplegable Móvil WhatsApp */}
       {menuMovilAbierto && (
         <div
-          className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs animate-in fade-in"
+          className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-50 backdrop-blur-xs animate-in fade-in"
           onClick={() => setMenuMovilAbierto(false)}
         >
           <div
             className={`w-full max-h-[85vh] overflow-y-auto rounded-t-3xl p-4 shadow-2xl space-y-3.5 ${
-              esClaro ? "bg-white text-[#111b21]" : "bg-[#111b21] text-[#e9edef] border-t border-gray-800"
+              esClaro ? "bg-white text-slate-900" : "bg-white text-slate-900 border-t border-slate-200"
             }`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header del menú */}
             <div className="flex items-center justify-between border-b pb-2.5 border-current/10">
               <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-full bg-[#008069] text-white flex items-center justify-center text-sm font-bold shadow-xs">
+                <span className="w-8 h-8 rounded-full bg-emerald-100 text-slate-900 flex items-center justify-center text-sm font-bold shadow-xs">
                   🏇
                 </span>
                 <div>
@@ -938,10 +930,10 @@ export function SalaJuegosApp({
                     }}
                     className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 border transition ${
                       salaActiva?.id === s.id
-                        ? "bg-[#008069] text-white border-[#008069] shadow-sm"
+                        ? "bg-emerald-100 text-slate-900 border-[#008069] shadow-sm"
                         : esClaro
                           ? "bg-gray-100 text-gray-800 border-gray-200"
-                          : "bg-[#202c33] text-gray-200 border-gray-700"
+                          : "bg-slate-50 text-slate-700 border-slate-200"
                     }`}
                   >
                     <span>●</span>
@@ -962,11 +954,11 @@ export function SalaJuegosApp({
                     setMenuMovilAbierto(false);
                   }}
                   className={`w-full font-bold text-xs rounded-xl p-2.5 border outline-none ${
-                    esClaro ? "bg-gray-50 border-gray-300 text-black" : "bg-[#202c33] border-gray-700 text-white"
+                    esClaro ? "bg-gray-50 border-gray-300 text-slate-900" : "bg-slate-50 border-slate-200 text-slate-900"
                   }`}
                 >
                   {grupos.map((g) => (
-                    <option key={g.id} value={g.id} className="text-black bg-white">
+                    <option key={g.id} value={g.id} className="text-slate-900 bg-white">
                       {g.nombre}
                     </option>
                   ))}
@@ -977,7 +969,7 @@ export function SalaJuegosApp({
             {/* Accesos Rápidos: Operador dinámico vs Jugador */}
             {identidad?.esOperador ? (
               <div className="space-y-1.5 border-t pt-2 border-current/10">
-                <span className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-wider flex items-center gap-1">
+                <span className="text-[10px] font-black uppercase text-emerald-600 tracking-wider flex items-center gap-1">
                   <span>🛠️</span> Opciones Rápidas de Operador
                 </span>
                 <div className="grid grid-cols-2 gap-2">
@@ -1009,7 +1001,7 @@ export function SalaJuegosApp({
                       setMenuMovilAbierto(false);
                       abrirOperadorConTab("liquidacion");
                     }}
-                    className="py-2.5 px-3 rounded-xl font-black text-xs bg-[#008069] hover:bg-[#017561] text-white flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
+                    className="py-2.5 px-3 rounded-xl font-black text-xs bg-emerald-100 hover:bg-emerald-200 text-slate-900 flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
                   >
                     <span>🏆</span>
                     <span>Liquidar Pizarra</span>
@@ -1020,7 +1012,7 @@ export function SalaJuegosApp({
                       setMenuMovilAbierto(false);
                       setModalPrejugadasAbierto(true);
                     }}
-                    className="py-2.5 px-3 rounded-xl font-black text-xs bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-600/40 flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
+                    className="py-2.5 px-3 rounded-xl font-black text-xs bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
                   >
                     <span>📋</span>
                     <span>Ver Prejugadas</span>
@@ -1031,7 +1023,7 @@ export function SalaJuegosApp({
                       setMenuMovilAbierto(false);
                       abrirOperadorConTab("publicidad");
                     }}
-                    className="col-span-2 py-2 px-3 rounded-xl font-bold text-xs bg-slate-800 text-white flex items-center justify-center gap-1.5 shadow-xs transition active:scale-95"
+                    className="col-span-2 py-2 px-3 rounded-xl font-bold text-xs bg-slate-100 text-slate-900 flex items-center justify-center gap-1.5 shadow-xs transition active:scale-95"
                   >
                     <span>📢</span>
                     <span>Publicar / Fijar Aviso en la Sala</span>
@@ -1061,7 +1053,7 @@ export function SalaJuegosApp({
                     setMenuMovilAbierto(false);
                     setModalRecargaAbierto(true);
                   }}
-                  className="py-2 px-3 rounded-xl font-black text-xs bg-[#25d366] text-[#111b21] flex items-center justify-center gap-2 shadow-sm transition active:scale-95"
+                  className="py-2 px-3 rounded-xl font-black text-xs bg-[#25d366] text-slate-900 flex items-center justify-center gap-2 shadow-sm transition active:scale-95"
                 >
                   <span>💳</span>
                   <span>Recargar Saldo</span>
@@ -1073,15 +1065,9 @@ export function SalaJuegosApp({
             <div className="space-y-2 border-t pt-2.5 border-current/10">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold">Tema visual:</span>
-                <button
-                  type="button"
-                  onClick={alternarTema}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold border transition ${
-                    esClaro ? "bg-gray-100 border-gray-300 text-gray-800" : "bg-[#202c33] border-gray-700 text-white"
-                  }`}
-                >
-                  {esClaro ? "☀️ Modo Claro" : "🌙 Modo Oscuro"}
-                </button>
+                <span className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                  ☀️ Modo Claro
+                </span>
               </div>
 
               <div className="flex items-center justify-between">
@@ -1112,7 +1098,7 @@ export function SalaJuegosApp({
                   setMenuMovilAbierto(false);
                   setModalLoginEspectadorAbierto(true);
                 }}
-                className="w-full bg-[#008069] text-white py-2 rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-sm active:scale-95"
+                className="w-full bg-emerald-100 text-slate-900 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-sm active:scale-95"
               >
                 <span>🔑</span>
                 <span>Identificarse / Iniciar Sesión</span>
@@ -1124,7 +1110,7 @@ export function SalaJuegosApp({
               type="button"
               onClick={salirALaPlataforma}
               className={`w-full py-2.5 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 border transition ${
-                esClaro ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300" : "bg-[#202c33] text-gray-200 border-gray-700"
+                esClaro ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300" : "bg-slate-50 text-slate-700 border-slate-200"
               }`}
             >
               <span>←</span>
@@ -1136,9 +1122,9 @@ export function SalaJuegosApp({
 
       {/* Modal Identificación para Espectadores */}
       {modalLoginEspectadorAbierto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-50 backdrop-blur-xs p-4 animate-in fade-in">
           <div className={`w-full max-w-sm rounded-2xl p-5 shadow-2xl border ${
-            esClaro ? "bg-white border-gray-200 text-[#111b21]" : "bg-[#111b21] border-gray-800 text-white"
+            esClaro ? "bg-white border-gray-200 text-slate-900" : "bg-white border-slate-200 text-slate-900"
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-current/10">
               <div className="flex items-center gap-2">
@@ -1163,7 +1149,7 @@ export function SalaJuegosApp({
                 onClick={() => {
                   window.location.href = "/portal";
                 }}
-                className="w-full bg-[#008069] hover:bg-[#017561] text-white font-extrabold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition active:scale-95"
+                className="w-full bg-emerald-100 hover:bg-emerald-200 text-slate-900 font-extrabold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition active:scale-95"
               >
                 <span>📱</span>
                 <span>Ingresar a mi Taquilla / Portal</span>
@@ -1177,7 +1163,7 @@ export function SalaJuegosApp({
                 className={`w-full py-2.5 px-3 rounded-xl font-bold flex items-center justify-center gap-2 border transition active:scale-95 ${
                   esClaro
                     ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
-                    : "bg-[#202c33] hover:bg-gray-800 text-emerald-400 border-gray-700"
+                    : "bg-slate-50 hover:bg-slate-200 text-emerald-700 border-slate-200"
                 }`}
               >
                 <span>⚙️</span>

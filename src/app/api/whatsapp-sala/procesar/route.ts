@@ -1724,6 +1724,30 @@ export async function POST(req: Request) {
     const grupoId = sala.grupo_id;
     const carreraAbierta = String(sala.estado_carrera || "").toLowerCase() === "abierta";
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // INMUNIDAD DEL OPERADOR / ADMINISTRADOR
+    // El oficial NO es un jugador: su texto libre se ignora en silencio (sin
+    // INSERT en chat_mensajes, sin broadcast y sin respuesta pública/privada).
+    // Únicamente se procesan sus comandos exactos de control de carrera.
+    // ─────────────────────────────────────────────────────────────────────────
+    const esOperadorRemitente =
+      Boolean(body.esMensajePropioTelefono) ||
+      Boolean(body.esOperador) ||
+      (await verificarEsOperador(null, participantJid, grupoId));
+    const COMANDO_OPERADOR_EXACTO = /^!(?:abrir|cerrar|pizarra|rectificar|plano)(?:\s|$)/i;
+    if (esOperadorRemitente && !COMANDO_OPERADOR_EXACTO.test(texto)) {
+      return NextResponse.json({
+        ok: true,
+        tipo: "IGNORADO_OPERADOR",
+        respuestaGrupo: null,
+        mensajePrivadoAutor: null,
+        msg_publico: null,
+        msg_publico_bot: null,
+        respuestaPublica: null,
+        msg_privado_bot: null,
+      });
+    }
+
     // Todo mensaje entrante del grupo (sea texto normal o jugada) debe registrarse
     // para que aparezca en el monitor en vivo de la Sala de Juegos Web
     const textoUsuarioLimpio = String(texto || "").trim();
@@ -3565,15 +3589,19 @@ export async function POST(req: Request) {
         analisis.mensajePedagogicoPrivado ||
         `🤖 Corrección Pedagógica: Para publicar una jugada indica Condición (Juego/Consigo), Jugada, Ejemplar y Monto. Ejemplo: Juego 1P 5 100`;
 
+      // Silencio absoluto para el operador: nunca se le muestra el aviso
+      // "⚠️¡Por favor, verificar redacción!" ni su versión privada.
+      const avisoPublico = esOperadorRemitente ? null : analisis.msgPublicoBot || null;
+      const avisoPrivado = esOperadorRemitente ? null : msgPrivPedagogico;
       return NextResponse.json({
         ok: false,
         tipo: "PEDAGOGICO",
-        respuestaGrupo: analisis.msgPublicoBot || null,
-        msg_publico: analisis.msgPublicoBot || null,
-        msg_publico_bot: analisis.msgPublicoBot || null,
-        respuestaPublica: analisis.msgPublicoBot || null,
-        mensajePrivadoAutor: msgPrivPedagogico,
-        msg_privado_bot: msgPrivPedagogico,
+        respuestaGrupo: avisoPublico,
+        msg_publico: avisoPublico,
+        msg_publico_bot: avisoPublico,
+        respuestaPublica: avisoPublico,
+        mensajePrivadoAutor: avisoPrivado,
+        msg_privado_bot: avisoPrivado,
         alertaPrivada: null,
         notificaciones_privadas: [],
         clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),

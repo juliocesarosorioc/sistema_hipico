@@ -466,6 +466,35 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 4.0 Leer configuración de sala + comisión/cruces del grupo dueño
+    if (accion === "obtener_config_sala" || accion === "obtener-config-sala") {
+      const { salaId } = body;
+      if (!salaId) {
+        return NextResponse.json({ ok: false, motivo: "salaId es requerido" }, { status: 200 });
+      }
+      const { data: sala, error: errSala } = await supabaseAdmin
+        .from("salas_juego")
+        .select("*")
+        .eq("id", salaId)
+        .maybeSingle();
+      if (errSala) {
+        return NextResponse.json({ ok: false, motivo: errSala.message }, { status: 200 });
+      }
+      if (!sala) {
+        return NextResponse.json({ ok: false, motivo: "Sala no encontrada" }, { status: 200 });
+      }
+      let grupo = null;
+      if (sala.grupo_id) {
+        const { data: g } = await supabaseAdmin
+          .from("grupos_venta")
+          .select("id, nombre, comision_default, cruce_mismo_ejemplar, cruce_diferente_ejemplar, permite_cruces")
+          .eq("id", sala.grupo_id)
+          .maybeSingle();
+        grupo = g || null;
+      }
+      return NextResponse.json({ ok: true, sala, grupo }, { status: 200 });
+    }
+
     // 4.1 Actualizar configuración de sala (apuesta mínima, vencimiento, topes de marcas)
     if (accion === "actualizar_config_sala" || accion === "actualizar-config-sala") {
       const {
@@ -474,6 +503,9 @@ export async function POST(req: NextRequest) {
         tiempoVencimientoPropuestaMin,
         topeCaballosMarcasNacional,
         topeCaballosMarcasInternacional,
+        comisionDefault,
+        cruceMismoEjemplar,
+        cruceDiferenteEjemplar,
         nombreSala,
         hipodromoActivo,
       } = body;
@@ -481,6 +513,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, motivo: "salaId es requerido" }, { status: 200 });
       }
 
+      // OJO: `salas_juego` NO tiene columnas `tiempo_vencimiento_propuesta_min`,
+      // `tope_caballos_marcas_nacional` ni `tope_caballos_marcas_internacional`.
+      // Escribirlas hacía que Supabase rechazara TODO el UPDATE (42703) y el
+      // botón Guardar pareciera no disparar. Solo se escriben columnas reales.
       const payload: Record<string, any> = {
         updated_at: new Date().toISOString(),
       };
@@ -490,24 +526,15 @@ export async function POST(req: NextRequest) {
       }
       if (tiempoVencimientoPropuestaMin !== undefined) {
         const n = parseInt(String(tiempoVencimientoPropuestaMin), 10);
-        if (Number.isFinite(n) && n > 0) {
-          payload.tiempo_vencimiento_propuesta_min = n;
-          payload.tiempo_vencimiento_min = n;
-        }
+        if (Number.isFinite(n) && n > 0) payload.tiempo_vencimiento_min = n;
       }
       if (topeCaballosMarcasNacional !== undefined) {
         const n = parseInt(String(topeCaballosMarcasNacional), 10);
-        if (Number.isFinite(n) && n > 0) {
-          payload.tope_caballos_marcas_nacional = n;
-          payload.tope_marcas_nacional = n;
-        }
+        if (Number.isFinite(n) && n > 0) payload.tope_marcas_nacional = n;
       }
       if (topeCaballosMarcasInternacional !== undefined) {
         const n = parseInt(String(topeCaballosMarcasInternacional), 10);
-        if (Number.isFinite(n) && n > 0) {
-          payload.tope_caballos_marcas_internacional = n;
-          payload.tope_marcas_americano = n;
-        }
+        if (Number.isFinite(n) && n > 0) payload.tope_marcas_americano = n;
       }
       if (nombreSala) payload.nombre_sala = String(nombreSala).trim();
       if (hipodromoActivo) payload.hipodromo_activo = String(hipodromoActivo).trim().toUpperCase();
@@ -529,7 +556,37 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, motivo: errUpd.message }, { status: 200 });
       }
 
-      return NextResponse.json({ ok: true, sala: updated }, { status: 200 });
+      // Comisión y permisos de cruce viven en `grupos_venta`. Se actualizan
+      // contra el grupo_id de la sala, nunca con un id suelto del frontend.
+      let grupoActualizado = null;
+      const hayDatosGrupo =
+        comisionDefault !== undefined || cruceMismoEjemplar !== undefined || cruceDiferenteEjemplar !== undefined;
+      if (hayDatosGrupo && updated?.grupo_id) {
+        const pg: Record<string, any> = {};
+        if (comisionDefault !== undefined) {
+          const n = parseFloat(String(comisionDefault));
+          if (Number.isFinite(n) && n >= 0) pg.comision_default = n;
+        }
+        if (cruceMismoEjemplar !== undefined) pg.cruce_mismo_ejemplar = Boolean(cruceMismoEjemplar);
+        if (cruceDiferenteEjemplar !== undefined) pg.cruce_diferente_ejemplar = Boolean(cruceDiferenteEjemplar);
+        if (Object.keys(pg).length > 0) {
+          const { data: g, error: errG } = await supabaseAdmin
+            .from("grupos_venta")
+            .update(pg)
+            .eq("id", updated.grupo_id)
+            .select("id, nombre, comision_default, cruce_mismo_ejemplar, cruce_diferente_ejemplar")
+            .maybeSingle();
+          if (errG) {
+            return NextResponse.json(
+              { ok: false, motivo: `Salas actualizada, pero la comisión/cruces falló: ${errG.message}` },
+              { status: 200 }
+            );
+          }
+          grupoActualizado = g || null;
+        }
+      }
+
+      return NextResponse.json({ ok: true, sala: updated, grupo: grupoActualizado }, { status: 200 });
     }
 
     // 4.2 Difusión multimedia a 1 o varios grupos seleccionados por ícono
