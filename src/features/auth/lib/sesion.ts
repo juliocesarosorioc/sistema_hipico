@@ -72,15 +72,41 @@ export async function resolverGrupoPorCodigoSala(
       .select("id, nombre, codigo_sala")
       .ilike("codigo_sala", codigo)
       .maybeSingle();
-    if (error || !data) return null;
-    return {
-      id: String(data.id),
-      nombre: String(data.nombre ?? ""),
-      codigo_sala: String(data.codigo_sala ?? codigo),
-    };
+    if (!error && data) {
+      return {
+        id: String(data.id),
+        nombre: String(data.nombre ?? ""),
+        codigo_sala: String(data.codigo_sala ?? codigo),
+      };
+    }
   } catch {
-    return null;
+    /* caer al respaldo del grupo principal */
   }
+
+  // Instalaciones donde la migración del código de sala todavía no se aplicó:
+  // el código reservado `principal` resuelve al único grupo principal. No se
+  // aceptan nombres de otros grupos como código: la frontera sigue siendo el
+  // tenant marcado como principal en la base.
+  if (codigo.toLowerCase() === CODIGO_SALA_PRINCIPAL.toLowerCase()) {
+    try {
+      const { data, error } = await supabase
+        .from("grupos_venta")
+        .select("id, nombre")
+        .eq("es_principal", true)
+        .maybeSingle();
+      if (!error && data?.id) {
+        return {
+          id: String(data.id),
+          nombre: String(data.nombre ?? "PRINCIPAL"),
+          codigo_sala: CODIGO_SALA_PRINCIPAL,
+        };
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 }
 
 export type ResultadoLogin =
