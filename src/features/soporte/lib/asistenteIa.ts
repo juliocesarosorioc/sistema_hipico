@@ -536,7 +536,7 @@ Te recomiendo **abrir un Ticket de Incidencia** para que el Administrador Princi
   }
 
   return {
-    respuesta: `Hola 👋 Soy tu **🤖 Super Club del Sistema Hípico**.
+    respuesta: `Hola 👋 Soy tu **🤖 Asistente del Sistema Hípico**.
 Suministro toda la información del sistema en tiempo real y también puedes **dictarme por voz (🎙️)** para que interprete consultas, saldos, carreras o jugadas:
 1. 📊 **Resumen e Información del Sistema**: Pídeme *"Resumen del sistema"*, *"Saldos de clientes"*, *"Carreras de hoy"* o *"Saldo de [nombre]"*.
 2. 🎙️ **Dictado e Interpretación de Jugadas**: Díctame por ejemplo *"Carlos juega 1P al 4 por 100 con Pedro"* o *"10 a 8 caballo 3 por 50"*.
@@ -611,7 +611,7 @@ export function normalizarDictadoVoz(texto: string): string {
 }
 
 /**
- * Motor en vivo del Super Club: suministra toda la información del sistema
+ * Motor en vivo del Asistente: suministra toda la información del sistema
  * (clientes, saldos comprometidos, grupos, carreras del día, pizarras) e interpreta dictados.
  */
 export async function consultarAgenteIaEnVivo(
@@ -1064,7 +1064,7 @@ export async function consultarAgenteIaEnVivo(
       limpiarCacheClientesVenta();
       return {
         respuesta: creado.ok
-          ? `✅ **Cliente Creado en Vivo por el Super Club**:\n` +
+          ? `✅ **Cliente Creado en Vivo por el Asistente**:\n` +
             `• **Nombre / Código**: **${nombreNuevo}** (\`${seudonimo}\`)\n` +
             `• **Resultado / Saldo Inicial**: **${formatoMoneda("USD", Number.isFinite(saldoVal) ? saldoVal : 0)}**\n` +
             `• **Aval Autorizado**: **${formatoMoneda("USD", Number.isFinite(avalVal) ? avalVal : 0)}**\n` +
@@ -1113,7 +1113,7 @@ export async function consultarAgenteIaEnVivo(
           limpiarCacheClientesVenta();
           return {
             respuesta:
-              `✅ **Actualización Ejecutada en Vivo por el Super Club**:\n` +
+              `✅ **Actualización Ejecutada en Vivo por el Asistente**:\n` +
               `• **Cliente**: **${objetivo.seudonimo || objetivo.nombre}**\n` +
               `• **Campo actualizado**: **${campoRaw.toUpperCase()}** → **${campoRaw.startsWith("devoluci") ? `${valorNum}%` : formatoMoneda("USD", valorNum)}**`,
             resuelto: true,
@@ -1143,7 +1143,7 @@ export async function consultarAgenteIaEnVivo(
         });
         return {
           respuesta:
-            `🐎🚫 **Retiro Oficial Ejecutado por el Super Club**:\n` +
+            `🐎🚫 **Retiro Oficial Ejecutado por el Asistente**:\n` +
             `• **Carrera**: **${hip} · C${numCarrera}** (${hoyLocal()})\n` +
             `• **Ejemplar retirado**: **#${numEjemplar}**\n` +
             `• **Jugadas actualizadas a RETIRADO**: ${resRetiro.reembolsos} jugada(s).`,

@@ -171,27 +171,24 @@ export async function POST(req: NextRequest) {
         .eq("activa", true)
         .order("orden_sala", { ascending: true });
 
-      if ((existentes?.length || 0) >= 2) {
+      if ((existentes?.length || 0) >= 1) {
         return NextResponse.json(
-          { ok: false, motivo: "Máximo 2 salas activas permitidas por grupo" },
-          { status: 400 }
+          { ok: true, sala: existentes![0], motivo: "Ya existe una Sala de Juegos unificada para este grupo" },
+          { status: 200 }
         );
       }
 
-      const siguienteOrden = (existentes?.length || 0) + 1;
-      const nombreFinal =
-        String(nombreSala || "").trim() ||
-        (siguienteOrden === 1 ? "Sala 1 - Nacionales" : "Sala 2 - Americanas");
+      const nombreFinal = String(nombreSala || "").trim() || "Sala de Juegos";
 
       const { data: creada, error: errCrear } = await supabaseAdmin
         .from("salas_juego")
         .insert({
           grupo_id: grupoId,
           nombre_sala: nombreFinal,
-          orden_sala: siguienteOrden,
+          orden_sala: 1,
           activa: true,
           estado_carrera: "abierta",
-          hipodromo_activo: hipodromoActivo || (siguienteOrden === 1 ? "LA RINCONADA" : "GULFSTREAM PARK"),
+          hipodromo_activo: hipodromoActivo || "LA RINCONADA",
           numero_carrera_activa: 1,
         })
         .select()

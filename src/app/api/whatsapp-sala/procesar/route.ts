@@ -127,6 +127,13 @@ function normalizarTelefono(raw?: string | null): string {
     .replace(/[^0-9]/g, "");
 }
 
+function extraerUltimos10Digitos(raw?: string | null): string {
+  if (!raw) return "";
+  const soloDigitos = String(raw).replace(/@.*$/, "").replace(/:.*$/, "").replace(/\D/g, "");
+  if (soloDigitos.length >= 10) return soloDigitos.slice(-10);
+  return soloDigitos.length >= 7 ? soloDigitos : "";
+}
+
 function calcularSaldoDisponible(cliente: any): number {
   if (!cliente) return 0;
   if (cliente.libre) return 999999;
@@ -438,7 +445,7 @@ async function intentarCruceAutomatico(params: {
   return null;
 }
 
-async function asegurarDosSalasPrincipales() {
+async function obtenerSalasUnicas() {
   const { data: salasExistentes } = await supabaseAdmin
     .from("salas_juego")
     .select("*")
@@ -447,7 +454,9 @@ async function asegurarDosSalasPrincipales() {
 
   const { data: gruposSistema } = await supabaseAdmin
     .from("grupos_venta")
-    .select("id, nombre");
+    .select("id, nombre")
+    .eq("activo", true);
+
   const grupoNombrePorId = new Map<string, string>();
   for (const g of gruposSistema || []) {
     if (g?.id) grupoNombrePorId.set(String(g.id), String(g.nombre || ""));
@@ -460,6 +469,7 @@ async function asegurarDosSalasPrincipales() {
     }));
   }
 
+  // Si no hay ninguna sala activa, crear una única "Sala de Juegos" para el grupo principal
   let { data: grupoPrincipal } = await supabaseAdmin
     .from("grupos_venta")
     .select("id, nombre")
@@ -486,47 +496,26 @@ async function asegurarDosSalasPrincipales() {
 
   const grupoId = grupoPrincipal?.id || "default";
 
-  if (!salasExistentes || salasExistentes.length === 0) {
-    await supabaseAdmin.from("salas_juego").insert([
-      {
-        grupo_id: grupoId,
-        nombre_sala: "Sala 1 - Nacionales",
-        orden_sala: 1,
-        activa: true,
-        estado_carrera: "abierta",
-        hipodromo_activo: "LA RINCONADA",
-        numero_carrera_activa: 1,
-      },
-      {
-        grupo_id: grupoId,
-        nombre_sala: "Sala 2 - Americanas",
-        orden_sala: 2,
-        activa: true,
-        estado_carrera: "abierta",
-        hipodromo_activo: "GULFSTREAM PARK",
-        numero_carrera_activa: 1,
-      },
-    ]);
-  } else if (salasExistentes.length === 1) {
-    await supabaseAdmin.from("salas_juego").insert({
-      grupo_id: salasExistentes[0].grupo_id || grupoId,
-      nombre_sala: "Sala 2 - Americanas",
-      orden_sala: 2,
+  const { data: salaCreada } = await supabaseAdmin
+    .from("salas_juego")
+    .insert({
+      grupo_id: grupoId,
+      nombre_sala: "Sala de Juegos",
+      orden_sala: 1,
       activa: true,
       estado_carrera: "abierta",
-      hipodromo_activo: "GULFSTREAM PARK",
+      hipodromo_activo: "LA RINCONADA",
       numero_carrera_activa: 1,
-    });
-  }
-
-  const { data: salasFinales } = await supabaseAdmin
-    .from("salas_juego")
+    })
     .select("*")
-    .eq("activa", true)
-    .order("orden_sala", { ascending: true })
-    .limit(2);
+    .single();
 
-  return salasFinales || [];
+  return [
+    {
+      ...(salaCreada || {}),
+      grupo_nombre: grupoPrincipal?.nombre || "Grupo Oficial",
+    },
+  ];
 }
 
 // ============================================================================
@@ -585,7 +574,7 @@ export async function GET(req: Request) {
 
   let salas: any[] = [];
   try {
-    salas = await asegurarDosSalasPrincipales();
+    salas = await obtenerSalasUnicas();
   } catch {
     salas = [];
   }
@@ -1799,9 +1788,9 @@ export async function POST(req: Request) {
     }
 
     // 2. Identificar al jugador estrictamente en `public.clientes` del `grupo_id` de la sala
-    const participantAlt = String(body.participantAlt || "");
-    const telefonoRealProp = String(body.telefonoReal || "");
-    const pushNameLimpio = String(body.pushName || body.senderNombre || "")
+    const participantAlt = String(body.participantAlt || "").trim();
+    const telefonoRealProp = String(body.telefonoReal || body.participant_phone || "").trim();
+    const pushNameLimpio = String(body.push_name || body.pushName || body.senderNombre || "")
       .trim()
       .replace(/\s+/g, " ")
       .toUpperCase();
@@ -1811,6 +1800,8 @@ export async function POST(req: Request) {
         ? pushNameLimpio
         : "";
 
+    const esLid = participantJid.endsWith("@lid");
+    const esAltLid = participantAlt.endsWith("@lid");
     const telAlt = normalizarTelefono(participantAlt);
     let telReal = normalizarTelefono(telefonoRealProp);
     if (!telReal) {
@@ -1818,16 +1809,17 @@ export async function POST(req: Request) {
         telReal = telAlt;
       } else if (participantJid && participantJid.endsWith("@s.whatsapp.net")) {
         telReal = normalizarTelefono(participantJid);
-      } else if (telAlt && telAlt.length >= 7 && telAlt.length <= 15) {
+      } else if (!esLid && normalizarTelefono(participantJid).length >= 7 && normalizarTelefono(participantJid).length <= 15) {
+        telReal = normalizarTelefono(participantJid);
+      } else if (!esAltLid && telAlt && telAlt.length >= 7 && telAlt.length <= 15) {
         telReal = telAlt;
-      } else if (!participantJid.endsWith("@lid")) {
-        const tPrinc = normalizarTelefono(participantJid);
-        if (tPrinc.length >= 7) telReal = tPrinc;
       }
     }
 
+    const tel10 = extraerUltimos10Digitos(telReal || telefonoRealProp || (!esLid ? participantJid : "") || (!esAltLid ? participantAlt : ""));
+
     const CAMPOS_CLIENTE_SALA =
-      "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, codigo_pais, telefono, telefono_normalizado";
+      "id, grupo_id, nombre, seudonimo, saldo_actual, saldo_retenido, saldo_disponible, libre, aval, whatsapp_jid, whatsapp_lid, codigo_pais, telefono, telefono_normalizado";
 
     let cliente: any =
       body.clientePreviamenteIdentificado?.id &&
@@ -1835,129 +1827,124 @@ export async function POST(req: Request) {
         ? body.clientePreviamenteIdentificado
         : null;
 
-    // A. Búsqueda en `clientes` donde `grupo_id = sala.grupo_id` por JID o teléfono normalizado
-    if (!cliente && (participantJid || participantAlt || telReal)) {
-      const orConds: string[] = [];
-      if (participantJid) orConds.push(`whatsapp_jid.eq.${participantJid}`);
-      if (participantAlt && participantAlt !== participantJid) orConds.push(`whatsapp_jid.eq.${participantAlt}`);
-      if (telReal && telReal.length >= 7) orConds.push(`telefono_normalizado.eq.${telReal}`);
-      if (telAlt && telAlt !== telReal && telAlt.length >= 7) orConds.push(`telefono_normalizado.eq.${telAlt}`);
-
-      if (orConds.length > 0) {
-        const { data: clPorJidOTel } = await supabaseAdmin
+    // A. Búsqueda en `clientes` donde `grupo_id = sala.grupo_id` por whatsapp_jid o whatsapp_lid
+    if (!cliente && (participantJid || participantAlt)) {
+      const orJids: string[] = [];
+      if (participantJid) {
+        orJids.push(`whatsapp_jid.eq.${participantJid}`);
+        orJids.push(`whatsapp_lid.eq.${participantJid}`);
+      }
+      if (participantAlt && participantAlt !== participantJid) {
+        orJids.push(`whatsapp_jid.eq.${participantAlt}`);
+        orJids.push(`whatsapp_lid.eq.${participantAlt}`);
+      }
+      if (orJids.length > 0) {
+        const { data: clPorJid } = await supabaseAdmin
           .from("clientes")
           .select(CAMPOS_CLIENTE_SALA)
           .eq("grupo_id", grupoId)
-          .or(orConds.join(","))
+          .or(orJids.join(","))
           .order("saldo_actual", { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (clPorJidOTel) {
-          cliente = clPorJidOTel;
-        }
+        if (clPorJid) cliente = clPorJid;
       }
     }
 
-    // B. Búsqueda por teléfono compuesto (codigo_pais + telefono) y últimos 9/8 dígitos dentro del grupo_id
-    if (!cliente && telReal && telReal.length >= 7) {
-      const sufijo9 = telReal.slice(-9);
-      const { data: candidatosTel } = await supabaseAdmin
+    // B. Normalización y búsqueda por últimos 10 dígitos (RIGHT(solo_digitos, 10))
+    // Match exacto para +584241737612, 584241737612, 04241737612 -> 4241737612
+    if (!cliente && tel10 && tel10.length >= 7) {
+      const { data: clPor10 } = await supabaseAdmin
         .from("clientes")
         .select(CAMPOS_CLIENTE_SALA)
-        .eq("grupo_id", grupoId);
+        .eq("grupo_id", grupoId)
+        .or(`telefono.ilike.%${tel10}%,telefono_normalizado.ilike.%${tel10}%`)
+        .order("saldo_actual", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (Array.isArray(candidatosTel) && candidatosTel.length > 0) {
-        const clCompuesto = candidatosTel.find((c: any) => {
-          const comp = normalizarTelefonoCompleto(c.codigo_pais, c.telefono);
-          const norm = normalizarTelefono(c.telefono_normalizado || c.telefono);
-          return (
-            (comp && (comp === telReal || comp === telAlt || (sufijo9.length >= 9 && comp.endsWith(sufijo9)))) ||
-            (norm && (norm === telReal || norm === telAlt || (sufijo9.length >= 9 && norm.endsWith(sufijo9))))
-          );
-        });
-        if (clCompuesto) {
-          cliente = clCompuesto;
-        }
-      }
-
-      if (!cliente) {
-        const sufijo8 = telReal.slice(-8);
-        const { data: clPorSufijo } = await supabaseAdmin
-          .from("clientes")
-          .select(CAMPOS_CLIENTE_SALA)
-          .eq("grupo_id", grupoId)
-          .ilike("telefono", `%${sufijo8}%`)
-          .order("saldo_actual", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (clPorSufijo) {
-          cliente = clPorSufijo;
-        }
-      }
+      if (clPor10) cliente = clPor10;
     }
 
-    // C. Búsqueda en `clientes` donde `grupo_id = sala.grupo_id` por UPPER(TRIM(nombre)) o UPPER(TRIM(seudonimo)) = UPPER(TRIM(pushName))
-    if (!cliente && pushNameValido) {
+    // C. Búsqueda en memoria sobre todos los clientes del grupo (10 dígitos o pushName)
+    if (!cliente) {
       const { data: candidatosGrupo } = await supabaseAdmin
         .from("clientes")
         .select(CAMPOS_CLIENTE_SALA)
         .eq("grupo_id", grupoId);
 
       if (Array.isArray(candidatosGrupo) && candidatosGrupo.length > 0) {
-        const matchNombre = candidatosGrupo.find((c: any) => {
-          const nom = String(c.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
-          const seu = String(c.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
-          return nom === pushNameValido || (seu && seu === pushNameValido);
-        });
-        if (matchNombre) {
-          cliente = matchNombre;
+        if (tel10) {
+          cliente = candidatosGrupo.find((c: any) => {
+            const c10 = extraerUltimos10Digitos(c.telefono_normalizado || c.telefono);
+            if (c10 && c10 === tel10) return true;
+            const comp = normalizarTelefonoCompleto(c.codigo_pais, c.telefono);
+            const comp10 = extraerUltimos10Digitos(comp);
+            return Boolean(comp10 && comp10 === tel10);
+          });
+        }
+
+        if (!cliente && pushNameValido) {
+          cliente = candidatosGrupo.find((c: any) => {
+            const nom = String(c.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
+            const seu = String(c.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
+            return (
+              nom === pushNameValido ||
+              (seu && seu === pushNameValido) ||
+              nom.includes(pushNameValido) ||
+              (seu && seu.includes(pushNameValido)) ||
+              pushNameValido.includes(nom) ||
+              (seu && pushNameValido.includes(seu))
+            );
+          });
         }
       }
     }
 
-    // D. Si el jugador está registrado en múltiples grupos y su fila en `sala.grupo_id` aún tiene `whatsapp_jid = null`,
-    // pero otra fila en otro grupo ya tiene ese `whatsapp_jid` o `telefono_normalizado`, usar esa pista (teléfono/nombre/seudónimo)
-    // para localizar su fila independiente dentro de `sala.grupo_id`.
-    if (!cliente && (participantJid || participantAlt || telReal)) {
-      const orPista: string[] = [];
-      if (participantJid) orPista.push(`whatsapp_jid.eq.${participantJid}`);
-      if (participantAlt && participantAlt !== participantJid) orPista.push(`whatsapp_jid.eq.${participantAlt}`);
-      if (telReal && telReal.length >= 7) orPista.push(`telefono_normalizado.eq.${telReal}`);
-
-      if (orPista.length > 0) {
-        const { data: filasOtroGrupo } = await supabaseAdmin
+    // D. Pistas cruzadas entre grupos (si el jugador ya fue visto en otro grupo con ese JID/LID/teléfono)
+    if (!cliente && (participantJid || participantAlt || tel10 || pushNameValido)) {
+      const orPistas: string[] = [];
+      if (participantJid) {
+        orPistas.push(`whatsapp_jid.eq.${participantJid}`);
+        orPistas.push(`whatsapp_lid.eq.${participantJid}`);
+      }
+      if (participantAlt && participantAlt !== participantJid) {
+        orPistas.push(`whatsapp_jid.eq.${participantAlt}`);
+        orPistas.push(`whatsapp_lid.eq.${participantAlt}`);
+      }
+      if (tel10) {
+        orPistas.push(`telefono.ilike.%${tel10}%`);
+        orPistas.push(`telefono_normalizado.ilike.%${tel10}%`);
+      }
+      if (orPistas.length > 0) {
+        const { data: pistaRows } = await supabaseAdmin
           .from("clientes")
           .select("nombre, seudonimo, telefono, telefono_normalizado")
-          .or(orPista.join(","))
+          .or(orPistas.join(","))
           .limit(5);
 
-        if (Array.isArray(filasOtroGrupo) && filasOtroGrupo.length > 0) {
+        if (Array.isArray(pistaRows) && pistaRows.length > 0) {
           const { data: candidatosGrupo } = await supabaseAdmin
             .from("clientes")
             .select(CAMPOS_CLIENTE_SALA)
             .eq("grupo_id", grupoId);
 
           if (Array.isArray(candidatosGrupo) && candidatosGrupo.length > 0) {
-            for (const pista of filasOtroGrupo) {
-              const telPista = normalizarTelefono(pista.telefono_normalizado || pista.telefono);
-              const sufijoPista = telPista.length >= 7 ? telPista.slice(-8) : "";
-              const nomPista = String(pista.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
-              const seuPista = String(pista.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
+            for (const pista of pistaRows) {
+              const p10 = extraerUltimos10Digitos(pista.telefono_normalizado || pista.telefono);
+              const nomP = String(pista.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
+              const seuP = String(pista.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
 
               const encontrado = candidatosGrupo.find((c: any) => {
-                const telC = normalizarTelefono(c.telefono_normalizado || c.telefono);
-                if (telPista && telC && (telC === telPista || (sufijoPista && telC.endsWith(sufijoPista)))) {
-                  return true;
-                }
+                const c10 = extraerUltimos10Digitos(c.telefono_normalizado || c.telefono);
+                if (p10 && c10 && p10 === c10) return true;
                 const nomC = String(c.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
                 const seuC = String(c.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
-                if (nomPista && (nomC === nomPista || seuC === nomPista)) return true;
-                if (seuPista && (nomC === seuPista || seuC === seuPista)) return true;
+                if (nomP && (nomC === nomP || seuC === nomP)) return true;
+                if (seuP && (nomC === seuP || seuC === seuP)) return true;
                 return false;
               });
-
               if (encontrado) {
                 cliente = encontrado;
                 break;
@@ -1968,7 +1955,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // E. Fallback a `clientes_grupos` donde `grupo_id = sala.grupo_id`
+    // E. Fallback a membresías `clientes_grupos`
     if (!cliente) {
       try {
         const { data: membresias } = await supabaseAdmin
@@ -1981,31 +1968,25 @@ export async function POST(req: Request) {
           .filter(Boolean);
 
         if (idsMembresia.length > 0) {
-          const { data: candidatosMembresia } = await supabaseAdmin
+          const { data: candidatosMem } = await supabaseAdmin
             .from("clientes")
             .select(CAMPOS_CLIENTE_SALA)
             .in("id", idsMembresia);
 
-          if (Array.isArray(candidatosMembresia) && candidatosMembresia.length > 0) {
-            const sufijo8 = telReal && telReal.length >= 7 ? telReal.slice(-8) : "";
-            const matchMem = candidatosMembresia.find((c: any) => {
-              if (participantJid && c.whatsapp_jid === participantJid) return true;
-              if (participantAlt && c.whatsapp_jid === participantAlt) return true;
-              const telC = normalizarTelefono(c.telefono_normalizado || c.telefono);
-              if (telReal && telC && (telC === telReal || (sufijo8 && telC.endsWith(sufijo8)))) return true;
+          if (Array.isArray(candidatosMem) && candidatosMem.length > 0) {
+            cliente = candidatosMem.find((c: any) => {
+              if (participantJid && (c.whatsapp_jid === participantJid || c.whatsapp_lid === participantJid)) return true;
+              if (participantAlt && (c.whatsapp_jid === participantAlt || c.whatsapp_lid === participantAlt)) return true;
+              const c10 = extraerUltimos10Digitos(c.telefono_normalizado || c.telefono);
+              if (tel10 && c10 && c10 === tel10) return true;
               const nomC = String(c.nombre || "").trim().replace(/\s+/g, " ").toUpperCase();
               const seuC = String(c.seudonimo || "").trim().replace(/\s+/g, " ").toUpperCase();
               if (pushNameValido && (nomC === pushNameValido || seuC === pushNameValido)) return true;
               return false;
             });
-            if (matchMem) {
-              cliente = matchMem;
-            }
           }
         }
-      } catch {
-        // Tabla clientes_grupos opcional
-      }
+      } catch {}
     }
 
     // Si no existe en public.clientes para ese grupo_id, rechazar de inmediato sin tocar la BD
@@ -2020,10 +2001,18 @@ export async function POST(req: Request) {
 
     const nombreJugador = cliente.seudonimo || cliente.nombre;
 
-    // Auto-vincular el whatsapp_jid en la fila de `sala.grupo_id` filtrando por `id` y `grupo_id`
+    // F. Persistencia y auto-vinculación de whatsapp_lid y whatsapp_jid en public.clientes
     const updatesCl: Record<string, any> = {};
-    if (participantJid && cliente.whatsapp_jid !== participantJid) {
-      updatesCl.whatsapp_jid = participantJid;
+    if (participantJid) {
+      if (participantJid.endsWith("@lid") && cliente.whatsapp_lid !== participantJid) {
+        updatesCl.whatsapp_lid = participantJid;
+      } else if (participantJid.endsWith("@s.whatsapp.net") && cliente.whatsapp_jid !== participantJid) {
+        updatesCl.whatsapp_jid = participantJid;
+        updatesCl.whatsapp_vinculado = true;
+      }
+    }
+    if (participantAlt && participantAlt.endsWith("@s.whatsapp.net") && !cliente.whatsapp_jid) {
+      updatesCl.whatsapp_jid = participantAlt;
       updatesCl.whatsapp_vinculado = true;
     }
     if (!cliente.telefono_normalizado && telReal && telReal.length >= 7) {
@@ -2036,8 +2025,9 @@ export async function POST(req: Request) {
         qUpd = qUpd.eq("grupo_id", cliente.grupo_id);
       }
       await qUpd;
-      cliente.whatsapp_jid = participantJid;
-      if (telReal) cliente.telefono_normalizado = telReal;
+      if (updatesCl.whatsapp_lid) cliente.whatsapp_lid = updatesCl.whatsapp_lid;
+      if (updatesCl.whatsapp_jid) cliente.whatsapp_jid = updatesCl.whatsapp_jid;
+      if (updatesCl.telefono_normalizado) cliente.telefono_normalizado = updatesCl.telefono_normalizado;
     }
 
     const saldoDisponible = calcularSaldoDisponible(cliente);

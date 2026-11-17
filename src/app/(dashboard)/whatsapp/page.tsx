@@ -116,9 +116,8 @@ function mensajeDeError(err: unknown, porDefecto: string): string {
 }
 
 function tituloCorto(sala: SalaJuego, index: number): string {
-  if (index === 0) return "Sala 1";
-  if (index === 1) return "Sala 2";
-  return `Sala ${index + 1}`;
+  if (sala?.nombre_sala) return sala.nombre_sala;
+  return "Sala de Juegos";
 }
 
 function nombreGrupo(

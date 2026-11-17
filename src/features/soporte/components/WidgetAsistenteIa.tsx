@@ -61,7 +61,7 @@ export function WidgetAsistenteIa() {
     {
       id: "bienvenida",
       remitente: "ia",
-      texto: `👋 ¡Hola! Soy tu **🤖 Super Club del Sistema Hípico**.\nTengo **todas las acciones de la plataforma activadas**: suministro información en vivo, ejecuto operaciones (liquidación, **🤖 Cambio de Pizarra**, cruces, saldos, clientes, bloqueos del portal y navegación a los 24 módulos) o puedes usar la pestaña **⚡ Acciones Super Club**. Los administradores pueden además adjuntar imágenes y capturas.`,
+      texto: `👋 ¡Hola! Soy tu **🤖 Asistente del Sistema Hípico**.\nTengo **todas las acciones de la plataforma activadas**: suministro información en vivo, ejecuto operaciones (liquidación, **🤖 Cambio de Pizarra**, cruces, saldos, clientes, bloqueos del portal y navegación a los 24 módulos) o puedes usar la pestaña **⚡ Acciones Rápidas**. Los administradores pueden además adjuntar imágenes y capturas.`,
       fecha: new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
@@ -289,7 +289,7 @@ export function WidgetAsistenteIa() {
     }
   };
 
-  // Enviar mensaje al Super Club
+  // Enviar mensaje al Asistente
   const handleEnviarMensaje = (textoPersonalizado?: string) => {
     const mensajeAEnviar = (textoPersonalizado || textoInput).trim();
     if (!mensajeAEnviar && !imagenAdjunta) return;
@@ -309,7 +309,7 @@ export function WidgetAsistenteIa() {
     setImagenAdjunta(null);
     setEscribiendoIa(true);
 
-    // Procesamiento inteligente del Super Club con acceso a toda la información del sistema y FSM contable
+    // Procesamiento inteligente del Asistente con acceso a toda la información del sistema y FSM contable
     setTimeout(async () => {
       const textoNormalizado = normalizarDictadoVoz(mensajeAEnviar);
       const sesionActual = obtenerSesionCopilotoGlobal();
@@ -413,8 +413,8 @@ export function WidgetAsistenteIa() {
           type="button"
           onClick={() => setAbierto(true)}
           className="group relative flex items-center rounded-full border-2 border-emerald-400/80 bg-slate-900/95 p-2 text-white shadow-xl shadow-emerald-950/40 backdrop-blur-md transition-all duration-300 ease-out hover:scale-105 hover:border-emerald-300 hover:shadow-emerald-500/30"
-          title="Super Club · Información del Sistema y Dictado por Voz"
-          aria-label="Abrir Super Club"
+          title="Asistente IA · Información del Sistema y Dictado por Voz"
+          aria-label="Abrir Asistente IA"
         >
           {/* Indicador de estado online pulsante */}
           <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 pointer-events-none">
@@ -431,7 +431,7 @@ export function WidgetAsistenteIa() {
           <div className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 ease-out group-hover:max-w-xs group-hover:opacity-100 group-hover:pl-2 group-hover:pr-2.5">
             <div className="flex flex-col text-left">
               <span className="text-xs font-black tracking-tight text-emerald-400 flex items-center gap-1">
-                <span>Super Club</span>
+                <span>Asistente IA</span>
                 <span className="rounded bg-emerald-500/20 px-1 py-0.2 text-[9px] font-black text-emerald-300 border border-emerald-400/30">IA</span>
               </span>
               <span className="text-[10px] font-semibold text-slate-300">
@@ -453,7 +453,7 @@ export function WidgetAsistenteIa() {
               </div>
               <div>
                 <h4 className="text-xs font-black tracking-tight text-white flex items-center gap-1.5">
-                  <span>🤖 Super Club del Sistema</span>
+                  <span>🤖 Asistente del Sistema</span>
                   <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                 </h4>
                 <p className="text-[10px] text-slate-400">
@@ -493,7 +493,7 @@ export function WidgetAsistenteIa() {
                   : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
-              ⚡ Acciones Super Club
+              ⚡ Acciones Rápidas
             </button>
             <button
               onClick={() => setPestana("mis_tickets")}
@@ -672,7 +672,7 @@ export function WidgetAsistenteIa() {
                     ) : (
                       <>
                         <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400">
-                          <span>{m.remitente === "usuario" ? "Tú" : "🤖 Super Club"}</span>
+                          <span>{m.remitente === "usuario" ? "Tú" : "🤖 Asistente IA"}</span>
                           <span>•</span>
                           <span>{m.fecha}</span>
                         </div>
@@ -748,7 +748,7 @@ export function WidgetAsistenteIa() {
                 {escribiendoIa && (
                   <div className="flex items-center gap-2 text-xs text-slate-400 italic">
                     <span className="h-2 w-2 rounded-full bg-emerald-500 animate-bounce" />
-                    <span>El Super Club está procesando la información del sistema...</span>
+                    <span>El Asistente está procesando la información del sistema...</span>
                   </div>
                 )}
 

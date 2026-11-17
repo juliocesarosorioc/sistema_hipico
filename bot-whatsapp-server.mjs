@@ -1507,14 +1507,20 @@ async function manejarMensajeEntrante(msg) {
       null;
 
     const senderNombre = sanitizarTexto(msg.pushName) || (esFromMe ? "Operador" : "Usuario");
+    const esLid = participantJid.endsWith("@lid");
+    const esAltLid = participantAlt.endsWith("@lid");
     const telPrincipal = normalizarTelefono(participantJid);
     const telAlt = normalizarTelefono(participantAlt);
-    const telReal =
-      participantAlt && participantAlt.endsWith("@s.whatsapp.net")
-        ? telAlt
-        : telPrincipal && telPrincipal.length >= 7
-        ? telPrincipal
-        : telAlt || null;
+    let telReal = null;
+    if (participantAlt && participantAlt.endsWith("@s.whatsapp.net")) {
+      telReal = telAlt;
+    } else if (participantJid && participantJid.endsWith("@s.whatsapp.net")) {
+      telReal = telPrincipal;
+    } else if (!esLid && telPrincipal && telPrincipal.length >= 7 && telPrincipal.length <= 15) {
+      telReal = telPrincipal;
+    } else if (!esAltLid && telAlt && telAlt.length >= 7 && telAlt.length <= 15) {
+      telReal = telAlt;
+    }
 
     // Rate Limiter Anti-Spam
     const senderJid = participantJid || remoteJid;
@@ -1544,7 +1550,15 @@ async function manejarMensajeEntrante(msg) {
     let salasDestino = [];
     if (esGrupo) {
       salasDestino = await obtenerSalasPorGroupJid(remoteJid);
-      if (salasDestino.length === 0) return;
+      if (salasDestino.length === 0) {
+        const nomGrupo = gruposCache.find((g) => g.jid === remoteJid)?.nombre || null;
+        salasDestino = [{
+          id: null,
+          grupo_id: null,
+          _whatsapp_group_jid: remoteJid,
+          _whatsapp_group_nombre: nomGrupo,
+        }];
+      }
     } else {
       // En DM privado, buscar sala por grupo_id del cliente
       if (telReal && supabase) {
@@ -1585,19 +1599,26 @@ async function manejarMensajeEntrante(msg) {
         const payload = {
           salaId: salaDest.id || null,
           grupoId: salaDest.grupo_id || null,
+          grupo_id: salaDest.grupo_id || null,
           groupJid: remoteJid,
+          whatsapp_group_jid: remoteJid,
           groupNombre: salaDest._whatsapp_group_nombre || nombreGrupoOrigen,
           whatsappGroupNombre: salaDest._whatsapp_group_nombre || nombreGrupoOrigen,
           senderJid: participantJid,
           participantJid,
           participantAlt: participantAlt || null,
           telefonoReal: telReal,
+          participant_phone: telReal,
           pushName: senderNombre,
+          push_name: msg.pushName || senderNombre,
           senderNombre,
           esMensajePropioTelefono: esFromMe,
           texto: textoLimpio,
+          text: textoLimpio,
           whatsappMsgId,
+          whatsapp_msg_id: whatsappMsgId,
           quotedMsgId,
+          quoted_msg_id: quotedMsgId,
         };
 
         const r = await fetch(`${NEXT_API_BASE}/api/whatsapp-sala/procesar-unificado`, {
@@ -1907,6 +1928,8 @@ const server = http.createServer(async (req, res) => {
     pathname === "/" ||
     pathname === "/status" ||
     pathname === "/api/whatsapp/status" ||
+    pathname === "/groups" ||
+    pathname === "/api/whatsapp/groups" ||
     pathname === "/connect" ||
     pathname === "/api/whatsapp/connect" ||
     pathname === "/disconnect" ||
@@ -1965,6 +1988,24 @@ const server = http.createServer(async (req, res) => {
         numeroVinculado,
         grupos: gruposCache,
         salasDesconectadas,
+      });
+    }
+
+    // 1.d GET/POST /groups y /api/whatsapp/groups (Lista de grupos con sock.groupFetchAllParticipating())
+    if ((req.method === "GET" || req.method === "POST") && (pathname === "/groups" || pathname === "/api/whatsapp/groups")) {
+      const grupos = await refrescarGruposParticipantes(true);
+      return responderJson(res, 200, {
+        ok: true,
+        conectado: Boolean(conectado),
+        numeroVinculado,
+        grupos: (grupos || []).map((g) => ({
+          jid: g.jid || g.id,
+          id: g.id || g.jid,
+          nombre: g.nombre || g.subject || g.id,
+          subject: g.subject || g.nombre || g.id,
+          participantes: g.participantes || 0,
+        })),
+        total: (grupos || []).length,
       });
     }
 

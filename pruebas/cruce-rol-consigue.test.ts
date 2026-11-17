@@ -170,19 +170,19 @@ test("Chat P2P: 'Doy 50 al 2' NO es propuesta ni jugada (solo puestos permitidos
 
 test("Chat P2P: Las propuestas de chat reconocen exactamente jugadas de puestos", () => {
   const p1 = parsearPropuestaChat("Juego 1p 7 100");
-  assert.deepStrictEqual(p1, { esPropuesta: true, rol: "JUEGA", jugada: "1P", caballo: "7", monto: 100, contraparte: undefined });
+  assert.deepStrictEqual(p1, { esPropuesta: true, rol: "JUEGA", jugada: "1P", caballo: "7", monto: 100, montoTexto: "100", contraparte: undefined });
 
   const p2 = parsearPropuestaChat("Juego 2n 1 50 con @SAM");
-  assert.deepStrictEqual(p2, { esPropuesta: true, rol: "JUEGA", jugada: "2N", caballo: "1", monto: 50, contraparte: "SAM" });
+  assert.deepStrictEqual(p2, { esPropuesta: true, rol: "JUEGA", jugada: "2N", caballo: "1", monto: 50, montoTexto: "50", contraparte: "SAM" });
 
   const p3 = parsearPropuestaChat("50 2p al 7");
-  assert.deepStrictEqual(p3, { esPropuesta: true, rol: "JUEGA", jugada: "2P", caballo: "7", monto: 50, contraparte: undefined });
+  assert.deepStrictEqual(p3, { esPropuesta: true, rol: "JUEGA", jugada: "2P", caballo: "7", monto: 50, montoTexto: "50", contraparte: undefined });
 
   const p4 = parsearPropuestaChat("250 10/6 1.3");
-  assert.deepStrictEqual(p4, { esPropuesta: true, rol: "JUEGA", jugada: "10/6", caballo: "1.3", monto: 250, contraparte: undefined });
+  assert.deepStrictEqual(p4, { esPropuesta: true, rol: "JUEGA", jugada: "10/6", caballo: "1.3", monto: 250, montoTexto: "250", contraparte: undefined });
 
   const p5 = parsearPropuestaChat("100 al 5");
-  assert.deepStrictEqual(p5, { esPropuesta: true, rol: "JUEGA", jugada: "1P", caballo: "5", monto: 100, contraparte: undefined });
+  assert.deepStrictEqual(p5, { esPropuesta: true, rol: "JUEGA", jugada: "1P", caballo: "5", monto: 100, montoTexto: "100", contraparte: undefined });
 });
 
 console.log(`\n🎉 TODAS LAS PRUEBAS DE CRUCE Y DEVOLUCIÓN ROL CONSIGUE PASARON (${pasan}/${pasan})`);
