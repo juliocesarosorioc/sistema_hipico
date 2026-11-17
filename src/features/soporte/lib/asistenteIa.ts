@@ -540,7 +540,7 @@ Te recomiendo **abrir un Ticket de Incidencia** para que el Administrador Princi
 Suministro toda la información del sistema en tiempo real y también puedes **dictarme por voz (🎙️)** para que interprete consultas, saldos, carreras o jugadas:
 1. 📊 **Resumen e Información del Sistema**: Pídeme *"Resumen del sistema"*, *"Saldos de clientes"*, *"Carreras de hoy"* o *"Saldo de [nombre]"*.
 2. 🎙️ **Dictado e Interpretación de Jugadas**: Díctame por ejemplo *"Carlos juega 1P al 4 por 100 con Pedro"* o *"10 a 8 caballo 3 por 50"*.
-3. 🐎 **Reglas de Puestos, PP y Premios**: Sintaxis de \`1P\`..\`6Y7N\`, \`10a7\`, \`PP\` (nunca se muestra 10/10 en el reporte) y ejemplares retirados (\`0,00 Empate\`).
+3. 🐎 **Reglas de Puestos, PP y Premios**: Sintaxis de \`1P\`..\`6Y7N\`, \`10a7\`, \`PP\` (nunca se muestra la fracción en el reporte) y ejemplares retirados (\`0,00 Empate\`).
 4. 💵 **Contabilidad y Saldos Comprometidos**: Descuento inmediato en cuenta puente \`2.1.02.003\` al cargar jugadas en cualquier modal.
 5. 🏁 **Liquidación y Reportes**: Pizarra oficial, resultados exclusivos de la carrera liquidada y devoluciones.`,
     resuelto: true,

@@ -3,24 +3,22 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { supabase } from "@/core/supabase";
-import { obtenerClaveCacheLocal, obtenerOperadorCacheLocal } from "@/features/grupos/lib/operadores-grupo";
+import { obtenerOperadorCacheLocal } from "@/features/grupos/lib/operadores-grupo";
 import {
   cerrarSesion as cerrarSesionSupabase,
   conTimeout,
   iniciarSesion as login,
-  resolverCorreo,
   sesionActual,
   TIMEOUT_SESION_MS,
 } from "@/features/auth/lib/sesion";
 import {
   esUsuarioPrincipal,
   resolverAccesos,
-  USUARIO_PRINCIPAL,
   baseDeTipo,
 } from "@/features/seguridad/lib/resolver";
 import { atributosDeUsuario, claveDeUsuario, leerTipoDeUsuario, permisosIndividuales } from "@/features/seguridad/lib/accesos";
 import { leerMiGrupo } from "@/features/seguridad/lib/grupo-usuario";
-import { CAPACIDADES, CAPACIDADES_POR_CLAVE, esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
+import { CAPACIDADES_POR_CLAVE, esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
 import {
   iniciarSesionStaffSala,
   limpiarSesionStaffSala,
@@ -72,32 +70,6 @@ function leerSesionOperadorLocal(): boolean {
     return typeof window !== "undefined" && localStorage.getItem(CLAVE_SESION_OPERADOR_LOCAL) === "1";
   } catch {
     return false;
-  }
-}
-
-function leerSesionAdminLocal(): string | null {
-  try {
-    if (typeof window !== "undefined") {
-      const u = localStorage.getItem(CLAVE_SESION_ADMIN_LOCAL);
-      if (u && esUsuarioPrincipal(u)) return u;
-    }
-  } catch {
-    /* sinop */
-  }
-  return null;
-}
-
-function guardarSesionAdminLocal(u: string | null): void {
-  try {
-    if (typeof window !== "undefined") {
-      if (u && esUsuarioPrincipal(u)) {
-        localStorage.setItem(CLAVE_SESION_ADMIN_LOCAL, u);
-      } else {
-        localStorage.removeItem(CLAVE_SESION_ADMIN_LOCAL);
-      }
-    }
-  } catch {
-    /* sinop */
   }
 }
 
@@ -268,6 +240,20 @@ function borrarCookiesDeAcceso(): void {
   }
 }
 
+/**
+ * Tenant elegido en el login. Es OPCIONAL para no romper los accesos rápidos
+ * que siguen llamando a `iniciarSesion(usuario, clave)` con dos argumentos.
+ * Cuando viene, la base decide el grupo y el store comprueba que el usuario
+ * pertenezca a él antes de conceder cualquier capacidad.
+ */
+export type ContextoLoginMultiTenant = {
+  grupoId: string;
+  grupoNombre?: string;
+  codigoSala?: string;
+};
+
+export type RolSesion = "superadmin" | "admin_grupo" | "cliente";
+
 export type EstadoAuth = {
   /** true después del primer ciclo de carga inicial. */
   inicializada: boolean;
@@ -285,6 +271,8 @@ export type EstadoAuth = {
   errorLogin: string | null;
   /** Tipo de usuario asignado, ya resueltos sus requisitos. */
   tipoUsuario: TipoUsuario | null;
+  /** Rol funcional de la sesión dentro del esquema multi-tenant. */
+  rol: RolSesion | null;
   /** Excepciones individuales por encima de la base del tipo. */
   excepciones: ExcepcionUsuario;
   /** true si la sesión es del usuario principal (acceso total). */
@@ -317,7 +305,11 @@ export type EstadoAuth = {
     esRestauracion?: boolean
   ) => void;
   /** Inicia sesión contra Supabase Auth y siembra los permisos del perfil. */
-  iniciarSesion: (identificador: string, clave: string) => Promise<boolean>;
+  iniciarSesion: (
+    identificador: string,
+    clave: string,
+    contexto?: ContextoLoginMultiTenant
+  ) => Promise<boolean>;
   inicializar: () => Promise<void>;
   salir: (cerrarSesionRemota?: boolean) => Promise<void>;
 };
@@ -341,6 +333,76 @@ const inicioDefault = {
 };
 
 /**
+ * Capacidades que un `cliente` puede conservar. Es el mismo subconjunto que
+ * usa `esRolCliente` en el maestro; cualquier capacidad de administración se
+ * descarta ANTES de publicar cookies o sembrar `setAccesosVigentes`.
+ */
+const CAPACIDADES_CLIENTE = [
+  "portal:ruta_portal",
+  "portal:btn_jugar",
+  "portal:celda_saldo_portal",
+];
+
+function rolDeSesion(params: {
+  esPrincipal: boolean;
+  perfiles: string[];
+  tipo?: TipoUsuario | null;
+}): RolSesion {
+  if (params.esPrincipal) return "superadmin";
+  const nombre = (
+    params.tipo?.nombre ||
+    params.perfiles[0] ||
+    ""
+  ).toLowerCase();
+  if (nombre.includes("jugador") || nombre.includes("cliente")) return "cliente";
+  return "admin_grupo";
+}
+
+function limitarCapacidadesPorRol(rol: RolSesion, permisos: string[]): string[] {
+  if (rol !== "cliente") return permisos;
+  const permitidas = permisos.filter((p) => CAPACIDADES_CLIENTE.includes(p));
+  // `vigente.ts` trata un set vacío como "sin restricciones". Sembrar el
+  // subconjunto portal evita que un cliente herede escrituras admin por ese
+  // fallback, aunque su tipo no tenga ninguna capacidad portal cargada.
+  return permitidas.length ? permitidas : [...CAPACIDADES_CLIENTE];
+}
+
+/** Nombre que se publica en cookies para que el middleware aplique el rol. */
+function perfilesPorRol(rol: RolSesion, perfilesBase: string[]): string[] {
+  if (rol === "cliente") return ["cliente"];
+  if (rol === "superadmin") return ["admin", ...perfilesBase.filter((p) => p !== "admin")];
+  return perfilesBase.length ? perfilesBase : ["admin_grupo"];
+}
+
+/**
+ * Tipo que se siembra para los guards de `vigente.ts`. Nunca se publica
+ * "admin" para un administrador de grupo: `esPerfilAdministradorVigente`
+ * concedería TODO por encima de la matriz. Los operadores conservan su tipo
+ * para que las reglas ABAC `tipo:operador` sigan aplicando.
+ */
+function tipoVigentePorRol(rol: RolSesion, tipo?: TipoUsuario | null): string {
+  if (rol === "superadmin") return "superadmin";
+  if (rol === "cliente") return "cliente";
+  const nombre = (tipo?.nombre || "").toLowerCase();
+  if (nombre.includes("operador") || nombre.includes("taqui")) return "operador";
+  return "admin_grupo";
+}
+
+/** Error interno para distinguir un tenant ajeno de un fallo de red. */
+const ERROR_TENANT = "TENANT_RECHAZADO";
+
+function contextoGrupoValido(
+  rol: RolSesion,
+  grupoDelUsuario: string,
+  contexto?: ContextoLoginMultiTenant | null
+): boolean {
+  const esperado = String(contexto?.grupoId ?? "").trim();
+  if (!esperado) return true; // llamadas de dos argumentos: compatibilidad
+  if (rol === "superadmin") return true;
+  return Boolean(grupoDelUsuario) && String(grupoDelUsuario) === esperado;
+}
+
+/**
  * Resuelve los accesos de la sesión con el MAESTRO: tipo de usuario + excepciones
  * individuales, con el usuario principal como atajo de acceso total.
  *
@@ -358,6 +420,7 @@ type ResolucionAccesos = {
   tipoUsuario: TipoUsuario | null;
   excepciones: ExcepcionUsuario;
   esPrincipal: boolean;
+  rol: RolSesion | null;
   permisos: string[];
   perfiles: string[];
   falloLectura: boolean;
@@ -367,7 +430,10 @@ type ResolucionAccesos = {
   grupoActivo: string | null;
 };
 
-async function aplicarAccesos(identificador: string): Promise<ResolucionAccesos> {
+async function aplicarAccesos(
+  identificador: string,
+  contexto?: ContextoLoginMultiTenant | null
+): Promise<ResolucionAccesos> {
   // Se normaliza aquí y no en cada consulta: `usuario_sistema.id` guarda la
   // parte local del correo, así que entrar como "josorioc" y recargar con
   // "josorioc@sistemahipico.local" tienen que dar el MISMO resultado.
@@ -409,32 +475,58 @@ async function aplicarAccesos(identificador: string): Promise<ResolucionAccesos>
     conTimeout(leerMiGrupo(), TIMEOUT_SESION_MS, "La lectura del grupo").catch(() => null),
   ]);
   const resolucion = resolverAccesos({ identificador: id, tipo, excepciones });
-  const permisos = [...resolucion.permitidas];
-  const perfiles = tipo ? [tipo.nombre] : principal ? ["admin"] : [];
+  const rol = rolDeSesion({
+    esPrincipal: resolucion.total,
+    perfiles: tipo ? [tipo.nombre] : principal ? ["admin"] : [],
+    tipo,
+  });
+  const permisos = limitarCapacidadesPorRol(rol, [...resolucion.permitidas]);
+  const perfiles = perfilesPorRol(rol, tipo ? [tipo.nombre] : principal ? ["admin"] : []);
+  // La frontera del tenant se comprueba ANTES de publicar cualquier capacidad.
+  // Si el usuario autenticado pertenece a otro grupo, no se siembra nada: el
+  // servidor es quien resolvió el grupo (`club_mi_grupo`), no el navegador.
+  if (!contextoGrupoValido(rol, resolucion.total ? "" : (miGrupo?.grupoId ?? ""), contexto)) {
+    throw new Error(ERROR_TENANT);
+  }
   publicarPermisosEnCookies(perfiles, permisos, id);
-  // Un principal ve todos, tenga o no grupo asignado.
-  // Un operador solo se vincula estrictamente a su grupo asignado: nunca ve todos los grupos.
+
+  // El código de sala lo resolvió la base antes del login. El grupo del usuario
+  // sale del maestro (`club_mi_grupo`); con contexto, el superadmin puede
+  // "mirar como" cualquier tenant pero un administrador de grupo queda atado
+  // al suyo. Sin contexto se conserva el comportamiento anterior.
+  const grupoMaestro = resolucion.total ? "" : (miGrupo?.grupoId ?? "");
+  const grupoId = String(contexto?.grupoId ?? "").trim() || grupoMaestro;
+  const grupoNombre =
+    String(contexto?.grupoNombre ?? "").trim() ||
+    (resolucion.total ? "Todos los grupos" : (miGrupo?.grupoNombre ?? ""));
   const esOperador = esRolOperadorExclusivo(perfiles);
-  const veTodosLosGrupos = !esOperador && (resolucion.total || (miGrupo?.veTodos ?? true));
-  const grupoId = resolucion.total ? "" : (miGrupo?.grupoId ?? "");
-  const grupoNombre = resolucion.total ? "Todos los grupos" : (miGrupo?.grupoNombre ?? "");
-  // El filtro "ver un grupo / todos" es SOLO para quien ve todos. Un operador con
-  // grupo solo se vincula a su grupo:
-  const grupoActivo = veTodosLosGrupos ? leerGrupoActivoGuardado() : (grupoId || null);
+  // Un tenant distinto del del usuario se rechaza en `iniciarSesion`, antes de
+  // publicar permisos. Acá solo se decide qué se muestra: nadie que no sea
+  // superadmin puede "ver todos" cuando entró con un código de sala.
+  const veTodosLosGrupos =
+    rol === "superadmin"
+      ? true
+      : !esOperador && contexto == null && (resolucion.total || (miGrupo?.veTodos ?? true));
+  const grupoActivo =
+    rol === "superadmin" && contexto?.grupoId
+      ? String(contexto.grupoId).trim()
+      : veTodosLosGrupos
+        ? leerGrupoActivoGuardado()
+        : (grupoId || null);
   setGrupoActivoVigente(grupoActivo);
-  // Espejo para las funciones de escritura de src/lib, que no son componentes y
-  // no pueden leer el store (ver src/lib/seguridad/vigente.ts).
-  //
-  // Van también el TIPO y los ATRIBUTOS porque el ABAC los necesita: el
-  // ámbito `tipo:operador` decide con el primero, y las reglas `en_atributo`
-  // (el operador solo trabaja sus hipódromos) con el segundo. Sin esto, el
-  // ABAC quedaría con permiso pero sin contexto y bloquearía siempre.
+
+  // El ABAC `tipo:admin_grupo` necesita la lista de grupos del usuario. Sin
+  // este atributo, una regla `en_atributo` bloquearía escrituras legítimas.
+  const atributosEfectivos: Record<string, unknown> = {
+    ...atributos,
+    usuario_grupos: grupoId ? [grupoId] : [],
+  };
   setAccesosVigentes({
     permisos,
     esPrincipal: resolucion.total,
     usuario: id,
-    tipoUsuario: tipo?.nombre ?? (principal ? "admin" : ""),
-    atributos,
+    tipoUsuario: tipoVigentePorRol(rol, tipo),
+    atributos: atributosEfectivos,
     grupoId,
     grupoNombre,
     veTodos: veTodosLosGrupos,
@@ -443,6 +535,7 @@ async function aplicarAccesos(identificador: string): Promise<ResolucionAccesos>
     tipoUsuario: tipo,
     excepciones,
     esPrincipal: resolucion.total,
+    rol,
     permisos,
     perfiles,
     falloLectura,
@@ -533,14 +626,10 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
         }
       })();
       const tieneSesionLocal =
-        hayCookie ||
-        leerSesionOperadorLocal() ||
-        Boolean(leerSesionAdminLocal()) ||
-        tieneSupabaseStorage;
+        hayCookie || leerSesionOperadorLocal() || tieneSupabaseStorage;
 
       if (tieneSesionLocal) {
         const uidHint =
-          leerSesionAdminLocal() ||
           (() => {
             try {
               const rawOp = localStorage.getItem(CLAVE_OPERADOR_ACTUAL);
@@ -559,7 +648,6 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
       }
     }
     if (!sesionActiva) {
-      guardarSesionAdminLocal(null);
       try {
         localStorage.removeItem(CLAVE_MODO_OPERADOR);
         localStorage.removeItem(CLAVE_SESION_OPERADOR_LOCAL);
@@ -579,6 +667,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
         perfiles: inicioDefault.perfiles,
         permisos: inicioDefault.permisos,
         tipoUsuario: null,
+        rol: null,
         excepciones: {},
         esPrincipal: false,
         modoOperador: false,
@@ -592,49 +681,6 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
 
   const sesion = await sesionActual();
   if (!sesion) {
-    const adminLocal = leerSesionAdminLocal();
-    if (adminLocal) {
-      const uidPrincipal = "josorioc";
-      const correoAdmin = resolverCorreo(uidPrincipal);
-      const todasCaps = CAPACIDADES.map((c) => c.clave);
-      publicarPermisosEnCookies(["admin"], todasCaps, uidPrincipal);
-      void iniciarSesionStaffSala(uidPrincipal, "Maxi1912").catch(() => null);
-      setAccesosVigentes({
-        permisos: todasCaps,
-        esPrincipal: true,
-        usuario: uidPrincipal,
-        tipoUsuario: "admin",
-        atributos: {},
-        grupoId: "",
-        grupoNombre: "Todos los grupos",
-        veTodos: true,
-      });
-      set({
-        inicializada: true,
-        sembrada: true,
-        cargando: false,
-        usuario: uidPrincipal,
-        email: correoAdmin,
-        tipoUsuario: {
-          id: 1,
-          nombre: "admin",
-          descripcion: "Administrador Principal",
-          activo: true,
-          capacidades: todasCaps,
-        },
-        excepciones: {},
-        esPrincipal: true,
-        permisos: todasCaps,
-        perfiles: ["admin"],
-        modoOperador: false,
-        veTodosLosGrupos: true,
-        grupoId: "",
-        grupoNombre: "Todos los grupos",
-        grupoActivo: leerGrupoActivoGuardado(),
-      });
-      void postLoginSesionUnica(uidPrincipal, "Julio Osorio", "admin", "", true);
-      return;
-    }
     if (leerSesionOperadorLocal()) {
       try {
         const rawOp = typeof window !== "undefined" ? localStorage.getItem(CLAVE_OPERADOR_ACTUAL) : null;
@@ -669,6 +715,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
       perfiles: inicioDefault.perfiles,
       permisos: inicioDefault.permisos,
       tipoUsuario: null,
+      rol: null,
       excepciones: {},
       esPrincipal: false,
       modoOperador: false,
@@ -689,6 +736,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
     limpiarAccesosVigentes();
     a = {
       tipoUsuario: null,
+      rol: null,
       excepciones: {},
       esPrincipal: false,
       permisos: [],
@@ -716,6 +764,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
       perfiles: inicioDefault.perfiles,
       permisos: inicioDefault.permisos,
       tipoUsuario: null,
+      rol: null,
       excepciones: {},
       esPrincipal: false,
       grupoId: inicioDefault.grupoId,
@@ -733,6 +782,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
     usuario: id,
     email: sesion.correo,
     tipoUsuario: a.tipoUsuario,
+    rol: a.rol,
     excepciones: a.excepciones,
     esPrincipal: a.esPrincipal,
     modoOperador: leerModoOperadorGuardado(),
@@ -772,6 +822,7 @@ export const useAuthStore = create<EstadoAuth>()(
       perfiles: inicioDefault.perfiles,
       permisos: inicioDefault.permisos,
       tipoUsuario: null,
+      rol: null,
       excepciones: {},
       esPrincipal: false,
       grupoId: inicioDefault.grupoId,
@@ -857,6 +908,7 @@ export const useAuthStore = create<EstadoAuth>()(
           usuario: "operador",
           email: "operador@sistemahipico.local",
           tipoUsuario: tipoOp,
+          rol: "admin_grupo",
           excepciones: {},
           esPrincipal: false,
           permisos: capsOperador,
@@ -921,6 +973,7 @@ export const useAuthStore = create<EstadoAuth>()(
           usuario: op.id,
           email: `${op.id}@sistemahipico.local`,
           tipoUsuario: tipoOp,
+          rol: "admin_grupo",
           excepciones: {},
           esPrincipal: false,
           permisos: capsOperador,
@@ -940,97 +993,28 @@ export const useAuthStore = create<EstadoAuth>()(
         );
       },
 
-      iniciarSesion: async (identificador, clave) => {
+      iniciarSesion: async (identificador, clave, contexto) => {
         set({ cargando: true, errorLogin: null });
         const idLimpio = (identificador ?? "").trim().toLowerCase().split("@")[0];
         const digitos = (identificador ?? "").replace(/\D/g, "");
+        const grupoEsperado = String(contexto?.grupoId ?? "").trim();
 
-        // 0. ACCESO INMEDIATO Y GARANTIZADO DEL ADMINISTRADOR PRINCIPAL (josorio / josorioc / Maxi1912)
-        if (esUsuarioPrincipal(idLimpio)) {
-          if (clave === "Maxi1912" || clave === "maxi1912") {
-            const uidPrincipal = "josorioc";
-            const correoAdmin = resolverCorreo(uidPrincipal);
-            const todasCaps = CAPACIDADES.map((c) => c.clave);
-            guardarSesionAdminLocal(uidPrincipal);
-            // La API de la Sala autoriza con el JWT real de Supabase y el token HMAC de staff.
-            await login(uidPrincipal, clave);
-            await iniciarSesionStaffSala(uidPrincipal, clave).catch(() => null);
-            publicarPermisosEnCookies(["admin"], todasCaps, uidPrincipal);
-            setAccesosVigentes({
-              permisos: todasCaps,
-              esPrincipal: true,
-              usuario: uidPrincipal,
-              tipoUsuario: "admin",
-              atributos: {},
-              grupoId: "",
-              grupoNombre: "Todos los grupos",
-              veTodos: true,
-            });
-            set({
-              cargando: false,
-              errorLogin: null,
-              sembrada: true,
-              inicializada: true,
-              usuario: uidPrincipal,
-              email: correoAdmin,
-              tipoUsuario: {
-                id: 1,
-                nombre: "admin",
-                descripcion: "Administrador Principal",
-                activo: true,
-                capacidades: todasCaps,
-              },
-              excepciones: {},
-              esPrincipal: true,
-              permisos: todasCaps,
-              perfiles: ["admin"],
-              modoOperador: false,
-              veTodosLosGrupos: true,
-              grupoId: "",
-              grupoNombre: "Todos los grupos",
-              grupoActivo: null,
-            });
-            void postLoginSesionUnica(uidPrincipal, "Julio Osorio", "admin", "");
-            return true;
+        /**
+         * Un tenant ajeno no se arregla en el navegador: la sesión que acaba de
+         * abrir Supabase pertenece a otro grupo. Se cierra ANTES de publicar
+         * cookies o sembrar capacidades, para no dejar una sesión colgada.
+         */
+        const rechazarTenant = async (): Promise<false> => {
+          limpiarAccesosVigentes();
+          borrarCookiesDeAcceso();
+          try {
+            await cerrarSesionSupabase();
+          } catch {
+            /* la sesión local ya quedó limpia */
           }
-        }
-
-        // Operador Gun Bold garantizado (ricardogunbold / Ricardo123*)
-        if (idLimpio === "ricardogunbold" && (clave === "Ricardo123*" || clave === "ricardo123*")) {
-          let gId = "";
-          let gNom = "Gun Bold";
-          if (supabase) {
-            try {
-              const { data: g } = await supabase
-                .from("grupos_venta")
-                .select("id, nombre")
-                .or("nombre.ilike.%gun%bold%,nombre.ilike.%gun%")
-                .maybeSingle();
-              if (g) {
-                gId = String(g.id);
-                gNom = String(g.nombre || "Gun Bold");
-              }
-            } catch {
-              /* fallback */
-            }
-          }
-          // El operador no tiene cuenta en Supabase Auth: la Sala se autoriza
-          // con el token HMAC que emite el servidor tras validar la clave.
-          await iniciarSesionStaffSala(idLimpio, clave);
-          get().entrarComoOperadorGrupo({
-            id: "ricardogunbold",
-            nombre: "Ricardo Gun Bold",
-            grupoId: gId,
-            grupoNombre: gNom,
-          });
-          return true;
-        }
-
-        if (idLimpio === "operador" && (clave === "operador2026" || clave === "operador123" || clave === "123456")) {
-          await iniciarSesionStaffSala(idLimpio, clave);
-          get().entrarComoOperador();
-          return true;
-        }
+          set({ cargando: false, errorLogin: "El usuario no pertenece a la sala indicada." });
+          return false;
+        };
 
         // 1. Verificación directa y segura de operador por RPC (SECURITY DEFINER, SOLO OPERADORES)
         // Permite login de operadores tanto por usuario ('yes', 'ricardogunbold') como por teléfono celular (+584149327337 o 584149327337)
@@ -1050,10 +1034,21 @@ export const useAuthStore = create<EstadoAuth>()(
                   (digitos ? obtenerOperadorCacheLocal(digitos) : null);
                 const gId = String(r.grupoId || opCache?.grupoId || "");
                 const gNom = String(r.grupoNombre || opCache?.grupoNombre || "Grupo Asignado");
-
+                // El código de sala manda: un operador de otro tenant no entra,
+                // aunque la RPC haya validado su contraseña.
+                if (grupoEsperado && !contextoGrupoValido("admin_grupo", gId, contexto)) {
+                  return rechazarTenant();
+                }
                 // La RPC valida la clave; el endpoint firma además el token
                 // HMAC que la API de la Sala exige como credencial de staff.
-                await iniciarSesionStaffSala(identificador, clave);
+                const sesionSala = await iniciarSesionStaffSala(identificador, clave);
+                if (!sesionSala.ok) {
+                  set({
+                    cargando: false,
+                    errorLogin: sesionSala.error || "No se pudo iniciar la sesión de sala.",
+                  });
+                  return false;
+                }
                 get().entrarComoOperadorGrupo({
                   id: String(r.id),
                   nombre: String(r.nombre || opCache?.nombre || r.id),
@@ -1079,99 +1074,9 @@ export const useAuthStore = create<EstadoAuth>()(
           }
 
           if (!r.ok) {
-            // Comprobar si es un operador asignado a un grupo por su usuario y clave celular
-            try {
-              const opCache =
-                obtenerOperadorCacheLocal(idLimpio) ||
-                (digitos ? obtenerOperadorCacheLocal(digitos) : null);
-              const claveCache =
-                opCache?.clave ||
-                obtenerClaveCacheLocal(idLimpio) ||
-                (digitos ? obtenerClaveCacheLocal(digitos) : null);
-              let coincide = Boolean(claveCache && claveCache === clave);
-              let opEncontrado: { id: string; nombre: string; grupoId: string; grupoNombre?: string } | null = null;
-
-              if (opCache && opCache.grupoId) {
-                opEncontrado = {
-                  id: opCache.usuario,
-                  nombre: opCache.nombre || opCache.usuario,
-                  grupoId: opCache.grupoId,
-                  grupoNombre: opCache.grupoNombre,
-                };
-              }
-
-              if (supabase) {
-                let uFila: Record<string, unknown> | null = null;
-                try {
-                  let q = supabase
-                    .from("usuario_sistema")
-                    .select("id, nombre, activo, grupo_id, clave_acceso, telefono");
-                  if (digitos.length >= 7) {
-                    q = q.or(`id.eq.${idLimpio},telefono.ilike.%${digitos}%`);
-                  } else {
-                    q = q.eq("id", idLimpio);
-                  }
-                  const res = await q.maybeSingle();
-                  if (!res.error && res.data) {
-                    uFila = res.data as Record<string, unknown>;
-                  }
-                } catch {
-                  /* Si columnas clave_acceso o telefono no existen aún */
-                }
-
-                if (!uFila) {
-                  try {
-                    const resBase = await supabase
-                      .from("usuario_sistema")
-                      .select("id, nombre, activo, grupo_id")
-                      .eq("id", idLimpio)
-                      .maybeSingle();
-                    if (!resBase.error && resBase.data) {
-                      uFila = resBase.data as Record<string, unknown>;
-                    }
-                  } catch {
-                    /* fallback */
-                  }
-                }
-
-                if (uFila && uFila.activo !== false) {
-                  const claveBD = uFila.clave_acceso ? String(uFila.clave_acceso) : null;
-                  if (claveBD && claveBD === clave) coincide = true;
-
-                  if (coincide && uFila.grupo_id) {
-                    const { data: gFila } = await supabase
-                      .from("grupos_venta")
-                      .select("nombre")
-                      .eq("id", String(uFila.grupo_id))
-                      .maybeSingle();
-
-                    opEncontrado = {
-                      id: String(uFila.id),
-                      nombre: String(uFila.nombre ?? uFila.id),
-                      grupoId: String(uFila.grupo_id),
-                      grupoNombre: (gFila as Record<string, unknown>)?.nombre
-                        ? String((gFila as Record<string, unknown>).nombre)
-                        : opCache?.grupoNombre,
-                    };
-                  }
-                }
-              }
-
-              if (coincide) {
-                const opFinal = opEncontrado || {
-                  id: idLimpio,
-                  nombre: idLimpio.toUpperCase(),
-                  grupoId: opCache?.grupoId || "",
-                  grupoNombre: opCache?.grupoNombre || "Operador Móvil",
-                };
-                await iniciarSesionStaffSala(identificador, clave);
-                get().entrarComoOperadorGrupo(opFinal);
-                return true;
-              }
-            } catch {
-              /* fallback normal */
-            }
-
+            // Sin comparaciones de claves en el navegador: la única puerta es
+            // Supabase Auth (o la RPC del servidor, arriba). Los cachés locales
+            // de operadores solo se usan para mostrar el nombre del grupo.
             set({ cargando: false, errorLogin: r.error });
             return false;
           }
@@ -1185,11 +1090,15 @@ export const useAuthStore = create<EstadoAuth>()(
           // sistema falló por dentro".
           let a: ResolucionAccesos;
           try {
-            a = await aplicarAccesos(id);
-          } catch {
+            a = await aplicarAccesos(id, contexto);
+          } catch (e) {
             limpiarAccesosVigentes();
+            if (e instanceof Error && e.message === ERROR_TENANT) {
+              return rechazarTenant();
+            }
             a = {
               tipoUsuario: null,
+              rol: null,
               excepciones: {},
               esPrincipal: false,
               permisos: [],
@@ -1217,6 +1126,7 @@ export const useAuthStore = create<EstadoAuth>()(
               perfiles: inicioDefault.perfiles,
               permisos: inicioDefault.permisos,
               tipoUsuario: null,
+              rol: a.rol,
               excepciones: {},
               esPrincipal: false,
               grupoId: inicioDefault.grupoId,
@@ -1237,6 +1147,7 @@ export const useAuthStore = create<EstadoAuth>()(
             usuario: id,
             email: r.correo,
             tipoUsuario: a.tipoUsuario,
+            rol: a.rol,
             excepciones: a.excepciones,
             esPrincipal: a.esPrincipal,
             permisos: a.permisos,
@@ -1293,6 +1204,8 @@ export const useAuthStore = create<EstadoAuth>()(
                 email: inicioDefault.email,
                 perfiles: inicioDefault.perfiles,
                 permisos: inicioDefault.permisos,
+                tipoUsuario: null,
+                rol: null,
                 grupoId: inicioDefault.grupoId,
                 grupoNombre: inicioDefault.grupoNombre,
                 veTodosLosGrupos: inicioDefault.veTodosLosGrupos,
@@ -1314,7 +1227,6 @@ export const useAuthStore = create<EstadoAuth>()(
         limpiarSesionStaffSala();
         limpiarAccesosVigentes();
         guardarGrupoActivo(null);
-        guardarSesionAdminLocal(null);
         try {
           if (typeof window !== "undefined") {
             sessionStorage.removeItem("hipico_sesion_activa");
@@ -1345,6 +1257,7 @@ export const useAuthStore = create<EstadoAuth>()(
           perfiles: inicioDefault.perfiles,
           permisos: inicioDefault.permisos,
           tipoUsuario: null,
+          rol: null,
           excepciones: {},
           esPrincipal: false,
           modoOperador: false,

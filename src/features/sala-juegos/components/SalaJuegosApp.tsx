@@ -438,7 +438,7 @@ export function SalaJuegosApp({
               type="button"
               onClick={() => abrirOperadorConTab("carrera")}
               className="bg-emerald-500 hover:bg-emerald-400 text-white font-black text-[11px] px-2 py-1 rounded-lg shadow-xs transition active:scale-95 flex items-center gap-0.5"
-              title="Panel de Control de Operador"
+              title="Tablero de Control"
             >
               <span>⚙️</span>
             </button>
@@ -497,24 +497,27 @@ export function SalaJuegosApp({
           </button>
 
           {grupos.length > 1 && identidad?.esAdmin ? (
-            <select
-              value={grupoActivo?.id}
-              onChange={(e) => cargarBootstrap(e.target.value)}
-              className={`font-bold text-xs rounded-lg px-2 py-1 outline-none max-w-[180px] truncate ${
-                esClaro
-                  ? "bg-emerald-200 border border-emerald-200 text-slate-900"
-                  : "bg-white border border-emerald-300 text-emerald-700"
-              }`}
-            >
-              {grupos.map((g) => (
-                <option key={g.id} value={g.id} className="text-slate-900 bg-white">
-                  {g.nombre}
-                </option>
-              ))}
-            </select>
+            <span className="flex items-center gap-1 min-w-0">
+              <span className="font-bold text-xs text-slate-700 whitespace-nowrap">Viendo como:</span>
+              <select
+                value={grupoActivo?.id}
+                onChange={(e) => cargarBootstrap(e.target.value)}
+                className={`font-bold text-xs rounded-lg px-2 py-1 outline-none max-w-[180px] truncate ${
+                  esClaro
+                    ? "bg-emerald-200 border border-emerald-200 text-slate-900"
+                    : "bg-white border border-emerald-300 text-emerald-700"
+                }`}
+              >
+                {grupos.map((g) => (
+                  <option key={g.id} value={g.id} className="text-slate-900 bg-white">
+                    [{g.nombre}]
+                  </option>
+                ))}
+              </select>
+            </span>
           ) : (
-            <span className="font-extrabold text-sm tracking-tight truncate max-w-[180px]">
-              {grupoActivo?.nombre || "SALA HÍPICA"}
+            <span className="font-extrabold text-sm tracking-tight truncate max-w-[220px]">
+              Viendo como: [{grupoActivo?.nombre || "SALA HÍPICA"}]
             </span>
           )}
 
@@ -541,19 +544,20 @@ export function SalaJuegosApp({
             ))}
           </div>
 
-          {/* Toggle Vista Dual en escritorio si hay 2 salas */}
-          {salas.length >= 2 && (
-            <button
-              onClick={() => setVistaDual(!vistaDual)}
-              className={`hidden lg:inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-lg font-bold transition ${
-                esClaro
+          {/* Split View: botón exacto de doble sala */}
+          <button
+            onClick={() => setVistaDual(!vistaDual)}
+            title="Activar o desactivar el modo doble sala"
+            className={`hidden lg:inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-lg font-bold transition whitespace-nowrap ${
+              vistaDual
+                ? "bg-emerald-500 text-white border border-emerald-500"
+                : esClaro
                   ? "bg-emerald-100 hover:bg-emerald-200 text-slate-900 border border-emerald-200"
                   : "bg-white hover:bg-slate-200 border border-slate-200 text-slate-700"
-              }`}
-            >
-              <span>{vistaDual ? "🔲 1 Sala" : "👥 2 Salas"}</span>
-            </button>
-          )}
+            }`}
+          >
+            <span>🖥️ Modo Doble Sala (Split View)</span>
+          </button>
         </div>
 
         {/* Lado derecho: Billetera/Operador, Acción rápida, Prejugadas, Aa y Tema */}
@@ -601,10 +605,10 @@ export function SalaJuegosApp({
             <button
               onClick={() => abrirOperadorConTab("carrera")}
               className="bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xs px-3 py-1 rounded-lg transition shadow-xs flex items-center gap-1 active:scale-95"
-              title="Panel de Control de Operador"
+              title="Tablero de Control"
             >
               <span>⚙️</span>
-              <span>Control Operador</span>
+              <span>Tablero de Control</span>
             </button>
           ) : esEspectador ? (
             <button

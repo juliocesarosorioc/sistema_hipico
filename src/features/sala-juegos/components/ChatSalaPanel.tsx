@@ -9,30 +9,50 @@ import {
   prefijoMonedaGrupo,
 } from "@/shared/lib/dinero";
 import { extraerMontoNumerico } from "../lib/parser-pedagogico";
+import {
+  ORDEN_MODALIDADES_PROGRESIVO,
+  limpiarEtiquetasProhibidas,
+  normalizarModalidadProgresiva,
+  parsearBloqueEnfrentamiento,
+} from "@/features/sala-juegos/lib/modalidades-progresivas";
 
 export type ClaveFuenteSala = "whatsapp" | "inter" | "roboto" | "sf" | "tabular";
 export type TemaSala = "claro" | "oscuro";
 
 export const MONTOS_BOTONES_USD = [
-  { val: "1", label: "$1" },
-  { val: "5", label: "$5" },
-  { val: "10", label: "$10" },
-  { val: "20", label: "$20" },
-  { val: "50", label: "$50" },
-  { val: "100", label: "$100" },
-  { val: "300", label: "$300" },
-  { val: "400", label: "$400" },
-  { val: "500", label: "$500" },
+  { val: "todo", label: "⚡ Voy Todo" },
+  { val: "10", label: "10" },
+  { val: "20", label: "20" },
+  { val: "50", label: "50" },
+  { val: "100", label: "100" },
 ];
 
 export const MONTOS_BOTONES_VES = [
-  { val: "5000", label: "5.000" },
-  { val: "10000", label: "10.000" },
-  { val: "20000", label: "20.000" },
-  { val: "50000", label: "50.000" },
-  { val: "100000", label: "100.000" },
-  { val: "200000", label: "200.000" },
+  { val: "todo", label: "⚡ Voy Todo" },
+  { val: "10000", label: "10" },
+  { val: "20000", label: "20" },
+  { val: "50000", label: "50" },
+  { val: "100000", label: "100" },
 ];
+
+const MONTO_TODO = "todo";
+const MONTO_POR_DEFECTO_USD = "20";
+const MONTO_POR_DEFECTO_VES = "20000";
+
+/** Aliases progresivos que el bot reconoce y que deben estar visibles en el compositor. */
+const ALIAS_MODALIDAD_PROGRESIVA: Record<string, string> = {
+  "2N y 2P": "2/2N",
+  "3N y 3P": "3/3N",
+  "4N y 4P": "4/4N",
+  "5N y 5P": "5/5N",
+};
+
+const MODALIDADES_RAPIDAS = ORDEN_MODALIDADES_PROGRESIVO.flatMap((mod) => {
+  const alias = ALIAS_MODALIDAD_PROGRESIVA[mod];
+  return alias ? [mod, alias] : [mod];
+});
+
+const EJEMPLOS_BLOQUE = ["1,2x5", "1,3,4x2,6", "1y2x3y4", "Bloque 1-2 contra 5-6"];
 
 export const FAMILIAS_FUENTE_SALA: Record<ClaveFuenteSala, { nombre: string; css: string }> = {
   whatsapp: {
@@ -130,17 +150,17 @@ export function ChatSalaPanel({
   const [filtroFeed, setFiltroFeed] = useState<"todos" | "abiertas" | "jugaron" | "mias">("todos");
   const [tecladoRapidoAbierto, setTecladoRapidoAbierto] = useState<boolean>(false);
   const [accionRapida, setAccionRapida] = useState<"Juego" | "Consigo">("Juego");
-  const [puestoRapido, setPuestoRapido] = useState<string>("1P");
+  const [modalidadRapida, setModalidadRapida] = useState<string>("1P");
   const [ejemplarRapido, setEjemplarRapido] = useState<string>("1");
-  const [montoRapido, setMontoRapido] = useState<string>(esBs ? "5000" : "20");
+  const [bloqueRapido, setBloqueRapido] = useState<string>("");
+  const [montoRapido, setMontoRapido] = useState<string>(esBs ? MONTO_POR_DEFECTO_VES : MONTO_POR_DEFECTO_USD);
   const [montoManual, setMontoManual] = useState<string>("");
+  const [imagenAdjunta, setImagenAdjunta] = useState<{ url: string; path: string } | null>(null);
+  const [subiendoImagen, setSubiendoImagen] = useState(false);
+  const inputImagenRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (esBs) {
-      setMontoRapido("5000");
-    } else {
-      setMontoRapido("20");
-    }
+    setMontoRapido(esBs ? MONTO_POR_DEFECTO_VES : MONTO_POR_DEFECTO_USD);
     setMontoManual("");
   }, [esBs]);
 
@@ -362,6 +382,71 @@ export function ChatSalaPanel({
     enviarMensaje(sug);
   };
 
+  /** Ctrl+V / botón Adjuntar → Supabase Storage `whatsapp_media` → URL pública. */
+  const subirImagenAdjunta = async (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    if (!supabase) return;
+    setSubiendoImagen(true);
+    try {
+      const extension = (file.name.split(".").pop() || "jpg").replace(/[^a-zA-Z0-9]/g, "").toLowerCase() || "jpg";
+      const ruta = `${grupoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+      const { error } = await supabase.storage.from("whatsapp_media").upload(ruta, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type,
+      });
+      if (error) throw error;
+      const { data } = supabase.storage.from("whatsapp_media").getPublicUrl(ruta);
+      if (!data?.publicUrl) throw new Error("No se obtuvo URL pública del archivo");
+      setImagenAdjunta({ url: data.publicUrl, path: ruta });
+    } catch (err: any) {
+      console.warn("Error subiendo imagen adjunta:", err);
+      alert(`No se pudo adjuntar la imagen: ${err?.message || "error desconocido"}`);
+    } finally {
+      setSubiendoImagen(false);
+    }
+  };
+
+  const manejarPasteImagen = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const archivo = Array.from(e.clipboardData?.items || [])
+      .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+      ?.getAsFile();
+    if (archivo) {
+      e.preventDefault();
+      void subirImagenAdjunta(archivo);
+    }
+  };
+
+  const enviarImagenAdjunta = async () => {
+    if (!imagenAdjunta) return;
+    const jid = String(sala?.whatsapp_group_jid || sala?.whatsappGroupJid || "").trim();
+    if (!jid) {
+      alert("Esta sala no tiene un grupo de WhatsApp vinculado para enviar la imagen.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grupoId,
+          media_url: imagenAdjunta.url,
+          tipo: "IMAGEN",
+          session_id: "default",
+          to_jid: jid,
+          message_text: textoInput.trim(),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!json?.ok) throw new Error(json?.error || "No se pudo enviar la imagen al grupo de WhatsApp");
+      setTextoInput("");
+      setImagenAdjunta(null);
+      await cargarMensajes();
+    } catch (err: any) {
+      alert(`No se pudo enviar la imagen: ${err?.message || "error desconocido"}`);
+    }
+  };
+
   /**
    * Cierra directamente cada jugada abierta del jugador (todas o una individual)
    * SIN enviar ningún mensaje al chat para no saturar el grupo.
@@ -415,6 +500,12 @@ export function ChatSalaPanel({
 
   const esCarreraAbierta = sala?.estado_carrera === "abierta";
   const esClaro = true; // Tema claro estricto
+
+  const bloqueDetectado = useMemo(() => parsearBloqueEnfrentamiento(bloqueRapido), [bloqueRapido]);
+  const caballosRapidosTexto = bloqueDetectado
+    ? `${bloqueDetectado.ladoA.join("-")} x ${bloqueDetectado.ladoB.join("-")}`
+    : ejemplarRapido;
+  const modalidadCanon = normalizarModalidadProgresiva(modalidadRapida) || modalidadRapida;
   const fontFamilyCss = FAMILIAS_FUENTE_SALA[fuenteId]?.css || FAMILIAS_FUENTE_SALA.whatsapp.css;
 
   const mensajesFiltrados = useMemo(() => {
@@ -1120,103 +1211,120 @@ export function ChatSalaPanel({
               </button>
             </div>
 
-            {/* Condición: Solo "Juego" y "Consigo" (sin botón "Doy") */}
+            {/* 1. Condición: 🟢 JUEGO / 🟠 DOY (DOY mapea a Consigo para el bot) */}
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] font-bold shrink-0 opacity-80">Condición:</span>
-              {(["Juego", "Consigo"] as const).map((acc) => (
+              {(
+                [
+                  { acc: "Juego", label: "🟢 JUEGO" },
+                  { acc: "Consigo", label: "🟠 DOY" },
+                ] as const
+              ).map((op) => (
                 <button
-                  key={acc}
+                  key={op.acc}
                   type="button"
-                  onClick={() => setAccionRapida(acc)}
+                  onClick={() => setAccionRapida(op.acc)}
                   className={`px-3 py-1 rounded-lg font-black text-xs transition ${
-                    accionRapida === acc
+                    accionRapida === op.acc
                       ? "bg-emerald-600 text-white shadow-xs"
                       : esClaro
                         ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
                         : "bg-slate-50 text-slate-700 hover:bg-slate-200"
                   }`}
                 >
-                  {acc}
+                  {limpiarEtiquetasProhibidas(op.label)}
                 </button>
               ))}
-              <span className="opacity-30 mx-0.5">|</span>
-              <span className="text-[10px] font-bold shrink-0 opacity-80">Puesto:</span>
-              <div className="flex flex-wrap items-center gap-1 max-h-24 overflow-y-auto">
-                {[
-                  "1P",
-                  "1P-1/2N",
-                  "1/2N",
-                  "1/2N-2N",
-                  "2N",
-                  "2N-2/2N",
-                  "2/2N",
-                  "2/2N-2P",
-                  "2P",
-                  "2P-2/3N",
-                  "2/3N",
-                  "2/3N-3N",
-                  "3N",
-                  "3N-3/3N",
-                  "3/3N",
-                  "3/3N-3P",
-                  "3P",
-                  "3P-3/4N",
-                  "3/4N",
-                  "3/4N-4N",
-                  "4N",
-                  "4N-4/4N",
-                  "4/4N",
-                  "4/4N-4P",
-                  "4P",
-                  "4P-4/5N",
-                  "4/5N",
-                  "4/5N-5N",
-                  "5N",
-                  "5N-5/5N",
-                  "5/5N",
-                  "5/5N-5P",
-                  "5P",
-                ].map((p) => (
+            </div>
+
+            {/* 2. Caballos (ejemplar): selección simple o bloques enfrentados */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+                <span className="text-[10px] font-bold shrink-0 opacity-80">Caballos (ejemplar):</span>
+                {Array.from({ length: 14 }, (_, i) => String(i + 1)).map((num) => (
                   <button
-                    key={p}
+                    key={num}
                     type="button"
-                    onClick={() => setPuestoRapido(p)}
-                    className={`px-1.5 py-0.5 rounded font-mono font-bold text-[11px] whitespace-nowrap ${
-                      puestoRapido === p
-                        ? "bg-emerald-600 text-white shadow-xs"
+                    onClick={() => {
+                      setEjemplarRapido(num);
+                      setBloqueRapido("");
+                    }}
+                    className={`w-6 h-6 rounded-full font-mono font-bold text-[11px] shrink-0 transition ${
+                      !bloqueDetectado && ejemplarRapido === num
+                        ? "bg-emerald-600 text-white shadow-xs scale-105"
                         : esClaro
-                          ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          ? "bg-gray-100 text-gray-800 hover:bg-gray-200"
                           : "bg-slate-50 text-slate-700 hover:bg-slate-200"
                     }`}
                   >
-                    {p}
+                    {num}
                   </button>
                 ))}
               </div>
-            </div>
-
-            {/* Selector de Ejemplar */}
-            <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-              <span className="text-[10px] font-bold shrink-0 opacity-80">Ejemplar #:</span>
-              {Array.from({ length: 14 }, (_, i) => String(i + 1)).map((num) => (
-                <button
-                  key={num}
-                  type="button"
-                  onClick={() => setEjemplarRapido(num)}
-                  className={`w-6 h-6 rounded-full font-mono font-bold text-[11px] shrink-0 transition ${
-                    ejemplarRapido === num
-                      ? "bg-emerald-600 text-white shadow-xs scale-105"
+              <div className="flex flex-wrap items-center gap-1">
+                <input
+                  type="text"
+                  value={bloqueRapido}
+                  onChange={(e) => setBloqueRapido(e.target.value)}
+                  placeholder="Bloque (ej. 1,2x5)"
+                  className={`w-40 text-[11px] font-mono font-bold rounded-lg px-2 py-0.5 border outline-none transition ${
+                    bloqueDetectado
+                      ? "border-[#008069] ring-1 ring-[#008069] bg-white text-slate-900"
                       : esClaro
-                        ? "bg-gray-100 text-gray-800 hover:bg-gray-200"
-                        : "bg-slate-50 text-slate-700 hover:bg-slate-200"
+                        ? "bg-white border-gray-300 text-slate-900 placeholder-gray-400 focus:border-[#008069]"
+                        : "bg-slate-50 border-slate-200 text-slate-700 placeholder-gray-500 focus:border-emerald-500"
                   }`}
-                >
-                  {num}
-                </button>
-              ))}
+                />
+                {EJEMPLOS_BLOQUE.map((ej) => (
+                  <button
+                    key={ej}
+                    type="button"
+                    onClick={() => setBloqueRapido(ej)}
+                    className={`px-1.5 py-0.5 rounded font-mono text-[10px] whitespace-nowrap border ${
+                      bloqueRapido === ej
+                        ? "bg-emerald-600 text-white border-[#008069]"
+                        : esClaro
+                          ? "bg-white text-[#008069] border-[#008069]/40 hover:bg-gray-50"
+                          : "bg-white text-emerald-700 border-emerald-600/40"
+                    }`}
+                    title="Generar bloque enfrentado entendible por el bot"
+                  >
+                    {limpiarEtiquetasProhibidas(ej)}
+                  </button>
+                ))}
+                {bloqueRapido && !bloqueDetectado && (
+                  <span className="text-[10px] text-amber-700 font-semibold">Revisa el bloque: usa 1,2x5</span>
+                )}
+              </div>
             </div>
 
-            {/* Montos Inteligentes (Dólares vs Bolívares) + Entrada Manual */}
+            {/* 3. Modalidad progresiva (SSOT) con alias y sin etiquetas prohibidas */}
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold shrink-0 opacity-80">Modalidad:</span>
+              <div className="flex flex-wrap items-center gap-1 max-h-24 overflow-y-auto">
+                {MODALIDADES_RAPIDAS.map((mod) => {
+                  const canon = normalizarModalidadProgresiva(mod) || mod;
+                  return (
+                    <button
+                      key={mod}
+                      type="button"
+                      onClick={() => setModalidadRapida(mod)}
+                      className={`px-1.5 py-0.5 rounded font-mono font-bold text-[11px] whitespace-nowrap ${
+                        (normalizarModalidadProgresiva(modalidadRapida) || modalidadRapida) === canon
+                          ? "bg-emerald-600 text-white shadow-xs"
+                          : esClaro
+                            ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            : "bg-slate-50 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {limpiarEtiquetasProhibidas(mod)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 4. Montos: ⚡ Voy Todo / 10 / 20 / 50 / 100 */}
             <div className="space-y-1.5 pt-1 border-t border-current/10">
               <div className="flex items-center justify-between gap-1 flex-wrap">
                 <span className="text-[10px] font-bold shrink-0">
@@ -1247,7 +1355,7 @@ export function ChatSalaPanel({
                       type="button"
                       onClick={() => {
                         setMontoManual("");
-                        setMontoRapido(esBs ? "5000" : "20");
+                        setMontoRapido(esBs ? MONTO_POR_DEFECTO_VES : MONTO_POR_DEFECTO_USD);
                       }}
                       className="text-[10px] opacity-60 hover:opacity-100 font-bold px-1"
                       title="Restablecer"
@@ -1278,19 +1386,35 @@ export function ChatSalaPanel({
                             : "bg-slate-50 text-slate-700 hover:bg-slate-200 border border-slate-200"
                       }`}
                     >
-                      {item.label}
+                      {limpiarEtiquetasProhibidas(item.label)}
                     </button>
                   );
                 })}
               </div>
 
-              {/* Botón de Publicación con Estructura Limpia (ej: "Juego 1p 5 5000") */}
+              {/* Publicación: "Juego 1P 5 20" o bloque "Juego 1-2 x 5-6 20" */}
               {(() => {
-                const rawSeleccionado = (montoManual.trim() || montoRapido || (esBs ? "5000" : "20")).trim();
+                const rawSeleccionado = (
+                  montoManual.trim() ||
+                  montoRapido ||
+                  (esBs ? MONTO_POR_DEFECTO_VES : MONTO_POR_DEFECTO_USD)
+                ).trim();
                 const extraido = extraerMontoNumerico(rawSeleccionado);
-                const montoLimpio = extraido.monto > 0 ? String(extraido.monto) : rawSeleccionado;
-                const cadenaJugada = `${accionRapida} ${puestoRapido} ${ejemplarRapido} ${montoLimpio}`;
-                const montoVisual = extraido.monto > 0 ? formatearMontoRegional(extraido.monto) : rawSeleccionado;
+                const montoLimpio =
+                  rawSeleccionado === MONTO_TODO
+                    ? "Todo"
+                    : extraido.monto > 0
+                      ? String(extraido.monto)
+                      : rawSeleccionado;
+                const parteModalidad = bloqueDetectado ? "" : ` ${modalidadCanon}`;
+                const cadenaJugada = `${accionRapida}${parteModalidad} ${caballosRapidosTexto} ${montoLimpio}`;
+                const cadenaVisible = limpiarEtiquetasProhibidas(cadenaJugada);
+                const montoVisual =
+                  rawSeleccionado === MONTO_TODO
+                    ? "Todo"
+                    : extraido.monto > 0
+                      ? formatearMontoRegional(extraido.monto)
+                      : rawSeleccionado;
 
                 return (
                   <div className="flex justify-end pt-1">
@@ -1301,9 +1425,7 @@ export function ChatSalaPanel({
                       className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-black px-4 py-2 rounded-xl text-xs shadow-md text-center transition active:scale-[0.98] flex items-center justify-center gap-2"
                     >
                       <span>➤ Publicar:</span>
-                      <span className="font-mono bg-slate-200 px-2 py-0.5 rounded text-[11px]">
-                        {cadenaJugada}
-                      </span>
+                      <span className="font-mono bg-slate-200 px-2 py-0.5 rounded text-[11px]">{cadenaVisible}</span>
                       <span className="text-[10px] opacity-80">
                         ({esBs ? `Bs. ${montoVisual}` : `$${montoVisual}`})
                       </span>
@@ -1519,7 +1641,7 @@ export function ChatSalaPanel({
                 esClaro ? "bg-white border-gray-300 text-slate-900" : "bg-white border-slate-200 text-slate-700"
               }`}
             >
-              + Match (x)
+              {limpiarEtiquetasProhibidas("+ Match (x)")}
             </button>
             <button
               onClick={() => cerrarPropuestasDirectamente()}
@@ -1536,6 +1658,50 @@ export function ChatSalaPanel({
           </div>
         )}
 
+        {/* Preview de imagen adjunta (Ctrl+V o botón Adjuntar) */}
+        {imagenAdjunta && (
+          <div
+            className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${
+              esClaro ? "bg-white border-slate-200" : "bg-white border-slate-200"
+            }`}
+          >
+            <img
+              src={imagenAdjunta.url}
+              alt="Imagen adjunta"
+              className="h-10 w-10 rounded-md object-cover border border-slate-200 shrink-0"
+            />
+            <span className="flex-1 truncate text-[11px] font-semibold text-slate-700">
+              🖼️ Imagen lista para enviar al grupo
+            </span>
+            <button
+              type="button"
+              onClick={() => void enviarImagenAdjunta()}
+              disabled={enviando}
+              className="shrink-0 rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-40"
+            >
+              📤 Enviar
+            </button>
+            <button
+              type="button"
+              onClick={() => setImagenAdjunta(null)}
+              className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700"
+            >
+              ✕ Quitar
+            </button>
+          </div>
+        )}
+        <input
+          ref={inputImagenRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void subirImagenAdjunta(file);
+            e.target.value = "";
+          }}
+        />
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -1548,13 +1714,14 @@ export function ChatSalaPanel({
             type="text"
             value={textoInput}
             onChange={(e) => setTextoInput(e.target.value)}
+            onPaste={manejarPasteImagen}
             placeholder={
               identidad?.esOperador
                 ? "Escribe mensaje como Operador oficial de la sala (ej. Carrera abierta, aviso)..."
                 : replyToPropuesta
                   ? `Responder a ${replyToPropuesta.remitente_nombre || "propuesta"} (ej. Consigo 20, Ponte, J)...`
                   : esCarreraAbierta
-                    ? "Escribe un mensaje o jugada (ej. Juego 1p 5 5000)..."
+                    ? "Escribe un mensaje o jugada (ej. Juego 1p 5 20)..."
                     : "Carrera cerrada (solo mensajes de consulta)..."
             }
             className={`flex-1 text-xs rounded-full px-3.5 py-2 outline-none font-medium border ${
@@ -1563,6 +1730,15 @@ export function ChatSalaPanel({
                 : "bg-slate-100 text-slate-900 placeholder-gray-400 border-transparent focus:border-emerald-500"
             }`}
           />
+          <button
+            type="button"
+            onClick={() => inputImagenRef.current?.click()}
+            disabled={subiendoImagen}
+            title="Adjuntar imagen (o Ctrl+V en el cuadro de texto)"
+            className="shrink-0 rounded-full px-2.5 py-2 text-[11px] font-bold border border-slate-200 bg-white text-slate-700 hover:bg-gray-50 disabled:opacity-40"
+          >
+            {subiendoImagen ? "⏳" : "📎 Adjuntar"}
+          </button>
           <button
             type="submit"
             disabled={enviando || !textoInput.trim()}

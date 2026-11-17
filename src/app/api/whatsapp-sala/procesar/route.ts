@@ -16,6 +16,10 @@ import {
 } from "@/features/sala-juegos/lib/parser-pedagogico";
 import { formatearMontoRegional } from "@/shared/lib/dinero";
 import { sincronizarTicketsPropuestaATaquilla } from "@/features/whatsapp-sala/lib/sincronizar-tickets-sala";
+import {
+  formatearModalidadMensaje,
+  limpiarEtiquetasProhibidas,
+} from "@/features/sala-juegos/lib/modalidades-progresivas";
 
 export const dynamic = "force-dynamic";
 
@@ -143,6 +147,104 @@ function calcularSaldoDisponible(cliente: any): number {
   const dispCalculado = Math.max(0, Number((saldo + aval - retenido).toFixed(2)));
   const dispDb = Number(cliente.saldo_disponible ?? 0);
   return Math.max(dispCalculado, dispDb);
+}
+
+function normalizarNombreHipodromo(raw?: string | null): string {
+  return String(raw ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/^HIPODROMO\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Resuelve un hipódromo contra la tabla oficial `public.hipodromos`. */
+async function resolverHipodromoEnTabla(
+  nombre?: string | null
+): Promise<{ id?: string; nombre: string } | null> {
+  const buscado = normalizarNombreHipodromo(nombre);
+  if (!buscado) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from("hipodromos")
+    .select("id, nombre")
+    .order("nombre", { ascending: true });
+
+  const filas: any[] = Array.isArray(data) ? (data as any[]) : [];
+
+  if (error || filas.length === 0) {
+    const { data: exacta } = await supabaseAdmin
+      .from("hipodromos")
+      .select("id, nombre")
+      .ilike("nombre", String(nombre).trim())
+      .limit(1)
+      .maybeSingle();
+    if (!exacta) return null;
+    return {
+      id: (exacta as any).id ? String((exacta as any).id) : undefined,
+      nombre: String((exacta as any).nombre || nombre).trim().toUpperCase(),
+    };
+  }
+
+  const exacta = filas.find(
+    (h) => normalizarNombreHipodromo(h?.nombre) === buscado
+  );
+  if (exacta) {
+    return {
+      id: exacta.id ? String(exacta.id) : undefined,
+      nombre: String(exacta.nombre || nombre).trim().toUpperCase(),
+    };
+  }
+
+  const coincidencias = filas.filter((h) => {
+    const norm = normalizarNombreHipodromo(h?.nombre);
+    return Boolean(norm) && (norm.includes(buscado) || buscado.includes(norm));
+  });
+  if (coincidencias.length !== 1) return null;
+  const unica = coincidencias[0];
+  return {
+    id: unica.id ? String(unica.id) : undefined,
+    nombre: String(unica.nombre || nombre).trim().toUpperCase(),
+  };
+}
+
+const AVISO_REDACCION_GRUPO = "⚠️¡Por favor, verificar redacción! ¡Gracias!";
+
+function detallePublicoPropuesta(prop: any): string {
+  if (prop?.es_match) {
+    const bA = Array.isArray(prop.caballos_bando_a) ? prop.caballos_bando_a.join("-") : String(prop.caballos_bando_a || "");
+    const bB = Array.isArray(prop.caballos_bando_b) ? prop.caballos_bando_b.join("-") : String(prop.caballos_bando_b || "");
+    const propRaw = String(prop.proporcion_premio || prop.proporcion || "1x1").trim();
+    const canon = limpiarEtiquetasProhibidas(propRaw);
+    const sufijo = canon && canon !== "pp" && !/^1x1$/i.test(canon) ? ` ${canon}` : "";
+    return `A Premio (${bA}x${bB})${sufijo}`.trim();
+  }
+  const mod = String(prop?.modalidad_propuesta || prop?.modalidad || "1P").trim();
+  const ej = String(prop?.ejemplar_texto || (Array.isArray(prop?.caballos_bando_a) ? prop.caballos_bando_a[0] : "") || "").trim();
+  return limpiarEtiquetasProhibidas(formatearModalidadMensaje(mod, ej));
+}
+
+function mensajeJugaronPorPozo(prop: any, monto: number, limitador: string): string {
+  return `✅ Jugaron ${detallePublicoPropuesta(prop)} con ${formatearMontoRegional(monto)} por Pozo de ${limitador}`;
+}
+
+function mensajeJugaronCompleto(nombreJuega: string, detalle: string, nombreDa: string, monto: number): string {
+  return limpiarEtiquetasProhibidas(
+    `✅ Jugaron: *${nombreJuega} Juega ${detalle} da ${nombreDa} $${formatearMontoRegional(monto)}*`
+  );
+}
+
+function limitadorPorPozo(
+  montoSolicitado: number,
+  montoEfectivo: number,
+  disponibleProponente: number,
+  disponibleAceptante: number,
+  nombreProponente: string,
+  nombreAceptante: string
+): string | null {
+  if (montoEfectivo <= 0 || montoEfectivo >= montoSolicitado) return null;
+  return disponibleProponente <= disponibleAceptante ? nombreProponente : nombreAceptante;
 }
 
 async function emitirBroadcastSala(salaId: string, evento: string, payload: any) {
@@ -1734,7 +1836,8 @@ export async function POST(req: Request) {
       Boolean(body.esMensajePropioTelefono) ||
       Boolean(body.esOperador) ||
       (await verificarEsOperador(null, participantJid, grupoId));
-    const COMANDO_OPERADOR_EXACTO = /^!(?:abrir|cerrar|pizarra|rectificar|plano)(?:\s|$)/i;
+    const COMANDO_OPERADOR_EXACTO =
+      /^!(?:abrir|abierta|cerrar|cerrad[ao]|pizarra|rectificar|plano|hip[óo]dromo|retirar|recargar|aval)(?:\s|$)/i;
     if (esOperadorRemitente && !COMANDO_OPERADOR_EXACTO.test(texto)) {
       return NextResponse.json({
         ok: true,
@@ -1760,6 +1863,9 @@ export async function POST(req: Request) {
     const esComandoPlano = /^(?:!?(?:plano|prejugadas))$/i.test(textoUsuarioLimpio);
     const esComandoCerrar = /^(?:!?(?:cerrar(?:\s+carrera)?|cerrada|cerrado|trancar|no\s+va\s+m[aá]s))$/i.test(textoUsuarioLimpio);
     const matchAbrirComando = textoUsuarioLimpio.match(/^(?:!)?(?:abrir|abierta)(?:\s+carrera)?(?:\s+(.+?))?(?:\s+(?:c(?:arrera)?\s*|#\s*)?(\d{1,2}))?$/i);
+    const matchHipodromoComando = textoUsuarioLimpio.match(/^!?hip[óo]dromo\s+(.+)$/i);
+    const matchRetirarCarreraComando = textoUsuarioLimpio.match(/^!retirar\s+(.+)$/i);
+    const matchCreditoOperador = textoUsuarioLimpio.match(/^!(recargar|aval)\s+(.+?)\s+([0-9][0-9.,]*\s*[kK]?)$/i);
     const matchPizarraComando = textoUsuarioLimpio.match(/^(?:!)?(?:llegada|sentenciar|pizarra)\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
     const matchRectificarComando = textoUsuarioLimpio.match(/^(?:!)?rectificar(?:\s+pizarra)?\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
     const esSolicitudCajero = /^(?:!?(?:deposito|depósito|reportar\s+pago|retiro|solicito\s+retiro|quiero\s+retirar|recarga|solicito\s+recarga))\b/i.test(textoUsuarioLimpio);
@@ -2409,13 +2515,46 @@ export async function POST(req: Request) {
     if (matchAbrirComando && (/^(?:!)?abrir/i.test(textoUsuarioLimpio) || /^(?:!)?abierta/i.test(textoUsuarioLimpio))) {
       const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
       if (esOp) {
-        let posibleHipo = (matchAbrirComando[1] || "").trim();
-        let posibleCarrera = (matchAbrirComando[2] || "").trim();
+        // Formato: !abrir [Hipódromo] [Nro] [ret X,Y]
+        const parteArgumentos = textoUsuarioLimpio.replace(/^!?(?:abrir|abierta)(?:\s+carrera)?\s*/i, "").trim();
+        const matchRetApertura = parteArgumentos.match(/(?:^|\s)ret(?:irados?)?\s*[:=]?\s*([0-9\s,./·#-]+)$/i);
+        const retiradosApertura = matchRetApertura
+          ? matchRetApertura[1]
+              .split(/[\s,]+/)
+              .map((x) => x.replace(/^#/, "").trim())
+              .filter(Boolean)
+          : [];
+        const argumentosSinRet = matchRetApertura
+          ? parteArgumentos.slice(0, matchRetApertura.index).trim()
+          : parteArgumentos;
+        const matchAbrirBase = argumentosSinRet
+          ? `!abrir ${argumentosSinRet}`.match(/^(?:!)?(?:abrir|abierta)(?:\s+carrera)?(?:\s+(.+?))?(?:\s+(?:c(?:arrera)?\s*|#\s*)?(\d{1,2}))?$/i)
+          : matchAbrirComando;
+
+        let posibleHipo = ((matchAbrirBase as RegExpMatchArray | null)?.[1] || "").trim();
+        let posibleCarrera = ((matchAbrirBase as RegExpMatchArray | null)?.[2] || "").trim();
         if (!posibleCarrera && /^\d{1,2}$/.test(posibleHipo)) {
           posibleCarrera = posibleHipo;
           posibleHipo = "";
         }
-        const hipoLimpio = String(posibleHipo || sala.hipodromo_activo || "LA RINCONADA").toUpperCase();
+        const hipoSolicitado = String(posibleHipo || sala.hipodromo_activo || "LA RINCONADA").trim();
+        const hipoTab = await resolverHipodromoEnTabla(hipoSolicitado);
+        if (posibleHipo && !hipoTab) {
+          const msgErrHipo = limpiarEtiquetasProhibidas(
+            `⚠️ El hipódromo "${hipoSolicitado}" no está registrado en la tabla oficial. No se abrió la carrera.`
+          );
+          return NextResponse.json({
+            ok: false,
+            tipo: "HIPODROMO_NO_REGISTRADO",
+            respuestaGrupo: msgErrHipo,
+            msg_publico: msgErrHipo,
+            msg_publico_bot: msgErrHipo,
+            respuestaPublica: msgErrHipo,
+            mensajePrivadoAutor: null,
+            senderJid: participantJid,
+          });
+        }
+        const hipoLimpio = hipoTab?.nombre || hipoSolicitado.toUpperCase();
         const numCarrera = parseInt(posibleCarrera, 10) || parseInt(sala.numero_carrera_activa, 10) || 1;
 
         await supabaseAdmin
@@ -2428,7 +2567,21 @@ export async function POST(req: Request) {
           })
           .eq("id", salaId);
 
-        const msgAbrir = `🟢 *${hipoLimpio} CARRERA ${numCarrera} ABIERTA* — Hagan sus jugadas.`;
+        if (retiradosApertura.length > 0 && sala.carrera_activa_id) {
+          try {
+            await supabaseAdmin
+              .from("carreras")
+              .update({ ejemplares_retirados: retiradosApertura })
+              .eq("id", sala.carrera_activa_id);
+          } catch {
+            // Best-effort: la apertura no depende de este metadato.
+          }
+        }
+
+        const msgAbrir = limpiarEtiquetasProhibidas(
+          `🟢 *${hipoLimpio} CARRERA ${numCarrera} ABIERTA* — Hagan sus jugadas.` +
+            (retiradosApertura.length > 0 ? `\n🚫 Retirados: ${retiradosApertura.map((r) => `#${r}`).join(", ")}` : "")
+        );
 
         await supabaseAdmin.from("chat_mensajes").insert({
           grupo_id: grupoId,
@@ -2455,6 +2608,282 @@ export async function POST(req: Request) {
           senderJid: participantJid,
         });
       }
+    }
+
+    if (matchHipodromoComando) {
+      const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
+      if (!esOp) {
+        return NextResponse.json({
+          ok: false,
+          tipo: "NO_AUTORIZADO",
+          respuestaGrupo: null,
+          mensajePrivadoAutor: "⚠️ No está autorizado para cambiar el hipódromo activo.",
+          senderJid: participantJid,
+        });
+      }
+      const nombreSolicitado = String(matchHipodromoComando[1] || "")
+        .trim()
+        .replace(/^["']|["']$/g, "");
+      const hipoTab = await resolverHipodromoEnTabla(nombreSolicitado);
+      if (!hipoTab) {
+        const msgErrHipo = limpiarEtiquetasProhibidas(
+          `⚠️ El hipódromo "${nombreSolicitado}" no está registrado en la tabla oficial.`
+        );
+        return NextResponse.json({
+          ok: false,
+          tipo: "HIPODROMO_NO_REGISTRADO",
+          respuestaGrupo: msgErrHipo,
+          msg_publico: msgErrHipo,
+          msg_publico_bot: msgErrHipo,
+          respuestaPublica: msgErrHipo,
+          mensajePrivadoAutor: null,
+          senderJid: participantJid,
+        });
+      }
+      await supabaseAdmin
+        .from("salas_juego")
+        .update({ hipodromo_activo: hipoTab.nombre, updated_at: new Date().toISOString() })
+        .eq("id", salaId);
+      sala.hipodromo_activo = hipoTab.nombre;
+
+      const msgHipodromo = limpiarEtiquetasProhibidas(
+        `📍 *HIPÓDROMO ACTIVO:* ${hipoTab.nombre} — Carrera ${sala.numero_carrera_activa || 1}.`
+      );
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_nombre: "🤖 ASISTENTE DE SALA",
+        es_operador: true,
+        tipo_mensaje: "sistema",
+        contenido: msgHipodromo,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "WHATSAPP",
+      });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+      return NextResponse.json({
+        ok: true,
+        tipo: "HIPODROMO_ACTIVO",
+        respuestaGrupo: msgHipodromo,
+        msg_publico: msgHipodromo,
+        msg_publico_bot: msgHipodromo,
+        respuestaPublica: msgHipodromo,
+        mensajePrivadoAutor: null,
+        senderJid: participantJid,
+      });
+    }
+
+    if (matchRetirarCarreraComando) {
+      const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
+      if (!esOp) {
+        return NextResponse.json({
+          ok: false,
+          tipo: "NO_AUTORIZADO",
+          respuestaGrupo: null,
+          mensajePrivadoAutor: "⚠️ No está autorizado para procesar retirados.",
+          senderJid: participantJid,
+        });
+      }
+      const ejemplar = String(matchRetirarCarreraComando[1] || "").trim().replace(/^#/, "");
+      if (!ejemplar) {
+        return NextResponse.json({
+          ok: false,
+          tipo: "RETIRO_ARGUMENTOS",
+          respuestaGrupo: limpiarEtiquetasProhibidas("⚠️ Uso correcto: !retirar [ejemplar]"),
+          mensajePrivadoAutor: null,
+          senderJid: participantJid,
+        });
+      }
+      if (String(sala.estado_carrera || "").toLowerCase() === "liquidada") {
+        return NextResponse.json({
+          ok: false,
+          tipo: "CARRERA_LIQUIDADA",
+          respuestaGrupo: limpiarEtiquetasProhibidas("⚠️ Carrera liquidada: reversa la liquidación antes de procesar retirados."),
+          mensajePrivadoAutor: null,
+          senderJid: participantJid,
+        });
+      }
+      const carreraEfectivaId = sala.carrera_activa_id || sala.carrera_recien_cerrada_id || null;
+      const { data: retRes, error: errRet } = await supabaseAdmin.rpc("procesar_retirado_en_sala", {
+        p_grupo_id: grupoId,
+        p_sala_id: salaId,
+        p_carrera_id: carreraEfectivaId,
+        p_ejemplar_retirado: ejemplar,
+      });
+      if (errRet || (retRes as any)?.ok === false) {
+        const msgErrRetiro = limpiarEtiquetasProhibidas(
+          `⚠️ No se pudo procesar el retiro del ejemplar #${ejemplar}: ${errRet?.message || (retRes as any)?.error || (retRes as any)?.motivo || "error desconocido"}`
+        );
+        return NextResponse.json({
+          ok: false,
+          tipo: "ERROR_RETIRO_EJEMPLAR",
+          respuestaGrupo: msgErrRetiro,
+          msg_publico: msgErrRetiro,
+          msg_publico_bot: msgErrRetiro,
+          respuestaPublica: msgErrRetiro,
+          mensajePrivadoAutor: null,
+          senderJid: participantJid,
+        });
+      }
+      const msgRetirado = limpiarEtiquetasProhibidas(
+        `🚫 EJEMPLAR RETIRADO: Se ha procesado el retiro del ejemplar #${ejemplar}. Las jugadas pactadas han sido anuladas y los saldos restituidos.`
+      );
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_nombre: "🤖 ASISTENTE DE SALA",
+        es_operador: true,
+        tipo_mensaje: "sistema",
+        contenido: msgRetirado,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "WHATSAPP",
+      });
+      await emitirBroadcastSala(salaId, "ejemplar_retirado", { salaId, ejemplar });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+      return NextResponse.json({
+        ok: true,
+        tipo: "RETIRO_EJEMPLAR",
+        respuestaGrupo: msgRetirado,
+        msg_publico: msgRetirado,
+        msg_publico_bot: msgRetirado,
+        respuestaPublica: msgRetirado,
+        mensajePrivadoAutor: null,
+        senderJid: participantJid,
+      });
+    }
+
+    if (matchCreditoOperador) {
+      const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
+      if (!esOp) {
+        return NextResponse.json({
+          ok: false,
+          tipo: "NO_AUTORIZADO",
+          respuestaGrupo: null,
+          mensajePrivadoAutor: "⚠️ No está autorizado para acreditar saldo o aval.",
+          senderJid: participantJid,
+        });
+      }
+      const esAval = String(matchCreditoOperador[1] || "").toLowerCase() === "aval";
+      const targetNombre = String(matchCreditoOperador[2] || "").trim();
+      const { monto } = extraerMontoNumerico(String(matchCreditoOperador[3] || ""));
+      if (!targetNombre || !(monto > 0)) {
+        const msgErrCredito = limpiarEtiquetasProhibidas(
+          `⚠️ Uso correcto: !${esAval ? "aval" : "recargar"} [Jugador] [Monto]`
+        );
+        return NextResponse.json({
+          ok: false,
+          tipo: "CREDITO_ARGUMENTOS",
+          respuestaGrupo: msgErrCredito,
+          msg_publico: msgErrCredito,
+          msg_publico_bot: msgErrCredito,
+          respuestaPublica: msgErrCredito,
+          mensajePrivadoAutor: null,
+          senderJid: participantJid,
+        });
+      }
+
+      const { data: candidatos } = await supabaseAdmin
+        .from("clientes")
+        .select(CAMPOS_CLIENTE_SALA)
+        .eq("grupo_id", grupoId);
+      const targetLimpio = targetNombre.toUpperCase();
+      const targetCliente = (candidatos || []).find((c: any) => {
+        const n = String(c.nombre || "").trim().toUpperCase();
+        const s = String(c.seudonimo || "").trim().toUpperCase();
+        return n === targetLimpio || s === targetLimpio || n.includes(targetLimpio) || (s && s.includes(targetLimpio));
+      });
+
+      if (!targetCliente) {
+        const msgNoCliente = limpiarEtiquetasProhibidas(
+          `⚠️ Jugador "${targetNombre}" no encontrado en este grupo.`
+        );
+        return NextResponse.json({
+          ok: false,
+          tipo: "JUGADOR_NO_ENCONTRADO",
+          respuestaGrupo: msgNoCliente,
+          msg_publico: msgNoCliente,
+          msg_publico_bot: msgNoCliente,
+          respuestaPublica: msgNoCliente,
+          mensajePrivadoAutor: null,
+          senderJid: participantJid,
+        });
+      }
+
+      const saldoActual = Number(targetCliente.saldo_actual || 0);
+      const avalActual = Number(targetCliente.aval || (targetCliente as any).limite_credito || 0);
+      const retenido = Number(targetCliente.saldo_retenido || 0);
+      const nuevoSaldo = esAval ? saldoActual : Number((saldoActual + monto).toFixed(2));
+      const nuevoAval = esAval ? Number((avalActual + monto).toFixed(2)) : avalActual;
+      const nuevoDisponible = targetCliente.libre
+        ? 999999
+        : Math.max(0, Number((nuevoSaldo + nuevoAval - retenido).toFixed(2)));
+
+      await supabaseAdmin
+        .from("clientes")
+        .update({
+          saldo_actual: nuevoSaldo,
+          aval: nuevoAval,
+          saldo_disponible: nuevoDisponible,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", targetCliente.id);
+
+      await supabaseAdmin.from("libro_mayor_clientes").insert({
+        cliente_id: targetCliente.id,
+        cliente_nombre: targetCliente.nombre,
+        grupo_id: grupoId,
+        tipo_movimiento: "DEPOSITO",
+        monto_centavos: Math.round(monto * 100),
+        monto,
+        observacion: esAval ? "Aval otorgado por operador WhatsApp" : "Recarga operador WhatsApp",
+        creado_por: body.pushName || body.senderNombre || "OPERADOR_WHATSAPP",
+        fecha_carrera: new Date().toISOString().split("T")[0],
+      });
+
+      const nombreFinal = targetCliente.seudonimo || targetCliente.nombre;
+      const msgPublico = limpiarEtiquetasProhibidas(
+        esAval
+          ? `✅ Aval acreditado a *${nombreFinal}*: $${formatearMontoRegional(monto)}. Aval total: $${formatearMontoRegional(nuevoAval)}.`
+          : `✅ Recarga acreditada a *${nombreFinal}*: $${formatearMontoRegional(monto)}. Nuevo saldo: $${formatearMontoRegional(nuevoSaldo)}.`
+      );
+      const msgPrivado = limpiarEtiquetasProhibidas(
+        esAval
+          ? `🛡️ Se ha acreditado un aval de $${formatearMontoRegional(monto)} a tu cuenta. Tu aval disponible es $${formatearMontoRegional(nuevoAval)} y tu saldo disponible es $${formatearMontoRegional(nuevoDisponible)}.`
+          : `💰 Tu cuenta ha sido acreditada con $${formatearMontoRegional(monto)}. Tu nuevo saldo disponible es $${formatearMontoRegional(nuevoDisponible)}.`
+      );
+
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_nombre: "🤖 ASISTENTE DE SALA",
+        es_operador: true,
+        tipo_mensaje: "sistema",
+        contenido: msgPublico,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "WHATSAPP",
+      });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
+
+      const jidTarget = targetCliente.whatsapp_jid || (targetCliente.telefono_normalizado ? `${targetCliente.telefono_normalizado}@s.whatsapp.net` : null);
+
+      return NextResponse.json({
+        ok: true,
+        tipo: esAval ? "AVAL_OPERADOR" : "RECARGA_OPERADOR",
+        respuestaGrupo: msgPublico,
+        msg_publico: msgPublico,
+        msg_publico_bot: msgPublico,
+        respuestaPublica: msgPublico,
+        mensajePrivadoAutor: null,
+        notificaciones_privadas: jidTarget ? [{ whatsapp_jid: jidTarget, mensaje: msgPrivado }] : [],
+        senderJid: participantJid,
+      });
     }
 
     if (matchPizarraComando || matchRectificarComando) {
@@ -3112,8 +3541,9 @@ export async function POST(req: Request) {
             ? propFresca.caballos_bando_b.join("-")
             : String(propFresca.caballos_bando_b || "");
           let propTexto = "";
-          if (propRaw && !["1x1", "pp", "10/10", "10a10", "10@10"].includes(propRaw.toLowerCase())) {
-            propTexto = ` [${propRaw.replace("@", "/").replace(/a/i, "/")}]`;
+          const propParaMostrar = limpiarEtiquetasProhibidas(propRaw);
+          if (propParaMostrar && !["1x1", "pp"].includes(propParaMostrar.toLowerCase())) {
+            propTexto = ` ${propParaMostrar.replace("@", "/").replace(/a/i, "/")}`;
           }
           detalleJugada = `(${bA}x${bB})${propTexto}`;
         } else {
@@ -3142,10 +3572,18 @@ export async function POST(req: Request) {
         const riesgoJuegaFmt = formatearMontoRegional(riesgoJuega);
         const riesgoDaFmt = formatearMontoRegional(riesgoDa);
 
-        const msgPublicoFinal =
-          `✅ Aquí jugaron: *${nombreJuega} Juega ${detalleJugada} da ${nombreDa} $${montoBaseFmt}*\n` +
-          `🔹 Juega: ${nombreJuega} (Riesgo $${riesgoJuegaFmt})\n` +
-          `🔸 Da: ${nombreDa} (Riesgo $${riesgoDaFmt})`;
+        const jugadorQueLimitó = limitadorPorPozo(
+          Number(evalConcrecion.montoSolicitado || montoEfectivo),
+          Number(montoEfectivo || 0),
+          Number(remanenteDisponible || 0),
+          Number(saldoDispAceptante || 0),
+          propFresca.remitente_nombre || "Proponente",
+          nombreJugador
+        );
+
+        const msgPublicoFinal = jugadorQueLimitó
+          ? mensajeJugaronPorPozo(propFresca, montoEfectivo, jugadorQueLimitó)
+          : mensajeJugaronCompleto(nombreJuega, detalleJugada, nombreDa, montoEfectivo);
 
         const msgPrivAceptante = evalConcrecion.excedioSaldo
           ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de $${formatearMontoRegional(evalConcrecion.montoEfectivo)}. Muchas gracias.`
@@ -3591,8 +4029,8 @@ export async function POST(req: Request) {
 
       // Silencio absoluto para el operador: nunca se le muestra el aviso
       // "⚠️¡Por favor, verificar redacción!" ni su versión privada.
-      const avisoPublico = esOperadorRemitente ? null : analisis.msgPublicoBot || null;
-      const avisoPrivado = esOperadorRemitente ? null : msgPrivPedagogico;
+      const avisoPublico = esOperadorRemitente ? null : AVISO_REDACCION_GRUPO;
+      const avisoPrivado = esOperadorRemitente ? null : limpiarEtiquetasProhibidas(msgPrivPedagogico);
       return NextResponse.json({
         ok: false,
         tipo: "PEDAGOGICO",
@@ -3841,11 +4279,20 @@ export async function POST(req: Request) {
 
     await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-    // Si publicó por encima de su saldo_disponible, devolver los textos exactos requeridos
-    if (excedioSaldo) {
+    // Ajuste automático "Por Pozo": si supera el disponible pero hay saldo parcial,
+    // se concreta hasta el máximo y se aclara públicamente quién limitó la jugada.
+    if (excedioSaldo && montoAPublicar > 0) {
       const saldoFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
-      const msgPubRecorte = `⚠️ *${nombreJugador}* dispone de $${saldoFmt} para jugar`;
-      const msgPrivRecorte = `⚠️ Hola ${nombreJugador}, tu jugada se procesó por $${formatearMontoRegional(montoAPublicar)} ya que es lo que dispones para realizarla. Tu saldo actual es $${saldoFmt}.\n\nTe invitamos a jugar hasta el tope exacto de tu saldo disponible ($${saldoFmt}).`;
+      const propPublica = {
+        es_match: analisis.esMatch,
+        caballos_bando_a: analisis.caballosBandoA,
+        caballos_bando_b: analisis.caballosBandoB,
+        modalidad_propuesta: analisis.modalidad,
+        ejemplar_texto: analisis.ejemplarTexto,
+        proporcion_premio: analisis.proporcion,
+      };
+      const msgPubRecorte = mensajeJugaronPorPozo(propPublica, montoAPublicar, nombreJugador);
+      const msgPrivRecorte = `✅ Tu jugada fue ajustada y registrada por $${formatearMontoRegional(montoAPublicar)}, el máximo disponible en tu saldo ($${saldoFmt}). Para corregir la redacción, escribe: Juego ${detallePublicoPropuesta(propPublica)} ${formatearMontoRegional(montoAPublicar)}.`;
       return NextResponse.json({
         ok: true,
         excedio_saldo: true,

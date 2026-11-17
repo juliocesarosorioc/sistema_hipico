@@ -1594,7 +1594,8 @@ async function manejarMensajeEntrante(msg) {
     // Texto libre del oficial se descarta en el demonio (ni siquiera se
     // reenvía a /procesar-unificado). Solo comandos exactos de control pasan.
     // ───────────────────────────────────────────────────────────────────────
-    const COMANDOS_OPERADOR_EXACTOS = /^!(?:abrir|cerrar|pizarra|rectificar|plano)(?:\s|$)/i;
+    const COMANDOS_OPERADOR_EXACTOS =
+      /^!(?:abrir|abierta|cerrar|cerrad[ao]|pizarra|rectificar|plano|hip[óo]dromo|retirar|recargar|aval)(?:\s|$)/i;
     let esOperadorMensaje = esFromMe;
     if (!esOperadorMensaje && telReal) {
       try {
@@ -1637,6 +1638,7 @@ async function manejarMensajeEntrante(msg) {
           push_name: msg.pushName || senderNombre,
           senderNombre,
           esMensajePropioTelefono: esFromMe,
+          esOperador: esOperadorMensaje,
           texto: textoLimpio,
           text: textoLimpio,
           whatsappMsgId,

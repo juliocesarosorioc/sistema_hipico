@@ -6708,7 +6708,7 @@ const hipodromosDelDia = useMemo(() => {
                           {rotuloPareo(p.jugada, p.caballo) && (
                             <span
                               className="rounded bg-blue-600 px-1 py-0.5 text-[9px] font-bold text-white"
-                              title="Ítem 7: un MATCH sin fracción se juega PELO A PELO (10/10)"
+                              title="Ítem 7: un pareo sin fracción se juega PELO A PELO (pp)"
                             >
                               {rotuloPareo(p.jugada, p.caballo)}
                             </span>

@@ -5,6 +5,10 @@ import {
   prefijoMonedaGrupo,
   esGrupoBolivares,
 } from "@/shared/lib/dinero";
+import {
+  normalizarModalidadProgresiva,
+  parsearBloqueEnfrentamiento,
+} from "./modalidades-progresivas";
 
 export interface ResultadoAnalisisJugada {
   esIntencionDeJugada: boolean;
@@ -46,11 +50,19 @@ export interface ResultadoConcrecionEstricta {
  * - Elimina ceros flotantes de formato ("00"): "20,00" -> 20, "20.00" -> 20, "20.000,00" -> 20000
  * - Soporta sufijo k/K (miles): "5k" -> 5000, "5.5k" -> 5500
  */
-export function extraerMontoNumerico(rawInput: string): { monto: number; montoTexto: string; esKilo: boolean } {
+export function extraerMontoNumerico(
+  rawInput: string,
+  saldoDisponible?: number
+): { monto: number; montoTexto: string; esKilo: boolean } {
   if (!rawInput) return { monto: 0, montoTexto: "0", esKilo: false };
   let str = String(rawInput).trim();
   // Eliminar prefijos de moneda o espacios
   str = str.replace(/^[\$Bs\.\s]+/i, "").trim();
+  // "Voy Todo" / "Todo" significa el saldo disponible completo del jugador.
+  if (/^(?:voy\s+)?todo$/.test(str)) {
+    const montoTodo = Math.max(0, Math.round(Number(saldoDisponible || 0) * 100) / 100);
+    return { monto: montoTodo, montoTexto: String(montoTodo), esKilo: false };
+  }
   // Eliminar ceros flotantes de formato final (,00 o .00 o 00 final)
   str = str.replace(/[,.]00(?!\d)/g, "").replace(/\s+00$/g, "").trim();
   if (!str) return { monto: 0, montoTexto: "0", esKilo: false };
@@ -208,8 +220,8 @@ export function evaluarConcrecionEstricta(
   const esPropuestaJuego = accionPropuesta === 'JUEGA';
 
   // Soporta montos opcionales: 5k, 10k, 10.000, 20.000, 10.424,50, etc.
-  const regexJuego = /^(jugaste|ponte|consigo|j)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+))?$/i;
-  const regexConsigo = /^(juego|jugue|jugué|ponte|jugamos|voy|j)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+))?$/i;
+  const regexJuego = /^(jugaste|ponte|consigo|j)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+|todo))?$/i;
+  const regexConsigo = /^(juego|jugue|jugué|ponte|jugamos|voy|j)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+|todo))?$/i;
 
   const match = esPropuestaJuego ? texto.match(regexJuego) : texto.match(regexConsigo);
 
@@ -229,7 +241,7 @@ export function evaluarConcrecionEstricta(
   // Extraer monto especificado mediante el parser inteligente con K, o tomar el remanente disponible
   let montoSolicitado = montoDisponiblePropuesta;
   if (match[2]) {
-    const extraido = extraerMontoNumerico(match[2]);
+    const extraido = extraerMontoNumerico(match[2], saldoDisponibleAceptante);
     if (extraido.monto > 0) {
       montoSolicitado = extraido.monto;
     }
@@ -277,9 +289,10 @@ function normalizarBandoCaballos(raw: string, maxEjemplarCarrera = 16, esDupla =
     .replace(/\b(de\s+la|del|de|la|el|#)\b/gi, ' ')
     .trim();
 
-  // Si tiene separadores explícitos (., -, /, , o espacios entre números)
-  if (/[\.\-,\/]/.test(limpio) || /\d+\s+\d+/.test(limpio)) {
+  // Si tiene separadores explícitos (., -, /, ,, y o espacios entre números)
+  if (/[\.\-,\/y]/.test(limpio) || /\d+\s+\d+/.test(limpio)) {
     return limpio
+      .replace(/\by\b/gi, ' ')
       .split(/[\.\-,\/\s]+/)
       .map((s) => s.trim())
       .filter((s) => /^\d+[A-Z]?$/i.test(s));
@@ -327,7 +340,9 @@ export function analizarYEstandarizarJugada(
     };
   }
 
-  const textoNormalizado = normalizarParadaPremio(textoUsuario.trim());
+  const textoNormalizadoRaw = normalizarParadaPremio(textoUsuario.trim());
+  const bloqueDetectado = parsearBloqueEnfrentamiento(textoNormalizadoRaw);
+  const textoNormalizado = bloqueDetectado ? bloqueDetectado.texto : textoNormalizadoRaw;
   const texto = textoNormalizado.replace(/\s+/g, ' ');
   const prefijo = prefijoMonedaGrupo(moneda);
 
@@ -335,9 +350,10 @@ export function analizarYEstandarizarJugada(
   const matchGabela = texto.match(/\b(10\/\d+(?:[.,]\d+)?)\b/);
   const proporcionDetectada = matchGabela ? matchGabela[1].replace(',', '.') : '1x1';
 
-  // 1. Detectar si el mensaje tiene intención de jugada
-  const patronIntencion = /\b(juego|jugo|jugó|jugue|jugué|j|consigo|doy|pido|voy|ponte|copiado|pago|ganador|win|a\s+ganador|g|[1-6]p|[2-6]n|1n|[1-5]y[1-5][pn]?|[1-5]\/[1-5]n?|10\/\d+|x|contra)\b/i;
-  if (!patronIntencion.test(texto) && !/^[0-9kK\.,]+\s+(?:al?|del?|el)\s+\d{1,2}$/i.test(texto)) {
+  // 1. Filtro de charla libre: sólo verbos de apuesta o estructura canónica de jugada.
+  const patronVerbosApuesta = /\b(juego|jugue|jugué|jugo|jugó|doy|voy|pago|ponte|jugamos|consigo|j)\b/i;
+  const patronEstructuraApuesta = /(?:^|\s)(?:10\s*[\/a@]\s*\d+|pp|[1-5]\s*p|[2-5]\s*n|[1-5]\s*[\/y]\s*[1-5]\s*n?|\d{1,2}\s*(?:x|vs|contra)\s*\d{1,2})(?:\s|$)/i;
+  if (!patronVerbosApuesta.test(texto) && !patronEstructuraApuesta.test(texto) && !/^[0-9kK\.,]+\s+(?:al?|del?|el)\s+\d{1,2}$/i.test(texto)) {
     return {
       esIntencionDeJugada: false,
       valido: true,
@@ -368,7 +384,7 @@ export function analizarYEstandarizarJugada(
 
   // 2. CASO A: JUGADA DE MATCH CON "x" O "contra" (soporta proporción opcional 10/X)
   // Ejemplos: "Juego 1x4 50", "Juego 3x5 10/8 con 100", "Consigo 3x5 10/8 con 100", "Juego 1-2x4-6 10/8 con 100"
-  const regexMatch = /^(?:(juego|jugo|jugó|consigo|doy|pido)\s+)?(?:de\s+la\s+|la\s+|del\s+|el\s+)?([0-9A-Za-z\.\-,\s]+?)\s*(?:x|vs|contra)\s*(?:de\s+la\s+|la\s+|del\s+|el\s+)?([0-9A-Za-z\.\-,]+(?:\s+[0-9A-Za-z\.\-,]+)*?)(?:\s+(10\/\d+(?:[.,]\d+)?))?\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+)$/i;
+  const regexMatch = /^(?:(juego|jugo|jugó|consigo|doy|pido)\s+)?(?:de\s+la\s+|la\s+|del\s+|el\s+)?([0-9A-Za-z\.\-,\s]+?)\s*(?:x|vs|contra)\s*(?:de\s+la\s+|la\s+|del\s+|el\s+)?([0-9A-Za-z\.\-,]+(?:\s+[0-9A-Za-z\.\-,]+)*?)(?:\s+(10\/\d+(?:[.,]\d+)?))?\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+|todo)$/i;
   const matchVs = texto.match(regexMatch);
 
   if (matchVs) {
@@ -381,7 +397,7 @@ export function analizarYEstandarizarJugada(
     const bandoB = normalizarBandoCaballos(matchVs[3], maxEjemplarCarrera, esDuplaB);
     const propMatch = matchVs[4] ? matchVs[4].replace(',', '.') : proporcionDetectada;
 
-    const { monto, montoTexto } = extraerMontoNumerico(matchVs[5]);
+    const { monto, montoTexto } = extraerMontoNumerico(matchVs[5], saldoDisponible);
 
     if (bandoA.length > 0 && bandoB.length > 0 && monto > 0) {
       // Verificar retirados en cualquiera de los dos bandos
@@ -499,10 +515,36 @@ export function analizarYEstandarizarJugada(
   // 3. CASO B: JUGADAS DE PUESTOS, NINIS, GANADOR, PROPORCIONES Y CABALLOS
   // Soporta: G, GANADOR, WIN, A GANADOR, 1P..6P, 1Y2P..4Y5P, 2N..6N, 1/2N, 2/3N, 3/4N,
   // 1Y2N..4Y5N, 2Y2N..4Y4N, 1P Y 2N, 2N Y 2Y2N, 2Y3N Y 3N, 3N Y 3Y3N, 1Y2N Y 2N, 10/X
-  const MODS_COMPUESTAS_RE =
-    "1P\\s+Y\\s+2N|2N\\s+Y\\s+2Y2N|2Y3N\\s+Y\\s+3N|3N\\s+Y\\s+3Y3N|1Y2N\\s+Y\\s+2N|A\\s+GANADOR|GANADOR|WIN|G|[1-5]Y[1-5][PN]?|[1-5]\\/[1-5]N?|[1-9]P|10P|[1-9]N|10N|10\\/\\d+(?:[\\.,]\\d+)?|A|AL";
+  const MODS_COMPUESTAS_RE = [
+    "1P\\s+Y\\s+1\\/2N",
+    "1\\/2N\\s+Y\\s+2N",
+    "2N\\s+Y\\s+2P",
+    "2\\/2N",
+    "2P\\s+Y\\s+2\\/3N",
+    "2\\/3N\\s+Y\\s+3N",
+    "3N\\s+Y\\s+3P",
+    "3\\/3N",
+    "3P\\s+Y\\s+3\\/4N",
+    "3\\/4N\\s+Y\\s+4N",
+    "4N\\s+Y\\s+4P",
+    "4\\/4N",
+    "4P\\s+Y\\s+4\\/5N",
+    "4\\/5N\\s+Y\\s+5N",
+    "5N\\s+Y\\s+5P",
+    "5\\/5N",
+    "1P\\s+Y\\s+2N",
+    "2N\\s+Y\\s+2Y2N",
+    "2Y3N\\s+Y\\s+3N",
+    "3N\\s+Y\\s+3Y3N",
+    "1Y2N\\s+Y\\s+2N",
+    "A\\s+GANADOR|GANADOR|WIN|G",
+    "[1-5]Y[1-5][PN]?",
+    "[1-5]\\/[1-5]N?",
+    "[1-9]P|10P|[1-9]N|10N",
+    "10\\/\\d+(?:[\\.,]\\d+)?|A|AL",
+  ].join("|");
   const regexPuestosYCaballos = new RegExp(
-    `^(?:(juego|jugo|jugó|consigo|doy|pido|voy)\\s+)?(?:(${MODS_COMPUESTAS_RE})\\s+)?(?:de\\s+la\\s+|del\\s+|de\\s+|la\\s+|el\\s+|a\\s+|al\\s+|#)?([0-9A-Za-z\\.\\-,\\s']+?)\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?([0-9kK\\.,]+)$`,
+    `^(?:(juego|jugo|jugó|consigo|doy|pido|voy)\\s+)?(?:(${MODS_COMPUESTAS_RE})\\s+)?(?:de\\s+la\\s+|del\\s+|de\\s+|la\\s+|el\\s+|a\\s+|al\\s+|#)?([0-9A-Za-z\\.\\-,\\s']+?)\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?([0-9kK\\.,]+|todo)$`,
     "i"
   );
   const matchPuesto = texto.match(regexPuestosYCaballos);
@@ -522,6 +564,9 @@ export function analizarYEstandarizarJugada(
     } else if (proporcionDetectada !== "1x1") {
       modLimpia = proporcionDetectada;
     }
+
+    const modProgresiva = normalizarModalidadProgresiva(modLimpia);
+    if (modProgresiva) modLimpia = modProgresiva;
 
     // Prohibición estricta de 1N (Primer Nini no existe)
     if (/\b1N\b/i.test(modLimpia) || /\b1\/1N?\b/i.test(modLimpia)) {
@@ -548,7 +593,7 @@ export function analizarYEstandarizarJugada(
       .replace(/\b(de\s+la|del|de|la|el|al?|con|por|#)\b/gi, " ")
       .replace(/\s+/g, " ")
       .trim();
-    const { monto, montoTexto } = extraerMontoNumerico(matchPuesto[4]);
+    const { monto, montoTexto } = extraerMontoNumerico(matchPuesto[4], saldoDisponible);
 
     if (rawEjemplar && monto > 0) {
       // Analizar si el ejemplar contiene números o nombres
@@ -717,12 +762,12 @@ export function analizarYEstandarizarJugada(
 
   // 5. CASO D: JUGADA INVERTIDA "<monto> al <caballo>"
   // Ejemplos: "5k al 7", "10.000 al 5", "20.000 al 2", "50 al 1"
-  const regexInvertido = /^([0-9kK\.,]+)\s+(?:al?|del?|el)\s+(\d{1,2})$/i;
+  const regexInvertido = /^([0-9kK\.,]+|todo)\s+(?:al?|del?|el)\s+(\d{1,2})$/i;
   const matchInvertido = texto.match(regexInvertido);
 
   if (matchInvertido) {
     const caballos = [matchInvertido[2]];
-    const { monto, montoTexto } = extraerMontoNumerico(matchInvertido[1]);
+    const { monto, montoTexto } = extraerMontoNumerico(matchInvertido[1], saldoDisponible);
 
     if (monto > 0) {
       const retiradoDetectado = caballos.find((c) =>

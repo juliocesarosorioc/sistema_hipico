@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { mensajeSinAcceso, useAuthStore } from "@/shared/store/useAuthStore";
-import { pedirRecuperacion, resolverCorreo } from "@/features/auth/lib/sesion";
-import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
+import { resolverGrupoPorCodigoSala } from "@/features/auth/lib/sesion";
 import { sanitizarIdentificador } from "@/shared/lib/security";
 import { RecaptchaWidget } from "@/shared/components/ui/RecaptchaWidget";
 import { activarProteccionAntiClonacion } from "@/shared/lib/anti-clonacion";
@@ -31,7 +30,7 @@ export type PantallaLoginProps = {
  *  - Contador estricto de 3 intentos fallidos consecutivos por usuario/IP.
  *  - Al alcanzar 3 intentos: bloqueo de 30 minutos (usuario + IP).
  *  - El bloqueo se registra en Supabase para alerta al administrador.
- *  - El administrador principal (josorioc) NUNCA es bloqueado por intentos.
+ *  - El bloqueo vale para TODOS los usuarios, sin atajos por rol.
  */
 export default function PantallaLogin(props: PantallaLoginProps = {}) {
   const { modoPortal = false, avisoExterno = null, onLoginPortalExitoso } = props;
@@ -45,6 +44,7 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
   const perfiles = useAuthStore((s) => s.perfiles);
   const esPrincipal = useAuthStore((s) => s.esPrincipal);
 
+  const [codigoSala, setCodigoSala] = useState("");
   const [usuario, setUsuario] = useState("");
   const [clave, setClave] = useState("");
   const [verClave, setVerClave] = useState(false);
@@ -74,13 +74,6 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
 
   const honeypotRef = useRef<HTMLInputElement>(null);
 
-  // Recuperación: dos vistas en la misma pantalla en vez de una página aparte,
-  // para no mandar al operador a otra URL solo para pedir un correo.
-  const [pidiendo, setPidiendo] = useState(false);
-  const [recuperando, setRecuperando] = useState(false);
-  const [avisoRecovery, setAvisoRecovery] = useState<string | null>(null);
-  const [errorRecovery, setErrorRecovery] = useState<string | null>(null);
-
   /**
    * El motivo con el que el middleware expulsó, si fue con motivo.
    *
@@ -93,13 +86,6 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
     const m = new URLSearchParams(window.location.search).get("motivo");
     if (m) setMotivoExpulsion(m);
   }, []);
-
-  /** El correo contra el que se va a verificar, ya con el dominio resuelto. */
-  const correoResuelto = useMemo(() => {
-    const id = usuario.trim();
-    if (!id) return "";
-    return id.includes("@") ? id.toLowerCase() : resolverCorreo(id);
-  }, [usuario]);
 
   /**
    * Aviso de "entró pero no tiene nada". El middleware manda acá con
@@ -163,23 +149,49 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
       return;
     }
 
-    const esAdminPrincipal = esUsuarioPrincipal(usuarioSanitizado);
-    const esRicardo = usuarioSanitizado.toLowerCase().includes("ricardo");
+    const codigoLimpio = (codigoSala ?? "").trim();
+    if (!codigoLimpio) {
+      useAuthStore.setState({ cargando: false, errorLogin: "Ingresá el código de sala." });
+      return;
+    }
 
-    // [Módulo 1] Verificar bloqueo por intentos fallidos (Anti Brute-Force).
-    // El administrador principal NUNCA es bloqueado.
-    if (!esAdminPrincipal) {
-      const ipActual = ipRef.current;
-      const bloqueo = verificarBloqueoIntentos(usuarioSanitizado, ipActual);
-      if (bloqueo.bloqueado) {
-        const minutos = Math.ceil((bloqueo.segundosRestantes ?? 1800) / 60);
-        setBloqueadoSegundos(bloqueo.segundosRestantes ?? 1800);
-        useAuthStore.setState({
-          cargando: false,
-          errorLogin: `🔒 Cuenta bloqueada por ${minutos} minuto${minutos !== 1 ? "s" : ""} debido a intentos fallidos repetidos. El administrador ha sido notificado. Intentá más tarde.`,
-        });
-        return;
-      }
+    // El tenant lo resuelve la base, nunca el formulario. Sin un grupo válido
+    // no se intenta ningún login: nadie entra con un código ajeno.
+    setIngresando(true);
+    let grupo: Awaited<ReturnType<typeof resolverGrupoPorCodigoSala>>;
+    try {
+      grupo = await resolverGrupoPorCodigoSala(codigoLimpio);
+    } catch {
+      grupo = null;
+    }
+    if (!grupo?.id) {
+      setIngresando(false);
+      useAuthStore.setState({
+        cargando: false,
+        errorLogin: "Código de sala no válido. Verificá el código con tu administrador.",
+      });
+      return;
+    }
+    setIngresando(false);
+
+    const contexto = {
+      grupoId: String(grupo.id),
+      grupoNombre: grupo.nombre,
+      codigoSala: grupo.codigo_sala || codigoLimpio,
+    };
+
+    // [Módulo 1] Bloqueo por intentos fallidos. Vale para TODOS los usuarios:
+    // ya no existe el atajo del administrador principal.
+    const ipActual = ipRef.current;
+    const bloqueo = verificarBloqueoIntentos(usuarioSanitizado, ipActual);
+    if (bloqueo.bloqueado) {
+      const minutos = Math.ceil((bloqueo.segundosRestantes ?? 1800) / 60);
+      setBloqueadoSegundos(bloqueo.segundosRestantes ?? 1800);
+      useAuthStore.setState({
+        cargando: false,
+        errorLogin: `🔒 Cuenta bloqueada por ${minutos} minuto${minutos !== 1 ? "s" : ""} debido a intentos fallidos repetidos. El administrador ha sido notificado. Intentá más tarde.`,
+      });
+      return;
     }
 
     let tokenValido = recaptchaToken;
@@ -194,28 +206,22 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
         // Ignorar
       }
     }
-
     if (!tokenValido) {
-      if (esAdminPrincipal) {
-        tokenValido = `admin_bypass_${Date.now()}`;
-      } else {
-        useAuthStore.setState({
-          cargando: false,
-          errorLogin: "⚠️ Por favor complete la verificación de seguridad reCAPTCHA antes de iniciar sesión.",
-        });
-        return;
-      }
+      useAuthStore.setState({
+        cargando: false,
+        errorLogin: "⚠️ Por favor complete la verificación de seguridad reCAPTCHA antes de iniciar sesión.",
+      });
+      return;
     }
 
     setIngresando(true);
     try {
-      // 1. Intentar inicio de sesión como Administrador u Operador del Sistema (solo fuera de /portal, salvo admin principal)
-      if (!modoPortal || esAdminPrincipal) {
-        const ok = await iniciarSesion(usuarioSanitizado, clave);
+      // 1. Personal del sistema: siempre autenticado por Supabase o RPC y
+      //    siempre limitado al grupo resuelto por el código de sala.
+      if (!modoPortal) {
+        const ok = await iniciarSesion(usuarioSanitizado, clave, contexto);
         if (ok) {
-          if (!esAdminPrincipal) {
-            limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
-          }
+          limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
           if (!yaNavegandoRef.current) {
             yaNavegandoRef.current = true;
             const st = useAuthStore.getState();
@@ -230,15 +236,26 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
         }
       }
 
-      // 2. Comprobar si es un CLIENTE / JUGADOR del portal
+      // 2. Cliente / jugador del portal. Su grupo tiene que ser EXACTAMENTE el
+      //    del código de sala; si no, se descarta la sesión del portal.
       try {
         const { entrarPortal } = await import("@/features/portal/lib/portal");
         const resPortal = await entrarPortal({ usuario: usuarioSanitizado, clave });
         if (resPortal.ok && resPortal.sesion) {
-          useAuthStore.setState({ errorLogin: null, cargando: false });
-          if (!esAdminPrincipal) {
-            limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
+          const grupoPortal = String(
+            resPortal.sesion.cliente?.grupo_id ?? resPortal.sesion.grupo?.id ?? ""
+          ).trim();
+          if (grupoPortal !== contexto.grupoId) {
+            limpiarAlmacenamientoPortal();
+            useAuthStore.setState({
+              errorLogin: "El cliente no pertenece a la sala indicada.",
+              cargando: false,
+            });
+            setIngresando(false);
+            return;
           }
+          useAuthStore.setState({ errorLogin: null, cargando: false });
+          limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
           if (onLoginPortalExitoso) {
             setIngresando(false);
             onLoginPortalExitoso(resPortal.sesion);
@@ -254,21 +271,19 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
         console.warn("Fallo en verificación de cliente portal:", errPortal);
       }
 
-      // 3. Ni staff ni cliente: registrar intento fallido y mostrar error
+      // 3. Ni staff ni cliente del tenant: registrar intento fallido y error.
       setIngresando(false);
       setClave("");
-      if (!esAdminPrincipal) {
-        registrarIntentoFallido(usuarioSanitizado, ipRef.current);
-        const estadoBloqueo = verificarBloqueoIntentos(usuarioSanitizado, ipRef.current);
-        if (estadoBloqueo.bloqueado) {
-          const minutos = Math.ceil((estadoBloqueo.segundosRestantes ?? 1800) / 60);
-          setBloqueadoSegundos(estadoBloqueo.segundosRestantes ?? 1800);
-          useAuthStore.setState({
-            cargando: false,
-            errorLogin: `🔒 Cuenta bloqueada por ${minutos} minuto${minutos !== 1 ? "s" : ""} por intentos fallidos repetidos. El administrador ha sido notificado.`,
-          });
-          return;
-        }
+      registrarIntentoFallido(usuarioSanitizado, ipRef.current);
+      const estadoBloqueo = verificarBloqueoIntentos(usuarioSanitizado, ipRef.current);
+      if (estadoBloqueo.bloqueado) {
+        const minutos = Math.ceil((estadoBloqueo.segundosRestantes ?? 1800) / 60);
+        setBloqueadoSegundos(estadoBloqueo.segundosRestantes ?? 1800);
+        useAuthStore.setState({
+          cargando: false,
+          errorLogin: `🔒 Cuenta bloqueada por ${minutos} minuto${minutos !== 1 ? "s" : ""} por intentos fallidos repetidos. El administrador ha sido notificado.`,
+        });
+        return;
       }
       useAuthStore.setState({
         cargando: false,
@@ -276,32 +291,11 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
       });
     } catch (err) {
       setIngresando(false);
-      if (!esAdminPrincipal) {
-        registrarIntentoFallido(usuarioSanitizado, ipRef.current);
-      }
+      registrarIntentoFallido(usuarioSanitizado, ipRef.current);
       useAuthStore.setState({
         cargando: false,
         errorLogin: `Error al iniciar sesión: ${err instanceof Error ? err.message : String(err)}`,
       });
-    }
-  };
-
-  const pedirRecuperacion_ = async (e: FormEvent) => {
-    e.preventDefault();
-    if (pidiendo) return;
-    setPidiendo(true);
-    setErrorRecovery(null);
-    setAvisoRecovery(null);
-    try {
-      const r = await pedirRecuperacion(sanitizarIdentificador(usuario));
-      if (r.ok) setAvisoRecovery(r.aviso);
-      else setErrorRecovery(r.error);
-    } catch (err) {
-      setErrorRecovery(
-        `Falló el pedido por dentro: ${err instanceof Error ? err.message : String(err)}`
-      );
-    } finally {
-      setPidiendo(false);
     }
   };
 
@@ -337,8 +331,36 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
             aria-hidden="true"
           />
           <div>
+            <label htmlFor="codigo-sala" className="mb-1 block text-xs font-bold text-slate-700">
+              Código de Sala
+            </label>
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M4 21V8l8-5 8 5v13" />
+                  <path d="M9 21v-6h6v6" />
+                </svg>
+              </span>
+              <input
+                id="codigo-sala"
+                name="codigo_sala"
+                type="text"
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                required
+                value={codigoSala}
+                onChange={(e) => setCodigoSala(e.target.value)}
+                placeholder="Código de tu sala"
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-3 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-emerald-500"
+              />
+            </div>
+          </div>
+
+          <div>
             <label htmlFor="usuario" className="mb-1 block text-xs font-bold text-slate-700">
-              Usuario, Seudónimo o Teléfono
+              Usuario
             </label>
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -508,21 +530,8 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
             )}
           </button>
 
-          {!recuperando ? (
-            <div className="space-y-2 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setRecuperando(true);
-                  setErrorRecovery(null);
-                  setAvisoRecovery(null);
-                }}
-                className="w-full text-center text-xs font-semibold text-slate-500 underline-offset-2 transition-colors hover:text-emerald-600 hover:underline focus:outline-none focus-visible:underline"
-              >
-                Olvid&eacute; mi contrase&ntilde;a
-              </button>
-
-              <div className="relative my-3 flex items-center justify-center">
+          <div className="space-y-2 pt-2">
+            <div className="relative my-3 flex items-center justify-center">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-slate-200" />
                 </div>
@@ -547,80 +556,8 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
                 <span>🌐</span>
                 <span>Ver Portal Comercial & Parámetros</span>
               </Link>
-            </div>
-          ) : null}
+          </div>
         </form>
-
-        {recuperando ? (
-          <form
-            onSubmit={pedirRecuperacion_}
-            className="mt-6 space-y-4 border-t border-slate-200 pt-6"
-            noValidate
-          >
-            <p className="text-xs leading-relaxed text-slate-600">
-              Escrib&iacute; tu usuario y te mandamos un correo con un enlace para poner una
-             contrase&ntilde;a nueva. El enlace sirve una sola vez y vence despu&eacute;s de un rato.
-            </p>
-
-            <div>
-              <label htmlFor="usuario-recuperacion" className="mb-1 block text-xs font-bold text-slate-700">
-                Usuario
-              </label>
-              <input
-                id="usuario-recuperacion"
-                name="username-recovery"
-                type="text"
-                autoComplete="off"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                required
-                value={usuario}
-                onChange={(e) => setUsuario(e.target.value)}
-                placeholder="Usuario"
-                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-emerald-500"
-              />
-            </div>
-
-            {avisoRecovery ? (
-              <p
-                role="status"
-                className="rounded border border-emerald-200 bg-emerald-50 p-2 text-center text-xs font-bold text-emerald-700"
-              >
-                {avisoRecovery}
-              </p>
-            ) : null}
-            {errorRecovery ? (
-              <p
-                role="alert"
-                className="rounded border border-red-200 bg-red-50 p-2 text-center text-xs font-bold text-red-600"
-              >
-                {errorRecovery}
-              </p>
-            ) : null}
-
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={pidiendo}
-                className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {pidiendo ? "Enviando..." : "Enviar enlace"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRecuperando(false);
-                  setAvisoRecovery(null);
-                  setErrorRecovery(null);
-                }}
-                className="rounded-lg border border-slate-300 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-600 transition-colors hover:bg-slate-100 focus:outline-none"
-              >
-                Volver
-              </button>
-            </div>
-          </form>
-        ) : null}
 
         <div className="mt-6 border-t border-slate-200 pt-4 text-center text-[10px] leading-relaxed text-slate-500">
           <p className="font-black text-slate-700">

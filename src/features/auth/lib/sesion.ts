@@ -6,7 +6,6 @@
  * que queda en el cliente es la sesión firmada que emite el servidor.
  */
 import { supabase } from "@/core/supabase";
-import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 
 /**
  * El usuario escribe `josorioc`, pero Supabase autentica por correo. Para que el
@@ -25,6 +24,63 @@ export function resolverCorreo(identificador: string): string {
   const id = (identificador ?? "").trim().toLowerCase();
   if (!id) return "";
   return id.includes("@") ? id : `${id}@${dominio()}`;
+}
+
+/** Código de sala reservado para el grupo neutral / principal. */
+export const CODIGO_SALA_PRINCIPAL = "principal";
+
+export interface GrupoPorCodigoSala {
+  id: string;
+  nombre: string;
+  codigo_sala: string;
+}
+
+/**
+ * Resuelve el `grupos_venta.id` que corresponde al código de sala escrito en
+ * el login. El RP C de resolución es la única fuente autorizada: el cliente no
+ * decide a qué tenant pertenece, lo decide la base. Se conserva un respaldo a
+ * la tabla para instalaciones donde la RPC todavía no se aplicó.
+ */
+export async function resolverGrupoPorCodigoSala(
+  codigoSala: string,
+): Promise<GrupoPorCodigoSala | null> {
+  const codigo = (codigoSala ?? "").trim();
+  if (!codigo || !supabase) return null;
+
+  try {
+    const { data, error } = await supabase.rpc("club_resolver_codigo_sala", {
+      p_codigo: codigo,
+    });
+    if (!error && data) {
+      const fila = Array.isArray(data) ? data[0] : data;
+      if (fila) {
+        return {
+          id: String((fila as { id?: unknown }).id ?? ""),
+          nombre: String((fila as { nombre?: unknown }).nombre ?? ""),
+          codigo_sala: String((fila as { codigo_sala?: unknown }).codigo_sala ?? codigo),
+        };
+      }
+      return null;
+    }
+  } catch {
+    /* caer al respaldo */
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("grupos_venta")
+      .select("id, nombre, codigo_sala")
+      .ilike("codigo_sala", codigo)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      id: String(data.id),
+      nombre: String(data.nombre ?? ""),
+      codigo_sala: String(data.codigo_sala ?? codigo),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export type ResultadoLogin =
@@ -195,31 +251,6 @@ export async function iniciarSesion(identificador: string, clave: string): Promi
       "El inicio de sesión"
     );
 
-    if ((res.error || !res.data.user) && esUsuarioPrincipal(identificador)) {
-      const variantes = [
-        clave.charAt(0).toUpperCase() + clave.slice(1),
-        clave.toLowerCase(),
-        "Maxi1912",
-        "maxi1912",
-      ].filter((v) => v && v !== clave);
-
-      for (const variante of variantes) {
-        try {
-          const rVar = await conTimeout(
-            supabase.auth.signInWithPassword({ email: correo, password: variante }),
-            TIMEOUT_SESION_MS,
-            "El inicio de sesión"
-          );
-          if (!rVar.error && rVar.data?.user) {
-            res = rVar;
-            break;
-          }
-        } catch {
-          /* continuar con siguiente variante */
-        }
-      }
-    }
-
     if ((res.error || !res.data.user) && identificador.startsWith("+")) {
       const correoSinMas = resolverCorreo(identificador.replace(/^\+/, ""));
       try {
@@ -292,60 +323,6 @@ export async function cerrarSesion(): Promise<void> {
     /* la sesión local ya se limpió directamente; no se bloquea el logout */
   } finally {
     limpiarAlmacenamientoSesionLocal();
-  }
-}
-
-// ============================================================================
-// Recuperación de contraseña
-// ============================================================================
-
-/** Mensaje único para cualquier resultado. Ver la nota de `pedirRecuperacion`. */
-export const AVISO_RECOVERY =
-  "Si ese usuario existe, te llega un correo con el enlace para poner una contraseña nueva.";
-
-export type ResultadoRecuperacion = { ok: true; aviso: string } | { ok: false; error: string };
-
-/**
- * Pide el correo de recuperación.
- *
- * El mensaje que devuelve NO depende de si el usuario existe: siempre es el
- * mismo aviso. Distinguir "te mandamos el correo" de "ese usuario no existe"
- * convierte este formulario en una herramienta para enumerar quién tiene
- * cuenta en el sistema, que es medio camino para un ataque de fuerza bruta con
- * nombres plausibles. Supabase tampoco filtra la respuesta; el neutral es
- * nuestro.
- *
- * El token no viaja en nuestra URL ni se guarda: lo manda Supabase al correo y
- * vuelve como sesión de recuperación de un solo uso y con vencimiento.
- */
-export async function pedirRecuperacion(identificador: string): Promise<ResultadoRecuperacion> {
-  if (!supabase) return { ok: false, error: "Supabase no está configurado (faltan las variables de entorno)." };
-  const correo = resolverCorreo(identificador);
-  if (!correo) return { ok: false, error: "Escribí tu usuario para continuar." };
-  try {
-    // `redirectTo` se arma con el origen real porque el build es estático
-    // (`output: "export"`): no hay servidor que nos diga cuál es, y una URL
-    // fija en el código fallaría en cuanto el sitio se sirviera en otro host.
-    // Ese origen tiene que estar en las "Redirect URLs" de Supabase; si no
-    // está, Supabase cae al `SITE_URL` y el enlace vuelve a la raíz.
-    const origen = typeof window !== "undefined" ? window.location.origin : "";
-    const { error } = await conTimeout(
-      supabase.auth.resetPasswordForEmail(correo, { redirectTo: `${origen}/reset-password` }),
-      TIMEOUT_SESION_MS,
-      "El pedido de recuperación"
-    );
-    if (error) {
-      // Un rate limit también se reporta de forma neutral: no le confirma a
-      // nadie que la cuenta exista.
-      if (/rate|too many|429/i.test(error.message)) return { ok: true, aviso: AVISO_RECOVERY };
-      return { ok: false, error: "No se pudo pedir la recuperación. Probá de nuevo en un momento." };
-    }
-    return { ok: true, aviso: AVISO_RECOVERY };
-  } catch (e) {
-    if (e instanceof Error && e.message.includes("tardó demasiado")) {
-      return { ok: false, error: "El servidor no respondió. Revisá la conexión y probá otra vez." };
-    }
-    return { ok: false, error: "No se pudo pedir la recuperación. Probá de nuevo en un momento." };
   }
 }
 

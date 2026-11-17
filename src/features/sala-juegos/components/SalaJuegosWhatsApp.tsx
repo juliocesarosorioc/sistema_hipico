@@ -1494,7 +1494,7 @@ export default function SalaJuegosWhatsApp({
               onClick={() => setVistaDualEscritorio(!vistaDualEscritorio)}
               className="text-xs bg-slate-200 hover:bg-slate-200 px-2.5 py-1 rounded text-slate-700 font-semibold"
             >
-              {vistaDualEscritorio ? '1 Sala' : 'Vista Dual (2 Salas)'}
+              🖥️ Modo Doble Sala (Split View)
             </button>
           )}
         </div>
