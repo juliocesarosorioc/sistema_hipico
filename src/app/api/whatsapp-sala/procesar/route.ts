@@ -20,6 +20,10 @@ import {
   formatearModalidadMensaje,
   limpiarEtiquetasProhibidas,
 } from "@/features/sala-juegos/lib/modalidades-progresivas";
+import {
+  mensajeConCodigoSala,
+  resolverCodigoSalaGrupo,
+} from "@/features/grupos/lib/codigo-sala";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +52,40 @@ function normalizarTelefonoCompleto(codigoPais?: string | null, telefono?: strin
 
 const BOT_DAEMON_URL = process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
 const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
+
+const codigoSalaPorSalaId = new Map<string, string>();
+const codigoSalaPorGrupoId = new Map<string, string>();
+
+async function recordarCodigoSala(datos: {
+  salaId?: string | number | null;
+  grupoId?: string | number | null;
+  nombre?: string | null;
+}): Promise<string> {
+  const salaId = datos.salaId ? String(datos.salaId) : "";
+  const grupoId = datos.grupoId ? String(datos.grupoId) : "";
+  if (salaId && codigoSalaPorSalaId.has(salaId)) return codigoSalaPorSalaId.get(salaId) || "";
+  if (grupoId && codigoSalaPorGrupoId.has(grupoId)) return codigoSalaPorGrupoId.get(grupoId) || "";
+
+  const codigo = await resolverCodigoSalaGrupo(supabaseAdmin, {
+    salaId: datos.salaId,
+    grupoId: datos.grupoId,
+    nombre: datos.nombre || "PRINCIPAL",
+  });
+  if (salaId) codigoSalaPorSalaId.set(salaId, codigo);
+  if (grupoId) codigoSalaPorGrupoId.set(grupoId, codigo);
+  return codigo;
+}
+
+function codigoSalaEnRespuesta(body: any): string {
+  if (!body || typeof body !== "object") return "";
+  const salaId = body.sala?.id ? String(body.sala.id) : body.salaId ? String(body.salaId) : "";
+  const grupoId = body.grupoId ? String(body.grupoId) : "";
+  return (
+    (salaId ? codigoSalaPorSalaId.get(salaId) : "") ||
+    (grupoId ? codigoSalaPorGrupoId.get(grupoId) : "") ||
+    ""
+  );
+}
 
 // Cierre VULN-15: Set en memoria de los últimos 1000 whatsappMsgId (por sala) para descartar reintentos en < 1ms
 const ultimosWhatsappMsgIds = new Set<string>();
@@ -765,7 +803,7 @@ export async function GET(req: Request) {
     desconectados: gruposEnriquecidos.filter((g: any) => !g.conectado).length,
   };
 
-  return NextResponse.json({
+  return respuestaSala({
     ok: true,
     ...estadoBot,
     grupos: gruposEnriquecidos,
@@ -1106,13 +1144,13 @@ export async function POST(req: Request) {
   const _origin = req.headers.get("origin");
   const _host = req.headers.get("host");
   if (_origin && !_origin.includes(_host || "")) {
-    return NextResponse.json({ error: "CSRF bloqueado" }, { status: 403 });
+    return respuestaSala({ error: "CSRF bloqueado" }, { status: 403 });
   }
   try {
     // Blindaje SecOps Parche 1: Header de secreto interno estricto
     const authHeader = req.headers.get("x-internal-bot-secret");
     if (authHeader !== INTERNAL_BOT_SECRET) {
-      return NextResponse.json(
+      return respuestaSala(
         {
           ok: false,
           error: "401 Unauthorized: Solicitud no autorizada. Header x-internal-bot-secret requerido.",
@@ -1138,7 +1176,7 @@ export async function POST(req: Request) {
 
     // Cierre VULN-15: Descartar reintentos en < 1ms por idempotencia de whatsappMsgId
     if (body.whatsappMsgId && esWhatsappMsgIdDuplicado(body.whatsappMsgId, body.salaId)) {
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "REINTENTO_DESCARTADO",
         idempotente: true,
@@ -1153,7 +1191,7 @@ export async function POST(req: Request) {
     if (body.accion === "abrir-carrera") {
       const { salaId, hipodromo, carrera } = body;
       if (!salaId) {
-        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+        return respuestaSala({ ok: false, error: "salaId es requerido" }, { status: 400 });
       }
 
       const hipoLimpio = String(hipodromo || "LA RINCONADA").toUpperCase().trim();
@@ -1173,7 +1211,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (error) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+        return respuestaSala({ ok: false, error: error.message }, { status: 500 });
       }
 
       const textoApertura = `🏆🏇${hipoLimpio}, ${ord} Carrera🏆🏇\nCARRERA ABIERTA Y EN JUEGO\nMucha suerte a todos.`;
@@ -1219,7 +1257,7 @@ export async function POST(req: Request) {
       });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         sala: salaActualizada,
         textoApertura,
@@ -1230,7 +1268,7 @@ export async function POST(req: Request) {
     if (body.accion === "cerrar-carrera") {
       const { salaId } = body;
       if (!salaId) {
-        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+        return respuestaSala({ ok: false, error: "salaId es requerido" }, { status: 400 });
       }
 
       const { data: salaPrevia } = await supabaseAdmin
@@ -1251,7 +1289,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (error) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+        return respuestaSala({ ok: false, error: error.message }, { status: 500 });
       }
 
       const hipo = String(salaActualizada?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
@@ -1296,7 +1334,7 @@ export async function POST(req: Request) {
       await emitirBroadcastSala(salaId, "carrera_cerrada", { salaId });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         sala: salaActualizada,
         textoCierre,
@@ -1307,7 +1345,7 @@ export async function POST(req: Request) {
     if (body.accion === "vincular-sala") {
       const { salaId, groupJid, groupNombre } = body;
       if (!salaId) {
-        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+        return respuestaSala({ ok: false, error: "salaId es requerido" }, { status: 400 });
       }
 
       const updatePayload: Record<string, any> = {
@@ -1328,7 +1366,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (error) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+        return respuestaSala({ ok: false, error: error.message }, { status: 500 });
       }
 
       // Notificar también al demonio local en :3005 si está activo
@@ -1352,7 +1390,7 @@ export async function POST(req: Request) {
         escribirRespaldoDesconectadas(respaldo);
       }
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         sala: salaActualizada,
         groupJid: groupJid || null,
@@ -1366,7 +1404,7 @@ export async function POST(req: Request) {
     if (body.accion === "desconectar-sala") {
       const { salaId } = body;
       if (!salaId) {
-        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+        return respuestaSala({ ok: false, error: "salaId es requerido" }, { status: 400 });
       }
 
       let groupJid: string | null = null;
@@ -1384,7 +1422,7 @@ export async function POST(req: Request) {
         });
         const json = await rBot.json().catch(() => ({}));
         if (rBot.ok && json?.ok) {
-          return NextResponse.json({
+          return respuestaSala({
             ok: true,
             salaId,
             desconectado: true,
@@ -1408,10 +1446,10 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (errorLectura) {
-        return NextResponse.json({ ok: false, error: errorLectura.message }, { status: 500 });
+        return respuestaSala({ ok: false, error: errorLectura.message }, { status: 500 });
       }
       if (!sala) {
-        return NextResponse.json({ ok: false, error: "Sala no encontrada" }, { status: 404 });
+        return respuestaSala({ ok: false, error: "Sala no encontrada" }, { status: 404 });
       }
 
       const respaldoActual = leerRespaldoDesconectadas();
@@ -1437,10 +1475,10 @@ export async function POST(req: Request) {
         .eq("id", salaId);
 
       if (error) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+        return respuestaSala({ ok: false, error: error.message }, { status: 500 });
       }
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         salaId,
         desconectado: true,
@@ -1457,7 +1495,7 @@ export async function POST(req: Request) {
     if (body.accion === "reconectar-sala") {
       const { salaId, groupJid, groupNombre } = body;
       if (!salaId) {
-        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+        return respuestaSala({ ok: false, error: "salaId es requerido" }, { status: 400 });
       }
 
       // 1) Intentar con el demonio
@@ -1472,7 +1510,7 @@ export async function POST(req: Request) {
         });
         const json = await rBot.json().catch(() => ({}));
         if (rBot.ok && json?.ok) {
-          return NextResponse.json({
+          return respuestaSala({
             ok: true,
             salaId,
             reconectado: true,
@@ -1493,10 +1531,10 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (errorLectura) {
-        return NextResponse.json({ ok: false, error: errorLectura.message }, { status: 500 });
+        return respuestaSala({ ok: false, error: errorLectura.message }, { status: 500 });
       }
       if (!sala) {
-        return NextResponse.json({ ok: false, error: "Sala no encontrada" }, { status: 404 });
+        return respuestaSala({ ok: false, error: "Sala no encontrada" }, { status: 404 });
       }
 
       const respaldoActual = leerRespaldoDesconectadas();
@@ -1507,7 +1545,7 @@ export async function POST(req: Request) {
         groupNombre || sala.whatsapp_group_nombre || respaldoSala.groupNombre || null;
 
       if (!jidFinal) {
-        return NextResponse.json(
+        return respuestaSala(
           {
             ok: false,
             error:
@@ -1527,7 +1565,7 @@ export async function POST(req: Request) {
         .eq("id", salaId);
 
       if (error) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+        return respuestaSala({ ok: false, error: error.message }, { status: 500 });
       }
 
       if (respaldoActual[salaId]) {
@@ -1535,7 +1573,7 @@ export async function POST(req: Request) {
         escribirRespaldoDesconectadas(respaldoActual);
       }
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         salaId,
         reconectado: true,
@@ -1548,7 +1586,7 @@ export async function POST(req: Request) {
     if (body.accion === "ping-grupo") {
       const { groupJid } = body;
       if (!groupJid) {
-        return NextResponse.json({ ok: false, error: "groupJid es requerido" }, { status: 400 });
+        return respuestaSala({ ok: false, error: "groupJid es requerido" }, { status: 400 });
       }
 
       try {
@@ -1560,9 +1598,9 @@ export async function POST(req: Request) {
           signal: AbortSignal.timeout(6000),
         });
         const json = await rBot.json().catch(() => ({}));
-        return NextResponse.json(json, { status: rBot.status });
+        return respuestaSala(json, { status: rBot.status });
       } catch (errPing: any) {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           conectado: false,
           latenciaMs: 0,
@@ -1574,7 +1612,7 @@ export async function POST(req: Request) {
     if (body.accion === "publicar-plano") {
       const { salaId } = body;
       if (!salaId) {
-        return NextResponse.json({ ok: false, error: "salaId es requerido" }, { status: 400 });
+        return respuestaSala({ ok: false, error: "salaId es requerido" }, { status: 400 });
       }
 
       const { data: sala } = await supabaseAdmin
@@ -1584,7 +1622,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (!sala) {
-        return NextResponse.json({ ok: false, error: "Sala no encontrada" }, { status: 404 });
+        return respuestaSala({ ok: false, error: "Sala no encontrada" }, { status: 404 });
       }
 
       const hipodromo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
@@ -1654,7 +1692,7 @@ export async function POST(req: Request) {
         }
       }
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         textoPlano,
         totalTickets: lista.length,
@@ -1667,7 +1705,7 @@ export async function POST(req: Request) {
       const { salaId, pizarra } = body;
       const esRectificacion = body.accion === "rectificar-pizarra" || Boolean(body.esRectificacion);
       if (!salaId || !pizarra) {
-        return NextResponse.json(
+        return respuestaSala(
           { ok: false, error: "salaId y pizarra son requeridos" },
           { status: 400 }
         );
@@ -1680,7 +1718,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (!sala) {
-        return NextResponse.json({ ok: false, error: "Sala no encontrada" }, { status: 404 });
+        return respuestaSala({ ok: false, error: "Sala no encontrada" }, { status: 404 });
       }
 
       const resSentencia = await liquidarYSentenciarCarreraPlataforma({
@@ -1691,16 +1729,17 @@ export async function POST(req: Request) {
       });
 
       if (!resSentencia.ok) {
-        return NextResponse.json({ ok: false, error: resSentencia.error }, { status: 400 });
+        return respuestaSala({ ok: false, error: resSentencia.error }, { status: 400 });
       }
 
-      return NextResponse.json(resSentencia);
+      return respuestaSala(resSentencia);
     }
 
     if (body.accion === "ajuste-saldo-operador") {
       const { grupoId, targetNombre, signo, monto, operadorNombre } = body;
+      await recordarCodigoSala({ grupoId });
       if (!grupoId || !targetNombre || !signo || !monto) {
-        return NextResponse.json({ ok: false, error: "Datos incompletos para ajuste" }, { status: 400 });
+        return respuestaSala({ ok: false, error: "Datos incompletos para ajuste" }, { status: 400 });
       }
 
       const { data: candidatos } = await supabaseAdmin
@@ -1716,7 +1755,7 @@ export async function POST(req: Request) {
       });
 
       if (!match) {
-        return NextResponse.json({ ok: false, error: `Jugador "${targetNombre}" no encontrado en este grupo.` }, { status: 404 });
+        return respuestaSala({ ok: false, error: `Jugador "${targetNombre}" no encontrado en este grupo.` }, { status: 404 });
       }
 
       const montoNum = Number(monto);
@@ -1750,7 +1789,7 @@ export async function POST(req: Request) {
       const msgPublico = `✅ Saldo actualizado para *${nombreFinal}*: Nuevo saldo $${formatearMontoRegional(nuevoSaldo)}`;
       const msgPrivado = `💰 Tu cuenta ha sido ${signo === "+" ? "acreditada" : "debitada"} con $${formatearMontoRegional(montoNum)}. Tu nuevo saldo disponible es $${formatearMontoRegional(nuevoDisponible)}.`;
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         clienteId: match.id,
         nombre: nombreFinal,
@@ -1772,7 +1811,7 @@ export async function POST(req: Request) {
     const quotedMsgId = body.quotedMsgId ? String(body.quotedMsgId) : null;
 
     if (!groupJid || !participantJid || !texto) {
-      return NextResponse.json(
+      return respuestaSala(
         {
           ok: false,
           error: "groupJid, participantJid y texto son requeridos",
@@ -1843,7 +1882,7 @@ export async function POST(req: Request) {
     }
 
     if (!sala) {
-      return NextResponse.json({
+      return respuestaSala({
         ok: false,
         tipo: "IGNORADO",
         mensaje: "Grupo no vinculado a ninguna sala activa",
@@ -1854,6 +1893,11 @@ export async function POST(req: Request) {
 
     const salaId = sala.id;
     const grupoId = sala.grupo_id;
+    const codigoSala = await recordarCodigoSala({
+      salaId,
+      grupoId,
+      nombre: sala.nombre_grupo || sala.nombre || whatsappGroupNombre || "PRINCIPAL",
+    });
     const carreraAbierta = String(sala.estado_carrera || "").toLowerCase() === "abierta";
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1869,7 +1913,7 @@ export async function POST(req: Request) {
     const COMANDO_OPERADOR_EXACTO =
       /^!(?:abrir|abierta|cerrar|cerrad[ao]|pizarra|rectificar|plano|hip[óo]dromo|retirar|recargar|aval)(?:\s|$)/i;
     if (esOperadorRemitente && !COMANDO_OPERADOR_EXACTO.test(texto)) {
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "IGNORADO_OPERADOR",
         respuestaGrupo: null,
@@ -1903,7 +1947,7 @@ export async function POST(req: Request) {
     const matchAjusteOperador = textoUsuarioLimpio.match(
       /^(?:!)?(?:(?:recargar?|abonar?|ajuste|cargar?)\s+)?([a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s._-]+?)\s*([+-])\s*([0-9kK.,]+)$/i
     );
-    const preAnalisis = analizarYEstandarizarJugada(textoUsuarioLimpio, 999999);
+    const preAnalisis = analizarYEstandarizarJugada(textoUsuarioLimpio, 999999, [], 16, undefined, undefined, codigoSala);
 
     const esAccionOJugada =
       Boolean(quotedMsgId) ||
@@ -1939,7 +1983,7 @@ export async function POST(req: Request) {
       });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "CHARLA",
         respuestaGrupo: null,
@@ -2151,7 +2195,7 @@ export async function POST(req: Request) {
 
     // Si no existe en public.clientes para ese grupo_id, rechazar de inmediato sin tocar la BD
     if (!cliente) {
-      return NextResponse.json({
+      return respuestaSala({
         ok: false,
         tipo: "SIN_REGISTRO",
         respuestaGrupo: "🚫 *Nada Aquí* — Jugador no registrado en la nómina oficial del grupo.",
@@ -2239,7 +2283,7 @@ export async function POST(req: Request) {
             await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
           }
 
-          return NextResponse.json({
+          return respuestaSala({
             ok: true,
             tipo: "RESPUESTA_ENTRENADA",
             respuestaGrupo: msgPublico,
@@ -2325,7 +2369,7 @@ export async function POST(req: Request) {
 
             const jidTarget = targetCliente.whatsapp_jid || (targetCliente.telefono_normalizado ? `${targetCliente.telefono_normalizado}@s.whatsapp.net` : null);
 
-            return NextResponse.json({
+            return respuestaSala({
               ok: true,
               tipo: "AJUSTE_SALDO_OPERADOR",
               respuestaGrupo: msgPublico,
@@ -2360,7 +2404,7 @@ export async function POST(req: Request) {
       });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: false,
         tipo: "ACEPTACION_SIN_CITA",
         nada_aqui: true,
@@ -2383,7 +2427,7 @@ export async function POST(req: Request) {
 
       const notifOp = `🔔 *Solicitud de ${tipoOp} de Jugador:*\n👤 *${nombreJugador}* (${cliente.telefono || "Sin teléfono"})\n💰 Saldo Disponible: $${formatearMontoRegional(saldoDisponible)}\nPara procesar escribe: *${nombreJugador} +[MONTO]* o *${nombreJugador} -[MONTO]*`;
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "SOLICITUD_CAJERO",
         respuestaGrupo: null,
@@ -2427,7 +2471,7 @@ export async function POST(req: Request) {
         });
         await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-        return NextResponse.json({
+        return respuestaSala({
           ok: true,
           tipo: "LISTADO_SALDOS",
           respuestaGrupo: msgSaldos,
@@ -2487,7 +2531,7 @@ export async function POST(req: Request) {
       });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "PLANO_OFICIAL",
         respuestaGrupo: planoTexto,
@@ -2529,7 +2573,7 @@ export async function POST(req: Request) {
         });
         await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-        return NextResponse.json({
+        return respuestaSala({
           ok: true,
           tipo: "CIERRE_CARRERA",
           respuestaGrupo: msgCierre,
@@ -2573,7 +2617,7 @@ export async function POST(req: Request) {
           const msgErrHipo = limpiarEtiquetasProhibidas(
             `⚠️ El hipódromo "${hipoSolicitado}" no está registrado en la tabla oficial. No se abrió la carrera.`
           );
-          return NextResponse.json({
+          return respuestaSala({
             ok: false,
             tipo: "HIPODROMO_NO_REGISTRADO",
             respuestaGrupo: msgErrHipo,
@@ -2627,7 +2671,7 @@ export async function POST(req: Request) {
         });
         await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-        return NextResponse.json({
+        return respuestaSala({
           ok: true,
           tipo: "APERTURA_CARRERA",
           respuestaGrupo: msgAbrir,
@@ -2643,7 +2687,7 @@ export async function POST(req: Request) {
     if (matchHipodromoComando) {
       const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
       if (!esOp) {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "NO_AUTORIZADO",
           respuestaGrupo: null,
@@ -2659,7 +2703,7 @@ export async function POST(req: Request) {
         const msgErrHipo = limpiarEtiquetasProhibidas(
           `⚠️ El hipódromo "${nombreSolicitado}" no está registrado en la tabla oficial.`
         );
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "HIPODROMO_NO_REGISTRADO",
           respuestaGrupo: msgErrHipo,
@@ -2693,7 +2737,7 @@ export async function POST(req: Request) {
       });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "HIPODROMO_ACTIVO",
         respuestaGrupo: msgHipodromo,
@@ -2708,7 +2752,7 @@ export async function POST(req: Request) {
     if (matchRetirarCarreraComando) {
       const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
       if (!esOp) {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "NO_AUTORIZADO",
           respuestaGrupo: null,
@@ -2718,7 +2762,7 @@ export async function POST(req: Request) {
       }
       const ejemplar = String(matchRetirarCarreraComando[1] || "").trim().replace(/^#/, "");
       if (!ejemplar) {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "RETIRO_ARGUMENTOS",
           respuestaGrupo: limpiarEtiquetasProhibidas("⚠️ Uso correcto: !retirar [ejemplar]"),
@@ -2727,7 +2771,7 @@ export async function POST(req: Request) {
         });
       }
       if (String(sala.estado_carrera || "").toLowerCase() === "liquidada") {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "CARRERA_LIQUIDADA",
           respuestaGrupo: limpiarEtiquetasProhibidas("⚠️ Carrera liquidada: reversa la liquidación antes de procesar retirados."),
@@ -2746,7 +2790,7 @@ export async function POST(req: Request) {
         const msgErrRetiro = limpiarEtiquetasProhibidas(
           `⚠️ No se pudo procesar el retiro del ejemplar #${ejemplar}: ${errRet?.message || (retRes as any)?.error || (retRes as any)?.motivo || "error desconocido"}`
         );
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "ERROR_RETIRO_EJEMPLAR",
           respuestaGrupo: msgErrRetiro,
@@ -2775,7 +2819,7 @@ export async function POST(req: Request) {
       await emitirBroadcastSala(salaId, "ejemplar_retirado", { salaId, ejemplar });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "RETIRO_EJEMPLAR",
         respuestaGrupo: msgRetirado,
@@ -2790,7 +2834,7 @@ export async function POST(req: Request) {
     if (matchCreditoOperador) {
       const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
       if (!esOp) {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "NO_AUTORIZADO",
           respuestaGrupo: null,
@@ -2805,7 +2849,7 @@ export async function POST(req: Request) {
         const msgErrCredito = limpiarEtiquetasProhibidas(
           `⚠️ Uso correcto: !${esAval ? "aval" : "recargar"} [Jugador] [Monto]`
         );
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "CREDITO_ARGUMENTOS",
           respuestaGrupo: msgErrCredito,
@@ -2832,7 +2876,7 @@ export async function POST(req: Request) {
         const msgNoCliente = limpiarEtiquetasProhibidas(
           `⚠️ Jugador "${targetNombre}" no encontrado en este grupo.`
         );
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "JUGADOR_NO_ENCONTRADO",
           respuestaGrupo: msgNoCliente,
@@ -2903,7 +2947,7 @@ export async function POST(req: Request) {
 
       const jidTarget = targetCliente.whatsapp_jid || (targetCliente.telefono_normalizado ? `${targetCliente.telefono_normalizado}@s.whatsapp.net` : null);
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: esAval ? "AVAL_OPERADOR" : "RECARGA_OPERADOR",
         respuestaGrupo: msgPublico,
@@ -2919,7 +2963,7 @@ export async function POST(req: Request) {
     if (matchPizarraComando || matchRectificarComando) {
       const esOp = Boolean(body.esMensajePropioTelefono) || Boolean(body.esOperador) || (await verificarEsOperador(cliente?.id, telReal || participantJid, grupoId));
       if (!esOp) {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "NO_AUTORIZADO",
           respuestaGrupo: null,
@@ -2940,7 +2984,7 @@ export async function POST(req: Request) {
       });
 
       if (!resSentencia.ok) {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "ERROR_PIZARRA",
           respuestaGrupo: `⚠️ ${resSentencia.error || "Formato de pizarra inválido"}`,
@@ -2949,7 +2993,7 @@ export async function POST(req: Request) {
         });
       }
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: esRectificacion ? "RECTIFICACION_PIZARRA" : "SENTENCIA_PIZARRA",
         respuestaGrupo: resSentencia.textoResultado,
@@ -2976,7 +3020,7 @@ export async function POST(req: Request) {
         `⏳ *Retenido:* $${retenidoFmt}\n` +
         `🟢 *Saldo Disponible:* $${dispFmt}`;
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "CONSULTA_SALDO",
         respuestaGrupo: null,
@@ -2994,7 +3038,7 @@ export async function POST(req: Request) {
     if (esConsultaCuenta) {
       const resumenDm = await construirResumenEstadoCuentaCliente(cliente, grupoId);
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "CONSULTA_CUENTA",
         respuestaGrupo: null,
@@ -3035,7 +3079,7 @@ export async function POST(req: Request) {
           (dataAmp as any)?.motivo ||
           errAmp?.message ||
           "No se pudo ampliar el cupo de la propuesta.";
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "AMPLIACION_ERROR",
           respuestaGrupo: msgErrPublico,
@@ -3113,7 +3157,7 @@ export async function POST(req: Request) {
         (dataAmp as any).alertaPrivada ||
         null;
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "AMPLIACION_CUPO",
         respuestaGrupo: msgPublico,
@@ -3153,7 +3197,7 @@ export async function POST(req: Request) {
         !propMsg ||
         (propMsg.tipo_mensaje !== "propuesta_jugada" && propMsg.tipo_mensaje !== "PROPUESTA")
       ) {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "IGNORADO",
           respuestaGrupo: null,
@@ -3162,7 +3206,7 @@ export async function POST(req: Request) {
       }
 
       if (!carreraAbierta) {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "CARRERA_CERRADA",
           respuestaGrupo: `⛔ La carrera se encuentra ${String(sala.estado_carrera || "CERRADA").toUpperCase()}. No se admiten concreciones.`,
@@ -3174,7 +3218,7 @@ export async function POST(req: Request) {
       const cmdRetiroCita = analizarComandoRetiro(texto);
       if (cmdRetiroCita.esComandoRetiro) {
         if (!cmdRetiroCita.esValido) {
-          return NextResponse.json({
+          return respuestaSala({
             ok: false,
             tipo: "PEDAGOGICO",
             respuestaGrupo: null,
@@ -3185,7 +3229,7 @@ export async function POST(req: Request) {
         }
 
         if (propMsg.remitente_id !== cliente.id) {
-          return NextResponse.json({
+          return respuestaSala({
             ok: false,
             tipo: "NO_AUTORIZADO",
             respuestaGrupo: null,
@@ -3204,7 +3248,7 @@ export async function POST(req: Request) {
         );
 
         if (errSeFue || rpcSeFue?.ok === false) {
-          return NextResponse.json({
+          return respuestaSala({
             ok: false,
             tipo: "ERROR_RETIRO",
             respuestaGrupo: rpcSeFue?.msg_publico_bot || null,
@@ -3222,7 +3266,7 @@ export async function POST(req: Request) {
 
         await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-        return NextResponse.json({
+        return respuestaSala({
           ok: true,
           tipo: "RETIRO_PROPUESTA_ESPECIFICA",
           respuestaGrupo: msgRetiroCita,
@@ -3241,7 +3285,7 @@ export async function POST(req: Request) {
         if (amp.esAmpliacion) {
           return await ejecutarAmpliacionCupo(propMsg.id, amp.nuevoTope);
         }
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "AUTO_CONCRECION",
           respuestaGrupo: null,
@@ -3311,7 +3355,7 @@ export async function POST(req: Request) {
 
           await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-          return NextResponse.json({
+          return respuestaSala({
             ok: false,
             tipo: "FUERA_DE_TIEMPO",
             nada_aqui: true,
@@ -3328,7 +3372,7 @@ export async function POST(req: Request) {
           remanenteDisponible <= 0 ||
           (estadoProp !== "abierta" && estadoProp !== "parcial")
         ) {
-          return NextResponse.json({
+          return respuestaSala({
             ok: false,
             tipo: "PROPUESTA_AGOTADA",
             respuestaGrupo: `⚠️ Esta parada ya fue tomada al 100% o no tiene saldo disponible.`,
@@ -3376,7 +3420,7 @@ export async function POST(req: Request) {
 
         if (maxBaseAceptante <= 0) {
           const saldoFmt = formatearMontoRegional(Math.max(0, saldoDispAceptante));
-          return NextResponse.json({
+          return respuestaSala({
             ok: false,
             tipo: "SIN_SALDO",
             respuestaGrupo: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
@@ -3413,14 +3457,16 @@ export async function POST(req: Request) {
           accionProp,
           remanenteDisponible,
           Math.max(0, Math.min(maxBaseAceptante, maxBaseProponente)),
-          nombreJugador
+          nombreJugador,
+          undefined,
+          codigoSala
         );
 
         if (!evalConcrecion.valido) {
           // Si no tenía saldo en absoluto
           if (saldoDispAceptante <= 0 && evalConcrecion.montoSolicitado > 0) {
             const saldoFmt = formatearMontoRegional(Math.max(0, saldoDispAceptante));
-            return NextResponse.json({
+            return respuestaSala({
               ok: false,
               tipo: "SIN_SALDO",
               respuestaGrupo: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
@@ -3435,7 +3481,7 @@ export async function POST(req: Request) {
           }
 
           // Palabra no autorizada -> Enseñanza pedagógica en privado sin ensuciar el grupo
-          return NextResponse.json({
+          return respuestaSala({
             ok: false,
             tipo: "PEDAGOGICO",
             respuestaGrupo: null,
@@ -3462,7 +3508,7 @@ export async function POST(req: Request) {
             origen_canal: "WHATSAPP",
           });
           await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
-          return NextResponse.json({
+          return respuestaSala({
             ok: false,
             tipo: "APUESTA_MINIMA",
             nada_aqui: true,
@@ -3520,7 +3566,7 @@ export async function POST(req: Request) {
               origen_canal: "WHATSAPP",
             });
             await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
-            return NextResponse.json({
+            return respuestaSala({
               ok: false,
               tipo: "NADA_AQUI",
               nada_aqui: true,
@@ -3555,7 +3601,7 @@ export async function POST(req: Request) {
             (resRpcData as any)?.msg_privado_bot ||
             (resRpcData as any)?.alertaPrivada ||
             "La concreción no pudo ser procesada por el motor atómico.";
-          return NextResponse.json({
+          return respuestaSala({
             ok: false,
             tipo: "CONCRECION_ERROR",
             respuestaGrupo: msgErrPub,
@@ -3681,7 +3727,7 @@ export async function POST(req: Request) {
 
         await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-        return NextResponse.json({
+        return respuestaSala({
           ok: true,
           tipo: "CONCRECION",
           respuestaGrupo: msgPublicoFinal,
@@ -3724,7 +3770,7 @@ export async function POST(req: Request) {
     const comandoRetiro = analizarComandoRetiro(texto);
     if (comandoRetiro.esComandoRetiro) {
       if (!comandoRetiro.esValido) {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "PEDAGOGICO",
           respuestaGrupo: null,
@@ -3745,7 +3791,7 @@ export async function POST(req: Request) {
       );
 
       if (errSeFue || rpcSeFue?.ok === false) {
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "ERROR_RETIRO",
           respuestaGrupo: rpcSeFue?.msg_publico_bot || null,
@@ -3762,7 +3808,7 @@ export async function POST(req: Request) {
 
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "RETIRO_PROPUESTAS",
         respuestaGrupo: msgPublicoRetiro,
@@ -3827,14 +3873,16 @@ export async function POST(req: Request) {
       saldoDisponible,
       retirados,
       16,
-      nombreJugador
+      nombreJugador,
+      undefined,
+      codigoSala
     );
     const bloquesValidos = bloqueItems.filter((b) => b.esIntencionDeJugada && b.valido);
 
     if (bloquesValidos.length > 1) {
       if (!carreraAbierta) {
         const msgCerrada = `⛔ La carrera está ${String(sala.estado_carrera || "CERRADA").toUpperCase()}. No se reciben nuevas propuestas.`;
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "CARRERA_CERRADA",
           respuestaGrupo: msgCerrada,
@@ -3850,7 +3898,7 @@ export async function POST(req: Request) {
         const saldoFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
         const msgSinSaldo = `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`;
         const msgPrivSinSaldo = `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`;
-        return NextResponse.json({
+        return respuestaSala({
           ok: false,
           tipo: "SIN_SALDO",
           respuestaGrupo: msgSinSaldo,
@@ -3945,7 +3993,7 @@ export async function POST(req: Request) {
         ? `⚠️ Hola *${nombreJugador}*, estás jugando por encima de tu saldo disponible ($${saldoBlkFmt}). Por favor ajusta el monto de tus jugadas o recarga saldo.`
         : null;
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: propIdsBloque.length > 0,
         tipo: "PROPUESTA_BLOQUE",
         propuestasIds: propIdsBloque,
@@ -4000,7 +4048,7 @@ export async function POST(req: Request) {
         origen_canal: "WHATSAPP",      });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: "CHARLA",
         respuestaGrupo: null,
@@ -4020,7 +4068,7 @@ export async function POST(req: Request) {
     if (Number(saldoDisponible) <= 0) {
       const msgPubSinSaldo = `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`;
       const msgPrivSinSaldo = `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
-      return NextResponse.json({
+      return respuestaSala({
         ok: false,
         tipo: "EXCESO_SALDO",
         respuestaGrupo: msgPubSinSaldo,
@@ -4055,7 +4103,7 @@ export async function POST(req: Request) {
         eliminado: false,
       });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
-      return NextResponse.json({
+      return respuestaSala({
         ok: false,
         tipo: "EXCESO_SALDO",
         respuestaGrupo: msgPubExceso,
@@ -4108,7 +4156,7 @@ export async function POST(req: Request) {
       // "⚠️¡Por favor, verificar redacción!" ni su versión privada.
       const avisoPublico = esOperadorRemitente ? null : AVISO_REDACCION_GRUPO;
       const avisoPrivado = esOperadorRemitente ? null : limpiarEtiquetasProhibidas(msgPrivPedagogico);
-      return NextResponse.json({
+      return respuestaSala({
         ok: false,
         tipo: "PEDAGOGICO",
         respuestaGrupo: avisoPublico,
@@ -4126,7 +4174,7 @@ export async function POST(req: Request) {
 
     if (!carreraAbierta) {
       const msgCerrada = `⛔ La carrera está ${String(sala.estado_carrera || "CERRADA").toUpperCase()}. No se reciben nuevas propuestas.`;
-      return NextResponse.json({
+      return respuestaSala({
         ok: false,
         tipo: "CARRERA_CERRADA",
         respuestaGrupo: msgCerrada,
@@ -4161,7 +4209,7 @@ export async function POST(req: Request) {
         eliminado: false,
       });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
-      return NextResponse.json({
+      return respuestaSala({
         ok: false,
         tipo: "SIN_SALDO",
         respuestaGrupo: msgSinSaldo,
@@ -4194,7 +4242,7 @@ export async function POST(req: Request) {
         origen_canal: "WHATSAPP",
       });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
-      return NextResponse.json({
+      return respuestaSala({
         ok: false,
         tipo: "APUESTA_MINIMA",
         nada_aqui: true,
@@ -4329,7 +4377,7 @@ export async function POST(req: Request) {
     if (!rpcPublicado || !propId) {
       const msgErrPriv =
         `⚠️ Hola *${nombreJugador}*, tu mensaje "${texto}" no pudo procesarse porque ocurrió un problema registrando tu propuesta.\n\n✅ *Ejemplo correcto:* "Juego 1P 5 20.000" o "Juego 3x5 10a8 100".`;
-      return NextResponse.json({
+      return respuestaSala({
         ok: false,
         tipo: "PROPUESTA_ERROR",
         respuestaGrupo: null,
@@ -4371,7 +4419,7 @@ export async function POST(req: Request) {
         proporcion_premio: analisis.proporcion,
       };
       const msgPubRecorte = `⚠️ *${nombreJugador}* está jugando por encima de su saldo disponible ($${saldoFmt}). Propuesta ajustada a $${montoAjustadoFmt}.`;
-      const msgPrivRecorte = `⚠️ Hola *${nombreJugador}*, estás jugando por encima de tu saldo disponible ($${saldoFmt}). Tu propuesta en ${detallePublicoPropuesta(propPublica)} fue ajustada a $${montoAjustadoFmt}.`;
+      const msgPrivRecorte = `⚠️ Hola *${nombreJugador}*, estás jugando por encima de tu saldo disponible ($${saldoFmt}). Tu propuesta en ${detallePublicoPropuesta(propPublica)} fue ajustada a $${montoAjustadoFmt}. ⚠️¡Por favor, verificar redacción! ¡Gracias!`;
       await supabaseAdmin.from("chat_mensajes").insert({
         grupo_id: grupoId,
         sala_id: salaId,
@@ -4386,7 +4434,7 @@ export async function POST(req: Request) {
         eliminado: false,
       });
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         excedio_saldo: true,
         tipo: "PROPUESTA_CON_RECORTE_SALDO",
@@ -4432,7 +4480,7 @@ export async function POST(req: Request) {
 
     if (resCruceAuto?.cruzado || resCruceAuto?.esSugerencia) {
       const msgCrucePub = (resCruceAuto as any).msgCruce || (resCruceAuto as any).msgPublico || null;
-      return NextResponse.json({
+      return respuestaSala({
         ok: true,
         tipo: resCruceAuto?.cruzado ? "PROPUESTA_CON_CRUCE" : "SUGERENCIA_CRUCE",
         propuestaId: propId,
@@ -4448,7 +4496,7 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({
+    return respuestaSala({
       ok: true,
       tipo: "PROPUESTA",
       propuestaId: propId,
@@ -4467,7 +4515,7 @@ export async function POST(req: Request) {
       senderJid: participantJid,
     });
   } catch (err: any) {
-    return NextResponse.json(
+    return respuestaSala(
       {
         ok: false,
         error: err?.message || "Error interno en /api/whatsapp-sala/procesar",
@@ -4477,4 +4525,38 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+}
+
+/**
+ *Toda respuesta del endpoint pasa por acá: los mensajes privados que el
+ *demonio Baileys entrega por DM siempre incluyen el Código de Sala del tenant.
+ */
+function respuestaSala(body: any, init?: ResponseInit): NextResponse {
+  const codigo = codigoSalaEnRespuesta(body);
+  if (codigo && body && typeof body === "object") {
+    const camposPrivados = [
+      "mensajePrivadoAutor",
+      "msg_privado_bot",
+      "msg_privado_proponente",
+      "msg_privado_aceptante",
+      "msgPrivado",
+      "alertaPrivada",
+    ];
+    for (const campo of camposPrivados) {
+      if (typeof body[campo] === "string" && body[campo].trim()) {
+        body[campo] = mensajeConCodigoSala(body[campo], codigo);
+      }
+    }
+    if (Array.isArray(body.notificaciones_privadas)) {
+      for (const notif of body.notificaciones_privadas) {
+        if (!notif || typeof notif !== "object") continue;
+        for (const clave of ["mensaje", "texto"]) {
+          if (typeof notif[clave] === "string" && notif[clave].trim()) {
+            notif[clave] = mensajeConCodigoSala(notif[clave], codigo);
+          }
+        }
+      }
+    }
+  }
+  return NextResponse.json(body, init);
 }

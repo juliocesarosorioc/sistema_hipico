@@ -6,6 +6,7 @@
  * que queda en el cliente es la sesión firmada que emite el servidor.
  */
 import { supabase } from "@/core/supabase";
+import { codigoSalaFallback } from "@/features/grupos/lib/codigo-sala";
 
 /**
  * El usuario escribe `josorioc`, pero Supabase autentica por correo. Para que el
@@ -67,6 +68,23 @@ export async function resolverGrupoPorCodigoSala(
   }
 
   try {
+    const { data: filaGrupos } = await supabase
+      .from("grupos")
+      .select("id, codigo, nombre_grupo, nombre")
+      .ilike("codigo", codigo)
+      .maybeSingle();
+    if (filaGrupos?.id) {
+      return {
+        id: String(filaGrupos.id),
+        nombre: String((filaGrupos as any).nombre_grupo || (filaGrupos as any).nombre || ""),
+        codigo_sala: codigo,
+      };
+    }
+  } catch {
+    /* tabla legacy opcional */
+  }
+
+  try {
     const { data, error } = await supabase
       .from("grupos_venta")
       .select("id, nombre, codigo_sala")
@@ -77,6 +95,25 @@ export async function resolverGrupoPorCodigoSala(
         id: String(data.id),
         nombre: String(data.nombre ?? ""),
         codigo_sala: String(data.codigo_sala ?? codigo),
+      };
+    }
+  } catch {
+    /* caer al respaldo del grupo principal */
+  }
+
+  // Código derivado del nombre: UPPER(REGEXP_REPLACE(nombre_grupo, '\s+', '', 'g')).
+  try {
+    const { data: grupos } = await supabase
+      .from("grupos_venta")
+      .select("id, nombre");
+    const coincide = (grupos || []).find(
+      (g: any) => codigoSalaFallback(g.nombre) === codigo.toUpperCase()
+    );
+    if (coincide?.id) {
+      return {
+        id: String(coincide.id),
+        nombre: String(coincide.nombre || ""),
+        codigo_sala: codigo,
       };
     }
   } catch {

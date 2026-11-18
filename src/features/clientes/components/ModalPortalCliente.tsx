@@ -5,14 +5,18 @@ import { Button } from "@/shared/components/ui/Button";
 import { Guard } from "@/shared/components/ui/Guard";
 import { ToastHost } from "@/shared/components/ui/ToastHost";
 import { ModalEditorMensajeWhatsapp } from "@/shared/components/ui/ModalEditorMensajeWhatsapp";
+import { supabase } from "@/core/supabase";
 import {
-  acortarEnlace,
-  enlacePortalLargo,
   generarCodigo,
   guardarPortal,
   limpiarCacheClientes,
   type ClienteRow,
 } from "@/features/clientes/lib/clientes";
+import {
+  mensajeBienvenidaSala,
+  resolverCodigoSalaGrupo,
+  urlLoginConSala,
+} from "@/features/grupos/lib/codigo-sala";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -34,6 +38,8 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
   const [clavePortal, setClavePortal] = useState("");
   const [linkLargo, setLinkLargo] = useState("");
   const [linkCorto, setLinkCorto] = useState("");
+  const [codigoSala, setCodigoSala] = useState("");
+  const [nombreGrupo, setNombreGrupo] = useState("");
   const [msgRecibido, setMsgRecibido] = useState("");
   const [guardando, setGuardando] = useState(false);
 
@@ -45,6 +51,14 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
     setHabilitado(habInicial);
     setToken(tkInicial);
     setClavePortal(clInicial);
+    const grupoNombre = String(
+      (cliente as any).grupo_nombre || (cliente as any).grupo?.nombre || ""
+    ).trim();
+    setNombreGrupo(grupoNombre || "PRINCIPAL");
+    void resolverCodigoSalaGrupo(supabase, {
+      grupoId: (cliente as any).grupo_id,
+      nombre: grupoNombre || "PRINCIPAL",
+    }).then(setCodigoSala);
     setMsgRecibido(
       cliente.portal_habilitado
         ? "El cliente ya tiene acceso activo; puede copiar el enlace o regenerar las credenciales."
@@ -62,18 +76,11 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
   }, [cliente?.id]);
 
   useEffect(() => {
-    if (!cliente) return;
-    const largo = enlacePortalLargo(cliente.id, token);
-    setLinkLargo(largo);
-    setLinkCorto("Generando enlace corto...");
-    let vivo = true;
-    acortarEnlace(largo, cliente.id, token).then((corto) => {
-      if (vivo) setLinkCorto(corto);
-    });
-    return () => {
-      vivo = false;
-    };
-  }, [token, clavePortal, cliente]);
+    if (!cliente || !codigoSala) return;
+    const enlace = urlLoginConSala(codigoSala);
+    setLinkLargo(enlace);
+    setLinkCorto(enlace);
+  }, [codigoSala, cliente]);
 
   if (!cliente) return null;
 
@@ -85,22 +92,13 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
     toast("Enlace copiado al portapapeles.", "success");
   };
 
-  const armarMensajeWhatsApp = () => {
-    const enlaceFinal = linkCorto && linkCorto.startsWith("http") ? linkCorto : linkLargo;
-    const usuarioTxt = cliente.seudonimo || cliente.nombre || "";
-    return [
-      `🏇📱 *PORTAL DE CLIENTES — ACCESO OFICIAL*`,
-      `----------------------------------------`,
-      `👋 *¡Hola, ${usuarioTxt}!* Ya puedes ingresar a tu portal personal para consultar saldo, jugadas en vivo y resultados.`,
-      ``,
-      `👤 *Usuario:* *${usuarioTxt}*`,
-      `🔑 *Código:* \`${token}\``,
-      `🔒 *Contraseña:* \`${clavePortal}\``,
-      `🌐 *Enlace directo:* ${enlaceFinal}`,
-      `----------------------------------------`,
-      `🛡️ _Guarda este mensaje para ingresar siempre a tu cuenta._ ✨`,
-    ].join("\n");
-  };
+  const armarMensajeWhatsApp = () =>
+    mensajeBienvenidaSala({
+      nombreGrupo,
+      codigoSala,
+      usuario: cliente.seudonimo || String(cliente.telefono || "") || cliente.nombre || "",
+      password: clavePortal,
+    });
 
   const enviarWhatsApp = async () => {
     await guardarPortal(
@@ -148,6 +146,16 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
             <span className="mr-1 text-cyan-600">👤</span>
             {cliente.nombre}
           </p>
+
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-800">
+              🏷️ Código de Sala
+            </p>
+            <p className="mt-0.5 font-mono text-lg font-black tracking-widest text-emerald-900">
+              {codigoSala || "RESOLVIENDO..."}
+            </p>
+            <p className="mt-0.5 text-[10px] font-bold text-emerald-700">{nombreGrupo}</p>
+          </div>
 
           
           {/* Banner de Seguridad: Única Sesión y Restricción por IP */}

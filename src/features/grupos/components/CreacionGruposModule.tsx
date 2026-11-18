@@ -26,6 +26,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuthStore } from "@/shared/store/useAuthStore";
+import { supabase } from "@/core/supabase";
 import { Button } from "@/shared/components/ui/Button";
 import { Card } from "@/shared/components/ui/Card";
 import { Input } from "@/shared/components/ui/Input";
@@ -46,6 +47,10 @@ import {
   type UsuarioDeGrupoCreado,
 } from "@/features/grupos/lib/grupos";
 import { CamposComisionesConvenio } from "@/features/grupos/components/CamposComisionesConvenio";
+import {
+  mensajeBienvenidaSala,
+  resolverCodigoSalaGrupo,
+} from "@/features/grupos/lib/codigo-sala";
 import {
   columnasConvenioDesde,
   valoresConvenioInicial,
@@ -91,6 +96,7 @@ export function CreacionGruposModule() {
   const [paso, setPaso] = useState<1 | 2 | 3>(1);
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState<EcosistemaGrupoResultado | null>(null);
+  const [codigoSalaCreado, setCodigoSalaCreado] = useState("");
 
   // Paso 1 — datos del grupo
   const [nombre, setNombre] = useState("");
@@ -237,6 +243,11 @@ export function CreacionGruposModule() {
       }
       setResultado(r);
       if (r.ok) {
+        const codigo = await resolverCodigoSalaGrupo(supabase, {
+          grupoId: r.grupoId,
+          nombre: r.grupoNombre || nombre,
+        });
+        setCodigoSalaCreado(codigo);
         toast(`Grupo "${r.grupoNombre ?? ""}" creado.`, "success");
         if (r.aviso) toast(r.aviso, "warning");
         // Propagación reactiva: el logo del grupo recién creado aparece ya.
@@ -256,6 +267,7 @@ export function CreacionGruposModule() {
   const reiniciar = () => {
     setPaso(1);
     setResultado(null);
+    setCodigoSalaCreado("");
     setNombre("");
     setMoneda("USD");
     setMonedaCuadre("USD");
@@ -302,6 +314,12 @@ export function CreacionGruposModule() {
                 Anotá estas credenciales: las cuentas ya pueden iniciar sesión
                 <span className="font-semibold text-slate-700"> solo en este grupo</span>.
               </p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5">
+                <span className="text-xs font-bold text-emerald-800">🏷️ Código de Sala:</span>
+                <span className="font-mono text-sm font-black tracking-widest text-emerald-900">
+                  {codigoSalaCreado || "RESOLVIENDO..."}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -343,9 +361,15 @@ export function CreacionGruposModule() {
                         type="button"
                         className="text-[11px] font-semibold text-primary-700 hover:text-primary-500"
                         onClick={() => {
+                          const texto = mensajeBienvenidaSala({
+                            nombreGrupo: resultado.grupoNombre || "",
+                            codigoSala: codigoSalaCreado,
+                            usuario: c.usuario,
+                            password: c.clave,
+                          });
                           void navigator.clipboard
-                            .writeText(`${c.usuario} · ${c.correo} · ${c.clave}`)
-                            .then(() => toast(`Credenciales de ${c.usuario} copiadas.`, "info"));
+                            .writeText(texto)
+                            .then(() => toast(`Credenciales de ${c.usuario} copiadas con Código de Sala.`, "info"));
                         }}
                       >
                         Copiar

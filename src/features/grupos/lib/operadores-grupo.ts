@@ -16,6 +16,10 @@ import { supabase } from "@/core/supabase";
 import { claveDeUsuario } from "@/features/seguridad/lib/accesos";
 import { guardarHipodromosDeOperador, CLAVE_HIPODROMOS } from "@/features/operadores/lib/operadores";
 import { basePathActual } from "@/features/auth/lib/sesion";
+import {
+  mensajeBienvenidaSala,
+  resolverCodigoSalaGrupo,
+} from "@/features/grupos/lib/codigo-sala";
 
 export type OperadorGrupo = {
   id: string; // nombre de usuario para acceso celular
@@ -652,8 +656,19 @@ export function urlLoginOperador(): string {
   return `${window.location.origin}${base}/login/`;
 }
 
+/** Código exacto de la sala del grupo, reutilizable en credenciales y DMs. */
+export async function codigoSalaDelGrupo(
+  grupoId: string | number | null | undefined,
+  grupoNombre?: string | null
+): Promise<string> {
+  return resolverCodigoSalaGrupo(supabase, {
+    grupoId,
+    nombre: grupoNombre || "PRINCIPAL",
+  });
+}
+
 /**
- * Genera un texto formateado con íconos para compartir las credenciales del operador por WhatsApp.
+ * Genera el mensaje oficial de afiliación con el Código de Sala exacto.
  */
 export function generarMensajeWhatsappOperador(opts: {
   grupoNombre: string;
@@ -661,29 +676,15 @@ export function generarMensajeWhatsappOperador(opts: {
   clave: string;
   nombre?: string;
   telefono?: string;
+  codigoSala?: string;
   urlLogin?: string;
 }): string {
-  const url = opts.urlLogin || urlLoginOperador();
-  const nombreTxt = opts.nombre && opts.nombre !== opts.usuario ? `\n👤 *Operador:* ${opts.nombre}` : "";
-  const telTxt = opts.telefono ? `\n📞 *Móvil:* ${opts.telefono}` : "";
-
-  return (
-    `🏇 *SISTEMA HÍPICO — ACCESO DE TAQUILLA MÓVIL*\n` +
-    `----------------------------------------\n` +
-    `🏢 *Grupo:* ${opts.grupoNombre.toUpperCase()}${nombreTxt}${telTxt}\n` +
-    `\n` +
-    `📋 *CREDENCIALES DE INGRESO:*\n` +
-    `📱 *Usuario / Móvil:* \`${opts.usuario}\`\n` +
-    `🔑 *Contraseña:* \`${opts.clave || "(asignada)"}\`\n` +
-    `\n` +
-    `🌐 *Enlace de Ingreso:*\n` +
-    `${url}\n` +
-    `----------------------------------------\n` +
-    `✨ *Instrucciones:*\n` +
-    `1️⃣ Abre el enlace en tu navegador móvil\n` +
-    `2️⃣ Ingresa tu Usuario (o Teléfono) y tu Contraseña\n` +
-    `3️⃣ ¡Listo para vender jugadas y consultar tus reportes!`
-  );
+  return mensajeBienvenidaSala({
+    nombreGrupo: opts.grupoNombre,
+    codigoSala: opts.codigoSala || opts.grupoNombre.toUpperCase().replace(/\s+/g, ""),
+    usuario: opts.usuario,
+    password: opts.clave || "(asignada)",
+  });
 }
 
 /**
@@ -696,6 +697,7 @@ export function enlaceWhatsappOperador(opts: {
   nombre?: string;
   telefono?: string;
   codigoPais?: string;
+  codigoSala?: string;
   urlLogin?: string;
 }): string {
   const telNormalizado = normalizarTelefonoWhatsapp(opts.telefono || "", opts.codigoPais || "+58");

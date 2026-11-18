@@ -45,6 +45,7 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
   const esPrincipal = useAuthStore((s) => s.esPrincipal);
 
   const [codigoSala, setCodigoSala] = useState("");
+  const [codigoSalaDelEnlace, setCodigoSalaDelEnlace] = useState("");
   const [usuario, setUsuario] = useState("");
   const [clave, setClave] = useState("");
   const [verClave, setVerClave] = useState(false);
@@ -83,8 +84,14 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
    */
   const [motivoExpulsion, setMotivoExpulsion] = useState<string | null>(null);
   useEffect(() => {
-    const m = new URLSearchParams(window.location.search).get("motivo");
+    const params = new URLSearchParams(window.location.search);
+    const m = params.get("motivo");
     if (m) setMotivoExpulsion(m);
+    const sala = String(params.get("sala") || "").trim().toUpperCase();
+    if (sala) {
+      setCodigoSala(sala);
+      setCodigoSalaDelEnlace(sala);
+    }
   }, []);
 
   /**
@@ -356,6 +363,11 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
                 className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-3 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-emerald-500"
               />
             </div>
+            {codigoSalaDelEnlace ? (
+              <p className="mt-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800">
+                🏷️ Código de Sala verificado: <span className="font-black">{codigoSalaDelEnlace}</span>
+              </p>
+            ) : null}
           </div>
 
           <div>

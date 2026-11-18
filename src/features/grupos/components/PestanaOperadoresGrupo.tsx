@@ -11,6 +11,7 @@ import {
   alternarEstadoOperador,
   generarMensajeWhatsappOperador,
   enlaceWhatsappOperador,
+  codigoSalaDelGrupo,
   type OperadorGrupo,
 } from "@/features/grupos/lib/operadores-grupo";
 import { codigosPaisUnicos, componerTelefono, desglosarTelefono } from "@/shared/lib/vzla";
@@ -36,6 +37,7 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
   const [hipodromos, setHipodromos] = useState<Hipodromo[]>([]);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  const [codigoSala, setCodigoSala] = useState("");
 
   // Formulario de creación / edición
   const [modoForm, setModoForm] = useState<"crear" | "editar" | null>(null);
@@ -51,6 +53,16 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
 
   // Visibilidad de contraseñas en la tabla
   const [visibles, setVisibles] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    let vivo = true;
+    void codigoSalaDelGrupo(grupoId, grupoNombre).then((codigo) => {
+      if (vivo) setCodigoSala(codigo);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [grupoId, grupoNombre]);
 
   // Modal para ver y editar mensaje antes de enviar a WhatsApp
   const [modalWhatsapp, setModalWhatsapp] = useState<{
@@ -74,6 +86,7 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
       clave: op.clave || "",
       nombre: op.nombre,
       telefono: op.telefono,
+      codigoSala,
     });
     setModalWhatsapp({
       abierto: true,
@@ -243,6 +256,7 @@ export function PestanaOperadoresGrupo({ grupoId, grupoNombre, onActualizado }: 
       clave: op.clave || "",
       nombre: op.nombre,
       telefono: op.telefono,
+      codigoSala,
     });
 
     if (navigator.clipboard) {

@@ -12,6 +12,11 @@ import {
 import { guardarUsuarioSistema } from "@/features/seguridad/lib/accesos";
 import { emitirToast } from "@/shared/lib/mensajeria";
 import { useAuthStore } from "@/shared/store/useAuthStore";
+import { supabase } from "@/core/supabase";
+import {
+  mensajeBienvenidaSala,
+  resolverCodigoSalaGrupo,
+} from "@/features/grupos/lib/codigo-sala";
 
 export function SeccionSolicitudesRegistro() {
   const adminUsuario = useAuthStore((s) => s.usuario) || "ADMIN";
@@ -103,25 +108,23 @@ export function SeccionSolicitudesRegistro() {
     }
   };
 
-  const handleNotificarWhatsApp = (sol: SolicitudRegistro) => {
+  const handleNotificarWhatsApp = async (sol: SolicitudRegistro) => {
     const telLimpio = sol.telefono.replace(/\D/g, "");
-    const msg = [
-      `🏇 *SISTEMA HÍPICO - CUENTA ACTIVADA*`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `¡Hola ${sol.nombre}!`,
-      `Tu cuenta en la plataforma ha sido *APROBADA Y ACTIVADA* con éxito.`,
-      ``,
-      `👤 *Usuario:* ${sol.usuario}`,
-      `🎯 *Rol Asignado:* ${ETIQUETAS_ROL[sol.rol_solicitado]?.titulo || sol.rol_solicitado}`,
-      sol.grupo_nombre ? `🏢 *Grupo:* ${sol.grupo_nombre}` : "",
-      ``,
-      `Puedes ingresar de inmediato en:`,
-      `👉 ${typeof window !== "undefined" ? window.location.origin : ""}/login`,
-      `━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `¡Bienvenido y éxito en tus jugadas!`,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const nombreGrupo =
+      sol.grupo_nombre || sol.nombre_grupo_nuevo || "PRINCIPAL";
+    const codigoSala = await resolverCodigoSalaGrupo(supabase, {
+      grupoId: sol.grupo_id,
+      nombre: nombreGrupo,
+    });
+    const password =
+      String((sol as SolicitudRegistro & { clave_deseada?: string | null }).clave_deseada || "").trim() ||
+      "(la entregada por el administrador)";
+    const msg = mensajeBienvenidaSala({
+      nombreGrupo,
+      codigoSala,
+      usuario: sol.usuario || sol.telefono,
+      password,
+    });
 
     const url = telLimpio
       ? `https://wa.me/${telLimpio}?text=${encodeURIComponent(msg)}`

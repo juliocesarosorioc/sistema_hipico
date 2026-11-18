@@ -9,6 +9,7 @@ import {
   normalizarModalidadProgresiva,
   parsearBloqueEnfrentamiento,
 } from "./modalidades-progresivas";
+import { mensajeConCodigoSala } from "@/features/grupos/lib/codigo-sala";
 
 export interface ResultadoAnalisisJugada {
   esIntencionDeJugada: boolean;
@@ -194,7 +195,7 @@ export function calcularRiesgoReal(
 /**
  * Valida de forma estricta las palabras autorizadas para responder y concretar una propuesta
  */
-export function evaluarConcrecionEstricta(
+function evaluarConcrecionEstrictaBase(
   textoRespuesta: string,
   accionPropuesta: 'JUEGA' | 'CONSIGUE',
   montoDisponiblePropuesta: number,
@@ -315,7 +316,7 @@ function normalizarBandoCaballos(raw: string, maxEjemplarCarrera = 16, esDupla =
   return /^\d+[A-Z]?$/i.test(soloDigitos) ? [soloDigitos.toUpperCase()] : [];
 }
 
-export function analizarYEstandarizarJugada(
+function analizarYEstandarizarJugadaBase(
   textoUsuario: string,
   saldoDisponible: number,
   ejemplaresRetirados: string[] = [],
@@ -982,7 +983,8 @@ export function analizarBloqueJugadas(
   ejemplaresRetirados: string[] = [],
   maxEjemplarCarrera = 16,
   nombreUsuario?: string,
-  moneda?: string
+  moneda?: string,
+  codigoSala?: string
 ): ResultadoAnalisisJugada[] {
   if (!textoUsuario || typeof textoUsuario !== 'string') return [];
 
@@ -1003,7 +1005,8 @@ export function analizarBloqueJugadas(
       ejemplaresRetirados,
       maxEjemplarCarrera,
       nombreUsuario,
-      moneda
+      moneda,
+      codigoSala
     );
 
     // Si es no-match con múltiples caballos (ej: "Juego 2p 3,5,8 con 100")
@@ -1030,7 +1033,8 @@ export function analizarBloqueJugadas(
           ejemplaresRetirados,
           maxEjemplarCarrera,
           nombreUsuario,
-          moneda
+          moneda,
+          codigoSala
         );
         resultados.push(subRes);
         if (subRes.valido) {
@@ -1051,4 +1055,61 @@ export function analizarBloqueJugadas(
   }
 
   return resultados;
+}
+
+/**
+ *Envoltorios públicos: toda respuesta privada del bot sale con el Código de
+ *Sala exacto del tenant, sin alterar las reglas determinísticas del parser.
+ */
+export function evaluarConcrecionEstricta(
+  textoRespuesta: string,
+  accionPropuesta: 'JUEGA' | 'CONSIGUE',
+  montoDisponiblePropuesta: number,
+  saldoDisponibleAceptante: number,
+  nombreAceptante?: string,
+  moneda?: string,
+  codigoSala?: string
+): ResultadoConcrecionEstricta {
+  const r = evaluarConcrecionEstrictaBase(
+    textoRespuesta,
+    accionPropuesta,
+    montoDisponiblePropuesta,
+    saldoDisponibleAceptante,
+    nombreAceptante,
+    moneda
+  );
+  return {
+    ...r,
+    msgPrivadoBot: r.msgPrivadoBot
+      ? mensajeConCodigoSala(r.msgPrivadoBot, codigoSala)
+      : r.msgPrivadoBot,
+  };
+}
+
+export function analizarYEstandarizarJugada(
+  textoUsuario: string,
+  saldoDisponible: number,
+  ejemplaresRetirados: string[] = [],
+  maxEjemplarCarrera = 16,
+  nombreUsuario?: string,
+  moneda?: string,
+  codigoSala?: string
+): ResultadoAnalisisJugada {
+  const r = analizarYEstandarizarJugadaBase(
+    textoUsuario,
+    saldoDisponible,
+    ejemplaresRetirados,
+    maxEjemplarCarrera,
+    nombreUsuario,
+    moneda
+  );
+  return {
+    ...r,
+    msgPrivadoBot: r.msgPrivadoBot
+      ? mensajeConCodigoSala(r.msgPrivadoBot, codigoSala)
+      : r.msgPrivadoBot,
+    mensajePedagogicoPrivado: r.mensajePedagogicoPrivado
+      ? mensajeConCodigoSala(r.mensajePedagogicoPrivado, codigoSala)
+      : r.mensajePedagogicoPrivado,
+  };
 }

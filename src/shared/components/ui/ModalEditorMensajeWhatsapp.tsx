@@ -74,8 +74,13 @@ export function ModalEditorMensajeWhatsapp({
         if (!ctx) return resolve(null);
 
         // Extraer campos del mensaje
-        const mGrupo = mensaje.match(/(?:Grupo|GRUPO):\s*([^\n\r]+)/i);
+        const mGrupo =
+          mensaje.match(/BIENVENIDO A LA SALA DE JUEGOS:\s*([^\n\r*]+)/i) ||
+          mensaje.match(/(?:Grupo|GRUPO):\s*([^\n\r]+)/i);
         const grupo = mGrupo ? mGrupo[1].replace(/[*_#`]/g, "").trim() : "SISTEMA HÍPICO";
+
+        const mCodigoSala = mensaje.match(/(?:Código de Sala|CODIGO DE SALA):\s*`?([^\n\r*`]+)`?/i);
+        const codigoSala = mCodigoSala ? mCodigoSala[1].trim() : "";
 
         const mUser = mensaje.match(/(?:Usuario|Móvil|Usuario\s*\/\s*Móvil):\s*`?([^`\n\r*]+)`?/i);
         const usuario = mUser ? mUser[1].trim() : destinatarioNombre || "operador";
@@ -139,15 +144,21 @@ export function ModalEditorMensajeWhatsapp({
         ctx.textAlign = "left";
         ctx.fillText(`GRUPO: ${grupo.toUpperCase()}`, 40, 120);
 
+        if (codigoSala) {
+          ctx.fillStyle = "#fbbf24";
+          ctx.font = "bold 15px system-ui, Arial, sans-serif";
+          ctx.fillText(`CÓDIGO DE SALA: ${codigoSala}`, 40, 145);
+        }
+
         if (operador || telTexto) {
           ctx.fillStyle = "#94a3b8";
           ctx.font = "13px system-ui, Arial, sans-serif";
           const opTxt = [operador ? `Operador: ${operador}` : "", telTexto ? `Móvil: ${telTexto}` : ""].filter(Boolean).join(" · ");
-          ctx.fillText(opTxt, 40, 142);
+          ctx.fillText(opTxt, 40, 165);
         }
 
         // Cajas de Credenciales (Usuario y Clave)
-        const boxY = 166;
+        const boxY = 186;
         const boxW = (w - 100) / 2;
         const boxH = 88;
 
@@ -183,7 +194,7 @@ export function ModalEditorMensajeWhatsapp({
         ctx.fillText(clave, box2X + 15, boxY + 62);
 
         // Caja Enlace
-        const linkY = 274;
+        const linkY = 294;
         const linkW = w - 80;
         const linkH = 65;
 
@@ -205,11 +216,11 @@ export function ModalEditorMensajeWhatsapp({
         ctx.fillStyle = "#94a3b8";
         ctx.font = "11px system-ui, Arial, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText("1. Abre el enlace en tu navegador móvil  ·  2. Ingresa tus datos  ·  3. ¡Listo para operar!", w / 2, 375);
+        ctx.fillText("1. Abre el enlace en tu navegador móvil  ·  2. Verifica el Código de Sala  ·  3. Ingresa tus datos", w / 2, 395);
 
         ctx.fillStyle = "#64748b";
         ctx.font = "italic 10px system-ui, Arial, sans-serif";
-        ctx.fillText("Credencial oficial autorizada · Guarda esta tarjeta en tus fotos para acceder rápidamente", w / 2, 400);
+        ctx.fillText("Credencial oficial autorizada · Guarda esta tarjeta en tus fotos para acceder rápidamente", w / 2, 420);
 
         canvas.toBlob((blob) => resolve(blob), "image/png");
       } catch {

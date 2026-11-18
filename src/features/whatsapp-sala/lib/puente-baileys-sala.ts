@@ -6,6 +6,10 @@ import {
   analizarComandoRetiro,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
 import { formatearMontoRegional, prefijoMonedaGrupo } from "@/shared/lib/dinero";
+import {
+  mensajeConCodigoSala,
+  resolverCodigoSalaGrupo,
+} from "@/features/grupos/lib/codigo-sala";
 import { sincronizarTicketsPropuestaATaquilla } from "./sincronizar-tickets-sala";
 
 export interface MensajeEntranteWhatsApp {
@@ -134,6 +138,12 @@ export async function procesarMensajeEntranteWhatsApp(
     .eq("id", grupoId)
     .maybeSingle();
   const prefijo = prefijoMonedaGrupo(grupoMoneda?.moneda || sala.moneda);
+  const codigoSala = await resolverCodigoSalaGrupo(supabaseAdmin, {
+    salaId: salaId,
+    grupoId,
+    nombre: sala.nombre_grupo || sala.nombre || sala.whatsapp_group_nombre || "PRINCIPAL",
+  });
+  const dm = (texto?: string | null) => mensajeConCodigoSala(texto, codigoSala);
 
   // 2. Identificar al cliente en la base de datos estrictamente dentro de `grupoId = sala.grupo_id`
   const telLimpio = normalizarTelefono(senderJid);
@@ -418,7 +428,9 @@ export async function procesarMensajeEntranteWhatsApp(
           accionProp,
           remanenteActual,
           saldoDisponible,
-          nombreJugador
+          nombreJugador,
+          undefined,
+          codigoSala
         );
 
         if (!evaluacion.valido) {
@@ -437,7 +449,7 @@ export async function procesarMensajeEntranteWhatsApp(
             ok: false,
             tipo: "PEDAGOGICO",
             acciones: {
-              enviarPrivadoJugador: evaluacion.motivoRechazo || "Palabra no autorizada para concretar esta jugada.",
+              enviarPrivadoJugador: dm(evaluacion.motivoRechazo || "Palabra no autorizada para concretar esta jugada."),
             },
           };
         }
@@ -577,8 +589,8 @@ export async function procesarMensajeEntranteWhatsApp(
           tipo: "CONCRECION",
           acciones: {
             responderEnGrupo: msgGrupoFinal,
-            enviarPrivadoJugador: msgPrivadoAceptante,
-            enviarPrivadoProponente: msgPrivadoProponente,
+            enviarPrivadoJugador: dm(msgPrivadoAceptante),
+            enviarPrivadoProponente: dm(msgPrivadoProponente),
           },
           data: {
             montoConcretado,
@@ -644,13 +656,21 @@ export async function procesarMensajeEntranteWhatsApp(
       tipo: "TEXTO",
       acciones: {
         responderEnGrupo: null,
-        enviarPrivadoJugador: `Has cerrado exitosamente todas tus jugadas abiertas. Se liberó una retención de ${prefijo}${formatearMontoRegional(totalDevuelto)}.`,
+        enviarPrivadoJugador: dm(`Has cerrado exitosamente todas tus jugadas abiertas. Se liberó una retención de ${prefijo}${formatearMontoRegional(totalDevuelto)}.`),
       },
     };
   }
 
   const retirados = sala.retirados || [];
-  const analisis = analizarYEstandarizarJugada(textoLimpio, saldoDisponible, retirados, 16, nombreJugador);
+  const analisis = analizarYEstandarizarJugada(
+    textoLimpio,
+    saldoDisponible,
+    retirados,
+    16,
+    nombreJugador,
+    undefined,
+    codigoSala
+  );
 
   // Si tuvo intención de jugar pero no fue válida (error sintaxis, ejemplar retirado, etc.)
   if (analisis.esIntencionDeJugada && !analisis.valido) {
@@ -678,9 +698,10 @@ export async function procesarMensajeEntranteWhatsApp(
       ok: false,
       tipo: "PEDAGOGICO",
       acciones: {
-        enviarPrivadoJugador:
+        enviarPrivadoJugador: dm(
           analisis.mensajePedagogicoPrivado ||
-          "Formato de jugada no reconocido. Ejemplo: Juego 1p del 5 con 50",
+          "Formato de jugada no reconocido. Ejemplo: Juego 1p del 5 con 50"
+        ),
       },
     };
   }
@@ -806,7 +827,7 @@ export async function procesarMensajeEntranteWhatsApp(
       tipo: "PROPUESTA",
       acciones: {
         responderEnGrupo: msgGrupo,
-        enviarPrivadoJugador: msgPrivadoBot,
+        enviarPrivadoJugador: dm(msgPrivadoBot),
       },
       data: {
         propuestaId: propId,
