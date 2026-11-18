@@ -1086,7 +1086,11 @@ export async function guardarPortal(
   }
   try {
     exigirCapacidad("clientes:fn_guardar_cliente");
-    let qPort = supabase.from("clientes").update(payload).eq("id", id);
+    const patchFinal: Record<string, unknown> = { ...payload };
+    if (datos.portal_clave && fila && "pin_acceso" in (fila as Record<string, unknown>)) {
+      patchFinal.pin_acceso = datos.portal_clave;
+    }
+    let qPort = supabase.from("clientes").update(patchFinal).eq("id", id);
     if (fila?.grupo_id != null && String(fila.grupo_id).trim() !== "") {
       qPort = qPort.eq("grupo_id", fila.grupo_id);
     }
