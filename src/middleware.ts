@@ -16,13 +16,20 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
  * - La lista de rutas y capacidades sale del REGISTRO MAESTRO.
  */
 
-const ES_PUBLICA = (p: string) => p === "/login";
+const ES_PUBLICA = (p: string) =>
+  p === "/login" ||
+  p === "/verificacion" ||
+  p === "/reset-password" ||
+  p === "/api/ip" ||
+  p.startsWith("/api/auth/");
 
 /** Superficies internas con su propia validación (CSRF / secreto del daemon). */
 const ES_SERVICIO_INTERNO = (p: string) =>
   p === "/api/whatsapp/upload" ||
   p === "/api/whatsapp-sala" ||
-  p.startsWith("/api/whatsapp-sala/");
+  p.startsWith("/api/whatsapp-sala/") ||
+  p.startsWith("/api/whatsapp/") ||
+  p.startsWith("/api/auth/");
 
 /** Rutas y extensiones que deben bloquearse siempre con 403. */
 const BLOQUEAR = (p: string) => {
