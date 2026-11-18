@@ -12,7 +12,8 @@ import { PieDerechosAutor } from "@/shared/components/ui/PieDerechosAutor";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { esRutaPublica, esRolOperadorExclusivo, esRutaPermitidaOperador } from "@/features/seguridad/lib/capacidades";
 import { sincronizarYAuditarContabilidadCompleta } from "@/features/contabilidad/lib/motor-backfill-retroactivo";
-import { MonitorInactividadSesion } from "@/features/auth/components/MonitorInactividadSesion";
+import { IdleSessionTimer } from "@/features/auth/components/IdleSessionTimer";
+import { GuardiaSesionNavegador } from "@/features/auth/components/GuardiaSesionNavegador";
 
 const ES_PORTAL = (p: string) => p === "/portal" || p.startsWith("/portal/");
 const ES_SALA = (p: string) => p === "/sala" || p.startsWith("/sala/");
@@ -192,7 +193,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     return (
       <div className="min-h-screen bg-slate-50 font-sans text-sm text-slate-900 transition-colors duration-200">
         {children}
-        <MonitorInactividadSesion />
+        <IdleSessionTimer timeoutMs={300000} warningMs={60000} />
+        <GuardiaSesionNavegador />
       </div>
     );
   }
@@ -242,8 +244,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <ModalConfirmacionYResultado />
       {/* Widget Asistente Inteligente de Soporte & Escalamiento de Incidencias */}
       <WidgetAsistenteIa />
-      {/* Monitor de inactividad de sesión (15 min con aviso previo a los 14 min) */}
-      <MonitorInactividadSesion />
+      {/* Guardia de historial (botón Atrás). El temporizador de inactividad vive
+          en el layout autenticado `(dashboard)`. */}
+      <GuardiaSesionNavegador />
     </div>
   );
 }

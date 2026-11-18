@@ -9,7 +9,10 @@ import { SelectorTemas } from "@/shared/components/ui/SelectorTemas";
 import { BotonCargaRapidaSaldo } from "@/features/contabilidad/components/BotonCargaRapidaSaldo";
 import { RelojNavegador } from "@/shared/components/layout/RelojNavegador";
 import { useAuthStore } from "@/shared/store/useAuthStore";
-import { rutaLoginConBasePath, limpiarAlmacenamientoSesionLocal } from "@/features/auth/lib/sesion";
+import {
+  limpiarAlmacenamientoSesionLocal,
+  cerrarSesionYRedirigir,
+} from "@/features/auth/lib/sesion";
 import { conCacheBust } from "@/shared/lib/logos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
 import { listarGruposVenta } from "@/features/grupos/lib/grupos";
@@ -180,14 +183,8 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
     } catch {
       /* aunque falle el borrado remoto, se sale igual para no quedar atrapado */
     } finally {
-      try {
-        router.replace("/login");
-      } catch {
-        /* sinop */
-      }
-      if (typeof window !== "undefined") {
-        window.location.replace(rutaLoginConBasePath());
-      }
+      // Limpieza total + replace: el botón "Atrás" no puede devolver la app.
+      await cerrarSesionYRedirigir();
     }
   };
 

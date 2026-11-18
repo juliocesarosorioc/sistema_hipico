@@ -10,6 +10,7 @@ import {
 } from '../lib/parser-pedagogico';
 import { generarHashArchivoSHA256, generarHashTextoSHA256, cifrarMensajeSala } from '../lib/seguridad-crypto';
 import { salaApi } from '../lib/sala-api';
+import { esJidWhatsAppValido } from './GateVinculacionWhatsApp';
 import { supabase } from '@/core/supabase';
 import { formatearMontoRegional, prefijoMonedaGrupo, esGrupoBolivares } from '@/shared/lib/dinero';
 import { construirMensajeCarreraAbierta } from '../lib/mensajes-carrera';
@@ -1022,13 +1023,9 @@ export default function SalaJuegosWhatsApp({
   const enviarImagenAdjunta = async () => {
     const sala =
       salas.find((s) => s.id === salaSeleccionadaId) || salas[0];
-    const jid =
-      sala?.whatsappGroupJid ||
-      (sala?.id ? gruposWaPorSala[sala.id]?.[0]?.whatsapp_group_jid : null);
-    if (!imagenAdjunta || !sala || !jid) {
-      alert('Esta sala no tiene un grupo de WhatsApp vinculado para enviar la imagen.');
-      return;
-    }
+    // Destinatario único: el vínculo guardado en `salas_juego`.
+    const jid = String(sala?.whatsappGroupJid || '').trim();
+    if (!imagenAdjunta || !sala || !esJidWhatsAppValido(jid)) return;
     try {
       const res = await fetch('/api/whatsapp/send', {
         method: 'POST',

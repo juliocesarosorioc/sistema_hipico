@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import React from "react";
+import { IdleSessionTimer } from "@/features/auth/components/IdleSessionTimer";
+import { GuardiaSesionNavegador } from "@/features/auth/components/GuardiaSesionNavegador";
+
+export const dynamic = "force-dynamic";
 
 
 export const metadata: Metadata = {
@@ -31,6 +35,8 @@ export default function SalaLayout({ children }: { children: React.ReactNode }) 
       className="antialiased"
     >
       {children}
+      <IdleSessionTimer timeoutMs={300000} warningMs={60000} />
+      <GuardiaSesionNavegador />
     </div>
   );
 }

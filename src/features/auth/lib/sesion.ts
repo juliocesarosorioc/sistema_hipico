@@ -352,6 +352,79 @@ export async function cerrarSesion(): Promise<void> {
   }
 }
 
+/**
+ * Sesión válida en el navegador. Es la misma señal que acepta el middleware:
+ * cookie de usuario, token HMAC de la Sala o sesión de Supabase en storage.
+ */
+export function hasValidSession(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const cookies = String(document.cookie || "");
+    if (/(?:^|;\s*)hipico_usuario=/.test(cookies)) return true;
+    if (/(?:^|;\s*)sala_staff_token=/.test(cookies)) return true;
+    const llavesLocales = Object.keys(window.localStorage);
+    if (
+      llavesLocales.some(
+        (k) =>
+          (k.startsWith("sb-") && k.endsWith("-auth-token")) ||
+          k === "club_sesion_activa"
+      )
+    ) {
+      return true;
+    }
+    if (window.sessionStorage.getItem("hipico_sesion_activa")) return true;
+  } catch {
+    /* almacenamiento bloqueado: sin sesión */
+  }
+  return false;
+}
+
+/** Borra localStorage, sessionStorage y TODAS las cookies accesibles. */
+export function limpiarSesionCompleta(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.clear();
+  } catch {
+    /* noop */
+  }
+  try {
+    window.sessionStorage.clear();
+  } catch {
+    /* noop */
+  }
+  try {
+    for (const entrada of String(document.cookie || "").split(";")) {
+      const nombre = entrada.split("=")[0]?.trim();
+      if (!nombre) continue;
+      document.cookie = `${nombre}=; path=/; max-age=0; SameSite=Lax`;
+      document.cookie = `${nombre}=; path=/; max-age=0; SameSite=Lax; Secure`;
+      document.cookie = `${nombre}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+    }
+  } catch {
+    /* noop */
+  }
+}
+
+/**
+ * Cierre total: destruye la sesión local y remota, limpia todo el almacenamiento
+ * y sustituye la entrada del historial con `replace` para que "Atrás" jamás
+ * vuelva a mostrar la plataforma.
+ */
+export async function cerrarSesionYRedirigir(motivo?: string): Promise<void> {
+  try {
+    await cerrarSesion();
+  } catch {
+    /* la sesión local se destruye de todas formas */
+  }
+  limpiarSesionCompleta();
+  if (typeof window !== "undefined") {
+    const destino = motivo
+      ? `/login?reason=${encodeURIComponent(motivo)}`
+      : "/login";
+    window.location.replace(destino);
+  }
+}
+
 export type ResultadoCambioClave = { ok: true } | { ok: false; error: string };
 
 /**

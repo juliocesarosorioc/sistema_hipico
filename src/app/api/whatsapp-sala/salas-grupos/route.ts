@@ -3,7 +3,8 @@ import { supabaseAdmin } from "@/core/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
-const BOT_DAEMON_URL = process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
+const BOT_DAEMON_URL =
+  process.env.BOT_DAEMON_URL || process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
 const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
 export async function GET(req: NextRequest) {
@@ -248,6 +249,115 @@ export async function POST(req: NextRequest) {
       } catch {}
 
       return NextResponse.json({ ok: true, motivo: "Vínculos huérfanos liberados exitosamente." });
+    }
+
+    /**
+     * Vinculación directa desde la pantalla de bloqueo de la Sala de Juegos.
+     * Escribe SIEMPRE en `salas_juego.whatsapp_group_jid` /
+     * `whatsapp_group_nombre` con service_role, sin depender de que el daemon
+     * acepte `/verificar-y-vincular` (ese aviso queda como best-effort).
+     */
+    if (accion === "vincular-grupo-sala") {
+      const { grupoId, salaId, groupJid, nombreGrupo } = body;
+      const jid = String(groupJid || "").trim();
+      if (!/@g\.us$/i.test(jid)) {
+        return NextResponse.json(
+          { ok: false, motivo: "El JID debe ser un grupo de WhatsApp válido (@g.us)" },
+          { status: 400 }
+        );
+      }
+
+      let salaObjetivoId = String(salaId || "").trim();
+      if (!salaObjetivoId && grupoId) {
+        const { data: primera } = await supabaseAdmin
+          .from("salas_juego")
+          .select("id")
+          .eq("grupo_id", grupoId)
+          .eq("activa", true)
+          .order("orden_sala", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        salaObjetivoId = String(primera?.id || "");
+      }
+      if (!salaObjetivoId) {
+        return NextResponse.json(
+          { ok: false, motivo: "No se encontró la sala de juegos a vincular" },
+          { status: 400 }
+        );
+      }
+
+      const nombreFinal = String(nombreGrupo || jid).trim() || jid;
+      const ahora = new Date().toISOString();
+
+      // Un mismo grupo solo puede pertenecer a una sala.
+      await supabaseAdmin
+        .from("salas_juego")
+        .update({
+          whatsapp_group_jid: null,
+          whatsapp_group_nombre: null,
+          updated_at: ahora,
+        })
+        .eq("whatsapp_group_jid", jid)
+        .neq("id", salaObjetivoId);
+
+      try {
+        await supabaseAdmin.from("salas_whatsapp_grupos").upsert(
+          {
+            sala_id: salaObjetivoId,
+            grupo_id: grupoId || null,
+            whatsapp_group_jid: jid,
+            whatsapp_group_nombre: nombreFinal,
+            activo: true,
+            estado_conexion: "conectado",
+            motivo_estado: "Vinculado desde Sala de Juegos",
+            updated_at: ahora,
+          },
+          { onConflict: "sala_id,whatsapp_group_jid" }
+        );
+      } catch {
+        /* la fuente de verdad para la Sala es `salas_juego` */
+      }
+
+      const { data: sala, error: errUpdate } = await supabaseAdmin
+        .from("salas_juego")
+        .update({
+          whatsapp_group_jid: jid,
+          whatsapp_group_nombre: nombreFinal,
+          updated_at: ahora,
+        })
+        .eq("id", salaObjetivoId)
+        .select()
+        .single();
+
+      if (errUpdate) {
+        return NextResponse.json(
+          { ok: false, motivo: errUpdate.message },
+          { status: 500 }
+        );
+      }
+
+      try {
+        await fetch(`${BOT_DAEMON_URL}/verificar-y-vincular`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({ grupoId, salaId: salaObjetivoId, groupJid: jid }),
+          cache: "no-store",
+          signal: AbortSignal.timeout(3000),
+        });
+      } catch {
+        /* aviso best-effort: la vinculación ya quedó persistida */
+      }
+
+      return NextResponse.json({
+        ok: true,
+        sala,
+        groupJid: jid,
+        whatsapp_group_nombre: nombreFinal,
+        motivo: "Grupo de WhatsApp vinculado correctamente",
+      });
     }
 
     if (accion === "verificar-y-vincular") {

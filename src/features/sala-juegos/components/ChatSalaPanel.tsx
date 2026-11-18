@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { salaApi } from "../lib/sala-api";
+import { esJidWhatsAppValido } from "./GateVinculacionWhatsApp";
+import { notificarActividadSala } from "@/features/auth/components/IdleSessionTimer";
 import { supabase } from "@/core/supabase";
 import {
   formatearMontoRegional,
@@ -301,6 +303,7 @@ export function ChatSalaPanel({
   const enviarMensaje = async (textoAEnviar?: string) => {
     const texto = (textoAEnviar || textoInput).trim();
     if (!texto || !sala?.id) return;
+    notificarActividadSala();
 
     setEnviando(true);
     try {
@@ -416,11 +419,10 @@ export function ChatSalaPanel({
 
   const enviarImagenAdjunta = async () => {
     if (!imagenAdjunta) return;
+    notificarActividadSala();
+    // El destinatario SIEMPRE sale del vínculo guardado en `salas_juego`.
     const jid = String(sala?.whatsapp_group_jid || sala?.whatsappGroupJid || "").trim();
-    if (!jid) {
-      alert("Esta sala no tiene un grupo de WhatsApp vinculado para enviar la imagen.");
-      return;
-    }
+    if (!esJidWhatsAppValido(jid)) return;
     try {
       const res = await fetch("/api/whatsapp/send", {
         method: "POST",

@@ -6,6 +6,7 @@ import { supabase } from "@/core/supabase";
 import { obtenerOperadorCacheLocal } from "@/features/grupos/lib/operadores-grupo";
 import {
   cerrarSesion as cerrarSesionSupabase,
+  limpiarSesionCompleta,
   conTimeout,
   iniciarSesion as login,
   sesionActual,
@@ -1220,6 +1221,8 @@ export const useAuthStore = create<EstadoAuth>()(
       },
 
       salir: async (cerrarSesionRemota = true) => {
+        // Retención cero de sesión: storage y cookies se destruyen por completo.
+        limpiarSesionCompleta();
         _sesionHeartbeatRegistrada = null;
         detenerHeartbeatSesion();
         desactivarProteccionAntiClonacion();

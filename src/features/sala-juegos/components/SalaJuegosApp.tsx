@@ -7,6 +7,10 @@ import { ModalOperadorSala } from "./ModalOperadorSala";
 import { ModalRecargaBlindada } from "./ModalRecargaBlindada";
 import { ModalPrejugadas } from "./ModalPrejugadas";
 import {
+  GateVinculacionWhatsApp,
+  usarBloqueoWhatsApp,
+} from "./GateVinculacionWhatsApp";
+import {
   formatearMontoRegional,
   esGrupoBolivares,
   prefijoMonedaGrupo,
@@ -209,6 +213,17 @@ export function SalaJuegosApp({
   const fontFamilyCss = FAMILIAS_FUENTE_SALA[fuenteId]?.css || FAMILIAS_FUENTE_SALA.whatsapp.css;
 
   const salaActiva = salas.find((s) => s.id === salaSeleccionadaId) || salas[0];
+  const bloqueoWa = usarBloqueoWhatsApp(salas, salaSeleccionadaId);
+  const alVincularWhatsApp = useCallback((jid: string, nombre: string) => {
+    setSalas((prev: any[]) => {
+      const objetivo = salaActiva?.id || prev[0]?.id;
+      return (prev || []).map((s: any) =>
+        s.id === objetivo
+          ? { ...s, whatsapp_group_jid: jid, whatsapp_group_nombre: nombre }
+          : s
+      );
+    });
+  }, [salaActiva?.id]);
   const saldoDisp = identidad?.clienteRow?.saldo_disponible ?? 0;
   const esLibre = Boolean(identidad?.clienteRow?.libre);
   const esEspectador = identidad?.usuarioId === "espectador" || identidad?.tipo === "INVITADO";
@@ -285,6 +300,28 @@ export function SalaJuegosApp({
             Reintentar Conexión
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (bloqueoWa.bloqueado) {
+    const esAdminSala = Boolean(
+      identidad?.esAdmin ||
+        identidad?.esOperador ||
+        identidad?.esPrincipal ||
+        identidad?.rol === "superadmin" ||
+        identidad?.rol === "admin_grupo"
+    );
+    return (
+      <div style={{ fontFamily: fontFamilyCss }} className="h-full w-full bg-white">
+        <GateVinculacionWhatsApp
+          esAdmin={esAdminSala}
+          salas={salas}
+          salaId={salaActiva?.id}
+          grupoId={grupoActivo?.id}
+          estado={bloqueoWa.estado}
+          onVinculado={alVincularWhatsApp}
+        />
       </div>
     );
   }

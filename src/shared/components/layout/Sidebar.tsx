@@ -4,7 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/shared/store/useAuthStore";
-import { rutaLoginConBasePath, limpiarAlmacenamientoSesionLocal } from "@/features/auth/lib/sesion";
+import {
+  limpiarAlmacenamientoSesionLocal,
+  cerrarSesionYRedirigir,
+} from "@/features/auth/lib/sesion";
 import { Guard } from "@/shared/components/ui/Guard";
 import {
   capacidadesDeRuta,
@@ -287,14 +290,8 @@ export function Sidebar({
     } catch {
       /* aunque falle el borrado remoto, se sale igual para no quedar atrapado */
     } finally {
-      try {
-        router.replace("/login");
-      } catch {
-        /* sinop */
-      }
-      if (typeof window !== "undefined") {
-        window.location.replace(rutaLoginConBasePath());
-      }
+      // Limpieza total + replace: el botón "Atrás" no puede devolver la app.
+      await cerrarSesionYRedirigir();
     }
   };
 

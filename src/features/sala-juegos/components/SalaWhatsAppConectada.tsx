@@ -2,6 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import SalaJuegosWhatsApp, { type SalaActivaInfo } from "./SalaJuegosWhatsApp";
+import {
+  GateVinculacionWhatsApp,
+  usarBloqueoWhatsApp,
+} from "./GateVinculacionWhatsApp";
 import { configurarCredencialesSala, obtenerCredencialesGuardadas, salaApi, iniciarSesionStaffSala } from "../lib/sala-api";
 
 interface Props {
@@ -56,6 +60,7 @@ export function SalaWhatsAppConectada({
   const [grupoActivo, setGrupoActivo] = useState<any>(null);
   const [usuarioActual, setUsuarioActual] = useState<IdentidadSalaUI | null>(null);
   const [salas, setSalas] = useState<SalaActivaInfo[]>([]);
+  const bloqueoWa = usarBloqueoWhatsApp(salas, salas[0]?.id);
 
   useEffect(() => {
     if (portalTokenInicial && clienteIdInicial) {
@@ -166,6 +171,27 @@ export function SalaWhatsAppConectada({
         <a href="/login" className="bg-[#00a884] text-black font-bold text-xs px-4 py-2 rounded-lg">
           Iniciar sesión
         </a>
+      </div>
+    );
+  }
+
+  if (bloqueoWa.bloqueado) {
+    return (
+      <div className="h-full w-full bg-white">
+        <GateVinculacionWhatsApp
+          esAdmin={Boolean(usuarioActual?.esOperador)}
+          salas={salas}
+          salaId={salas[0]?.id}
+          grupoId={String(grupoActivo?.id || "")}
+          estado={bloqueoWa.estado}
+          onVinculado={(jid: string, nombre: string) =>
+            setSalas((prev: SalaActivaInfo[]) =>
+              prev.map((s: SalaActivaInfo, i: number) =>
+                i === 0 ? { ...s, whatsappGroupJid: jid, whatsappGroupNombre: nombre } : s
+              )
+            )
+          }
+        />
       </div>
     );
   }
