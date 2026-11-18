@@ -24,6 +24,7 @@ import {
   desglosarTelefono,
 } from "@/shared/lib/vzla";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
+import { codigoSalaDeGrupo } from "@/features/grupos/lib/codigo-sala";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
@@ -238,6 +239,7 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
 
   const [grupos, setGrupos] = useState<GrupoVenta[]>([]);
   const [grupoId, setGrupoId] = useState("");
+  const [codigoSalaResuelto, setCodigoSalaResuelto] = useState("");
 
   // SOLO el usuario principal. Meter a un cliente en un grupo cambia el precio de
   // todas sus jugadas, así que el campo no se abre a quien solo pueda crear
@@ -263,6 +265,34 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
   });
   const puedeAsignarGrupo = esPrincipal || esAdminGrupo;
   const modoLibre = modo === "libre";
+  const grupoEfectivoId = String(
+    grupoId || cliente?.grupo_id || grupoIdPorDefecto || miGrupoId || grupoActivo || ""
+  ).trim();
+  const grupoEfectivoObj = useMemo(
+    () => grupos.find((g) => String(g.id) === grupoEfectivoId) || grupos.find((g) => g.es_principal) || null,
+    [grupos, grupoEfectivoId]
+  );
+  const codigoSalaVisible =
+    codigoSalaResuelto || (grupoEfectivoObj ? codigoSalaDeGrupo(grupoEfectivoObj) : "");
+
+  useEffect(() => {
+    let vivo = true;
+    if (!grupoEfectivoId) {
+      setCodigoSalaResuelto("");
+      return;
+    }
+    void fetch(`/api/auth/resolver-sala?grupoId=${encodeURIComponent(grupoEfectivoId)}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (vivo && json?.ok && json?.grupo?.codigo_sala) {
+          setCodigoSalaResuelto(String(json.grupo.codigo_sala));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      vivo = false;
+    };
+  }, [grupoEfectivoId]);
 
   useEffect(() => {
     if (!cliente) {
@@ -513,6 +543,20 @@ export function ModalCliente({ cliente = null, grupoIdPorDefecto = null, onClose
                 {cliente.grupo_id ? <Insignia icono="👥" texto="En grupo" tono="bg-indigo-400/20 text-indigo-200" /> : null}
                 {cliente.portal_habilitado ? <Insignia icono="🔑" texto="Portal" tono="bg-cyan-400/20 text-cyan-200" /> : null}
               </span>
+            ) : null}
+            {codigoSalaVisible ? (
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(codigoSalaVisible).catch(() => undefined);
+                  toast(`Código de sala "${codigoSalaVisible}" copiado.`, "success");
+                }}
+                title="Clic para copiar el Código de Sala con el que el usuario inicia sesión"
+                className="inline-flex items-center gap-1 rounded bg-emerald-500/20 border border-emerald-400/40 px-2 py-0.5 text-[10px] font-mono font-black text-emerald-200 hover:bg-emerald-500/30 transition"
+              >
+                <span>🔑 Sala:</span>
+                <span>{codigoSalaVisible}</span>
+              </button>
             ) : null}
           </div>
           <button

@@ -296,6 +296,7 @@ async function resolverClientePortalFallback(opts: {
   usuario?: string;
   token?: string;
   clave?: string;
+  grupoId?: string;
 }): Promise<ClienteRow | null> {
   if (!supabase) return null;
   try {
@@ -305,11 +306,11 @@ async function resolverClientePortalFallback(opts: {
     const originales: ClienteRow[] = [];
     const BLOQUE = 1000;
     for (let desde = 0; desde < 50000; desde += BLOQUE) {
-      const { data, error } = await supabase
-        .from("clientes")
-        .select("*")
-        .order("id", { ascending: true })
-        .range(desde, desde + BLOQUE - 1);
+      let q = supabase.from("clientes").select("*").order("id", { ascending: true });
+      if (opts.grupoId) {
+        q = q.eq("grupo_id", opts.grupoId);
+      }
+      const { data, error } = await q.range(desde, desde + BLOQUE - 1);
       if (error) {
         if (originales.length === 0) return null;
         break;
@@ -453,6 +454,7 @@ export async function entrarPortal(opts: {
   usuario?: string;
   token?: string;
   clave?: string;
+  grupoId?: string;
 }): Promise<{ ok: boolean; error?: string; sesion?: SesionPortal }> {
   const ERROR = "Credenciales inválidas o portal deshabilitado para el cliente.";
 
@@ -464,6 +466,25 @@ export async function entrarPortal(opts: {
     };
   } else if (opts.usuario && opts.token && opts.clave) {
     r = await llamarPortalAuth({ accion: "entrar", usuario: opts.usuario, token: opts.token, clave: opts.clave });
+  } else if (opts.usuario && opts.clave && typeof window !== "undefined") {
+    try {
+      const respApi = await fetch("/api/auth/portal-entrar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          usuario: opts.usuario,
+          clave: opts.clave,
+          grupoId: opts.grupoId,
+        }),
+      });
+      const jsonApi = await respApi.json().catch(() => null);
+      r =
+        respApi.ok && jsonApi?.ok && jsonApi?.cliente
+          ? { ok: true, data: { cliente: jsonApi.cliente } }
+          : { ok: false, error: jsonApi?.error || ERROR };
+    } catch {
+      r = { ok: false, error: ERROR };
+    }
   } else if (opts.usuario) {
     r = { ok: false, error: ERROR };
   } else {

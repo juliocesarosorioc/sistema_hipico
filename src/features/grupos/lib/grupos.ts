@@ -26,6 +26,8 @@ import {
 export type GrupoVenta = {
   id: string | number;
   nombre: string;
+  codigo_sala?: string | null;
+  slug?: string | null;
   moneda?: string | null;
   cupo_tabla?: number | null;
   /**
@@ -642,6 +644,8 @@ export type GrupoRow = {
   comision_dupletas?: number | null;
   responsable?: string | null;
   cuenta_bancaria?: string | null;
+  codigo_sala?: string | null;
+  slug?: string | null;
   es_principal?: boolean | null;
   activo?: boolean | null;
   estatus?: string | null;

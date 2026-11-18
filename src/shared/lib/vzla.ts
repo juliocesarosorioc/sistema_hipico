@@ -97,14 +97,42 @@ export function componerTelefono(codigo: string | null | undefined, numero: stri
   return codigo + " " + dig;
 }
 
-/** Separa "+58 4121234567" en { codigo: '+58', numero: '4121234567' }. */
+/** Separa "+58 4121234567" o "584121234567" en { codigo: '+58', numero: '4121234567' }. */
 export function desglosarTelefono(tel: string | null | undefined): { codigo: string; numero: string } {
   const t = String(tel ?? "").trim();
   if (!t) return { codigo: "+58", numero: "" };
-  const m = t.match(/^(\+?\d{1,4})\s*([\d\s-]*)$/);
-  if (m) return { codigo: m[1] || "+58", numero: m[2].replace(/[^\d]/g, "") };
+
+  // Si ya viene con separador explícito ("+58 4241737612" o "58 424...")
+  const conEspacio = t.match(/^(\+?\d{1,3})\s+([\d\s-]+)$/);
+  if (conEspacio) {
+    const codNorm = conEspacio[1].startsWith("+") ? conEspacio[1] : `+${conEspacio[1]}`;
+    const numLimpio = conEspacio[2].replace(/[^\d]/g, "");
+    if (PAISES_TELEFONO.some((p) => p.codigo === codNorm)) {
+      return { codigo: codNorm, numero: numLimpio };
+    }
+  }
+
   const dig = t.replace(/[^\d]/g, "");
-  return { codigo: "+58", numero: dig.startsWith("0") ? dig : dig };
+  // Reparar formato corrupto previo como "5842 4241737612" (14 dígitos con prefijo repetido)
+  if (dig.length >= 12) {
+    const u10 = dig.slice(-10);
+    if ((dig.startsWith("58") || t.includes("5842")) && /^[24]/.test(u10)) {
+      return { codigo: "+58", numero: u10 };
+    }
+  }
+
+  // Coincidir códigos de país conocidos antes del fallback genérico
+  const codigosOrdenados = [...PAISES_TELEFONO]
+    .map((p) => p.codigo.replace("+", ""))
+    .sort((a, b) => b.length - a.length);
+  for (const codSinMas of codigosOrdenados) {
+    if (dig.startsWith(codSinMas) && dig.length - codSinMas.length >= 7) {
+      return { codigo: `+${codSinMas}`, numero: dig.slice(codSinMas.length) };
+    }
+  }
+
+  const limpio = dig.startsWith("0") ? dig.slice(1) : dig;
+  return { codigo: "+58", numero: limpio };
 }
 
 export type DatosPago = {

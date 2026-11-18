@@ -176,6 +176,18 @@ function extraerUltimos10Digitos(raw?: string | null): string {
   return soloDigitos.length >= 7 ? soloDigitos : "";
 }
 
+function resolverTelefonoWhatsappCliente(cliente: any): string | null {
+  const raw = cliente?.telefono_normalizado || cliente?.telefono || "";
+  const digits = String(raw).replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length === 12 && digits.startsWith("58")) return digits;
+  const u10 = extraerUltimos10Digitos(digits);
+  if (u10.length === 10 && /^[24]/.test(u10) && (!digits.startsWith("1") || digits.length > 11)) {
+    return `58${u10}`;
+  }
+  return digits;
+}
+
 function calcularSaldoDisponible(cliente: any): number {
   if (!cliente) return 0;
   if (cliente.libre) return 999999;
@@ -3254,7 +3266,7 @@ export async function POST(req: Request) {
             respuestaGrupo: rpcSeFue?.msg_publico_bot || null,
             msg_publico_bot: rpcSeFue?.msg_publico_bot || null,
             msg_privado_bot: rpcSeFue?.msg_privado_bot || null,
-            clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+            clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
             error: errSeFue?.message || rpcSeFue?.error || "No se pudo retirar la propuesta",
           });
         }
@@ -3275,7 +3287,7 @@ export async function POST(req: Request) {
           respuestaPublica: msgRetiroCita,
           msg_privado_bot: msgPrivadoCita,
           mensajePrivadoAutor: msgPrivadoCita,
-          clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+          clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
           senderJid: participantJid,
         });
       }
@@ -3429,7 +3441,7 @@ export async function POST(req: Request) {
             respuestaPublica: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
             mensajePrivadoAutor: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
             msg_privado_bot: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
-            clienteTelefono: telefonoClienteCompleto,
+            clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
             senderJid: participantJid,
           });
         }
@@ -3475,7 +3487,7 @@ export async function POST(req: Request) {
               respuestaPublica: `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`,
               mensajePrivadoAutor: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
               msg_privado_bot: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
-              clienteTelefono: telefonoClienteCompleto,
+              clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
               senderJid: participantJid,
             });
           }
@@ -3797,7 +3809,7 @@ export async function POST(req: Request) {
           respuestaGrupo: rpcSeFue?.msg_publico_bot || null,
           msg_publico_bot: rpcSeFue?.msg_publico_bot || null,
           msg_privado_bot: rpcSeFue?.msg_privado_bot || null,
-          clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+          clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
           error: errSeFue?.message || rpcSeFue?.error || "No se pudieron retirar las propuestas",
         });
       }
@@ -3817,7 +3829,7 @@ export async function POST(req: Request) {
         respuestaPublica: msgPublicoRetiro,
         msg_privado_bot: msgPrivadoRetiro,
         mensajePrivadoAutor: msgPrivadoRetiro,
-        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+        clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
         senderJid: participantJid,
       });
     }
@@ -3863,10 +3875,7 @@ export async function POST(req: Request) {
 
     // Analizar en bloque (multilínea o múltiples caballos separados por coma: "Juego 2p 3,5,8 con 100")
     const retirados = Array.isArray(sala.retirados) ? sala.retirados : [];
-    const telefonoClienteCompleto =
-      normalizarTelefonoCompleto(cliente.codigo_pais, cliente.telefono) ||
-      cliente?.telefono_normalizado ||
-      (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null);
+    const telefonoClienteCompleto = resolverTelefonoWhatsappCliente(cliente);
 
     const bloqueItems = analizarBloqueJugadas(
       texto,
@@ -4059,7 +4068,7 @@ export async function POST(req: Request) {
         msg_privado_bot: null,
         alertaPrivada: null,
         notificaciones_privadas: [],
-        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+        clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
         senderJid: participantJid,
       });
     }
@@ -4079,7 +4088,7 @@ export async function POST(req: Request) {
         msg_privado_bot: msgPrivSinSaldo,
         alertaPrivada: msgPrivSinSaldo,
         notificaciones_privadas: [],
-        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+        clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
         senderJid: participantJid,
       });
     }
@@ -4114,7 +4123,7 @@ export async function POST(req: Request) {
         msg_privado_bot: msgPrivExceso,
         alertaPrivada: msgPrivExceso,
         notificaciones_privadas: [],
-        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+        clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
         senderJid: participantJid,
       });
     }
@@ -4167,7 +4176,7 @@ export async function POST(req: Request) {
         msg_privado_bot: avisoPrivado,
         alertaPrivada: null,
         notificaciones_privadas: [],
-        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+        clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
         senderJid: participantJid,
       });
     }
@@ -4185,7 +4194,7 @@ export async function POST(req: Request) {
         msg_privado_bot: null,
         alertaPrivada: null,
         notificaciones_privadas: [],
-        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+        clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
         senderJid: participantJid,
       });
     }
@@ -4389,7 +4398,7 @@ export async function POST(req: Request) {
         msg_privado_proponente: msgErrPriv,
         alertaPrivada: null,
         notificaciones_privadas: [],
-        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+        clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
         senderJid: participantJid,
       });
     }
@@ -4448,7 +4457,7 @@ export async function POST(req: Request) {
         msg_privado_proponente: msgPrivRecorte,
         alertaPrivada: (rpcResFinal as any)?.alertaPrivada || msgPrivRecorte,
         notificaciones_privadas: (rpcResFinal as any)?.notificaciones_privadas || [],
-        clienteTelefono: cliente?.telefono_normalizado || (cliente?.telefono ? String(cliente.telefono).replace(/\D/g, "") : null),
+        clienteTelefono: resolverTelefonoWhatsappCliente(cliente),
         senderJid: participantJid,
       });
     }

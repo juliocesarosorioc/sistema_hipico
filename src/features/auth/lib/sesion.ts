@@ -46,7 +46,37 @@ export async function resolverGrupoPorCodigoSala(
   codigoSala: string,
 ): Promise<GrupoPorCodigoSala | null> {
   const codigo = (codigoSala ?? "").trim();
-  if (!codigo || !supabase) return null;
+  if (!codigo) return null;
+
+  // 1. Resolución autorizada vía API de servidor (usa Service Role y funciona
+  //    incluso antes de aplicar migraciones DDL sobre grupos_venta).
+  if (typeof window !== "undefined") {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 6000);
+      const res = await fetch("/api/auth/resolver-sala", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codigo }),
+        signal: ctrl.signal,
+      }).finally(() => clearTimeout(timer));
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok && data?.grupo?.id) {
+        return {
+          id: String(data.grupo.id),
+          nombre: String(data.grupo.nombre ?? ""),
+          codigo_sala: String(data.grupo.codigo_sala ?? codigo),
+        };
+      }
+      if (res.status === 404 && data?.ok === false) {
+        return null;
+      }
+    } catch {
+      /* caer al respaldo Supabase directo */
+    }
+  }
+
+  if (!supabase) return null;
 
   try {
     const { data, error } = await supabase.rpc("club_resolver_codigo_sala", {

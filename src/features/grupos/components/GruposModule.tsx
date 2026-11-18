@@ -93,24 +93,16 @@ import { ReporteComisionesConvenioModal } from "@/features/grupos/components/Rep
 import { PestanaOperadoresGrupo } from "@/features/grupos/components/PestanaOperadoresGrupo";
 
 import {
-
   CONCEPTOS_CONVENIO,
-
   columnasConvenioCompletas,
-
   columnasConvenioDesde,
-
   conceptoDe,
-
   valoresConvenioDeGrupo,
-
   valoresConvenioInicial,
-
   type ProductoConvenio,
-
   type ValoresConvenio,
-
 } from "@/features/grupos/lib/comisiones-convenio";
+import { codigoSalaDeGrupo } from "@/features/grupos/lib/codigo-sala";
 
 
 
@@ -810,6 +802,26 @@ export function GruposModule() {
     setGuardando(true);
 
     const r = await actualizarGrupo(id, datos as Record<string, unknown>);
+
+    if (r.ok && editando.codigo_sala && String(editando.codigo_sala).trim()) {
+      try {
+        const resCod = await fetch("/api/auth/resolver-sala", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            accion: "guardar_codigo",
+            grupoId: String(id),
+            codigoSala: String(editando.codigo_sala).trim(),
+          }),
+        });
+        const jCod = await resCod.json().catch(() => null);
+        if (!resCod.ok || !jCod?.ok) {
+          toast(jCod?.error || "No se pudo guardar el código de sala.", "warning");
+        }
+      } catch {
+        /* best-effort */
+      }
+    }
 
     // ⏱️ Ventana de Revisión y Reclamos (PROMPT #6): va por RPC/update propio y es
     // mejor esfuerzo, para que la falta de la migración no tumbe el guardado del
@@ -1623,6 +1635,19 @@ export function GruposModule() {
                               </span>
                               {esActivo ? "ACTIVO" : "INACTIVO"}
                             </span>
+                            <span className="text-slate-400">·</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const cod = codigoSalaDeGrupo(g);
+                                navigator.clipboard?.writeText(cod).catch(() => undefined);
+                                toast(`Código de sala "${cod}" copiado.`, "success");
+                              }}
+                              title="Código de Sala para iniciar sesión (clic para copiar)"
+                              className="rounded bg-emerald-100 hover:bg-emerald-200 px-1.5 py-0.5 font-mono text-[9px] font-black text-emerald-900 transition"
+                            >
+                              🔑 {codigoSalaDeGrupo(g)}
+                            </button>
                             <span className="text-slate-400">·</span>
                             <span className="text-slate-500">
                               🗓️ {etiquetaDia(g.dia_inicio_semana ?? 1)}–{etiquetaDia(g.dia_fin_semana ?? 7)}
@@ -2616,6 +2641,37 @@ export function GruposModule() {
 
                 />
 
+              </div>
+
+              <div>
+                <label className={etiqueta}>
+                  🔑 Código de Sala (para Login)
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    value={editando.codigo_sala ?? codigoSalaDeGrupo(editando)}
+                    onChange={(e) =>
+                      setEditando({
+                        ...editando,
+                        codigo_sala: e.target.value.toLowerCase().replace(/[^a-z0-9-_]+/g, "-"),
+                      })
+                    }
+                    className={inp + " font-mono lowercase"}
+                    placeholder="ej: grupo-de-prueba"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cod = editando.codigo_sala || codigoSalaDeGrupo(editando);
+                      navigator.clipboard?.writeText(cod).catch(() => undefined);
+                      toast(`Código "${cod}" copiado.`, "success");
+                    }}
+                    className="rounded-lg border border-slate-300 bg-slate-100 px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200"
+                    title="Copiar código de sala"
+                  >
+                    📋
+                  </button>
+                </div>
               </div>
 
               <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">

@@ -247,7 +247,11 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
       //    del código de sala; si no, se descarta la sesión del portal.
       try {
         const { entrarPortal } = await import("@/features/portal/lib/portal");
-        const resPortal = await entrarPortal({ usuario: usuarioSanitizado, clave });
+        const resPortal = await entrarPortal({
+          usuario: usuarioSanitizado,
+          clave,
+          grupoId: contexto.grupoId,
+        });
         if (resPortal.ok && resPortal.sesion) {
           const grupoPortal = String(
             resPortal.sesion.cliente?.grupo_id ?? resPortal.sesion.grupo?.id ?? ""

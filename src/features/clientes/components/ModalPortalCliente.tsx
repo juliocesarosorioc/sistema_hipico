@@ -13,10 +13,12 @@ import {
   type ClienteRow,
 } from "@/features/clientes/lib/clientes";
 import {
+  codigoSalaDeGrupo,
   mensajeBienvenidaSala,
   resolverCodigoSalaGrupo,
   urlLoginConSala,
 } from "@/features/grupos/lib/codigo-sala";
+import { listarGruposVenta } from "@/features/grupos/lib/grupos";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
@@ -28,20 +30,20 @@ type Props = {
 };
 
 /**
- * Modal "Portal de Consulta del Cliente" — genera (o conserva) el Código del
- * enlace + Contraseña y construye el enlace largo + corto (is.gd con fallback).
- * Clon de js/clientes.js abrirModalPortal / btnGuardarPortal.
+ * Modal "Portal de Consulta del Cliente" — muestra Código de Sala, Usuario,
+ * Contraseña y Enlace de acceso directo al Login multi-tenant.
  */
 export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
   const [habilitado, setHabilitado] = useState(false);
   const [token, setToken] = useState("");
   const [clavePortal, setClavePortal] = useState("");
-  const [linkLargo, setLinkLargo] = useState("");
-  const [linkCorto, setLinkCorto] = useState("");
   const [codigoSala, setCodigoSala] = useState("");
   const [nombreGrupo, setNombreGrupo] = useState("");
+  const [urlAcceso, setUrlAcceso] = useState("/login");
   const [msgRecibido, setMsgRecibido] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [modalWaAbierto, setModalWaAbierto] = useState(false);
+  const [mensajeWa, setMensajeWa] = useState("");
 
   useEffect(() => {
     if (!cliente) return;
@@ -51,20 +53,12 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
     setHabilitado(habInicial);
     setToken(tkInicial);
     setClavePortal(clInicial);
-    const grupoNombre = String(
-      (cliente as any).grupo_nombre || (cliente as any).grupo?.nombre || ""
-    ).trim();
-    setNombreGrupo(grupoNombre || "PRINCIPAL");
-    void resolverCodigoSalaGrupo(supabase, {
-      grupoId: (cliente as any).grupo_id,
-      nombre: grupoNombre || "PRINCIPAL",
-    }).then(setCodigoSala);
     setMsgRecibido(
       cliente.portal_habilitado
-        ? "El cliente ya tiene acceso activo; puede copiar el enlace o regenerar las credenciales."
+        ? "El cliente ya tiene acceso activo; puede copiar sus credenciales o regenerar la contraseña."
         : "Se han generado credenciales listas para compartir. Presione Guardar o Enviar por WhatsApp."
     );
-    // Si el cliente aún no tenía credenciales persistidas en BD, las sincronizamos automáticamente
+
     if (!cliente.portal_token || !cliente.portal_clave || cliente.portal_habilitado == null) {
       guardarPortal(
         cliente.id,
@@ -72,31 +66,72 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
         cliente
       ).catch(() => undefined);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cliente?.id]);
 
-  useEffect(() => {
-    if (!cliente || !codigoSala) return;
-    const enlace = urlLoginConSala(codigoSala);
-    setLinkLargo(enlace);
-    setLinkCorto(enlace);
-  }, [codigoSala, cliente]);
+    let vivo = true;
+    const gId = String(cliente.grupo_id ?? "").trim();
+    const grupoNombreCli = String(
+      (cliente as any).grupo_nombre || (cliente as any).grupo?.nombre || ""
+    ).trim();
+
+    const cargarCodigoSala = async () => {
+      if (gId) {
+        try {
+          const res = await fetch(`/api/auth/resolver-sala?grupoId=${encodeURIComponent(gId)}`);
+          const json = await res.json().catch(() => null);
+          if (vivo && res.ok && json?.ok && json?.grupo?.codigo_sala) {
+            const cod = String(json.grupo.codigo_sala);
+            setCodigoSala(cod);
+            setNombreGrupo(String(json.grupo.nombre ?? (grupoNombreCli || "PRINCIPAL")));
+            setUrlAcceso(urlLoginConSala(cod));
+            return;
+          }
+        } catch {
+          /* fallback abajo */
+        }
+      }
+      try {
+        const gs = await listarGruposVenta();
+        const grp = gs.find((g) => String(g.id) === gId) || gs.find((g) => g.es_principal) || gs[0];
+        if (vivo && grp) {
+          const cod = codigoSalaDeGrupo(grp);
+          setCodigoSala(cod);
+          setNombreGrupo(String(grp.nombre ?? (grupoNombreCli || "PRINCIPAL")));
+          setUrlAcceso(urlLoginConSala(cod));
+          return;
+        }
+      } catch {
+        /* fallback abajo */
+      }
+      const codResuelto = await resolverCodigoSalaGrupo(supabase, {
+        grupoId: gId || null,
+        nombre: grupoNombreCli || "PRINCIPAL",
+      });
+      if (vivo) {
+        setCodigoSala(codResuelto || "PRINCIPAL");
+        setNombreGrupo(grupoNombreCli || "PRINCIPAL");
+        setUrlAcceso(urlLoginConSala(codResuelto || "PRINCIPAL"));
+      }
+    };
+    void cargarCodigoSala();
+
+    return () => {
+      vivo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cliente?.id, cliente?.grupo_id]);
 
   if (!cliente) return null;
 
-  const [modalWaAbierto, setModalWaAbierto] = useState(false);
-  const [mensajeWa, setMensajeWa] = useState("");
-
-  const copiar = (texto: string) => {
+  const copiar = (texto: string, etiqueta = "Dato") => {
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(texto).catch(() => undefined);
-    toast("Enlace copiado al portapapeles.", "success");
+    toast(`${etiqueta} copiado al portapapeles.`, "success");
   };
 
   const armarMensajeWhatsApp = () =>
     mensajeBienvenidaSala({
-      nombreGrupo,
-      codigoSala,
-      usuario: cliente.seudonimo || String(cliente.telefono || "") || cliente.nombre || "",
+      nombreGrupo: nombreGrupo || "SALA DE JUEGOS",
+      codigoSala: codigoSala || "PRINCIPAL",
+      usuario: cliente.seudonimo || cliente.nombre || String(cliente.telefono || ""),
       password: clavePortal,
     });
 
@@ -113,11 +148,15 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
 
   const guardar = async () => {
     setGuardando(true);
-    const r = await guardarPortal(cliente.id, { portal_habilitado: habilitado, portal_token: token, portal_clave: clavePortal }, cliente);
+    const r = await guardarPortal(
+      cliente.id,
+      { portal_habilitado: habilitado, portal_token: token, portal_clave: clavePortal },
+      cliente
+    );
     setGuardando(false);
     if (!r.ok) return toast(r.error ?? "Error al guardar el portal.", "error");
     limpiarCacheClientes();
-    toast("Portal guardado. Entregue el enlace y la contraseña al cliente.", "success");
+    toast("Portal guardado. Entregue el Código de Sala, usuario y contraseña al cliente.", "success");
     onGuardado();
     onClose();
   };
@@ -137,27 +176,19 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
             <span className="mr-2">🔗</span> Portal de Consulta del Cliente
           </span>
           <button className="text-cyan-200 hover:text-white" onClick={onClose} aria-label="Cerrar">
-            <span >✕</span>
+            <span>✕</span>
           </button>
         </div>
 
         <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
           <p className="font-bold text-slate-800">
             <span className="mr-1 text-cyan-600">👤</span>
-            {cliente.nombre}
+            {cliente.seudonimo || cliente.nombre}
+            {cliente.seudonimo && cliente.nombre && cliente.seudonimo !== cliente.nombre ? (
+              <span className="ml-2 text-xs font-normal text-slate-500">({cliente.nombre})</span>
+            ) : null}
           </p>
 
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-800">
-              🏷️ Código de Sala
-            </p>
-            <p className="mt-0.5 font-mono text-lg font-black tracking-widest text-emerald-900">
-              {codigoSala || "RESOLVIENDO..."}
-            </p>
-            <p className="mt-0.5 text-[10px] font-bold text-emerald-700">{nombreGrupo}</p>
-          </div>
-
-          
           {/* Banner de Seguridad: Única Sesión y Restricción por IP */}
           <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-3 text-xs space-y-1">
             <div className="flex items-center gap-1.5 font-black text-indigo-950">
@@ -165,37 +196,46 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
               <span>Seguridad de Acceso: Única Sesión y Restricción de IP</span>
             </div>
             <p className="text-[11px] text-indigo-900 leading-relaxed">
-              Al guardar o regenerar este código, <b>se expulsará automáticamente cualquier sesión abierta anterior</b>. El cliente solo podrá trabajar desde una única conexión vinculada a su dirección IP.
+              Al guardar o regenerar la contraseña, <b>se expulsará automáticamente cualquier sesión abierta anterior</b>. El cliente solo podrá trabajar desde una única conexión.
             </p>
           </div>
 
           <label className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-            <input type="checkbox" checked={habilitado} onChange={(e) => setHabilitado(e.target.checked)} className="h-4 w-4 accent-cyan-600" />
+            <input
+              type="checkbox"
+              checked={habilitado}
+              onChange={(e) => setHabilitado(e.target.checked)}
+              className="h-4 w-4 accent-cyan-600"
+            />
             <span className="text-xs font-black text-slate-700 uppercase">Habilitar acceso al portal</span>
           </label>
           {msgRecibido ? <p className="text-[10px] font-bold text-amber-600">{msgRecibido}</p> : null}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Código del enlace</label>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                🏷️ Código de Sala {nombreGrupo ? `(${nombreGrupo})` : ""}
+              </label>
               <div className="flex gap-1">
                 <input
-                  value={token}
-                  onChange={(e) => setToken(e.target.value.toUpperCase().slice(0, 12))}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-center font-mono text-sm font-black uppercase outline-none focus:border-cyan-500"
+                  readOnly
+                  value={codigoSala || "RESOLVIENDO..."}
+                  className="w-full border border-emerald-300 bg-emerald-50 rounded-lg px-3 py-2 text-center font-mono text-xs font-black text-emerald-900 outline-none select-all"
                 />
                 <button
                   type="button"
-                  title="Regenerar código"
-                  className="px-2 rounded-lg bg-slate-200 hover:bg-cyan-100 text-slate-600"
-                  onClick={() => { setToken(generarCodigo(6)); toast("Nuevo código generado. Al guardar, se expulsará la sesión anterior.", "warning"); }}
+                  title="Copiar Código de Sala"
+                  className="px-2.5 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold"
+                  onClick={() => copiar(codigoSala || "PRINCIPAL", "Código de Sala")}
                 >
-                  <span >🔄</span>
+                  📋
                 </button>
               </div>
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Contraseña</label>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                🔒 Contraseña
+              </label>
               <div className="flex gap-1">
                 <input
                   value={clavePortal}
@@ -204,38 +244,43 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
                 />
                 <button
                   type="button"
-                  title="Regenerar contraseña"
+                  title="Regenerar contraseña y cerrar sesión anterior"
                   className="px-2 rounded-lg bg-slate-200 hover:bg-cyan-100 text-slate-600"
-                  onClick={() => setClavePortal(generarCodigo(4))}
+                  onClick={() => {
+                    setToken(generarCodigo(6));
+                    setClavePortal(generarCodigo(4));
+                    toast("Nueva contraseña generada. Al guardar, se expulsará la sesión anterior.", "warning");
+                  }}
                 >
-                  <span >🔄</span>
+                  <span>🔄</span>
                 </button>
               </div>
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Enlace largo (copia manual)</label>
+            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">
+              🌐 Enlace de ingreso (Código de Sala + Usuario + Contraseña)
+            </label>
             <div className="flex gap-1">
-              <input readOnly value={linkLargo} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[11px] font-mono text-slate-600 bg-slate-50" />
-              <button type="button" className="px-2 rounded-lg bg-slate-200 hover:bg-cyan-100 text-slate-600" onClick={() => copiar(linkLargo)} title="Copiar">
-                <span >🗐️</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Enlace corto (WhatsApp)</label>
-            <div className="flex gap-1">
-              <input readOnly value={linkCorto} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[11px] font-mono text-cyan-700 font-bold bg-cyan-50" />
-              <button type="button" className="px-2 rounded-lg bg-slate-200 hover:bg-cyan-100 text-slate-600" onClick={() => copiar(linkCorto)} title="Copiar">
-                <span >🗐️</span>
+              <input
+                readOnly
+                value={urlAcceso}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[11px] font-mono text-cyan-700 font-bold bg-cyan-50"
+              />
+              <button
+                type="button"
+                className="px-2 rounded-lg bg-slate-200 hover:bg-cyan-100 text-slate-600"
+                onClick={() => copiar(urlAcceso, "Enlace de acceso")}
+                title="Copiar"
+              >
+                <span>🗐️</span>
               </button>
               <button
                 type="button"
                 className="px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black whitespace-nowrap"
                 onClick={enviarWhatsApp}
-                title="Enviar enlace y credenciales por WhatsApp"
+                title="Enviar credenciales con Código de Sala por WhatsApp"
               >
                 📲 WhatsApp
               </button>
@@ -243,7 +288,9 @@ export function ModalPortalCliente({ cliente, onClose, onGuardado }: Props) {
           </div>
 
           {habilitado ? (
-            <p className="text-[10px] italic text-slate-400">Entréguele al cliente el enlace y la contraseña. Pedirá ambos al entrar.</p>
+            <p className="text-[10px] italic text-slate-400">
+              El cliente ingresa en Login escribiendo: Código de Sala ({codigoSala || "PRINCIPAL"}) + Usuario ({cliente.seudonimo || cliente.nombre}) + Contraseña.
+            </p>
           ) : (
             <p className="text-[10px] italic text-amber-600">El acceso queda DESHABILITADO hasta que lo active.</p>
           )}

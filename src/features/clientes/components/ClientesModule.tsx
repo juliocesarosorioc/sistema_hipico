@@ -37,6 +37,7 @@ import { esClienteAfiliadoAlSocio } from "@/features/clientes/lib/comisiones-soc
 import { supabase } from "@/core/supabase";
 import { formatoMoneda } from "@/shared/lib/vzla";
 import { listarGruposVenta, type GrupoVenta } from "@/features/grupos/lib/grupos";
+import { codigoSalaDeGrupo } from "@/features/grupos/lib/codigo-sala";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
@@ -371,6 +372,29 @@ export function ClientesModule() {
               </span>
             </div>
           )}
+          {(() => {
+            const gActual =
+              grupos.find((g) => String(g.id) === String(grupoConsultado || miGrupoId || grupoActivo)) ||
+              grupos.find((g) => g.es_principal) ||
+              grupos[0];
+            const codSala = gActual ? codigoSalaDeGrupo(gActual) : "";
+            if (!codSala) return null;
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(codSala).catch(() => undefined);
+                  toast(`Código de sala "${codSala}" copiado.`, "success");
+                }}
+                title="Código de Sala para que los usuarios inicien sesión (clic para copiar)"
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-900 hover:bg-emerald-100 transition"
+              >
+                <span>🔑 Código de Sala:</span>
+                <span className="font-mono font-black">{codSala}</span>
+                <span className="text-[10px]">📋</span>
+              </button>
+            );
+          })()}
         </div>
         <div className="flex gap-2">
           <BotonCargaRapidaSaldo />
