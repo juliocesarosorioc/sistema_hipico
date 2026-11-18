@@ -245,6 +245,12 @@ export function ChatSalaPanel({
   };
 
   useEffect(() => {
+    if (sala?.id) {
+      void cargarMensajes();
+    }
+  }, [sala?.id, sala?.estado_carrera, sala?.hipodromo_activo, sala?.numero_carrera_activa]);
+
+  useEffect(() => {
     cargarMensajes();
     const interval = setInterval(cargarMensajes, 2500);
 
@@ -327,7 +333,14 @@ export function ChatSalaPanel({
             jugadaEstandarizada: res.data.jugadaEstandarizada,
           });
         } else {
-          setSugerenciaPedagogica(null);
+          if (res.data?.advertenciaSaldo) {
+            setSugerenciaPedagogica({
+              mensaje: res.data.advertenciaSaldo,
+              sugerencias: [],
+            });
+          } else {
+            setSugerenciaPedagogica(null);
+          }
           setTextoInput("");
           setReplyToPropuesta(null);
           setTomandoParteId(null);

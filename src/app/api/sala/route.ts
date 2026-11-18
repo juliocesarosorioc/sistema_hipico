@@ -15,6 +15,10 @@ import {
   analizarYEstandarizarJugada,
   analizarComandoRetiro,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
+import {
+  indiceModalidadProgresiva,
+  limpiarEtiquetasProhibidas,
+} from "@/features/sala-juegos/lib/modalidades-progresivas";
 import { validarSolicitudRecargaServidor } from "@/features/sala-juegos/lib/recargas-server";
 import {
   formatearMontoRegional,
@@ -35,7 +39,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const BOT_DAEMON_URL = process.env.BOT_WHATSAPP_DAEMON_URL || "http://127.0.0.1:3005";
+const BOT_DAEMON_URL = process.env.BOT_DAEMON_URL || process.env.BOT_WHATSAPP_DAEMON_URL || "http://127.0.0.1:3005";
 const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
 /**
@@ -129,6 +133,67 @@ async function emitirBroadcast(salaId: string, evento: string, payload: any) {
     }).catch(() => {});
   } catch {
     // Modo resiliente
+  }
+}
+
+/**
+ * Inserta un mensaje en public.chat_mensajes usando únicamente columnas válidas
+ * y con fallback automático si falta alguna columna opcional en el esquema.
+ */
+async function insertarMensajeChatResiliente(payload: Record<string, any>) {
+  try {
+    let whatsappGroupJid = payload.whatsapp_group_jid || null;
+    if (!whatsappGroupJid && payload.sala_id) {
+      const { data: sRow } = await supabaseAdmin
+        .from("salas_juego")
+        .select("whatsapp_group_jid")
+        .eq("id", payload.sala_id)
+        .maybeSingle();
+      if (sRow?.whatsapp_group_jid) whatsappGroupJid = sRow.whatsapp_group_jid;
+    }
+
+    const filaBase: Record<string, any> = {
+      grupo_id: payload.grupo_id,
+      sala_id: payload.sala_id,
+      remitente_id: payload.remitente_id ?? null,
+      remitente_nombre: payload.remitente_nombre || "Operador de Sala",
+      es_operador: Boolean(payload.es_operador),
+      tipo_mensaje: payload.tipo_mensaje || "TEXTO",
+      contenido: payload.contenido,
+      whatsapp_group_jid: whatsappGroupJid,
+      eliminado: false,
+    };
+
+    const filaExtendida: Record<string, any> = {
+      ...filaBase,
+      estado_propuesta: payload.estado_propuesta || "no_aplica",
+      origen_canal: payload.origen_canal || "WEB",
+      ...(payload.destinatario_privado_id !== undefined
+        ? { destinatario_privado_id: payload.destinatario_privado_id }
+        : {}),
+      ...(payload.reply_to_msg_id !== undefined
+        ? { reply_to_msg_id: payload.reply_to_msg_id }
+        : {}),
+      ...(payload.imagen_url ? { imagen_url: payload.imagen_url } : {}),
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from("chat_mensajes")
+      .insert(filaExtendida)
+      .select()
+      .maybeSingle();
+
+    if (!error) return { data, error: null };
+
+    // Fallback: insertar sólo columnas núcleo si alguna columna opcional falló
+    const fallback = await supabaseAdmin
+      .from("chat_mensajes")
+      .insert(filaBase)
+      .select()
+      .maybeSingle();
+    return fallback;
+  } catch (err: any) {
+    return { data: null, error: err };
   }
 }
 
@@ -551,7 +616,7 @@ export async function GET(req: Request) {
         qMensajes = qMensajes.eq("sala_id", salaId);
       }
       const { data: mensajes, error } = await qMensajes
-        .eq("eliminado", false)
+        .or("eliminado.eq.false,eliminado.is.null")
         .order("created_at", { ascending: false })
         .limit(limit);
 
@@ -711,17 +776,18 @@ async function liquidarCarreraFallback(
       sala.numero_carrera_activa || 1
     );
 
-    await supabaseAdmin.from("chat_mensajes").insert({
+    await insertarMensajeChatResiliente({
       grupo_id: grupoId,
       sala_id: salaId,
       remitente_nombre: "Operador de Sala",
       es_operador: true,
       tipo_mensaje: "ESTADO_CARRERA",
       contenido: textoCierre,
-      solo_borrable_operador: true,
-      origen_canal: "web",    });
+      origen_canal: "WEB",
+    });
 
     void publicarEnWhatsAppSala(salaId, textoCierre);
+    await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
   }
 
   const { data: grupo } = await supabaseAdmin
@@ -1000,14 +1066,14 @@ async function liquidarCarreraFallback(
     (reportePositivos.length === 0 && reporteNegativos.length === 0 ? "Sin movimientos en esta carrera.\n" : "") +
     `\n👉 ¿Cuál es la próxima carrera a abrir?`;
 
-  await supabaseAdmin.from("chat_mensajes").insert({
+  await insertarMensajeChatResiliente({
     grupo_id: grupoId,
     sala_id: salaId,
     remitente_nombre: "Operador de Sala",
     es_operador: true,
     tipo_mensaje: "PIZARRA",
     contenido: mensajeReporte,
-    solo_borrable_operador: true,
+    origen_canal: "WEB",
   });
 
   void publicarEnWhatsAppSala(salaId, mensajeReporte);
@@ -1149,14 +1215,14 @@ async function reversarCarrera(grupoId: string, salaId: string, operadorNombre: 
   await sincronizarEstadoGrupo(grupoId);
 
   const textoAviso = `🔄 *LIQUIDACIÓN REVERSADA*\nEl operador ha reversado la liquidación de la carrera ${hipodromo} C${numCarrera} y eliminado la pizarra colocada. Se han restituido los saldos y tickets al estado previo a la liquidación.`;
-  await supabaseAdmin.from("chat_mensajes").insert({
+  await insertarMensajeChatResiliente({
     grupo_id: grupoId,
     sala_id: salaId,
     remitente_nombre: "Operador de Sala",
     es_operador: true,
     tipo_mensaje: "ESTADO_CARRERA",
     contenido: textoAviso,
-    solo_borrable_operador: true,
+    origen_canal: "WEB",
   });
 
   await emitirBroadcast(salaId, "carrera_reversada", { salaId, carreraId });
@@ -1289,14 +1355,14 @@ async function anularCarrera(grupoId: string, salaId: string, operadorNombre: st
 
   const textoAviso = `🚫 *CARRERA ANULADA*\nSe ha cancelado y anulado la carrera ${hipodromo} C${numCarrera}. Se ha reembolsado y restituido el 100% de los fondos y jugadas comprometidas a todos los participantes.`;
 
-  await supabaseAdmin.from("chat_mensajes").insert({
+  await insertarMensajeChatResiliente({
     grupo_id: grupoId,
     sala_id: salaId,
     remitente_nombre: "Operador de Sala",
     es_operador: true,
     tipo_mensaje: "ESTADO_CARRERA",
     contenido: textoAviso,
-    solo_borrable_operador: true,
+    origen_canal: "WEB",
   });
 
   await emitirBroadcast(salaId, "carrera_anulada", { salaId, carreraId });
@@ -1627,7 +1693,8 @@ export async function POST(req: Request) {
               contenido: textoVanJugando,
               reply_to_msg_id: propuestaId,
               carrera_id: propMsg.carrera_id || sala.carrera_activa_id,
-              origen_canal: "web",            });
+              origen_canal: "web",
+            });
           }
           void publicarEnWhatsAppSala(salaId, textoVanJugando, propMsg.whatsapp_msg_id);
         }
@@ -1831,9 +1898,13 @@ export async function POST(req: Request) {
           }
 
           let propId: string | null = null;
+          const montoPropFinal = analisis.excedioSaldo
+            ? Math.max(0, Number((analisis.montoDisponibleValido ?? disponible).toFixed(2)))
+            : Number(analisis.monto);
 
           // 1. Intentar creación atómica vía RPC publicar_propuesta_atomica
           if (
+            montoPropFinal > 0 &&
             esUuidValido(carreraIdActiva) &&
             esUuidValido(identidad.usuarioId) &&
             esUuidValido(salaId) &&
@@ -1852,7 +1923,7 @@ export async function POST(req: Request) {
                 p_caballos_b: analisis.caballosBandoB || [],
                 p_ejemplar_texto: analisis.ejemplarTexto || "",
                 p_proporcion: analisis.proporcion || "1x1",
-                p_monto_solicitado: analisis.monto,
+                p_monto_solicitado: montoPropFinal,
                 p_texto_estandarizado: analisis.jugadaEstandarizada,
               });
 
@@ -1871,9 +1942,31 @@ export async function POST(req: Request) {
             }, { status: 400 });
           }
 
+          let advertenciaSaldo: string | null = null;
+          if (analisis.excedioSaldo) {
+            const prefijoAdv = prefijoMonedaGrupo(monedaGrupo);
+            advertenciaSaldo = `⚠️ *${identidad.nombre}* está jugando por encima de su saldo disponible (${prefijoAdv}${formatearMontoRegional(Math.max(0, disponible))}). Propuesta ajustada a ${prefijoAdv}${formatearMontoRegional(montoPropFinal)}.`;
+            await insertarMensajeChatResiliente({
+              grupo_id: grupoId,
+              sala_id: salaId,
+              remitente_nombre: "🤖 ASISTENTE DE SALA",
+              es_operador: true,
+              tipo_mensaje: "sistema",
+              contenido: advertenciaSaldo,
+              origen_canal: "WEB",
+            });
+            void publicarEnWhatsAppSala(salaId, advertenciaSaldo);
+          }
+
           await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
           void publicarEnWhatsAppSala(salaId, `🎲 *${identidad.nombre}*: ${analisis.jugadaEstandarizada}`);
-          return NextResponse.json({ ok: true, propuestaId: propId, jugadaEstandarizada: analisis.jugadaEstandarizada });
+          return NextResponse.json({
+            ok: true,
+            propuestaId: propId,
+            jugadaEstandarizada: analisis.jugadaEstandarizada,
+            excedioSaldo: Boolean(analisis.excedioSaldo),
+            advertenciaSaldo,
+          });
         }
       }
 
@@ -1886,24 +1979,20 @@ export async function POST(req: Request) {
       const destPrivadoUuid = esUuidValido(destinatarioPrivadoId) ? destinatarioPrivadoId : null;
       const replyMsgUuid = esUuidValido(replyToMsgId) ? replyToMsgId : null;
 
-      const { data: msgInsertado, error: errInsert } = await supabaseAdmin
-        .from("chat_mensajes")
-        .insert({
-          grupo_id: grupoId,
-          sala_id: salaId,
-          remitente_id: remitenteUuid,
-          remitente_nombre: identidad.nombre,
-          es_operador: esOperador,
-          tipo_mensaje: pizarraLlegada ? "PIZARRA" : destPrivadoUuid ? "DM_PRIVADO" : "TEXTO",
-          estado_propuesta: "no_aplica",
-          contenido: texto,
-          destinatario_privado_id: destPrivadoUuid,
-          reply_to_msg_id: replyMsgUuid,
-          imagen_url: imagenUrl || null,
-          solo_borrable_operador: esOperador,
-          origen_canal: "WEB",        })
-        .select()
-        .single();
+      const { data: msgInsertado, error: errInsert } = await insertarMensajeChatResiliente({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_id: remitenteUuid,
+        remitente_nombre: identidad.nombre,
+        es_operador: esOperador,
+        tipo_mensaje: pizarraLlegada ? "PIZARRA" : destPrivadoUuid ? "DM_PRIVADO" : "TEXTO",
+        estado_propuesta: "no_aplica",
+        contenido: texto,
+        destinatario_privado_id: destPrivadoUuid,
+        reply_to_msg_id: replyMsgUuid,
+        imagen_url: imagenUrl || null,
+        origen_canal: "WEB",
+      });
 
       if (errInsert) {
         return NextResponse.json({ ok: false, error: errInsert.message }, { status: 500 });
@@ -2050,19 +2139,20 @@ export async function POST(req: Request) {
         // Mensaje destacado exacto según especificación
         const textoDestacado = construirMensajeCarreraAbierta(hipoTexto, carreraNum);
 
-        await supabaseAdmin.from("chat_mensajes").insert({
+        await insertarMensajeChatResiliente({
           grupo_id: grupoId,
           sala_id: salaId,
           remitente_nombre: "Operador de Sala",
           es_operador: true,
           tipo_mensaje: "ESTADO_CARRERA",
           contenido: textoDestacado,
-          solo_borrable_operador: true,
-          origen_canal: "web",        });
+          origen_canal: "WEB",
+        });
 
         void publicarEnWhatsAppSala(salaId, textoDestacado);
         await emitirBroadcast(salaId, "carrera_abierta", { salaId });
-        return NextResponse.json({ ok: true });
+        await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+        return NextResponse.json({ ok: true, mensaje: textoDestacado });
       }
 
       // 4.b CERRAR CARRERA
@@ -2085,25 +2175,27 @@ export async function POST(req: Request) {
           sala?.numero_carrera_activa || 1
         );
 
-        await supabaseAdmin.from("chat_mensajes").insert({
+        await insertarMensajeChatResiliente({
           grupo_id: grupoId,
           sala_id: salaId,
           remitente_nombre: "Operador de Sala",
           es_operador: true,
           tipo_mensaje: "ESTADO_CARRERA",
           contenido: textoCierre,
-          solo_borrable_operador: true,
-          origen_canal: "web",        });
+          whatsapp_group_jid: sala?.whatsapp_group_jid || null,
+          origen_canal: "WEB",
+        });
 
         void publicarEnWhatsAppSala(salaId, textoCierre);
 
         await emitirBroadcast(salaId, "carrera_cerrada", { salaId });
-        return NextResponse.json({ ok: true });
+        await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+        return NextResponse.json({ ok: true, mensaje: textoCierre });
       }
 
       // 4.c REABRIR CARRERA
       if (subaccion === "reabrir-carrera") {
-        const { data: sala } = await supabaseAdmin.from("salas_juego").select("estado_carrera").eq("id", salaId).maybeSingle();
+        const { data: sala } = await supabaseAdmin.from("salas_juego").select("*").eq("id", salaId).maybeSingle();
         if (sala?.estado_carrera === "liquidada") {
           return NextResponse.json({ ok: false, error: "Carrera liquidada: debes reversar la liquidación antes de reabrir." }, { status: 400 });
         }
@@ -2116,8 +2208,24 @@ export async function POST(req: Request) {
           .eq("id", salaId);
 
         await sincronizarEstadoGrupo(grupoId);
+        const textoReapertura = construirMensajeCarreraAbierta(
+          sala?.hipodromo_activo || "HIPÓDROMO",
+          sala?.numero_carrera_activa || 1
+        );
+        await insertarMensajeChatResiliente({
+          grupo_id: grupoId,
+          sala_id: salaId,
+          remitente_nombre: "Operador de Sala",
+          es_operador: true,
+          tipo_mensaje: "ESTADO_CARRERA",
+          contenido: textoReapertura,
+          whatsapp_group_jid: sala?.whatsapp_group_jid || null,
+          origen_canal: "WEB",
+        });
+        void publicarEnWhatsAppSala(salaId, textoReapertura);
         await emitirBroadcast(salaId, "carrera_reabierta", { salaId });
-        return NextResponse.json({ ok: true });
+        await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+        return NextResponse.json({ ok: true, mensaje: textoReapertura });
       }
 
       // 4.d RETIRADO EN VIVO
@@ -2146,18 +2254,20 @@ export async function POST(req: Request) {
 
         const textoRetirado = `🚫 EJEMPLAR RETIRADO: Se ha procesado el retiro del ejemplar #${ejemplar}. Las jugadas pactadas han sido anuladas y los saldos restituidos.`;
 
-        await supabaseAdmin.from("chat_mensajes").insert({
+        await insertarMensajeChatResiliente({
           grupo_id: grupoId,
           sala_id: salaId,
           remitente_nombre: "Operador de Sala",
           es_operador: true,
           tipo_mensaje: "ESTADO_CARRERA",
           contenido: textoRetirado,
-          solo_borrable_operador: true,
-          origen_canal: "web",        });
+          whatsapp_group_jid: sala?.whatsapp_group_jid || null,
+          origen_canal: "WEB",
+        });
 
         void publicarEnWhatsAppSala(salaId, textoRetirado);
         await emitirBroadcast(salaId, "ejemplar_retirado", { salaId, ejemplar });
+        await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
         return NextResponse.json({ ok: true, resultado: retRes });
       }
 
@@ -2242,12 +2352,141 @@ export async function POST(req: Request) {
           .from("chat_tickets_fifo")
           .select("*")
           .eq("sala_id", salaId)
-          .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"]);
+          .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"])
+          .order("created_at", { ascending: true });
 
         return NextResponse.json({
           ok: true,
           sala,
           tickets: tickets || [],
+        });
+      }
+
+      // 4.i PUBLICAR PREJUGADAS EN EL CHAT DE LA SALA Y WHATSAPP
+      if (subaccion === "publicar-prejugadas") {
+        const { data: sala } = await supabaseAdmin.from("salas_juego").select("*").eq("id", salaId).single();
+        if (!sala) {
+          return NextResponse.json({ ok: false, error: "Sala no encontrada" }, { status: 404 });
+        }
+
+        const { data: grupoRow } = await supabaseAdmin
+          .from("grupos_venta")
+          .select("nombre, moneda")
+          .eq("id", sala.grupo_id)
+          .maybeSingle();
+
+        const { data: tickets } = await supabaseAdmin
+          .from("chat_tickets_fifo")
+          .select("*")
+          .eq("sala_id", salaId)
+          .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"])
+          .order("created_at", { ascending: true });
+
+        const { data: propsAbiertas } = await supabaseAdmin
+          .from("chat_mensajes")
+          .select("remitente_nombre, jugada_estandarizada, contenido, monto_disponible, modalidad_propuesta, proporcion_premio, es_match")
+          .eq("sala_id", salaId)
+          .in("tipo_mensaje", ["propuesta_jugada", "PROPUESTA"])
+          .in("estado_propuesta", ["abierta", "parcial"])
+          .gt("monto_disponible", 0)
+          .order("created_at", { ascending: true });
+
+        let retirados: string[] = [];
+        if (sala.carrera_activa_id) {
+          try {
+            const { data: cRow } = await supabaseAdmin
+              .from("carreras")
+              .select("ejemplares_retirados")
+              .eq("id", sala.carrera_activa_id)
+              .maybeSingle();
+            if (Array.isArray(cRow?.ejemplares_retirados)) {
+              retirados = cRow.ejemplares_retirados;
+            }
+          } catch {}
+        }
+
+        const pref = prefijoMonedaGrupo(grupoRow?.moneda);
+        const ordenTicket = (t: any) => {
+          const clave = t.es_match
+            ? t.proporcion_premio || t.proporcion || "pp"
+            : t.modalidad || t.modalidad_propuesta || "1P";
+          const i = indiceModalidadProgresiva(String(clave));
+          return i >= 0 ? i : 99;
+        };
+
+        const ticketsOrdenados = [...(tickets || [])].sort((a, b) => {
+          const diff = ordenTicket(a) - ordenTicket(b);
+          if (diff !== 0) return diff;
+          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        });
+
+        const hipo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
+        const carrera = sala.numero_carrera_activa || 1;
+        const fecha = new Date().toLocaleDateString("es-VE");
+        const retStr = retirados.length > 0 ? retirados.map((r) => `#${String(r).replace(/^#/, "")}`).join(", ") : "Ninguno";
+
+        const lineasCasadas =
+          ticketsOrdenados.length > 0
+            ? ticketsOrdenados
+                .map((t, idx) => {
+                  const cruce = `${t.proponente_nombre || "Jugador A"} vs ${t.aceptante_nombre || "Jugador B"}`;
+                  let jugada = "";
+                  if (t.es_match) {
+                    const bA = (t.caballos_bando_a || []).join("-");
+                    const bB = (t.caballos_bando_b || []).join("-");
+                    const prop = limpiarEtiquetasProhibidas(String(t.proporcion_premio || t.proporcion || "").trim());
+                    const propStr = prop && !["1x1", "pp"].includes(prop.toLowerCase()) ? ` [${prop.replace("@", "/").replace(/a/i, "/")}]` : "";
+                    jugada = `(${bA}x${bB})${propStr}`;
+                  } else {
+                    jugada = `${t.modalidad || "1P"} #${t.ejemplar_numero || (t.caballos_bando_a || []).join("-")}`;
+                  }
+                  const cod = (t.codigo_ticket || String(t.id || "").slice(0, 6)).toUpperCase();
+                  return `${idx + 1}. [T-${cod}] ${pref}${formatearMontoRegional(Number(t.monto_concretado || 0))} · ${cruce} · ${jugada}`;
+                })
+                .join("\n")
+            : "_No hay jugadas pactadas aún en esta carrera._";
+
+        const propsOrdenadas = [...(propsAbiertas || [])].sort((a, b) => ordenTicket(a) - ordenTicket(b));
+        const bloqueAbiertas =
+          propsOrdenadas.length > 0
+            ? `\n\n📌 *Propuestas abiertas en cola (${propsOrdenadas.length}):*\n` +
+              propsOrdenadas
+                .map((p: any) => {
+                  const det = limpiarEtiquetasProhibidas(String(p.jugada_estandarizada || p.contenido || "Propuesta"));
+                  return `• ${p.remitente_nombre}: ${det} (Disp: ${pref}${formatearMontoRegional(Number(p.monto_disponible || 0))})`;
+                })
+                .join("\n")
+            : "";
+
+        const totalPactado = ticketsOrdenados.reduce((acc, t) => acc + Number(t.monto_concretado || 0), 0);
+        const textoReporte =
+          `📋 *PREJUGADAS OFICIALES — ${hipo} C${carrera}*\n` +
+          `🏛️ ${grupoRow?.nombre || "Sala Hípica"} | 📅 ${fecha} | 🚫 Retirados: ${retStr}\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `${lineasCasadas}` +
+          `${bloqueAbiertas}\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `💰 *Total Pactado:* ${pref}${formatearMontoRegional(totalPactado)} (${ticketsOrdenados.length} tickets)`;
+
+        await insertarMensajeChatResiliente({
+          grupo_id: sala.grupo_id,
+          sala_id: salaId,
+          remitente_nombre: "📋 PREJUGADAS OFICIALES",
+          es_operador: true,
+          tipo_mensaje: "sistema",
+          contenido: textoReporte,
+          whatsapp_group_jid: sala.whatsapp_group_jid || null,
+          origen_canal: "WEB",
+        });
+
+        await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+        await publicarEnWhatsAppSala(salaId, textoReporte);
+
+        return NextResponse.json({
+          ok: true,
+          textoReporte,
+          sala,
+          tickets: ticketsOrdenados,
         });
       }
 

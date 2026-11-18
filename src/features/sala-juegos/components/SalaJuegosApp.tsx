@@ -227,6 +227,14 @@ export function SalaJuegosApp({
   const saldoDisp = identidad?.clienteRow?.saldo_disponible ?? 0;
   const esLibre = Boolean(identidad?.clienteRow?.libre);
   const esEspectador = identidad?.usuarioId === "espectador" || identidad?.tipo === "INVITADO";
+  const puedePublicarPrejugadas =
+    !esEspectador &&
+    Boolean(
+      identidad?.esOperador ||
+        identidad?.esAdmin ||
+        identidad?.tipo === "DUENO" ||
+        identidad?.tipo === "OPERADOR"
+    );
 
   // Resolver publicidad activa y destino para clics hacia Tablas Fijas, Remates, Marcas, etc.
   // Todos los hooks deben ejecutarse incondicionalmente antes de cualquier return temprano.
@@ -906,8 +914,14 @@ export function SalaJuegosApp({
       {modalPrejugadasAbierto && salaActiva && (
         <ModalPrejugadas
           salaId={salaActiva.id}
+          grupoId={grupoActivo?.id}
           grupoNombre={grupoActivo?.nombre || ""}
           moneda={grupoActivo?.moneda}
+          puedePublicar={puedePublicarPrejugadas}
+          publicarAlAbrir={puedePublicarPrejugadas}
+          onPublicado={() => {
+            void cargarBootstrap(grupoActivo?.id);
+          }}
           onCerrar={() => setModalPrejugadasAbierto(false)}
         />
       )}

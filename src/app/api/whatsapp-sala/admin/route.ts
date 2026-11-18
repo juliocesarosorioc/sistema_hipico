@@ -13,6 +13,53 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { persistSession: false },
 });
 
+async function emitirBroadcastSalaAdmin(salaId: string, evento: string, payload: any) {
+  try {
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !key || !salaId) return;
+    await fetch(`${supabaseUrl}/realtime/v1/api/broadcast`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        messages: [
+          { topic: `realtime:sala:${salaId}`, event: evento, payload },
+          { topic: `realtime:sala-${salaId}`, event: evento, payload },
+        ],
+      }),
+    }).catch(() => {});
+  } catch {}
+}
+
+async function registrarEstadoCarreraEnChatAdmin(salaActualizada: any, texto: string, evento: string) {
+  if (!salaActualizada?.id || !texto) return;
+  try {
+    const filaBase = {
+      grupo_id: salaActualizada.grupo_id,
+      sala_id: salaActualizada.id,
+      remitente_nombre: "Operador de Sala",
+      es_operador: true,
+      tipo_mensaje: "ESTADO_CARRERA",
+      contenido: texto,
+      whatsapp_group_jid: salaActualizada.whatsapp_group_jid || null,
+      eliminado: false,
+    };
+    const { error } = await supabaseAdmin.from("chat_mensajes").insert({
+      ...filaBase,
+      estado_propuesta: "no_aplica",
+      origen_canal: "WEB",
+    });
+    if (error) {
+      await supabaseAdmin.from("chat_mensajes").insert(filaBase);
+    }
+    await emitirBroadcastSalaAdmin(salaActualizada.id, evento, { salaId: salaActualizada.id });
+    await emitirBroadcastSalaAdmin(salaActualizada.id, "nuevo_mensaje", { salaId: salaActualizada.id });
+  } catch {}
+}
+
 export async function GET() {
   try {
     const res = await fetch(`${BOT_DAEMON_URL}/status`, {
@@ -714,6 +761,8 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      await registrarEstadoCarreraEnChatAdmin(salaActualizada, textoApertura, "carrera_abierta");
+
       return NextResponse.json({
         ok: true,
         sala: salaActualizada,
@@ -774,6 +823,8 @@ export async function POST(req: NextRequest) {
           enviadoWhatsApp = false;
         }
       }
+
+      await registrarEstadoCarreraEnChatAdmin(salaActualizada, textoCierre, "carrera_cerrada");
 
       return NextResponse.json({
         ok: true,

@@ -1688,8 +1688,10 @@ async function manejarMensajeEntrante(msg) {
       data.alertaPrivada ||
       data.msg_privado_aceptante;
 
+    const telClienteFallback = data.clienteTelefono ? normalizarTelefono(data.clienteTelefono) : null;
     const dmDest =
       (telReal ? `${telReal}@s.whatsapp.net` : null) ||
+      (telClienteFallback ? `${telClienteFallback}@s.whatsapp.net` : null) ||
       (participantJid && participantJid.endsWith("@s.whatsapp.net") ? participantJid : null) ||
       (esPrivado ? remoteJid : null);
 

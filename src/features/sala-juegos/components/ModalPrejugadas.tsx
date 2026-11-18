@@ -6,17 +6,69 @@ import { formatearMontoRegional, prefijoMonedaGrupo } from "@/shared/lib/dinero"
 
 interface PropsModalPrejugadas {
   salaId: string;
+  grupoId?: string;
   grupoNombre: string;
   moneda?: string | null;
+  puedePublicar?: boolean;
+  publicarAlAbrir?: boolean;
+  onPublicado?: () => void;
   onCerrar: () => void;
 }
 
-export function ModalPrejugadas({ salaId, grupoNombre, moneda, onCerrar }: PropsModalPrejugadas) {
+export function ModalPrejugadas({
+  salaId,
+  grupoId,
+  grupoNombre,
+  moneda,
+  puedePublicar = false,
+  publicarAlAbrir = false,
+  onPublicado,
+  onCerrar,
+}: PropsModalPrejugadas) {
   const [cargando, setCargando] = useState(true);
   const [tickets, setTickets] = useState<any[]>([]);
   const [salaInfo, setSalaInfo] = useState<any>(null);
   const [copiado, setCopiado] = useState(false);
+  const [publicando, setPublicando] = useState(false);
+  const [estadoPublicacion, setEstadoPublicacion] = useState<{
+    ok: boolean;
+    mensaje: string;
+  } | null>(null);
+  const autoPublicadoSalaRef = useRef<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const publicarEnChatYWhatsapp = async () => {
+    if (!salaId || publicando) return;
+    setPublicando(true);
+    try {
+      const res = await salaApi.accionOperador("publicar-prejugadas", {
+        salaId,
+        grupoId,
+      });
+      if (res.ok && res.data?.ok) {
+        const msgWa = res.data.enviadoWhatsApp
+          ? " y WhatsApp"
+          : " (en Chat Web; WhatsApp sin conexión o sin grupo vinculado)";
+        setEstadoPublicacion({
+          ok: true,
+          mensaje: `✅ Prejugadas publicadas en Sala${msgWa}`,
+        });
+        onPublicado?.();
+      } else {
+        setEstadoPublicacion({
+          ok: false,
+          mensaje: `⚠️ ${res.data?.error || "No se pudo publicar las prejugadas."}`,
+        });
+      }
+    } catch {
+      setEstadoPublicacion({
+        ok: false,
+        mensaje: "⚠️ Error de conexión al publicar las prejugadas.",
+      });
+    } finally {
+      setPublicando(false);
+    }
+  };
 
   useEffect(() => {
     let montado = true;
@@ -33,6 +85,13 @@ export function ModalPrejugadas({ salaId, grupoNombre, moneda, onCerrar }: Props
       montado = false;
     };
   }, [salaId]);
+
+  useEffect(() => {
+    if (!cargando && publicarAlAbrir && puedePublicar && autoPublicadoSalaRef.current !== salaId) {
+      autoPublicadoSalaRef.current = salaId;
+      void publicarEnChatYWhatsapp();
+    }
+  }, [cargando, publicarAlAbrir, puedePublicar, salaId]);
 
   const hipodromo = (salaInfo?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
   const carrera = salaInfo?.numero_carrera_activa || 1;
@@ -193,7 +252,29 @@ export function ModalPrejugadas({ salaId, grupoNombre, moneda, onCerrar }: Props
             <div className="p-8 text-center text-gray-400">Cargando jugadas pactadas...</div>
           ) : (
             <>
-              <div className="flex gap-2">
+              {estadoPublicacion && (
+                <div
+                  className={`px-3 py-2 rounded-lg border text-[11px] font-bold ${
+                    estadoPublicacion.ok
+                      ? "bg-emerald-950/70 border-emerald-600/50 text-emerald-300"
+                      : "bg-amber-950/70 border-amber-600/50 text-amber-300"
+                  }`}
+                >
+                  {estadoPublicacion.mensaje}
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                {puedePublicar && (
+                  <button
+                    onClick={() => void publicarEnChatYWhatsapp()}
+                    disabled={publicando}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition"
+                  >
+                    <span>{publicando ? "⏳" : "📢"}</span>
+                    <span>{publicando ? "Publicando en Chat y WhatsApp..." : "Publicar en Chat y WhatsApp"}</span>
+                  </button>
+                )}
                 <button
                   onClick={copiarTexto}
                   className="flex-1 bg-[#202c33] hover:bg-[#2a3942] border border-gray-700 text-emerald-400 font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition"

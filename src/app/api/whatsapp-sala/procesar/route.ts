@@ -1178,6 +1178,20 @@ export async function POST(req: Request) {
 
       const textoApertura = `🏆🏇${hipoLimpio}, ${ord} Carrera🏆🏇\nCARRERA ABIERTA Y EN JUEGO\nMucha suerte a todos.`;
 
+      if (salaActualizada?.grupo_id) {
+        await supabaseAdmin.from("chat_mensajes").insert({
+          grupo_id: salaActualizada.grupo_id,
+          sala_id: salaId,
+          remitente_nombre: "Operador de Sala",
+          es_operador: true,
+          tipo_mensaje: "ESTADO_CARRERA",
+          contenido: textoApertura,
+          whatsapp_group_jid: salaActualizada.whatsapp_group_jid || null,
+          origen_canal: "WEB",
+          eliminado: false,
+        });
+      }
+
       let enviadoWhatsApp = false;
       if (salaActualizada?.whatsapp_group_jid) {
         try {
@@ -1203,6 +1217,7 @@ export async function POST(req: Request) {
         hipodromo: hipoLimpio,
         carrera: numCarrera,
       });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
       return NextResponse.json({
         ok: true,
@@ -1244,6 +1259,20 @@ export async function POST(req: Request) {
       const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
       const textoCierre = `${hipo}, ${ord} Carrera\nCARRERA CERRADA\n\nPUEDE ESCRIBIR LA PIZARRA: LLEGADA: 1RO.2DO.3RO.4TO.5TO`;
 
+      if (salaActualizada?.grupo_id) {
+        await supabaseAdmin.from("chat_mensajes").insert({
+          grupo_id: salaActualizada.grupo_id,
+          sala_id: salaId,
+          remitente_nombre: "Operador de Sala",
+          es_operador: true,
+          tipo_mensaje: "ESTADO_CARRERA",
+          contenido: textoCierre,
+          whatsapp_group_jid: salaActualizada.whatsapp_group_jid || null,
+          origen_canal: "WEB",
+          eliminado: false,
+        });
+      }
+
       let enviadoWhatsApp = false;
       if (salaActualizada?.whatsapp_group_jid) {
         try {
@@ -1265,6 +1294,7 @@ export async function POST(req: Request) {
       }
 
       await emitirBroadcastSala(salaId, "carrera_cerrada", { salaId });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
       return NextResponse.json({
         ok: true,
@@ -3907,11 +3937,12 @@ export async function POST(req: Request) {
         await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
       }
 
+      const saldoBlkFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
       const msgPubBlk = excedioSaldoBloque
-        ? `⚠️ *${nombreJugador}* dispone de $${formatearMontoRegional(Math.max(0, saldoDisponible))}`
+        ? `⚠️ *${nombreJugador}* está jugando por encima de su saldo disponible ($${saldoBlkFmt}). Algunas jugadas fueron ajustadas.`
         : null;
       const msgPrivBlk = excedioSaldoBloque
-        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`
+        ? `⚠️ Hola *${nombreJugador}*, estás jugando por encima de tu saldo disponible ($${saldoBlkFmt}). Por favor ajusta el monto de tus jugadas o recarga saldo.`
         : null;
 
       return NextResponse.json({
@@ -4008,8 +4039,22 @@ export async function POST(req: Request) {
     // Caso: Publicó jugada por encima de su saldo y tiene $0 disponible
     if (!analisis.valido && analisis.excedioSaldo) {
       const saldoFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
-      const msgPubExceso = `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`;
-      const msgPrivExceso = `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`;
+      const msgPubExceso = `⚠️ *${nombreJugador}* está jugando por encima de su saldo disponible ($${saldoFmt}). Debes recargar para proponer jugadas.`;
+      const msgPrivExceso = `⚠️ Hola *${nombreJugador}*, estás jugando por encima de tu saldo disponible ($${saldoFmt}). Por favor recarga o ajusta el monto de tus jugadas.`;
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_nombre: "🤖 ASISTENTE DE SALA",
+        es_operador: true,
+        tipo_mensaje: "sistema",
+        contenido: msgPubExceso,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "WHATSAPP",
+        eliminado: false,
+      });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
       return NextResponse.json({
         ok: false,
         tipo: "EXCESO_SALDO",
@@ -4100,8 +4145,22 @@ export async function POST(req: Request) {
     // Bloqueo estricto: Si el cliente no posee saldo disponible
     if (saldoDisponible <= 0 && !cliente.libre) {
       const saldoFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
-      const msgSinSaldo = `⚠️ *${nombreJugador}* dispone de $${saldoFmt}`;
-      const msgPrivSinSaldo = `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`;
+      const msgSinSaldo = `⚠️ *${nombreJugador}* está jugando por encima de su saldo disponible ($${saldoFmt}). Debes recargar para proponer jugadas.`;
+      const msgPrivSinSaldo = `⚠️ Hola *${nombreJugador}*, estás jugando por encima de tu saldo disponible ($${saldoFmt}). Por favor recarga o ajusta el monto de tus jugadas.`;
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_nombre: "🤖 ASISTENTE DE SALA",
+        es_operador: true,
+        tipo_mensaje: "sistema",
+        contenido: msgSinSaldo,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "WHATSAPP",
+        eliminado: false,
+      });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
       return NextResponse.json({
         ok: false,
         tipo: "SIN_SALDO",
@@ -4299,10 +4358,10 @@ export async function POST(req: Request) {
 
     await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 
-    // Ajuste automático "Por Pozo": si supera el disponible pero hay saldo parcial,
-    // se concreta hasta el máximo y se aclara públicamente quién limitó la jugada.
+    // Advertencia explícita y ajuste automático cuando propone por encima de su saldo disponible
     if (excedioSaldo && montoAPublicar > 0) {
       const saldoFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
+      const montoAjustadoFmt = formatearMontoRegional(montoAPublicar);
       const propPublica = {
         es_match: analisis.esMatch,
         caballos_bando_a: analisis.caballosBandoA,
@@ -4311,8 +4370,22 @@ export async function POST(req: Request) {
         ejemplar_texto: analisis.ejemplarTexto,
         proporcion_premio: analisis.proporcion,
       };
-      const msgPubRecorte = mensajeJugaronPorPozo(propPublica, montoAPublicar, nombreJugador);
-      const msgPrivRecorte = `✅ Tu jugada fue ajustada y registrada por $${formatearMontoRegional(montoAPublicar)}, el máximo disponible en tu saldo ($${saldoFmt}). Para corregir la redacción, escribe: Juego ${detallePublicoPropuesta(propPublica)} ${formatearMontoRegional(montoAPublicar)}.`;
+      const msgPubRecorte = `⚠️ *${nombreJugador}* está jugando por encima de su saldo disponible ($${saldoFmt}). Propuesta ajustada a $${montoAjustadoFmt}.`;
+      const msgPrivRecorte = `⚠️ Hola *${nombreJugador}*, estás jugando por encima de tu saldo disponible ($${saldoFmt}). Tu propuesta en ${detallePublicoPropuesta(propPublica)} fue ajustada a $${montoAjustadoFmt}.`;
+      await supabaseAdmin.from("chat_mensajes").insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_nombre: "🤖 ASISTENTE DE SALA",
+        es_operador: true,
+        tipo_mensaje: "sistema",
+        contenido: msgPubRecorte,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "WHATSAPP",
+        eliminado: false,
+      });
+      await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
       return NextResponse.json({
         ok: true,
         excedio_saldo: true,
