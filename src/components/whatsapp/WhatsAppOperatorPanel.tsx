@@ -351,17 +351,17 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
   const plantillaActiva = plantillas.find((p) => p.clave === plantillaSeleccionada) || plantillas[0];
 
   return (
-    <div className={`rounded-3xl border border-slate-800 bg-slate-950 p-5 text-white shadow-2xl ${className}`}>
+    <div className={`rounded-3xl border border-slate-200 bg-white p-5 text-slate-900 shadow-2xl ${className}`}>
       {/* Cabecera del Panel */}
-      <div className="mb-4 flex flex-wrap items-center justify-between border-b border-slate-800/80 pb-3 gap-2">
+      <div className="mb-4 flex flex-wrap items-center justify-between border-b border-slate-200 pb-3 gap-2">
         <div className="flex items-center gap-2">
           <span className="text-xl">💬</span>
           <div>
-            <h2 className="text-xs font-black uppercase tracking-[0.14em] text-emerald-400">
-              Centro Integral WhatsApp SaaS
+            <h2 className="text-xs font-black uppercase tracking-[0.14em] text-emerald-700">
+              Motor Bot de WhatsApp en VivoBaileys 24/7
             </h2>
-            <p className="text-[10px] text-slate-400">
-              Inquilino / Grupo ID: <span className="font-mono text-emerald-300">{grupo_id || "Sin ID"}</span>
+            <p className="text-[10px] text-slate-600">
+              Inquilino / Grupo ID: <span className="font-mono text-emerald-800">{grupo_id || "Sin ID"}</span>
             </p>
           </div>
         </div>
@@ -376,7 +376,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                 : "bg-slate-600"
             }`}
           />
-          <span className="text-[11px] font-bold capitalize text-slate-300">
+          <span className="text-[11px] font-bold capitalize text-slate-700">
             {status === "loading"
               ? "Cargando…"
               : status === "connected"
@@ -389,14 +389,14 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
       </div>
 
       {/* Navegación por Pestañas (Tabs) */}
-      <div className="mb-5 flex rounded-2xl bg-slate-900/90 p-1 border border-slate-800 text-xs font-black">
+      <div className="mb-5 flex rounded-2xl bg-slate-50 p-1 border border-slate-200 text-xs font-black">
         <button
           type="button"
           onClick={() => setActiveTab("conexion")}
           className={`flex-1 py-2 px-3 rounded-xl transition text-center ${
             activeTab === "conexion"
               ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/60"
-              : "text-slate-400 hover:text-slate-200"
+              : "text-slate-600 hover:text-slate-800"
           }`}
         >
           📱 Conexión QR (1 a 1)
@@ -407,7 +407,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
           className={`flex-1 py-2 px-3 rounded-xl transition text-center ${
             activeTab === "plantillas"
               ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/60"
-              : "text-slate-400 hover:text-slate-200"
+              : "text-slate-600 hover:text-slate-800"
           }`}
         >
           📝 Plantillas Bot
@@ -418,7 +418,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
           className={`flex-1 py-2 px-3 rounded-xl transition text-center ${
             activeTab === "control"
               ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/60"
-              : "text-slate-400 hover:text-slate-200"
+              : "text-slate-600 hover:text-slate-800"
           }`}
         >
           🏇 Salas y Carreras
@@ -427,12 +427,12 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
 
       {/* Alertas Globales */}
       {errorMsg && (
-        <div className="mb-3 rounded-xl border border-rose-500/30 bg-rose-950/40 px-3 py-2 text-[11px] text-rose-300">
+        <div className="mb-3 rounded-xl border border-rose-500/30 bg-rose-50 px-3 py-2 text-[11px] text-rose-800">
           ⚠️ {errorMsg}
         </div>
       )}
       {feedbackSuccess && (
-        <div className="mb-3 rounded-xl border border-emerald-500/30 bg-emerald-950/40 px-3 py-2 text-[11px] text-emerald-300">
+        <div className="mb-3 rounded-xl border border-emerald-500/30 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
           ✅ {feedbackSuccess}
         </div>
       )}
@@ -444,7 +444,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
         <div className="flex flex-col items-center justify-center py-2 space-y-4">
           {/* ESTADO 1: Cargando */}
           {status === "loading" && (
-            <div className="flex flex-col items-center gap-2 py-8 text-center text-slate-400">
+            <div className="flex flex-col items-center gap-2 py-8 text-center text-slate-600">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
               <p className="text-xs">Sincronizando estado con el bot…</p>
             </div>
@@ -453,9 +453,9 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
           {/* ESTADO 2: CONNECTED -> Muestra Check Verde */}
           {status === "connected" && (
             <div className="flex flex-col items-center gap-3 py-4 text-center w-full">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-emerald-400/80 bg-emerald-500/15 text-emerald-400 ring-4 ring-emerald-500/20 shadow-lg shadow-emerald-950/60">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-emerald-400/80 bg-emerald-500/15 text-emerald-700 ring-4 ring-emerald-500/20 shadow-lg shadow-emerald-950/60">
                 <svg
-                  className="h-10 w-10 text-emerald-400 stroke-current"
+                  className="h-10 w-10 text-emerald-700 stroke-current"
                   fill="none"
                   viewBox="0 0 24 24"
                   strokeWidth="2.8"
@@ -467,29 +467,29 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
               </div>
 
               <div className="space-y-1">
-                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 px-3 py-0.5 text-xs font-black text-emerald-300">
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 px-3 py-0.5 text-xs font-black text-emerald-800">
                   <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span>Online Activo</span>
                 </div>
-                <p className="mt-1 text-sm font-black text-emerald-400">
+                <p className="mt-1 text-sm font-black text-emerald-700">
                   ✅ Bot de WhatsApp Vinculado
                 </p>
                 {numero && (
-                  <p className="mt-1 font-mono text-xs font-bold text-slate-200">
+                  <p className="mt-1 font-mono text-xs font-bold text-slate-800">
                     +{numero}
                   </p>
                 )}
-                <p className="mt-1 max-w-xs text-[11px] leading-relaxed text-slate-400">
+                <p className="mt-1 max-w-xs text-[11px] leading-relaxed text-slate-600">
                   Tu banca tiene la sesión 1 a 1 activa, procesando y casando jugadas en tiempo real.
                 </p>
               </div>
 
-              <div className="mt-2 pt-2 border-t border-slate-800/80 w-full flex flex-wrap gap-2 justify-center">
+              <div className="mt-2 pt-2 border-t border-slate-200 w-full flex flex-wrap gap-2 justify-center">
                 <button
                   type="button"
                   onClick={desconectarBot}
                   disabled={procesando}
-                  className="inline-flex items-center gap-2 rounded-xl border border-rose-500/50 bg-rose-950/60 px-4 py-2 text-[11px] font-black text-rose-200 shadow transition hover:bg-rose-900/70 disabled:opacity-40"
+                  className="inline-flex items-center gap-2 rounded-xl border border-rose-500/50 bg-rose-50 px-4 py-2 text-[11px] font-black text-rose-900 shadow transition hover:bg-rose-900/70 disabled:opacity-40"
                 >
                   {procesando ? "Desconectando…" : "🔌 Desconectar"}
                 </button>
@@ -497,7 +497,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                   type="button"
                   onClick={limpiarSesionHuerfana}
                   disabled={procesando}
-                  className="inline-flex items-center gap-2 rounded-xl border border-amber-500/50 bg-amber-950/40 px-4 py-2 text-[11px] font-black text-amber-200 shadow transition hover:bg-amber-900/60 disabled:opacity-40"
+                  className="inline-flex items-center gap-2 rounded-xl border border-amber-500/50 bg-amber-50 px-4 py-2 text-[11px] font-black text-amber-900 shadow transition hover:bg-amber-900/60 disabled:opacity-40"
                   title="Resetea credenciales residuales si el bot queda en loop o trabado"
                 >
                   🧹 Limpiar Sesión Huérfana
@@ -519,22 +519,22 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
               </div>
 
               <div className="max-w-xs text-center space-y-1">
-                <p className="text-xs font-black text-slate-200">
+                <p className="text-xs font-black text-slate-800">
                   Escanea el código QR desde WhatsApp
                 </p>
-                <ol className="rounded-xl border border-slate-800 bg-slate-900/60 p-2 text-left text-[10px] leading-relaxed text-slate-400 space-y-0.5">
+                <ol className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-left text-[10px] leading-relaxed text-slate-600 space-y-0.5">
                   <li>1. Abre WhatsApp &gt; Dispositivos vinculados.</li>
                   <li>2. Toca <strong>Vincular un dispositivo</strong>.</li>
                   <li>3. Apunta la cámara al QR.</li>
                 </ol>
               </div>
 
-              <div className="mt-1 pt-2 border-t border-slate-800/80 w-full flex flex-wrap gap-2 justify-center">
+              <div className="mt-1 pt-2 border-t border-slate-200 w-full flex flex-wrap gap-2 justify-center">
                 <button
                   type="button"
                   onClick={desconectarBot}
                   disabled={procesando}
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-1.5 text-[11px] font-bold text-slate-300 transition hover:bg-slate-800 disabled:opacity-40"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40"
                 >
                   {procesando ? "Cancelando…" : "Cancelar / Reiniciar QR"}
                 </button>
@@ -542,7 +542,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                   type="button"
                   onClick={limpiarSesionHuerfana}
                   disabled={procesando}
-                  className="inline-flex items-center gap-2 rounded-xl border border-amber-500/50 bg-amber-950/40 px-3.5 py-1.5 text-[11px] font-bold text-amber-200 transition hover:bg-amber-900/60 disabled:opacity-40"
+                  className="inline-flex items-center gap-2 rounded-xl border border-amber-500/50 bg-amber-50 px-3.5 py-1.5 text-[11px] font-bold text-amber-900 transition hover:bg-amber-900/60 disabled:opacity-40"
                 >
                   🧹 Limpiar Sesión Huérfana
                 </button>
@@ -553,15 +553,15 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
           {/* ESTADO 4: DISCONNECTED */}
           {status === "disconnected" && (
             <div className="flex flex-col items-center gap-3 py-4 text-center w-full">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed border-slate-700 bg-slate-900 text-2xl text-slate-400">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed border-slate-300 bg-slate-50 text-2xl text-slate-600">
                 📱
               </div>
 
               <div>
-                <p className="text-xs font-black text-slate-200">
+                <p className="text-xs font-black text-slate-800">
                   Bot Desconectado (Regla 1 a 1)
                 </p>
-                <p className="mt-1 max-w-xs text-[11px] leading-relaxed text-slate-400">
+                <p className="mt-1 max-w-xs text-[11px] leading-relaxed text-slate-600">
                   Cada inquilino cuenta con una conexión exclusiva 1 a 1. Presiona para generar el QR.
                 </p>
               </div>
@@ -579,7 +579,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                   type="button"
                   onClick={limpiarSesionHuerfana}
                   disabled={procesando}
-                  className="inline-flex items-center gap-2 rounded-xl border border-amber-600/50 bg-amber-950/30 px-3 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-900/50"
+                  className="inline-flex items-center gap-2 rounded-xl border border-amber-600/50 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 transition hover:bg-amber-900/50"
                 >
                   🧹 Forzar Limpieza
                 </button>
@@ -594,9 +594,9 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
       {/* ==================================================================== */}
       {activeTab === "plantillas" && (
         <div className="space-y-4 py-1">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
             <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
                 Selecciona la Plantilla a Editar:
               </label>
               <select
@@ -606,7 +606,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                   const p = plantillas.find((item) => item.clave === e.target.value);
                   setTextoEditado(p?.contenido || "");
                 }}
-                className="mt-1 block w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-bold text-emerald-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="mt-1 block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-emerald-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               >
                 {plantillas.map((p) => (
                   <option key={p.clave} value={p.clave}>
@@ -619,22 +619,22 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
             <button
               type="button"
               onClick={() => setModalPlantillaAbierto(true)}
-              className="text-xs font-bold text-emerald-400 hover:text-emerald-300 underline"
+              className="text-xs font-bold text-emerald-700 hover:text-emerald-800 underline"
             >
               🔍 Ver en Modal Interactivo
             </button>
           </div>
 
-          <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-3 space-y-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black text-slate-200">
+              <span className="text-[11px] font-black text-slate-800">
                 {plantillaActiva?.titulo}
               </span>
-              <span className="text-[9px] uppercase font-mono tracking-wider px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">
+              <span className="text-[9px] uppercase font-mono tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                 {plantillaActiva?.clave}
               </span>
             </div>
-            <p className="text-[10px] text-slate-400">
+            <p className="text-[10px] text-slate-600">
               {plantillaActiva?.descripcion}
             </p>
 
@@ -647,7 +647,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                     key={v}
                     type="button"
                     onClick={() => insertarVariable(v)}
-                    className="rounded-lg bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-mono text-emerald-300 hover:bg-emerald-900/60 transition"
+                    className="rounded-lg bg-emerald-50 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-mono text-emerald-800 hover:bg-emerald-900/60 transition"
                   >
                     {v}
                   </button>
@@ -661,7 +661,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                 value={textoEditado}
                 onChange={(e) => setTextoEditado(e.target.value)}
                 rows={4}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 font-mono text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-xl border border-slate-300 bg-white p-2.5 font-mono text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 placeholder="Escribe el texto de la plantilla..."
               />
             </div>
@@ -671,7 +671,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
               <button
                 type="button"
                 onClick={restaurarPlantillaDefault}
-                className="text-[11px] font-bold text-slate-400 hover:text-slate-200"
+                className="text-[11px] font-bold text-slate-600 hover:text-slate-800"
               >
                 ↩️ Restaurar Predeterminado
               </button>
@@ -694,18 +694,18 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
       {activeTab === "control" && (
         <div className="space-y-4 py-1">
           {cargandoSalas ? (
-            <div className="py-6 text-center text-xs text-slate-400">
+            <div className="py-6 text-center text-xs text-slate-600">
               Cargando salas activas de tu banca…
             </div>
           ) : salas.length === 0 ? (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 text-center text-xs text-slate-400">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-600">
               No tienes ninguna sala vinculada a este grupo actualmente.
             </div>
           ) : (
             <>
               {/* Selector de Sala */}
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
                   Sala de Juegos Activa:
                 </label>
                 <select
@@ -718,7 +718,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                       setCarreraInput(Number(s.numero_carrera_activa || 1));
                     }
                   }}
-                  className="mt-1 block w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-bold text-emerald-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="mt-1 block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-emerald-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 >
                   {salas.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -729,10 +729,10 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
               </div>
 
               {/* Tarjeta de Estado de la Carrera */}
-              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-3 space-y-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Estatus Taquilla:</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-600">Estatus Taquilla:</span>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span
                         className={`h-2.5 w-2.5 rounded-full ${
@@ -741,40 +741,40 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                             : "bg-rose-500"
                         }`}
                       />
-                      <span className="text-xs font-black uppercase text-slate-200">
+                      <span className="text-xs font-black uppercase text-slate-800">
                         {salaActiva?.estado_carrera || "CERRADA"}
                       </span>
                     </div>
                   </div>
 
                   <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Carrera Activa:</span>
-                    <p className="text-xs font-black text-emerald-400">
+                    <span className="text-[10px] uppercase font-bold text-slate-600">Carrera Activa:</span>
+                    <p className="text-xs font-black text-emerald-700">
                       {salaActiva?.hipodromo_activo || "LA RINCONADA"} #{salaActiva?.numero_carrera_activa || 1}
                     </p>
                   </div>
                 </div>
 
                 {/* Formulario Apertura Rápida */}
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200">
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-slate-400">Hipódromo:</label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Hipódromo:</label>
                     <input
                       type="text"
                       value={hipodromoInput}
                       onChange={(e) => setHipodromoInput(e.target.value)}
-                      className="mt-0.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-bold text-slate-200"
+                      className="mt-0.5 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold text-slate-800"
                     />
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-slate-400">Carrera Nro:</label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Carrera Nro:</label>
                     <input
                       type="number"
                       min={1}
                       max={20}
                       value={carreraInput}
                       onChange={(e) => setCarreraInput(parseInt(e.target.value, 10) || 1)}
-                      className="mt-0.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-bold text-slate-200"
+                      className="mt-0.5 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold text-slate-800"
                     />
                   </div>
                 </div>
@@ -813,8 +813,8 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                 </div>
 
                 {/* Sentenciar y Liquidar Pizarra */}
-                <div className="pt-2 border-t border-slate-800/80 space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-slate-400">
+                <div className="pt-2 border-t border-slate-200 space-y-2">
+                  <label className="text-[10px] font-bold uppercase text-slate-600">
                     Sentenciar / Liquidar Pizarra Oficial (ej: 5-3-8-1-2):
                   </label>
                   <div className="flex gap-2">
@@ -823,7 +823,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                       value={pizarraInput}
                       onChange={(e) => setPizarraInput(e.target.value)}
                       placeholder="5-3-8-1-2"
-                      className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-mono font-bold text-slate-200"
+                      className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-mono font-bold text-slate-800"
                     />
                     <button
                       type="button"
@@ -845,7 +845,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
                         })
                       }
                       disabled={Boolean(accionEnCurso) || !pizarraInput.trim()}
-                      className="rounded-xl border border-amber-500/50 bg-amber-950/60 px-3 py-1.5 text-xs font-black text-amber-200 hover:bg-amber-900/60 transition disabled:opacity-40"
+                      className="rounded-xl border border-amber-500/50 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-900 hover:bg-amber-900/60 transition disabled:opacity-40"
                     >
                       🔄 Rectificar
                     </button>
@@ -859,38 +859,38 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
 
       {/* Modal Interactivo de Plantilla */}
       {modalPlantillaAbierto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div className="w-full max-w-lg rounded-3xl border border-slate-800 bg-slate-950 p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-sm font-black uppercase text-emerald-400">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="text-sm font-black uppercase text-emerald-700">
                 📝 Editor de Plantilla Bot
               </h3>
               <button
                 type="button"
                 onClick={() => setModalPlantillaAbierto(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-600 hover:text-slate-900"
               >
                 ✕
               </button>
             </div>
 
             <div>
-              <p className="text-xs font-black text-slate-200">{plantillaActiva?.titulo}</p>
-              <p className="text-[11px] text-slate-400">{plantillaActiva?.descripcion}</p>
+              <p className="text-xs font-black text-slate-800">{plantillaActiva?.titulo}</p>
+              <p className="text-[11px] text-slate-600">{plantillaActiva?.descripcion}</p>
             </div>
 
             <textarea
               value={textoEditado}
               onChange={(e) => setTextoEditado(e.target.value)}
               rows={6}
-              className="w-full rounded-2xl border border-slate-700 bg-slate-900 p-3 font-mono text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="w-full rounded-2xl border border-slate-300 bg-slate-50 p-3 font-mono text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
             />
 
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setModalPlantillaAbierto(false)}
-                className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-xs font-bold text-slate-300"
+                className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-700"
               >
                 Cerrar
               </button>

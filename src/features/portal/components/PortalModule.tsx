@@ -242,12 +242,8 @@ export function PortalModule() {
     setErrorLogin("");
     setAvisoInactividad("");
     try {
-      if (autoId && autoToken) {
-        const r = await entrarPortal({ linkId: autoId, linkToken: autoToken });
-        return aplicarLogin(r.ok, r.error, r.sesion);
-      }
-      if (!usuario.trim()) {
-        return setErrorLogin("Indique el seudónimo o nombre del cliente para entrar.");
+      if (!usuario.trim() || !clave.trim()) {
+        return setErrorLogin("Indique el seudónimo/nombre y contraseña del cliente para entrar.");
       }
       const r = await entrarPortal({ usuario, token, clave });
       aplicarLogin(r.ok, r.error, r.sesion);

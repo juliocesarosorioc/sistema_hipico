@@ -24,8 +24,6 @@ import {
   obtenerTodosLosTickets,
   EVENTO_TICKETS_ACTUALIZADOS,
 } from "../lib/ticketsStorage";
-import { TabSalaJugadasIa } from "./TabSalaJugadasIa";
-import { listarClientes, type ClienteRow } from "@/features/clientes/lib/clientes";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { CategoriaTicket, PrioridadTicket, TicketIncidencia } from "../types/soporte";
 
@@ -51,10 +49,9 @@ export function WidgetAsistenteIa() {
   const modoOperador = useAuthStore((s) => s.modoOperador);
 
   const [abierto, setAbierto] = useState(false);
-  const [pestana, setPestana] = useState<"chat" | "acciones" | "mis_tickets" | "jugadas">("chat");
+  const [pestana, setPestana] = useState<"chat" | "acciones" | "mis_tickets">("chat");
   const [bloqueosPortal, setBloqueosPortal] = useState<Record<ModalidadPortalJugada, boolean> | null>(null);
   const [guardandoBloqueoIa, setGuardandoBloqueoIa] = useState(false);
-  const [clientesSala, setClientesSala] = useState<ClienteRow[]>([]);
 
   // Mensajes del chat interactivo
   const [mensajes, setMensajes] = useState<MensajeChat[]>([
@@ -148,22 +145,6 @@ export function WidgetAsistenteIa() {
       })
       .catch(() => {
         /* noop */
-      });
-    return () => {
-      vivo = false;
-    };
-  }, [abierto, pestana]);
-
-  // Cargar los clientes reales del grupo activo para la Sala de Jugadas.
-  useEffect(() => {
-    if (!abierto || pestana !== "jugadas") return;
-    let vivo = true;
-    listarClientes(true)
-      .then((cs) => {
-        if (vivo) setClientesSala(cs);
-      })
-      .catch(() => {
-        /* si falla, la sala conserva los jugadores locales */
       });
     return () => {
       vivo = false;
@@ -505,25 +486,7 @@ export function WidgetAsistenteIa() {
             >
               🎫 Tickets ({misTickets.length})
             </button>
-            <button
-              onClick={() => setPestana("jugadas")}
-              className={`flex-1 py-2 text-center transition border-b-2 ${
-                pestana === "jugadas"
-                  ? "border-fuchsia-500 text-fuchsia-300 bg-fuchsia-950/20"
-                  : "border-transparent text-slate-400 hover:text-slate-200"
-              }`}
-              title="Sala de Jugadas de Puestos estilo WhatsApp (propuestas y concreciones en vivo)"
-            >
-              🎯 Jugadas
-            </button>
           </div>
-
-          {/* CONTENIDO PESTAÑA SALA DE JUGADAS (PUESTOS WHATSAPP) */}
-          {pestana === "jugadas" && (
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <TabSalaJugadasIa clientes={clientesSala} />
-            </div>
-          )}
 
           {/* CONTENIDO PESTAÑA ACCIONES DE LA PLATAFORMA */}
           {pestana === "acciones" && (

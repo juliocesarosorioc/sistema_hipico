@@ -341,24 +341,7 @@ async function resolverClientePortalFallback(opts: {
       }
     };
 
-    const tkLink = normalizarCredencial(opts.linkToken);
-    const idLink = String(opts.linkId ?? "").trim().toLowerCase();
-    if (idLink || tkLink) {
-      const porId = filas.find((c) => {
-        if (c.portal_habilitado === false) return false;
-        const cId = String(c.id ?? "").toLowerCase();
-        const cTk = normalizarCredencial(c.portal_token);
-        if (idLink && tkLink) {
-          return (cId === idLink || cId.startsWith(idLink)) && cTk === tkLink;
-        }
-        if (idLink) return cId === idLink || cId.startsWith(idLink);
-        return cTk === tkLink;
-      });
-      if (porId) {
-        await sincronizarCredencialesSiFaltan(porId);
-        return porId;
-      }
-    }
+    // Magic Links deshabilitados por seguridad: solo acceso explícito con usuario y contraseña.
     const u = normalizarIdentificador(opts.usuario);
     const tk = normalizarCredencial(opts.token);
     const cl = normalizarCredencial(opts.clave);
@@ -474,10 +457,11 @@ export async function entrarPortal(opts: {
   const ERROR = "Credenciales inválidas o portal deshabilitado para el cliente.";
 
   let r: { ok: boolean; data?: Record<string, unknown>; error?: string };
-  if (opts.linkId && opts.linkToken) {
-    // `accion: "entrar"` es lo que la función mira primero. Sin esto, toda
-    // entrada al portal moría con "Falta la acción".
-    r = await llamarPortalAuth({ accion: "entrar", id: opts.linkId, token: opts.linkToken });
+  if (opts.linkId || opts.linkToken) {
+    return {
+      ok: false,
+      error: "Los enlaces directos (Magic Links) han sido deshabilitados. Ingresa con Código de Sala/Grupo, Usuario y Contraseña.",
+    };
   } else if (opts.usuario && opts.token && opts.clave) {
     r = await llamarPortalAuth({ accion: "entrar", usuario: opts.usuario, token: opts.token, clave: opts.clave });
   } else if (opts.usuario) {

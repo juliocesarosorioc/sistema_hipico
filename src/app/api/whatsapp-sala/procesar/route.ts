@@ -3306,7 +3306,7 @@ export async function POST(req: Request) {
           });
         }
 
-        // Recalcular saldo fresco del aceptante dentro del candado FIFO
+        // Recalcular saldo fresco de ambos jugadores dentro del candado FIFO
         const { data: aceptanteFresco } = await supabaseAdmin
           .from("clientes")
           .select(
@@ -3315,8 +3315,36 @@ export async function POST(req: Request) {
           .eq("id", cliente.id)
           .single();
 
+        const { data: proponenteRow } = await supabaseAdmin
+          .from("clientes")
+          .select(
+            "id, nombre, seudonimo, saldo_actual, saldo_retenido, libre, aval, whatsapp_jid, telefono, telefono_normalizado"
+          )
+          .eq("id", propFresca.remitente_id)
+          .maybeSingle();
+
+        const accionProp: "JUEGA" | "CONSIGUE" =
+          String(propFresca.accion_proponente || "").toUpperCase() === "CONSIGUE" ||
+          /^(consigo|doy)\b/i.test(String(propFresca.contenido || ""))
+            ? "CONSIGUE"
+            : "JUEGA";
+
+        const propRawCheck = String(propFresca.proporcion_premio || propFresca.proporcion || "1x1").trim();
+        const factorPropBilat = calcularRiesgoReal(1, propRawCheck, accionProp, "PROPONENTE") || 1;
+        const factorAcepBilat = calcularRiesgoReal(1, propRawCheck, accionProp, "ACEPTANTE") || 1;
+
         const saldoDispAceptante = calcularSaldoDisponible(aceptanteFresco || cliente);
-        if (Number(saldoDispAceptante) <= 0) {
+        const saldoDispProponente = proponenteRow ? calcularSaldoDisponible(proponenteRow) : remanenteDisponible;
+
+        const maxBaseAceptante = (aceptanteFresco || cliente)?.libre
+          ? remanenteDisponible
+          : Math.floor((saldoDispAceptante / factorAcepBilat) * 100) / 100;
+        const maxBaseProponente =
+          !proponenteRow || proponenteRow.libre
+            ? remanenteDisponible
+            : Math.floor((saldoDispProponente / factorPropBilat) * 100) / 100;
+
+        if (maxBaseAceptante <= 0) {
           const saldoFmt = formatearMontoRegional(Math.max(0, saldoDispAceptante));
           return NextResponse.json({
             ok: false,
@@ -3332,18 +3360,29 @@ export async function POST(req: Request) {
           });
         }
 
-        const accionProp: "JUEGA" | "CONSIGUE" =
-          String(propFresca.accion_proponente || "").toUpperCase() === "CONSIGUE" ||
-          /^(consigo|doy)\b/i.test(String(propFresca.contenido || ""))
-            ? "CONSIGUE"
-            : "JUEGA";
+        if (maxBaseProponente <= 0) {
+          const nomProp = proponenteRow?.seudonimo || proponenteRow?.nombre || propFresca.remitente_nombre || "Proponente";
+          const saldoPropFmt = formatearMontoRegional(Math.max(0, saldoDispProponente));
+          await supabaseAdmin
+            .from("chat_mensajes")
+            .update({ estado_propuesta: "cerrada", monto_disponible: 0 })
+            .eq("id", propFresca.id);
+          return NextResponse.json({
+            ok: false,
+            tipo: "SIN_SALDO_PROPONENTE",
+            respuestaGrupo: `⚠️ *${nomProp}* ya no dispone de saldo suficiente ($${saldoPropFmt}). Propuesta cerrada.`,
+            msg_publico: `⚠️ *${nomProp}* ya no dispone de saldo suficiente ($${saldoPropFmt}). Propuesta cerrada.`,
+            msg_publico_bot: `⚠️ *${nomProp}* ya no dispone de saldo suficiente ($${saldoPropFmt}). Propuesta cerrada.`,
+            senderJid: participantJid,
+          });
+        }
 
-        // Evaluar palabras estrictas según diccionario direccional
+        // Evaluar palabras estrictas según diccionario direccional (recortando al Pozo real de ambos)
         const evalConcrecion = evaluarConcrecionEstricta(
           texto,
           accionProp,
           remanenteDisponible,
-          saldoDispAceptante,
+          Math.max(0, Math.min(maxBaseAceptante, maxBaseProponente)),
           nombreJugador
         );
 
@@ -3509,13 +3548,6 @@ export async function POST(req: Request) {
           condicionProponente: propFresca.condicion_proponente,
         });
 
-        // Obtener datos de contacto del proponente para notificación privada a ambos jugadores
-        const { data: proponenteRow } = await supabaseAdmin
-          .from("clientes")
-          .select("id, nombre, whatsapp_jid, telefono, telefono_normalizado")
-          .eq("id", propFresca.remitente_id)
-          .maybeSingle();
-
         const esConsigueProp =
           accionProp === "CONSIGUE" ||
           /^(consigo|doy)\b/i.test(String(propFresca.contenido || ""));
@@ -3556,33 +3588,33 @@ export async function POST(req: Request) {
           // Puestos y ninis: NUNCA imprimen proporción
         }
 
-        // Riesgos
-        const matchProp = /^10[x\/\-a@ª](\d+(?:\.\d+)?)$/i.exec(propRaw.replace(',', '.'));
-        let riesgoJuega = Number(montoEfectivo || 0);
-        let riesgoDa = Number(montoEfectivo || 0);
-        if (matchProp) {
-          const xVal = parseFloat(matchProp[1]);
-          if (Number.isFinite(xVal) && xVal > 0) {
-            riesgoDa = Math.round(montoEfectivo * 100) / 100;
-            riesgoJuega = Math.round(montoEfectivo * (xVal / 10) * 100) / 100;
-          }
-        }
+        // Riesgos exactos: Proponente (Banquero Consigo/Doy o Jugador Juego) arriesga proporción (10/X); Aceptante va al 100%
+        const riesgoProponente = calcularRiesgoReal(montoEfectivo, propRaw, accionProp, "PROPONENTE");
+        const riesgoAceptante = calcularRiesgoReal(montoEfectivo, propRaw, accionProp, "ACEPTANTE");
+        const riesgoJuega = esConsigueProp ? riesgoAceptante : riesgoProponente;
+        const riesgoDa = esConsigueProp ? riesgoProponente : riesgoAceptante;
 
         const montoBaseFmt = formatearMontoRegional(montoEfectivo);
         const riesgoJuegaFmt = formatearMontoRegional(riesgoJuega);
         const riesgoDaFmt = formatearMontoRegional(riesgoDa);
 
-        const jugadorQueLimitó = limitadorPorPozo(
-          Number(evalConcrecion.montoSolicitado || montoEfectivo),
-          Number(montoEfectivo || 0),
-          Number(remanenteDisponible || 0),
-          Number(saldoDispAceptante || 0),
-          propFresca.remitente_nombre || "Proponente",
-          nombreJugador
-        );
+        const montoSolicitadoTotal = Math.min(Number(evalConcrecion.montoSolicitado || montoEfectivo), remanenteDisponible);
+        const pozoLimitadorBilateral =
+          montoEfectivo > 0 && montoEfectivo < montoSolicitadoTotal
+            ? maxBaseProponente <= maxBaseAceptante
+              ? proponenteRow?.seudonimo || proponenteRow?.nombre || propFresca.remitente_nombre || "Proponente"
+              : nombreJugador
+            : limitadorPorPozo(
+                Number(evalConcrecion.montoSolicitado || montoEfectivo),
+                Number(montoEfectivo || 0),
+                Number(remanenteDisponible || 0),
+                Number(maxBaseAceptante || 0),
+                propFresca.remitente_nombre || "Proponente",
+                nombreJugador
+              );
 
-        const msgPublicoFinal = jugadorQueLimitó
-          ? mensajeJugaronPorPozo(propFresca, montoEfectivo, jugadorQueLimitó)
+        const msgPublicoFinal = pozoLimitadorBilateral
+          ? mensajeJugaronPorPozo(propFresca, montoEfectivo, pozoLimitadorBilateral)
           : mensajeJugaronCompleto(nombreJuega, detalleJugada, nombreDa, montoEfectivo);
 
         const msgPrivAceptante = evalConcrecion.excedioSaldo
@@ -4187,21 +4219,9 @@ export async function POST(req: Request) {
       rpcPublicado = false;
     }
 
-    // Fallback resiliente: inserción directa en chat_mensajes si el RPC falla
+    // Fallback resiliente: inserción directa en chat_mensajes si el RPC falla (0 RETENCIÓN al proponer)
     if (!rpcPublicado || !propId) {
       try {
-        if (!cliente.libre) {
-          const saldoRetenidoActual = Number(cliente.saldo_retenido || 0);
-          const nuevoRetenido = Number((saldoRetenidoActual + montoAPublicar).toFixed(2));
-          await supabaseAdmin
-            .from("clientes")
-            .update({
-              saldo_retenido: nuevoRetenido,
-              saldo_disponible: Math.max(0, Number((Number(cliente.saldo_actual || 0) + Number(cliente.aval || 0) - nuevoRetenido).toFixed(2))),
-            })
-            .eq("id", cliente.id);
-        }
-
         const rawFirma = `PROPUESTA_WA:${salaId}:${cliente.id}:${montoAPublicar}:${Date.now()}`;
         const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
 
@@ -4337,18 +4357,19 @@ export async function POST(req: Request) {
       }
     }
 
-    if (resCruceAuto?.cruzado) {
+    if (resCruceAuto?.cruzado || resCruceAuto?.esSugerencia) {
+      const msgCrucePub = (resCruceAuto as any).msgCruce || (resCruceAuto as any).msgPublico || null;
       return NextResponse.json({
         ok: true,
-        tipo: "PROPUESTA_CON_CRUCE",
+        tipo: resCruceAuto?.cruzado ? "PROPUESTA_CON_CRUCE" : "SUGERENCIA_CRUCE",
         propuestaId: propId,
         jugadaEstandarizada: analisis.jugadaEstandarizada,
         montoPublicado: montoAPublicar,
         reaccionEmoji: null,
-        respuestaGrupo: resCruceAuto.msgCruce,
-        msg_publico: resCruceAuto.msgCruce,
-        msg_publico_bot: resCruceAuto.msgCruce,
-        respuestaPublica: resCruceAuto.msgCruce,
+        respuestaGrupo: msgCrucePub,
+        msg_publico: msgCrucePub,
+        msg_publico_bot: msgCrucePub,
+        respuestaPublica: msgCrucePub,
         mensajePrivadoAutor: null,
         senderJid: participantJid,
       });

@@ -168,14 +168,15 @@ export function validarParidadProporcion(proporcion?: string): { valido: boolean
 }
 
 /**
- * Calcula el riesgo real según proporción 10/X y lado:
- * - Lado del 10 (CONSIGUE / dador): arriesga M
- * - Lado del X (JUEGA recibiendo 10aX): arriesga ROUND(M * (X / 10), 2)
+ * Calcula el riesgo real según proporción 10/X y rol en la transacción:
+ * - Quien propone (Banquero Consigo/Doy o Jugador Juego): arriesga la proporción ROUND(M * (X / 10), 2)
+ * - Quien acepta/concreta (ACEPTANTE): siempre arriesga el 100% ROUND(M, 2)
  */
 export function calcularRiesgoReal(
   monto: number,
   proporcion?: string,
-  accion: 'JUEGA' | 'CONSIGUE' = 'JUEGA'
+  _accion: 'JUEGA' | 'CONSIGUE' = 'JUEGA',
+  rolEnTransaccion: 'PROPONENTE' | 'ACEPTANTE' = 'PROPONENTE'
 ): number {
   const m = Number(monto || 0);
   if (!Number.isFinite(m) || m <= 0) return 0;
@@ -184,7 +185,7 @@ export function calcularRiesgoReal(
   if (!match) return Math.round(m * 100) / 100;
   const x = parseFloat(match[1]);
   if (!Number.isFinite(x) || x <= 0) return Math.round(m * 100) / 100;
-  if (accion === 'CONSIGUE') {
+  if (rolEnTransaccion === 'ACEPTANTE') {
     return Math.round(m * 100) / 100;
   }
   return Math.round(m * (x / 10) * 100) / 100;
@@ -350,9 +351,9 @@ export function analizarYEstandarizarJugada(
   const matchGabela = texto.match(/\b(10\/\d+(?:[.,]\d+)?)\b/);
   const proporcionDetectada = matchGabela ? matchGabela[1].replace(',', '.') : '1x1';
 
-  // 1. Filtro de charla libre: sólo verbos de apuesta o estructura canónica de jugada.
-  const patronVerbosApuesta = /\b(juego|jugue|jugué|jugo|jugó|doy|voy|pago|ponte|jugamos|consigo|j)\b/i;
-  const patronEstructuraApuesta = /(?:^|\s)(?:10\s*[\/a@]\s*\d+|pp|[1-5]\s*p|[2-5]\s*n|[1-5]\s*[\/y]\s*[1-5]\s*n?|\d{1,2}\s*(?:x|vs|contra)\s*\d{1,2})(?:\s|$)/i;
+  // 1. Filtro de charla libre: sólo verbos de apuesta al inicio o estructura canónica de jugada.
+  const patronVerbosApuesta = /^(?:juego|jugo|jugó|jugue|jugué|consigo|doy|pido)\b|^(?:j|voy)\s+(?:de\s+|del\s+|el\s+|la\s+|a\s+|con\s+)?(?:\d|[1-5]p\b|[1-5]n\b|[1-5]\/[2-5]n?\b|[1-5]y[1-5][pn]?\b|ganador\b|win\b)/i;
+  const patronEstructuraApuesta = /(?:^|\s)(?:10\s*[\/a@]\s*\d+|[1-5]\s*p|[2-5]\s*n|[1-5]\s*[\/y]\s*[1-5]\s*n?|\d+(?:[.,-]\d+)*\s*(?:x|vs|contra)\s*\d+(?:[.,-]\d+)*)(?:\s|$)/i;
   if (!patronVerbosApuesta.test(texto) && !patronEstructuraApuesta.test(texto) && !/^[0-9kK\.,]+\s+(?:al?|del?|el)\s+\d{1,2}$/i.test(texto)) {
     return {
       esIntencionDeJugada: false,

@@ -1374,7 +1374,7 @@ export default function WhatsappPage() {
                 type="button"
                 onClick={desconectarTodas}
                 disabled={ocupado || metricas.vinculadas === 0}
-                className="rounded-xl border border-rose-500/40 bg-rose-950/40 px-3 py-2 text-[11px] font-black text-rose-200 transition hover:bg-rose-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-xl border border-rose-500/40 bg-rose-50 px-3 py-2 text-[11px] font-black text-rose-900 transition hover:bg-rose-900/50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 ⏸ Desconectar todas las salas
               </button>
@@ -1382,7 +1382,7 @@ export default function WhatsappPage() {
                 type="button"
                 onClick={reconectarTodas}
                 disabled={ocupado || metricas.pausadas === 0}
-                className="rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-3 py-2 text-[11px] font-black text-emerald-800 transition hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-xl border border-emerald-500/40 bg-emerald-50 px-3 py-2 text-[11px] font-black text-emerald-800 transition hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 ▶ Reconectar salas pausadas
               </button>
@@ -1390,7 +1390,7 @@ export default function WhatsappPage() {
                 type="button"
                 onClick={refrescarGruposWhatsApp}
                 disabled={ocupado}
-                className="rounded-xl border border-sky-500/40 bg-sky-950/40 px-3 py-2 text-[11px] font-black text-sky-200 transition hover:bg-sky-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-xl border border-sky-500/40 bg-sky-50 px-3 py-2 text-[11px] font-black text-sky-900 transition hover:bg-sky-900/50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {procesandoAccion === "refrescar-grupos" ? "Sincronizando…" : "🔄 Sincronizar Grupos de WhatsApp"}
               </button>
@@ -1416,7 +1416,7 @@ export default function WhatsappPage() {
                     className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-black transition ${
                       gruposFiltroIds.length === 0
                         ? "border-emerald-500 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-500/40 shadow-sm"
-                        : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-200 hover:text-slate-200"
+                        : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-200 hover:text-slate-800"
                     }`}
                   >
                     <span>🗂️</span>
@@ -1433,7 +1433,7 @@ export default function WhatsappPage() {
                       className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-bold transition ${
                         seleccionado
                           ? "border-emerald-500 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-500/40 shadow-sm font-black"
-                          : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-200 hover:text-slate-200"
+                          : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-200 hover:text-slate-800"
                       }`}
                     >
                       {seleccionado && <span className="text-[10px] text-emerald-700 font-black">✓</span>}
@@ -1459,7 +1459,7 @@ export default function WhatsappPage() {
           {salas.filter((s) => gruposFiltroIds.length === 0 || (s.grupo_id && gruposFiltroIds.includes(String(s.grupo_id)))).length === 0 ? (
             <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-10 text-center text-slate-500">
               <p className="text-2xl">🏇</p>
-              <p className="mt-2 text-sm font-bold text-slate-200">
+              <p className="mt-2 text-sm font-bold text-slate-800">
                 No hay salas de juego activas
               </p>
               <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed">
@@ -1506,7 +1506,7 @@ export default function WhatsappPage() {
                       </div>
                       <p className="mt-1 text-[11px] text-slate-500">
                         {sala.grupo_nombre ? (
-                          <span className="font-bold text-sky-300">Grupo: {sala.grupo_nombre} · </span>
+                          <span className="font-bold text-sky-800">Grupo: {sala.grupo_nombre} · </span>
                         ) : null}
                         {sala.hipodromo_activo || "Sin hipódromo"} · Carrera #
                         {sala.numero_carrera_activa || 1}
@@ -1516,22 +1516,15 @@ export default function WhatsappPage() {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <a
                         href={sala.grupo_id ? `/sala?grupoId=${sala.grupo_id}` : "/sala"}
-                        className="rounded-full border border-indigo-500/40 bg-indigo-950/60 px-2.5 py-0.5 text-[10px] font-black text-indigo-200 transition hover:bg-indigo-900"
+                        className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[10px] font-black text-indigo-800 transition hover:bg-indigo-100"
                         title="Abrir la Sala de Juegos en vivo de este grupo"
                       >
                         🎮 Ver Sala de Juegos
                       </a>
-                      <a
-                        href={sala.grupo_id ? `/sala?ui=whatsapp&grupoId=${sala.grupo_id}` : "/sala?ui=whatsapp"}
-                        className="rounded-full border border-emerald-500/40 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black text-emerald-800 transition hover:bg-emerald-900"
-                        title="Abrir la vista tipo WhatsApp Web de este grupo"
-                      >
-                        📱 Sala WhatsApp
-                      </a>
                       <button
                         type="button"
                         onClick={() => abrirConfigSala(sala)}
-                        className="rounded-full border border-sky-500/40 bg-sky-950/60 px-2.5 py-0.5 text-[10px] font-black text-sky-200 transition hover:bg-sky-900"
+                        className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[10px] font-black text-sky-800 transition hover:bg-sky-100"
                         title="Configurar y gestionar grupos de esta sala"
                       >
                         ⚙️ Configurar
@@ -1540,7 +1533,7 @@ export default function WhatsappPage() {
                         type="button"
                         onClick={() => void eliminarSalaDelGrupo(sala.id)}
                         disabled={ocupado}
-                        className="rounded-full border border-rose-500/40 bg-rose-950/60 px-2.5 py-0.5 text-[10px] font-black text-rose-200 transition hover:bg-rose-900 disabled:opacity-40"
+                        className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-[10px] font-black text-rose-800 transition hover:bg-rose-100 disabled:opacity-40"
                         title="Eliminar esta sala del grupo"
                       >
                         🗑️ Eliminar
@@ -1548,8 +1541,8 @@ export default function WhatsappPage() {
                       <span
                         className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${
                           abierta
-                            ? "border-emerald-600/50 bg-emerald-950 text-emerald-700"
-                            : "border-amber-600/50 bg-amber-950 text-amber-300"
+                            ? "border-emerald-600/50 bg-emerald-50 text-emerald-700"
+                            : "border-amber-600/50 bg-amber-50 text-amber-800"
                         }`}
                       >
                         ● {abierta ? "Carrera abierta" : "Carrera cerrada"}
@@ -1557,9 +1550,9 @@ export default function WhatsappPage() {
                       <span
                         className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${
                           vinculada
-                            ? "border-sky-500/50 bg-sky-950 text-sky-300"
+                            ? "border-sky-500/50 bg-sky-50 text-sky-800"
                             : pausada
-                            ? "border-amber-500/50 bg-amber-950 text-amber-300"
+                            ? "border-amber-500/50 bg-amber-50 text-amber-800"
                             : "border-slate-200 bg-slate-50 text-slate-500"
                         }`}
                       >
@@ -1575,7 +1568,7 @@ export default function WhatsappPage() {
                       vinculada
                         ? "border-emerald-500/40 bg-gradient-to-r from-emerald-50/40 to-slate-900/60 shadow-md shadow-emerald-950/20"
                         : pausada
-                        ? "border-amber-500/30 bg-amber-950/20"
+                        ? "border-amber-500/30 bg-amber-50"
                         : "border-slate-200 bg-slate-50"
                     }`}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1589,7 +1582,7 @@ export default function WhatsappPage() {
                             }`}></span>
                           </span>
                           <span className={`text-[11px] font-black tracking-wide uppercase ${
-                            vinculada ? "text-emerald-700" : pausada ? "text-amber-300" : "text-slate-500"
+                            vinculada ? "text-emerald-700" : pausada ? "text-amber-800" : "text-slate-500"
                           }`}>
                             {vinculada ? "🟢 ENLAZADO Y ESCUCHANDO EN VIVO" : pausada ? "⏸ PAUSADA (Desconectada temporalmente)" : "⚪ SIN GRUPO ENLAZADO"}
                           </span>
@@ -1639,7 +1632,7 @@ export default function WhatsappPage() {
                             )}
                           </div>
                         ) : pausada ? (
-                          <p className="truncate text-xs font-bold text-amber-300">
+                          <p className="truncate text-xs font-bold text-amber-800">
                             Desconectado · guardado{" "}
                             {respaldo.groupNombre ? `("${respaldo.groupNombre}")` : ""}
                           </p>
@@ -1655,7 +1648,7 @@ export default function WhatsappPage() {
                           type="button"
                           onClick={() => desconectarSala(sala)}
                           disabled={ocupado}
-                          className="rounded-xl border border-rose-500/40 bg-rose-950/40 px-3 py-1.5 text-[11px] font-black text-rose-200 transition hover:bg-rose-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="rounded-xl border border-rose-500/40 bg-rose-50 px-3 py-1.5 text-[11px] font-black text-rose-900 transition hover:bg-rose-900/50 disabled:cursor-not-allowed disabled:opacity-40"
                           title="Pausa la sala: el bot deja de publicar en este grupo"
                         >
                           {procesandoAccion === `desconectar-${sala.id}`
@@ -1667,7 +1660,7 @@ export default function WhatsappPage() {
                           type="button"
                           onClick={() => reconectarSala(sala)}
                           disabled={ocupado || !jidActual}
-                          className="rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-3 py-1.5 text-[11px] font-black text-emerald-800 transition hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="rounded-xl border border-emerald-500/40 bg-emerald-50 px-3 py-1.5 text-[11px] font-black text-emerald-800 transition hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-40"
                           title="Restaura el grupo guardado y el bot vuelve a publicar"
                         >
                           {procesandoAccion === `reconectar-${sala.id}`
@@ -1711,9 +1704,9 @@ export default function WhatsappPage() {
                                 key={g.jid}
                                 className={`flex items-center justify-between gap-2 rounded-xl border px-2.5 py-2 transition ${
                                   esEstaSala
-                                    ? "border-emerald-500/60 bg-emerald-950/50"
+                                    ? "border-emerald-500/60 bg-emerald-50"
                                     : seleccionado
-                                    ? "border-sky-500/60 bg-sky-950/40"
+                                    ? "border-sky-500/60 bg-sky-50"
                                     : ocupadoOtraSala
                                     ? "border-slate-200/80 bg-slate-50 opacity-55"
                                     : "border-slate-200 bg-white hover:border-slate-200"
@@ -1740,7 +1733,7 @@ export default function WhatsappPage() {
                                       esEstaSala
                                         ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-700"
                                         : seleccionado
-                                        ? "border-sky-400/60 bg-sky-500/20 text-sky-300"
+                                        ? "border-sky-400/60 bg-sky-500/20 text-sky-800"
                                         : "border-slate-200 bg-slate-50 text-slate-700"
                                     }`}
                                   >
@@ -1767,7 +1760,7 @@ export default function WhatsappPage() {
                                     onClick={() =>
                                       void desvincularMultiGrupo(undefined, sala.id, g.jid)
                                     }
-                                    className="shrink-0 rounded-lg border border-rose-500/40 bg-rose-950/60 px-2 py-1 text-[10px] font-black text-rose-200 hover:bg-rose-900/70"
+                                    className="shrink-0 rounded-lg border border-rose-500/40 bg-rose-50 px-2 py-1 text-[10px] font-black text-rose-900 hover:bg-rose-900/70"
                                   >
                                     Desconectar
                                   </button>
@@ -1801,7 +1794,7 @@ export default function WhatsappPage() {
                               type="button"
                               onClick={() => void desvincularMultiGrupo(v.id, sala.id, v.whatsapp_group_jid)}
                               disabled={ocupado}
-                              className="ml-0.5 rounded-full px-1 text-rose-300 hover:bg-rose-900/60 hover:text-slate-900"
+                              className="ml-0.5 rounded-full px-1 text-rose-800 hover:bg-rose-900/60 hover:text-slate-900"
                               title="Desvincular este grupo"
                             >
                               ✕
@@ -1812,7 +1805,7 @@ export default function WhatsappPage() {
                     )}
 
                     {status.grupos.length === 0 && (
-                      <p className="mt-2 text-[10px] leading-relaxed text-amber-300/80">
+                      <p className="mt-2 text-[10px] leading-relaxed text-amber-800/80">
                         El bot aún no detecta grupos. Verifica que la sesión esté conectada y que
                         la cuenta esté dentro de los grupos.
                       </p>
@@ -1828,7 +1821,7 @@ export default function WhatsappPage() {
                       <span className="text-[10px] text-slate-500">
                         Atajos en WhatsApp:{" "}
                         <code className="font-mono text-emerald-700">!abrir hipódromo #</code> y{" "}
-                        <code className="font-mono text-amber-400">!cerrar</code>
+                        <code className="font-mono text-amber-700">!cerrar</code>
                       </span>
                     </div>
 
@@ -1963,7 +1956,7 @@ export default function WhatsappPage() {
               onClick={() => setFiltroEstadoGrupo("conectados")}
               className={`px-3 py-1 rounded-lg font-bold transition ${
                 filtroEstadoGrupo === "conectados"
-                  ? "bg-emerald-950 border border-emerald-500/40 text-emerald-700"
+                  ? "bg-emerald-50 border border-emerald-500/40 text-emerald-700"
                   : "text-slate-500 hover:text-slate-900"
               }`}
             >
@@ -1974,7 +1967,7 @@ export default function WhatsappPage() {
               onClick={() => setFiltroEstadoGrupo("desconectados")}
               className={`px-3 py-1 rounded-lg font-bold transition ${
                 filtroEstadoGrupo === "desconectados"
-                  ? "bg-slate-100 text-slate-200"
+                  ? "bg-slate-100 text-slate-800"
                   : "text-slate-500 hover:text-slate-900"
               }`}
             >
@@ -2028,8 +2021,8 @@ export default function WhatsappPage() {
                           }
                           className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl border text-sm transition ${
                             seleccionadoDifusion
-                              ? "border-sky-400 bg-sky-500/25 text-sky-200 shadow"
-                              : "border-slate-200 bg-white text-slate-500 hover:border-sky-500/60 hover:text-sky-300"
+                              ? "border-sky-400 bg-sky-500/25 text-sky-900 shadow"
+                              : "border-slate-200 bg-white text-slate-500 hover:border-sky-500/60 hover:text-sky-800"
                           }`}
                         >
                           {seleccionadoDifusion ? "☑️" : "💬"}
@@ -2054,7 +2047,7 @@ export default function WhatsappPage() {
                     <span
                       className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase shrink-0 border ${
                         estaConectado
-                          ? "border-emerald-500/50 bg-emerald-950 text-emerald-700"
+                          ? "border-emerald-500/50 bg-emerald-50 text-emerald-700"
                           : "border-slate-200 bg-slate-100 text-slate-500"
                       }`}
                     >
@@ -2071,7 +2064,7 @@ export default function WhatsappPage() {
                       {g.grupoNombre ? (
                         <div className="flex items-center justify-between text-slate-500">
                           <span>Grupo del sistema:</span>
-                          <span className="font-bold text-sky-300">{g.grupoNombre}</span>
+                          <span className="font-bold text-sky-800">{g.grupoNombre}</span>
                         </div>
                       ) : null}
                       <div className="pt-1 flex items-center justify-end">
@@ -2082,7 +2075,7 @@ export default function WhatsappPage() {
                             desvincularGrupoDirecto(g.jid, g.nombre);
                           }}
                           disabled={procesandoAccion === `desvincular-dir-${g.jid}`}
-                          className="px-2 py-0.5 bg-rose-950/70 hover:bg-rose-900 border border-rose-800/70 text-rose-300 text-[10px] font-bold rounded-lg transition-colors flex items-center gap-1 shadow-sm disabled:opacity-50"
+                          className="px-2 py-0.5 bg-rose-50 hover:bg-rose-900 border border-rose-800/70 text-rose-800 text-[10px] font-bold rounded-lg transition-colors flex items-center gap-1 shadow-sm disabled:opacity-50"
                         >
                           {procesandoAccion === `desvincular-dir-${g.jid}` ? "⏳ Desconectando..." : "🔌 Desconectar Grupo"}
                         </button>
@@ -2105,7 +2098,7 @@ export default function WhatsappPage() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h4 className="text-xs font-black uppercase tracking-wider text-sky-300">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-sky-800">
                     📣 Difusión Multimedia a Grupos Seleccionados ({gruposDifusionSeleccionados.length})
                   </h4>
                   <p className="text-[10px] text-slate-500">
@@ -2140,7 +2133,7 @@ export default function WhatsappPage() {
                     onClick={() => setTipoDifusion(t)}
                     className={`rounded-xl border px-3 py-1.5 text-[11px] font-black transition ${
                       tipoDifusion === t
-                        ? "border-sky-400 bg-sky-950/70 text-sky-200"
+                        ? "border-sky-400 bg-sky-50 text-sky-900"
                         : "border-slate-200 bg-white text-slate-500 hover:text-slate-900"
                     }`}
                   >
@@ -2192,7 +2185,7 @@ export default function WhatsappPage() {
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
             <div>
-              <h4 className="text-xs font-black uppercase tracking-wider text-amber-300">
+              <h4 className="text-xs font-black uppercase tracking-wider text-amber-800">
                 🧹 Limpiador de Multimedia por Rango de Fechas
               </h4>
               <p className="text-[10px] text-slate-500">
@@ -2223,7 +2216,7 @@ export default function WhatsappPage() {
               type="button"
               onClick={limpiarMultimediaPorFechas}
               disabled={ocupado}
-              className="w-full rounded-xl border border-amber-500/40 bg-amber-950/60 px-4 py-2 text-xs font-black text-amber-200 transition hover:bg-amber-900/70 disabled:opacity-40"
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-2 text-xs font-black text-amber-900 transition hover:bg-amber-900/70 disabled:opacity-40"
             >
               {procesandoAccion === "limpiar-multimedia"
                 ? "Limpiando…"
@@ -2251,17 +2244,17 @@ export default function WhatsappPage() {
           />
           <Comando
             codigo="!cerrar"
-            color="text-rose-300"
+            color="text-rose-800"
             descripcion="Cierra la carrera y bloquea nuevas jugadas."
           />
           <Comando
             codigo="LLEGADA: 10.5.1.2.7"
-            color="text-indigo-300"
+            color="text-indigo-800"
             descripcion="Liquida la carrera, actualiza saldos y publica positivos/negativos."
           />
           <Comando
             codigo="!plano / !anular"
-            color="text-amber-300"
+            color="text-amber-800"
             descripcion="Publica el plano numerado o anula tickets y retirados en vivo."
           />
         </div>
@@ -2276,7 +2269,7 @@ export default function WhatsappPage() {
               feedback.tipo === "ok"
                 ? "border-emerald-500/50 bg-emerald-50 text-emerald-50"
                 : feedback.tipo === "error"
-                ? "border-rose-500/50 bg-rose-950/90 text-rose-50"
+                ? "border-rose-500/50 bg-rose-50 text-rose-50"
                 : "border-slate-200 bg-slate-50/95 text-slate-100"
             }`}
           >

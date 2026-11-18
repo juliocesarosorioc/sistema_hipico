@@ -3,7 +3,6 @@
 import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { SalaJuegosApp } from "@/features/sala-juegos/components/SalaJuegosApp";
-import { SalaWhatsAppConectada } from "@/features/sala-juegos/components/SalaWhatsAppConectada";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 
 class SalaErrorBoundary extends React.Component<
@@ -63,21 +62,6 @@ function SalaContenido() {
       ? sessionStorage.getItem("sala_staff_token") || localStorage.getItem("sala_staff_token") || undefined
       : undefined;
   const staffToken = staffTokenParam || staffTokenStored;
-  const ui = (params.get("ui") || params.get("vista") || "").toLowerCase();
-
-  // El tablero WhatsApp conectado comparte exactamente la misma sesión real
-  // (portal token o staff JWT/HMAC), el mismo bootstrap de perfil/salas y el
-  // mismo Realtime. La app principal sigue siendo el valor por defecto.
-  if (ui === "whatsapp" || ui === "legacy") {
-    return (
-      <SalaWhatsAppConectada
-        grupoIdInicial={grupoId}
-        clienteIdInicial={clienteId}
-        portalTokenInicial={portalToken}
-        staffTokenInicial={staffToken}
-      />
-    );
-  }
 
   return (
     <SalaJuegosApp
