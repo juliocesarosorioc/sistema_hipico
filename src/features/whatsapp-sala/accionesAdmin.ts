@@ -144,7 +144,7 @@ export async function generarTextoPlanoOficial(
     0
   );
   if (ticketsConcretados.length > 0) {
-    textoFinal += `\n\n💰 Total Casado: $${formatearMontoRegional(totalPactado)} (${ticketsConcretados.length} tickets)`;
+    textoFinal += `\n\nTotal Jugadas (${ticketsConcretados.length})\nMonto Jugado: $${formatearMontoRegional(totalPactado)}`;
   }
 
   return textoFinal;
@@ -690,10 +690,10 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
       `📊 Pizarra Oficial: *${pizarraFormateada}*\n\n` +
       `📑 RESUMEN DE LIQUIDACIÓN (${listaTickets.length} JUGADAS):\n` +
       `${bloqueResumenJugadas}\n\n` +
-      `🔄BALANCE TOTAL (Compensando Ganancias vs. Pérdidas antes de con cruces el monto total):\n` +
-      `POSITIVOS\n` +
+      `🔄BALANCE TOTAL:\n\n` +
+      `🟢 *POSITIVOS (+)*\n` +
       `${lineasPositivos}\n` +
-      `NEGATIVOS\n` +
+      `🔴 *NEGATIVOS (-)*\n` +
       `${lineasNegativos}`
   );
   const textoResultado = `${prefijoRectificado}🏆 RESULTADO Y LIQUIDACIÓN OFICIAL\n${cuerpoResultado}`;

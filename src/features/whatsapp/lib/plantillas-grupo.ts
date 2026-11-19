@@ -102,7 +102,7 @@ export const PLANTILLAS_GRUPO_DEFAULT: PlantillaGrupoItem[] = [
       "📊 Pizarra Oficial: *{pizarra}*\n\n" +
       "📑 RESUMEN DE LIQUIDACIÓN ({total_jugadas} JUGADAS):\n{resumen}\n\n" +
       "🔄BALANCE TOTAL:\n\n" +
-      "*POSITIVOS* (Signo + en verde)\n{positivos}\n*NEGATIVOS* (Signo menos en rojo) \n{negativos}",
+      "🟢 *POSITIVOS (+)*\n{positivos}\n🔴 *NEGATIVOS (-)*\n{negativos}",
     variables: [
       ...VARS_ENCABEZADO,
       "{fecha}",

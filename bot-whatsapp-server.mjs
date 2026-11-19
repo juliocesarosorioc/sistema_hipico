@@ -1102,7 +1102,7 @@ export async function construirYPublicarPlano(sala, groupJid) {
     `${lineas}`;
 
   if (lista.length > 0) {
-    textoPlano += `\n\n💰 Total Casado: $${formatearMonto(totalPactado)} (${lista.length} tickets)`;
+    textoPlano += `\n\nTotal Jugadas (${lista.length})\nMonto Jugado: $${formatearMonto(totalPactado)}`;
   }
 
   if (groupJid && conectado) {
