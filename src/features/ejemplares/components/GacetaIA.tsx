@@ -15,6 +15,7 @@ import {
 import {
   validarCarrera,
   validarLoteCarreras,
+  validarCarrerasAntesDeGuardar,
   generarMensajeResumenImportacion,
   generarMensajeParaAgenteIA,
   type ReporteValidacionLote,
@@ -23,6 +24,7 @@ import {
 import {
   parsearGacetaVenezuelaNativo,
   parsearGacetaRetrospectosNativo,
+  esEjemplarFantasmaCabecera,
 } from "@/features/gaceta/lib/segmentar";
 import { guardarHistorialGaceta, registrarEjemplares, registrarGacetaEHistorial } from "@/features/gaceta/lib/padron";
 import { PROMPT_RINCONADA } from "@/features/gaceta/lib/prompts/prompt-rinconada";
@@ -1092,6 +1094,10 @@ export function GacetaIA() {
       let ultimoError = "";
       const archivosTextoExitosos = new Set<string>();
 
+      const limpiarTextoGaceta = (texto: string): string =>
+        subPestana === "americanas" ? limpiarMarcaAguaRetrospecto(texto) : texto;
+      const paginasPorDoc = new Map<string, string[]>();
+
       const listaTextos =
         docsConTextoActivos.length > 0
           ? docsConTextoActivos.map((doc) => {
@@ -1099,15 +1105,22 @@ export function GacetaIA() {
                 (p) => p.archivo === doc.nombre && p.texto && p.texto.trim().length > 0
               );
               if (paginasDocSel.length > 0) {
-                return {
-                  nombre: doc.nombre,
-                  texto: paginasDocSel.map((p) => p.texto).join("\n\n"),
-                };
+                const paginasLimp = paginasDocSel
+                  .map((p) => limpiarTextoGaceta(p.texto || ""))
+                  .filter((t) => t.trim().length > 0);
+                paginasPorDoc.set(doc.nombre, paginasLimp);
+                return { nombre: doc.nombre, texto: paginasLimp.join("\n\n") };
               }
-              return doc;
+              const textoLimpio = limpiarTextoGaceta(doc.texto);
+              paginasPorDoc.set(doc.nombre, [textoLimpio]);
+              return { nombre: doc.nombre, texto: textoLimpio };
             })
           : hayTexto
-            ? [{ nombre: "documento", texto: textoDocumento }]
+            ? (() => {
+                const textoLimpio = limpiarTextoGaceta(textoDocumento);
+                paginasPorDoc.set("documento", [textoLimpio]);
+                return [{ nombre: "documento", texto: textoLimpio }];
+              })()
             : [];
 
       // 1. PRIMER INTENTO: Extracción determinística nativa (instantánea, offline y sin consumo de tokens)
@@ -1127,7 +1140,7 @@ export function GacetaIA() {
                   hipodromos
                 ),
               })
-            : parsearGacetaRetrospectosNativo([doc.texto], {
+            : parsearGacetaRetrospectosNativo(paginasPorDoc.get(doc.nombre) || [doc.texto], {
                 fechaOverride: fechaDestinoRef,
               });
 
@@ -1139,22 +1152,31 @@ export function GacetaIA() {
               hora: c.hora,
               distancia: c.distancia,
               superficie: c.superficie,
+              raza: c.raza,
               premio: c.premio,
               archivoOrigen: doc.nombre,
-              ejemplares: c.ejemplares.map((e) => ({
-                numero: e.numero,
-                nombre: e.nombre,
-                nacionalidad: esVzla ? "VEN" : "USA",
-                pp: e.pp,
-                jockey: e.jinete,
-                entrenador: e.entrenador,
-                peso: e.peso,
-                ml: e.ml,
-                stud: e.stud,
-                pedigri: e.pedigri,
-                retirado: e.retirado ?? false,
-                condicionElegibilidad: e.condicionElegibilidad,
-              })),
+              ejemplares: c.ejemplares
+                .filter((e) => !esEjemplarFantasmaCabecera(e.nombre, c.hipodromo))
+                .map((e) => ({
+                  numero: e.numero,
+                  nombre: e.nombre,
+                  nacionalidad: esVzla ? "VEN" : "USA",
+                  pp: e.pp,
+                  jockey: e.jinete,
+                  entrenador: e.entrenador,
+                  peso: e.pesoKg ?? e.peso,
+                  ml: e.morningLine ?? e.ml,
+                  morningLine: e.morningLine ?? e.ml,
+                  campana: e.campana,
+                  diasSinCorrer: e.diasSinCorrer,
+                  esDebutante: e.esDebutante,
+                  esAe: e.esAe,
+                  esMto: e.esMto,
+                  stud: e.stud,
+                  pedigri: e.pedigri,
+                  retirado: e.retirado ?? false,
+                  condicionElegibilidad: e.condicionElegibilidad,
+                })),
             }));
             carrerasAcumuladas.push(...carrerasNativas);
             archivosTextoExitosos.add(doc.nombre);
@@ -1293,6 +1315,18 @@ export function GacetaIA() {
         enviada: false,
         aplicada: false,
       }));
+      // BLOQUEO FINAL: nombres vacíos o números duplicados impiden guardar.
+      const validacionGuardado = validarCarrerasAntesDeGuardar(lista);
+      if (!validacionGuardado.esValido) {
+        const advertencia = validacionGuardado.advertencia || "Registros rotos detectados.";
+        setFaseRegistro("error");
+        setEstado(advertencia);
+        setDiag((prev) => `${prev}${prev ? "\n" : ""}${advertencia}`);
+        setCarreras([]);
+        toast(advertencia, "warning");
+        return;
+      }
+
       const listaOrdenada = ordenarCarrerasYEjemplares(lista);
       setCarreras(listaOrdenada);
       setResumen({ nuevos: 0, vinculados: 0 });

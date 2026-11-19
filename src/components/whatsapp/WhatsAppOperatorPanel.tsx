@@ -12,9 +12,6 @@ export interface WhatsAppOperatorPanelProps {
 type BotStatus = "connected" | "qr" | "disconnected" | "loading";
 type TabType = "conexion" | "plantillas" | "control";
 
-const CONTABO_IP = "80.190.77.210";
-const BOT_SERVER_URL = process.env.NEXT_PUBLIC_BOT_URL || `http://${CONTABO_IP}:3005`;
-
 export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: WhatsAppOperatorPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>("conexion");
 
@@ -48,16 +45,9 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
   const consultarEstado = useCallback(async () => {
     if (!grupo_id) return;
     try {
-      let res: Response | null = null;
-      try {
-        res = await fetch(`${BOT_SERVER_URL}/api/whatsapp/status?session_id=${encodeURIComponent(grupo_id)}`, {
-          cache: "no-store",
-        });
-      } catch {
-        res = await fetch(`/api/whatsapp/status?session_id=${encodeURIComponent(grupo_id)}`, {
-          cache: "no-store",
-        });
-      }
+      const res = await fetch(`/api/whatsapp/status?session_id=${encodeURIComponent(grupo_id)}`, {
+        cache: "no-store",
+      });
 
       if (!isMounted.current) return;
 
@@ -167,22 +157,13 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
     setProcesando(true);
     setErrorMsg(null);
     try {
-      let res: Response | null = null;
-      try {
-        res = await fetch(`${BOT_SERVER_URL}/api/whatsapp/connect`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: grupo_id }),
-        });
-      } catch {
-        res = await fetch("/api/whatsapp/connect", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: grupo_id }),
-        });
-      }
+      const res = await fetch("/api/whatsapp/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: grupo_id }),
+      });
 
-      if (res && res.ok) {
+      if (res.ok) {
         const data = await res.json();
         if (data?.status === "connected") {
           setStatus("connected");
@@ -205,22 +186,13 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
     setProcesando(true);
     setErrorMsg(null);
     try {
-      let res: Response | null = null;
-      try {
-        res = await fetch("/disconnect", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: grupo_id }),
-        });
-      } catch {
-        res = await fetch(`${BOT_SERVER_URL}/disconnect`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: grupo_id }),
-        });
-      }
+      const res = await fetch("/api/whatsapp/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: grupo_id }),
+      });
 
-      if (res && res.ok) {
+      if (res.ok) {
         setStatus("disconnected");
         setQrValue(null);
         setNumero(null);
@@ -237,13 +209,7 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
     setProcesando(true);
     setErrorMsg(null);
     try {
-      await fetch("/disconnect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: grupo_id, forzar_limpieza: true }),
-      }).catch(() => {});
-
-      await fetch(`${BOT_SERVER_URL}/disconnect`, {
+      await fetch("/api/whatsapp/disconnect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: grupo_id, forzar_limpieza: true }),

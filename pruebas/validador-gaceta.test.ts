@@ -2,6 +2,7 @@
 import assert from "node:assert";
 import {
   validarCarrera,
+  validarCarrerasAntesDeGuardar,
   validarLoteCarreras,
   generarMensajeResumenImportacion,
   generarMensajeParaAgenteIA,
@@ -96,5 +97,40 @@ const msgAgente = generarMensajeParaAgenteIA(cIncompleta, diag2, "2026-10-30");
 assert.ok(msgAgente.includes("Carrera 2"), "Mensaje agente debe mencionar Carrera 2");
 assert.ok(msgAgente.includes("#3"), "Mensaje agente debe mencionar que falta el ejemplar #3");
 console.log("✔ Instrucción para el Agente IA generada correctamente con las discrepancias");
+
+// 7. Acoplados americanos (1 y 1A) NO son números duplicados
+const cAcoplados = {
+  carrera: 1,
+  hipodromo: "PENN NATIONAL",
+  distancia: 1200,
+  ejemplares: [
+    { numero: "1", nombre: "ALPHA", jockey: "J. ORTIZ" },
+    { numero: "1A", nombre: "BETA", jockey: "R. SAEZ" },
+    { numero: "2", nombre: "GAMMA", jockey: "F. PRAT" },
+    { numero: "3", nombre: "DELTA", jockey: "I. ROSARIO" },
+  ],
+};
+const diagAcoplados = validarCarrera(cAcoplados);
+assert.strictEqual(diagAcoplados.numerosDuplicados.length, 0, "1 y 1A deben ser entradas distintas");
+assert.strictEqual(diagAcoplados.totalCaballos, 4);
+console.log("✔ Acoplados 1/1A no se reportan como duplicados");
+
+// 8. La cabecera con el nombre del hipódromo NO es un ejemplar
+const cConCabecera = {
+  carrera: 7,
+  hipodromo: "PENN NATIONAL",
+  distancia: 1200,
+  ejemplares: [
+    { numero: "7", nombre: "PENN NATIONAL" },
+    { numero: "1", nombre: "REAL ONE", jockey: "J. ORTIZ" },
+    { numero: "2", nombre: "REAL TWO", jockey: "R. SAEZ" },
+  ],
+};
+const diagCabecera = validarCarrera(cConCabecera);
+assert.strictEqual(diagCabecera.numerosDuplicados.length, 0, "La cabecera no debe generar duplicado #7");
+assert.strictEqual(diagCabecera.totalCaballos, 2, "La fila del hipódromo debe descartarse");
+const bloqueo = validarCarrerasAntesDeGuardar([cAcoplados, cConCabecera]);
+assert.strictEqual(bloqueo.esValido, true, "La importación no debe bloquearse por estas filas");
+console.log("✔ Cabecera con nombre del hipódromo descartada antes de validar");
 
 console.log("🎉 TODAS LAS PRUEBAS DEL VALIDADOR PASARON CON ÉXITO.");

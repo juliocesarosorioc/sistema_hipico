@@ -2,11 +2,10 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/core/supabase-admin";
 import { autenticarPeticionSala, type IdentidadSala } from "@/features/sala-juegos/lib/sala-auth";
 import { validarSolicitudRecargaServidor } from "@/features/sala-juegos/lib/recargas-server";
+import { esSecretoInternoBotValido } from "@/features/whatsapp-sala/lib/bot-secret";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
 /**
  * POST /api/recargas/validar
@@ -24,7 +23,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "CSRF bloqueado" }, { status: 403 });
   }
   const secretHeader = req.headers.get("x-internal-bot-secret");
-  const esBot = secretHeader === INTERNAL_BOT_SECRET;
+  let esBot = false;
+  try {
+    esBot = esSecretoInternoBotValido(secretHeader);
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "INTERNAL_BOT_SECRET no configurado." },
+      { status: 500 }
+    );
+  }
 
   const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
 

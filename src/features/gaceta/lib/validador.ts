@@ -7,6 +7,7 @@
  */
 
 import { numeroDeCarrera } from "./numeros";
+import { esEjemplarFantasmaCabecera } from "./segmentar";
 import type { CarreraRegistro, EjemplarEditable } from "./ui";
 import type { CarreraExtraida } from "./ia";
 
@@ -44,7 +45,19 @@ function obtenerEjemplares(c: CarreraValidable): Array<{
   valor?: number | string;
 }> {
   const ej = (c as CarreraRegistro).ejemplares || (c as CarreraRegistro).caballos || (c as CarreraExtraida).ejemplares;
-  return Array.isArray(ej) ? ej : [];
+  const lista = Array.isArray(ej) ? ej : [];
+  return lista.filter((e) => !esEjemplarFantasmaCabecera(e?.nombre, c.hipodromo));
+}
+
+/** Clave exacta de programa: 1, 01 y 1A son entradas distintas en USA. */
+function claveNumeroEjemplar(raw: unknown): string {
+  const s = String(raw ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/^[#Nº°.\s]+/, "")
+    .replace(/[\s.]+/g, "");
+  const m = s.match(/^0*(\d{1,4})([A-Z]{0,2})$/);
+  return m ? `${Number(m[1])}${m[2]}` : s;
 }
 
 /**
@@ -103,7 +116,9 @@ export function validarCarrera(carrera: CarreraValidable): DiagnosticoCarrera {
   // Análisis detallado de los ejemplares
   const numerosPresentes: number[] = [];
   const numerosDuplicados: number[] = [];
+  const clavesDuplicadas: string[] = [];
   const setNumeros = new Set<number>();
+  const setClaves = new Set<string>();
   const caballosSinNombre: Array<string | number> = [];
   let sinJockeyCount = 0;
 
@@ -111,13 +126,20 @@ export function validarCarrera(carrera: CarreraValidable): DiagnosticoCarrera {
     const rawNum = ej.numero;
     const numInt = parseInt(String(rawNum ?? "").replace(/\D/g, ""), 10);
     const posVisual = rawNum ?? idx + 1;
+    const claveNumero = claveNumeroEjemplar(rawNum);
 
-    if (!Number.isNaN(numInt) && numInt > 0) {
-      if (setNumeros.has(numInt)) {
-        numerosDuplicados.push(numInt);
+    if (claveNumero) {
+      if (setClaves.has(claveNumero)) {
+        clavesDuplicadas.push(claveNumero);
+        if (!Number.isNaN(numInt) && numInt > 0 && !numerosDuplicados.includes(numInt)) {
+          numerosDuplicados.push(numInt);
+        }
       } else {
-        setNumeros.add(numInt);
-        numerosPresentes.push(numInt);
+        setClaves.add(claveNumero);
+        if (!Number.isNaN(numInt) && numInt > 0) {
+          setNumeros.add(numInt);
+          numerosPresentes.push(numInt);
+        }
       }
     }
 
@@ -138,7 +160,7 @@ export function validarCarrera(carrera: CarreraValidable): DiagnosticoCarrera {
     incidencias.push({
       tipo: "error",
       campo: "numeros",
-      mensaje: `Números de ejemplar duplicados: #${[...new Set(numerosDuplicados)].join(", #")}`,
+      mensaje: `Números de ejemplar duplicados: #${[...new Set(clavesDuplicadas)].join(", #")}`,
     });
   }
 
@@ -438,4 +460,42 @@ export function generarMensajeParaAgenteIA(
   );
 
   return lineas.join("\n");
+}
+
+export type ResultadoValidacionGuardado = {
+  esValido: boolean;
+  advertencia?: string;
+  detalles: string[];
+};
+
+/**
+ * Bloqueo final antes de persistir: una carrera con nombres vacíos o números
+ * duplicados NO debe guardarse. Devuelve la advertencia exacta de cada
+ * incidencia para reportarla en la respuesta de importación.
+ */
+export function validarCarrerasAntesDeGuardar(
+  carreras: CarreraValidable[]
+): ResultadoValidacionGuardado {
+  const detalles: string[] = [];
+
+  for (const carrera of Array.isArray(carreras) ? carreras : []) {
+    const diag = validarCarrera(carrera);
+    const mensajes = diag.incidencias
+      .filter((i) => i.tipo === "error" && (i.campo === "nombres" || i.campo === "numeros"))
+      .map((i) => i.mensaje);
+    if (!mensajes.length) continue;
+
+    const num = numeroDeCarrera(carrera.carrera);
+    const hipo = String(carrera.hipodromo || "").trim();
+    const etiqueta = `Carrera ${num ?? carrera.carrera ?? "?"}${hipo ? ` (${hipo})` : ""}`;
+    detalles.push(`${etiqueta}: ${mensajes.join("; ")}`);
+  }
+
+  if (!detalles.length) return { esValido: true, detalles: [] };
+
+  return {
+    esValido: false,
+    advertencia: `No se guardaron registros rotos. ${detalles.join(" | ")}.`,
+    detalles,
+  };
 }

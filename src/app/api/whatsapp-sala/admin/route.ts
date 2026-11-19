@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { cerrarParadasAbiertasDeSala } from "@/features/whatsapp-sala/concretarJugada";
+import { obtenerSecretoInternoBot } from "@/features/whatsapp-sala/lib/bot-secret";
 
 export const dynamic = "force-dynamic";
 
 const BOT_DAEMON_URL = process.env.BOT_DAEMON_URL || "http://127.0.0.1:3005";
-const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey =
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({ grupoId, salaId, groupJid }),
         });
@@ -204,7 +204,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({ salaId, groupJid }),
         });
@@ -294,7 +294,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({ salaId }),
         });
@@ -355,7 +355,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({ salaId, groupJid, groupNombre }),
         });
@@ -406,7 +406,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({ groupJid }),
         });
@@ -667,7 +667,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({ salaId }),
         });
@@ -684,7 +684,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({ groupJids, tipo, texto, mediaBase64, mimetype }),
         });
@@ -788,7 +788,7 @@ export async function POST(req: NextRequest) {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+              "x-internal-bot-secret": obtenerSecretoInternoBot(),
             },
             body: JSON.stringify({
               groupJid: salaActualizada.whatsapp_group_jid,
@@ -854,7 +854,7 @@ export async function POST(req: NextRequest) {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+              "x-internal-bot-secret": obtenerSecretoInternoBot(),
             },
             body: JSON.stringify({
               groupJid: salaActualizada.whatsapp_group_jid,
@@ -889,7 +889,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({ salaId, groupJid }),
         });
@@ -917,7 +917,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({ salaId, pizarra, groupJid }),
         });
@@ -945,7 +945,7 @@ export async function POST(req: NextRequest) {
           `${BOT_DAEMON_URL}/ping-grupo?groupJid=${encodeURIComponent(groupJid)}`,
           {
             method: "GET",
-            headers: { "x-internal-bot-secret": INTERNAL_BOT_SECRET },
+            headers: { "x-internal-bot-secret": obtenerSecretoInternoBot() },
             signal: AbortSignal.timeout(6000),
           }
         );
@@ -966,7 +966,7 @@ export async function POST(req: NextRequest) {
       try {
         const resBot = await fetch(`${BOT_DAEMON_URL}/status`, {
           method: "GET",
-          headers: { "x-internal-bot-secret": INTERNAL_BOT_SECRET },
+          headers: { "x-internal-bot-secret": obtenerSecretoInternoBot() },
         });
         const json = await resBot.json().catch(() => ({}));
         return NextResponse.json(json, { status: 200 });
@@ -981,7 +981,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify(body),
         });
@@ -998,7 +998,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify(body),
         });
@@ -1026,7 +1026,7 @@ export async function POST(req: NextRequest) {
           method,
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: method !== "GET" ? JSON.stringify(body) : undefined,
         });

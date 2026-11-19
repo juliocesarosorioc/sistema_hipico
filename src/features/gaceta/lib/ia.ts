@@ -24,8 +24,10 @@ import {
   parsearPaginaRetrospectosNativo,
   parsearGacetaRetrospectosNativo,
   esNombreJockeyPersona,
+  esEjemplarFantasmaCabecera,
 } from "@/features/gaceta/lib/segmentar";
 import type { CarreraRegistro } from "@/features/gaceta/lib/ui";
+import { INSTRUCCION_LECTURA_VISUAL_FILAS } from "@/features/gaceta/lib/prompts/prompt-americanas";
 
 export type EjemplarExtraido = {
   numero: string | number;
@@ -39,6 +41,12 @@ export type EjemplarExtraido = {
   medicamento?: string;
   implementos?: string;
   ml?: string;
+  morningLine?: string;
+  campana?: string;
+  diasSinCorrer?: number;
+  esDebutante?: boolean;
+  esAe?: boolean;
+  esMto?: boolean;
   stud?: string;
   pedigri?: string;
   retirado?: boolean;
@@ -588,7 +596,9 @@ function limpiarNombreEjemplar(
 /** Normaliza y verifica minuciosamente una carrera extraída (números 1..N, nombres limpios,
  *  nacionalidad y deduplicación) antes de fusionarla. */
 function normalizarExtraida(c: CarreraExtraida): void {
-  const crudos = Array.isArray(c.ejemplares) ? c.ejemplares : [];
+  const crudos = (Array.isArray(c.ejemplares) ? c.ejemplares : []).filter(
+    (ej) => !esEjemplarFantasmaCabecera(ej?.nombre, c.hipodromo)
+  );
   const procesados: EjemplarExtraido[] = [];
 
   for (const ej of crudos) {
@@ -770,21 +780,25 @@ function armarBody(
 ): Record<string, unknown> {
   const partes: Array<Record<string, unknown>> = [];
   const durls = contenido.durls || [];
-  if (contenido.texto && contenido.texto.trim()) {
-    const instruccion = estricto
-      ? 'Gaceta textual adjunta. Extrae las carreras que aparecen y responde ÚNICAMENTE con JSON válido con el formato {"carreras":[...]}, sin markdown, sin decoraciones ni explicaciones.'
-      : "Gaceta textual adjunta. Extrae las carreras y sus ejemplares.";
-    partes.push({ text: `${instruccion}\n\n${contenido.texto}` });
-  } else {
+  const texto = contenido.texto?.trim() || "";
+  const baseTexto = estricto
+    ? 'Extrae las carreras que aparecen y responde ÚNICAMENTE con JSON válido con el formato {"carreras":[...]}, sin markdown, sin decoraciones ni explicaciones.'
+    : "Extrae las carreras y sus ejemplares.";
+
+  if (durls.length > 0) {
+    // Multimodal: las imágenes SON la fuente primaria. El texto (cuando llega)
+    // se envía como apoyo, NUNCA en lugar de las páginas renderizadas.
     const imgs = durls.map((d) => {
       const [, meta] = d.split(",");
       const mime = d.split(";")[0].replace("data:", "");
       return { inline_data: { mime_type: mime, data: meta } };
     });
-    const parteTexto = estricto
-      ? 'Gaceta adjunta. Extrae las carreras y responde ÚNICAMENTE con JSON válido con el formato {"carreras":[...]}, sin markdown, sin decoraciones ni explicaciones.'
-      : "Gaceta adjunta. Extrae las carreras y sus ejemplares.";
-    partes.push({ text: parteTexto }, ...imgs);
+    const instruccion = `Páginas de la gaceta adjuntas como imágenes. ${baseTexto}\n${INSTRUCCION_LECTURA_VISUAL_FILAS}`;
+    partes.push({ text: texto ? `${instruccion}\n\n--- TEXTO DE APOYO (NO sustituye a las imágenes) ---\n${texto}` : instruccion }, ...imgs);
+  } else if (texto) {
+    partes.push({ text: `Gaceta textual adjunta. ${baseTexto}\n\n${texto}` });
+  } else {
+    partes.push({ text: `Gaceta adjunta. ${baseTexto}` });
   }
   const promptSistema = promptPersonalizado && promptPersonalizado.trim() ? promptPersonalizado.trim() : SYS;
   return {
@@ -915,11 +929,12 @@ async function extraerLote(
   etiqueta: string,
   diag: { respondio: string; ultimoError: string },
   onEstado?: (s: string) => void,
-  promptPersonalizado?: string
+  promptPersonalizado?: string,
+  textoApoyo?: string
 ): Promise<CarreraExtraida[]> {
   const mitad = Math.ceil(paginas.length / 2);
   const imagenes = (ps: Array<{ num: number; durl: string }>, suf: string): Parte => ({
-    contenido: { durls: ps.map((p) => p.durl) },
+    contenido: { durls: ps.map((p) => p.durl), texto: textoApoyo },
     etiqueta: `${etiqueta}${suf}`,
     partir: () => null,
   });
@@ -927,7 +942,7 @@ async function extraerLote(
     clave,
     modelos,
     {
-      contenido: { durls: paginas.map((p) => p.durl) },
+      contenido: { durls: paginas.map((p) => p.durl), texto: textoApoyo },
       etiqueta,
       partir: () =>
         paginas.length > 1
@@ -1306,7 +1321,8 @@ export async function transformarGaceta(
   onLote?: (hecho: number, total: number) => void,
   onEstado?: (s: string) => void,
   archivoOrigen?: string,
-  promptPersonalizado?: string
+  promptPersonalizado?: string,
+  textoApoyo?: string
 ): Promise<ResultadoGaceta> {
   const diag = { respondio: "", ultimoError: "" };
   let cuotaTotal = false;
@@ -1355,7 +1371,16 @@ export async function transformarGaceta(
           onEstado?.(`${etiqueta}: enviando a la IA…`);
         }
         try {
-          const nuevas = await extraerLote(clave, modelos, lote, etiqueta, diag, onEstado, promptPersonalizado);
+          const nuevas = await extraerLote(
+            clave,
+            modelos,
+            lote,
+            etiqueta,
+            diag,
+            onEstado,
+            promptPersonalizado,
+            textoApoyo
+          );
           if (archivoOrigen) {
             nuevas.forEach((c) => {
               if (!c.archivoOrigen) c.archivoOrigen = archivoOrigen;

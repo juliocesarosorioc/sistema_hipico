@@ -42,11 +42,11 @@ import {
   revertirTicketsEspejoSala,
   anularTicketsEspejoSala,
 } from "@/features/whatsapp-sala/lib/sincronizar-tickets-sala";
+import { obtenerSecretoInternoBot } from "@/features/whatsapp-sala/lib/bot-secret";
 
 export const dynamic = "force-dynamic";
 
 const BOT_DAEMON_URL = process.env.BOT_DAEMON_URL || process.env.BOT_WHATSAPP_DAEMON_URL || "http://127.0.0.1:3005";
-const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
 /**
  * Reenvía un mensaje publicado en la plataforma al grupo de WhatsApp vinculado a la sala (si existe)
@@ -86,7 +86,7 @@ async function publicarEnWhatsAppSala(salaId: string, texto: string, quotedMsgId
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+        "x-internal-bot-secret": obtenerSecretoInternoBot(),
       },
       body: JSON.stringify({
         groupJid,

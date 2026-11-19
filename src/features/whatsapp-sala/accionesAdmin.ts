@@ -18,10 +18,10 @@ import {
   revertirTicketsEspejoSala,
 } from "@/features/whatsapp-sala/lib/sincronizar-tickets-sala";
 import { cerrarParadasAbiertasDeSala } from "./concretarJugada";
+import { obtenerSecretoInternoBot } from "./lib/bot-secret";
 import type { RespaldoSalaDesconectada, ResultadoSentencia } from "./types";
 
 const BOT_DAEMON_URL = process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
-const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
 const AUTH_DIR_WHATSAPP =
   process.env.WHATSAPP_AUTH_DIR ||
@@ -731,7 +731,7 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          "x-internal-bot-secret": obtenerSecretoInternoBot(),
         },
         body: JSON.stringify({
           groupJid: sala.whatsapp_group_jid,
@@ -772,7 +772,7 @@ export async function obtenerEstadoDemonioYSalas(req: Request) {
     const timer = setTimeout(() => controller.abort(), 6000);
     const res = await fetch(`${BOT_DAEMON_URL}/status${forzar ? "?force=true" : ""}`, {
       cache: "no-store",
-      headers: { "x-internal-bot-secret": INTERNAL_BOT_SECRET },
+      headers: { "x-internal-bot-secret": obtenerSecretoInternoBot() },
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -965,7 +965,7 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({
             groupJid: salaActualizada.whatsapp_group_jid,
@@ -1061,7 +1061,7 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({
             groupJid: salaActualizada.whatsapp_group_jid,
@@ -1117,7 +1117,7 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          "x-internal-bot-secret": obtenerSecretoInternoBot(),
         },
         body: JSON.stringify({ salaId, groupJid, groupNombre }),
       });
@@ -1153,7 +1153,7 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          "x-internal-bot-secret": obtenerSecretoInternoBot(),
         },
         body: JSON.stringify({ salaId }),
       });
@@ -1236,7 +1236,7 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          "x-internal-bot-secret": obtenerSecretoInternoBot(),
         },
         body: JSON.stringify({ salaId, groupJid, groupNombre }),
       });
@@ -1324,7 +1324,7 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
       const rBot = await fetch(`${BOT_DAEMON_URL}/ping-grupo?groupJid=${encodeURIComponent(groupJid)}`, {
         method: "GET",
         headers: {
-          "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          "x-internal-bot-secret": obtenerSecretoInternoBot(),
         },
         signal: AbortSignal.timeout(6000),
       });
@@ -1413,7 +1413,7 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": obtenerSecretoInternoBot(),
           },
           body: JSON.stringify({
             groupJid: sala.whatsapp_group_jid,

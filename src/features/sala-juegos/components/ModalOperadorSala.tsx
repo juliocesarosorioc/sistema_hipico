@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { salaApi } from "../lib/sala-api";
 import { colorDeNumero, textoDeNumero } from "@/features/tablas/lib/tipos";
 import { getHorseColor } from "@/shared/lib/horseColors";
@@ -114,6 +114,10 @@ export function ModalOperadorSala({
   } | null>(null);
   const [cargandoPlataforma, setCargandoPlataforma] = useState(false);
 
+  // Navegación por teclado de la pizarra: Enter carga, ↑/Shift+Tab suben,
+  // ↓/Tab bajan (y en la última fila agrega una nueva posición).
+  const filasLlegadaRefs = useRef<Array<HTMLInputElement | null>>([]);
+
   // Publicidad
   const [pubTitulo, setPubTitulo] = useState("");
   const [pubContenido, setPubContenido] = useState("");
@@ -212,6 +216,58 @@ export function ModalOperadorSala({
       setMsgFeedback(`❌ Error de conexión: ${err?.message || err}`);
     } finally {
       setCargando(false);
+    }
+  };
+
+  /** Carga/liquida la pizarra oficial (misma acción que el botón 🏁). */
+  const liquidarPizarra = () => {
+    if (cargando || estadoCarreraActual === "liquidada" || !validacionPizarra.ok) return;
+    const ganadores = filasLlegada.map((f) => f.numero.trim()).filter(Boolean);
+    const empates = filasLlegada
+      .map((f, i) => (f.empate ? i + 1 : null))
+      .filter((x): x is number => x !== null);
+
+    void ejecutarAccion("liquidar", {
+      pizarra: {
+        primero: ganadores[0] || "",
+        segundo: ganadores[1] || undefined,
+        tercero: ganadores[2] || undefined,
+        cuarto: ganadores[3] || undefined,
+        quinto: ganadores[4] || undefined,
+        ganadores,
+        empates,
+      },
+    });
+  };
+
+  /** Enfoca y selecciona el dorsal de la posición `idx`. */
+  const enfocarFilaLlegada = (idx: number) => {
+    const el = filasLlegadaRefs.current[idx];
+    if (!el) return;
+    el.focus();
+    el.select();
+  };
+
+  /** Enter carga la pizarra; ↑/Shift+Tab retroceden; ↓/Tab avanzan. */
+  const teclaFilaLlegada = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      liquidarPizarra();
+      return;
+    }
+    if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
+      e.preventDefault();
+      if (idx > 0) enfocarFilaLlegada(idx - 1);
+      return;
+    }
+    if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
+      e.preventDefault();
+      if (idx + 1 < filasLlegada.length) {
+        enfocarFilaLlegada(idx + 1);
+      } else if (filasLlegada.length < 10) {
+        setFilasLlegada((prev) => [...prev, { numero: "", empate: false }]);
+        window.setTimeout(() => enfocarFilaLlegada(idx + 1), 0);
+      }
     }
   };
 
@@ -661,6 +717,9 @@ export function ModalOperadorSala({
                         <span className="w-6 font-bold text-slate-600 text-[11px]">{idx + 1}º</span>
 
                         <input
+                          ref={(el) => {
+                            filasLlegadaRefs.current[idx] = el;
+                          }}
                           type="text"
                           inputMode="numeric"
                           disabled={estadoCarreraActual === "liquidada"}
@@ -672,6 +731,8 @@ export function ModalOperadorSala({
                               prev.map((row, i) => (i === idx ? { ...row, numero: val } : row))
                             );
                           }}
+                          onKeyDown={(e) => teclaFilaLlegada(idx, e)}
+                          title="Enter: cargar pizarra · ↑ / Shift+Tab: posición anterior · ↓ / Tab: siguiente posición"
                           className="w-14 h-7 bg-white border border-slate-300 focus:border-emerald-500 rounded p-1 text-center text-slate-900 font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed"
                         />
                       </div>
@@ -746,24 +807,7 @@ export function ModalOperadorSala({
                 <button
                   type="button"
                   disabled={cargando || !validacionPizarra.ok}
-                  onClick={() => {
-                    const ganadores = filasLlegada.map((f) => f.numero.trim()).filter(Boolean);
-                    const empates = filasLlegada
-                      .map((f, i) => (f.empate ? i + 1 : null))
-                      .filter((x): x is number => x !== null);
-
-                    ejecutarAccion("liquidar", {
-                      pizarra: {
-                        primero: ganadores[0] || "",
-                        segundo: ganadores[1] || undefined,
-                        tercero: ganadores[2] || undefined,
-                        cuarto: ganadores[3] || undefined,
-                        quinto: ganadores[4] || undefined,
-                        ganadores,
-                        empates,
-                      },
-                    });
-                  }}
+                  onClick={liquidarPizarra}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
                 >
                   <span>🏁</span>

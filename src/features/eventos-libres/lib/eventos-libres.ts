@@ -245,12 +245,18 @@ export async function crearEventoLibre(params: {
   if (!Number.isFinite(comisionGrupoPct) || comisionGrupoPct < 0 || comisionGrupoPct > 100) {
     return { ok: false, error: "La comisión del grupo debe estar entre 0% y 100%." };
   }
-  const disponible1 = Math.max(0, redondearCentavos(params.jugador1.disponible));
-  const disponible2 = Math.max(0, redondearCentavos(params.jugador2.disponible));
-  if (r1 > disponible1) {
+  // Un cliente en modo libre tiene disponible Infinity: no se redondea (el
+  // motor de centavos convertiría Infinity en 0) y se omite su validación.
+  const disponible1 = Number.isFinite(params.jugador1.disponible)
+    ? Math.max(0, redondearCentavos(params.jugador1.disponible))
+    : Number.POSITIVE_INFINITY;
+  const disponible2 = Number.isFinite(params.jugador2.disponible)
+    ? Math.max(0, redondearCentavos(params.jugador2.disponible))
+    : Number.POSITIVE_INFINITY;
+  if (Number.isFinite(disponible1) && r1 > disponible1) {
     return { ok: false, error: `El jugador ${params.jugador1.nombre} no tiene saldo disponible suficiente.` };
   }
-  if (r2 > disponible2) {
+  if (Number.isFinite(disponible2) && r2 > disponible2) {
     return { ok: false, error: `El jugador ${params.jugador2.nombre} no tiene saldo disponible suficiente.` };
   }
 

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { resolverSala, esWhatsappMsgIdDuplicado } from "@/features/whatsapp-sala/resolverSala";
-import { resolverCliente, verificarEsOperador } from "@/features/whatsapp-sala/resolverCliente";
+import {
+  crearClienteOperadorSimbolico,
+  resolverCliente,
+  verificarEsOperador,
+} from "@/features/whatsapp-sala/resolverCliente";
 import {
   sanitizarTexto,
   detectarIntencionRapida,
@@ -8,6 +12,7 @@ import {
   parsearJugada,
   manejarFalloAnalisisJugada,
   AVISO_REDACCION_GRUPO,
+  COMANDO_OPERADOR_EXACTO,
 } from "@/features/whatsapp-sala/parsearJugada";
 import { validarYPublicarPropuesta } from "@/features/whatsapp-sala/validarSaldo";
 import { concretarJugada } from "@/features/whatsapp-sala/concretarJugada";
@@ -98,15 +103,29 @@ export async function POST(req: Request) {
 
     const { salaId, grupoId, codigoSala, carreraAbierta, sala } = contextoSala;
 
-    // Inmunidad del operador: su texto libre se ignora en silencio
+    // Inmunidad del operador: su texto libre se ignora en silencio.
+    // Los comandos operativos se aceptan con o sin «!» y se evalúan ANTES de
+    // exigir que el remitente figure en la nómina de `clientes`.
+    // El flag `esOperador` del demonio NO basta: además se revalida en backend
+    // por teléfono (últimos 10 dígitos) / whatsapp_lid contra la nómina de
+    // administradores y operadores del grupo o la sala.
+    const esMensajePropioBot = Boolean(body.esMensajePropioTelefono) || Boolean(body.esFromMe);
+    const operadorVerificadoBackend = await verificarEsOperador(
+      null,
+      participantJid,
+      grupoId,
+      {
+        participantJid,
+        participantAlt: body.participantAlt || body.participant_alt || null,
+        telefonoReal: body.telefonoReal || body.participant_phone || null,
+        salaId,
+      }
+    );
     const esOperadorRemitente =
-      Boolean(body.esMensajePropioTelefono) ||
-      Boolean(body.esOperador) ||
-      (await verificarEsOperador(null, participantJid, grupoId));
+      esMensajePropioBot || (Boolean(body.esOperador) && operadorVerificadoBackend);
 
-    const COMANDO_OPERADOR_EXACTO =
-      /^!(?:abrir|abierta|cerrar|cerrad[ao]|pizarra|rectificar|plano|hip[óo]dromo|retirar|recargar|aval)(?:\s|$)/i;
-    if (esOperadorRemitente && !COMANDO_OPERADOR_EXACTO.test(texto)) {
+    const esComandoOperador = esOperadorRemitente && COMANDO_OPERADOR_EXACTO.test(texto);
+    if (esOperadorRemitente && !esComandoOperador) {
       return respuestaSala({
         ok: true,
         tipo: "IGNORADO_OPERADOR",
@@ -123,7 +142,7 @@ export async function POST(req: Request) {
     const deteccion = detectarIntencionRapida(texto, quotedMsgId, codigoSala);
 
     // Si no es comando, ni acción, ni intención de jugada, registrar texto y salir
-    if (!deteccion.esAccionOJugada) {
+    if (!deteccion.esAccionOJugada && !esComandoOperador) {
       const nombreRemitente = String(body.senderNombre || body.pushName || "Usuario").trim();
       await registrarMensajeChat({
         salaId,
@@ -144,39 +163,51 @@ export async function POST(req: Request) {
       });
     }
 
-    // 3. Servicio 2: resolverCliente
-    const cliente = await resolverCliente({
-      grupoId,
-      participantJid,
-      participantAlt: body.participantAlt,
-      telefonoReal: body.telefonoReal || body.participant_phone,
-      pushName: body.push_name || body.pushName || body.senderNombre,
-      clientePreviamenteIdentificado: body.clientePreviamenteIdentificado,
-      esOperadorRemitente,
-    });
-
-    if (!cliente) {
-      return respuestaSala({
-        ok: false,
-        tipo: "SIN_REGISTRO",
-        respuestaGrupo: "🚫 *Nada Aquí* — Jugador no registrado en la nómina oficial del grupo.",
-        mensajePrivadoAutor: null,
+    // 3. Servicio 2: resolverCliente (omitido para comandos de operador)
+    let cliente: NonNullable<Awaited<ReturnType<typeof resolverCliente>>>;
+    if (esComandoOperador) {
+      cliente = crearClienteOperadorSimbolico({
+        grupoId,
+        participantJid,
+        nombre: body.pushName || body.push_name || body.senderNombre,
+        telefono: body.telefonoReal || body.participant_phone || null,
+        whatsappLid: participantJid.endsWith("@lid") ? participantJid : null,
       });
-    }
+    } else {
+      const clienteResuelto = await resolverCliente({
+        grupoId,
+        participantJid,
+        participantAlt: body.participantAlt,
+        telefonoReal: body.telefonoReal || body.participant_phone,
+        pushName: body.push_name || body.pushName || body.senderNombre,
+        clientePreviamenteIdentificado: body.clientePreviamenteIdentificado,
+        esOperadorRemitente,
+      });
 
-    // Auto-guardado de @lid en clientes en segundo plano (sin bloquear la respuesta)
-    if (participantJid.endsWith("@lid") && cliente.whatsapp_lid !== participantJid) {
-      (async () => {
-        try {
-          await supabaseAdmin
-            .from("clientes")
-            .update({ whatsapp_lid: participantJid, whatsapp_vinculado: true })
-            .eq("id", cliente.id);
-        } catch {
-          // Silencioso
-        }
-      })();
-      cliente.whatsapp_lid = participantJid;
+      if (!clienteResuelto) {
+        return respuestaSala({
+          ok: false,
+          tipo: "SIN_REGISTRO",
+          respuestaGrupo: "🚫 *Nada Aquí* — Jugador no registrado en la nómina oficial del grupo.",
+          mensajePrivadoAutor: null,
+        });
+      }
+      cliente = clienteResuelto;
+
+      // Auto-guardado de @lid en clientes en segundo plano (sin bloquear la respuesta)
+      if (participantJid.endsWith("@lid") && cliente.whatsapp_lid !== participantJid) {
+        (async () => {
+          try {
+            await supabaseAdmin
+              .from("clientes")
+              .update({ whatsapp_lid: participantJid, whatsapp_vinculado: true })
+              .eq("id", cliente.id);
+          } catch {
+            // Silencioso
+          }
+        })();
+        cliente.whatsapp_lid = participantJid;
+      }
     }
 
     // 4. Procesar intenciones de comandos y entrenadas

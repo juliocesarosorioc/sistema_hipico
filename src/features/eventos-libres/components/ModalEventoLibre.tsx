@@ -10,7 +10,12 @@ import {
   type CategoriaDeporte,
   type EventoLibreRow,
 } from "@/features/eventos-libres/lib/eventos-libres";
-import { clientesPertenecenAlMismoGrupo, type ClienteVenta } from "@/features/grupos/lib/grupos";
+import {
+  clientesPertenecenAlMismoGrupo,
+  esClienteLibre,
+  limiteDeJugar,
+  type ClienteVenta,
+} from "@/features/grupos/lib/grupos";
 import { formatoMoneda } from "@/shared/lib/vzla";
 import { SearchableSelect } from "@/shared/components/ui/SearchableSelect";
 import { hoyLocal } from "@/core/utils/fechas";
@@ -52,7 +57,11 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
     [clientes]
   );
 
-  const calcDisponible = (c?: ClienteVenta | null) => (c ? ((c.saldo_actual ?? 0) + (c.aval ?? 0)) : 0);
+  // El modo libre NO tiene tope: limiteDeJugar devuelve Infinity y se omite
+  // cualquier validación de saldo/aval en crearEventoLibre.
+  const calcDisponible = (c?: ClienteVenta | null) => limiteDeJugar(c);
+  const textoDisponible = (c?: ClienteVenta | null) =>
+    esClienteLibre(c) ? "libre (sin tope)" : formatoMoneda("USD", calcDisponible(c));
 
   useEffect(() => {
     let vigente = true;
@@ -283,7 +292,7 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
               <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 space-y-1.5">
                 <div className="text-[11px] font-black uppercase text-emerald-800 flex items-center justify-between">
                   <span>🟢 Quien Juega (Jugador 1)</span>
-                  {cli1 && <span className="font-mono text-[10px] text-emerald-700">Disp: {formatoMoneda("USD", calcDisponible(cli1))}</span>}
+                  {cli1 && <span className="font-mono text-[10px] text-emerald-700">Disp: {textoDisponible(cli1)}</span>}
                 </div>
                 <SearchableSelect
                   options={opcionesClientes}
@@ -311,7 +320,7 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
               <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-2 space-y-1.5">
                 <div className="text-[11px] font-black uppercase text-amber-800 flex items-center justify-between">
                   <span>🟡 Quien Da (Jugador 2)</span>
-                  {cli2 && <span className="font-mono text-[10px] text-amber-700">Disp: {formatoMoneda("USD", calcDisponible(cli2))}</span>}
+                  {cli2 && <span className="font-mono text-[10px] text-amber-700">Disp: {textoDisponible(cli2)}</span>}
                 </div>
                 <SearchableSelect
                   options={opcionesClientes}

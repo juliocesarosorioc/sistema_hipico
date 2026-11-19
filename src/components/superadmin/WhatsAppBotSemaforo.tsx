@@ -2,9 +2,6 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 
-const CONTABO_IP = "80.190.77.210";
-const BOT_SERVER_URL = process.env.NEXT_PUBLIC_BOT_URL || `http://${CONTABO_IP}:3005`;
-
 export interface WhatsAppBotSemaforoProps {
   grupo_id: string;
   onStatusChange?: (status: "connected" | "qr" | "disconnected") => void;
@@ -22,21 +19,13 @@ export default function WhatsAppBotSemaforo({
   const [numero, setNumero] = useState<string | null>(null);
   const isMounted = useRef<boolean>(true);
 
-  // Polling cada 5 segundos a http://80.190.77.210:3005/api/whatsapp/status?session_id={grupo_id}
+  // Polling cada 5 segundos al proxy interno de Next.js (mismo origen)
   const consultarSemaforo = useCallback(async () => {
     if (!grupo_id) return;
     try {
-      let res: Response | null = null;
-      try {
-        res = await fetch(`${BOT_SERVER_URL}/api/whatsapp/status?session_id=${encodeURIComponent(grupo_id)}`, {
-          cache: "no-store",
-        });
-      } catch {
-        // Fallback al proxy Next.js si la IP directa es inaccesible desde el navegador cliente
-        res = await fetch(`/api/whatsapp/status?session_id=${encodeURIComponent(grupo_id)}`, {
-          cache: "no-store",
-        });
-      }
+      const res = await fetch(`/api/whatsapp/status?session_id=${encodeURIComponent(grupo_id)}`, {
+        cache: "no-store",
+      });
 
       if (!isMounted.current) return;
 

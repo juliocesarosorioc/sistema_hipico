@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/core/supabase-admin";
 import { mensajeConCodigoSala } from "@/features/grupos/lib/codigo-sala";
 import { codigoSalaEnRespuesta } from "./resolverSala";
+import { obtenerSecretoInternoBot } from "./lib/bot-secret";
 import type { PayloadNotificacion } from "./types";
 
 export const BOT_DAEMON_URL = process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
-export const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
 /**
  * Emite eventos realtime a los canales Supabase de la sala.
@@ -125,12 +125,13 @@ export async function enviarNotificacionesPrivadasDaemon(notificaciones: any[]):
       } catch {}
     }
     if (destinoJid) {
+      const secretoInterno = obtenerSecretoInternoBot();
       try {
         await fetch(`${BOT_DAEMON_URL}/enviar-privado`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            "x-internal-bot-secret": secretoInterno,
           },
           body: JSON.stringify({ telefonoOjid: destinoJid, texto: msgPriv }),
         });

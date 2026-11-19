@@ -81,13 +81,7 @@ export default function SuperAdminMonitorPage() {
           exito = true;
         }
       } catch {
-        // Fallback directo a Contabo
-        const resDirect = await fetch(`http://80.190.77.210:3005/api/whatsapp/disconnect`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: inquilino.id }),
-        }).catch(() => null);
-        if (resDirect && resDirect.ok) exito = true;
+        exito = false;
       }
 
       if (exito) {

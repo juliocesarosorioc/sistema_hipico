@@ -21,8 +21,10 @@ import {
   parsearGacetaRetrospectosNativo,
   parsearGacetaVenezuelaNativo,
   esNombreJockeyPersona,
+  esEjemplarFantasmaCabecera,
   type CarreraParseadaNativa,
 } from "@/features/gaceta/lib/segmentar";
+import { validarCarrerasAntesDeGuardar } from "@/features/gaceta/lib/validador";
 import type { CarreraCatalogo, EjemplarCarreraCentral } from "@/features/carreras/lib/maestro-nucleo";
 import {
   simularCarreraV4,
@@ -251,7 +253,7 @@ export type ResultadoArchivoGaceta = {
  * 2. Aplica Parser Determinístico Nativo instantáneo (Cero cuelgues, Cero gasto innecesario de tokens).
  * 3. Fallback inteligente a IA Gemini con timeout de 25s sólo si quedan páginas sin resolver.
  */
-export async function importarYExtraerGacetaPdf(
+async function importarYExtraerGacetaPdfInterno(
   opciones: OpcionesExtraccionGaceta
 ): Promise<ResultadoArchivoGaceta> {
   const {
@@ -337,9 +339,8 @@ export async function importarYExtraerGacetaPdf(
 
   // Si tiene texto digital:
   if (paginasTexto.length > 0 && paginasTexto.some((p) => p.trim().length > 100)) {
-    if (tipoExtractor === "americanas") {
-      paginasTexto = paginasTexto.map((p) => limpiarMarcaAguaRetrospecto(p));
-    }
+    // Limpieza previa obligatoria antes de cualquier parseo/Envío a IA.
+    paginasTexto = paginasTexto.map((p) => limpiarMarcaAguaRetrospecto(p));
     const textoUnificado = paginasTexto.join("\n\n");
     const esVenezuela =
       tipoExtractor === "rinconada" ||
@@ -390,22 +391,31 @@ export async function importarYExtraerGacetaPdf(
       hora: c.hora,
       distancia: c.distancia,
       superficie: c.superficie,
+      raza: c.raza,
       premio: c.premio,
       archivoOrigen: file.name,
-      ejemplares: c.ejemplares.map((e) => ({
-        numero: e.numero,
-        nombre: e.nombre,
-        nacionalidad: nacDefault,
-        pp: e.pp,
-        jockey: e.jinete,
-        entrenador: e.entrenador,
-        peso: e.peso,
-        ml: e.ml,
-        stud: e.stud,
-        pedigri: e.pedigri,
-        retirado: e.retirado ?? false,
-        condicionElegibilidad: e.condicionElegibilidad,
-      })),
+      ejemplares: c.ejemplares
+        .filter((e) => !esEjemplarFantasmaCabecera(e.nombre, c.hipodromo))
+        .map((e) => ({
+          numero: e.numero,
+          nombre: e.nombre,
+          nacionalidad: nacDefault,
+          pp: e.pp,
+          jockey: e.jinete,
+          entrenador: e.entrenador,
+          peso: e.pesoKg ?? e.peso,
+          ml: e.morningLine ?? e.ml,
+          morningLine: e.morningLine ?? e.ml,
+          campana: e.campana,
+          diasSinCorrer: e.diasSinCorrer,
+          esDebutante: e.esDebutante,
+          esAe: e.esAe,
+          esMto: e.esMto,
+          stud: e.stud,
+          pedigri: e.pedigri,
+          retirado: e.retirado ?? false,
+          condicionElegibilidad: e.condicionElegibilidad,
+        })),
     }));
 
     // Si el parser determinístico extrajo carreras de forma limpia o no hay clave Gemini, usarlo directamente:
@@ -426,23 +436,50 @@ export async function importarYExtraerGacetaPdf(
     if (claveGemini.trim()) {
       onProgreso?.({
         fase: "extrayendo",
-        mensaje: `Extrayendo con IA Gemini y reglas de precisión (diferenciación estricta de Caballos, Jockeys, Entrenadores y M/L)...`,
+        mensaje: `Extrayendo con IA Gemini multimodal (lectura visual por fila + texto de apoyo)...`,
       });
 
-      const resIa = await transformarGacetaTexto(
-        claveGemini,
-        paginasTexto.join("\n\n"),
-        (hecho: number, tot: number) =>
+      // Aunque el PDF tenga capa de texto, las páginas se envían como imágenes:
+      // el texto plano despega la columna N./ML y parte el nombre del ejemplar.
+      const imagenesConTexto = await renderizarPdfAImagenes(
+        file,
+        (pag, tot) =>
           onProgreso?.({
-            fase: "extrayendo",
-            mensaje: `Procesando bloque IA ${hecho} de ${tot}...`,
-            paginaActual: hecho,
+            fase: "leyendo",
+            mensaje: `Renderizando página ${pag} de ${tot} para lectura visual...`,
+            paginaActual: pag,
             totalPaginas: tot,
           }),
-        (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s }),
-        file.name,
-        promptEfectivo
+        topePaginas
       );
+
+      const onLoteIa = (hecho: number, tot: number) =>
+        onProgreso?.({
+          fase: "extrayendo",
+          mensaje: `Procesando bloque IA ${hecho} de ${tot}...`,
+          paginaActual: hecho,
+          totalPaginas: tot,
+        });
+      const onEstadoIa = (s: string) => onProgreso?.({ fase: "extrayendo", mensaje: s });
+
+      const resIa = imagenesConTexto.length
+        ? await transformarGaceta(
+            claveGemini,
+            imagenesConTexto,
+            onLoteIa,
+            onEstadoIa,
+            file.name,
+            promptEfectivo,
+            textoUnificado
+          )
+        : await transformarGacetaTexto(
+            claveGemini,
+            textoUnificado,
+            onLoteIa,
+            onEstadoIa,
+            file.name,
+            promptEfectivo
+          );
 
       if (resIa.ok && resIa.carreras.length > 0) {
         return {
@@ -453,7 +490,7 @@ export async function importarYExtraerGacetaPdf(
             archivoOrigen: file.name,
             fecha: fechaEfectiva || c.fecha,
           })),
-          modo: "texto",
+          modo: imagenesConTexto.length ? "imagenes" : "texto",
           aviso: resIa.avisoNumeracion,
         };
       }
@@ -574,6 +611,29 @@ export async function importarYExtraerGacetaPdf(
     modo: "imagenes",
     error: res.error,
     aviso: res.avisoNumeracion,
+  };
+}
+
+/**
+ * Punto de entrada público: aplica la validación bloqueante final antes de
+ * entregar las carreras al guardado en BD.
+ */
+export async function importarYExtraerGacetaPdf(
+  opciones: OpcionesExtraccionGaceta
+): Promise<ResultadoArchivoGaceta> {
+  const resultado = await importarYExtraerGacetaPdfInterno(opciones);
+  if (!resultado.ok || resultado.carreras.length === 0) return resultado;
+
+  const validacion = validarCarrerasAntesDeGuardar(resultado.carreras);
+  if (validacion.esValido) return resultado;
+
+  const advertencia = validacion.advertencia || "Registros rotos detectados.";
+  return {
+    ...resultado,
+    ok: false,
+    carreras: [],
+    error: advertencia,
+    aviso: advertencia,
   };
 }
 

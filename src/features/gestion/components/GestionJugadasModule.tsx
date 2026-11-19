@@ -1,5 +1,4 @@
 "use client";
-import { ModalEventoLibre } from "@/features/eventos-libres/components/ModalEventoLibre";
 import { DateInput } from "@/shared/components/ui/DateInput";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -69,6 +68,7 @@ import { guardarCarreraCentral, numerosEjemplares } from "@/features/carreras/li
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados, jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros";
 import { claveHipodromo, numerosDeCarrera } from "@/features/carreras/lib/claves";
 import { useRegistroCentral, useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
+import { useRealtimeApuestasCarrera } from "@/shared/hooks/useRealtimeApuestasCarrera";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { revisarCaballo, maximoDeLaCarrera, type RevisionCaballo } from "@/features/taquilla/lib/caballos";
 import { mensajeResultadoDeCarrera, mensajePreliminarDeCarrera } from "@/features/taquilla/lib/mensajeResultado";
@@ -333,7 +333,6 @@ export function GestionJugadasModule() {
   const [recalculandoJornada, setRecalculandoJornada] = useState(false);
   const [modalSaldos, setModalSaldos] = useState(false);
   const [modalCreacionRapidaCliente, setModalCreacionRapidaCliente] = useState(false);
-  const [modalEventoLibre, setModalEventoLibre] = useState(false);
 
   const { carreras: centralCarrerasDiaAllBase, carrerasDe, recargar: recargarRegistroCentral } =
     useRegistroCentralOpts(fecha);
@@ -1743,25 +1742,39 @@ const hipodromosDelDia = useMemo(() => {
    * la sesión). Es la fuente que mantiene el panel visible después de recargar
    * o liquidar; el store local solo completa la proyección de las Pendientes.
    */
-  const recargarJugadasGuardadas = useCallback(async () => {
+  const recargarJugadasGuardadas = useCallback(async (silencioso = false) => {
     if (!listoParaCargar) {
       setJugadasGuardadas([]);
       return;
     }
-    setCargandoGuardadas(true);
+    if (!silencioso) setCargandoGuardadas(true);
     try {
       const r = await listarJugadasDeCarrera(hipodromo, carrera, fecha);
       setJugadasGuardadas(r.ok ? r.jugadas : []);
     } catch {
       setJugadasGuardadas([]);
     } finally {
-      setCargandoGuardadas(false);
+      if (!silencioso) setCargandoGuardadas(false);
     }
   }, [listoParaCargar, hipodromo, carrera, fecha, grupoSesion]);
 
   useEffect(() => {
     void recargarJugadasGuardadas();
   }, [recargarJugadasGuardadas]);
+
+  /** Concreciones del bot y tickets de Taquilla: el tablero y el plano se
+   *  reflejan solos en cuanto se escriben, sin esperar a recargar la página. */
+  useRealtimeApuestasCarrera({
+    activo: listoParaCargar,
+    fecha,
+    hipodromo,
+    carrera,
+    grupoId: veTodosLosGrupos ? null : grupoSesion,
+    onCambio: () => {
+      void recargarJugadasGuardadas(true);
+      void recargarClientes();
+    },
+  });
 
   /** Pizarra Oficial y Orden de Llegada (Raya) vigentes para la carrera actual. */
   const pizarraPuestosActual = useMemo<string[]>(() => {
@@ -4160,22 +4173,12 @@ const hipodromosDelDia = useMemo(() => {
             <button
               type="button"
               onClick={() => setModalAgentePizarra(true)}
-              disabled={bloqueoLiquidacionActivo || carreraLiquidada}
-              title={carreraLiquidada ? "🔒 Carrera liquidada: reverse la liquidación primero para cambiar pizarra" : "🤖 Agente de Pizarra Oficial (Cambio de Pizarra · Liquidación · Variación · Saldos)"}
+              disabled={bloqueoLiquidacionActivo || !carreraLiquidada}
+              title={carreraLiquidada ? "🤖 Agente de Pizarra Oficial: cambiar pizarra de una carrera liquidada" : "🔒 Disponible solo cuando la carrera esté liquidada"}
               className="col-span-1 sm:col-auto inline-flex h-9 sm:h-10 items-center justify-center gap-1 rounded-xl border border-indigo-200 bg-white px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-indigo-700 shadow-2xs transition-all hover:bg-indigo-50 hover:border-indigo-300 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 truncate"
             >
               <span className="text-sm">🔄</span>
               <span>Cambio de Pizarra</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setModalEventoLibre(true)}
-              disabled={bloqueoLiquidacionActivo}
-              title="🎯 Evento Libre / Sportsbook P2P (MLB, NBA, NFL, Fútbol, Boxeo/UFC, Logros 10/6, 10A7, etc.)"
-              className="col-span-1 sm:col-auto inline-flex h-9 sm:h-10 items-center justify-center gap-1 rounded-xl border border-purple-300 bg-purple-700 px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-black text-white shadow-2xs transition-all hover:bg-purple-600 disabled:opacity-40 shrink-0 truncate"
-            >
-              <span className="text-sm">🎯</span>
-              <span>Evento Libre / P2P</span>
             </button>
           </div>
           ) : null
@@ -4221,7 +4224,9 @@ const hipodromosDelDia = useMemo(() => {
           grupoId={grupoSesion}
           nombreGrupo={grupoCabecera}
           hipodromo={nombreHipodromo}
+          hipodromoClave={hipodromo}
           carrera={carrera}
+          fecha={fecha}
           gruposDisponibles={gruposVenta.map((g) => ({ id: g.id, nombre: g.nombre }))}
           onCargarApuestas={(apuestas: ApuestaWpsParseada[]) => {
             const nuevasFilas: FilaCarga[] = apuestas.map((ap) => ({
@@ -5983,18 +5988,6 @@ const hipodromosDelDia = useMemo(() => {
         </div>
       </div>
 
-      {/* Modal 🎯 Evento Libre P2P entre clientes */}
-      {modalEventoLibre && (
-        <ModalEventoLibre
-          clientes={clientesDelGrupo}
-          onClose={() => {
-            setModalEventoLibre(false);
-            void recargarClientes();
-          }}
-          comisionGrupoDefault={comisionNum}
-        />
-      )}
-
       {/* Modal 🎯 Apuesta Libre individual imputada a la cuenta del cliente */}
       {modalEventoEspecial && (
         <ModalApuestaEventoEspecial
@@ -6516,6 +6509,7 @@ const hipodromosDelDia = useMemo(() => {
           fecha={fecha}
           tasaComision={comisionNum}
           carreraLiquidada={carreraLiquidada}
+          grupoId={veTodosLosGrupos ? null : grupoSesion}
           onCerrar={() => {
             setModalEditarJugadas(false);
             void recargarJugadasGuardadas();

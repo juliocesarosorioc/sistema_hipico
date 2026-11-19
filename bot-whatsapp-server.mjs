@@ -5,6 +5,8 @@
 // ============================================================================
 
 import http from "node:http";
+import { timingSafeEqual } from "node:crypto";
+import WebSocket from "ws";
 
 if (typeof globalThis.WebSocket === "undefined") {
   try {
@@ -61,7 +63,20 @@ cargarVariablesEntorno();
 
 const PORT = Number(process.env.WHATSAPP_BOT_PORT || 3005);
 const NEXT_API_BASE = process.env.NEXT_INTERNAL_URL || "http://127.0.0.1:3000";
-const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
+const INTERNAL_BOT_SECRET = String(process.env.INTERNAL_BOT_SECRET ?? "").trim();
+if (!INTERNAL_BOT_SECRET) {
+  throw new Error("INTERNAL_BOT_SECRET no configurado: el demonio aborta (fail-closed).");
+}
+
+/** Comparación en tiempo constante del secreto interno recibido por HTTP. */
+function esSecretoInternoValido(valor) {
+  if (typeof valor !== "string" || !valor) return false;
+  const recibido = Buffer.from(valor);
+  const configurado = Buffer.from(INTERNAL_BOT_SECRET);
+  if (recibido.length !== configurado.length) return false;
+  return timingSafeEqual(recibido, configurado);
+}
+
 const AUTH_DIR =
   process.env.WHATSAPP_AUTH_DIR ||
   (process.platform === "linux"
@@ -191,8 +206,14 @@ const sanitizarTexto = (str) => {
     .join("\n");
 };
 
-async function verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado) {
-  const cacheKey = `${remoteJid}_${participantJid}`;
+async function verificarEsOperadorAutorizado(
+  sala,
+  remoteJid,
+  participantJid,
+  telNormalizado,
+  participantAlt = null
+) {
+  const cacheKey = `${remoteJid}_${participantJid}_${participantAlt || ""}`;
   const enCache = cacheOperadores.get(cacheKey);
   if (enCache && Date.now() < enCache.exp) {
     return enCache.esOp;
@@ -252,6 +273,34 @@ async function verificarEsOperadorAutorizado(sala, remoteJid, participantJid, te
       }
     } catch {
       // Ignorar fallback
+    }
+  }
+
+  // 4. Chequeo por whatsapp_lid / whatsapp_jid del operador registrado
+  if (!esAutorizado && supabase && (participantJid || participantAlt)) {
+    try {
+      const jids = [participantJid, participantAlt].filter(Boolean);
+      const filtros = jids.flatMap((jid) => [
+        `whatsapp_lid.eq.${jid}`,
+        `whatsapp_jid.eq.${jid}`,
+      ]);
+      if (filtros.length > 0) {
+        const { data: usuarioPorJid } = await supabase
+          .from("usuario_sistema")
+          .select("id, nombre, activo, es_principal, grupo_id")
+          .or(filtros.join(","))
+          .limit(1)
+          .maybeSingle();
+        if (usuarioPorJid && usuarioPorJid.activo !== false) {
+          if (usuarioPorJid.es_principal) {
+            esAutorizado = true;
+          } else if (sala?.grupo_id && usuarioPorJid.grupo_id === sala.grupo_id) {
+            esAutorizado = true;
+          }
+        }
+      }
+    } catch {
+      // Columnas opcionales ausentes: se ignora este fallback
     }
   }
 
@@ -1852,7 +1901,8 @@ async function manejarMensajeEntrante(msg) {
           salasDestino[0] || null,
           remoteJid,
           participantJid,
-          telReal
+          telReal,
+          participantAlt || null
         );
       } catch {
         esOperadorMensaje = false;
@@ -1883,7 +1933,7 @@ async function manejarMensajeEntrante(msg) {
           push_name: msg.pushName || senderNombre,
           senderNombre,
           esMensajePropioTelefono: esFromMe,
-          esOperador: esOperadorMensaje,
+          esOperador: Boolean(esOperadorMensaje),
           texto: textoLimpio,
           text: textoLimpio,
           whatsappMsgId,
@@ -2217,7 +2267,7 @@ const server = http.createServer(async (req, res) => {
 
   if (!esRutaPublicaLocal) {
     const authHeader = req.headers["x-internal-bot-secret"];
-    if (authHeader !== INTERNAL_BOT_SECRET) {
+    if (!esSecretoInternoValido(authHeader)) {
       return responderJson(res, 401, {
         ok: false,
         error: "401 Unauthorized: Header x-internal-bot-secret inválido o ausente",
@@ -3171,10 +3221,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const HOST = process.env.WHATSAPP_BOT_HOST || "0.0.0.0";
+const HOST = "127.0.0.1";
 server.listen(PORT, HOST, () => {
   console.log(
-    `[Bot WhatsApp] 🚀 Demonio HTTP escuchando en http://${HOST}:${PORT} (Sesión: ${AUTH_DIR})`
+    `[Bot WhatsApp] 🚀 Demonio HTTP escuchando SOLO en http://${HOST}:${PORT} (Sesión: ${AUTH_DIR})`
   );
   iniciarConexionBaileys();
 });
