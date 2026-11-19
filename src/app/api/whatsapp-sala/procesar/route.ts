@@ -24,6 +24,13 @@ import {
   mensajeConCodigoSala,
   resolverCodigoSalaGrupo,
 } from "@/features/grupos/lib/codigo-sala";
+import {
+  cargarPlantillasGrupo,
+  obtenerPlantillaGrupo,
+} from "@/features/whatsapp/lib/plantillas-grupo-server";
+import { variablesEncabezadoGrupo } from "@/features/whatsapp/lib/plantillas-grupo";
+import { encabezadoGrupo } from "@/features/whatsapp/lib/encabezados-grupo";
+import { mensajeJugaronPorSaldoParcial } from "@/features/whatsapp/lib/mensajes-concrecion";
 
 export const dynamic = "force-dynamic";
 
@@ -337,6 +344,9 @@ async function asegurarCarreraActivaSala(sala: any): Promise<string | null> {
 
 const AVISO_REDACCION_GRUPO = "⚠️¡Por favor, verificar redacción! ¡Gracias!";
 
+/** Abreviatura humanizada de miles compartida por los comandos del bot. */
+const RE_MONTO_INPUT = "(?:\\d+(?:[\\.,]\\d+)?\\s*(?:k|mil)?)";
+
 function detallePublicoPropuesta(prop: any): string {
   if (prop?.es_match) {
     const bA = Array.isArray(prop.caballos_bando_a) ? prop.caballos_bando_a.join("-") : String(prop.caballos_bando_a || "");
@@ -353,6 +363,31 @@ function detallePublicoPropuesta(prop: any): string {
 
 function mensajeJugaronPorPozo(prop: any, monto: number, limitador: string): string {
   return `✅ Jugaron ${detallePublicoPropuesta(prop)} con ${formatearMontoRegional(monto)} por Pozo de ${limitador}`;
+}
+
+async function construirMensajeSaldoParcial(params: {
+  sala: any;
+  juega: string;
+  da: string;
+  monto: number;
+  saldoDe: string;
+  detalle?: string;
+}): Promise<string> {
+  const { sala, juega, da, monto, saldoDe, detalle } = params;
+  const mapa = await cargarPlantillasGrupo(sala?.grupo_id);
+  return obtenerPlantillaGrupo(
+    mapa,
+    "concrecion_saldo_parcial",
+    {
+      ...variablesEncabezadoGrupo(sala, "concrecion"),
+      juega,
+      da,
+      monto: formatearMontoRegional(monto),
+      saldo_de: saldoDe,
+      detalle: detalle || "",
+    },
+    mensajeJugaronPorSaldoParcial({ juega, da, monto, saldoDe, detalle })
+  );
 }
 
 function mensajeJugaronCompleto(nombreJuega: string, detalle: string, nombreDa: string, monto: number): string {
@@ -473,12 +508,12 @@ async function construirResumenEstadoCuentaCliente(cliente: any, grupoId: string
   );
 }
 
-function generarTextoPlanoOficial(
+async function generarTextoPlanoOficial(
   sala: any,
   tickets: any[],
   propsAbiertas: any[] = [],
   retirados: string[] = []
-): string {
+): Promise<string> {
   const diasSemana = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
   const meses = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -522,11 +557,25 @@ function generarTextoPlanoOficial(
 
   const lineasCasadas = listaCasadas || "_No hay jugadas concretadas en esta carrera._";
 
+  const mapaPlantillas = await cargarPlantillasGrupo(sala?.grupo_id);
+  const encabezadoPlano = obtenerPlantillaGrupo(
+    mapaPlantillas,
+    "plano_encabezado",
+    {
+      ...variablesEncabezadoGrupo(sala, "plano"),
+      fecha: fechaStr,
+      hipodromo: hipo,
+      carrera: ordCarrera,
+      retirados: retiradosStr || "—",
+    },
+    `${encabezadoGrupo(sala, "plano")}\n` +
+      `${fechaStr}\n` +
+      `${hipo}, ${ordCarrera} Carrera\n` +
+      `Retirado: ${retiradosStr}`
+  );
+
   let textoFinal =
-    `🏇🏻Administración Hípica🏇🏻\n` +
-    `${fechaStr}\n` +
-    `${hipo}, ${ordCarrera} Carrera\n` +
-    `Retirado: ${retiradosStr}\n\n` +
+    `${encabezadoPlano}\n\n` +
     `[Listado de jugadas y propuestas concretadas]\n` +
     `${lineasCasadas}`;
 
@@ -1161,20 +1210,36 @@ async function liquidarYSentenciarCarreraPlataforma(params: {
   const lineasPositivos = positivos.length > 0 ? positivos.join("\n") : "_Sin saldos positivos en esta carrera_";
   const lineasNegativos = negativos.length > 0 ? negativos.join("\n") : "_Sin saldos negativos en esta carrera_";
 
-  const textoResultado =
-    `${prefijoRectificado}🏆 RESULTADO Y LIQUIDACIÓN OFICIAL\n` +
-    `🏇🏻Administración Hípica🏇🏻\n` +
-    `${fechaStr}\n` +
-    `${hipodromo}, ${ordCarrera} Carrera\n` +
-    `Retirado: ${retiradosStr}\n` +
-    `📊 Pizarra Oficial: *${pizarraFormateada}*\n\n` +
-    `📑 RESUMEN DE LIQUIDACIÓN (${listaTickets.length} JUGADAS):\n` +
-    `${bloqueResumenJugadas}\n\n` +
-    `🔄BALANCE TOTAL (Compensando Ganancias vs. Pérdidas antes de con cruces el monto total):\n` +
-    `POSITIVOS\n` +
-    `${lineasPositivos}\n` +
-    `NEGATIVOS\n` +
-    `${lineasNegativos}`;
+  const mapaPlantillasResultado = await cargarPlantillasGrupo(sala?.grupo_id);
+  const cuerpoResultado = obtenerPlantillaGrupo(
+    mapaPlantillasResultado,
+    "resultado_liquidacion",
+    {
+      ...variablesEncabezadoGrupo(sala, "resultado"),
+      fecha: fechaStr,
+      hipodromo,
+      carrera: ordCarrera,
+      retirados: retiradosStr || "—",
+      pizarra: pizarraFormateada,
+      total_jugadas: listaTickets.length,
+      resumen: bloqueResumenJugadas,
+      positivos: lineasPositivos,
+      negativos: lineasNegativos,
+    },
+    `${encabezadoGrupo(sala, "resultado")}\n` +
+      `${fechaStr}\n` +
+      `${hipodromo}, ${ordCarrera} Carrera\n` +
+      `Retirado: ${retiradosStr}\n` +
+      `📊 Pizarra Oficial: *${pizarraFormateada}*\n\n` +
+      `📑 RESUMEN DE LIQUIDACIÓN (${listaTickets.length} JUGADAS):\n` +
+      `${bloqueResumenJugadas}\n\n` +
+      `🔄BALANCE TOTAL (Compensando Ganancias vs. Pérdidas antes de con cruces el monto total):\n` +
+      `POSITIVOS\n` +
+      `${lineasPositivos}\n` +
+      `NEGATIVOS\n` +
+      `${lineasNegativos}`
+  );
+  const textoResultado = `${prefijoRectificado}🏆 RESULTADO Y LIQUIDACIÓN OFICIAL\n${cuerpoResultado}`;
 
   await supabaseAdmin.from("chat_mensajes").insert({
     grupo_id: sala.grupo_id,
@@ -1302,7 +1367,19 @@ export async function POST(req: Request) {
         return respuestaSala({ ok: false, error: error.message }, { status: 500 });
       }
 
-      const textoApertura = `🏆🏇${hipoLimpio}, ${ord} Carrera🏆🏇\nCARRERA ABIERTA Y EN JUEGO\nMucha suerte a todos.`;
+      const mapaApertura = await cargarPlantillasGrupo(salaActualizada?.grupo_id || salaId);
+      const textoApertura = obtenerPlantillaGrupo(
+        mapaApertura,
+        "apertura_carrera",
+        {
+          ...variablesEncabezadoGrupo(salaActualizada, "apertura"),
+          hipodromo: hipoLimpio,
+          carrera: ord,
+          retirados: "",
+        },
+        `${encabezadoGrupo(salaActualizada, "apertura")}\n` +
+          `🏆🏇${hipoLimpio}, ${ord} Carrera🏆🏇\nCARRERA ABIERTA Y EN JUEGO\nMucha suerte a todos.`
+      );
 
       if (salaActualizada?.grupo_id) {
         await supabaseAdmin.from("chat_mensajes").insert({
@@ -1383,7 +1460,18 @@ export async function POST(req: Request) {
       const hipo = String(salaActualizada?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
       const numCarrera = salaActualizada?.numero_carrera_activa || 1;
       const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
-      const textoCierre = `${hipo}, ${ord} Carrera\nCARRERA CERRADA\n\nPUEDE ESCRIBIR LA PIZARRA: LLEGADA: 1RO.2DO.3RO.4TO.5TO`;
+      const mapaCierre = await cargarPlantillasGrupo(salaActualizada?.grupo_id || salaPrevia?.grupo_id || salaId);
+      const textoCierre = obtenerPlantillaGrupo(
+        mapaCierre,
+        "cierre_carrera",
+        {
+          ...variablesEncabezadoGrupo(salaActualizada || salaPrevia, "cierre"),
+          hipodromo: hipo,
+          carrera: ord,
+        },
+        `${encabezadoGrupo(salaActualizada || salaPrevia, "cierre")}\n` +
+          `${hipo}, ${ord} Carrera\nCARRERA CERRADA\n\nPUEDE ESCRIBIR LA PIZARRA: LLEGADA: 1RO.2DO.3RO.4TO.5TO`
+      );
 
       if (salaActualizada?.grupo_id) {
         await supabaseAdmin.from("chat_mensajes").insert({
@@ -1757,7 +1845,7 @@ export async function POST(req: Request) {
         } catch {}
       }
 
-      const textoPlano = generarTextoPlanoOficial(sala, lista, listaProps, retiradosLista);
+      const textoPlano = await generarTextoPlanoOficial(sala, lista, listaProps, retiradosLista);
 
       let enviadoWhatsApp = false;
       if (sala.whatsapp_group_jid) {
@@ -2027,13 +2115,23 @@ export async function POST(req: Request) {
     const matchAbrirComando = textoUsuarioLimpio.match(/^(?:!)?(?:abrir|abierta)(?:\s+carrera)?(?:\s+(.+?))?(?:\s+(?:c(?:arrera)?\s*|#\s*)?(\d{1,2}))?$/i);
     const matchHipodromoComando = textoUsuarioLimpio.match(/^!?hip[óo]dromo\s+(.+)$/i);
     const matchRetirarCarreraComando = textoUsuarioLimpio.match(/^!retirar\s+(.+)$/i);
-    const matchCreditoOperador = textoUsuarioLimpio.match(/^!(recargar|aval)\s+(.+?)\s+([0-9][0-9.,]*\s*[kK]?)$/i);
+    const matchCreditoOperador = textoUsuarioLimpio.match(
+      new RegExp(`^!(recargar|aval)\\s+(.+?)\\s+(${RE_MONTO_INPUT})$`, "i")
+    );
     const matchPizarraComando = textoUsuarioLimpio.match(/^(?:!)?(?:llegada|sentenciar|pizarra)\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
     const matchRectificarComando = textoUsuarioLimpio.match(/^(?:!)?rectificar(?:\s+pizarra)?\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
     const esSolicitudCajero = /^(?:!?(?:deposito|depósito|reportar\s+pago|retiro|solicito\s+retiro|quiero\s+retirar|recarga|solicito\s+recarga))\b/i.test(textoUsuarioLimpio);
-    const esAceptacionSinCita = !quotedMsgId && /^(?:j|voy|ponte|juego|jugamos|jugue|jugué|copiado|pago|entro)(?:\s+(?:con\s+|por\s+|\$)?([0-9kK.,]+))?$/i.test(textoUsuarioLimpio);
+    const esAceptacionSinCita =
+      !quotedMsgId &&
+      new RegExp(
+        `^(?:j|voy|ponte|juego|jugamos|jugue|jugué|copiado|pago|entro)(?:\\s+(?:con\\s+|por\\s+|\\$)?(${RE_MONTO_INPUT}))?$`,
+        "i"
+      ).test(textoUsuarioLimpio);
     const matchAjusteOperador = textoUsuarioLimpio.match(
-      /^(?:!)?(?:(?:recargar?|abonar?|ajuste|cargar?)\s+)?([a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s._-]+?)\s*([+-])\s*([0-9kK.,]+)$/i
+      new RegExp(
+        `^(?:!)?(?:(?:recargar?|abonar?|ajuste|cargar?)\\s+)?([a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\\s._-]+?)\\s*([+-])\\s*(${RE_MONTO_INPUT})$`,
+        "i"
+      )
     );
     const preAnalisis = analizarYEstandarizarJugada(textoUsuarioLimpio, 999999, [], 16, undefined, undefined, codigoSala);
 
@@ -2620,7 +2718,7 @@ export async function POST(req: Request) {
         } catch {}
       }
 
-      const planoTexto = generarTextoPlanoOficial(sala, ticketsPlano || [], propsPlano || [], retiradosLista);
+      const planoTexto = await generarTextoPlanoOficial(sala, ticketsPlano || [], propsPlano || [], retiradosLista);
 
       await supabaseAdmin.from("chat_mensajes").insert({
         grupo_id: grupoId,
@@ -2662,7 +2760,17 @@ export async function POST(req: Request) {
 
         const hipo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
         const numCarrera = sala.numero_carrera_activa || 1;
-        const msgCierre = `🔒 *${hipo} CARRERA ${numCarrera} CERRADA* — No más jugadas. Suerte a todos.`;
+        const mapaCierreChat = await cargarPlantillasGrupo(sala?.grupo_id || grupoId);
+        const msgCierre = obtenerPlantillaGrupo(
+          mapaCierreChat,
+          "cierre_carrera",
+          {
+            ...variablesEncabezadoGrupo(sala, "cierre"),
+            hipodromo: hipo,
+            carrera: numCarrera,
+          },
+          `${encabezadoGrupo(sala, "cierre")}\n🔒 *${hipo} CARRERA ${numCarrera} CERRADA* — No más jugadas. Suerte a todos.`
+        );
 
         await supabaseAdmin.from("chat_mensajes").insert({
           grupo_id: grupoId,
@@ -2757,9 +2865,26 @@ export async function POST(req: Request) {
           }
         }
 
+        const mapaAperturaChat = await cargarPlantillasGrupo(sala?.grupo_id || grupoId);
         const msgAbrir = limpiarEtiquetasProhibidas(
-          `🟢 *${hipoLimpio} CARRERA ${numCarrera} ABIERTA* — Hagan sus jugadas.` +
-            (retiradosApertura.length > 0 ? `\n🚫 Retirados: ${retiradosApertura.map((r) => `#${r}`).join(", ")}` : "")
+          obtenerPlantillaGrupo(
+            mapaAperturaChat,
+            "apertura_carrera",
+            {
+              ...variablesEncabezadoGrupo(sala, "apertura"),
+              hipodromo: hipoLimpio,
+              carrera: numCarrera,
+              retirados:
+                retiradosApertura.length > 0
+                  ? `\n🚫 Retirados: ${retiradosApertura.map((r) => `#${r}`).join(", ")}`
+                  : "",
+            },
+            `${encabezadoGrupo(sala, "apertura")}\n` +
+              `🟢 *${hipoLimpio} CARRERA ${numCarrera} ABIERTA* — Hagan sus jugadas.` +
+              (retiradosApertura.length > 0
+                ? `\n🚫 Retirados: ${retiradosApertura.map((r) => `#${r}`).join(", ")}`
+                : "")
+          )
         );
 
         await supabaseAdmin.from("chat_mensajes").insert({
@@ -3564,7 +3689,8 @@ export async function POST(req: Request) {
           Math.max(0, Math.min(maxBaseAceptante, maxBaseProponente)),
           nombreJugador,
           undefined,
-          codigoSala
+          codigoSala,
+          Boolean(quotedMsgId)
         );
 
         if (!evalConcrecion.valido) {
@@ -3599,7 +3725,7 @@ export async function POST(req: Request) {
         // 3. Validación de Apuesta Mínima (salvo que el remanente sea menor)
         const apuestaMinima = Number(sala.apuesta_minima || 10.00);
         if (evalConcrecion.montoSolicitado < apuestaMinima && remanenteDisponible >= apuestaMinima) {
-          const msgMinimoBot = `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`;
+          const msgMinimoBot = `⛔ *Nada aquí* — El monto mínimo de apuesta es $${formatearMontoRegional(apuestaMinima)}`;
           await supabaseAdmin.from("chat_mensajes").insert({
             grupo_id: grupoId,
             sala_id: salaId,
@@ -3621,7 +3747,7 @@ export async function POST(req: Request) {
             msg_publico: msgMinimoBot,
             msg_publico_bot: msgMinimoBot,
             respuestaPublica: msgMinimoBot,
-            mensajePrivadoAutor: `El monto mínimo de apuesta configurado es $${apuestaMinima.toFixed(2)}.`,
+            mensajePrivadoAutor: `El monto mínimo de apuesta configurado es $${formatearMontoRegional(apuestaMinima)}.`,
             senderJid: participantJid,
           });
         }
@@ -3811,7 +3937,22 @@ export async function POST(req: Request) {
                 nombreJugador
               );
 
-        const msgPublicoFinal = pozoLimitadorBilateral
+        const montoSolicitadoReal = Number(evalConcrecion.montoSolicitado || montoEfectivo);
+        const esConcrecionSaldoParcial =
+          llenoRemanenteParcial && montoEfectivo > 0 && montoEfectivo < montoSolicitadoReal;
+        const nombreLimitador =
+          pozoLimitadorBilateral ||
+          (maxBaseAceptante <= maxBaseProponente ? nombreDa : nombreJuega);
+
+        const msgPublicoFinal = esConcrecionSaldoParcial
+          ? await construirMensajeSaldoParcial({
+              sala,
+              juega: nombreJuega,
+              da: nombreDa,
+              monto: montoEfectivo,
+              saldoDe: nombreLimitador,
+            })
+          : pozoLimitadorBilateral
           ? mensajeJugaronPorPozo(propFresca, montoEfectivo, pozoLimitadorBilateral)
           : mensajeJugaronCompleto(nombreJuega, detalleJugada, nombreDa, montoEfectivo);
 
@@ -4185,7 +4326,7 @@ export async function POST(req: Request) {
 
     // Bloqueo estricto de jugadas sin saldo (saldo_disponible <= 0)
     if (Number(saldoDisponible) <= 0) {
-      const msgPubSinSaldo = `*Nada Aquí* — ${nombreJugador} no posee saldo disponible ($0,00)`;
+      const msgPubSinSaldo = `*Nada Aquí* — ${nombreJugador} no posee saldo disponible (${formatearMontoRegional(0)})`;
       const msgPrivSinSaldo = `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
       return respuestaSala({
         ok: false,
@@ -4347,7 +4488,7 @@ export async function POST(req: Request) {
     // Regla: Apuesta Mínima para proponer
     const apuestaMinima = Number(sala.apuesta_minima || 10.00);
     if (analisis.monto < apuestaMinima) {
-      const msgMinimoBot = `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`;
+      const msgMinimoBot = `⛔ *Nada aquí* — El monto mínimo de apuesta es $${formatearMontoRegional(apuestaMinima)}`;
       await supabaseAdmin.from("chat_mensajes").insert({
         grupo_id: grupoId,
         sala_id: salaId,
@@ -4369,7 +4510,7 @@ export async function POST(req: Request) {
         msg_publico: msgMinimoBot,
         msg_publico_bot: msgMinimoBot,
         respuestaPublica: msgMinimoBot,
-        mensajePrivadoAutor: `El monto mínimo para publicar es $${apuestaMinima.toFixed(2)}.`,
+        mensajePrivadoAutor: `El monto mínimo para publicar es $${formatearMontoRegional(apuestaMinima)}.`,
         clienteTelefono: telefonoClienteCompleto,
         senderJid: participantJid,
       });

@@ -7,6 +7,7 @@
  */
 import { supabase } from "@/core/supabase";
 import { exigirCapacidad } from "@/features/seguridad/lib/vigente";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 export const CLUB_NOMBRE = "Administración Hípica";
 
@@ -164,13 +165,9 @@ export function fechaHoy(): string {
   return new Date().toLocaleDateString("es-VE", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-/** Número con 2 decimales estilo es-VE (1.234,56) — mismo formato del legacy. */
+/** Número con formato regional estricto (1.234,56 · enteros sin ,00). */
 export function fmtUSD(n: number | string | null | undefined): string {
-  const num = Number(n);
-  return (Number.isFinite(num) ? num : 0).toLocaleString("es-VE", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  return formatearMontoRegional(n);
 }
 
 /** Solo dígitos (limpia espacios, guiones, paréntesis y +). */
@@ -281,13 +278,21 @@ export function reemplazarVars(txt: string, c: ClienteWsp | null): string {
      Sin esta variable el mensaje de un cliente en mora dice "saldo -$300" y
      el cliente cree que no puede jugar, cuando en realidad tiene su aval. */
   const disponible = (c?.saldo_actual ?? 0) + (c?.aval ?? 0);
+  const nombreGrupo =
+    (c as any)?.grupo_nombre ||
+    (c as any)?.nombre_grupo ||
+    (c as any)?.grupo?.nombre ||
+    "PRINCIPAL";
   return txt
     .replace(/\{nombre\}/g, c?.nombre ? String(c.nombre) : "—")
     .replace(/\{saldo\}/g, fmtUSD(c?.saldo_actual))
     .replace(/\{aval\}/g, fmtUSD(c?.aval))
     .replace(/\{disponible\}/g, fmtUSD(disponible))
     .replace(/\{fecha\}/g, fechaHoy())
-    .replace(/\{club\}/g, CLUB_NOMBRE);
+    .replace(/\{club\}/g, CLUB_NOMBRE)
+    .replace(/\{grupo\}/g, String(nombreGrupo))
+    .replace(/\{conector\}/g, "comparte una propuesta en vivo")
+    .replace(/\{encabezado\}/g, `${CLUB_NOMBRE}\nTU Grupo "${String(nombreGrupo)}" te comparte una propuesta en vivo:`);
 }
 
 /** Reemplazo genérico de variables para plantillas de TABLAS (matriz/reporte). */

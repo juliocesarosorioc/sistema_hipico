@@ -11,6 +11,12 @@ import {
   resolverCodigoSalaGrupo,
 } from "@/features/grupos/lib/codigo-sala";
 import { sincronizarTicketsPropuestaATaquilla } from "./sincronizar-tickets-sala";
+import {
+  cargarPlantillasGrupo,
+  obtenerPlantillaGrupo,
+} from "@/features/whatsapp/lib/plantillas-grupo-server";
+import { variablesEncabezadoGrupo } from "@/features/whatsapp/lib/plantillas-grupo";
+import { mensajeJugaronPorSaldoParcial } from "@/features/whatsapp/lib/mensajes-concrecion";
 
 export interface MensajeEntranteWhatsApp {
   groupJid: string;
@@ -402,6 +408,7 @@ export async function procesarMensajeEntranteWhatsApp(
           .single();
 
         const saldoDispProponente = calcularDisponibleCliente(proponente);
+        const maxSaldoLimitador = saldoDispProponente <= saldoDisponible ? "PROPONENTE" : "ACEPTANTE";
         if (!proponente?.libre && saldoDispProponente <= 0) {
           await supabaseAdmin
             .from("chat_mensajes")
@@ -430,7 +437,8 @@ export async function procesarMensajeEntranteWhatsApp(
           saldoDisponible,
           nombreJugador,
           undefined,
-          codigoSala
+          codigoSala,
+          Boolean(quotedMsgId)
         );
 
         if (!evaluacion.valido) {
@@ -577,9 +585,50 @@ export async function procesarMensajeEntranteWhatsApp(
           msgPrivadoBot = evaluacion.msgPrivadoBot || `"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`;
         }
 
-        const msgGrupoFinal = msgPublicoBot
-          ? `${msgPublicoBot}\n${contenidoVanJugando}`
-          : contenidoVanJugando;
+        const montoSolicitadoReal = Number(evaluacion.montoSolicitado || montoConcretado);
+        const esConcrecionSaldoParcial =
+          montoConcretado > 0 && montoConcretado < montoSolicitadoReal;
+        let mensajeSaldoParcial: string | null = null;
+        if (esConcrecionSaldoParcial) {
+          const nombreJuega =
+            accionProp === "CONSIGUE"
+              ? nombreJugador
+              : propFresca.remitente_nombre || "Proponente";
+          const nombreDa =
+            accionProp === "CONSIGUE"
+              ? propFresca.remitente_nombre || "Proponente"
+              : nombreJugador;
+          const nombreSaldo =
+            maxSaldoLimitador === "PROPONENTE"
+              ? accionProp === "CONSIGUE"
+                ? nombreDa
+                : nombreJuega
+              : accionProp === "CONSIGUE"
+              ? nombreJuega
+              : nombreDa;
+          const mapaParcial = await cargarPlantillasGrupo(sala?.grupo_id || grupoId);
+          mensajeSaldoParcial = obtenerPlantillaGrupo(
+            mapaParcial,
+            "concrecion_saldo_parcial",
+            {
+              ...variablesEncabezadoGrupo(sala, "concrecion"),
+              juega: nombreJuega,
+              da: nombreDa,
+              monto: formatearMontoRegional(montoConcretado),
+              saldo_de: nombreSaldo,
+            },
+            mensajeJugaronPorSaldoParcial({
+              juega: nombreJuega,
+              da: nombreDa,
+              monto: montoConcretado,
+              saldoDe: nombreSaldo,
+            })
+          );
+        }
+
+        const msgGrupoFinal = [mensajeSaldoParcial, msgPublicoBot, contenidoVanJugando]
+          .filter(Boolean)
+          .join("\n");
 
         const msgPrivadoAceptante = msgPrivadoBot || `✅ Has tomado la jugada de ${propFresca.remitente_nombre} por ${prefijo}${formatearMontoRegional(montoConcretado)}. Retención aplicada: ${prefijo}${formatearMontoRegional(montoConcretado)}.`;
         const msgPrivadoProponente = `🔔 ${nombreJugador} jugó ${prefijo}${formatearMontoRegional(montoConcretado)} en tu jugada (${propFresca.jugada_estandarizada || propFresca.contenido}). Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}. ${nuevoRemanente > 0 ? `Remanente activo: ${prefijo}${formatearMontoRegional(nuevoRemanente)}` : "Tu jugada está 100% pactada."}`;

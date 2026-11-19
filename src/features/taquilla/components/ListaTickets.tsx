@@ -3,15 +3,12 @@
 import { useTaquillaStore } from "@/shared/store/useTaquillaStore";
 import { Button } from "@/shared/components/ui/Button";
 import { anularJugada } from "@/features/taquilla/lib/venta";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
 
-const COP = new Intl.NumberFormat("es-CO", {
-  style: "currency",
-  currency: "COP",
-  maximumFractionDigits: 0,
-});
+const COP = { format: (n: number) => `$${formatearMontoRegional(n)}` };
 
 /** Historial de la sesión — tickets registrados por el operador. */
 export function ListaTickets() {

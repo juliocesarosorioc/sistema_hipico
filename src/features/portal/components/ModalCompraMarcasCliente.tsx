@@ -204,7 +204,7 @@ export function ModalCompraMarcasCliente({
       fecha,
       carrera: carr,
       titulo: `MARCA #${caballo} vs #${rival}`,
-      detalle: `Matchup: #${caballo} (${cabData?.nombre || "Ejemplar"}) vs #${rival} (${rivData?.nombre || "Rival"}) · ${proporcionTexto}`,
+      detalle: `Duelo: #${caballo} (${cabData?.nombre || "Ejemplar"}) vs #${rival} (${rivData?.nombre || "Rival"}) · ${proporcionTexto}`,
       jugador: nombreJugador,
       grupo: nombreGrupo,
       monto: montoNum,
@@ -334,7 +334,7 @@ export function ModalCompraMarcasCliente({
             {caballo && (
               <div>
                 <label className="text-xs font-black uppercase tracking-wider text-slate-700 block mb-1.5">
-                  2. Selecciona el Rival del Match (a la izquierda de #{caballo})
+                  2. Selecciona el Rival del Duelo (a la izquierda de #{caballo})
                 </label>
                 {rivalesLegales.length === 0 ? (
                   <div className="rounded-lg bg-rose-50 p-2.5 text-xs text-rose-700">
@@ -414,7 +414,7 @@ export function ModalCompraMarcasCliente({
                 {/* RESUMEN DEL MATCHUP */}
                 <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 text-xs space-y-1">
                   <div className="flex justify-between items-center">
-                    <span className="font-bold text-slate-600">Matchup:</span>
+                    <span className="font-bold text-slate-600">Duelo:</span>
                     <span className="font-black text-indigo-950">
                       #{caballo} vence a #{rival}
                     </span>

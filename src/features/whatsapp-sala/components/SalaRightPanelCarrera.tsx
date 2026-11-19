@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import type { EstadoCarreraGrupo, TicketP2P } from "../lib/chat-p2p";
 import { obtenerColorGualdrapa } from "../lib/chat-p2p";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 interface Props {
   carreraActiva: EstadoCarreraGrupo;
@@ -224,7 +225,7 @@ export function SalaRightPanelCarrera({
                         <span className="font-bold text-white">{t.jugada} #{t.caballo}</span>
                       </div>
                       <span className="font-mono font-black text-white tabular-nums">
-                        ${Number(t.monto).toFixed(2)}
+                        ${formatearMontoRegional(t.monto)}
                       </span>
                     </div>
 

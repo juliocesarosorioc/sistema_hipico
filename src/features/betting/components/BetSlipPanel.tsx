@@ -1,12 +1,9 @@
 "use client";
 
 import { useBetSlipStore } from "@/shared/store/bet-slip";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
-const COP = new Intl.NumberFormat("es-CO", {
-  style: "currency",
-  currency: "COP",
-  maximumFractionDigits: 0,
-});
+const COP = { format: (n: number) => `$${formatearMontoRegional(n)}` };
 
 /** Boleto de Apuestas — panel lateral persistente (layout raíz), colapsable. */
 export function BetSlipPanel() {

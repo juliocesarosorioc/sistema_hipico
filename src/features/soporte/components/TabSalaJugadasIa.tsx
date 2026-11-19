@@ -17,6 +17,7 @@ import {
   type EstadoOperativoCarrera,
 } from "@/features/portal/lib/bloqueo-jugadas";
 import { supabase } from "@/core/supabase";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 export async function sincronizarReglaEntrenada(grupoId: string, regla: {
   id?: string;
@@ -260,7 +261,7 @@ export function TabSalaJugadasIa({
 
     if (Number(saldoActual.disponible) <= 0) {
       setErrorSeguridad(
-        `*Nada Aquí* — ${jugadorActivo} no posee saldo disponible ($0,00) — "Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
+        `*Nada Aquí* — ${jugadorActivo} no posee saldo disponible (${formatearMontoRegional(0)}) — "Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo`
       );
       return;
     }

@@ -45,6 +45,7 @@ import {
   calcularResumenContableCliente,
   esJugadaPuestosParaIncentivo,
 } from "@/features/saldos/lib/contabilidad-central";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 export { aplicarDevolucionIncentivoAFavor, calcularResumenContableCliente, esJugadaPuestosParaIncentivo };
 
@@ -202,7 +203,7 @@ export type ResultadoReporteDiario = {
 /** Redondea a centavos para que la suma no arrastre errores de coma flotante. */
 const centavos = (n: number): number => Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
 
-/** Formato pedido por la casa: separador de miles y dos decimales ($1,250.00). */
+/** Formato regional estricto: punto de miles y coma decimal ($102.543,23). */
 export function formatoDinero(
   v: number | string | null | undefined,
   moneda = "USD"
@@ -210,11 +211,8 @@ export function formatoDinero(
   const n = typeof v === "string" ? parseFloat(v) : v ?? 0;
   const seguro = Number.isFinite(n as number) ? (n as number) : 0;
   const m = String(moneda ?? "USD").toUpperCase();
-  const prefijo = m === "VES" || m === "BS" ? "Bs " : "$";
-  return (
-    prefijo +
-    seguro.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  );
+  const prefijo = m === "VES" || m === "BS" ? "Bs. " : "$";
+  return prefijo + formatearMontoRegional(seguro);
 }
 
 /** Clave de agrupación de una carrera: hipódromo + número. */

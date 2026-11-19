@@ -158,7 +158,7 @@ export async function sincronizarTicketsPropuestaATaquilla(
           estado: "Pendiente",
           anulada: false,
           es_adelantada: false,
-          modalidad: esMatch ? "Match" : "Puestos",
+          modalidad: esMatch ? "A Premio" : "Puestos",
           moneda: "USD",
           nota_auditoria: marcador,
         },

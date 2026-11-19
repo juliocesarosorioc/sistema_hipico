@@ -11,6 +11,9 @@ import {
 } from "./modalidades-progresivas";
 import { mensajeConCodigoSala } from "@/features/grupos/lib/codigo-sala";
 
+/** Monto humanizado: 30 · 30,50 · 30.000,50 · 30k · 30 K · 30mil · 30 mil · todo */
+const RE_MONTO_JUGADA = "(?:\\d+(?:[\\.,]\\d+)?\\s*(?:k|mil)?|todo)";
+
 export interface ResultadoAnalisisJugada {
   esIntencionDeJugada: boolean;
   valido: boolean;
@@ -56,87 +59,25 @@ export function extraerMontoNumerico(
   saldoDisponible?: number
 ): { monto: number; montoTexto: string; esKilo: boolean } {
   if (!rawInput) return { monto: 0, montoTexto: "0", esKilo: false };
-  let str = String(rawInput).trim();
-  // Eliminar prefijos de moneda o espacios
-  str = str.replace(/^[\$Bs\.\s]+/i, "").trim();
+  const str = String(rawInput).trim().replace(/^[\$Bs\.\s]+/i, "").trim();
+
   // "Voy Todo" / "Todo" significa el saldo disponible completo del jugador.
   if (/^(?:voy\s+)?todo$/.test(str)) {
     const montoTodo = Math.max(0, Math.round(Number(saldoDisponible || 0) * 100) / 100);
-    return { monto: montoTodo, montoTexto: String(montoTodo), esKilo: false };
-  }
-  // Eliminar ceros flotantes de formato final (,00 o .00 o 00 final)
-  str = str.replace(/[,.]00(?!\d)/g, "").replace(/\s+00$/g, "").trim();
-  if (!str) return { monto: 0, montoTexto: "0", esKilo: false };
-
-  // 1. Detectar explícitamente sufijo k / K (ej. 5k, 5.5k, 5,5k, 10k, 20k)
-  const matchK = /^(\d+(?:[\.,]\d+)?)\s*k$/i.exec(str);
-  if (matchK) {
-    const base = parseFloat(matchK[1].replace(",", "."));
-    if (Number.isFinite(base) && base > 0) {
-      const monto = Math.round(base * 1000 * 100) / 100;
-      return {
-        monto,
-        montoTexto: String(monto),
-        esKilo: true,
-      };
-    }
+    return {
+      monto: montoTodo,
+      montoTexto: formatearMontoRegional(montoTodo),
+      esKilo: false,
+    };
   }
 
-  // 2. Formato con puntos de miles y coma decimal (ej. "20.000,50" o "10.424,50")
-  if (str.includes(".") && str.includes(",")) {
-    const lastComma = str.lastIndexOf(",");
-    const lastDot = str.lastIndexOf(".");
-    let numStr = str;
-    if (lastComma > lastDot) {
-      numStr = str.replace(/\./g, "").replace(",", ".");
-    } else {
-      numStr = str.replace(/,/g, "");
-    }
-    const monto = parseFloat(numStr);
-    if (Number.isFinite(monto) && monto > 0) {
-      const rounded = Math.round(monto * 100) / 100;
-      return {
-        monto: rounded,
-        montoTexto: String(rounded),
-        esKilo: false,
-      };
-    }
-  }
-
-  // 3. Puntos de miles solos (ej: "5.000", "10.000", "20.000", "50.000", "100.000", "1.500")
-  if (/^\d{1,3}(?:\.\d{3})+$/.test(str) || /^\d+\.\d{3}$/.test(str)) {
-    const monto = parseFloat(str.replace(/\./g, ""));
-    if (Number.isFinite(monto) && monto > 0) {
-      const rounded = Math.round(monto * 100) / 100;
-      return {
-        monto: rounded,
-        montoTexto: String(rounded),
-        esKilo: false,
-      };
-    }
-  }
-
-  // 4. Coma decimal sola (ej: "43,50", "100,5")
-  if (/^\d+,\d+$/.test(str)) {
-    const monto = parseFloat(str.replace(",", "."));
-    if (Number.isFinite(monto) && monto > 0) {
-      const rounded = Math.round(monto * 100) / 100;
-      return {
-        monto: rounded,
-        montoTexto: String(rounded),
-        esKilo: false,
-      };
-    }
-  }
-
-  // 5. Número estándar
-  const limpioSinPuntos = str.replace(/\.(?=\d{3})/g, "");
-  const f = parseFloat(limpioSinPuntos);
-  const m = Number.isFinite(f) && f > 0 ? Math.round(f * 100) / 100 : 0;
+  // Núcleo único de abreviaturas y formatos regionales (30k / 30mil / 30 mil / 30.000,50).
+  const parseado = parsearMontoConK(str);
+  if (!parseado) return { monto: 0, montoTexto: "0", esKilo: false };
   return {
-    monto: m,
-    montoTexto: String(m),
-    esKilo: false,
+    monto: parseado.monto,
+    montoTexto: formatearMontoRegional(parseado.monto),
+    esKilo: parseado.esKilo,
   };
 }
 
@@ -201,7 +142,8 @@ function evaluarConcrecionEstrictaBase(
   montoDisponiblePropuesta: number,
   saldoDisponibleAceptante: number,
   nombreAceptante?: string,
-  moneda?: string
+  moneda?: string,
+  permitirMontoSuelto = false
 ): ResultadoConcrecionEstricta {
   // Blindaje SecOps Anti-ReDoS: Descartar textos gigantes antes de evaluar regex
   if (!textoRespuesta || typeof textoRespuesta !== 'string' || textoRespuesta.length > 180) {
@@ -216,16 +158,22 @@ function evaluarConcrecionEstrictaBase(
 
   const texto = normalizarParadaPremio(textoRespuesta.trim());
 
+  // Un monto suelto al citar una propuesta equivale a "J <monto>".
+  const MONTO_ABREVIADO = "(?:\\d+(?:[\\.,]\\d+)?\\s*(?:k|mil)?|todo)";
+  const textoConVerbo =
+    permitirMontoSuelto && new RegExp(`^${MONTO_ABREVIADO}$`, "i").test(texto)
+      ? `J ${texto}`
+      : texto;
+
   // Validar verbos autorizados según el rol de la propuesta citada:
   // - Si el proponente "CONSIGUE / DA" (accion_proponente = consigo/doy): Solo concretan: Juego, Jugue, Jugué, Ponte, Jugamos, Voy, J
   // - Si el proponente "JUEGA / VOY" (accion_proponente = juego): Solo concretan: Jugaste, Ponte, Consigo, J
   const esPropuestaJuego = accionPropuesta === 'JUEGA';
 
-  // Soporta montos opcionales: 5k, 10k, 10.000, 20.000, 10.424,50, etc.
-  const regexJuego = /^(jugaste|ponte|consigo|j)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+|todo))?$/i;
-  const regexConsigo = /^(juego|jugue|jugué|ponte|jugamos|voy|j)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+|todo))?$/i;
+  const regexJuego = new RegExp(`^(jugaste|ponte|consigo|j)(?:\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?(${MONTO_ABREVIADO}))?$`, "i");
+  const regexConsigo = new RegExp(`^(juego|jugue|jugué|ponte|jugamos|voy|j)(?:\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?(${MONTO_ABREVIADO}))?$`, "i");
 
-  const match = esPropuestaJuego ? texto.match(regexJuego) : texto.match(regexConsigo);
+  const match = esPropuestaJuego ? textoConVerbo.match(regexJuego) : textoConVerbo.match(regexConsigo);
 
   if (!match) {
     const permitidas = esPropuestaJuego
@@ -270,8 +218,8 @@ function evaluarConcrecionEstrictaBase(
 
   if (excedioSaldo) {
     const saldoFmt = formatearMontoRegional(topeSaldo);
-    msgPublicoBot = `⚠️ *${nombreAceptante || 'Jugador'}* dispone de $${saldoFmt} para esta jugada.`;
-    msgPrivadoBot = `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de $${saldoFmt}. Muchas gracias.`;
+    msgPublicoBot = `⚠️ *${nombreAceptante || 'Jugador'}* dispone de ${prefijo}${saldoFmt} para esta jugada.`;
+    msgPrivadoBot = `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de ${prefijo}${saldoFmt}. Muchas gracias.`;
   }
 
   return {
@@ -355,7 +303,11 @@ function analizarYEstandarizarJugadaBase(
   // 1. Filtro de charla libre: sólo verbos de apuesta al inicio o estructura canónica de jugada.
   const patronVerbosApuesta = /^(?:juego|jugo|jugó|jugue|jugué|consigo|doy|pido)\b|^(?:j|voy)\s+(?:de\s+|del\s+|el\s+|la\s+|a\s+|con\s+)?(?:\d|[1-5]p\b|[1-5]n\b|[1-5]\/[2-5]n?\b|[1-5]y[1-5][pn]?\b|ganador\b|win\b)/i;
   const patronEstructuraApuesta = /(?:^|\s)(?:10\s*[\/a@]\s*\d+|[1-5]\s*p|[2-5]\s*n|[1-5]\s*[\/y]\s*[1-5]\s*n?|\d+(?:[.,-]\d+)*\s*(?:x|vs|contra)\s*\d+(?:[.,-]\d+)*)(?:\s|$)/i;
-  if (!patronVerbosApuesta.test(texto) && !patronEstructuraApuesta.test(texto) && !/^[0-9kK\.,]+\s+(?:al?|del?|el)\s+\d{1,2}$/i.test(texto)) {
+  const patronMontoAlCaballo = new RegExp(
+    `^${RE_MONTO_JUGADA}\\s+(?:al?|del?|el)\\s+\\d{1,2}$`,
+    "i"
+  );
+  if (!patronVerbosApuesta.test(texto) && !patronEstructuraApuesta.test(texto) && !patronMontoAlCaballo.test(texto)) {
     return {
       esIntencionDeJugada: false,
       valido: true,
@@ -386,7 +338,10 @@ function analizarYEstandarizarJugadaBase(
 
   // 2. CASO A: JUGADA DE MATCH CON "x" O "contra" (soporta proporción opcional 10/X)
   // Ejemplos: "Juego 1x4 50", "Juego 3x5 10/8 con 100", "Consigo 3x5 10/8 con 100", "Juego 1-2x4-6 10/8 con 100"
-  const regexMatch = /^(?:(juego|jugo|jugó|consigo|doy|pido)\s+)?(?:de\s+la\s+|la\s+|del\s+|el\s+)?([0-9A-Za-z\.\-,\s]+?)\s*(?:x|vs|contra)\s*(?:de\s+la\s+|la\s+|del\s+|el\s+)?([0-9A-Za-z\.\-,]+(?:\s+[0-9A-Za-z\.\-,]+)*?)(?:\s+(10\/\d+(?:[.,]\d+)?))?\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK\.,]+|todo)$/i;
+  const regexMatch = new RegExp(
+    `^(?:(juego|jugo|jugó|consigo|doy|pido)\\s+)?(?:de\\s+la\\s+|la\\s+|del\\s+|el\\s+)?([0-9A-Za-z\\.\\-,\\s]+?)\\s*(?:x|vs|contra)\\s*(?:de\\s+la\\s+|la\\s+|del\\s+|el\\s+)?([0-9A-Za-z\\.\\-,]+(?:\\s+[0-9A-Za-z\\.\\-,]+)*?)(?:\\s+(10\\/\\d+(?:[.,]\\d+)?))?\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?(${RE_MONTO_JUGADA})$`,
+    "i"
+  );
   const matchVs = texto.match(regexMatch);
 
   if (matchVs) {
@@ -472,9 +427,9 @@ function analizarYEstandarizarJugadaBase(
           requiereOperador: false,
           excedioSaldo: true,
           montoDisponibleValido: 0,
-          mensajePedagogicoPrivado: `🔒 Saldo insuficiente ($${saldoFmt}). Debes recargar saldo antes de publicar jugadas.`,
-          msgPublicoBot: `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $0,00 para jugar`,
-          msgPrivadoBot: `⚠️ Hola ${nombreUsuario || 'Jugador'}, no dispones de saldo para realizar jugadas. Tu saldo disponible es $0,00. Por favor realiza una recarga para continuar jugando.`,
+          mensajePedagogicoPrivado: `🔒 Saldo insuficiente (${prefijo}${saldoFmt}). Debes recargar saldo antes de publicar jugadas.`,
+          msgPublicoBot: `⚠️ *${nombreUsuario || 'Jugador'}* dispone de ${prefijo}${formatearMontoRegional(0)} para jugar`,
+          msgPrivadoBot: `⚠️ Hola ${nombreUsuario || 'Jugador'}, no dispones de saldo para realizar jugadas. Tu saldo disponible es ${prefijo}${formatearMontoRegional(0)}. Por favor realiza una recarga para continuar jugando.`,
         };
       }
 
@@ -485,10 +440,10 @@ function analizarYEstandarizarJugadaBase(
 
       const jugadaEstandarizada = `${verboEstandar} ${bandoA.join('-')} x ${bandoB.join('-')}${propMatch !== '1x1' ? ` ${propMatch}` : ''} ${montoTexto}`;
       const msgPublicoBotMatch = excedioSaldoMatch
-        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${saldoFmt} para esta jugada.`
+        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de ${prefijo}${saldoFmt} para esta jugada.`
         : undefined;
       const msgPrivadoBotMatch = excedioSaldoMatch
-        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de $${saldoFmt}. Muchas gracias.`
+        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de ${prefijo}${saldoFmt}. Muchas gracias.`
         : undefined;
 
       return {
@@ -546,7 +501,7 @@ function analizarYEstandarizarJugadaBase(
     "10\\/\\d+(?:[\\.,]\\d+)?|A|AL",
   ].join("|");
   const regexPuestosYCaballos = new RegExp(
-    `^(?:(juego|jugo|jugó|consigo|doy|pido|voy)\\s+)?(?:(${MODS_COMPUESTAS_RE})\\s+)?(?:de\\s+la\\s+|del\\s+|de\\s+|la\\s+|el\\s+|a\\s+|al\\s+|#)?([0-9A-Za-z\\.\\-,\\s']+?)\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?([0-9kK\\.,]+|todo)$`,
+    `^(?:(juego|jugo|jugó|consigo|doy|pido|voy)\\s+)?(?:(${MODS_COMPUESTAS_RE})\\s+)?(?:de\\s+la\\s+|del\\s+|de\\s+|la\\s+|el\\s+|a\\s+|al\\s+|#)?([0-9A-Za-z\\.\\-,\\s']+?)\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?(${RE_MONTO_JUGADA})$`,
     "i"
   );
   const matchPuesto = texto.match(regexPuestosYCaballos);
@@ -720,9 +675,9 @@ function analizarYEstandarizarJugadaBase(
           requiereOperador: false,
           excedioSaldo: true,
           montoDisponibleValido: 0,
-          mensajePedagogicoPrivado: `🔒 Saldo insuficiente ($${saldoFmtPuesto}). Debes recargar saldo antes de publicar jugadas.`,
-          msgPublicoBot: `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $0,00 para jugar`,
-          msgPrivadoBot: `⚠️ Hola ${nombreUsuario || 'Jugador'}, no dispones de saldo para realizar jugadas. Tu saldo disponible es $0,00. Por favor realiza una recarga para continuar jugando.`,
+          mensajePedagogicoPrivado: `🔒 Saldo insuficiente (${prefijo}${saldoFmtPuesto}). Debes recargar saldo antes de publicar jugadas.`,
+          msgPublicoBot: `⚠️ *${nombreUsuario || 'Jugador'}* dispone de ${prefijo}${formatearMontoRegional(0)} para jugar`,
+          msgPrivadoBot: `⚠️ Hola ${nombreUsuario || 'Jugador'}, no dispones de saldo para realizar jugadas. Tu saldo disponible es ${prefijo}${formatearMontoRegional(0)}. Por favor realiza una recarga para continuar jugando.`,
         };
       }
 
@@ -733,10 +688,10 @@ function analizarYEstandarizarJugadaBase(
 
       const jugadaEstandarizada = `${verboEstandar} ${modLimpia} ${ejemplarTexto} ${montoTexto}`;
       const msgPublicoBotPuesto = excedioSaldoPuesto
-        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de $${saldoFmtPuesto} para esta jugada.`
+        ? `⚠️ *${nombreUsuario || 'Jugador'}* dispone de ${prefijo}${saldoFmtPuesto} para esta jugada.`
         : undefined;
       const msgPrivadoBotPuesto = excedioSaldoPuesto
-        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de $${saldoFmtPuesto}. Muchas gracias.`
+        ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de ${prefijo}${saldoFmtPuesto}. Muchas gracias.`
         : undefined;
 
       return {
@@ -764,7 +719,10 @@ function analizarYEstandarizarJugadaBase(
 
   // 5. CASO D: JUGADA INVERTIDA "<monto> al <caballo>"
   // Ejemplos: "5k al 7", "10.000 al 5", "20.000 al 2", "50 al 1"
-  const regexInvertido = /^([0-9kK\.,]+|todo)\s+(?:al?|del?|el)\s+(\d{1,2})$/i;
+  const regexInvertido = new RegExp(
+    `^(${RE_MONTO_JUGADA})\\s+(?:al?|del?|el)\\s+(\\d{1,2})$`,
+    "i"
+  );
   const matchInvertido = texto.match(regexInvertido);
 
   if (matchInvertido) {
@@ -1068,7 +1026,8 @@ export function evaluarConcrecionEstricta(
   saldoDisponibleAceptante: number,
   nombreAceptante?: string,
   moneda?: string,
-  codigoSala?: string
+  codigoSala?: string,
+  permitirMontoSuelto = false
 ): ResultadoConcrecionEstricta {
   const r = evaluarConcrecionEstrictaBase(
     textoRespuesta,
@@ -1076,7 +1035,8 @@ export function evaluarConcrecionEstricta(
     montoDisponiblePropuesta,
     saldoDisponibleAceptante,
     nombreAceptante,
-    moneda
+    moneda,
+    permitirMontoSuelto
   );
   return {
     ...r,

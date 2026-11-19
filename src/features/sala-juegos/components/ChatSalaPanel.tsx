@@ -1653,7 +1653,7 @@ export function ChatSalaPanel({
                 esClaro ? "bg-white border-gray-300 text-slate-900" : "bg-white border-slate-200 text-slate-700"
               }`}
             >
-              {limpiarEtiquetasProhibidas("+ Match (x)")}
+              {limpiarEtiquetasProhibidas("+ A Premio (x)")}
             </button>
             <button
               onClick={() => cerrarPropuestasDirectamente()}

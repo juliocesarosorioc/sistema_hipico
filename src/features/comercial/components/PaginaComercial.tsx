@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ModalRegistroUsuario } from "@/features/auth/components/ModalRegistroUsuario";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 export default function PaginaComercial() {
   const [modalRegistroAbierto, setModalRegistroAbierto] = useState(false);
@@ -357,15 +358,15 @@ export default function PaginaComercial() {
                   <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950/70 p-4 font-mono text-xs">
                     <div className="flex justify-between text-slate-400">
                       <span>Monto Apostado:</span>
-                      <span className="font-bold text-white">${calculadoraMonto.toFixed(2)}</span>
+                      <span className="font-bold text-white">${formatearMontoRegional(calculadoraMonto)}</span>
                     </div>
                     <div className="flex justify-between text-emerald-400">
                       <span>Ganancia Neta (100/120):</span>
-                      <span className="font-bold">+${gananciaNeta.toFixed(2)}</span>
+                      <span className="font-bold">+${formatearMontoRegional(gananciaNeta)}</span>
                     </div>
                     <div className="border-t border-slate-800 pt-2 flex justify-between text-sm font-black text-amber-400">
                       <span>Pago Total al Jugador:</span>
-                      <span>${pagoTotal.toFixed(2)}</span>
+                      <span>${formatearMontoRegional(pagoTotal)}</span>
                     </div>
                   </div>
 

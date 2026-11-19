@@ -110,7 +110,7 @@ export function ModalPrejugadas({
           .map((t, idx) => {
             const cruce = `${t.proponente_nombre} vs ${t.aceptante_nombre}`;
             const jugada = t.es_match
-              ? `Match: ${t.caballos_bando_a?.join("-")} x ${t.caballos_bando_b?.join("-")}`
+              ? `A Premio: ${t.caballos_bando_a?.join("-")} x ${t.caballos_bando_b?.join("-")}`
               : `${t.modalidad || "1P"} #${t.ejemplar_numero || t.caballos_bando_a?.join("-")}`;
             return `${idx + 1}. [T-${(t.codigo_ticket || t.id.slice(0, 6)).toUpperCase()}] ${prefijo}${formatearMontoRegional(t.monto_concretado)}\n   ${cruce}\n   ${jugada}`;
           })
@@ -194,7 +194,7 @@ export function ModalPrejugadas({
 
         ctx.fillStyle = "#ffd279";
         const jugada = t.es_match
-          ? `Match: ${t.caballos_bando_a?.join("-")} x ${t.caballos_bando_b?.join("-")}`
+          ? `A Premio: ${t.caballos_bando_a?.join("-")} x ${t.caballos_bando_b?.join("-")}`
           : `${t.modalidad || "1P"} #${t.ejemplar_numero || t.caballos_bando_a?.join("-")}`;
         ctx.fillText(jugada, 550, y + 5);
 

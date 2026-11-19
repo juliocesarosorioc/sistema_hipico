@@ -593,8 +593,9 @@ function parsearMontoFlexible(montoRaw) {
   if (typeof montoRaw === "number") return Math.max(0, montoRaw);
   if (!montoRaw) return 0;
   let s = String(montoRaw).trim().toUpperCase();
-  if (s.endsWith("K")) {
-    const base = parseFloat(s.slice(0, -1).replace(/\./g, "").replace(",", ".")) || 0;
+  const matchMil = /^(\d+(?:[.,]\d+)?)\s*(K|MIL)$/.exec(s);
+  if (matchMil) {
+    const base = parseFloat(matchMil[1].replace(/\./g, "").replace(",", ".")) || 0;
     return base * 1000;
   }
   if (s.includes(".") && s.includes(",")) {
@@ -620,6 +621,89 @@ function formatearMonto(n) {
     minimumFractionDigits: num % 1 === 0 ? 0 : 2,
     maximumFractionDigits: 2,
   });
+}
+
+// ============================================================================
+// IDENTIDAD DE GRUPO Y PLANTILLAS EFECTIVAS (réplica del servidor Next)
+// ============================================================================
+const ENCABEZADO_INSTITUCIONAL = "🏇🏻Administración Hípica🏇🏻";
+const CONECTORES_GRUPO = {
+  plano: "comparte el plano oficial de jugadas",
+  resultado: "informa el resultado y la liquidación oficial",
+  apertura: "da la bienvenida a la carrera",
+  cierre: "informa que la carrera quedó cerrada",
+  concrecion: "confirma una jugada pactada",
+  propuesta: "comparte una propuesta en vivo",
+};
+
+function nombreGrupoMensaje(sala) {
+  const candidatos = [
+    sala?.grupo_nombre,
+    sala?.nombre_grupo,
+    sala?.whatsapp_group_nombre,
+    sala?.grupo?.nombre,
+    sala?.nombre_sala,
+    sala?.nombre,
+  ];
+  for (const valor of candidatos) {
+    const nombre = String(valor ?? "").replace(/\s+/g, " ").trim();
+    if (nombre) return nombre.toUpperCase();
+  }
+  return "PRINCIPAL";
+}
+
+function encabezadoGrupo(sala, contexto) {
+  const conector = CONECTORES_GRUPO[contexto] || CONECTORES_GRUPO.plano;
+  return `${ENCABEZADO_INSTITUCIONAL}\nTU Grupo "${nombreGrupoMensaje(sala)}" te ${conector}:`;
+}
+
+function aplicarVariablesPlantilla(texto, variables) {
+  let resultado = String(texto || "");
+  for (const [clave, valor] of Object.entries(variables || {})) {
+    const key = clave.startsWith("{") && clave.endsWith("}") ? clave : `{${clave}}`;
+    resultado = resultado.split(key).join(valor == null ? "" : String(valor));
+  }
+  return resultado;
+}
+
+const PLANTILLAS_DAEMON_DEFAULT = {
+  apertura_carrera: "{encabezado}\n🟢 *{hipodromo} CARRERA {carrera} ABIERTA* — Hagan sus jugadas.{retirados}",
+  cierre_carrera: "{encabezado}\n🔒 *{hipodromo} CARRERA {carrera} CERRADA* — No más jugadas. Suerte a todos.",
+  plano_encabezado: "{encabezado}\n{fecha}\n{hipodromo}, {carrera} Carrera\nRetirado: {retirados}",
+};
+
+async function cargarPlantillasGrupo(grupoId) {
+  const mapa = new Map(Object.entries(PLANTILLAS_DAEMON_DEFAULT));
+  if (!grupoId || !supabase) return mapa;
+  try {
+    const { data, error } = await supabase
+      .from("whatsapp_plantillas_grupo")
+      .select("clave, contenido, activo")
+      .eq("grupo_id", String(grupoId));
+    if (!error && Array.isArray(data)) {
+      for (const fila of data) {
+        const clave = String(fila?.clave ?? "").trim();
+        const contenido = typeof fila?.contenido === "string" ? fila.contenido : "";
+        if (clave && contenido.trim() && fila?.activo !== false) mapa.set(clave, contenido);
+      }
+    }
+  } catch {}
+  return mapa;
+}
+
+function obtenerPlantillaGrupo(mapa, clave, variables, fallback) {
+  const contenido = mapa?.get(clave);
+  if (!contenido) return fallback;
+  const aplicada = aplicarVariablesPlantilla(contenido, variables).trim();
+  return aplicada || fallback;
+}
+
+function variablesEncabezadoGrupo(sala, contexto) {
+  return {
+    encabezado: encabezadoGrupo(sala, contexto),
+    grupo: nombreGrupoMensaje(sala),
+    conector: CONECTORES_GRUPO[contexto] || CONECTORES_GRUPO.plano,
+  };
 }
 
 async function convertirQrADataUrl(qrTexto) {
@@ -765,7 +849,18 @@ export async function ejecutarAperturaCarrera(sala, groupJid, hipodromoArg, carr
     })
     .eq("id", sala.id);
 
-  const textoApertura = `🟢 *${hipoLimpio} CARRERA ${numCarrera} ABIERTA* — Hagan sus jugadas.`;
+  const mapaApertura = await cargarPlantillasGrupo(sala?.grupo_id);
+  const textoApertura = obtenerPlantillaGrupo(
+    mapaApertura,
+    "apertura_carrera",
+    {
+      ...variablesEncabezadoGrupo(sala, "apertura"),
+      hipodromo: hipoLimpio,
+      carrera: numCarrera,
+      retirados: "",
+    },
+    `${encabezadoGrupo(sala, "apertura")}\n🟢 *${hipoLimpio} CARRERA ${numCarrera} ABIERTA* — Hagan sus jugadas.`
+  );
 
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoApertura);
@@ -790,7 +885,17 @@ export async function ejecutarCierreCarrera(sala, groupJid) {
   const hipo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
   const numCarrera = sala.numero_carrera_activa || 1;
 
-  const textoCierre = `🔒 *${hipo} CARRERA ${numCarrera} CERRADA* — No más jugadas. Suerte a todos.`;
+  const mapaCierre = await cargarPlantillasGrupo(sala?.grupo_id);
+  const textoCierre = obtenerPlantillaGrupo(
+    mapaCierre,
+    "cierre_carrera",
+    {
+      ...variablesEncabezadoGrupo(sala, "cierre"),
+      hipodromo: hipo,
+      carrera: numCarrera,
+    },
+    `${encabezadoGrupo(sala, "cierre")}\n🔒 *${hipo} CARRERA ${numCarrera} CERRADA* — No más jugadas. Suerte a todos.`
+  );
 
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoCierre);
@@ -848,7 +953,7 @@ export async function construirYPublicarPlano(sala, groupJid) {
       ? lista
           .map((t, idx) => {
             const detalleJugada = t.es_match
-              ? `Match ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`
+              ? `A Premio ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`
               : `${t.modalidad || "1P"} del ${t.ejemplar_numero || (t.caballos_bando_a || []).join("-")}`;
             return `${idx + 1}) ${t.proponente_nombre} juega ${detalleJugada} con ${t.aceptante_nombre} $${formatearMonto(t.monto_concretado)}`;
           })
@@ -879,11 +984,25 @@ export async function construirYPublicarPlano(sala, groupJid) {
           .join("\n")
       : "_No hay propuestas abiertas en cola._";
 
+  const mapaPlano = await cargarPlantillasGrupo(sala?.grupo_id);
+  const encabezadoPlano = obtenerPlantillaGrupo(
+    mapaPlano,
+    "plano_encabezado",
+    {
+      ...variablesEncabezadoGrupo(sala, "plano"),
+      fecha: fechaStr,
+      hipodromo,
+      carrera: ord,
+      retirados: retiradosStr || "—",
+    },
+    `${encabezadoGrupo(sala, "plano")}\n` +
+      `${fechaStr}\n` +
+      `${hipodromo}, ${ord} Carrera\n` +
+      `Retirado: ${retiradosStr}`
+  );
+
   let textoPlano =
-    `🏇🏻Administración Hípica🏇🏻\n` +
-    `${fechaStr}\n` +
-    `${hipodromo}, ${ord} Carrera\n` +
-    `Retirado: ${retiradosStr}\n\n` +
+    `${encabezadoPlano}\n\n` +
     `[Listado de jugadas y propuestas concretadas]\n` +
     `${lineas}`;
 
@@ -1260,7 +1379,7 @@ export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw, esRec
       ? listaJugadas
           .map((t, idx) => {
             const detalle = t.es_match
-              ? `Match ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`
+              ? `A Premio ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`
               : `${t.modalidad || "1P"} #${t.ejemplar_numero || (t.caballos_bando_a || []).join("-")}`;
             const montoStr = `$${formatearMonto(t.monto_concretado || 0)}`;
             const estadoEmoji =

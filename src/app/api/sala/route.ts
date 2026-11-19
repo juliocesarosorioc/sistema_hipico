@@ -937,7 +937,7 @@ async function liquidarCarreraFallback(
       .eq("id", t.id);
 
     const descJugada = t.es_match
-      ? `Match ${(t.caballos_bando_a || []).join(",")} vs ${(t.caballos_bando_b || []).join(",")}`
+      ? `A Premio ${(t.caballos_bando_a || []).join(",")} vs ${(t.caballos_bando_b || []).join(",")}`
       : `${t.accion_proponente || "JUEGA"} #${t.ejemplar_numero || (t.caballos_bando_a || [])[0] || "?"} (${t.modalidad || "1P"})`;
     const ganadorTag =
       nuevoEstadoTicket === "GANADOR_PROPONENTE"
@@ -1538,7 +1538,7 @@ export async function POST(req: Request) {
         // Extraer monto solicitado de body.monto o del texto de respuesta (ej. "Juego 20", "Consigo 5k", "Ponte 10.000")
         let montoPedido = body.monto ? Number(body.monto) : remanenteDisponible;
         if (texto && typeof texto === "string") {
-          const matchNum = texto.match(/([0-9kK\.,]+)/);
+          const matchNum = texto.match(/(\d+(?:[\.,]\d+)?\s*(?:k|mil)?)/i);
           if (matchNum) {
             const parsedK = parsearMontoConK(matchNum[1]);
             if (parsedK && parsedK.monto > 0) {
@@ -1577,8 +1577,8 @@ export async function POST(req: Request) {
         if (montoPedido < apuestaMinima && remanenteDisponible >= apuestaMinima) {
           return NextResponse.json({
             ok: false,
-            error: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`,
-            msg_publico_bot: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`,
+            error: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${formatearMontoRegional(apuestaMinima)}`,
+            msg_publico_bot: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${formatearMontoRegional(apuestaMinima)}`,
           }, { status: 400 });
         }
 
@@ -1878,8 +1878,8 @@ export async function POST(req: Request) {
           if (Number(analisis.monto) < apuestaMinima) {
             return NextResponse.json({
               ok: false,
-              error: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`,
-              msg_publico_bot: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${apuestaMinima.toFixed(2)}`,
+              error: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${formatearMontoRegional(apuestaMinima)}`,
+              msg_publico_bot: `⛔ *Nada aquí* — El monto mínimo de apuesta es $${formatearMontoRegional(apuestaMinima)}`,
             }, { status: 400 });
           }
 

@@ -2487,14 +2487,14 @@ const hipodromosDelDia = useMemo(() => {
       }
       const dispC1Actual = pFila?.cliente1 ? limiteDeJugar(pFila.cliente1) : limiteDeJugar(c1);
       if (dispC1Actual <= 0) {
-        errores.push(`Fila ${idxFila + 1}: ${c1.nombre} no posee saldo libre ni monto de saldo disponible ($0,00). No puede pasar a taquilla.`);
+        errores.push(`Fila ${idxFila + 1}: ${c1.nombre} no posee saldo libre ni monto de saldo disponible (${formatearMontoRegional(0)}). No puede pasar a taquilla.`);
         indicesError.push(idxFila);
         continue;
       }
       if (c2) {
         const dispC2Actual = pFila?.cliente2 ? limiteDeJugar(pFila.cliente2) : limiteDeJugar(c2);
         if (dispC2Actual <= 0) {
-          errores.push(`Fila ${idxFila + 1}: ${c2.nombre} no posee saldo libre ni monto de saldo disponible ($0,00). No puede pasar a taquilla.`);
+          errores.push(`Fila ${idxFila + 1}: ${c2.nombre} no posee saldo libre ni monto de saldo disponible (${formatearMontoRegional(0)}). No puede pasar a taquilla.`);
           indicesError.push(idxFila);
           continue;
         }

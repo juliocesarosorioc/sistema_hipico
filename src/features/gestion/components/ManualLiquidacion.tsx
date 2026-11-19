@@ -126,7 +126,7 @@ export default function ManualLiquidacion() {
           llega 2° o peor.
         </p>
 
-        <h4 className="pt-2 font-bold text-slate-800">Modalidad B · Matchs de Ejemplares (duelos)</h4>
+        <h4 className="pt-2 font-bold text-slate-800">Modalidad B · Duelos de Ejemplares</h4>
         <p>
           Formato: relación de pago, espacio, <i>Ejemplar(es) A</i> <Codigo>x</Codigo>{" "}
           <i>Ejemplar(es) B</i>. Los ejemplares se agrupan con guion <Codigo>-</Codigo>, coma{" "}

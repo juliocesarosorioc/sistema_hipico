@@ -209,73 +209,42 @@ export interface MontoParseado {
  */
 export function parsearMontoConK(rawInput: string): MontoParseado | null {
   if (!rawInput) return null;
-  const limpio = rawInput.trim().replace(/^[\$Bs\.\s]+/i, "").replace(/\.(?=\d{3})/g, "").trim();
-  if (!limpio) return null;
+  const original = String(rawInput)
+    .trim()
+    .replace(/^[\$Bs\.\s]+/i, "")
+    .trim();
+  if (!original) return null;
 
-  // 1. Detectar sufijo k / K (ej: 5k, 10k, 20k, 50k, 100k, 2.5k, 2,5k)
-  const matchK = /^(\d+(?:[\.,]\d+)?)\s*k$/i.exec(limpio);
+  const quitarMiles = (s: string) => s.replace(/\.(?=\d{3}(?:\D|$))/g, "");
+  const aNumero = (s: string) => {
+    const sinMiles = quitarMiles(s);
+    const conPunto = sinMiles.includes(",")
+      ? sinMiles.replace(/\./g, "").replace(",", ".")
+      : sinMiles;
+    return parseFloat(conPunto);
+  };
+
+  // 1. Abreviaturas de miles: 30k · 30 K · 30mil · 30 mil · 2,5k · 2.5k
+  const matchK = /^(\d+(?:[\.,]\d+)?)\s*(?:k|mil)$/i.exec(original);
   if (matchK) {
-    const base = parseFloat(matchK[1].replace(",", "."));
+    const base = aNumero(matchK[1]);
     if (Number.isFinite(base) && base > 0) {
       const monto = Math.round(base * 1000 * 100) / 100;
       return {
         monto,
-        textoPublicacion: `${matchK[1].toLowerCase()}k`,
+        textoPublicacion: formatearMontoRegional(monto),
         esKilo: true,
       };
     }
   }
 
-  // 2. Formato con puntos de miles y coma decimal (ej: "10.424,50")
-  if (limpio.includes(".") && limpio.includes(",")) {
-    const lastComma = limpio.lastIndexOf(",");
-    const lastDot = limpio.lastIndexOf(".");
-    let numStr = limpio;
-    if (lastComma > lastDot) {
-      numStr = limpio.replace(/\./g, "").replace(",", ".");
-    } else {
-      numStr = limpio.replace(/,/g, "");
-    }
-    const monto = parseFloat(numStr);
-    if (Number.isFinite(monto) && monto > 0) {
-      return {
-        monto: Math.round(monto * 100) / 100,
-        textoPublicacion: limpio,
-        esKilo: false,
-      };
-    }
-  }
-
-  // 3. Puntos de miles solos (ej: "5.000", "10.000", "20.000", "50.000", "100.000")
-  if (/^\d{1,3}(?:\.\d{3})+$/.test(limpio)) {
-    const monto = parseFloat(limpio.replace(/\./g, ""));
-    if (Number.isFinite(monto) && monto > 0) {
-      return {
-        monto: Math.round(monto * 100) / 100,
-        textoPublicacion: limpio,
-        esKilo: false,
-      };
-    }
-  }
-
-  // 4. Coma decimal sola (ej: "43,50", "100,5")
-  if (/^\d+,\d+$/.test(limpio)) {
-    const monto = parseFloat(limpio.replace(",", "."));
-    if (Number.isFinite(monto) && monto > 0) {
-      return {
-        monto: Math.round(monto * 100) / 100,
-        textoPublicacion: limpio,
-        esKilo: false,
-      };
-    }
-  }
-
-  // 5. Número estándar (ej: "100", "50", "20.5")
-  const monto = parseFloat(limpio);
+  // 2. Resto de formatos: 10.424,50 · 10.000 · 43,50 · 100 · 20.5
+  const monto = aNumero(original);
   if (Number.isFinite(monto) && monto > 0) {
+    const redondeado = Math.round(monto * 100) / 100;
     return {
-      monto: Math.round(monto * 100) / 100,
-      textoPublicacion: Number.isInteger(monto) ? String(monto) : formatearMontoRegional(monto),
+      monto: redondeado,
+      textoPublicacion: formatearMontoRegional(redondeado),
       esKilo: false,
     };
   }

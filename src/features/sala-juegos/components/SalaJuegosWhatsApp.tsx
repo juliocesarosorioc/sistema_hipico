@@ -645,7 +645,7 @@ export default function SalaJuegosWhatsApp({
           remitente: '🤖 ASISTENTE DE SALA',
           esBot: true,
           tipo: 'alerta_saldo',
-          contenido: `*Nada Aquí* — ${usuarioActual.nombre} no posee saldo disponible ($0,00)`,
+          contenido: `*Nada Aquí* — ${usuarioActual.nombre} no posee saldo disponible (${prefijo}${formatearMontoRegional(0)})`,
         });
         setSugerenciaPedagogica({
           mensaje: '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo',
@@ -866,7 +866,7 @@ export default function SalaJuegosWhatsApp({
           remitente: '🤖 ASISTENTE DE SALA',
           esBot: true,
           tipo: 'alerta_saldo',
-          contenido: `*Nada Aquí* — ${usuarioActual.nombre} no posee saldo disponible ($0,00)`,
+          contenido: `*Nada Aquí* — ${usuarioActual.nombre} no posee saldo disponible (${prefijo}${formatearMontoRegional(0)})`,
         });
         setSugerenciaPedagogica({
           mensaje: '"Atento", no publique jugadas por encima de saldo disponible, nos agrada tenerlo en este grupo',
@@ -1397,7 +1397,7 @@ export default function SalaJuegosWhatsApp({
       {/* SECCIÓN DE PUBLICIDAD EN TOPE DE SALA */}
       <div className="bg-gradient-to-r from-emerald-50 via-emerald-50 to-emerald-50 border-b border-emerald-200 px-4 py-1.5 flex items-center justify-between text-xs">
         <span className="truncate font-medium text-emerald-700">
-          📢 <strong>PUBLICIDAD OFICIAL ({grupoNombre}):</strong> Juega Puestos, Llaves y Match en vivo con liquidación instantánea y seguridad E2EE.
+          📢 <strong>PUBLICIDAD OFICIAL ({grupoNombre}):</strong> Juega Puestos, Llaves y A Premio en vivo con liquidación instantánea y seguridad E2EE.
         </span>
         <span className="text-[11px] text-emerald-700 font-mono hidden sm:inline">🔒 E2EE SHA-256 Activo</span>
       </div>
@@ -1653,7 +1653,7 @@ export default function SalaJuegosWhatsApp({
               onClick={() => setTextoInput('Juego 1x4 50')}
               className="bg-white hover:bg-slate-200 text-slate-700 border border-slate-200 px-2 py-0.5 rounded font-mono text-xs"
             >
-              + Match
+              + A Premio
             </button>
             <button
               onClick={() => manejarEnvioMensaje('Se fue')}

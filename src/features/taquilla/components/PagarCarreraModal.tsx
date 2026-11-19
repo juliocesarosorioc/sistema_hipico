@@ -26,15 +26,12 @@ import { listarClientes, type ClienteRow } from "@/features/clientes/lib/cliente
 import { exportarReporteCarreraImagen } from "@/features/liquidacion/lib/reporte-imagen";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import ReporteCarrera, { type ReporteCarreraDatos } from "@/features/saldos/components/ReporteCarrera";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
 
-const COP = new Intl.NumberFormat("es-CO", {
-  style: "currency",
-  currency: "COP",
-  maximumFractionDigits: 0,
-});
+const COP = { format: (n: number) => `$${formatearMontoRegional(n)}` };
 
 /**
  * Modal "Pagar Carrera": procesa los tickets de la sesión contra el motor y

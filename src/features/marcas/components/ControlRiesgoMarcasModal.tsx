@@ -818,7 +818,7 @@ export function ControlRiesgoMarcasModal({
                             <th className="px-3 py-2">Hora</th>
                             <th className="px-3 py-2">Jugador</th>
                             <th className="px-3 py-2">Grupo</th>
-                            <th className="px-3 py-2">Matchup</th>
+                            <th className="px-3 py-2">Duelo</th>
                             <th className="px-3 py-2 text-right">Monto</th>
                             <th className="px-3 py-2 text-right">Premio Potencial</th>
                           </tr>

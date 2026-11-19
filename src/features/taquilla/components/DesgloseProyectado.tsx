@@ -1,12 +1,9 @@
 "use client";
 
 import type { ValidacionComando } from "@/features/taquilla/lib/validar";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
-const COP = new Intl.NumberFormat("es-CO", {
-  style: "currency",
-  currency: "COP",
-  maximumFractionDigits: 0,
-});
+const COP = { format: (n: number) => `$${formatearMontoRegional(n)}` };
 
 function fila(label: string, valor: string, clase = "text-slate-700") {
   return (

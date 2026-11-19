@@ -7,6 +7,7 @@ import {
   grupoVigente,
   veTodosLosGruposVigente,
 } from "@/features/seguridad/lib/vigente";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 type TicketAdelantadoRow = {
   id: string | number;
@@ -23,12 +24,7 @@ type TicketAdelantadoRow = {
   fecha_registro?: string | null;
 };
 
-const USD = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
-});
+const USD = { format: (n: number) => `$${formatearMontoRegional(n)}` };
 
 /** Lista de jugadas adelantadas (`es_adelantada = true`) visibles directamente en Taquilla. */
 export function JugadasAdelantadasTaquilla() {

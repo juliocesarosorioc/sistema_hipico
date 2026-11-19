@@ -883,7 +883,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         autor_nombre: "Agente IA Oficial",
         autor_rol: "BOT",
         texto: `👋 ¡Hola @${sesion.nombre}! Soy tu Agente IA Oficial y moderador de la Sala.\n\n🏇 Carrera Activa: **${carreraActiva.hipodromo} (Carrera ${carreraActiva.carrera})** · Estado: **${carreraActiva.estado}**\n${
-          esLibre ? "⭐ Estatus: **Cuenta LIBRE**" : `💰 Tu Saldo Disponible: **$${(sesion.saldo_actual + sesion.aval).toFixed(2)}**`
+          esLibre ? "⭐ Estatus: **Cuenta LIBRE**" : `💰 Tu Saldo Disponible: **$${formatearMontoRegional(sesion.saldo_actual + sesion.aval)}**`
         }\n\nPuedes registrar tus jugadas de puestos directamente (ej. "Juego 1p 7 100", "50 2n al 1"), consultar tu "Saldo" en privado o contactar al Administrador u Operadores con /admin tu mensaje. ¿En qué te colaboro hoy?`,
         tipo: "TEXTO",
         created_at: new Date().toISOString(),
@@ -1584,11 +1584,11 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           if (ganoJuega) {
             balancePorJugador.set(t.juega_nombre, (balancePorJugador.get(t.juega_nombre) || 0) + monto);
             balancePorJugador.set(t.da_nombre, (balancePorJugador.get(t.da_nombre) || 0) - monto);
-            detallesJugadas.push(`✅ *Ticket #${t.numero_ticket}*: ${t.juega_nombre} GANA +${monto.toFixed(2)} (#${t.caballo}) vs ${t.da_nombre}`);
+            detallesJugadas.push(`✅ *Ticket #${t.numero_ticket}*: ${t.juega_nombre} GANA +${formatearMontoRegional(monto)} (#${t.caballo}) vs ${t.da_nombre}`);
           } else {
             balancePorJugador.set(t.da_nombre, (balancePorJugador.get(t.da_nombre) || 0) + monto);
             balancePorJugador.set(t.juega_nombre, (balancePorJugador.get(t.juega_nombre) || 0) - monto);
-            detallesJugadas.push(`❌ *Ticket #${t.numero_ticket}*: ${t.da_nombre} COBRA +${monto.toFixed(2)} vs ${t.juega_nombre} (#${t.caballo})`);
+            detallesJugadas.push(`❌ *Ticket #${t.numero_ticket}*: ${t.da_nombre} COBRA +${formatearMontoRegional(monto)} vs ${t.juega_nombre} (#${t.caballo})`);
           }
         }
 
@@ -1613,14 +1613,14 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         }
 
         if (positivos.length > 0) {
-          textoInformeWhatsapp += `\n🟢 *POSITIVOS (+):*\n` + positivos.map(([nom, bal]) => `• ${nom}: +${bal.toFixed(2)}`).join("\n");
+          textoInformeWhatsapp += `\n🟢 *POSITIVOS (+):*\n` + positivos.map(([nom, bal]) => `• ${nom}: +${formatearMontoRegional(bal)}`).join("\n");
         }
         if (negativos.length > 0) {
-          textoInformeWhatsapp += `\n\n🔴 *NEGATIVOS (-):*\n` + negativos.map(([nom, bal]) => `• ${nom}: -${Math.abs(bal).toFixed(2)}`).join("\n");
+          textoInformeWhatsapp += `\n\n🔴 *NEGATIVOS (-):*\n` + negativos.map(([nom, bal]) => `• ${nom}: -${formatearMontoRegional(Math.abs(bal))}`).join("\n");
         }
 
         const totalVolumen = ticketsCarrera.reduce((acc, t) => acc + Number(t.monto || 0), 0);
-        textoInformeWhatsapp += `\n\n📊 *TOTALIZACIÓN:* ${ticketsCarrera.length} tickets liquidados · Volumen Total: ${totalVolumen.toFixed(2)}`;
+        textoInformeWhatsapp += `\n\n📊 *TOTALIZACIÓN:* ${ticketsCarrera.length} tickets liquidados · Volumen Total: ${formatearMontoRegional(totalVolumen)}`;
 
         const msgReporte: MensajeSala = {
           id: `reporte-${Date.now()}`,
@@ -1668,8 +1668,8 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
       const s = await obtenerMiSaldoPrivado(sesion.id);
       const dispTxt = s.libre
         ? "⭐ Tu cuenta tiene **Estatus LIBRE** (sin limitaciones de saldo)."
-        : `💰 Tu Saldo Disponible es **$${s.disponible.toFixed(2)}** (Saldo: $${s.saldo_actual.toFixed(2)} + Aval: $${s.aval.toFixed(2)}${
-            s.riesgo_en_curso > 0 ? ` - En Juego: $${s.riesgo_en_curso.toFixed(2)}` : ""
+        : `💰 Tu Saldo Disponible es **$${formatearMontoRegional(s.disponible)}** (Saldo: $${formatearMontoRegional(s.saldo_actual)} + Aval: $${formatearMontoRegional(s.aval)}${
+            s.riesgo_en_curso > 0 ? ` - En Juego: $${formatearMontoRegional(s.riesgo_en_curso)}` : ""
           }).`;
 
       const dmSaldo: MensajeSala = {
@@ -1745,7 +1745,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
             autor_id: null,
             autor_nombre: "Agente IA Oficial",
             autor_rol: "BOT",
-            texto: `⚠️ @${sesion.nombre}: Tu disponible es $0.00. No puedes proponer jugadas sin saldo disponible.`,
+            texto: `⚠️ @${sesion.nombre}: Tu disponible es $${formatearMontoRegional(0)}. No puedes proponer jugadas sin saldo disponible.`,
             tipo: "DM_PRIVADO",
             destinatario_privado_id: sesion.id,
             reply_to_msg_id: replyId,
@@ -1780,7 +1780,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           autor_id: null,
           autor_nombre: "Agente IA Oficial",
           autor_rol: "BOT",
-          texto: `✅ *¡Aquí jugaron!*\n\n🏇 **${prop.jugada}** al ejemplar **#${prop.caballo}** por **$${montoReal.toFixed(2)}**\n👤 Juega: **@${juegaNombre}**\n🛡️ Da: **@${daNombre}**\n🎫 Ticket Oficial: \`#${ticketNum}\`\n\nRegistrado y asentado en tiempo real.`,
+          texto: `✅ *¡Aquí jugaron!*\n\n🏇 **${prop.jugada}** al ejemplar **#${prop.caballo}** por **$${formatearMontoRegional(montoReal)}**\n👤 Juega: **@${juegaNombre}**\n🛡️ Da: **@${daNombre}**\n🎫 Ticket Oficial: \`#${ticketNum}\`\n\nRegistrado y asentado en tiempo real.`,
           tipo: "CONCRECION",
           created_at: nowIso,
           esMio: false,
@@ -1835,7 +1835,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
         autor_id: sesion.id,
         autor_nombre: sesion.nombre,
         autor_rol: sesion.esOperadorOAdmin ? "OPERADOR" : "JUGADOR",
-        texto: `📢 **@${sesion.nombre}** ${rolTxt} **${prop.jugada}** al **#${prop.caballo}** por **$${montoReal.toFixed(2)}**.`,
+        texto: `📢 **@${sesion.nombre}** ${rolTxt} **${prop.jugada}** al **#${prop.caballo}** por **$${formatearMontoRegional(montoReal)}**.`,
         tipo: "PROPUESTA",
         monto_propuesto: montoReal,
         monto_disponible: montoReal,

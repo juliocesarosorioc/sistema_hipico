@@ -28,6 +28,7 @@ import {
   type HipodromoPivotDiario,
   type ReporteDiario,
 } from "@/features/reportes/lib/reporte-diario";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 type Props = {
   datos: ReporteDiario;
@@ -63,7 +64,7 @@ function balanceDe(
   return Math.round((fila.balance - comDev) * 100) / 100;
 }
 
-const numero = (n: number): string => n.toLocaleString("en-US");
+const numero = (n: number): string => formatearMontoRegional(n);
 
 function Kpi({ etiqueta, valor, acento }: { etiqueta: string; valor: string; acento: string }) {
   return (
@@ -1164,7 +1165,7 @@ function FragmentCarrera({
                               </span>
                             ) : esEmpateORetirado ? (
                               <span className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[9px] font-black uppercase text-slate-600">
-                                {estUpper} ($0.00)
+                                {estUpper} (${formatearMontoRegional(0)})
                               </span>
                             ) : esPend ? (
                               <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">

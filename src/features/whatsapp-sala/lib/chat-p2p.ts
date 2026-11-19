@@ -395,6 +395,9 @@ export interface PropuestaParseada {
 export const PATRON_PUESTOS_CHAT =
   /^(1p|2p|3p|4p|5p|6p|2n|3n|4n|5n|1y2n|2y3n|3y4n|4y5n|2ny2y2n|2y2|3y3|4y4|5y5|2\/2|3\/3|4\/4|5\/5|[1-5]\/[1-5]n|[1-5][pn]-[1-5]\/[1-5]n|[1-5]\/[1-5]n?-[1-5][pn]|pp|10\/\d+(?:\.\d+)?|10a\d+(?:\.\d+)?|ganador|place)$/i;
 
+/** Monto humanizado compartido por todos los patrones del chat. */
+const RE_MONTO_CHAT = "(?:\\d+(?:[\\.,]\\d+)?\\s*(?:k|mil)?)";
+
 export function parsearPropuestaChat(texto: string): PropuestaParseada | null {
   const t = texto.trim();
 
@@ -405,7 +408,10 @@ export function parsearPropuestaChat(texto: string): PropuestaParseada | null {
   const tLimpio = t.replace(/\s+con\s+@?[a-zA-Z0-9_\-\.]+/i, "").trim();
 
   // 1. "Juego <jugada_puestos> <caballo> <monto>" (ej: "Juego 1p 7 5k", "Juego 1p 7 10.000", "Juego 1p 7 100")
-  const m1 = /^(?:juego|jugar)\s+([0-9a-z\/\.\-]+)\s+(?:al?\s+)?([0-9\.\,x\-]+)\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?\s*([0-9kK\.,]+)$/i.exec(tLimpio);
+  const m1 = new RegExp(
+    `^(?:juego|jugar)\\s+([0-9a-z\\/\\.\\-]+)\\s+(?:al?\\s+)?([0-9\\.\\,x\\-]+)\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?\\s*(${RE_MONTO_CHAT})$`,
+    "i"
+  ).exec(tLimpio);
   if (m1 && PATRON_PUESTOS_CHAT.test(m1[1])) {
     const p = parsearMontoConK(m1[3]);
     if (p && p.monto > 0) {
@@ -422,7 +428,10 @@ export function parsearPropuestaChat(texto: string): PropuestaParseada | null {
   }
 
   // 2. "Juego 7 100" o "Juego al 7 5k" (puestos 1P por defecto)
-  const m1b = /^(?:juego|jugar)\s+(?:al?\s+)?([0-9]{1,2})\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?\s*([0-9kK\.,]+)$/i.exec(tLimpio);
+  const m1b = new RegExp(
+    `^(?:juego|jugar)\\s+(?:al?\\s+)?([0-9]{1,2})\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?\\s*(${RE_MONTO_CHAT})$`,
+    "i"
+  ).exec(tLimpio);
   if (m1b) {
     const p = parsearMontoConK(m1b[2]);
     if (p && p.monto > 0) {
@@ -439,7 +448,10 @@ export function parsearPropuestaChat(texto: string): PropuestaParseada | null {
   }
 
   // 3. "<monto> <jugada_puestos> [al?] <caballo>" (ej. "50 2p 7", "5k 2p 1", "10.000 2n al 4")
-  const m2 = /^([0-9kK\.,]+)\s+([0-9a-z\/\.\-]+)\s+(?:al?\s+)?([0-9\.\,x\-]+)$/i.exec(tLimpio);
+  const m2 = new RegExp(
+    `^(${RE_MONTO_CHAT})\\s+([0-9a-z\\/\\.\\-]+)\\s+(?:al?\\s+)?([0-9\\.\\,x\\-]+)$`,
+    "i"
+  ).exec(tLimpio);
   if (m2 && PATRON_PUESTOS_CHAT.test(m2[2])) {
     const p = parsearMontoConK(m2[1]);
     if (p && p.monto > 0) {
@@ -456,7 +468,10 @@ export function parsearPropuestaChat(texto: string): PropuestaParseada | null {
   }
 
   // 4. "<monto> al <caballo>" (1P) (ej. "5k al 7", "10.000 al 2", "50 al 5")
-  const m3 = /^([0-9kK\.,]+)\s*(?:al|a)\s*([0-9]{1,2})$/i.exec(tLimpio);
+  const m3 = new RegExp(
+    `^(${RE_MONTO_CHAT})\\s*(?:al|a)\\s*([0-9]{1,2})$`,
+    "i"
+  ).exec(tLimpio);
   if (m3) {
     const p = parsearMontoConK(m3[1]);
     if (p && p.monto > 0) {

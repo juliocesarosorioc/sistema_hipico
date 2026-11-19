@@ -142,7 +142,7 @@ export function parsearBloqueEnfrentamiento(
   const prefijo = (m[1] || "").trim();
   let bandoB = m[3].trim();
   let monto = "";
-  const mMonto = bandoB.match(/^(.*?)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?([0-9kK][0-9\.,kK]*))\s*$/i);
+  const mMonto = bandoB.match(/^(.*?)(?:\s+(?:con\s+|por\s+|\$|bs\.?|bs\s+)?(\d+(?:[\.,]\d+)?\s*(?:k|mil)?))\s*$/i);
   if (mMonto) {
     bandoB = mMonto[1].trim();
     monto = mMonto[2].trim();
