@@ -315,26 +315,14 @@ export async function resolverSala(params: {
     sala = sPorId || null;
   }
   if (!sala && groupJid) {
-    const { data: vinculo } = await supabaseAdmin
-      .from("salas_whatsapp_grupos")
-      .select("salas_juego(*)")
-      .eq("whatsapp_group_jid", groupJid)
-      .eq("activo", true)
-      .limit(1)
-      .maybeSingle();
-    if ((vinculo as any)?.salas_juego) {
-      sala = (vinculo as any).salas_juego;
-    }
-  }
-  if (!sala && groupJid) {
-    const { data: sLegacy } = await supabaseAdmin
+    const { data: sPorGroupJid } = await supabaseAdmin
       .from("salas_juego")
       .select("*")
       .eq("whatsapp_group_jid", groupJid)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    sala = sLegacy || null;
+    sala = sPorGroupJid || null;
   }
   if (!sala && grupoIdBody) {
     const { data: sGrp } = await supabaseAdmin

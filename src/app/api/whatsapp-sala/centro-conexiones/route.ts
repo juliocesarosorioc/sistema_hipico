@@ -176,41 +176,31 @@ export async function GET(req: NextRequest) {
   try {
     const [salas, bot] = await Promise.all([cargarSalasPermitidas(a.identidad), obtenerEstadoBot()]);
 
-    const salaIds = salas.map((s) => String(s.id));
     const grupoIds = Array.from(new Set(salas.map((s) => String(s.grupo_id || "")).filter(Boolean)));
 
-    const [vinculosRes, nombres, conteos] = await Promise.all([
-      salaIds.length
-        ? supabaseAdmin
-            .from("salas_whatsapp_grupos")
-            .select("id, sala_id, grupo_id, whatsapp_group_jid, whatsapp_group_nombre, estado_conexion, activo, updated_at")
-            .eq("activo", true)
-        : Promise.resolve({ data: [] as any[], error: null }),
+    const [salasVinculadasRes, nombres, conteos] = await Promise.all([
+      supabaseAdmin
+        .from("salas_juego")
+        .select("id, grupo_id, nombre_sala, whatsapp_group_jid, whatsapp_group_nombre, updated_at")
+        .not("whatsapp_group_jid", "is", null)
+        .eq("activa", true),
       nombresDeGrupos(grupoIds),
       Promise.all(grupoIds.map(async (g) => [g, await contarClientesConTelefono(g)] as const)),
     ]);
 
-    // Vínculos de TODAS las salas (necesario para etiquetar "En uso por"), sin exponer más que jid/sala.
-    const vinculos = ((vinculosRes.data || []) as any[]).map((v) => ({
-      id: v.id,
-      sala_id: v.sala_id,
-      grupo_id: v.grupo_id,
-      whatsapp_group_jid: v.whatsapp_group_jid,
-      whatsapp_group_nombre: v.whatsapp_group_nombre,
-      estado_conexion: v.estado_conexion,
-      activo: v.activo,
-    }));
-
-    // Nombre de sala que ocupa cada JID (incluye salas fuera de mi alcance, solo para la etiqueta).
-    const salaIdsVinculadas = Array.from(new Set(vinculos.map((v) => String(v.sala_id))));
-    const nombresSalaMap: Record<string, string> = {};
-    if (salaIdsVinculadas.length) {
-      const { data: salasVinc } = await supabaseAdmin
-        .from("salas_juego")
-        .select("id, nombre_sala")
-        .in("id", salaIdsVinculadas);
-      for (const s of (salasVinc || []) as any[]) nombresSalaMap[String(s.id)] = String(s.nombre_sala || "");
-    }
+    // Vínculos de TODAS las salas desde salas_juego (necesario para etiquetar "En uso por").
+    const vinculos = ((salasVinculadasRes.data || []) as any[])
+      .filter((s) => Boolean(s.whatsapp_group_jid))
+      .map((s) => ({
+        id: s.id,
+        sala_id: s.id,
+        grupo_id: s.grupo_id,
+        whatsapp_group_jid: s.whatsapp_group_jid,
+        whatsapp_group_nombre: s.whatsapp_group_nombre,
+        estado_conexion: "conectado",
+        activo: true,
+        sala_nombre_raw: String(s.nombre_sala || ""),
+      }));
 
     return json({
       ok: true,
@@ -222,9 +212,15 @@ export async function GET(req: NextRequest) {
         // Un operador no-admin no puede mover grupos de otra banca ni ver el nombre de sus salas.
         const bloqueado = !a.identidad.esAdmin && String(v.grupo_id || "") !== String(a.identidad.grupoId || "");
         return {
-          ...v,
+          id: v.id,
+          sala_id: v.sala_id,
+          grupo_id: v.grupo_id,
+          whatsapp_group_jid: v.whatsapp_group_jid,
+          whatsapp_group_nombre: v.whatsapp_group_nombre,
+          estado_conexion: v.estado_conexion,
+          activo: v.activo,
           bloqueado,
-          sala_nombre: bloqueado ? "otra banca" : nombresSalaMap[String(v.sala_id)] || null,
+          sala_nombre: bloqueado ? "otra banca" : v.sala_nombre_raw || null,
         };
       }),
       clientesPorGrupo: Object.fromEntries(conteos),
@@ -278,75 +274,52 @@ export async function POST(req: NextRequest) {
         return json({ ok: false, error: "grupoId no coincide con la sala." }, 400);
       }
 
-      // Dueño actual del JID (para limpiar el espejo en salas_juego tras mover).
+      // Dueño actual del JID en salas_juego (para limpiar antes de reasignar y respetar 1-a-1).
       const { data: previo } = await supabaseAdmin
-        .from("salas_whatsapp_grupos")
-        .select("sala_id, grupo_id")
+        .from("salas_juego")
+        .select("id, grupo_id")
         .eq("whatsapp_group_jid", whatsappGroupJid)
+        .neq("id", salaId)
+        .limit(1)
         .maybeSingle();
-      const salaPrevia = previo?.sala_id ? String(previo.sala_id) : null;
+      const salaPrevia = previo?.id ? String(previo.id) : null;
       if (previo && !identidad.esAdmin && String(previo.grupo_id || "") !== grupoId) {
         return json({ ok: false, error: "Ese grupo de WhatsApp está en uso por otra banca." }, 403);
       }
 
-      // 1-a-1: la sala solo puede tener un grupo → eliminar otros vínculos de esta sala.
-      await supabaseAdmin
-        .from("salas_whatsapp_grupos")
-        .delete()
-        .eq("sala_id", salaId)
-        .neq("whatsapp_group_jid", whatsappGroupJid);
+      const ahora = new Date().toISOString();
+      if (salaPrevia) {
+        await supabaseAdmin
+          .from("salas_juego")
+          .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: ahora })
+          .eq("id", salaPrevia);
+      }
 
-      const { error } = await supabaseAdmin.from("salas_whatsapp_grupos").upsert(
-        {
-          grupo_id: grupoId,
-          sala_id: salaId,
+      const { error } = await supabaseAdmin
+        .from("salas_juego")
+        .update({
           whatsapp_group_jid: whatsappGroupJid,
           whatsapp_group_nombre: whatsappGroupNombre,
-          estado_conexion: "conectado",
-          activo: true,
-        },
-        { onConflict: "whatsapp_group_jid" }
-      );
+          updated_at: ahora,
+        })
+        .eq("id", salaId);
       if (error) {
         console.error("[CENTRO_CONEXIONES_ERROR] vincular", error);
         return json({ ok: false, error: error.message }, 500);
       }
 
-      // Espejo best-effort (el trigger de BD ya sincroniza; esto solo cubre triggers ausentes).
-      const ahora = new Date().toISOString();
-      try {
-        if (salaPrevia && salaPrevia !== salaId) {
-          await supabaseAdmin
-            .from("salas_juego")
-            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: ahora })
-            .eq("id", salaPrevia)
-            .eq("whatsapp_group_jid", whatsappGroupJid);
-        }
-        await supabaseAdmin
-          .from("salas_juego")
-          .update({ whatsapp_group_jid: whatsappGroupJid, whatsapp_group_nombre: whatsappGroupNombre, updated_at: ahora })
-          .eq("id", salaId);
-      } catch (e) {
-        console.error("[CENTRO_CONEXIONES_ERROR] espejo salas_juego", e);
-      }
-
-      return json({ ok: true, movidoDesdeSalaId: salaPrevia && salaPrevia !== salaId ? salaPrevia : null });
+      return json({ ok: true, movidoDesdeSalaId: salaPrevia });
     }
 
     // --------------------------------------------------------------- DESVINCULAR
     if (accion === "desvincular") {
-      const { error } = await supabaseAdmin.from("salas_whatsapp_grupos").delete().eq("sala_id", salaId);
+      const { error } = await supabaseAdmin
+        .from("salas_juego")
+        .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+        .eq("id", salaId);
       if (error) {
         console.error("[CENTRO_CONEXIONES_ERROR] desvincular", error);
         return json({ ok: false, error: error.message }, 500);
-      }
-      try {
-        await supabaseAdmin
-          .from("salas_juego")
-          .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
-          .eq("id", salaId);
-      } catch (e) {
-        console.error("[CENTRO_CONEXIONES_ERROR] espejo salas_juego", e);
       }
       return json({ ok: true });
     }
@@ -356,24 +329,15 @@ export async function POST(req: NextRequest) {
       const t0 = Date.now();
       const checks: Array<{ nombre: string; ok: boolean; detalle: string }> = [];
 
-      // 1. Vínculo activo sincronizado con salas_juego
-      const { data: vinculo } = await supabaseAdmin
-        .from("salas_whatsapp_grupos")
-        .select("whatsapp_group_jid, whatsapp_group_nombre, activo")
-        .eq("sala_id", salaId)
-        .eq("activo", true)
-        .limit(1)
-        .maybeSingle();
-      const jid = vinculo?.whatsapp_group_jid ? String(vinculo.whatsapp_group_jid) : "";
-      const sincronizado = Boolean(jid) && String(sala.whatsapp_group_jid || "") === jid;
+      // 1. Vínculo activo en salas_juego
+      const jid = sala?.whatsapp_group_jid ? String(sala.whatsapp_group_jid) : "";
+      const sincronizado = Boolean(jid);
       checks.push({
         nombre: "Vínculo sala ⇄ grupo",
         ok: sincronizado,
         detalle: !jid
           ? "La sala no tiene un grupo de WhatsApp vinculado."
-          : sincronizado
-          ? `Vinculada con "${vinculo?.whatsapp_group_nombre || jid}".`
-          : "El vínculo existe pero salas_juego.whatsapp_group_jid no coincide (desincronizado).",
+          : `Vinculada con "${sala?.whatsapp_group_nombre || jid}".`,
       });
 
       // 2. Bot conectado y presente en el grupo

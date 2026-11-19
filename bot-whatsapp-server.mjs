@@ -126,18 +126,15 @@ async function liberarVinculosHuerfanos(salaId = null) {
     if (supabase) {
       if (salaId) {
         await supabase
-          .from("salas_whatsapp_grupos")
-          .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
-          .eq("sala_id", salaId);
-        await supabase
           .from("salas_juego")
           .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
           .eq("id", salaId);
       } else {
         await supabase
-          .from("salas_whatsapp_grupos")
-          .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
-          .eq("estado_conexion", "desconectado");
+          .from("salas_juego")
+          .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+          .eq("activa", false)
+          .not("whatsapp_group_jid", "is", null);
       }
     }
     console.log(`[Bot WhatsApp] 🧹 Vínculos huérfanos liberados en BD y memoria.`);
@@ -351,57 +348,27 @@ async function obtenerSalasPorGroupJid(remoteJid) {
   if (cached && Date.now() < cached.exp) {
     return cached.salas;
   }
-  if (!supabase) return [];
+  if (!supabase || !remoteJid) return [];
 
   const resultados = [];
-  const idsVistos = new Set();
+  const { data: salas, error: errSala } = await supabase
+    .from("salas_juego")
+    .select("*")
+    .eq("whatsapp_group_jid", remoteJid)
+    .eq("activa", true)
+    .order("created_at", { ascending: false })
+    .limit(1);
 
-  // 1. Buscar en tabla multi-grupo salas_whatsapp_grupos WHERE activo = true
-  try {
-    const { data: vinculos, error: errVinc } = await supabase
-      .from("salas_whatsapp_grupos")
-      .select("sala_id, whatsapp_group_jid, whatsapp_group_nombre, salas_juego(*)")
-      .eq("whatsapp_group_jid", remoteJid)
-      .eq("activo", true);
-
-    if (!errVinc && Array.isArray(vinculos)) {
-      for (const v of vinculos) {
-        const s = v.salas_juego;
-        if (s && s.id && !idsVistos.has(s.id)) {
-          idsVistos.add(s.id);
-          resultados.push({
-            ...s,
-            _whatsapp_group_jid: v.whatsapp_group_jid || remoteJid,
-            _whatsapp_group_nombre: v.whatsapp_group_nombre || s.whatsapp_group_nombre || null,
-          });
-        }
-      }
-    }
-  } catch {
-    // Fallback abajo si la tabla aún no existe
+  if (errSala) {
+    console.error("[Bot WhatsApp] Error consultando sala:", errSala.message);
+    return [];
   }
-
-  // 2. Respaldo compatible con salas_juego.whatsapp_group_jid
-  if (resultados.length === 0) {
-    const { data: sala, error: errSala } = await supabase
-      .from("salas_juego")
-      .select("*")
-      .eq("whatsapp_group_jid", remoteJid)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (errSala) {
-      console.error("[Bot WhatsApp] Error consultando sala:", errSala.message);
-      return [];
-    }
-    if (sala) {
-      resultados.push({
-        ...sala,
-        _whatsapp_group_jid: remoteJid,
-        _whatsapp_group_nombre: sala.whatsapp_group_nombre || null,
-      });
-    }
+  for (const sala of salas || []) {
+    resultados.push({
+      ...sala,
+      _whatsapp_group_jid: remoteJid,
+      _whatsapp_group_nombre: sala.whatsapp_group_nombre || null,
+    });
   }
 
   // 3. Respaldo por grupos.whatsapp_group_id o grupos.whatsapp_group_jid
@@ -1854,18 +1821,12 @@ async function manejarMensajeEntrante(msg) {
       messageTimestamps.set(senderJid, recentTimes);
     }
 
-    // Resolución de sala(s) vinculadas
+    // Resolución estricta de sala(s) vinculadas: en grupos, descartar silenciosamente si no está vinculado en salas_juego
     let salasDestino = [];
     if (esGrupo) {
       salasDestino = await obtenerSalasPorGroupJid(remoteJid);
       if (salasDestino.length === 0) {
-        const nomGrupo = gruposCache.find((g) => g.jid === remoteJid)?.nombre || null;
-        salasDestino = [{
-          id: null,
-          grupo_id: null,
-          _whatsapp_group_jid: remoteJid,
-          _whatsapp_group_nombre: nomGrupo,
-        }];
+        return;
       }
     } else {
       // En DM privado, buscar sala por grupo_id del cliente
@@ -2443,59 +2404,11 @@ const server = http.createServer(async (req, res) => {
 
       if (groupJid) {
         // Regla 1 a 1: Un Grupo de WhatsApp = Una Sala
-        const { data: otraSala } = await supabase
+        await supabase
           .from("salas_juego")
-          .select("id, nombre_sala")
+          .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
           .eq("whatsapp_group_jid", groupJid)
-          .eq("activa", true)
-          .neq("id", salaId)
-          .limit(1)
-          .maybeSingle();
-
-        if (otraSala) {
-          // Desvincular de la sala previa para reasignar a la nueva sala (Regla 1 a 1)
-          await supabase
-            .from("salas_juego")
-            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
-            .eq("id", otraSala.id);
-          await supabase
-            .from("salas_whatsapp_grupos")
-            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
-            .eq("sala_id", otraSala.id);
-        }
-
-        const { data: otroVinc } = await supabase
-          .from("salas_whatsapp_grupos")
-          .select("sala_id")
-          .eq("whatsapp_group_jid", groupJid)
-          .eq("activo", true)
-          .neq("sala_id", salaId)
-          .limit(1)
-          .maybeSingle();
-
-        if (otroVinc) {
-          // Limpiar vínculo huérfano o transferir de la sala previa
-          await supabase
-            .from("salas_whatsapp_grupos")
-            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
-            .eq("sala_id", otroVinc.sala_id);
-          await supabase
-            .from("salas_juego")
-            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
-            .eq("id", otroVinc.sala_id);
-        }
-
-        // Mantener 1 único grupo por sala
-        await supabase
-          .from("salas_whatsapp_grupos")
-          .delete()
-          .eq("sala_id", salaId)
-          .neq("whatsapp_group_jid", groupJid);
-      } else {
-        await supabase
-          .from("salas_whatsapp_grupos")
-          .delete()
-          .eq("sala_id", salaId);
+          .neq("id", salaId);
       }
 
       const updates = {
@@ -2513,27 +2426,6 @@ const server = http.createServer(async (req, res) => {
 
       if (error) {
         return responderJson(res, 500, { ok: false, error: error.message });
-      }
-
-      if (groupJid) {
-        const rowVinc = {
-          sala_id: salaId,
-          grupo_id: salaActualizada?.grupo_id || null,
-          whatsapp_group_jid: groupJid,
-          whatsapp_group_nombre: groupNombre || null,
-          activo: true,
-          estado_conexion: "conectado",
-          motivo_estado: "Vinculado",
-          updated_at: new Date().toISOString(),
-        };
-        const { error: errUp1 } = await supabase
-          .from("salas_whatsapp_grupos")
-          .upsert(rowVinc, { onConflict: "whatsapp_group_jid" });
-        if (errUp1) {
-          await supabase
-            .from("salas_whatsapp_grupos")
-            .upsert(rowVinc, { onConflict: "sala_id,whatsapp_group_jid" });
-        }
       }
 
       // Al vincular manualmente, cualquier respaldo de desconexión previo deja
@@ -2598,6 +2490,7 @@ const server = http.createServer(async (req, res) => {
         .from("salas_juego")
         .update({
           whatsapp_group_jid: null,
+          whatsapp_group_nombre: null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", salaId);
@@ -2605,16 +2498,6 @@ const server = http.createServer(async (req, res) => {
       if (error) {
         return responderJson(res, 500, { ok: false, error: error.message });
       }
-
-      await supabase
-        .from("salas_whatsapp_grupos")
-        .update({
-          activo: false,
-          estado_conexion: "pausado",
-          motivo_estado: "Desconectado temporalmente",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("sala_id", salaId);
 
       return responderJson(res, 200, {
         ok: true,
@@ -2679,27 +2562,6 @@ const server = http.createServer(async (req, res) => {
 
       if (error) {
         return responderJson(res, 500, { ok: false, error: error.message });
-      }
-
-      if (groupJid) {
-        const rowVinc = {
-          sala_id: salaId,
-          grupo_id: salaActualizada?.grupo_id || null,
-          whatsapp_group_jid: groupJid,
-          whatsapp_group_nombre: groupNombre || null,
-          activo: true,
-          estado_conexion: "conectado",
-          motivo_estado: "Vinculado",
-          updated_at: new Date().toISOString(),
-        };
-        const { error: errUp1 } = await supabase
-          .from("salas_whatsapp_grupos")
-          .upsert(rowVinc, { onConflict: "whatsapp_group_jid" });
-        if (errUp1) {
-          await supabase
-            .from("salas_whatsapp_grupos")
-            .upsert(rowVinc, { onConflict: "sala_id,whatsapp_group_jid" });
-        }
       }
 
       if (salasDesconectadas[salaId]) {
@@ -2784,97 +2646,29 @@ const server = http.createServer(async (req, res) => {
         }
 
         // Regla 1 a 1: Un Grupo de WhatsApp = Una Sala
-        const { data: otraSala } = await supabase
-          .from("salas_juego")
-          .select("id, nombre_sala")
-          .eq("whatsapp_group_jid", groupJid)
-          .eq("activa", true)
-          .neq("id", salaId)
-          .limit(1)
-          .maybeSingle();
-
-        if (otraSala) {
-          // Desvincular de la sala previa para reasignar a la nueva sala (Regla 1 a 1)
-          await supabase
-            .from("salas_juego")
-            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
-            .eq("id", otraSala.id);
-          await supabase
-            .from("salas_whatsapp_grupos")
-            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
-            .eq("sala_id", otraSala.id);
-        }
-
-        const { data: otroVinc } = await supabase
-          .from("salas_whatsapp_grupos")
-          .select("sala_id")
-          .eq("whatsapp_group_jid", groupJid)
-          .eq("activo", true)
-          .neq("sala_id", salaId)
-          .limit(1)
-          .maybeSingle();
-
-        if (otroVinc) {
-          // Limpiar vínculo huérfano o transferir de la sala previa
-          await supabase
-            .from("salas_whatsapp_grupos")
-            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
-            .eq("sala_id", otroVinc.sala_id);
-          await supabase
-            .from("salas_juego")
-            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
-            .eq("id", otroVinc.sala_id);
-        }
-
-        // Asegurar que la sala solo tenga 1 grupo vinculado
         await supabase
-          .from("salas_whatsapp_grupos")
-          .delete()
-          .eq("sala_id", salaId)
-          .neq("whatsapp_group_jid", groupJid);
+          .from("salas_juego")
+          .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+          .eq("whatsapp_group_jid", groupJid)
+          .neq("id", salaId);
 
-        const rowVerif = {
-          grupo_id: grupoIdFinal,
-          sala_id: salaId,
-          whatsapp_group_jid: groupJid,
-          whatsapp_group_nombre: metadata.subject,
-          estado_conexion: "conectado",
-          motivo_estado: "Vinculado y verificado con Baileys 24/7",
-          activo: true,
-          updated_at: new Date().toISOString(),
-        };
-        let { error: errUpsert } = await supabase
-          .from("salas_whatsapp_grupos")
-          .upsert(rowVerif, { onConflict: "whatsapp_group_jid" });
-        if (errUpsert) {
-          const rAlt = await supabase
-            .from("salas_whatsapp_grupos")
-            .upsert(rowVerif, { onConflict: "sala_id,whatsapp_group_jid" });
-          errUpsert = rAlt.error;
-        }
+        const { error: errUpdSala } = await supabase
+          .from("salas_juego")
+          .update({
+            whatsapp_group_jid: groupJid,
+            whatsapp_group_nombre: metadata.subject,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", salaId);
 
-        if (errUpsert) {
+        if (errUpdSala) {
           return responderJson(res, 500, {
             ok: false,
-            motivo: errUpsert.message || "Error guardando vinculación en Supabase",
+            motivo: errUpdSala.message || "Error guardando vinculación en Supabase",
           });
         }
 
         salasCacheMap.clear();
-
-        // Mantener también sincronizado salas_juego.whatsapp_group_jid para que permanezca conectado
-        try {
-          await supabase
-            .from("salas_juego")
-            .update({
-              whatsapp_group_jid: groupJid,
-              whatsapp_group_nombre: metadata.subject,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", salaId);
-        } catch {
-          // No bloqueante
-        }
       }
 
       salasCacheMap.clear();
@@ -2910,51 +2704,30 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      let qDel = supabase
-        .from("salas_whatsapp_grupos")
-        .delete()
-        .eq("whatsapp_group_jid", groupJid);
-
       if (salaId) {
-        qDel = qDel.eq("sala_id", salaId);
-      }
-
-      const { error: errDel } = await qDel;
-
-      if (errDel) {
-        return responderJson(res, 500, { ok: false, motivo: errDel.message });
-      }
-
-      try {
-        if (salaId) {
-          const { data: otros } = await supabase
-            .from("salas_whatsapp_grupos")
-            .select("whatsapp_group_jid, whatsapp_group_nombre")
-            .eq("sala_id", salaId)
-            .eq("activo", true)
-            .order("updated_at", { ascending: false });
-
-          const siguiente = (otros || [])[0] || null;
-          await supabase
-            .from("salas_juego")
-            .update({
-              whatsapp_group_jid: siguiente ? siguiente.whatsapp_group_jid : null,
-              whatsapp_group_nombre: siguiente ? siguiente.whatsapp_group_nombre : null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", salaId);
-        } else {
-          await supabase
-            .from("salas_juego")
-            .update({
-              whatsapp_group_jid: null,
-              whatsapp_group_nombre: null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("whatsapp_group_jid", groupJid);
+        const { error: errDesv } = await supabase
+          .from("salas_juego")
+          .update({
+            whatsapp_group_jid: null,
+            whatsapp_group_nombre: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", salaId);
+        if (errDesv) {
+          return responderJson(res, 500, { ok: false, motivo: errDesv.message });
         }
-      } catch {
-        // No bloqueante
+      } else {
+        const { error: errDesv } = await supabase
+          .from("salas_juego")
+          .update({
+            whatsapp_group_jid: null,
+            whatsapp_group_nombre: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("whatsapp_group_jid", groupJid);
+        if (errDesv) {
+          return responderJson(res, 500, { ok: false, motivo: errDesv.message });
+        }
       }
 
       salasCacheMap.clear();
@@ -2980,18 +2753,6 @@ const server = http.createServer(async (req, res) => {
       if (groupJid) destinos.add(groupJid);
 
       if (salaId && supabase) {
-        try {
-          const { data: vinculos } = await supabase
-            .from("salas_whatsapp_grupos")
-            .select("whatsapp_group_jid")
-            .eq("sala_id", salaId)
-            .eq("activo", true);
-          for (const v of vinculos || []) {
-            if (v.whatsapp_group_jid) destinos.add(v.whatsapp_group_jid);
-          }
-        } catch {
-          // Si falla tabla multi-grupo, usar fallback abajo
-        }
         try {
           const { data: salaRow } = await supabase
             .from("salas_juego")

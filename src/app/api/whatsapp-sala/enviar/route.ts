@@ -41,25 +41,6 @@ export async function POST(req: NextRequest) {
     if (!grupoId && sRow?.grupo_id) grupoId = sRow.grupo_id;
     if (sRow?.whatsapp_group_jid) whatsappGroupJid = sRow.whatsapp_group_jid;
 
-    // Si la sala no tiene whatsapp_group_jid directo, buscar en salas_whatsapp_grupos
-    if (!whatsappGroupJid) {
-      const { data: vRow } = await supabaseAdmin
-        .from("salas_whatsapp_grupos")
-        .select("whatsapp_group_jid")
-        .eq("sala_id", salaId)
-        .eq("activo", true)
-        .limit(1)
-        .maybeSingle();
-      if (vRow?.whatsapp_group_jid) {
-        whatsappGroupJid = vRow.whatsapp_group_jid;
-        // Sincronizar en salas_juego para acelerar lecturas y visibilidad en frontend
-        await supabaseAdmin
-          .from("salas_juego")
-          .update({ whatsapp_group_jid: whatsappGroupJid })
-          .eq("id", salaId);
-      }
-    }
-
     // 1. Insertar el mensaje en public.chat_mensajes (salvo si skipInsertDb viene en true)
     let msgInsert: any = null;
     if (!body.skipInsertDb) {

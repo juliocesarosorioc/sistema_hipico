@@ -62,17 +62,7 @@ async function publicarEnWhatsAppSala(salaId: string, texto: string, quotedMsgId
       .eq("id", salaId)
       .maybeSingle();
 
-    let groupJid = sala?.whatsapp_group_jid;
-    if (!groupJid) {
-      const { data: vinculo } = await supabaseAdmin
-        .from("salas_whatsapp_grupos")
-        .select("whatsapp_group_jid")
-        .eq("sala_id", salaId)
-        .eq("activo", true)
-        .limit(1)
-        .maybeSingle();
-      if (vinculo?.whatsapp_group_jid) groupJid = vinculo.whatsapp_group_jid;
-    }
+    let groupJid = sala?.whatsapp_group_jid || null;
     if (!groupJid && sala?.grupo_id) {
       try {
         const { data: grp } = await supabaseAdmin
@@ -461,27 +451,21 @@ export async function GET(req: Request) {
         salas = recargaSalas || salas;
       }
 
-      // Enriquecer salas con sus grupos de WhatsApp vinculados
-      const salaIdsBoot = (salas || []).map((s: any) => s.id);
-      let vinculosPorSalaBoot: Record<string, any[]> = {};
-      if (salaIdsBoot.length > 0) {
-        const { data: vinculos } = await supabaseAdmin
-          .from("salas_whatsapp_grupos")
-          .select("id, sala_id, whatsapp_group_jid, whatsapp_group_nombre, estado_conexion")
-          .in("sala_id", salaIdsBoot)
-          .eq("activo", true);
-        for (const v of vinculos || []) {
-          if (!vinculosPorSalaBoot[v.sala_id]) vinculosPorSalaBoot[v.sala_id] = [];
-          vinculosPorSalaBoot[v.sala_id].push(v);
-        }
-      }
+      // Enriquecer salas con su grupo de WhatsApp vinculado desde salas_juego
       const salasConGruposBoot = (salas || []).map((s: any) => ({
         ...s,
-        grupos_whatsapp: vinculosPorSalaBoot[s.id] || [],
-        whatsapp_group_nombre:
-          vinculosPorSalaBoot[s.id]?.[0]?.whatsapp_group_nombre || s.whatsapp_group_nombre || null,
-        whatsapp_group_jid:
-          vinculosPorSalaBoot[s.id]?.[0]?.whatsapp_group_jid || s.whatsapp_group_jid || null,
+        grupos_whatsapp: s.whatsapp_group_jid
+          ? [
+              {
+                sala_id: s.id,
+                whatsapp_group_jid: s.whatsapp_group_jid,
+                whatsapp_group_nombre: s.whatsapp_group_nombre || null,
+                estado_conexion: "conectado",
+              },
+            ]
+          : [],
+        whatsapp_group_nombre: s.whatsapp_group_nombre || null,
+        whatsapp_group_jid: s.whatsapp_group_jid || null,
       }));
 
       // Publicidad activa
@@ -556,26 +540,20 @@ export async function GET(req: Request) {
         .order("orden_sala", { ascending: true })
         .limit(2);
 
-      const salaIdsEst = (salas || []).map((s: any) => s.id);
-      let vinculosPorSalaEst: Record<string, any[]> = {};
-      if (salaIdsEst.length > 0) {
-        const { data: vinculos } = await supabaseAdmin
-          .from("salas_whatsapp_grupos")
-          .select("id, sala_id, whatsapp_group_jid, whatsapp_group_nombre, estado_conexion")
-          .in("sala_id", salaIdsEst)
-          .eq("activo", true);
-        for (const v of vinculos || []) {
-          if (!vinculosPorSalaEst[v.sala_id]) vinculosPorSalaEst[v.sala_id] = [];
-          vinculosPorSalaEst[v.sala_id].push(v);
-        }
-      }
       const salasConGruposEst = (salas || []).map((s: any) => ({
         ...s,
-        grupos_whatsapp: vinculosPorSalaEst[s.id] || [],
-        whatsapp_group_nombre:
-          vinculosPorSalaEst[s.id]?.[0]?.whatsapp_group_nombre || s.whatsapp_group_nombre || null,
-        whatsapp_group_jid:
-          vinculosPorSalaEst[s.id]?.[0]?.whatsapp_group_jid || s.whatsapp_group_jid || null,
+        grupos_whatsapp: s.whatsapp_group_jid
+          ? [
+              {
+                sala_id: s.id,
+                whatsapp_group_jid: s.whatsapp_group_jid,
+                whatsapp_group_nombre: s.whatsapp_group_nombre || null,
+                estado_conexion: "conectado",
+              },
+            ]
+          : [],
+        whatsapp_group_nombre: s.whatsapp_group_nombre || null,
+        whatsapp_group_jid: s.whatsapp_group_jid || null,
       }));
 
       const { data: estadoGrupo } = await supabaseAdmin
@@ -606,19 +584,7 @@ export async function GET(req: Request) {
         return NextResponse.json({ ok: false, error: "Sala no encontrada o no autorizada" }, { status: 403 });
       }
 
-      let whatsappGroupJid = sala.whatsapp_group_jid;
-      if (!whatsappGroupJid) {
-        const { data: vinculo } = await supabaseAdmin
-          .from("salas_whatsapp_grupos")
-          .select("whatsapp_group_jid")
-          .eq("sala_id", salaId)
-          .eq("activo", true)
-          .limit(1)
-          .maybeSingle();
-        if (vinculo?.whatsapp_group_jid) {
-          whatsappGroupJid = vinculo.whatsapp_group_jid;
-        }
-      }
+      const whatsappGroupJid = sala.whatsapp_group_jid || null;
 
       let qMensajes = supabaseAdmin.from("chat_mensajes").select("*");
       if (whatsappGroupJid) {

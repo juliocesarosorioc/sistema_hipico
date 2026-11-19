@@ -122,31 +122,6 @@ export async function POST(req: NextRequest) {
             .from("salas_juego")
             .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
             .eq("id", otraSala.id);
-          await supabaseAdmin
-            .from("salas_whatsapp_grupos")
-            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
-            .eq("sala_id", otraSala.id);
-        }
-
-        const { data: otroVinc } = await supabaseAdmin
-          .from("salas_whatsapp_grupos")
-          .select("sala_id")
-          .eq("whatsapp_group_jid", groupJid)
-          .eq("activo", true)
-          .neq("sala_id", salaId)
-          .limit(1)
-          .maybeSingle();
-
-        if (otroVinc) {
-          // Limpiar vínculo huérfano o transferir de la sala previa
-          await supabaseAdmin
-            .from("salas_whatsapp_grupos")
-            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
-            .eq("sala_id", otroVinc.sala_id);
-          await supabaseAdmin
-            .from("salas_juego")
-            .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
-            .eq("id", otroVinc.sala_id);
         }
       }
       try {
@@ -185,18 +160,10 @@ export async function POST(req: NextRequest) {
             .from("salas_juego")
             .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
             .eq("id", salaId);
-          await supabaseAdmin
-            .from("salas_whatsapp_grupos")
-            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
-            .eq("sala_id", salaId);
         } else if (groupJid) {
           await supabaseAdmin
             .from("salas_juego")
             .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
-            .eq("whatsapp_group_jid", groupJid);
-          await supabaseAdmin
-            .from("salas_whatsapp_grupos")
-            .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
             .eq("whatsapp_group_jid", groupJid);
         }
 
@@ -221,34 +188,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2.a Limpieza de vínculos huérfanos / zombies
+    // 2.a Limpieza de vínculos huérfanos / zombies en salas inactivas
     if (accion === "limpiar_vinculos_huerfanos" || accion === "limpiar-vinculos-huerfanos") {
       try {
-        const { data: vinculosActivos } = await supabaseAdmin
-          .from("salas_whatsapp_grupos")
-          .select("id, sala_id, whatsapp_group_jid")
-          .eq("activo", true);
-
-        if (vinculosActivos && vinculosActivos.length > 0) {
-          for (const v of vinculosActivos) {
-            const { data: salaRow } = await supabaseAdmin
-              .from("salas_juego")
-              .select("id, activa")
-              .eq("id", v.sala_id)
-              .maybeSingle();
-
-            if (!salaRow || salaRow.activa === false) {
-              await supabaseAdmin
-                .from("salas_whatsapp_grupos")
-                .update({ activo: false, estado_conexion: "desconectado", updated_at: new Date().toISOString() })
-                .eq("id", v.id);
-              await supabaseAdmin
-                .from("salas_juego")
-                .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
-                .eq("id", v.sala_id);
-            }
-          }
-        }
+        await supabaseAdmin
+          .from("salas_juego")
+          .update({ whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
+          .eq("activa", false)
+          .not("whatsapp_group_jid", "is", null);
         return NextResponse.json({ ok: true, motivo: "Vínculos huérfanos depurados con éxito" });
       } catch (err: any) {
         return NextResponse.json({ ok: false, error: err?.message || err }, { status: 500 });
@@ -278,16 +225,6 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", salaId);
-
-      await supabaseAdmin
-        .from("salas_whatsapp_grupos")
-        .update({
-          activo: false,
-          estado_conexion: "pausado",
-          motivo_estado: "Desconectado manualmente",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("sala_id", salaId);
 
       try {
         await fetch(`${BOT_DAEMON_URL}/desconectar-sala`, {
@@ -321,33 +258,21 @@ export async function POST(req: NextRequest) {
         await supabaseAdmin
           .from("salas_juego")
           .update({
+            whatsapp_group_jid: null,
+            whatsapp_group_nombre: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("whatsapp_group_jid", groupJid)
+          .neq("id", salaId);
+
+        await supabaseAdmin
+          .from("salas_juego")
+          .update({
             whatsapp_group_jid: groupJid,
             whatsapp_group_nombre: groupNombre || null,
             updated_at: new Date().toISOString(),
           })
           .eq("id", salaId);
-
-        const { data: sActual } = await supabaseAdmin
-          .from("salas_juego")
-          .select("grupo_id")
-          .eq("id", salaId)
-          .maybeSingle();
-
-        await supabaseAdmin
-          .from("salas_whatsapp_grupos")
-          .upsert(
-            {
-              sala_id: salaId,
-              grupo_id: sActual?.grupo_id || null,
-              whatsapp_group_jid: groupJid,
-              whatsapp_group_nombre: groupNombre || null,
-              activo: true,
-              estado_conexion: "conectado",
-              motivo_estado: "Reconectado",
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "whatsapp_group_jid" }
-          );
       }
 
       try {
@@ -381,16 +306,6 @@ export async function POST(req: NextRequest) {
       if (!groupJid) {
         return NextResponse.json({ ok: false, motivo: "groupJid es requerido" }, { status: 200 });
       }
-
-      await supabaseAdmin
-        .from("salas_whatsapp_grupos")
-        .update({
-          activo: false,
-          estado_conexion: "desconectado",
-          motivo_estado: "Desconectado por el usuario",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("whatsapp_group_jid", groupJid);
 
       await supabaseAdmin
         .from("salas_juego")
@@ -429,15 +344,6 @@ export async function POST(req: NextRequest) {
       });
       if (grupoId) qSalas = qSalas.eq("grupo_id", grupoId);
       await qSalas;
-
-      let qVinc = supabaseAdmin.from("salas_whatsapp_grupos").update({
-        activo: false,
-        estado_conexion: "pausado",
-        motivo_estado: "Desconectado masivo",
-        updated_at: new Date().toISOString(),
-      });
-      if (grupoId) qVinc = qVinc.eq("grupo_id", grupoId);
-      await qVinc;
 
       return NextResponse.json({ ok: true, motivo: "Todas las salas desconectadas exitosamente" });
     }
@@ -499,10 +405,9 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, motivo: "salaId es requerido" }, { status: 200 });
       }
 
-      await supabaseAdmin.from("salas_whatsapp_grupos").delete().eq("sala_id", salaId);
       const { error: errDel } = await supabaseAdmin
         .from("salas_juego")
-        .update({ activa: false, whatsapp_group_jid: null, updated_at: new Date().toISOString() })
+        .update({ activa: false, whatsapp_group_jid: null, whatsapp_group_nombre: null, updated_at: new Date().toISOString() })
         .eq("id", salaId);
 
       if (errDel) {

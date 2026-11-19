@@ -847,14 +847,9 @@ export async function obtenerEstadoDemonioYSalas(req: Request) {
 
   let gruposEnriquecidos = estadoBot.grupos;
   try {
-    const { data: vinculosActivos } = await supabaseAdmin
-      .from("salas_whatsapp_grupos")
-      .select("whatsapp_group_jid, whatsapp_group_nombre, sala_id, grupo_id, estado_conexion")
-      .eq("activo", true);
-
     const { data: todasSalas } = await supabaseAdmin
       .from("salas_juego")
-      .select("id, nombre_sala, grupo_id, whatsapp_group_jid")
+      .select("id, nombre_sala, grupo_id, whatsapp_group_jid, whatsapp_group_nombre")
       .eq("activa", true);
 
     const { data: gruposVenta } = await supabaseAdmin
@@ -877,16 +872,8 @@ export async function obtenerEstadoDemonioYSalas(req: Request) {
     }
 
     gruposEnriquecidos = (estadoBot.grupos || []).map((g) => {
-      const vinc = (vinculosActivos || []).find((v: any) => v.whatsapp_group_jid === g.jid);
-      let sInfo = vinc ? salaInfoMap.get(String(vinc.sala_id)) : null;
-
-      if (!sInfo) {
-        const sDirecta = (todasSalas || []).find((s: any) => s.whatsapp_group_jid === g.jid);
-        if (sDirecta) {
-          sInfo = salaInfoMap.get(String(sDirecta.id)) || null;
-        }
-      }
-
+      const sDirecta = (todasSalas || []).find((s: any) => s.whatsapp_group_jid === g.jid);
+      const sInfo = sDirecta ? salaInfoMap.get(String(sDirecta.id)) || null : null;
       const estaConectado = Boolean(sInfo);
 
       return {
@@ -896,27 +883,25 @@ export async function obtenerEstadoDemonioYSalas(req: Request) {
         salaNombre: sInfo?.nombre_sala || null,
         grupoId: sInfo?.grupo_id || null,
         grupoNombre: sInfo?.grupo_nombre || null,
-        estadoConexion: vinc?.estado_conexion || (estaConectado ? "conectado" : "desconectado"),
+        estadoConexion: estaConectado ? "conectado" : "desconectado",
       };
     });
 
-    const vinculosPorSalaId = new Map<string, any[]>();
-    for (const v of vinculosActivos || []) {
-      const sId = String(v.sala_id);
-      if (!vinculosPorSalaId.has(sId)) vinculosPorSalaId.set(sId, []);
-      vinculosPorSalaId.get(sId)!.push(v);
-    }
-
-    salas = (salas || []).map((s: any) => {
-      const sVinculos = vinculosPorSalaId.get(String(s.id)) || [];
-      const primerV = sVinculos[0];
-      return {
-        ...s,
-        grupos_whatsapp: sVinculos,
-        whatsapp_group_jid: s.whatsapp_group_jid || primerV?.whatsapp_group_jid || null,
-        whatsapp_group_nombre: s.whatsapp_group_nombre || primerV?.whatsapp_group_nombre || null,
-      };
-    });
+    salas = (salas || []).map((s: any) => ({
+      ...s,
+      grupos_whatsapp: s.whatsapp_group_jid
+        ? [
+            {
+              sala_id: s.id,
+              whatsapp_group_jid: s.whatsapp_group_jid,
+              whatsapp_group_nombre: s.whatsapp_group_nombre || null,
+              estado_conexion: "conectado",
+            },
+          ]
+        : [],
+      whatsapp_group_jid: s.whatsapp_group_jid || null,
+      whatsapp_group_nombre: s.whatsapp_group_nombre || null,
+    }));
   } catch {
     // Si falla el enriquecimiento, conservar grupos originales
   }
