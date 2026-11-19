@@ -18,6 +18,7 @@ import {
 } from "@/features/sala-juegos/lib/parser-pedagogico";
 import {
   cerrarParadasAbiertasDeSala,
+  concretarFallbackLocal,
   ejecutarRetiroPropuestasSeFue,
 } from "@/features/whatsapp-sala/concretarJugada";
 import { logicaGanancias } from "@/features/motores/lib/puestos";
@@ -1661,16 +1662,50 @@ export async function POST(req: Request) {
             p_aceptante_id: identidad.usuarioId,
             p_monto_pedido: montoPedido,
           });
-          if (errAtomico || !resAtomico || (resAtomico as any).ok === false) {
+
+          if (String((errAtomico as any)?.code || "") === "23502") {
+            // El RPC desplegado sigue insertando tickets sin `orden_fifo` (NOT NULL).
+            const resLocal = await concretarFallbackLocal({
+              contextoSala: {
+                grupoId,
+                salaId,
+                sala,
+                carreraActivaId: sala?.carrera_activa_id || null,
+              },
+              propuesta: propMsg,
+              cliente: {
+                id: identidad.usuarioId!,
+                libre: Boolean(aceptante?.libre),
+                nombreJugador: identidad.nombre || aceptante?.nombre || "Jugador",
+              },
+              montoEfectivo: montoPedido,
+              montoSolicitado: montoPedido,
+            });
+            if (resLocal.ok) {
+              resFifo = {
+                ok: true,
+                ticket_id: resLocal.ticketId,
+                codigo_ticket: resLocal.codigoTicket,
+                monto_concretado: resLocal.montoConcretado,
+              };
+              fifoExitoso = true;
+            } else {
+              return NextResponse.json({
+                ok: false,
+                error: "No se pudo concretar la jugada (orden_fifo)",
+              }, { status: 400 });
+            }
+          } else if (errAtomico || !resAtomico || (resAtomico as any).ok === false) {
             return NextResponse.json({
               ok: false,
               error: errAtomico?.message || (resAtomico as any)?.msg_publico_bot || (resAtomico as any)?.error || "No se pudo concretar la jugada",
               msg_publico_bot: (resAtomico as any)?.msg_publico_bot || null,
               msg_privado_bot: (resAtomico as any)?.msg_privado_bot || null,
             }, { status: 400 });
+          } else {
+            resFifo = resAtomico;
+            fifoExitoso = true;
           }
-          resFifo = resAtomico;
-          fifoExitoso = true;
         }
 
         if (!fifoExitoso) {

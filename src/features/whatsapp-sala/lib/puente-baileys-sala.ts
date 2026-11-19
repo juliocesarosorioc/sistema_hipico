@@ -13,6 +13,7 @@ import {
   resolverCodigoSalaGrupo,
 } from "@/features/grupos/lib/codigo-sala";
 import { sincronizarTicketsPropuestaATaquilla } from "./sincronizar-tickets-sala";
+import { insertarTicketFifo } from "./ticket-fifo";
 import {
   cargarPlantillasGrupo,
   obtenerPlantillaGrupo,
@@ -620,23 +621,29 @@ export async function procesarMensajeEntranteWhatsApp(
           const rawFirma = `${codigoTicket}:${propFresca.remitente_id}:${cliente.id}:${montoConcretado}:${new Date().toISOString()}`;
           const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
 
-          await supabaseAdmin.from("chat_tickets_fifo").insert({
-            grupo_id: grupoId,
-            sala_id: salaId,
-            propuesta_msg_id: propFresca.id,
-            codigo_ticket: codigoTicket,
-            proponente_id: propFresca.remitente_id,
-            proponente_nombre: propFresca.remitente_nombre,
-            aceptante_id: cliente.id,
-            aceptante_nombre: nombreJugador,
-            carrera_id: propFresca.carrera_id || sala.carrera_activa_id,
+          await insertarTicketFifo({
+            codigoTicket,
+            firmaSha256: firma,
+            grupoId,
+            salaId,
+            propuestaMsgId: propFresca.id,
+            proponenteId: propFresca.remitente_id,
+            proponenteNombre: propFresca.remitente_nombre || "Proponente",
+            aceptanteId: cliente.id,
+            aceptanteNombre: nombreJugador,
+            carreraId: propFresca.carrera_id || sala.carrera_activa_id,
+            accionProponente: propFresca.accion_proponente || "JUEGA",
+            esMatch: Boolean(propFresca.es_match),
             modalidad: propFresca.modalidad_jugada || "1P",
-            ejemplar_numero: propFresca.ejemplar_numero || (propFresca.caballos_bando_a?.[0] ?? "1"),
-            caballos_bando_a: propFresca.caballos_bando_a || [],
-            caballos_bando_b: propFresca.caballos_bando_b || [],
-            monto_concretado: montoConcretado,
+            ejemplarNumero: propFresca.ejemplar_numero || (propFresca.caballos_bando_a?.[0] ?? "1"),
+            caballosBandoA: propFresca.caballos_bando_a || [],
+            caballosBandoB: propFresca.caballos_bando_b || [],
+            proporcionPremio: propFresca.proporcion_premio || "1x1",
+            montoSolicitado: montoConcretado,
+            montoConcretado,
+            riesgoProponente: montoConcretado,
+            riesgoAceptante: montoConcretado,
             estado: "ABIERTO",
-            firma_sha256: firma,
           });
         }
 

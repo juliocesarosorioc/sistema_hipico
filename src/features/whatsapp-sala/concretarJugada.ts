@@ -23,6 +23,7 @@ import { asegurarCarreraActivaSala } from "./resolverSala";
 import { resolverTelefonoWhatsappCliente } from "./resolverCliente";
 import { calcularMaximosBilateral, detallePublicoPropuesta } from "./validarSaldo";
 import { emitirBroadcastSala, enviarNotificacionesPrivadasDaemon } from "./notificador";
+import { insertarTicketFifo } from "./lib/ticket-fifo";
 import type { ContextoSala, ClienteResuelto, ResultadoConcrecion, RespuestaGrupoItem } from "./types";
 
 // Mutex FIFO en memoria por propuesta para garantizar ejecución secuencial (1 a la vez: Caso 90 + 10 = 100)
@@ -43,6 +44,129 @@ export function encolarConcrecionSecuencial<T>(propuestaId: string, tarea: () =>
 
 export function mensajeJugaronPorPozo(prop: any, monto: number, limitador: string): string {
   return `✅ Jugaron ${detallePublicoPropuesta(prop)} con ${formatearMontoRegional(monto)} por Pozo de ${limitador}`;
+}
+
+function esUuidValido(valor: unknown): valor is string {
+  return (
+    typeof valor === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(valor.trim())
+  );
+}
+
+function esFalloEsquemaFifo(error: unknown): boolean {
+  const code = String((error as any)?.code || "");
+  const mensaje = String((error as any)?.message || "");
+  return code === "23502" || /orden_fifo|not-null constraint/i.test(mensaje);
+}
+
+/**
+ * Concreción local de emergencia cuando el RPC atómico choca con el esquema
+ * actual de `chat_tickets_fifo` (columna `orden_fifo` NOT NULL sin DEFAULT).
+ * Se ejecuta DENTRO del mutex por propuesta, de modo que la secuencia sigue
+ * siendo FIFO. El RPC aborta su propia transacción antes de llegar acá, así
+ * que no hay escrituras parciales que duplicar.
+ */
+export async function concretarFallbackLocal(params: {
+  contextoSala: Pick<ContextoSala, "grupoId" | "salaId" | "sala" | "carreraActivaId">;
+  propuesta: any;
+  cliente: Pick<ClienteResuelto, "id" | "libre" | "nombreJugador">;
+  montoEfectivo: number;
+  montoSolicitado: number;
+  whatsappMsgId?: string | null;
+}): Promise<{
+  ok: boolean;
+  ticketId?: string;
+  codigoTicket?: string;
+  montoConcretado?: number;
+  montoPendienteAmpliacion?: number;
+  error?: any;
+}> {
+  const { contextoSala, cliente, whatsappMsgId } = params;
+  const { data: prop } = await supabaseAdmin
+    .from("chat_mensajes")
+    .select("*")
+    .eq("id", params.propuesta.id)
+    .maybeSingle();
+
+  if (!prop) return { ok: false, error: "PROPUESTA_NO_EXISTE" };
+  const remanente = Number(prop.monto_disponible ?? 0);
+  const estado = String(prop.estado_propuesta || "").toLowerCase();
+  if (!["abierta", "parcial"].includes(estado) || remanente <= 0) {
+    return { ok: false, error: "PROPUESTA_AGOTADA" };
+  }
+
+  const monto = Math.min(Math.max(0, Number(params.montoEfectivo) || 0), remanente);
+  if (monto <= 0) return { ok: false, error: "MONTO_EFECTIVO_CERO" };
+
+  const nuevoRemanente = Number((remanente - monto).toFixed(2));
+  const updProp = await supabaseAdmin
+    .from("chat_mensajes")
+    .update({
+      monto_disponible: nuevoRemanente,
+      estado_propuesta: nuevoRemanente <= 0 ? "concretada" : "parcial",
+    })
+    .eq("id", prop.id)
+    .select("id")
+    .maybeSingle();
+  if (updProp.error) return { ok: false, error: updProp.error };
+
+  if (!cliente.libre) {
+    const { data: cli } = await supabaseAdmin
+      .from("clientes")
+      .select("saldo_actual, aval, saldo_retenido, libre")
+      .eq("id", cliente.id)
+      .maybeSingle();
+    if (cli) {
+      const nuevoRetenido = Number((Number(cli.saldo_retenido || 0) + monto).toFixed(2));
+      const disponible = Math.max(
+        0,
+        Number((Number(cli.saldo_actual || 0) + Number(cli.aval || 0) - nuevoRetenido).toFixed(2))
+      );
+      const updCli = await supabaseAdmin
+        .from("clientes")
+        .update({ saldo_retenido: nuevoRetenido, saldo_disponible: disponible })
+        .eq("id", cliente.id);
+      if (updCli.error) return { ok: false, error: updCli.error };
+    }
+  }
+
+  const montoSolicitado = Math.max(monto, Number(params.montoSolicitado) || 0);
+  const pendiente = Number((montoSolicitado - monto).toFixed(2));
+  const bandoA = Array.isArray(prop.caballos_bando_a) ? prop.caballos_bando_a : [];
+  const ins = await insertarTicketFifo({
+    grupoId: contextoSala.grupoId,
+    salaId: contextoSala.salaId,
+    carreraId: prop.carrera_id || contextoSala.sala?.carrera_activa_id || contextoSala.carreraActivaId || null,
+    propuestaMsgId: String(prop.id),
+    proponenteId: prop.remitente_id || null,
+    proponenteNombre: prop.remitente_nombre || "Proponente",
+    aceptanteId: cliente.id,
+    aceptanteNombre: cliente.nombreJugador,
+    accionProponente: prop.accion_proponente || "JUEGA",
+    esMatch: Boolean(prop.es_match),
+    modalidad: prop.modalidad_jugada || prop.modalidad_propuesta || prop.modalidad || "1P",
+    ejemplarNumero: prop.ejemplar_numero || prop.ejemplar_texto || bandoA[0] || "1",
+    caballosBandoA: bandoA,
+    caballosBandoB: Array.isArray(prop.caballos_bando_b) ? prop.caballos_bando_b : [],
+    proporcionPremio: prop.proporcion_premio || "1x1",
+    montoSolicitado,
+    montoConcretado: monto,
+    montoPendienteAmpliacion: Math.max(0, pendiente),
+    fueAjusteParcial: pendiente > 0,
+    riesgoProponente: monto,
+    riesgoAceptante: monto,
+    estado: "ACTIVO",
+    whatsappConcrecionMsgId: whatsappMsgId || null,
+  });
+
+  if (!ins.ok) return { ok: false, error: ins.error };
+  return {
+    ok: true,
+    ticketId: ins.ticketId,
+    codigoTicket: ins.codigoTicket,
+    montoConcretado: monto,
+    montoPendienteAmpliacion: Math.max(0, pendiente),
+  };
 }
 
 export async function construirMensajeSaldoParcial(params: {
@@ -1411,47 +1535,60 @@ export async function concretarJugada(params: {
       const montoEnCola = Math.min(evalCola.montoSolicitado, maxBaseAceptante);
       const codigoTicketCola = `TK-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
-      await supabaseAdmin.from("chat_tickets_fifo").insert({
-        codigo_ticket: codigoTicketCola,
-        grupo_id: contextoSala.grupoId,
-        sala_id: contextoSala.salaId,
-        carrera_id:
+      const insCola = await insertarTicketFifo({
+        codigoTicket: codigoTicketCola,
+        grupoId: contextoSala.grupoId,
+        salaId: contextoSala.salaId,
+        carreraId:
           propFresca.carrera_id ||
           contextoSala.sala?.carrera_activa_id ||
           contextoSala.carreraActivaId ||
           null,
-        propuesta_msg_id: propFresca.id,
-        proponente_id: propFresca.remitente_id,
-        proponente_nombre:
+        propuestaMsgId: propFresca.id,
+        proponenteId: propFresca.remitente_id,
+        proponenteNombre:
           proponenteRow?.seudonimo ||
           proponenteRow?.nombre ||
           propFresca.remitente_nombre ||
           "Proponente",
-        aceptante_id: cliente.id,
-        aceptante_nombre: cliente.nombreJugador,
-        accion_proponente: accionProp,
-        es_match: Boolean(propFresca.es_match),
+        aceptanteId: cliente.id,
+        aceptanteNombre: cliente.nombreJugador,
+        accionProponente: accionProp,
+        esMatch: Boolean(propFresca.es_match),
         modalidad:
           propFresca.modalidad_jugada ||
           propFresca.modalidad_propuesta ||
           propFresca.modalidad ||
           "1P",
-        ejemplar_numero:
+        ejemplarNumero:
           propFresca.ejemplar_numero ||
           propFresca.ejemplar_texto ||
           (Array.isArray(propFresca.caballos_bando_a) ? propFresca.caballos_bando_a[0] : "1"),
-        caballos_bando_a: propFresca.caballos_bando_a || [],
-        caballos_bando_b: propFresca.caballos_bando_b || [],
-        proporcion_premio: propFresca.proporcion_premio || "1x1",
-        monto_solicitado: montoEnCola,
-        monto_concretado: 0,
-        monto_pendiente_ampliacion: montoEnCola,
-        fue_ajuste_parcial: true,
-        riesgo_proponente: 0,
-        riesgo_aceptante: 0,
+        caballosBandoA: propFresca.caballos_bando_a || [],
+        caballosBandoB: propFresca.caballos_bando_b || [],
+        proporcionPremio: propFresca.proporcion_premio || "1x1",
+        montoSolicitado: montoEnCola,
+        montoConcretado: 0,
+        montoPendienteAmpliacion: montoEnCola,
+        fueAjusteParcial: true,
+        riesgoProponente: 0,
+        riesgoAceptante: 0,
         estado: "EN_COLA",
-        whatsapp_concrecion_msg_id: whatsappMsgId || null,
+        whatsappConcrecionMsgId: whatsappMsgId || null,
       });
+      if (!insCola.ok) {
+        return {
+          ok: false,
+          tipo: "CONCRECION_ERROR",
+          respuestaGrupo: `🚫 *Error al concretar jugada* (${insCola.error?.code || "INSERT_FIFO"}) — Intente nuevamente.`,
+          msg_publico: `🚫 *Error al concretar jugada* (${insCola.error?.code || "INSERT_FIFO"}) — Intente nuevamente.`,
+          msg_publico_bot: `🚫 *Error al concretar jugada* (${insCola.error?.code || "INSERT_FIFO"}) — Intente nuevamente.`,
+          respuestaPublica: `🚫 *Error al concretar jugada* (${insCola.error?.code || "INSERT_FIFO"}) — Intente nuevamente.`,
+          mensajePrivadoAutor: `La concreción no pudo ser procesada por el motor atómico (${insCola.error?.code || "INSERT_FIFO"}).`,
+          msg_privado_bot: `La concreción no pudo ser procesada por el motor atómico (${insCola.error?.code || "INSERT_FIFO"}).`,
+          senderJid: participantJid,
+        };
+      }
 
       return {
         ok: true,
@@ -1602,6 +1739,20 @@ export async function concretarJugada(params: {
       propFresca.carrera_id = carreraEfectivaId;
     }
 
+    if (!esUuidValido(cliente.id)) {
+      return {
+        ok: false,
+        tipo: "CONCRECION_ERROR",
+        respuestaGrupo: "🚫 *Error al concretar jugada* — El operador no tiene identidad de jugador en esta sala.",
+        msg_publico: "🚫 *Error al concretar jugada* — El operador no tiene identidad de jugador en esta sala.",
+        msg_publico_bot: "🚫 *Error al concretar jugada* — El operador no tiene identidad de jugador en esta sala.",
+        respuestaPublica: "🚫 *Error al concretar jugada* — El operador no tiene identidad de jugador en esta sala.",
+        mensajePrivadoAutor: "La concreción no pudo ser procesada por el motor atómico: identidad de jugador inválida.",
+        msg_privado_bot: "La concreción no pudo ser procesada por el motor atómico: identidad de jugador inválida.",
+        senderJid: participantJid,
+      };
+    }
+
     try {
       const { data: resRpc, error: errRpc } = await supabaseAdmin.rpc(
         "concretar_jugada_fifo_atomica",
@@ -1611,6 +1762,7 @@ export async function concretarJugada(params: {
           p_propuesta_msg_id: propFresca.id,
           p_aceptante_id: cliente.id,
           p_monto_pedido: montoEfectivo,
+          p_whatsapp_concrecion_msg_id: whatsappMsgId || null,
         }
       );
       resRpcData = resRpc;
@@ -1677,7 +1829,34 @@ export async function concretarJugada(params: {
       rpcExitoso = false;
     }
 
-    // Fallback si el RPC no fue exitoso
+    // Fallback si el RPC no fue exitoso. El error 23502 de `orden_fifo` es un
+    // desfase entre el RPC desplegado y el esquema actual: se resuelve en la app.
+    if (!rpcExitoso) {
+      if (esFalloEsquemaFifo(errorConcretar)) {
+        const resFallback = await concretarFallbackLocal({
+          contextoSala,
+          propuesta: propFresca,
+          cliente,
+          montoEfectivo,
+          montoSolicitado: Number(evalConcrecion.montoSolicitado || montoEfectivo),
+          whatsappMsgId,
+        });
+        if (resFallback.ok) {
+          rpcExitoso = true;
+          errorConcretar = null;
+          resRpcData = {
+            ok: true,
+            ticket_id: resFallback.ticketId,
+            codigo_ticket: resFallback.codigoTicket,
+            monto_concretado: resFallback.montoConcretado,
+            monto_pendiente_ampliacion: resFallback.montoPendienteAmpliacion,
+          };
+        } else {
+          errorConcretar = resFallback.error || errorConcretar;
+        }
+      }
+    }
+
     if (!rpcExitoso) {
       const error = errorConcretar ?? "RPC concretar_jugada_fifo_atomica sin ok=true";
       console.error("[CONCRETAR_ERROR]", error);
