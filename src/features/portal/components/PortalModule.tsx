@@ -226,11 +226,34 @@ export function PortalModule() {
   const [avisoInactividad, setAvisoInactividad] = useState("");
 
   useEffect(() => {
-    // Login obligatorio en cada carga: limpia inmediatamente localStorage/sessionStorage
-    // y mantiene la sesión exclusivamente en memoria (sesion = null).
-    cerrarSesion();
-    setSesion(null);
-    setCargando(false);
+    // Si viene con cookie de cliente recién creada por login, restaurar sesión de inmediato
+    const cookies = typeof document !== "undefined" ? document.cookie : "";
+    const matchId = cookies.match(/(?:^|;\s*)(?:portal_cliente_id|sala_cliente_id)=([^;]+)/);
+    const clienteIdCookie = matchId ? decodeURIComponent(matchId[1]) : null;
+
+    if (clienteIdCookie) {
+      setCargando(true);
+      (async () => {
+        try {
+          const { restaurarSesionDesdeCookie } = await import("@/features/portal/lib/portal");
+          const sesionRestaurada = await restaurarSesionDesdeCookie(clienteIdCookie);
+          if (sesionRestaurada) {
+            setSesion(sesionRestaurada);
+            return;
+          }
+        } catch {
+          // Fallback a pantalla de login
+        } finally {
+          setCargando(false);
+        }
+        cerrarSesion();
+        setSesion(null);
+      })();
+    } else {
+      cerrarSesion();
+      setSesion(null);
+      setCargando(false);
+    }
     try {
       window.history.replaceState({}, "", window.location.pathname);
     } catch {

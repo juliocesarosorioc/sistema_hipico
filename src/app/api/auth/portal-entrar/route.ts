@@ -69,8 +69,11 @@ export async function POST(req: NextRequest) {
       if (c.activo === false || c.portal_habilitado === false) return false;
 
       const pToken = normalizarTexto(c.portal_token);
-      if (pToken && pToken === uNorm) return true;
-      if (pToken && pToken.replace(/^tk/, "") === uNorm.replace(/^tk/, "")) return true;
+      if (pToken && (pToken === uNorm || pToken.replace(/^tk/, "") === uNorm.replace(/^tk/, ""))) return true;
+
+      const creds = credencialesPorDefecto(c);
+      const defToken = normalizarTexto(creds.portal_token);
+      if (defToken && (defToken === uNorm || defToken.replace(/^tk/, "") === uNorm.replace(/^tk/, ""))) return true;
 
       const seudonimo = normalizarTexto(c.seudonimo);
       if (seudonimo && seudonimo === uNorm) return true;
@@ -87,8 +90,10 @@ export async function POST(req: NextRequest) {
       if (uDigitos10) {
         const tel = normalizarDigitos(c.telefono);
         const telNorm = normalizarDigitos(c.telefono_normalizado);
-        if (tel.length >= 7 && (tel.endsWith(uDigitos10) || uDigitos10.endsWith(tel))) return true;
-        if (telNorm.length >= 7 && (telNorm.endsWith(uDigitos10) || uDigitos10.endsWith(telNorm))) return true;
+        const tel10 = tel.length >= 10 ? tel.slice(-10) : tel;
+        const telNorm10 = telNorm.length >= 10 ? telNorm.slice(-10) : telNorm;
+        if (tel.length >= 7 && (tel10 === uDigitos10 || tel.endsWith(uDigitos10) || uDigitos10.endsWith(tel))) return true;
+        if (telNorm.length >= 7 && (telNorm10 === uDigitos10 || telNorm.endsWith(uDigitos10) || uDigitos10.endsWith(telNorm))) return true;
       }
 
       // Si ingresó ID exacto

@@ -125,7 +125,7 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
   // re-renderizaba el formulario sin parar y dejaba los campos imposibles de
   // seleccionar. La puerta no tiene que desloguear a nadie.
   useEffect(() => {
-    limpiarAlmacenamientoPortal();
+    limpiarAlmacenamientoPortal({ borrarCookies: false });
     if (!inicializada || modoPortal) return;
     if (usuarioActual && (perfiles.length > 0 || esPrincipal)) {
       if (yaNavegandoRef.current) return;
@@ -145,84 +145,78 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
     e.preventDefault();
     if (cargando || ingresando || yaNavegandoRef.current) return;
 
-    // Honeypot anti-bot (oculto)
-    if (honeypotRef.current && honeypotRef.current.value) {
-      return; // Silencioso para bots
-    }
-
-    const usuarioSanitizado = sanitizarIdentificador(usuario);
-    if (!usuarioSanitizado) {
-      useAuthStore.setState({ cargando: false, errorLogin: "Usuario inválido." });
-      return;
-    }
-
-    const codigoLimpio = (codigoSala ?? "").trim();
-    if (!codigoLimpio) {
-      useAuthStore.setState({ cargando: false, errorLogin: "Ingresá el código de sala." });
-      return;
-    }
-
-    // El tenant lo resuelve la base, nunca el formulario. Sin un grupo válido
-    // no se intenta ningún login: nadie entra con un código ajeno.
     setIngresando(true);
-    let grupo: Awaited<ReturnType<typeof resolverGrupoPorCodigoSala>>;
+    useAuthStore.setState({ cargando: true, errorLogin: null });
     try {
-      grupo = await resolverGrupoPorCodigoSala(codigoLimpio);
-    } catch {
-      grupo = null;
-    }
-    if (!grupo?.id) {
-      setIngresando(false);
-      useAuthStore.setState({
-        cargando: false,
-        errorLogin: "Código de sala no válido. Verificá el código con tu administrador.",
-      });
-      return;
-    }
-    setIngresando(false);
-
-    const contexto = {
-      grupoId: String(grupo.id),
-      grupoNombre: grupo.nombre,
-      codigoSala: grupo.codigo_sala || codigoLimpio,
-    };
-
-    // [Módulo 1] Bloqueo por intentos fallidos. Vale para TODOS los usuarios:
-    // ya no existe el atajo del administrador principal.
-    const ipActual = ipRef.current;
-    const bloqueo = verificarBloqueoIntentos(usuarioSanitizado, ipActual);
-    if (bloqueo.bloqueado) {
-      const minutos = Math.ceil((bloqueo.segundosRestantes ?? 1800) / 60);
-      setBloqueadoSegundos(bloqueo.segundosRestantes ?? 1800);
-      useAuthStore.setState({
-        cargando: false,
-        errorLogin: `🔒 Cuenta bloqueada por ${minutos} minuto${minutos !== 1 ? "s" : ""} debido a intentos fallidos repetidos. El administrador ha sido notificado. Intentá más tarde.`,
-      });
-      return;
-    }
-
-    let tokenValido = recaptchaToken;
-    if (!tokenValido && typeof window !== "undefined" && (window as { grecaptcha?: { getResponse: () => string } }).grecaptcha) {
-      try {
-        const resp = (window as { grecaptcha?: { getResponse: () => string } }).grecaptcha?.getResponse();
-        if (resp) {
-          tokenValido = resp;
-          setRecaptchaToken(resp);
-        }
-      } catch {
-        // Ignorar
+      // Honeypot anti-bot (oculto)
+      if (honeypotRef.current && honeypotRef.current.value) {
+        return; // Silencioso para bots
       }
-    }
-    if (!tokenValido) {
-      useAuthStore.setState({
-        cargando: false,
-        errorLogin: "⚠️ Por favor complete la verificación de seguridad reCAPTCHA antes de iniciar sesión.",
-      });
-      return;
-    }
 
-    setIngresando(true);
-    try {
+      const usuarioSanitizado = sanitizarIdentificador(usuario);
+      if (!usuarioSanitizado) {
+        useAuthStore.setState({ errorLogin: "Usuario inválido." });
+        return;
+      }
+
+      const codigoLimpio = (codigoSala ?? "").trim();
+      if (!codigoLimpio) {
+        useAuthStore.setState({ errorLogin: "Ingresá el código de sala." });
+        return;
+      }
+
+      // El tenant lo resuelve la base, nunca el formulario. Sin un grupo válido
+      // no se intenta ningún login: nadie entra con un código ajeno.
+      let grupo: Awaited<ReturnType<typeof resolverGrupoPorCodigoSala>>;
+      try {
+        grupo = await resolverGrupoPorCodigoSala(codigoLimpio);
+      } catch {
+        grupo = null;
+      }
+      if (!grupo?.id) {
+        useAuthStore.setState({
+          errorLogin: "Código de sala no válido. Verificá el código con tu administrador.",
+        });
+        return;
+      }
+
+      const contexto = {
+        grupoId: String(grupo.id),
+        grupoNombre: grupo.nombre,
+        codigoSala: grupo.codigo_sala || codigoLimpio,
+      };
+
+      // [Módulo 1] Bloqueo por intentos fallidos.
+      const ipActual = ipRef.current;
+      const bloqueo = verificarBloqueoIntentos(usuarioSanitizado, ipActual);
+      if (bloqueo.bloqueado) {
+        const minutos = Math.ceil((bloqueo.segundosRestantes ?? 1800) / 60);
+        setBloqueadoSegundos(bloqueo.segundosRestantes ?? 1800);
+        useAuthStore.setState({
+          errorLogin: `🔒 Cuenta bloqueada por ${minutos} minuto${minutos !== 1 ? "s" : ""} debido a intentos fallidos repetidos. El administrador ha sido notificado. Intentá más tarde.`,
+        });
+        return;
+      }
+
+      let tokenValido = recaptchaToken;
+      if (!tokenValido && typeof window !== "undefined" && (window as { grecaptcha?: { getResponse: () => string } }).grecaptcha) {
+        try {
+          const resp = (window as { grecaptcha?: { getResponse: () => string } }).grecaptcha?.getResponse();
+          if (resp) {
+            tokenValido = resp;
+            setRecaptchaToken(resp);
+          }
+        } catch {
+          // Ignorar
+        }
+      }
+      if (!tokenValido) {
+        useAuthStore.setState({
+          errorLogin: "⚠️ Por favor complete la verificación de seguridad reCAPTCHA antes de iniciar sesión.",
+        });
+        return;
+      }
+
       // 1. Personal del sistema: siempre autenticado por Supabase o RPC y
       //    siempre limitado al grupo resuelto por el código de sala.
       if (!modoPortal) {
@@ -243,33 +237,45 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
         }
       }
 
-      // 2. Cliente / jugador del portal. Su grupo tiene que ser EXACTAMENTE el
-      //    del código de sala; si no, se descarta la sesión del portal.
+      // 2. Cliente / jugador del portal: fetch con AbortController (timeout 10 segundos)
       try {
-        const { entrarPortal } = await import("@/features/portal/lib/portal");
-        const resPortal = await entrarPortal({
-          usuario: usuarioSanitizado,
-          clave,
-          grupoId: contexto.grupoId,
-        });
-        if (resPortal.ok && resPortal.sesion) {
-          const grupoPortal = String(
-            resPortal.sesion.cliente?.grupo_id ?? resPortal.sesion.grupo?.id ?? ""
-          ).trim();
-          if (grupoPortal !== contexto.grupoId) {
-            limpiarAlmacenamientoPortal();
-            useAuthStore.setState({
-              errorLogin: "El cliente no pertenece a la sala indicada.",
-              cargando: false,
-            });
-            return;
-          }
-          useAuthStore.setState({ errorLogin: null, cargando: false });
+        const abortCtrl = new AbortController();
+        const timeoutId = setTimeout(() => abortCtrl.abort(), 10000);
+        let respApi: Response | null = null;
+        let jsonApi: any = null;
+        try {
+          respApi = await fetch("/api/auth/portal-entrar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: abortCtrl.signal,
+            body: JSON.stringify({
+              usuario: usuarioSanitizado,
+              clave,
+              grupoId: contexto.grupoId,
+            }),
+          });
+          jsonApi = await respApi.json().catch(() => null);
+        } finally {
+          clearTimeout(timeoutId);
+        }
+
+        if (respApi?.ok && jsonApi?.ok && jsonApi?.cliente) {
+          useAuthStore.setState({ errorLogin: null });
           limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
+
           if (onLoginPortalExitoso) {
-            onLoginPortalExitoso(resPortal.sesion);
-            return;
+            const { entrarPortal } = await import("@/features/portal/lib/portal");
+            const resPortal = await entrarPortal({
+              usuario: usuarioSanitizado,
+              clave,
+              grupoId: contexto.grupoId,
+            });
+            if (resPortal?.ok && resPortal?.sesion) {
+              onLoginPortalExitoso(resPortal.sesion);
+              return;
+            }
           }
+
           if (!yaNavegandoRef.current) {
             yaNavegandoRef.current = true;
             window.location.assign("/portal");
@@ -288,24 +294,22 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
         const minutos = Math.ceil((estadoBloqueo.segundosRestantes ?? 1800) / 60);
         setBloqueadoSegundos(estadoBloqueo.segundosRestantes ?? 1800);
         useAuthStore.setState({
-          cargando: false,
           errorLogin: `🔒 Cuenta bloqueada por ${minutos} minuto${minutos !== 1 ? "s" : ""} por intentos fallidos repetidos. El administrador ha sido notificado.`,
         });
         return;
       }
       useAuthStore.setState({
-        cargando: false,
         errorLogin: "Usuario o contraseña incorrectos. Verifica tus credenciales de acceso.",
       });
     } catch (err) {
-      registrarIntentoFallido(usuarioSanitizado, ipRef.current);
+      registrarIntentoFallido(sanitizarIdentificador(usuario) || "desconocido", ipRef.current);
       useAuthStore.setState({
-        cargando: false,
         errorLogin: `Error al iniciar sesión: ${err instanceof Error ? err.message : String(err)}`,
       });
     } finally {
       if (!yaNavegandoRef.current) {
         setIngresando(false);
+        useAuthStore.setState({ cargando: false });
       }
     }
   };

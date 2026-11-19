@@ -58,20 +58,34 @@ export function ModalLoginRapido({
         const esOp =
           modoOperador ||
           (perfiles.length > 0 && perfiles.every((p) => p.toLowerCase().includes("operador")));
-        window.location.href = esOp ? "/apuestas" : "/inicio";
+        window.location.assign(esOp ? "/apuestas" : "/inicio");
         return;
       }
 
-      // 2. Probar como Cliente del Portal
+      // 2. Probar como Cliente del Portal (fetch con AbortController de 10s)
       try {
-        const { entrarPortal } = await import("@/features/portal/lib/portal");
-        const resPortal = await entrarPortal({ usuario: usuario.trim(), clave });
-        if (resPortal.ok && resPortal.sesion) {
+        const abortCtrl = new AbortController();
+        const timeoutId = setTimeout(() => abortCtrl.abort(), 10000);
+        let respApi: Response | null = null;
+        let jsonApi: any = null;
+        try {
+          respApi = await fetch("/api/auth/portal-entrar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: abortCtrl.signal,
+            body: JSON.stringify({ usuario: usuario.trim(), clave: clave.trim() }),
+          });
+          jsonApi = await respApi.json().catch(() => null);
+        } finally {
+          clearTimeout(timeoutId);
+        }
+
+        if (respApi?.ok && jsonApi?.ok && jsonApi?.cliente) {
           useAuthStore.setState({ errorLogin: null, cargando: false });
-          const nom = resPortal.sesion.cliente.nombre || resPortal.sesion.cliente.seudonimo || "Jugador";
-        emitirToast(`¡Bienvenido ${nom}! Accediendo a tu portal...`, "success");
+          const nom = jsonApi.cliente.nombre || jsonApi.cliente.seudonimo || "Jugador";
+          emitirToast(`¡Bienvenido ${nom}! Accediendo a tu portal...`, "success");
           onCerrar();
-          window.location.href = "/portal";
+          window.location.assign("/portal");
           return;
         }
       } catch (errPortal) {
@@ -189,6 +203,8 @@ export function ModalLoginRapido({
               type="text"
               required
               autoFocus
+              autoCapitalize="none"
+              autoCorrect="off"
               value={usuario}
               onChange={(e) => setUsuario(e.target.value)}
               placeholder="Ej: admin, operador, o tu seudónimo"
@@ -213,6 +229,8 @@ export function ModalLoginRapido({
               <input
                 type={verClave ? "text" : "password"}
                 required
+                autoCapitalize="none"
+                autoCorrect="off"
                 value={clave}
                 onChange={(e) => setClave(e.target.value)}
                 placeholder="••••••••"

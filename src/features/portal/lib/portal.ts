@@ -193,7 +193,7 @@ const CLAVES_PERSISTENTES_PROHIBIDAS = [
   "sala_cliente_id",
 ];
 
-export function limpiarAlmacenamientoPortal(): void {
+export function limpiarAlmacenamientoPortal(opts?: { borrarCookies?: boolean }): void {
   if (typeof window === "undefined") return;
   try {
     for (const k of CLAVES_PERSISTENTES_PROHIBIDAS) {
@@ -212,16 +212,33 @@ export function limpiarAlmacenamientoPortal(): void {
         window.sessionStorage.removeItem(key);
       }
     }
-    if (typeof document !== "undefined" && document.cookie) {
+    if (opts?.borrarCookies && typeof document !== "undefined" && document.cookie) {
       for (const par of document.cookie.split(";")) {
         const nombre = par.split("=")[0]?.trim();
-        if (nombre && /^(portal|pin_acceso|cliente_id)/i.test(nombre)) {
+        if (nombre && /^(portal|sala_portal|sala_cliente|pin_acceso|cliente_id|hipico)/i.test(nombre)) {
           document.cookie = `${nombre}=; Max-Age=0; path=/`;
         }
       }
     }
   } catch {
     /* ignore */
+  }
+}
+
+export async function restaurarSesionDesdeCookie(clienteId: string): Promise<SesionPortal | null> {
+  if (!supabase || !clienteId) return null;
+  try {
+    const { data: cDb, error } = await supabase
+      .from("clientes")
+      .select("*")
+      .eq("id", clienteId)
+      .maybeSingle();
+    if (error || !cDb || (cDb as any).activo === false || (cDb as any).portal_habilitado === false) return null;
+    const creds = credencialesPortalPorDefecto(cDb);
+    cacheMemoria = { cliente: cDb as ClienteRow, token: creds.portal_token, id: cDb.id };
+    return await construirSesion(cDb as ClienteRow);
+  } catch {
+    return null;
   }
 }
 
@@ -249,7 +266,7 @@ function actualizarIpCache(ip: string): void {
 
 export function cerrarSesion(): void {
   cacheMemoria = null;
-  limpiarAlmacenamientoPortal();
+  limpiarAlmacenamientoPortal({ borrarCookies: true });
   try {
     void supabase?.removeAllChannels();
   } catch {
