@@ -67,6 +67,7 @@
     "./posiciones-llegada.test.ts",
     "./wps.test.ts",
     "./aval-limite.test.ts",
+    "./orden-fifo-ticket.test.ts",
     "./caballos-carga.test.ts",
     "./claves-carreras.test.ts",
     "./carreras-maestro.test.ts",
