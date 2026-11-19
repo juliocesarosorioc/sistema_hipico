@@ -5,26 +5,69 @@
  * Motor de Extracción Documental y Estructuración Hípica de Precisión Total
  * para retrospectos de Estados Unidos.
  *
- * Limpia la marca de agua recurrente "RETRO HIPICO 0414 9132896" y procesa
- * las coordenadas espaciales (Y, X) para reconstruir columnas de izquierda a
- * derecha.
+ * Limpia TODAS las variantes de la marca de agua recurrente de Retro Hípico y
+ * obliga al modelo a leer cada fila como una unidad espacial (coordenada Y con
+ * tolerancia de fila) antes de ordenar las columnas por coordenada X.
  */
 
-export const MARCA_AGUA_RETRO_HIPICO_REGEX = /RETRO\s*H[ÍI]PICO\s*0?414\s*9132896/gi;
+/** Marcas de agua / ruido que el PDF de Retro Hípico incrusta en el texto. */
+export const MARCA_AGUA_RETRO_HIPICO_REGEXES: RegExp[] = [
+  /Este\s+retrospecto\s+es\s+generado\s+por/gi,
+  /Este\s+retros(?:pecto)?\b/gi,
+  /Este\s+TOS\b/gi,
+  /Este\s+ros\b/gi,
+  /RETRO\s*H[ÍI]PICO(?:\s*0?414\s*9132896)?/gi,
+  /0?414\s*9132896/g,
+  /(?:rospect|trospect)[a-z]*/gi,
+];
+
+/** Compatibilidad con el export histórico. */
+export const MARCA_AGUA_RETRO_HIPICO_REGEX = /RETRO\s*H[ÍI]PICO(?:\s*0?414\s*9132896)?/gi;
 
 /**
- * Limpia la marca de agua recurrente de los retrospectos americanos
+ * Limpia todas las marcas de agua y fragmentos huérfanos ANTES de parsear.
+ * Se aplica tanto al texto que consume el parser determinístico como al texto
+ * que se envía al modelo multimodal como apoyo de las imágenes.
  */
 export function limpiarMarcaAguaRetrospecto(texto: string): string {
   if (!texto) return "";
-  return texto.replace(MARCA_AGUA_RETRO_HIPICO_REGEX, "").trim();
+  let limpio = texto;
+  for (const re of MARCA_AGUA_RETRO_HIPICO_REGEXES) {
+    limpio = limpio.replace(re, "");
+  }
+  return limpio
+    .split(/\r?\n/)
+    .map((linea) => linea.replace(/[ \t]{2,}/g, " ").trim())
+    .filter(Boolean)
+    .join("\n")
+    .trim();
 }
 
+/**
+ * Instrucción estricta de lectura visual para modelos multimodales.
+ * Se agrega al cuerpo de Gemini junto con las imágenes (y el texto, si existe).
+ */
+export const INSTRUCCION_LECTURA_VISUAL_FILAS = `
+LECTURA VISUAL OBLIGATORIA (PÁGINAS COMO IMAGEN):
+- Analiza la imagen de cada página; NO transcribas únicamente una capa de texto plano.
+- Antes de ordenar por coordenada X, agrupa todos los elementos por coordenada Y con tolerancia de fila. Nunca leas una columna completa de arriba abajo: lee CADA FILA completa de izquierda a derecha.
+- La columna izquierda "N./ML" NO debe despegarse del resto de su fila. Empareja el número de programa, el morning line y la primera palabra del nombre con el PP, jinete, peso y entrenador de ESA MISMA fila.
+- Si la primera palabra del nombre quedó reubicada al pie de página junto a "Stud:", reconstruye el nombre completo (por ejemplo "Obi" + "Kenobi" = "OBI KENOBI"). Nunca mezcles "Stud:", ni códigos de sexo/edad/pedigrí (YC3a-, YZ4a-, CC5a-, C2a-, Y3a-, CC3a-, p.) dentro del nombre.
+- La línea de resumen en inglés (ENTRIES 1ST WOX, 2ND RPX, 3RD PRX, 1ST PEN, MVR, LSX, FGX, EVD, DED, CTX) es la FUENTE DE VERDAD para el hipódromo y el número de carrera. Mapea WOX=Woodbine, RPX=Remington Park, PRX=Parx Racing, PEN=Penn National, MVR=Mahoning Valley, LSX=Lone Star Park, FGX=Fair Grounds, EVD=Evangeline Downs, DED=Delta Downs, CTX=Charles Town. Corrige OCR como "HOLLYWOOD AT CHARLES TOO" a "CHARLES TOWN". Número de carrera: 1ST..12TH o 1a..12a.
+- Distancias: si es THOROUGHBRED y la línea inglesa dice 4.5F=900m, 5F=1000m, 5.5F=1100m, 6F=1200m, 6.5F=1300m, 7F=1400m, 7.5F=1500m, 8F/1 MILE=1600m, 8F70Y/1 MILE 70 YARDS=1664m, 8.5F/1 1/16 MILES=1700m, 9F=1800m, usa esa conversión aunque el encabezado español esté recortado. Si es QUARTER HORSE o MIXED, ignora "XXX.00 FURLONGS" y toma los metros del encabezado español (100 a 500).
+- Superficie: prioriza Tapeta/Sintética si aparece en español (aunque Equibase diga DIRT), luego Grama/TURF, y Arena en caso contrario.
+- Por cada ejemplar extrae: numero, pp, morning_line, nombre completo, jinete, peso_kg (coma decimal -> punto), entrenador, es_ae/es_mto, campana ("Act: (C-1-2-3) $Ganancias") y dias_sin_correr ("XXd S/C"; "0d S/C" = debutante, NO lo marques como fallido por no tener retrospectos).
+- Si dos páginas consecutivas tienen el mismo hipódromo y número de carrera, concatena los ejemplares nuevos en la MISMA carrera sin duplicar por numero/pp y sin sobrescribir los anteriores.
+- No inventes datos. Si un nombre quedó vacío o un número se repite dentro de una carrera, repórtalo en la respuesta antes de devolver el JSON.
+`;
+
 export const PROMPT_EXTRACTOR_AMERICANAS_V2 = `
-Eres un Motor de Extracción Documental y Estructuración Hípica de Precisión Total para retrospectos de Estados Unidos (BEL, CD, CT, DED, DMR, EVD, FL, GP, IND, LRL, LS, MNR, MVR, PEN, PRX, RP, SAR).
+Eres un Motor de Extracción Documental y Estructuración Hípica de Precisión Total para retrospectos de Estados Unidos (BEL, CD, CT, DED, DMR, EVD, FL, GP, IND, LRL, LS, MNR, MVR, PEN, PRX, RP, SAR, WOX, RPX, PRX, LSX, FGX).
 Tu misión es extraer el 100% de la información de la gaceta sin omitir ningún ejemplar, actuación pasada ni trabajo matutino, y estructurarla en un único objeto JSON válido.
 
-El texto ha sido ordenado espacialmente por coordenadas (Y, X) de pdfjs-dist y se ha removido la marca de agua "RETRO HIPICO 0414 9132896".
+Lee las páginas como IMÁGENES, agrupando primero por coordenada Y (tolerancia de fila) y ordenando después por X. La marca de agua de Retro Hípico ya fue eliminada del texto de apoyo.
+
+${INSTRUCCION_LECTURA_VISUAL_FILAS}
 
 REGLAS CRÍTICAS DE RECONSTRUCCIÓN Y NO-OMISIÓN:
 
@@ -40,7 +83,7 @@ REGLAS CRÍTICAS DE RECONSTRUCCIÓN Y NO-OMISIÓN:
 
 3. CABECERA DE CARRERA Y LOTE:
    - Valida siempre con la línea maestra: "Purse <MONTO> <PREFIJO>ENTRIES <NUM> <TRACK_CODE> <MES> <DIA> <DISTANCIA>".
-   - Usa el nombre de hipódromo y código impresos dentro de la página por encima del nombre del archivo PDF.
+   - Usa la línea Equibase en inglés como fuente primaria: WOX=Woodbine, RPX=Remington Park, PRX=Parx Racing, PEN=Penn National, MVR=Mahoning Valley, LSX=Lone Star Park, FGX=Fair Grounds, EVD=Evangeline Downs, DED=Delta Downs, CTX=Charles Town; número 1ST..12TH o 1a..12a.
    - Extrae: "hipodromo", "codigo_hipodromo", "fecha" (YYYY-MM-DD), "numero_carrera", "hora" (formato 24h), "distancia_m" (metros enteros), "superficie" ("Arena", "Grama", "Tapeta"), "raza" ("THOROUGHBRED" o "QUARTER HORSE"), "bolsa_usd" (entero de Purse), "condicion_lote" (ej. "Clm 7500n2l") y "linea_programa_completa".
 
 4. DATOS DEL EJEMPLAR EN LA CARRERA DE HOY:
@@ -48,14 +91,21 @@ REGLAS CRÍTICAS DE RECONSTRUCCIÓN Y NO-OMISIÓN:
    - "puesto_partida": Número entero en la columna "PP".
    - "morning_line": Cotización con guion ("8-1", "5-2", "9-5").
    - Toma "jinete", "peso_kg" (convirtiendo coma a punto decimal: "56,2" -> 56.2) y "entrenador" exclusivamente de la columna "Jin/Kgs/Ent" de HOY (ubicada antes de las fechas DD/MM de carreras previas).
-   - Extrae "stud", "sexo", "pelaje", "edad_anios", "anio_nacimiento", "padre", "madre", "abuelo_materno", "dias_sin_correr" (de "XXd S/C"), "campana_resumen" (de "Act: (...)"), "ganancias_usd", "rating_ultimo", "rating_maximo" y "es_elegible" (true si tiene marca "AE" o "MTO").
-   - Si dos páginas consecutivas tienen el mismo número de carrera porque la segunda lista los elegibles ("AE" / "MTO"), FUSIONA todos los ejemplares en la misma carrera sin sobrescribir los anteriores.
+   - Extrae "stud", "sexo", "pelaje", "edad_anios", "anio_nacimiento", "padre", "madre", "abuelo_materno", "dias_sin_correr" (de "XXd S/C"); "0d S/C" significa debutante sin fallar por ausencia de retrospectos, NO lo marques como error.
+   - Extrae "campana_resumen" de "Act: (C-1-2-3) $Ganancias" y "ganancias_usd".
+   - Marca "es_elegible": true y "condicionElegibilidad" = "AE" o "MTO" cuando corresponda, conservando el número de programa.
+   - Si dos páginas consecutivas tienen el mismo hipódromo y el mismo número de carrera, FUSIONA todos los ejemplares en la misma carrera sin sobrescribir los anteriores ni duplicar por numero/pp.
 
-5. CARRERAS PREVIAS ("carreras_previas") Y TRABAJOS ("trabajos"):
+5. VALIDACIÓN FINAL ANTES DE EMITIR EL JSON:
+   - Ningún "nombre" puede quedar vacío.
+   - No puede haber dos ejemplares con el mismo "numero" dentro de una carrera.
+   - Si detectas cualquiera de esos dos casos, inclúyelo en un campo "advertencia" del JSON y NO lo corrijas inventando datos.
+
+6. CARRERAS PREVIAS ("carreras_previas") Y TRABAJOS ("trabajos"):
    - Extrae todas las filas de actuaciones pasadas separando: "fecha" (YYYY-MM-DD), "hipodromo", "numero_carrera", "distancia_m", "pp", "pos_400m" (columna 1), "pos_800m" (columna 2), "pos_llegada" (columna Ll), "peso_jinete_kg", "jinete", "dividendo", "ganador", "cuerpos", "lote", "rating" (columna Rat), "tiempo_ganador" (TG) y "tiempo_ejemplar" (TE).
    - Extrae todos los briseos al pie del ejemplar ("hXd, DIST en TIEMPO-SUP-EST (RANK)-HIP").
 
-6. ESTRUCTURA PARA MODALES DE LA PLATAFORMA ("vistas_modales"):
+7. ESTRUCTURA PARA MODALES DE LA PLATAFORMA ("vistas_modales"):
    - Dentro de cada carrera, genera también el objeto "vistas_modales":
      - "tablas_fijas_y_remates": array con { "numero_ejemplar", "nombre", "morning_line" }.
      - "dupleta_y_polla": array con { "numero_ejemplar", "nombre" }.
@@ -64,17 +114,18 @@ ESTRUCTURA DEL RESULTADO JSON OBLIGATORIA (devuelve SOLO el JSON, sin markdown):
 {
   "carreras": [
     {
-      "hipodromo": "GULFSTREAM PARK",
-      "codigo_hipodromo": "GP",
+      "hipodromo": "WOODBINE",
+      "codigo_hipodromo": "WOX",
       "fecha": "YYYY-MM-DD",
       "hora": "14:15",
       "numero_carrera": 1,
       "distancia_m": 1200,
-      "superficie": "Arena",
+      "superficie": "Tapeta",
       "raza": "THOROUGHBRED",
       "bolsa_usd": 32000,
       "condicion_lote": "Clm 16000b",
       "linea_programa_completa": "Purse 32.000 CLAIMING 16000-12500 ...",
+      "advertencia": null,
       "ejemplares": [
         {
           "numero_programa": "1",
@@ -91,6 +142,7 @@ ESTRUCTURA DEL RESULTADO JSON OBLIGATORIA (devuelve SOLO el JSON, sin markdown):
           "madre": "Starlet",
           "abuelo_materno": "Empire Maker",
           "dias_sin_correr": 35,
+          "es_debutante": false,
           "ganancias_usd": 45200,
           "rating_ultimo": 84,
           "rating_maximo": 92,
@@ -98,6 +150,7 @@ ESTRUCTURA DEL RESULTADO JSON OBLIGATORIA (devuelve SOLO el JSON, sin markdown):
           "entrenador": "T. Pletcher",
           "peso_kg": 54.4,
           "es_elegible": false,
+          "condicionElegibilidad": null,
           "campana_resumen": "Act: (10-2-1-3) $45.200",
           "morning_line": "5-2",
           "carreras_previas": [

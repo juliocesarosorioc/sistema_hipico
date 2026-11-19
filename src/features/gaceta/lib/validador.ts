@@ -439,3 +439,41 @@ export function generarMensajeParaAgenteIA(
 
   return lineas.join("\n");
 }
+
+export type ResultadoValidacionGuardado = {
+  esValido: boolean;
+  advertencia?: string;
+  detalles: string[];
+};
+
+/**
+ * Bloqueo final antes de persistir: una carrera con nombres vacíos o números
+ * duplicados NO debe guardarse. Devuelve la advertencia exacta de cada
+ * incidencia para reportarla en la respuesta de importación.
+ */
+export function validarCarrerasAntesDeGuardar(
+  carreras: CarreraValidable[]
+): ResultadoValidacionGuardado {
+  const detalles: string[] = [];
+
+  for (const carrera of Array.isArray(carreras) ? carreras : []) {
+    const diag = validarCarrera(carrera);
+    const mensajes = diag.incidencias
+      .filter((i) => i.tipo === "error" && (i.campo === "nombres" || i.campo === "numeros"))
+      .map((i) => i.mensaje);
+    if (!mensajes.length) continue;
+
+    const num = numeroDeCarrera(carrera.carrera);
+    const hipo = String(carrera.hipodromo || "").trim();
+    const etiqueta = `Carrera ${num ?? carrera.carrera ?? "?"}${hipo ? ` (${hipo})` : ""}`;
+    detalles.push(`${etiqueta}: ${mensajes.join("; ")}`);
+  }
+
+  if (!detalles.length) return { esValido: true, detalles: [] };
+
+  return {
+    esValido: false,
+    advertencia: `No se guardaron registros rotos. ${detalles.join(" | ")}.`,
+    detalles,
+  };
+}

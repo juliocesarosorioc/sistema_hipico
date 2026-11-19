@@ -29,6 +29,7 @@
  * Todo es PURO: sin red, sin reloj, sin base. Se puede probar en node.
  */
 import { numeroDeCarrera, numeroDeValida } from "@/features/gaceta/lib/numeros";
+import { limpiarMarcaAguaRetrospecto } from "@/features/gaceta/lib/prompts/prompt-americanas";
 
 /**
  * Catálogo Canónico de Códigos de Pista y Nombres de Hipódromos
@@ -39,6 +40,10 @@ export const CATALOGO_TRACKS_GACETA: Record<string, string> = {
   CD: "CHURCHILL DOWNS",
   CTX: "CHARLES TOWN",
   CT: "CHARLES TOWN",
+  WOX: "WOODBINE",
+  RPX: "REMINGTON PARK",
+  LSX: "LONE STAR PARK",
+  FGX: "FAIR GROUNDS",
   DED: "DELTA DOWNS",
   EVD: "EVANGELINE DOWNS",
   FLX: "FINGER LAKES",
@@ -94,9 +99,12 @@ export const NOMBRES_HIPODROMOS_GACETA: Record<string, string> = {
   "CHURCHILL DOWNS": "CHURCHILL DOWNS",
   "HOLLYWOOD CASINO AT CHARLES TOWN": "CHARLES TOWN",
   "HOLLYWOOD AT CHARLES TOWN": "CHARLES TOWN",
+  "HOLLYWOOD AT CHARLES TOO": "CHARLES TOWN",
   "CHARLES TOWN": "CHARLES TOWN",
   "DELTA DOWNS": "DELTA DOWNS",
   "EVANGELINE DOWNS": "EVANGELINE DOWNS",
+  "LONE STAR PARK": "LONE STAR PARK",
+  "REMMINGTON PARK": "REMINGTON PARK",
   "FINGER LAKES": "FINGER LAKES",
   "HORSESHOE INDIANAPOLIS": "HORSESHOE INDIANAPOLIS",
   "INDIANA GRAND": "HORSESHOE INDIANAPOLIS",
@@ -168,59 +176,132 @@ const MESES_MAP: Record<string, string> = {
   DIC: "12", DICIEMBRE: "12",
 };
 
-/** Convierte distancia en texto americano a metros */
+/** Tabla exacta de furlongs/millas exigida para Purasangre. */
+const DISTANCIAS_FURLONG_EXACTAS: Record<string, number> = {
+  "4.5": 900, "5": 1000, "5.5": 1100, "6": 1200, "6.5": 1300,
+  "7": 1400, "7.5": 1500, "8": 1600, "8.5": 1700, "9": 1800,
+};
+
+/** Convierte distancia en texto americano a metros. */
 export function convertirDistanciaAMetros(distStr: string): number {
-  const d = String(distStr ?? "").trim().toUpperCase();
+  const d = String(distStr ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
   if (!d) return 1200;
 
-  // Si ya es un número directo en metros o yardas de Quarter Horse
+  // 8F70Y y 1 MILE 70 YARDS son 1664 m (NO 1670 m).
+  if (/\b8\s*F\s*70\s*(?:YARDS?|YDS?|Y)\b/.test(d) || /\b1\s*MILE\s*70\s*(?:YARDS?|YDS?|Y)\b/.test(d)) {
+    return 1664;
+  }
+
+  // Millas fraccionarias y enteras.
+  if (/\b1\s+1\/16\b/.test(d) || /\b1\/16\s*MILES?\b/.test(d)) return 1700;
+  if (/\b1\/8\s*MILES?\b/.test(d) || /\b1\s+1\/8\b/.test(d)) return 1800;
+  if (/\b3\/16\s*MILES?\b/.test(d)) return 1900;
+  if (/\b1\/4\s*MILES?\b/.test(d) || /\b1\s+1\/4\b/.test(d)) return 2000;
+  if (/\b1\/2\s*MILES?\b/.test(d) || /\b1\s+1\/2\b/.test(d)) return 2400;
+  if (/\b1\s*MILE(?:S)?\b/.test(d) || /\b8\s*F\b/.test(d)) return 1600;
+
+  // Furlongs fraccionarios ("4 1/2F") y decimales ("4.5F").
+  const frac = d.match(/\b(\d)\s+(1\/2)\s*F\b/);
+  if (frac) {
+    return DISTANCIAS_FURLONG_EXACTAS[`${frac[1]}.5`] ?? 1200;
+  }
+  const dec = d.match(/\b(\d+(?:\.\d+)?)\s*(?:F|FUR|FURLONGS?)\b/);
+  if (dec) {
+    const valor = parseFloat(dec[1]);
+    const clave = Number.isInteger(valor) ? String(valor) : valor.toFixed(1);
+    if (DISTANCIAS_FURLONG_EXACTAS[clave] != null) return DISTANCIAS_FURLONG_EXACTAS[clave];
+  }
+
+  // Yardas de Cuarto de Milla.
+  const yardas = d.match(/\b(\d{3,4})\s*(?:YARDS?|YDS?|Y)\b/);
+  if (yardas) {
+    const y = parseInt(yardas[1], 10);
+    const tablaYardas: Record<number, number> = {
+      220: 200, 250: 228, 300: 272, 330: 300, 350: 318,
+      400: 364, 440: 400, 550: 500,
+    };
+    if (tablaYardas[y] != null) return tablaYardas[y];
+    if (y > 100 && y < 900) return Math.round(y * 0.9144);
+  }
+
   const soloNum = parseInt(d.replace(/[^0-9]/g, ""), 10);
-  if (d.includes("YDS") || d.includes("Y") || d.includes("YD")) {
-    if (soloNum === 220) return 200;
-    if (soloNum === 250) return 228;
-    if (soloNum === 300) return 272;
-    if (soloNum === 330) return 300;
-    if (soloNum === 350) return 318;
-    if (soloNum === 400) return 364;
-    if (soloNum === 440) return 400;
-    if (soloNum === 550) return 500;
-    if (soloNum > 100 && soloNum < 900) return Math.round(soloNum * 0.9144);
+  // Metros del encabezado español de Cuarto de Milla (100..500).
+  if ([100, 200, 228, 272, 300, 318, 364, 400, 500].includes(soloNum)) return soloNum;
+  if (soloNum >= 800 && soloNum <= 3200) return soloNum;
+
+  return 1200;
+}
+
+/** Línea de resumen Equibase en inglés, fuente primaria de hipódromo y carrera. */
+export type ResumenEquibase = {
+  numeroCarrera: number;
+  trackCode: string;
+  ordinal: string;
+  linea: string;
+};
+
+export function parsearLineaResumenEquibase(texto: string): ResumenEquibase | null {
+  if (!texto) return null;
+  for (const linea of texto.split(/\r?\n/)) {
+    const m = linea.trim().match(/\b(?:[A-Z0-9]{1,6})?ENTRIES\s+(\d{1,2})\s*(ST|ND|RD|TH|[Aa])\s+([A-Z]{2,4})\b/i);
+    if (!m) continue;
+    const numeroCarrera = parseInt(m[1], 10);
+    if (!Number.isFinite(numeroCarrera) || numeroCarrera < 1 || numeroCarrera > 12) continue;
+    return {
+      numeroCarrera,
+      trackCode: m[3].toUpperCase(),
+      ordinal: m[2].toUpperCase(),
+      linea: linea.trim(),
+    };
+  }
+  return null;
+}
+
+export type RazaRetrospecto = "THOROUGHBRED" | "QUARTER HORSE" | "MIXED";
+
+export function detectarRazaRetrospecto(texto: string): RazaRetrospecto {
+  const t = String(texto || "").toUpperCase();
+  if (/\bQUARTER\s+HORSE\b|\bQUARTER\s*MILE\b/.test(t)) return "QUARTER HORSE";
+  if (/\bMIXED\b/.test(t)) return "MIXED";
+  return "THOROUGHBRED";
+}
+
+export type SuperficieRetrospecto = "Arena" | "Grama" | "Tapeta" | "Sintética";
+
+export function resolverSuperficieRetrospecto(texto: string): SuperficieRetrospecto {
+  const t = String(texto || "");
+  if (/\bTAPETA\b|\bSINT[ÉE]TICA\b|\bSYNTHETIC\b|\bALL[- ]?WEATHER\b/i.test(t)) return "Tapeta";
+  if (/\bGRAMA\b|\bCESPED\b|\bCÉSPED\b|\bTURF\b|\bGRASS\b/i.test(t)) return "Grama";
+  return "Arena";
+}
+
+function extraerDistanciaInglesa(texto: string): string | null {
+  const m = String(texto || "")
+    .slice(0, 1800)
+    .match(/\b(\d+\s*F\s*\d+\s*(?:YARDS?|YDS?|Y)|\d+(?:\.\d+)?\s*(?:F|FUR|FURLONGS?)|\d+\s+MILE(?:S)?(?:\s+\d+\s*(?:YARDS?|YDS?|Y))?|\d+\s+\d+\/\d+\s*MILES?)\b/i);
+  return m ? m[1].trim() : null;
+}
+
+/** Resuelve la distancia definitiva aplicando la raza y la línea Equibase. */
+export function resolverDistanciaRetrospecto(texto: string): number {
+  const raza = detectarRazaRetrospecto(texto);
+  const mEsp = String(texto || "").match(/\b(\d{3,4})\s*(?:METROS|METERS|M\.?)\b/i);
+  const metrosEsp = mEsp ? parseInt(mEsp[1], 10) : null;
+  const distInglesa = extraerDistanciaInglesa(texto);
+  const metrosIngleses = distInglesa ? convertirDistanciaAMetros(distInglesa) : null;
+
+  if (raza === "QUARTER HORSE" || raza === "MIXED") {
+    if (metrosEsp != null && metrosEsp >= 100 && metrosEsp <= 500) return metrosEsp;
+    if (metrosIngleses != null) return metrosIngleses;
+    return metrosEsp ?? 1200;
   }
 
-  // Quarter Horse direct metros
-  if ([200, 228, 272, 300, 318, 364, 400, 500].includes(soloNum)) {
-    return soloNum;
-  }
-
-  // Furlongs
-  if (d.includes("F") || d.includes("FUR")) {
-    if (d.includes("4 1/2") || d.includes("4.5")) return 900;
-    if (d.includes("5 1/2") || d.includes("5.5")) return 1100;
-    if (d.includes("6 1/2") || d.includes("6.5")) return 1300;
-    if (d.includes("7 1/2") || d.includes("7.5")) return 1500;
-    if (d.includes("8 1/2") || d.includes("8.5")) return 1700;
-    if (d.includes("5")) return 1000;
-    if (d.includes("6")) return 1200;
-    if (d.includes("7")) return 1400;
-    if (d.includes("8")) return 1600;
-    if (d.includes("9")) return 1800;
-  }
-
-  // Miles
-  if (d.includes("1M") || d.includes("1 M") || d.includes("MILE")) {
-    if (d.includes("70") || d.includes("70 Y")) return 1670;
-    if (d.includes("1/16") || d.includes("1 1/16")) return 1700;
-    if (d.includes("1/8") || d.includes("1 1/8")) return 1800;
-    if (d.includes("3/16") || d.includes("1 3/16")) return 1900;
-    if (d.includes("1/4") || d.includes("1 1/4")) return 2000;
-    if (d.includes("1/2") || d.includes("1 1/2")) return 2400;
-    return 1600;
-  }
-
-  if (soloNum >= 800 && soloNum <= 3200) {
-    return soloNum;
-  }
-
+  // Purasangre: los furlongs/millas de Equibase corrigen el encabezado español recortado.
+  if (metrosIngleses != null && metrosIngleses >= 900) return metrosIngleses;
+  if (metrosEsp != null) return convertirDistanciaAMetros(String(metrosEsp));
   return 1200;
 }
 
@@ -231,7 +312,8 @@ export type CarreraParseadaNativa = {
   fecha: string;
   hora: string | null;
   distancia: number;
-  superficie: "Arena" | "Grama";
+  superficie: SuperficieRetrospecto;
+  raza?: RazaRetrospecto;
   premio?: number;
   ejemplares: Array<{
     numero: string;
@@ -240,7 +322,14 @@ export type CarreraParseadaNativa = {
     jinete?: string;
     entrenador?: string;
     peso?: number | string;
+    pesoKg?: number;
     ml?: string;
+    morningLine?: string;
+    campana?: string;
+    diasSinCorrer?: number;
+    esDebutante?: boolean;
+    esAe?: boolean;
+    esMto?: boolean;
     stud?: string;
     pedigri?: string;
     retirado?: boolean;
@@ -348,6 +437,163 @@ export function resolverHipodromoTexto(texto: string, trackCodeDetectado?: strin
   return "USA";
 }
 
+/** Limpia el nombre evitando Stud, pedigrí y códigos de sexo/edad pegados. */
+function limpiarNombreEjemplarRetrospecto(raw: string): string {
+  return String(raw || "")
+    .replace(/\bSTUD\s*:.*$/i, "")
+    .replace(/\b(?:AE|MTO)\b/gi, "")
+    .replace(/\((?:L|L\d+|FTG|AE|MTO|SCR|RET)\)/gi, "")
+    .replace(/\b[A-Z]{0,2}[CZY]\d+[A-Z]?-?[\w'-]*/gi, "")
+    .replace(/\bp\.\s*\S+/gi, "")
+    .replace(/[()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+type FilaEjemplarRetrospecto = {
+  numero: string;
+  pp?: number | string;
+  ml?: string;
+  nombre: string;
+  jinete?: string;
+  entrenador?: string;
+  pesoKg?: number;
+  campana?: string;
+  diasSinCorrer?: number;
+  esDebutante?: boolean;
+  esAe?: boolean;
+  esMto?: boolean;
+};
+
+/** Parsea UNA fila visual completa: N./ML + nombre + Jin/Kgs/Ent + campana + S/C. */
+export function parsearFilaEjemplarRetrospecto(linea: string): FilaEjemplarRetrospecto | null {
+  const m = String(linea || "").trim().match(/^(\d{1,2}[A-Za-z]?)(?:[.)])?\s+(.+)$/);
+  if (!m) return null;
+
+  const numero = m[1].toUpperCase();
+  const chunks = m[2].split(/\s{2,}|\t+/).map((c) => c.trim()).filter(Boolean);
+  if (!chunks.length) return null;
+
+  const nombrePalabras: string[] = [];
+  const personas: string[] = [];
+  let pp: number | string | undefined;
+  let ml: string | undefined;
+  let pesoKg: number | undefined;
+  let campana: string | undefined;
+  let diasSinCorrer: number | undefined;
+  let esAe = false;
+  let esMto = false;
+
+  for (const chunkRaw of chunks) {
+    let c = chunkRaw.trim();
+    if (!c) continue;
+
+    const mPp = c.match(/^PP\s*:?\s*(\d{1,2}[A-Za-z]?)$/i);
+    if (mPp) {
+      pp = mPp[1].toUpperCase();
+      continue;
+    }
+    if (/^(AE|MTO)$/i.test(c)) {
+      if (/MTO/i.test(c)) esMto = true;
+      else esAe = true;
+      continue;
+    }
+    if (/\((AE|MTO)\)/i.test(c)) {
+      if (/MTO/i.test(c)) esMto = true;
+      else esAe = true;
+      c = c.replace(/\((?:AE|MTO)\)/gi, "").trim();
+      if (!c) continue;
+    }
+    const mCampana = c.match(/Act:\s*\(([^)]*)\)\s*\$?\s*([\d.,]+)/i);
+    if (mCampana) {
+      campana = `Act: (${mCampana[1]}) $${mCampana[2]}`;
+      continue;
+    }
+    const mDias = c.match(/\b(\d{1,3})\s*d\s*S\/C\b/i);
+    if (mDias) {
+      diasSinCorrer = parseInt(mDias[1], 10);
+      continue;
+    }
+    if (/^(?:\d{1,2}[-/]\d{1,2}|EVEN|1-1)$/i.test(c)) {
+      ml = c.toUpperCase();
+      continue;
+    }
+    const mPeso = c.match(/^(\d{2,3})(?:[.,](\d))?\s*(?:KG|KGS|LB|LBS)?$/i);
+    if (mPeso) {
+      const entero = parseInt(mPeso[1], 10);
+      if ((entero >= 45 && entero <= 62) || (entero >= 110 && entero <= 130)) {
+        pesoKg = parseFloat(`${entero}.${mPeso[2] ?? "0"}`);
+        continue;
+      }
+    }
+    if (/^STUD\s*:/i.test(c) || /^[A-Z]{0,2}[CZY]\d+[A-Z]?-?/i.test(c) || /^p\./i.test(c)) {
+      continue;
+    }
+    if (esNombreJockeyPersona(c)) {
+      personas.push(c);
+      continue;
+    }
+    nombrePalabras.push(...c.split(/\s+/));
+  }
+
+  const nombre = limpiarNombreEjemplarRetrospecto(nombrePalabras.join(" "));
+  if (!nombre || esNombreJockeyPersona(nombre)) return null;
+
+  return {
+    numero,
+    pp,
+    ml,
+    nombre,
+    jinete: personas[0],
+    entrenador: personas[1],
+    pesoKg,
+    campana,
+    diasSinCorrer,
+    esDebutante: diasSinCorrer === 0,
+    esAe,
+    esMto,
+  };
+}
+
+/** Evita duplicados por número de programa o, en su defecto, por puesto/nombre. */
+function claveEjemplarRetrospecto(e: CarreraParseadaNativa["ejemplares"][number]): string {
+  const numero = String(e.numero ?? "").trim().toUpperCase();
+  if (numero) return `N:${numero}`;
+  if (e.pp != null && String(e.pp).trim()) return `PP:${String(e.pp).trim().toUpperCase()}`;
+  return `NM:${String(e.nombre ?? "").trim().toUpperCase()}`;
+}
+
+/** Concatena páginas consecutivas de la MISMA carrera sin crear otra ni sobrescribir. */
+export function fusionarCarrerasRetrospecto(carreras: CarreraParseadaNativa[]): CarreraParseadaNativa[] {
+  const resultado: CarreraParseadaNativa[] = [];
+  for (const carrera of carreras) {
+    const anterior = resultado[resultado.length - 1];
+    const mismaCarrera =
+      anterior &&
+      anterior.carrera === carrera.carrera &&
+      String(anterior.hipodromo || "").trim().toUpperCase() === String(carrera.hipodromo || "").trim().toUpperCase();
+
+    if (mismaCarrera && anterior) {
+      const vistos = new Set(anterior.ejemplares.map(claveEjemplarRetrospecto));
+      for (const ejemplar of carrera.ejemplares) {
+        const clave = claveEjemplarRetrospecto(ejemplar);
+        if (vistos.has(clave)) continue;
+        vistos.add(clave);
+        anterior.ejemplares.push({ ...ejemplar });
+      }
+      if (anterior.distancia === 1200 && carrera.distancia !== 1200) {
+        anterior.distancia = carrera.distancia;
+      }
+      if (!anterior.raza && carrera.raza) anterior.raza = carrera.raza;
+      continue;
+    }
+
+    resultado.push({ ...carrera, ejemplares: carrera.ejemplares.map((e) => ({ ...e })) });
+  }
+  return resultado;
+}
+
 /**
  * PARSER DETERMINÍSTICO NATIVO:
  * Extrae carreras de páginas de gacetas (Daily Racing Form / Retrospectos / Equibase).
@@ -373,7 +619,9 @@ export function parsearPaginaRetrospectosNativo(
   // ej: "TCENTRIES 1ST MNR"
   // ej: "DCENTRIES 1ST MVR"
   // ej: "DCENTRIES 1ST PRX"
-  const reLineaMaestra = /(?:PURSE\s*[\$]?\s*([0-9,.]+)\s*)?([A-Z0-9]+ENTRIES|[A-Z]{2,4}\s*ENTRIES)?\s*(\d{1,2})\s*(?:ST|ND|RD|TH)\s+([A-Z]{2,4})\b/i;
+  // La línea de resumen Equibase en inglés manda sobre cualquier nombre/OCR.
+  const resumenEquibase = parsearLineaResumenEquibase(textoCompleto);
+  const reLineaMaestra = /(?:PURSE\s*[\$]?\s*([0-9,.]+)\s*)?([A-Z0-9]+ENTRIES|[A-Z]{2,4}\s*ENTRIES)?\s*(\d{1,2})\s*(?:ST|ND|RD|TH|[Aa])\s+([A-Z]{2,4})\b/i;
   const matchMaestra = textoCompleto.match(reLineaMaestra);
 
   // Alternativa de encabezado clásico: "RACE 1", "1ST RACE", "CARRERA 1"
@@ -381,7 +629,10 @@ export function parsearPaginaRetrospectosNativo(
   let trackCode: string | null = null;
   let purseMonto: number | undefined = undefined;
 
-  if (matchMaestra) {
+  if (resumenEquibase) {
+    numCarrera = resumenEquibase.numeroCarrera;
+    trackCode = resumenEquibase.trackCode;
+  } else if (matchMaestra) {
     if (matchMaestra[1]) {
       purseMonto = parseFloat(matchMaestra[1].replace(/,/g, ""));
     }
@@ -390,18 +641,24 @@ export function parsearPaginaRetrospectosNativo(
   } else {
     // Buscar "RACE <N>" o "<N>ST RACE"
     const mRace = textoCompleto.match(/\b(?:RACE|CARRERA)\s*#?\s*(\d{1,2})\b/i) ||
-                  textoCompleto.match(/\b(\d{1,2})\s*(?:ST|ND|RD|TH)\s+(?:RACE|CARRERA)\b/i);
+                  textoCompleto.match(/\b(\d{1,2})\s*(?:ST|ND|RD|TH|[Aa])\s+(?:RACE|CARRERA)\b/i);
     if (mRace) {
       numCarrera = parseInt(mRace[1], 10);
     }
+  }
+
+  if (purseMonto == null && matchMaestra?.[1]) {
+    purseMonto = parseFloat(matchMaestra[1].replace(/,/g, ""));
   }
 
   if (!numCarrera || isNaN(numCarrera) || numCarrera <= 0) {
     return null;
   }
 
-  // 2. Hipódromo
-  const hipodromo = opciones?.hipodromoOverride?.trim() ||
+  // 2. Hipódromo (Equibase > override > detección por texto)
+  const trackCanonico = trackCode ? CATALOGO_TRACKS_GACETA[trackCode] : undefined;
+  const hipodromo = trackCanonico ||
+    opciones?.hipodromoOverride?.trim() ||
     resolverHipodromoTexto(textoCompleto, trackCode);
 
   // 3. Fecha
@@ -415,19 +672,12 @@ export function parsearPaginaRetrospectosNativo(
     fecha = hoy.toISOString().split("T")[0];
   }
 
-  // 4. Distancia
-  let distancia = 1200;
-  const mDist = textoCompleto.match(/\b(\d+(?:\s*(?:1\/2|1\/4|3\/4|1\/16|1\/8|3\/16))?\s*(?:F|FUR|FURLONGS|M|MILE|MILES|YDS|YARDS))\b/i) ||
-                textoCompleto.match(/\b(\d{3,4})\s*(?:METROS|METERS|M)\b/i);
-  if (mDist) {
-    distancia = convertirDistanciaAMetros(mDist[1]);
-  }
+  // 4. Distancia (Purasangre desde furlongs; Cuarto de Milla desde el español)
+  const distancia = resolverDistanciaRetrospecto(textoCompleto);
+  const raza = detectarRazaRetrospecto(textoCompleto);
 
-  // 5. Superficie
-  let superficie: "Arena" | "Grama" = "Arena";
-  if (/\b(?:TURF|GRAMA|INNER TURF|GRASS)\b/i.test(textoCompleto)) {
-    superficie = "Grama";
-  }
+  // 5. Superficie (Tapeta/Sintética en español gana sobre DIRT de Equibase)
+  const superficie = resolverSuperficieRetrospecto(textoCompleto);
 
   // 6. Hora de partida
   let hora: string | null = null;
@@ -448,6 +698,30 @@ export function parsearPaginaRetrospectosNativo(
   // O líneas con número de gualdrapa al inicio:
   const reEjemplarLinea = /^(\d{1,2}[A-Za-z]?)\s+([A-Z0-9\s'.\-]{3,35}?)(?:\s*\((?:L|FTG|L1|L[0-9]+)\))?(?:\s*\((AE|MTO)\))?(?:\s+([A-Z][a-zA-Z'.\-]+(?:\s+[A-Z][a-zA-Z'.\-]+){1,3}))?\s+(\d{2,3}(?:[.,]\d)?|\d{2,3})\s+(?:.*?\s+)?(\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}|EVEN|[0-9]+(?:\.[0-9]+)?-?[0-9]*)?$/im;
 
+  const pushEjemplar = (fila: FilaEjemplarRetrospecto): void => {
+    const clave = `N:${fila.numero.toUpperCase()}`;
+    if (nombresVistos.has(clave)) return;
+    nombresVistos.add(clave);
+    ejemplares.push({
+      numero: fila.numero,
+      nombre: fila.nombre,
+      pp: fila.pp,
+      jinete: fila.jinete,
+      entrenador: fila.entrenador,
+      peso: fila.pesoKg,
+      pesoKg: fila.pesoKg,
+      ml: fila.ml,
+      morningLine: fila.ml,
+      campana: fila.campana,
+      diasSinCorrer: fila.diasSinCorrer,
+      esDebutante: fila.esDebutante,
+      esAe: fila.esAe,
+      esMto: fila.esMto,
+      retirado: false,
+      condicionElegibilidad: fila.esAe ? "AE" : fila.esMto ? "MTO" : null,
+    });
+  };
+
   for (let i = 0; i < lineas.length; i++) {
     const l = lineas[i];
 
@@ -456,12 +730,20 @@ export function parsearPaginaRetrospectosNativo(
       continue;
     }
 
+    // 1) Lector por fila visual (prioritario: preserva la primera palabra del nombre).
+    const fila = parsearFilaEjemplarRetrospecto(l);
+    if (fila) {
+      pushEjemplar(fila);
+      continue;
+    }
+
+    // 2) Compatibilidad con líneas transcritas con un solo espacio entre columnas.
     const m = l.match(reEjemplarLinea);
     if (m) {
       const numProg = m[1].trim();
-      let nombre = m[2].trim().replace(/\s*\((?:L|AE|MTO)\)/gi, "").trim();
+      let nombre = limpiarNombreEjemplarRetrospecto(m[2] || "");
       const condicion = (m[3]?.toUpperCase() as "AE" | "MTO") ||
-                        (l.includes("(AE)") ? "AE" : l.includes("(MTO)") ? "MTO" : null);
+                        (/\bAE\b/i.test(l) ? "AE" : /\bMTO\b/i.test(l) ? "MTO" : null);
       let jockey = m[4]?.trim();
       let pesoStr = m[5]?.trim()?.replace(",", ".");
       let pesoNum: number | string | undefined = pesoStr ? parseFloat(pesoStr) : undefined;
@@ -476,37 +758,37 @@ export function parsearPaginaRetrospectosNativo(
         entrenador = mTrainer[1].trim();
       }
 
-      // PROTECCIÓN CRÍTICA: Si el nombre capturado es en realidad un Jockey (ej: "I. Ortiz, Jr." o "J. Rosario")
+      // PROTECCIÓN CRÍTICA: Si el nombre capturado es en realidad un Jockey
       if (esNombreJockeyPersona(nombre)) {
         if (jockey && !esNombreJockeyPersona(jockey)) {
-          // El orden en la línea venía invertido (Jockey primero, Caballo después)
           const temp = nombre;
           nombre = jockey;
           jockey = temp;
         } else {
-          // Descartar falso positivo de jockey como nombre de caballo
           nombre = "";
         }
       }
 
-      const nombreKey = nombre.toUpperCase();
       if (
-        nombreKey.length >= 2 &&
+        nombre.length >= 2 &&
         !esNombreJockeyPersona(nombre) &&
-        !nombresVistos.has(nombreKey) &&
-        !/^(?:PURSE|RACE|TRACK|POST|EXACTA|TRIFECTA|SUPERFECTA)/.test(nombreKey)
+        !/^(?:PURSE|RACE|TRACK|POST|EXACTA|TRIFECTA|SUPERFECTA)/.test(nombre.toUpperCase())
       ) {
-        nombresVistos.add(nombreKey);
-        ejemplares.push({
+        const mCampana = l.match(/Act:\s*\(([^)]*)\)\s*\$?\s*([\d.,]+)/i);
+        const mDias = l.match(/\b(\d{1,3})\s*d\s*S\/C\b/i);
+        const diasSinCorrer = mDias ? parseInt(mDias[1], 10) : undefined;
+        pushEjemplar({
           numero: numProg,
           nombre,
-          pp: parseInt(numProg.replace(/[^0-9]/g, ""), 10) || undefined,
-          jinete: jockey || undefined,
-          entrenador: entrenador || undefined,
-          peso: pesoNum,
+          jinete: jockey,
+          entrenador,
+          pesoKg: typeof pesoNum === "number" ? pesoNum : undefined,
           ml: ml || undefined,
-          retirado: false,
-          condicionElegibilidad: condicion,
+          campana: mCampana ? `Act: (${mCampana[1]}) $${mCampana[2]}` : undefined,
+          diasSinCorrer,
+          esDebutante: diasSinCorrer === 0,
+          esAe: condicion === "AE",
+          esMto: condicion === "MTO",
         });
       }
     }
@@ -520,15 +802,16 @@ export function parsearPaginaRetrospectosNativo(
     let mBlock: RegExpExecArray | null;
     while ((mBlock = reNumCaballo.exec(textoCompleto)) !== null) {
       const numProg = mBlock[1].trim();
-      const nombre = mBlock[2].trim();
+      const nombre = limpiarNombreEjemplarRetrospecto(mBlock[2] || "");
       const nombreKey = nombre.toUpperCase();
+      const clave = `N:${numProg.toUpperCase()}`;
 
       // Descartar falsos positivos comunes y jockeys con iniciales
       if (
         /^(?:PURSE|RACE|CARRERA|FURLONG|CLAIMING|MAIDEN|ALLOWANCE|STAKES|POST|TRACK|COPYRIGHT|PAGE|DAILY)/i.test(nombreKey) ||
         nombreKey.length < 2 ||
         esNombreJockeyPersona(nombre) ||
-        nombresVistos.has(nombreKey)
+        nombresVistos.has(clave)
       ) {
         continue;
       }
@@ -537,7 +820,10 @@ export function parsearPaginaRetrospectosNativo(
       const contexto = textoCompleto.slice(mBlock.index, mBlock.index + 250);
       const mML = contexto.match(/\b(\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}|9-5|5-2|3-1|8-1|10-1|12-1|15-1|20-1)\b/);
       const mPeso = contexto.match(/\b(1[1-2][0-9]|5[0-9][.,][0-9]|5[0-9])\b/);
-      const condicion = contexto.includes("(AE)") ? "AE" : contexto.includes("(MTO)") ? "MTO" : null;
+      const condicion = /\bAE\b/i.test(contexto) ? "AE" : /\bMTO\b/i.test(contexto) ? "MTO" : null;
+      const mCampana = contexto.match(/Act:\s*\(([^)]*)\)\s*\$?\s*([\d.,]+)/i);
+      const mDias = contexto.match(/\b(\d{1,3})\s*d\s*S\/C\b/i);
+      const diasSinCorrer = mDias ? parseInt(mDias[1], 10) : undefined;
 
       let jockeyBlock: string | undefined;
       let trainerBlock: string | undefined;
@@ -549,17 +835,18 @@ export function parsearPaginaRetrospectosNativo(
         }
       }
 
-      nombresVistos.add(nombreKey);
-      ejemplares.push({
+      pushEjemplar({
         numero: numProg,
         nombre,
-        pp: parseInt(numProg.replace(/[^0-9]/g, ""), 10) || undefined,
-        jinete: jockeyBlock || undefined,
-        entrenador: trainerBlock || undefined,
-        peso: mPeso ? parseFloat(mPeso[1].replace(",", ".")) : undefined,
+        jinete: jockeyBlock,
+        entrenador: trainerBlock,
+        pesoKg: mPeso ? parseFloat(mPeso[1].replace(",", ".")) : undefined,
         ml: mML ? mML[1] : undefined,
-        retirado: false,
-        condicionElegibilidad: condicion,
+        campana: mCampana ? `Act: (${mCampana[1]}) $${mCampana[2]}` : undefined,
+        diasSinCorrer,
+        esDebutante: diasSinCorrer === 0,
+        esAe: condicion === "AE",
+        esMto: condicion === "MTO",
       });
     }
   }
@@ -577,6 +864,7 @@ export function parsearPaginaRetrospectosNativo(
     hora,
     distancia,
     superficie,
+    raza,
     premio: purseMonto,
     ejemplares,
   };
@@ -597,7 +885,7 @@ export function parsearGacetaRetrospectosNativo(
   const paginasParaFallback: Array<{ indicePagina: number; texto: string }> = [];
 
   for (let idx = 0; idx < paginasTexto.length; idx++) {
-    const textoPagina = paginasTexto[idx];
+    const textoPagina = limpiarMarcaAguaRetrospecto(paginasTexto[idx] || "");
     const carrera = parsearPaginaRetrospectosNativo(textoPagina, opciones);
     if (carrera && carrera.ejemplares.length >= 2) {
       carreras.push(carrera);
@@ -609,7 +897,7 @@ export function parsearGacetaRetrospectosNativo(
     }
   }
 
-  return { carreras, paginasParaFallback };
+  return { carreras: fusionarCarrerasRetrospecto(carreras), paginasParaFallback };
 }
 
 /**
