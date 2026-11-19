@@ -498,20 +498,27 @@ export async function entrarPortal(opts: {
     r = await llamarPortalAuth({ accion: "entrar", usuario: opts.usuario, token: opts.token, clave: opts.clave });
   } else if (opts.usuario && opts.clave && typeof window !== "undefined") {
     try {
-      const respApi = await fetch("/api/auth/portal-entrar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          usuario: opts.usuario,
-          clave: opts.clave,
-          grupoId: opts.grupoId,
-        }),
-      });
-      const jsonApi = await respApi.json().catch(() => null);
-      r =
-        respApi.ok && jsonApi?.ok && jsonApi?.cliente
-          ? { ok: true, data: { cliente: jsonApi.cliente } }
-          : { ok: false, error: jsonApi?.error || ERROR };
+      const abortCtrl = new AbortController();
+      const timeoutId = setTimeout(() => abortCtrl.abort(), 10000);
+      try {
+        const respApi = await fetch("/api/auth/portal-entrar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: abortCtrl.signal,
+          body: JSON.stringify({
+            usuario: opts.usuario.trim(),
+            clave: opts.clave.trim(),
+            grupoId: opts.grupoId,
+          }),
+        });
+        const jsonApi = await respApi.json().catch(() => null);
+        r =
+          respApi.ok && jsonApi?.ok && jsonApi?.cliente
+            ? { ok: true, data: { cliente: jsonApi.cliente } }
+            : { ok: false, error: jsonApi?.error || ERROR };
+      } finally {
+        clearTimeout(timeoutId);
+      }
     } catch {
       r = { ok: false, error: ERROR };
     }

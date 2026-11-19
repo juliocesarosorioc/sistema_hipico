@@ -237,7 +237,7 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
               (st.perfiles.length > 0 &&
                 st.perfiles.every((p) => p.toLowerCase().includes("operador")) &&
                 !st.esPrincipal);
-            window.location.href = esOp ? "/apuestas" : "/inicio";
+            window.location.assign(esOp ? "/apuestas" : "/inicio");
           }
           return;
         }
@@ -262,19 +262,17 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
               errorLogin: "El cliente no pertenece a la sala indicada.",
               cargando: false,
             });
-            setIngresando(false);
             return;
           }
           useAuthStore.setState({ errorLogin: null, cargando: false });
           limpiarIntentosFallidos(usuarioSanitizado, ipRef.current);
           if (onLoginPortalExitoso) {
-            setIngresando(false);
             onLoginPortalExitoso(resPortal.sesion);
             return;
           }
           if (!yaNavegandoRef.current) {
             yaNavegandoRef.current = true;
-            router.push("/portal");
+            window.location.assign("/portal");
           }
           return;
         }
@@ -283,7 +281,6 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
       }
 
       // 3. Ni staff ni cliente del tenant: registrar intento fallido y error.
-      setIngresando(false);
       setClave("");
       registrarIntentoFallido(usuarioSanitizado, ipRef.current);
       const estadoBloqueo = verificarBloqueoIntentos(usuarioSanitizado, ipRef.current);
@@ -301,12 +298,15 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
         errorLogin: "Usuario o contraseña incorrectos. Verifica tus credenciales de acceso.",
       });
     } catch (err) {
-      setIngresando(false);
       registrarIntentoFallido(usuarioSanitizado, ipRef.current);
       useAuthStore.setState({
         cargando: false,
         errorLogin: `Error al iniciar sesión: ${err instanceof Error ? err.message : String(err)}`,
       });
+    } finally {
+      if (!yaNavegandoRef.current) {
+        setIngresando(false);
+      }
     }
   };
 
@@ -420,6 +420,8 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
                 name="password"
                 type={verClave ? "text" : "password"}
                 autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
                 required
                 value={clave}
                 onChange={(e) => setClave(e.target.value)}

@@ -1,63 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/core/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-function normalizarIdentificador(v: unknown): string {
+function normalizarTexto(v: unknown): string {
   return String(v ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/^@+/, "")
-    .replace(/\s+/g, " ")
     .trim()
-    .toUpperCase();
+    .toLowerCase();
 }
 
-function normalizarCredencial(v: unknown): string {
-  return String(v ?? "").replace(/[\s\-_.]/g, "").trim().toUpperCase();
-}
-
-function verificarCredencialCliente(c: any, claveIngresada: string, tokenIngresado?: string): boolean {
-  const cl = normalizarCredencial(claveIngresada);
-  const tk = normalizarCredencial(tokenIngresado);
-
-  const tokenBd = normalizarCredencial(c.portal_token);
-  const tokenOk = !tk || tk === tokenBd || tk === tokenBd.replace(/^TK/, "");
-  if (!tokenOk) return false;
-  if (!cl) return true;
-
-  const claveBd = normalizarCredencial(c.portal_clave);
-  const pinBd = normalizarCredencial(c.pin_acceso);
-  const cleanId = String(c.id ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 6);
-  const telDigitos = String(c.telefono ?? "").replace(/\D/g, "");
-  const nombreNorm = normalizarCredencial(c.nombre);
-  const seudonimoNorm = normalizarCredencial(c.seudonimo);
-
-  const opcionesValidas = new Set<string>(
-    [
-      claveBd,
-      claveBd.replace(/^CL/, ""),
-      pinBd,
-      tokenBd,
-      tokenBd.replace(/^TK/, ""),
-      cleanId,
-      `CL${cleanId}`,
-      `TK${cleanId}`,
-      nombreNorm,
-      seudonimoNorm,
-      telDigitos,
-      telDigitos.slice(-4),
-      telDigitos.slice(-6),
-      "1234",
-    ].filter(Boolean)
-  );
-
-  return opcionesValidas.has(cl);
+function normalizarDigitos(v: unknown): string {
+  return String(v ?? "").replace(/\D/g, "");
 }
 
 function credencialesPorDefecto(c: any) {
@@ -72,85 +27,162 @@ function credencialesPorDefecto(c: any) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const u = normalizarIdentificador(body?.usuario);
-    const cl = normalizarCredencial(body?.clave);
-    const tk = normalizarCredencial(body?.token);
-    const grupoId = String(body?.grupoId || "").trim();
+    const usuarioRaw = typeof body?.usuario === "string" ? body.usuario.trim() : "";
+    const claveRaw = typeof body?.clave === "string" ? body.clave.trim() : "";
+    const grupoId = typeof body?.grupoId === "string" ? body.grupoId.trim() : "";
 
-    if (!u || (!cl && !tk)) {
+    if (!usuarioRaw || !claveRaw) {
       return NextResponse.json(
-        { ok: false, error: "Usuario y contraseña requeridos." },
+        { ok: false, error: "Ingresa tu usuario y contraseña." },
         { status: 400 }
       );
     }
 
-    let query = supabaseAdmin.from("clientes").select("*").order("id", { ascending: true });
+    // Traer candidatos activos del grupo o sistema
+    let query = supabaseAdmin
+      .from("clientes")
+      .select("*")
+      .or("activo.is.null,activo.neq.false")
+      .or("portal_habilitado.is.null,portal_habilitado.neq.false");
+
     if (grupoId) {
       query = query.eq("grupo_id", grupoId);
     }
 
-    const { data: rows, error } = await query.limit(5000);
-    if (error || !Array.isArray(rows)) {
+    const { data: rows, error: errQuery } = await query.limit(5000);
+    if (errQuery || !Array.isArray(rows)) {
+      console.error("[PORTAL_LOGIN_ERR] Error consultando clientes:", errQuery);
       return NextResponse.json(
-        { ok: false, error: "Credenciales inválidas o portal deshabilitado para el cliente." },
+        { ok: false, error: "Usuario o contraseña incorrectos." },
         { status: 401 }
       );
     }
 
-    const uAlfa = u.replace(/[^0-9A-Z]/g, "");
-    const uDigitos = u.replace(/\D/g, "");
+    const uNorm = normalizarTexto(usuarioRaw);
+    const uDigitos = normalizarDigitos(usuarioRaw);
+    const uDigitos10 = uDigitos.length >= 10 ? uDigitos.slice(-10) : (uDigitos.length >= 7 ? uDigitos : "");
 
-    const candidatos = rows
-      .map((c: any) => {
-        const creds = credencialesPorDefecto(c);
-        return {
-          ...c,
-          portal_habilitado: creds.portal_habilitado,
-          portal_token: creds.portal_token,
-          portal_clave: creds.portal_clave,
-        };
-      })
-      .filter((c: any) => {
-        if (c.portal_habilitado === false) return false;
-        const id = String(c.id ?? "").toUpperCase();
-        if (normalizarIdentificador(c.nombre) === u) return true;
-        if (normalizarIdentificador(c.seudonimo) === u) return true;
-        const completo = normalizarIdentificador(`${c.nombre ?? ""} ${c.apellido ?? ""}`);
-        if (completo === u) return true;
-        if (id === u || (u.length >= 4 && id.startsWith(u))) return true;
-        const ced = normalizarIdentificador(c.cedula_rif).replace(/[^0-9A-Z]/g, "");
-        if (uAlfa.length >= 5 && ced && ced === uAlfa) return true;
-        const tel = String(c.telefono ?? "").replace(/\D/g, "");
-        if (uDigitos.length >= 7 && tel.length >= 7 && (tel.endsWith(uDigitos) || uDigitos.endsWith(tel))) {
-          return true;
-        }
-        return false;
-      });
+    // 1. Filtrar candidatos donde coincida el identificador (case-insensitive) con:
+    // portal_token, seudonimo, nombre, email, o últimos 10 dígitos de telefono / telefono_normalizado
+    const candidatos = rows.filter((c: any) => {
+      // Activos check estricto en memoria
+      if (c.activo === false || c.portal_habilitado === false) return false;
 
-    const valido = candidatos.find((c: any) => verificarCredencialCliente(c, cl, tk));
+      const pToken = normalizarTexto(c.portal_token);
+      if (pToken && pToken === uNorm) return true;
+      if (pToken && pToken.replace(/^tk/, "") === uNorm.replace(/^tk/, "")) return true;
 
-    if (!valido) {
+      const seudonimo = normalizarTexto(c.seudonimo);
+      if (seudonimo && seudonimo === uNorm) return true;
+
+      const nombre = normalizarTexto(c.nombre);
+      if (nombre && nombre === uNorm) return true;
+
+      const nombreCompleto = normalizarTexto(`${c.nombre ?? ""} ${c.apellido ?? ""}`);
+      if (nombreCompleto && nombreCompleto === uNorm) return true;
+
+      const email = normalizarTexto(c.email);
+      if (email && email === uNorm) return true;
+
+      if (uDigitos10) {
+        const tel = normalizarDigitos(c.telefono);
+        const telNorm = normalizarDigitos(c.telefono_normalizado);
+        if (tel.length >= 7 && (tel.endsWith(uDigitos10) || uDigitos10.endsWith(tel))) return true;
+        if (telNorm.length >= 7 && (telNorm.endsWith(uDigitos10) || uDigitos10.endsWith(telNorm))) return true;
+      }
+
+      // Si ingresó ID exacto
+      const cId = String(c.id ?? "").toLowerCase();
+      if (cId === uNorm) return true;
+
+      return false;
+    });
+
+    if (candidatos.length === 0) {
       return NextResponse.json(
-        { ok: false, error: "Credenciales inválidas o portal deshabilitado para el cliente." },
+        { ok: false, error: "Usuario o contraseña incorrectos." },
         { status: 401 }
       );
     }
 
-    const orig = rows.find((r: any) => String(r.id) === String(valido.id));
-    if (orig && (!orig.portal_token || !orig.portal_clave || orig.portal_habilitado !== true)) {
-      const patch: Record<string, unknown> = {};
-      if ("portal_habilitado" in orig) patch.portal_habilitado = true;
-      if ("portal_token" in orig) patch.portal_token = valido.portal_token;
-      if ("portal_clave" in orig) patch.portal_clave = valido.portal_clave;
-      if (Object.keys(patch).length > 0) {
-        await supabaseAdmin.from("clientes").update(patch).eq("id", valido.id);
+    // 2. Validación de clave contra los candidatos:
+    // coincide con portal_clave (case-insensitive) O con pin_acceso (exacto tras .trim())
+    const claveTrim = claveRaw.trim();
+    const claveLower = claveTrim.toLowerCase();
+
+    let clienteValido: any = null;
+
+    for (const c of candidatos) {
+      const creds = credencialesPorDefecto(c);
+      const cPortalClave = (c.portal_clave ? String(c.portal_clave).trim() : creds.portal_clave).toLowerCase();
+      const cPinAcceso = c.pin_acceso ? String(c.pin_acceso).trim() : "";
+
+      // Coincidencia con portal_clave (case-insensitive)
+      if (cPortalClave && (cPortalClave === claveLower || cPortalClave.replace(/^cl/, "") === claveLower.replace(/^cl/, ""))) {
+        clienteValido = { ...c, portal_clave: c.portal_clave || creds.portal_clave, portal_token: c.portal_token || creds.portal_token };
+        break;
+      }
+
+      // Coincidencia con pin_acceso (exacto tras .trim())
+      if (cPinAcceso && cPinAcceso === claveTrim) {
+        clienteValido = { ...c, portal_clave: c.portal_clave || creds.portal_clave, portal_token: c.portal_token || creds.portal_token };
+        break;
       }
     }
 
-    return NextResponse.json({ ok: true, cliente: valido });
-  } catch (e: any) {
+    if (!clienteValido) {
+      return NextResponse.json(
+        { ok: false, error: "Usuario o contraseña incorrectos." },
+        { status: 401 }
+      );
+    }
+
+    // Sincronizar credenciales por defecto si faltaban en la BD
+    try {
+      const orig = rows.find((r: any) => String(r.id) === String(clienteValido.id));
+      if (orig && (!orig.portal_token || !orig.portal_clave || orig.portal_habilitado !== true)) {
+        const patch: Record<string, unknown> = {};
+        if ("portal_habilitado" in orig || orig.portal_habilitado == null) patch.portal_habilitado = true;
+        if (!orig.portal_token) patch.portal_token = clienteValido.portal_token;
+        if (!orig.portal_clave) patch.portal_clave = clienteValido.portal_clave;
+        if (Object.keys(patch).length > 0) {
+          await supabaseAdmin.from("clientes").update(patch).eq("id", clienteValido.id);
+        }
+      }
+    } catch (errSync) {
+      console.warn("[PORTAL_LOGIN_ERR] Sync credenciales warning:", errSync);
+    }
+
+    const respuesta = NextResponse.json({ ok: true, cliente: clienteValido });
+
+    // Emite la cookie/sesión del portal con path: "/" y sameSite: "lax"
+    // para que funcione tanto en HTTP como HTTPS sin perderse en redirecciones.
+    // También se establecen las cookies compatibles con el middleware para que no rebote a /login.
+    const maxAge = 60 * 60 * 24 * 7; // 7 días
+    const cookieOpts = {
+      path: "/",
+      sameSite: "lax" as const,
+      maxAge,
+      httpOnly: false,
+    };
+
+    respuesta.cookies.set("portal_cliente_id", String(clienteValido.id), cookieOpts);
+    respuesta.cookies.set("portal_token", String(clienteValido.portal_token), cookieOpts);
+    respuesta.cookies.set("sala_cliente_id", String(clienteValido.id), cookieOpts);
+    respuesta.cookies.set("sala_portal_token", String(clienteValido.portal_token), cookieOpts);
+
+    // Permisos y perfil compatibles con el middleware (esRolCliente)
+    const nombreUsuario = String(clienteValido.seudonimo || clienteValido.nombre || clienteValido.id);
+    respuesta.cookies.set("hipico_usuario", encodeURIComponent(nombreUsuario), cookieOpts);
+    respuesta.cookies.set("hipico_perfil", encodeURIComponent("cliente"), cookieOpts);
+    respuesta.cookies.set("hipico_permisos", encodeURIComponent("portal:ruta_portal,portal:btn_jugar,portal:celda_saldo_portal"), cookieOpts);
+    respuesta.cookies.set("hipico_acceso", "ok", cookieOpts);
+
+    return respuesta;
+  } catch (err: any) {
+    console.error("[PORTAL_LOGIN_ERR]", err);
     return NextResponse.json(
-      { ok: false, error: e?.message || "Error verificando acceso al portal." },
+      { ok: false, error: "Error interno al procesar el ingreso al portal." },
       { status: 500 }
     );
   }

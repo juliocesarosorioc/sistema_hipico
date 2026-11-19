@@ -379,10 +379,27 @@ function LoginScreen(props: {
 
         <div className="space-y-3 rounded-2xl bg-white/95 p-4 shadow-2xl backdrop-blur sm:p-6">
           <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Seudónimo / Nombre</label>
-          <input value={props.usuario} onChange={(e) => props.setUsuario(e.target.value.toUpperCase())} className={inp} placeholder="ej. EL MAGO" autoComplete="off" />
+          <input
+            value={props.usuario}
+            onChange={(e) => props.setUsuario(e.target.value.toUpperCase())}
+            className={inp}
+            placeholder="ej. EL MAGO"
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+          />
 
           <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Código del enlace (te lo dio el administrador)</label>
-          <input value={props.token} onChange={(e) => props.setToken(e.target.value.toUpperCase())} className={inp} placeholder="XXXXXX" maxLength={MAX_TOKEN} autoComplete="off" />
+          <input
+            value={props.token}
+            onChange={(e) => props.setToken(e.target.value.toUpperCase())}
+            className={inp}
+            placeholder="XXXXXX"
+            maxLength={MAX_TOKEN}
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+          />
 
           {/*
             SIN maxLength: el campo de contraseña NO se recorta.
@@ -393,7 +410,16 @@ function LoginScreen(props: {
             errores indescifrables; el largo lo valida la función del servidor.
           */}
           <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Contraseña</label>
-          <input value={props.clave} onChange={(e) => props.setClave(e.target.value.toUpperCase())} className={inp} placeholder="XXXX" maxLength={MAX_CLAVE} autoComplete="off" />
+          <input
+            value={props.clave}
+            onChange={(e) => props.setClave(e.target.value.toUpperCase())}
+            className={inp}
+            placeholder="XXXX"
+            maxLength={MAX_CLAVE}
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+          />
 
           {props.error ? (
             <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs font-bold text-red-600">
