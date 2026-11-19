@@ -1705,7 +1705,7 @@ async function manejarMensajeEntrante(msg) {
 
     const nombreGrupoOrigen =
       salasDestino[0]?._whatsapp_group_nombre ||
-      gruposCacheLista.find((g) => g.jid === remoteJid)?.nombre ||
+      gruposCache.find((g) => g.jid === remoteJid)?.nombre ||
       null;
 
     // ───────────────────────────────────────────────────────────────────────
