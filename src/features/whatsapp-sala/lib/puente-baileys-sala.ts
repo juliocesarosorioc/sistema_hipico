@@ -4,7 +4,9 @@ import {
   analizarYEstandarizarJugada,
   evaluarConcrecionEstricta,
   analizarComandoRetiro,
+  esIntentoConcrecionOMontoParcial,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
+import { ejecutarRetiroPropuestasSeFue } from "../concretarJugada";
 import { formatearMontoRegional, prefijoMonedaGrupo } from "@/shared/lib/dinero";
 import {
   mensajeConCodigoSala,
@@ -331,6 +333,62 @@ export async function procesarMensajeEntranteWhatsApp(
       .maybeSingle();
 
     if (propMsg && (propMsg.tipo_mensaje === "propuesta_jugada" || propMsg.tipo_mensaje === "PROPUESTA")) {
+      const cmdRetiroCita = analizarComandoRetiro(textoLimpio);
+      if (cmdRetiroCita.esComandoRetiro) {
+        if (!esCarreraAbierta) {
+          return {
+            ok: true,
+            tipo: "IGNORADO",
+            acciones: {
+              responderEnGrupo: null,
+              enviarPrivadoJugador: null,
+            },
+          };
+        }
+
+        if (!cmdRetiroCita.esValido) {
+          return {
+            ok: false,
+            tipo: "PEDAGOGICO",
+            acciones: {
+              responderEnGrupo: null,
+              enviarPrivadoJugador: dm(
+                cmdRetiroCita.mensajeAclaratoria ||
+                  "Por favor aclara si deseas retirar tus jugadas con: 'Se fue', 'sf' o 'cf'"
+              ),
+            },
+          };
+        }
+
+        if (propMsg.remitente_id !== cliente.id) {
+          return {
+            ok: false,
+            tipo: "PEDAGOGICO",
+            acciones: {
+              responderEnGrupo: null,
+              enviarPrivadoJugador: dm("⚠️ Solo el autor de la propuesta puede retirarla con 'Se fue'."),
+            },
+          };
+        }
+
+        await ejecutarRetiroPropuestasSeFue({
+          grupoId,
+          salaId,
+          jugadorId: cliente.id,
+          propuestaId: propMsg.id,
+        });
+        await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+
+        return {
+          ok: true,
+          tipo: "TEXTO",
+          acciones: {
+            responderEnGrupo: null,
+            enviarPrivadoJugador: null,
+          },
+        };
+      }
+
       if (!esCarreraAbierta) {
         return {
           ok: false,
@@ -347,6 +405,28 @@ export async function procesarMensajeEntranteWhatsApp(
           tipo: "PEDAGOGICO",
           acciones: {
             responderEnGrupo: `⚠️ No puedes concretar tu propia propuesta de jugada.`,
+          },
+        };
+      }
+
+      const estadoPropInicial = String(propMsg.estado_propuesta || "abierta").toLowerCase();
+      if (estadoPropInicial === "cancelada" || estadoPropInicial === "se_fue") {
+        if (esIntentoConcrecionOMontoParcial(textoLimpio)) {
+          return {
+            ok: false,
+            tipo: "PEDAGOGICO",
+            acciones: {
+              responderEnGrupo: "🚫Nada aquí, Se fue.",
+              enviarPrivadoJugador: null,
+            },
+          };
+        }
+        return {
+          ok: false,
+          tipo: "IGNORADO",
+          acciones: {
+            responderEnGrupo: null,
+            enviarPrivadoJugador: null,
           },
         };
       }
@@ -380,6 +460,28 @@ export async function procesarMensajeEntranteWhatsApp(
           .select("*")
           .eq("id", propMsg.id)
           .single();
+
+        const estadoFresca = String(propFresca?.estado_propuesta || "abierta").toLowerCase();
+        if (estadoFresca === "cancelada" || estadoFresca === "se_fue") {
+          if (esIntentoConcrecionOMontoParcial(textoLimpio)) {
+            return {
+              ok: false,
+              tipo: "PEDAGOGICO",
+              acciones: {
+                responderEnGrupo: "🚫Nada aquí, Se fue.",
+                enviarPrivadoJugador: null,
+              },
+            };
+          }
+          return {
+            ok: false,
+            tipo: "IGNORADO",
+            acciones: {
+              responderEnGrupo: null,
+              enviarPrivadoJugador: null,
+            },
+          };
+        }
 
         const remanenteActual = Number(propFresca?.monto_disponible ?? propFresca?.monto_original ?? 0);
         const edadFresca = (Date.now() - new Date(propFresca?.created_at || propMsg.created_at).getTime()) / 1000;
@@ -670,45 +772,37 @@ export async function procesarMensajeEntranteWhatsApp(
   // 1. Detección de orden de cierre/retiro de jugadas abiertas ("Se fue", "sf", etc.)
   const analisisRetiro = analizarComandoRetiro(textoLimpio);
   if (analisisRetiro.esComandoRetiro) {
+    if (!esCarreraAbierta) {
+      return {
+        ok: true,
+        tipo: "IGNORADO",
+        acciones: {
+          responderEnGrupo: null,
+          enviarPrivadoJugador: null,
+        },
+      };
+    }
+
     if (!analisisRetiro.esValido) {
       return {
         ok: false,
         tipo: "PEDAGOGICO",
         acciones: {
-          responderEnGrupo: analisisRetiro.mensajeAclaratoria || "Por favor aclara si deseas retirar tus jugadas con: 'Se fue' o 'sf'",
+          responderEnGrupo: null,
+          enviarPrivadoJugador: dm(
+            analisisRetiro.mensajeAclaratoria ||
+              "Por favor aclara si deseas retirar tus jugadas con: 'Se fue', 'sf' o 'cf'"
+          ),
         },
       };
     }
 
-    // Cerrar cada propuesta abierta no concretada del jugador individualmente SIN publicar mensaje en el chat del grupo
-    const { data: propsAbiertas } = await supabaseAdmin
-      .from("chat_mensajes")
-      .select("id, monto_disponible")
-      .eq("sala_id", salaId)
-      .eq("remitente_id", cliente.id)
-      .eq("estado_propuesta", "abierta")
-      .gt("monto_disponible", 0);
-
-    let totalDevuelto = 0;
-    for (const p of propsAbiertas || []) {
-      totalDevuelto += Number(p.monto_disponible || 0);
-      await supabaseAdmin
-        .from("chat_mensajes")
-        .update({ estado_propuesta: "cerrada", monto_disponible: 0 })
-        .eq("id", p.id);
-    }
-
-    if (!cliente.libre && totalDevuelto > 0) {
-      const retAct = Number(cliente.saldo_retenido || 0);
-      const nuevoRet = Math.max(0, Number((retAct - totalDevuelto).toFixed(2)));
-      await supabaseAdmin
-        .from("clientes")
-        .update({
-          saldo_retenido: nuevoRet,
-          saldo_disponible: Math.max(0, Number(((cliente.saldo_actual || 0) + (cliente.aval || 0) - nuevoRet).toFixed(2))),
-        })
-        .eq("id", cliente.id);
-    }
+    await ejecutarRetiroPropuestasSeFue({
+      grupoId,
+      salaId,
+      jugadorId: cliente.id,
+      propuestaId: null,
+    });
 
     await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
 
@@ -717,7 +811,7 @@ export async function procesarMensajeEntranteWhatsApp(
       tipo: "TEXTO",
       acciones: {
         responderEnGrupo: null,
-        enviarPrivadoJugador: dm(`Has cerrado exitosamente todas tus jugadas abiertas. Se liberó una retención de ${prefijo}${formatearMontoRegional(totalDevuelto)}.`),
+        enviarPrivadoJugador: dm("✅ Todas tus propuestas abiertas fueron retiradas."),
       },
     };
   }

@@ -10,6 +10,14 @@ import { variablesEncabezadoGrupo } from "@/features/whatsapp/lib/plantillas-gru
 import { encabezadoGrupo } from "@/features/whatsapp/lib/encabezados-grupo";
 import { emitirBroadcastSala, respuestaSala } from "./notificador";
 import { obtenerSalasUnicas, recordarCodigoSala } from "./resolverSala";
+import { logicaGanancias } from "@/features/motores/lib/puestos";
+import { calcularRiesgoReal } from "@/features/sala-juegos/lib/parser-pedagogico";
+import {
+  actualizarTicketEspejoLiquidado,
+  anularTicketsEspejoSala,
+  revertirTicketsEspejoSala,
+} from "@/features/whatsapp-sala/lib/sincronizar-tickets-sala";
+import { cerrarParadasAbiertasDeSala } from "./concretarJugada";
 import type { RespaldoSalaDesconectada, ResultadoSentencia } from "./types";
 
 const BOT_DAEMON_URL = process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
@@ -77,23 +85,29 @@ export async function generarTextoPlanoOficial(
     .map((t, idx) => {
       const proponente = t.proponente_nombre || "Jugador A";
       const aceptante = t.aceptante_nombre || "Jugador B";
-      let jugadaDetalle = "";
-      if (t.es_match) {
-        const bA = (t.caballos_bando_a || []).join("-");
+      const accProp = String(t.accion_proponente || "JUEGA").trim().toUpperCase();
+      const esConsigueProp = accProp === "CONSIGUE" || accProp === "CONSIGO" || accProp === "DA" || accProp === "DOY";
+      const jugadorJuega = esConsigueProp ? aceptante : proponente;
+      const jugadorDa = esConsigueProp ? proponente : aceptante;
+
+      const prop = String(t.proporcion_premio || t.proporcion || "").trim();
+      const tieneProp10 = /^10\s*[\/aAª@\-]\s*\d+(?:[.,]\d+)?$/i.test(prop) && !/^10\s*[\/aAª@\-]\s*10$/i.test(prop);
+      const propCanon = tieneProp10 ? prop.toUpperCase().replace(/\s+/g, "").replace(/[aAª@\-]/g, "/").replace(",", ".") : "";
+
+      let jugadaToken = "";
+      let caballoToken = "";
+      if (t.es_match || (Array.isArray(t.caballos_bando_b) && t.caballos_bando_b.length > 0)) {
+        const bA = (t.caballos_bando_a || []).join("-") || t.ejemplar_numero || "1";
         const bB = (t.caballos_bando_b || []).join("-");
-        const prop = String(t.proporcion_premio || t.proporcion || "").trim();
-        let propStr = "";
-        if (prop && !["1x1", "pp", "10/10", "10a10", "10@10"].includes(prop.toLowerCase())) {
-          propStr = ` [${prop.replace("@", "/").replace(/a/i, "/")}]`;
-        }
-        jugadaDetalle = `(${bA}x${bB})${propStr}`;
+        caballoToken = `${bA}x${bB}`;
+        jugadaToken = propCanon; // Si no hay proporción, "(3x5)" se clasifica como PP en Carga Rápida
       } else {
-        const mod = t.modalidad || "1P";
-        const ej = t.ejemplar_numero || (t.caballos_bando_a || []).join("-");
-        jugadaDetalle = `${mod} ${ej}`;
+        const mod = String(t.modalidad || "1P").trim().toUpperCase();
+        caballoToken = String(t.ejemplar_numero || (t.caballos_bando_a || []).join("-") || "1").trim();
+        jugadaToken = propCanon || (mod === "MATCH" ? "PP" : mod);
       }
       const monto = formatearMontoRegional(Number(t.monto_concretado || 0));
-      return `${idx + 1}) ${proponente} juega ${jugadaDetalle} con ${aceptante} $${monto}`;
+      return `${idx + 1}) Juega ${jugadorJuega} ${jugadaToken ? `${jugadaToken} ` : ""}(${caballoToken}) con ${monto} da ${jugadorDa}`;
     })
     .join("\n");
 
@@ -370,12 +384,57 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
 
   const { data: grupo } = await supabaseAdmin
     .from("grupos_venta")
-    .select("permite_cruces, comision_default")
+    .select("permite_cruces, cruce_mismo_ejemplar, cruce_diferente_ejemplar, comision_default")
     .eq("id", sala.grupo_id)
     .maybeSingle();
 
-  const permiteCruces = grupo?.permite_cruces ?? true;
-  const porcComision = Number(grupo?.comision_default ?? 5) / 100;
+  const permiteCruces = Boolean(
+    grupo?.permite_cruces ?? (grupo?.cruce_mismo_ejemplar || grupo?.cruce_diferente_ejemplar) ?? true
+  );
+  const comisionPct = Number(grupo?.comision_default ?? 5);
+  const porcComision = comisionPct / 100;
+
+  // Si es rectificación, revertir primero cualquier asiento previo de esta carrera en la sala
+  if (esRectificacion && sala.grupo_id) {
+    try {
+      const { data: movsPrevios } = await supabaseAdmin
+        .from("libro_mayor_clientes")
+        .select("id, cliente_id, tipo_movimiento, monto")
+        .eq("grupo_id", sala.grupo_id)
+        .eq("hipodromo", hipodromo)
+        .eq("carrera", numCarrera)
+        .in("tipo_movimiento", ["JUGADA_GANADA_NETO", "JUGADA_PERDIDA"]);
+
+      if (movsPrevios && movsPrevios.length > 0) {
+        const idsBorrar: string[] = [];
+        for (const mov of movsPrevios) {
+          idsBorrar.push(mov.id);
+          const mVal = Number(mov.monto || 0);
+          if (!mov.cliente_id || mVal <= 0) continue;
+          const deltaRev = mov.tipo_movimiento === "JUGADA_GANADA_NETO" ? -mVal : mVal;
+          const { data: clRev } = await supabaseAdmin
+            .from("clientes")
+            .select("saldo_actual, saldo_retenido, libre, aval")
+            .eq("id", mov.cliente_id)
+            .maybeSingle();
+          if (clRev) {
+            const sNuevo = Number((Number(clRev.saldo_actual || 0) + deltaRev).toFixed(2));
+            const rAct = Number(clRev.saldo_retenido || 0);
+            await supabaseAdmin
+              .from("clientes")
+              .update({
+                saldo_actual: sNuevo,
+                saldo_disponible: clRev.libre ? 999999 : Math.max(0, Number((sNuevo + Number(clRev.aval || 0) - rAct).toFixed(2))),
+              })
+              .eq("id", mov.cliente_id);
+          }
+        }
+        await supabaseAdmin.from("libro_mayor_clientes").delete().in("id", idsBorrar);
+      }
+    } catch (errRevRect) {
+      console.warn("[accionesAdmin] Aviso revirtiendo asientos previos en rectificación:", errRevRect);
+    }
+  }
 
   let queryTickets = supabaseAdmin
     .from("chat_tickets_fifo")
@@ -412,38 +471,68 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
     asegurar(t.aceptante_id, t.aceptante_nombre);
 
     const monto = Number(t.monto_concretado || 0);
-    balance[t.proponente_id].stake += monto;
-    balance[t.aceptante_id].stake += monto;
+    const accProp = String(t.accion_proponente || "JUEGA").trim().toUpperCase();
+    const esJuegaProponente = accProp !== "CONSIGUE" && accProp !== "CONSIGO" && accProp !== "DA" && accProp !== "DOY";
+    const accionCanon: "JUEGA" | "CONSIGUE" = esJuegaProponente ? "JUEGA" : "CONSIGUE";
+    const propRaw = String(t.proporcion_premio || t.proporcion || "1x1").trim();
 
-    const { data: evalData, error: evalErr } = await supabaseAdmin.rpc(
-      "evaluar_jugada_universal",
-      {
-        p_es_match: Boolean(t.es_match),
-        p_accion_proponente: t.accion_proponente || "JUEGA",
-        p_modalidad: t.modalidad || "1P",
-        p_caballos_a: t.caballos_bando_a || (t.ejemplar_numero ? [t.ejemplar_numero] : []),
-        p_caballos_b: t.caballos_bando_b || [],
-        p_p1: p1,
-        p_p2: p2,
-        p_p3: p3,
-        p_p4: p4,
-        p_p5: p5,
-      }
-    );
+    const estabaActivo = ["PENDIENTE", "ACTIVO", "ABIERTO"].includes(String(t.estado || "").toUpperCase());
+    if (estabaActivo) {
+      balance[t.proponente_id].stake += calcularRiesgoReal(monto, propRaw, accionCanon, "PROPONENTE");
+      balance[t.aceptante_id].stake += calcularRiesgoReal(monto, propRaw, accionCanon, "ACEPTANTE");
+    }
 
-    const factor = evalErr ? 0 : Number(evalData || 0);
+    const bandoA =
+      Array.isArray(t.caballos_bando_a) && t.caballos_bando_a.length > 0
+        ? t.caballos_bando_a.filter(Boolean)
+        : t.ejemplar_numero
+        ? [String(t.ejemplar_numero)]
+        : [];
+    const bandoB = Array.isArray(t.caballos_bando_b) ? t.caballos_bando_b.filter(Boolean) : [];
+    const esMatch = Boolean(t.es_match || (bandoA.length > 0 && bandoB.length > 0));
+    const tieneProp10 = /^10\s*[\/aAª@\-]\s*\d+(?:[.,]\d+)?$/i.test(propRaw) && !/^10\s*[\/aAª@\-]\s*10$/i.test(propRaw);
+    const propCanon = tieneProp10 ? propRaw.toUpperCase().replace(/\s+/g, "").replace(/[aAª@\-]/g, "/").replace(",", ".") : "";
+
+    const caballoMotor = esMatch
+      ? `${bandoA.join("-") || t.ejemplar_numero || "1"}X${bandoB.join("-")}`
+      : String(t.ejemplar_numero || bandoA[0] || "1").trim();
+    const modBase = String(t.modalidad || "1P").trim().toUpperCase();
+    const jugadaMotor = esMatch
+      ? propCanon || "PP"
+      : propCanon || (modBase === "MATCH" ? "PP" : modBase);
+
+    const resLg = logicaGanancias({
+      jugada: jugadaMotor,
+      caballo: caballoMotor,
+      monto,
+      pizarra: numeros,
+      comisionPct,
+    });
+
+    const n1 = Number(resLg.netoJugador1 || 0);
+    const n2 = Number(resLg.netoJugador2 || 0);
+    const brutoJuega = n1 > 0 ? Math.abs(n2) : n1;
+    const brutoDa = n2 > 0 ? Math.abs(n1) : n2;
+    const comisionJuega = n1 > 0 ? Number((Math.abs(n2) - n1).toFixed(2)) : 0;
+    const comisionDa = n2 > 0 ? Number((Math.abs(n1) - n2).toFixed(2)) : 0;
+    const comisionTotal = Number((comisionJuega + comisionDa).toFixed(2));
+
+    const brutoProp = esJuegaProponente ? brutoJuega : brutoDa;
+    const brutoAcep = esJuegaProponente ? brutoDa : brutoJuega;
+    const comisionProp = esJuegaProponente ? comisionJuega : comisionDa;
+    const comisionAcep = esJuegaProponente ? comisionDa : comisionJuega;
+
     let nuevoEstado = "EMPATE";
-
-    if (factor > 0) {
+    if (brutoProp > 0) {
       nuevoEstado = "GANADOR_PROPONENTE";
-      balance[t.proponente_id].ganancias += monto;
-      balance[t.aceptante_id].perdidas += monto;
-      balance[t.proponente_id].comisionInd += monto * porcComision;
-    } else if (factor < 0) {
+      balance[t.proponente_id].ganancias += brutoProp;
+      balance[t.aceptante_id].perdidas += Math.abs(brutoAcep);
+      balance[t.proponente_id].comisionInd += comisionProp;
+    } else if (brutoProp < 0) {
       nuevoEstado = "GANADOR_ACEPTANTE";
-      balance[t.aceptante_id].ganancias += monto;
-      balance[t.proponente_id].perdidas += monto;
-      balance[t.aceptante_id].comisionInd += monto * porcComision;
+      balance[t.aceptante_id].ganancias += brutoAcep;
+      balance[t.proponente_id].perdidas += Math.abs(brutoProp);
+      balance[t.aceptante_id].comisionInd += comisionAcep;
     }
 
     t.estado = nuevoEstado;
@@ -451,6 +540,17 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
       .from("chat_tickets_fifo")
       .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
       .eq("id", t.id);
+
+    await actualizarTicketEspejoLiquidado(supabaseAdmin, {
+      codigoTicket: t.codigo_ticket,
+      accionProponente: t.accion_proponente,
+      factor: monto > 0 ? brutoProp / monto : 0,
+      monto,
+      porcentajeComision: porcComision,
+      netoClienteJuega: n1,
+      comisionTotal,
+      estadoTicket: brutoJuega > 0 ? "Ganador" : brutoJuega < 0 ? "Perdedor" : "Empate",
+    });
   }
 
   const positivos: string[] = [];
@@ -481,7 +581,9 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
           .update({
             saldo_actual: nuevoSaldo,
             saldo_retenido: nuevoRet,
-            saldo_disponible: cl.libre ? 999999 : Math.max(0, nuevoSaldo + Number(cl.aval || 0) - nuevoRet),
+            saldo_disponible: cl.libre
+              ? 999999
+              : Math.max(0, Number((nuevoSaldo + Number(cl.aval || 0) - nuevoRet).toFixed(2))),
             updated_at: new Date().toISOString(),
           })
           .eq("id", jugadorId);
@@ -917,6 +1019,9 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
     if (error) {
       return respuestaSala({ ok: false, error: error.message }, { status: 500 });
     }
+
+    // Al cerrar la carrera se van todas las paradas abiertas de la sala
+    await cerrarParadasAbiertasDeSala(salaId, salaActualizada?.grupo_id || salaPrevia?.grupo_id || null);
 
     const hipo = String(salaActualizada?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
     const numCarrera = salaActualizada?.numero_carrera_activa || 1;

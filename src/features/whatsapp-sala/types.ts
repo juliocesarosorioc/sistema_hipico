@@ -66,6 +66,7 @@ export type TipoJugadaIntent =
   | "CARRERA_CERRADA"
   | "FUERA_DE_TIEMPO"
   | "PROPUESTA_AGOTADA"
+  | "PROPUESTA_SE_FUE"
   | "SIN_SALDO_PROPONENTE"
   | "NADA_AQUI"
   | "CONCRECION_ERROR"
@@ -133,6 +134,15 @@ export interface PayloadNotificacion {
   cliente_id?: string | null;
 }
 
+export interface RespuestaGrupoItem {
+  texto: string;
+  quotedMsgId?: string | null;
+  aceptanteId?: string | null;
+  aceptanteNombre?: string | null;
+  montoConcretado?: number;
+  eraParcial?: boolean;
+}
+
 export interface ResultadoConcrecion {
   ok: boolean;
   tipo: string;
@@ -142,6 +152,7 @@ export interface ResultadoConcrecion {
   msg_publico_bot?: string | null;
   respuestaPublica?: string | null;
   respuestaGrupo?: string | null;
+  respuestas_grupo?: RespuestaGrupoItem[];
   mensajePrivadoAutor?: string | null;
   msg_privado_bot?: string | null;
   msg_privado_aceptante?: string | null;
@@ -154,8 +165,17 @@ export interface ResultadoConcrecion {
   datos?: {
     propuestaId?: string;
     montoConcretado?: number;
+    montoPendienteAmpliacion?: number;
     remanenteDisponible?: number;
     excedioSaldo?: boolean;
+    jugadoresAmpliados?: Array<{
+      aceptanteId: string;
+      aceptanteNombre: string;
+      montoConcretado: number;
+      montoAdicional: number;
+      eraParcial: boolean;
+      mensaje: string;
+    }>;
   };
 }
 

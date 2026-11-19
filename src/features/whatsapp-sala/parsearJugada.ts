@@ -25,10 +25,11 @@ import {
   construirResumenEstadoCuentaCliente,
   liquidarYSentenciarCarreraPlataforma,
 } from "./accionesAdmin";
+import { cerrarParadasAbiertasDeSala } from "./concretarJugada";
 import type { ContextoSala, ClienteResuelto, JugadaParseada } from "./types";
 
 export const AVISO_REDACCION_GRUPO = "⚠️¡Por favor, verificar redacción! ¡Gracias!";
-export const RE_MONTO_INPUT = "(?:\\d+(?:[\\.,]\\d+)?\\s*(?:k|mil)?)";
+export const RE_MONTO_INPUT = "(?:\\d+(?:[\\.,]\\d+)*\\s*(?:k|mil)?)";
 
 export function sanitizarTexto(str: unknown): string {
   if (typeof str !== "string") return "";
@@ -152,6 +153,15 @@ export async function manejarIntencionComando(params: {
   const nombreJugador = cliente.nombreJugador;
   const saldoDisponible = cliente.saldo_disponible;
   const quotedMsgId = body.quotedMsgId || null;
+
+  // Si es un comando de cierre ("Se Fue", "sf", "cf") o de ampliación ("Jugue con Todos", "Todos"),
+  // delegar directamente a concretarJugada.
+  if (
+    analizarComandoRetiro(textoUsuarioLimpio).esComandoRetiro ||
+    evaluarAmpliacionPropuesta(textoUsuarioLimpio).esAmpliacion
+  ) {
+    return null;
+  }
 
   // 1. REGLAS ENTRENADAS DE LA SALA DE JUEGOS
   if (!texto.trim().startsWith("!")) {
@@ -501,6 +511,9 @@ export async function manejarIntencionComando(params: {
           updated_at: new Date().toISOString(),
         })
         .eq("id", salaId);
+
+      // Al cerrar la carrera se van todas las paradas abiertas de la sala
+      await cerrarParadasAbiertasDeSala(salaId, grupoId);
 
       const hipo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
       const numCarrera = sala.numero_carrera_activa || 1;

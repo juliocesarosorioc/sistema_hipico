@@ -1708,6 +1708,45 @@ export async function concretarJugada(params: {
       };
     }
 
+    const montoSolicitadoReal = Number(evalConcrecion.montoSolicitado || montoEfectivo);
+    const topeSolicitadoAceptante = Math.min(montoSolicitadoReal, maxBaseAceptante);
+    const fueRecortadoPorRemanente =
+      montoSolicitadoReal > remanenteDisponible &&
+      montoEfectivo === remanenteDisponible &&
+      Math.min(maxBaseAceptante, maxBaseProponente) >= remanenteDisponible;
+    const montoPendienteAmpliacion = fueRecortadoPorRemanente
+      ? Math.max(0, Number((topeSolicitadoAceptante - montoEfectivo).toFixed(2)))
+      : 0;
+
+    // Registrar monto_solicitado real, monto_pendiente_ampliacion y whatsapp_concrecion_msg_id en el ticket recién creado
+    try {
+      let ticketIdCreado = (resRpcData as any)?.ticket_id || null;
+      if (!ticketIdCreado) {
+        const { data: ultTk } = await supabaseAdmin
+          .from("chat_tickets_fifo")
+          .select("id")
+          .eq("propuesta_msg_id", propFresca.id)
+          .eq("aceptante_id", cliente.id)
+          .neq("estado", "ANULADO")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        ticketIdCreado = ultTk?.id || null;
+      }
+      if (ticketIdCreado) {
+        await supabaseAdmin
+          .from("chat_tickets_fifo")
+          .update({
+            monto_solicitado: topeSolicitadoAceptante,
+            monto_concretado: montoEfectivo,
+            monto_pendiente_ampliacion: montoPendienteAmpliacion,
+            fue_ajuste_parcial: montoPendienteAmpliacion > 0 || montoEfectivo < montoSolicitadoReal,
+            ...(whatsappMsgId ? { whatsapp_concrecion_msg_id: whatsappMsgId } : {}),
+          })
+          .eq("id", ticketIdCreado);
+      }
+    } catch {}
+
     await sincronizarTicketsPropuestaATaquilla(supabaseAdmin, {
       propuestaMsgId: propFresca.id,
       sala: contextoSala.sala,

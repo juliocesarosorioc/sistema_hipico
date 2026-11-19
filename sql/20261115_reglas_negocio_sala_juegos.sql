@@ -337,6 +337,17 @@ BEGIN
 
   v_remanente := COALESCE(v_prop.monto_disponible, 0);
 
+  -- Regla: Propuesta retirada con "Se fue"
+  IF v_prop.estado_propuesta IN ('cancelada', 'se_fue') THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'nada_aqui', true,
+      'error', 'PROPUESTA_SE_FUE',
+      'msg_publico', '🚫Nada aquí, Se fue.',
+      'msg_publico_bot', '🚫Nada aquí, Se fue.'
+    );
+  END IF;
+
   -- Regla: Vencimiento por Tiempo (X minutos)
   IF NOW() > (v_prop.created_at + (v_tiempo_vencimiento_min || ' minutes')::INTERVAL) THEN
     UPDATE public.chat_mensajes

@@ -5,10 +5,14 @@
 // ============================================================================
 
 import http from "node:http";
-import WebSocket from "ws";
 
 if (typeof globalThis.WebSocket === "undefined") {
-  globalThis.WebSocket = WebSocket;
+  try {
+    const wsMod = await import("ws");
+    globalThis.WebSocket = wsMod.default || wsMod;
+  } catch {
+    // Node 20+ provee globalThis.WebSocket de forma nativa
+  }
 }
 import fs from "node:fs";
 import path from "node:path";
@@ -882,6 +886,53 @@ export async function ejecutarCierreCarrera(sala, groupJid) {
     })
     .eq("id", sala.id);
 
+  // Al cerrar la carrera se van todas las paradas abiertas de la sala
+  try {
+    const { data: paradasAbiertas } = await supabase
+      .from("chat_mensajes")
+      .select("id, remitente_id, monto_disponible")
+      .eq("sala_id", sala.id)
+      .in("tipo_mensaje", ["propuesta_jugada", "PROPUESTA"])
+      .in("estado_propuesta", ["abierta", "parcial"])
+      .gt("monto_disponible", 0);
+
+    if (Array.isArray(paradasAbiertas) && paradasAbiertas.length > 0) {
+      const idsCerrar = paradasAbiertas.map((p) => p.id);
+      const liberadoPorJugador = new Map();
+      for (const p of paradasAbiertas) {
+        if (!p.remitente_id) continue;
+        const jId = String(p.remitente_id);
+        liberadoPorJugador.set(jId, (liberadoPorJugador.get(jId) || 0) + Number(p.monto_disponible || 0));
+      }
+      await supabase
+        .from("chat_mensajes")
+        .update({ estado_propuesta: "cancelada", monto_disponible: 0 })
+        .in("id", idsCerrar);
+
+      for (const [jugadorId, liberado] of liberadoPorJugador.entries()) {
+        if (liberado <= 0) continue;
+        const { data: cl } = await supabase
+          .from("clientes")
+          .select("id, saldo_actual, saldo_retenido, libre, aval")
+          .eq("id", jugadorId)
+          .maybeSingle();
+        if (cl && !cl.libre) {
+          const nuevoRet = Math.max(0, Number((Number(cl.saldo_retenido || 0) - liberado).toFixed(2)));
+          const nuevoDisp = Math.max(
+            0,
+            Number((Number(cl.saldo_actual || 0) + Number(cl.aval || 0) - nuevoRet).toFixed(2))
+          );
+          await supabase
+            .from("clientes")
+            .update({ saldo_retenido: nuevoRet, saldo_disponible: nuevoDisp })
+            .eq("id", jugadorId);
+        }
+      }
+    }
+  } catch (errParadas) {
+    console.warn("[Bot WhatsApp] Aviso cerrando paradas al cerrar carrera:", errParadas?.message || errParadas);
+  }
+
   const hipo = String(sala.hipodromo_activo || "HIPÓDROMO").toUpperCase();
   const numCarrera = sala.numero_carrera_activa || 1;
 
@@ -1710,6 +1761,20 @@ async function manejarMensajeEntrante(msg) {
       telReal = telPrincipal;
     } else if (!esAltLid && telAlt && telAlt.length >= 7 && telAlt.length <= 15) {
       telReal = telAlt;
+    } else if (esGrupo && esLid && sock) {
+      // Resolver teléfono real desde groupMetadata cuando WhatsApp envía participantJid en formato @lid
+      try {
+        const meta = await sock.groupMetadata(remoteJid);
+        const parts = Array.isArray(meta?.participants) ? meta.participants : [];
+        const pFound = parts.find((p) => p.id === participantJid || p.lid === participantJid);
+        const jidCandidato = pFound?.phoneNumber || (pFound?.jid && pFound.jid.endsWith("@s.whatsapp.net") ? pFound.jid : null);
+        if (jidCandidato) {
+          const tRes = normalizarTelefono(jidCandidato);
+          if (tRes && tRes.length >= 7 && tRes.length <= 15) {
+            telReal = tRes;
+          }
+        }
+      } catch {}
     }
 
     // Rate Limiter Anti-Spam
@@ -1779,15 +1844,9 @@ async function manejarMensajeEntrante(msg) {
       gruposCache.find((g) => g.jid === remoteJid)?.nombre ||
       null;
 
-    // ───────────────────────────────────────────────────────────────────────
-    // INMUNIDAD DEL OPERADOR / ADMIN
-    // Texto libre del oficial se descarta en el demonio (ni siquiera se
-    // reenvía a /procesar-unificado). Solo comandos exactos de control pasan.
-    // ───────────────────────────────────────────────────────────────────────
-    const COMANDOS_OPERADOR_EXACTOS =
-      /^!(?:abrir|abierta|cerrar|cerrad[ao]|pizarra|rectificar|plano|hip[óo]dromo|retirar|recargar|aval)(?:\s|$)/i;
+    // Identificación de rol de operador/admin (delegando el filtrado inteligente a /api/whatsapp-sala/procesar-unificado)
     let esOperadorMensaje = esFromMe;
-    if (!esOperadorMensaje && telReal) {
+    if (!esOperadorMensaje && (telReal || participantJid)) {
       try {
         esOperadorMensaje = await verificarEsOperadorAutorizado(
           salasDestino[0] || null,
@@ -1798,10 +1857,6 @@ async function manejarMensajeEntrante(msg) {
       } catch {
         esOperadorMensaje = false;
       }
-    }
-    if (esOperadorMensaje && !COMANDOS_OPERADOR_EXACTOS.test(textoLimpio)) {
-      console.log(`[Bot WhatsApp] 🔇 Operador ignorado (texto libre): ${senderNombre}`);
-      return;
     }
 
     console.log(
@@ -2040,7 +2095,6 @@ async function iniciarConexionBaileys() {
 
       if (connection === "close") {
         conectado = false;
-        await liberarVinculosHuerfanos();
         const statusCode =
           lastDisconnect?.error?.output?.statusCode ||
           lastDisconnect?.error?.statusCode ||
@@ -2056,6 +2110,7 @@ async function iniciarConexionBaileys() {
         sock = null;
 
         if (fueLogout) {
+          await liberarVinculosHuerfanos();
           reconectando = false;
           numeroVinculado = null;
           qrRaw = null;
@@ -2296,6 +2351,12 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // 1.c POST /invalidar-cache
+    if (req.method === "POST" && pathname === "/invalidar-cache") {
+      salasCacheMap.clear();
+      return responderJson(res, 200, { ok: true, cacheInvalidado: true });
+    }
+
     // 2. POST /vincular-sala
     if (req.method === "POST" && pathname === "/vincular-sala") {
       const body = await leerBodyJson(req);
@@ -2385,21 +2446,24 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (groupJid) {
-        await supabase
+        const rowVinc = {
+          sala_id: salaId,
+          grupo_id: salaActualizada?.grupo_id || null,
+          whatsapp_group_jid: groupJid,
+          whatsapp_group_nombre: groupNombre || null,
+          activo: true,
+          estado_conexion: "conectado",
+          motivo_estado: "Vinculado",
+          updated_at: new Date().toISOString(),
+        };
+        const { error: errUp1 } = await supabase
           .from("salas_whatsapp_grupos")
-          .upsert(
-            {
-              sala_id: salaId,
-              grupo_id: salaActualizada?.grupo_id || null,
-              whatsapp_group_jid: groupJid,
-              whatsapp_group_nombre: groupNombre || null,
-              activo: true,
-              estado_conexion: "conectado",
-              motivo_estado: "Vinculado",
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "sala_id,whatsapp_group_jid" }
-          );
+          .upsert(rowVinc, { onConflict: "whatsapp_group_jid" });
+        if (errUp1) {
+          await supabase
+            .from("salas_whatsapp_grupos")
+            .upsert(rowVinc, { onConflict: "sala_id,whatsapp_group_jid" });
+        }
       }
 
       // Al vincular manualmente, cualquier respaldo de desconexión previo deja
@@ -2548,21 +2612,24 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (groupJid) {
-        await supabase
+        const rowVinc = {
+          sala_id: salaId,
+          grupo_id: salaActualizada?.grupo_id || null,
+          whatsapp_group_jid: groupJid,
+          whatsapp_group_nombre: groupNombre || null,
+          activo: true,
+          estado_conexion: "conectado",
+          motivo_estado: "Vinculado",
+          updated_at: new Date().toISOString(),
+        };
+        const { error: errUp1 } = await supabase
           .from("salas_whatsapp_grupos")
-          .upsert(
-            {
-              sala_id: salaId,
-              grupo_id: salaActualizada?.grupo_id || null,
-              whatsapp_group_jid: groupJid,
-              whatsapp_group_nombre: groupNombre || null,
-              activo: true,
-              estado_conexion: "conectado",
-              motivo_estado: "Vinculado",
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "sala_id,whatsapp_group_jid" }
-          );
+          .upsert(rowVinc, { onConflict: "whatsapp_group_jid" });
+        if (errUp1) {
+          await supabase
+            .from("salas_whatsapp_grupos")
+            .upsert(rowVinc, { onConflict: "sala_id,whatsapp_group_jid" });
+        }
       }
 
       if (salasDesconectadas[salaId]) {
@@ -2696,21 +2763,25 @@ const server = http.createServer(async (req, res) => {
           .eq("sala_id", salaId)
           .neq("whatsapp_group_jid", groupJid);
 
-        const { error: errUpsert } = await supabase
+        const rowVerif = {
+          grupo_id: grupoIdFinal,
+          sala_id: salaId,
+          whatsapp_group_jid: groupJid,
+          whatsapp_group_nombre: metadata.subject,
+          estado_conexion: "conectado",
+          motivo_estado: "Vinculado y verificado con Baileys 24/7",
+          activo: true,
+          updated_at: new Date().toISOString(),
+        };
+        let { error: errUpsert } = await supabase
           .from("salas_whatsapp_grupos")
-          .upsert(
-            {
-              grupo_id: grupoIdFinal,
-              sala_id: salaId,
-              whatsapp_group_jid: groupJid,
-              whatsapp_group_nombre: metadata.subject,
-              estado_conexion: "conectado",
-              motivo_estado: "Vinculado y verificado con Baileys 24/7",
-              activo: true,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "sala_id,whatsapp_group_jid" }
-          );
+          .upsert(rowVerif, { onConflict: "whatsapp_group_jid" });
+        if (errUpsert) {
+          const rAlt = await supabase
+            .from("salas_whatsapp_grupos")
+            .upsert(rowVerif, { onConflict: "sala_id,whatsapp_group_jid" });
+          errUpsert = rAlt.error;
+        }
 
         if (errUpsert) {
           return responderJson(res, 500, {
@@ -2718,6 +2789,8 @@ const server = http.createServer(async (req, res) => {
             motivo: errUpsert.message || "Error guardando vinculación en Supabase",
           });
         }
+
+        salasCacheMap.clear();
 
         // Mantener también sincronizado salas_juego.whatsapp_group_jid para que permanezca conectado
         try {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { cerrarParadasAbiertasDeSala } from "@/features/whatsapp-sala/concretarJugada";
 
 export const dynamic = "force-dynamic";
 
@@ -603,6 +604,24 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, motivo: errUpd.message }, { status: 200 });
       }
 
+      // Sincronizar también columnas alias de migración 20261115000000 si existen en la BD
+      const payloadAlias: Record<string, any> = {};
+      if (payload.tiempo_vencimiento_min !== undefined) {
+        payloadAlias.tiempo_vencimiento_propuesta_min = payload.tiempo_vencimiento_min;
+      }
+      if (payload.tope_marcas_nacional !== undefined) {
+        payloadAlias.tope_caballos_marcas_nacional = payload.tope_marcas_nacional;
+      }
+      if (payload.tope_marcas_americano !== undefined) {
+        payloadAlias.tope_caballos_marcas_internacional = payload.tope_marcas_americano;
+      }
+      if (Object.keys(payloadAlias).length > 0) {
+        try {
+          await supabaseAdmin.from("salas_juego").update(payloadAlias).eq("id", salaId);
+          Object.assign(updated, payloadAlias);
+        } catch {}
+      }
+
       // Comisión y permisos de cruce viven en `grupos_venta`. Se actualizan
       // contra el grupo_id de la sala, nunca con un id suelto del frontend.
       let grupoActualizado = null;
@@ -630,8 +649,29 @@ export async function POST(req: NextRequest) {
             );
           }
           grupoActualizado = g || null;
+          if (g && (cruceMismoEjemplar !== undefined || cruceDiferenteEjemplar !== undefined)) {
+            const permiteCruces = Boolean(g.cruce_mismo_ejemplar || g.cruce_diferente_ejemplar);
+            try {
+              await supabaseAdmin
+                .from("grupos_venta")
+                .update({ permite_cruces: permiteCruces })
+                .eq("id", updated.grupo_id);
+            } catch {}
+          }
         }
       }
+
+      // Invalidar caché del demonio de WhatsApp si está corriendo
+      try {
+        await fetch(`${BOT_DAEMON_URL}/invalidar-cache`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          },
+          body: JSON.stringify({ salaId }),
+        });
+      } catch {}
 
       return NextResponse.json({ ok: true, sala: updated, grupo: grupoActualizado }, { status: 200 });
     }
@@ -798,6 +838,9 @@ export async function POST(req: NextRequest) {
       if (error) {
         return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
       }
+
+      // Al cerrar la carrera se van todas las paradas abiertas de la sala
+      await cerrarParadasAbiertasDeSala(salaId, salaActualizada?.grupo_id || salaPrevia?.grupo_id || null);
 
       const hipo = String(salaActualizada?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
       const numCarrera = salaActualizada?.numero_carrera_activa || 1;
