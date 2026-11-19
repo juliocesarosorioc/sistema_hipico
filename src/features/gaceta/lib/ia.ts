@@ -25,6 +25,7 @@ import {
   parsearGacetaRetrospectosNativo,
   esNombreJockeyPersona,
   esEjemplarFantasmaCabecera,
+  separarDatosEjemplar,
 } from "@/features/gaceta/lib/segmentar";
 import type { CarreraRegistro } from "@/features/gaceta/lib/ui";
 import { INSTRUCCION_LECTURA_VISUAL_FILAS } from "@/features/gaceta/lib/prompts/prompt-americanas";
@@ -535,6 +536,33 @@ function limpiarNombreEjemplar(
     .toUpperCase()
     .replace(/\s+/g, " ");
   if (!s) return "";
+
+  const separado = separarDatosEjemplar(s);
+  if (separado.segmentado && separado.nombre && separado.nombre !== s) {
+    if (separado.numero && (!ej.numero || String(ej.numero).trim() === "")) ej.numero = separado.numero;
+    if (separado.pp != null && ej.pp == null) ej.pp = separado.pp;
+    if (separado.jinete && !ej.jockey) ej.jockey = separado.jinete;
+    if (separado.entrenador && !ej.entrenador) ej.entrenador = separado.entrenador;
+    if (separado.pesoKg != null && ej.peso == null) ej.peso = separado.pesoKg;
+    if (separado.ml && !ej.ml) {
+      ej.ml = separado.ml;
+      ej.morningLine = separado.ml;
+    }
+    if (separado.campana && !ej.campana) ej.campana = separado.campana;
+    if (separado.diasSinCorrer != null && ej.diasSinCorrer == null) {
+      ej.diasSinCorrer = separado.diasSinCorrer;
+      ej.esDebutante = separado.diasSinCorrer === 0;
+    }
+    if (separado.esAe) {
+      ej.esAe = true;
+      ej.condicionElegibilidad = "AE";
+    }
+    if (separado.esMto) {
+      ej.esMto = true;
+      ej.condicionElegibilidad = "MTO";
+    }
+    s = separado.nombre;
+  }
 
   // 1) Si el nombre empieza con un número de dorsal (ej. "1. GRAN SOL", "#2 RELAMPAGO", "3 - RAYO")
   // y el nombre restante tiene al menos 3 letras:

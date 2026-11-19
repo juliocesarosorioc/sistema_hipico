@@ -411,6 +411,121 @@ export function esNombreJockeyPersona(str: string | null | undefined): boolean {
   return false;
 }
 
+export type EjemplarSeparado = {
+  numero?: string;
+  pp?: string;
+  nombre: string;
+  jinete?: string;
+  entrenador?: string;
+  pesoKg?: number;
+  ml?: string;
+  campana?: string;
+  diasSinCorrer?: number;
+  esAe?: boolean;
+  esMto?: boolean;
+  segmentado: boolean;
+};
+
+const RE_CANDIDATO_PERSONA =
+  /\b[A-Z]\.(?:\s*[A-Z]\.){0,2}\s*[A-Z][a-zA-Z'’\-,]+(?:\s*,?\s*(?:Jr|Sr|III|II)\.?)?(?:\(\d{1,3}\))?\b|\b[A-Z](?:\s+[A-Z]){1,2}\s+[A-ZÁÉÍÓÚÑ][a-zA-Záéíóúñ'’\-,]{2,}(?:\s*,?\s*(?:Jr|Sr|III|II)\.?)?\b|\b[A-Z][a-z'’\-]+\s+[A-Z][a-z'’\-]+(?:\s*,?\s*(?:Jr|Sr|III|II)\.?)?\b/g;
+
+/**
+ * Separa el nombre del ejemplar del resto de datos de la fila quando el PDF
+ * viene con un solo espacio entre columnas (o cuando la IA devuelve todo en
+ * el campo `nombre`). No toca filas ya limpias: `segmentado` queda en false.
+ */
+export function separarDatosEjemplar(raw: string): EjemplarSeparado {
+  let s = String(raw ?? "").replace(/\s+/g, " ").trim();
+  const salida: EjemplarSeparado = { nombre: "", segmentado: false };
+  if (!s) return salida;
+
+  const mNum = s.match(/^(?:#|N[º°.]?\s*)?0*(\d{1,2}[A-Za-z]?)(?:[.)])?\s+/);
+  if (mNum) {
+    salida.numero = mNum[1].toUpperCase();
+    s = s.slice(mNum[0].length).trim();
+    salida.segmentado = true;
+  }
+
+  const mPp = s.match(/\bPP\s*:?\s*(\d{1,2}[A-Za-z]?)\b/i);
+  if (mPp) {
+    salida.pp = mPp[1].toUpperCase();
+    s = s.replace(mPp[0], " ").trim();
+    salida.segmentado = true;
+  }
+
+  if (/\bAE\b/i.test(s)) salida.esAe = true;
+  if (/\bMTO\b/i.test(s)) salida.esMto = true;
+
+  const mCampana = s.match(/Act:\s*\(([^)]*)\)\s*\$?\s*([\d.,]+)/i);
+  if (mCampana) {
+    salida.campana = `Act: (${mCampana[1]}) $${mCampana[2]}`;
+    s = s.replace(mCampana[0], " ").trim();
+    salida.segmentado = true;
+  }
+  const mDias = s.match(/\b(\d{1,3})\s*d\s*S\/C\b/i);
+  if (mDias) {
+    salida.diasSinCorrer = parseInt(mDias[1], 10);
+    s = s.replace(mDias[0], " ").trim();
+    salida.segmentado = true;
+  }
+
+  s = s
+    .replace(/\((?:AE|MTO|L|L\d+|FTG|SCR|RET)\)/gi, " ")
+    .replace(/\((?:VE|VEN|US|USA|KY|FL|NY|CA|PA|MD|WV|LA|OH|IN|OK|TX|AR|ARG|BR|BRZ|CL|CHI|PE|PER|CO|COL|UY|URU|MX|MEX|FR|IRE|GB|CAN)\)/gi, " ")
+    .replace(/\b(?:AE|MTO)\b/gi, " ")
+    .replace(/\bSTUD\s*:.*$/i, " ")
+    .replace(/\b[A-Z]{0,2}[CZY]\d+[A-Z]?-?[\w'-]*/gi, " ")
+    .replace(/\bp\.\s*\S+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const mML = s.match(/\b(?:\d{1,2}[-/]\d{1,2}|EVEN)\b/i);
+  const todasML = s.match(/\b(?:\d{1,2}[-/]\d{1,2}|EVEN)\b/gi) ?? [];
+  const mlElegida = todasML.length > 0 ? todasML[todasML.length - 1] : null;
+  if (mlElegida) {
+    salida.ml = mlElegida.toUpperCase();
+    salida.segmentado = true;
+    for (const ml of todasML) s = s.replace(ml, " ");
+    s = s.replace(/\s+/g, " ").trim();
+  }
+
+  const mPeso = s.match(/\b(\d{2,3})(?:[.,](\d))?\s*(?:KG|KGS|LB|LBS)?\b/i);
+  if (mPeso) {
+    const entero = parseInt(mPeso[1], 10);
+    if ((entero >= 45 && entero <= 62) || (entero >= 110 && entero <= 130)) {
+      salida.pesoKg = parseFloat(`${entero}.${mPeso[2] ?? "0"}`);
+      s = s.replace(mPeso[0], " ").trim();
+      salida.segmentado = true;
+    }
+  }
+
+  const personas = Array.from(s.matchAll(RE_CANDIDATO_PERSONA)).filter(
+    (m) =>
+      (m.index ?? 0) > 0 &&
+      (/^[A-Z]\./.test(m[0]) ||
+        /^[A-Z]\s+[A-Z]\s+/.test(m[0]) ||
+        esNombreJockeyPersona(m[0]))
+  );
+
+  const normalizarPersona = (raw: string) =>
+    raw
+      .trim()
+      .toUpperCase()
+      .replace(/\s*,?\s*(JR|SR|III|II)\b(?!\.)/gi, ", $1.")
+      .replace(/\s*,?\s*(JR|SR|III|II)\s*\./gi, ", $1.");
+
+  if (personas.length > 0) {
+    salida.jinete = normalizarPersona(personas[0][0]);
+    salida.entrenador = personas[1] ? normalizarPersona(personas[1][0]) : undefined;
+    salida.segmentado = true;
+    s = s.slice(0, personas[0].index).trim();
+  }
+
+  salida.nombre = limpiarNombreEjemplarRetrospecto(s);
+  if (salida.segmentado && salida.nombre.length < 2) salida.nombre = "";
+  return salida;
+}
+
 function normalizarTextoCabeceraGaceta(valor: unknown): string {
   return String(valor ?? "")
     .normalize("NFD")
@@ -510,6 +625,24 @@ export function parsearFilaEjemplarRetrospecto(linea: string): FilaEjemplarRetro
   if (!m) return null;
 
   const numero = m[1].toUpperCase();
+  const separado = separarDatosEjemplar(m[2]);
+  if (separado.segmentado && separado.nombre && !esNombreJockeyPersona(separado.nombre)) {
+    return {
+      numero,
+      pp: separado.pp,
+      ml: separado.ml,
+      nombre: separado.nombre,
+      jinete: separado.jinete,
+      entrenador: separado.entrenador,
+      pesoKg: separado.pesoKg,
+      campana: separado.campana,
+      diasSinCorrer: separado.diasSinCorrer,
+      esDebutante: separado.diasSinCorrer === 0,
+      esAe: Boolean(separado.esAe),
+      esMto: Boolean(separado.esMto),
+    };
+  }
+
   const chunks = m[2].split(/\s{2,}|\t+/).map((c) => c.trim()).filter(Boolean);
   if (!chunks.length) return null;
 
@@ -841,7 +974,8 @@ export function parsearPaginaRetrospectosNativo(
     let mBlock: RegExpExecArray | null;
     while ((mBlock = reNumCaballo.exec(textoCompleto)) !== null) {
       const numProg = mBlock[1].trim();
-      const nombre = limpiarNombreEjemplarRetrospecto(mBlock[2] || "");
+      const separado = separarDatosEjemplar(mBlock[2] || "");
+      const nombre = separado.nombre || limpiarNombreEjemplarRetrospecto(mBlock[2] || "");
       const nombreKey = nombre.toUpperCase();
       const clave = `N:${numProg.toUpperCase()}`;
 
@@ -877,15 +1011,16 @@ export function parsearPaginaRetrospectosNativo(
       pushEjemplar({
         numero: numProg,
         nombre,
-        jinete: jockeyBlock,
-        entrenador: trainerBlock,
-        pesoKg: mPeso ? parseFloat(mPeso[1].replace(",", ".")) : undefined,
-        ml: mML ? mML[1] : undefined,
-        campana: mCampana ? `Act: (${mCampana[1]}) $${mCampana[2]}` : undefined,
-        diasSinCorrer,
-        esDebutante: diasSinCorrer === 0,
-        esAe: condicion === "AE",
-        esMto: condicion === "MTO",
+        pp: separado.pp,
+        jinete: separado.jinete || jockeyBlock,
+        entrenador: separado.entrenador || trainerBlock,
+        pesoKg: separado.pesoKg ?? (mPeso ? parseFloat(mPeso[1].replace(",", ".")) : undefined),
+        ml: separado.ml || (mML ? mML[1] : undefined),
+        campana: separado.campana || (mCampana ? `Act: (${mCampana[1]}) $${mCampana[2]}` : undefined),
+        diasSinCorrer: separado.diasSinCorrer ?? diasSinCorrer,
+        esDebutante: (separado.diasSinCorrer ?? diasSinCorrer) === 0,
+        esAe: Boolean(separado.esAe) || condicion === "AE",
+        esMto: Boolean(separado.esMto) || condicion === "MTO",
       });
     }
   }
