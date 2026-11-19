@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   type ConfiguracionIncentivosWps,
   type ApuestaWpsParseada,
@@ -19,6 +19,9 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 import { usuarioVigente } from "@/features/seguridad/lib/vigente";
 import { emitirToast } from "@/shared/lib/mensajeria";
 import { useAuthStore } from "@/shared/store/useAuthStore";
+import { listarJugadasDeCarrera, type JugadaAdmin } from "@/features/jugadas/lib/jugadas";
+import { useRealtimeApuestasCarrera } from "@/shared/hooks/useRealtimeApuestasCarrera";
+import { formatearMontoRegional } from "@/shared/lib/dinero";
 
 export type ModalWpsApuestasProps = {
   abierto: boolean;
@@ -26,7 +29,9 @@ export type ModalWpsApuestasProps = {
   grupoId?: string | number | null;
   nombreGrupo?: string;
   hipodromo?: string;
+  hipodromoClave?: string;
   carrera?: number | string;
+  fecha?: string;
   gruposDisponibles?: Array<{ id: string | number; nombre: string }>;
   onCargarApuestas?: (apuestas: ApuestaWpsParseada[]) => void;
 };
@@ -37,7 +42,9 @@ export function ModalWpsApuestas({
   grupoId,
   nombreGrupo = "Grupo Activo",
   hipodromo,
+  hipodromoClave,
   carrera,
+  fecha,
   gruposDisponibles = [],
   onCargarApuestas,
 }: ModalWpsApuestasProps) {
@@ -47,6 +54,8 @@ export function ModalWpsApuestas({
   // Estado de apuestas
   const [textoApuestas, setTextoApuestas] = useState("");
   const [cargandoGuardar, setCargandoGuardar] = useState(false);
+  const [jugadasEnVivo, setJugadasEnVivo] = useState<JugadaAdmin[]>([]);
+  const [cargandoEnVivo, setCargandoEnVivo] = useState(false);
 
   // Estado de configuracion
   const [config, setConfig] = useState<ConfiguracionIncentivosWps>(CONFIG_WPS_DEFECTO);
@@ -96,6 +105,40 @@ export function ModalWpsApuestas({
     const montoNum = parseFloat(simMonto.replace(",", ".")) || 0;
     return calcularPagoWps(montoNum, baseNum, config, simModalidad);
   }, [simDividendoBase, simMonto, simModalidad, config]);
+
+  const hipoConsulta = hipodromoClave || hipodromo;
+
+  const cargarJugadasEnVivo = useCallback(
+    async (silencioso = false) => {
+      if (!abierto || !hipoConsulta || !carrera || !fecha) {
+        setJugadasEnVivo([]);
+        return;
+      }
+      if (!silencioso) setCargandoEnVivo(true);
+      try {
+        const r = await listarJugadasDeCarrera(hipoConsulta, carrera, fecha);
+        setJugadasEnVivo(r.ok ? r.jugadas : []);
+      } catch {
+        setJugadasEnVivo([]);
+      } finally {
+        if (!silencioso) setCargandoEnVivo(false);
+      }
+    },
+    [abierto, hipoConsulta, carrera, fecha]
+  );
+
+  useEffect(() => {
+    void cargarJugadasEnVivo();
+  }, [cargarJugadasEnVivo]);
+
+  useRealtimeApuestasCarrera({
+    activo: abierto,
+    fecha,
+    hipodromo: hipoConsulta,
+    carrera,
+    grupoId,
+    onCambio: () => cargarJugadasEnVivo(true),
+  });
 
   if (!abierto) return null;
 
@@ -247,6 +290,7 @@ export function ModalWpsApuestas({
         <div className="flex-1 overflow-y-auto p-5 text-slate-200">
           {/* PESTAÑA 1: CARGA DE APUESTAS WPS */}
           {pestana === "apuestas" && (
+            <>
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
               <div className="space-y-3 lg:col-span-5">
                 <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 space-y-2">
@@ -408,6 +452,70 @@ export function ModalWpsApuestas({
                 </div>
               </div>
             </div>
+
+            {/* Apuestas ya concretadas por el bot/Taquilla para esta carrera. */}
+            <div className="mt-5 rounded-xl border border-emerald-500/30 bg-slate-950/70">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-4 py-2.5">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                    Apuestas en vivo · C{carrera || "—"}
+                  </h3>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Realtime
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold text-slate-400">
+                  {jugadasEnVivo.length} ticket(s) ·{" "}
+                  {formatearMontoRegional(
+                    jugadasEnVivo.reduce((a, j) => a + Number(j.monto_jugado ?? 0), 0)
+                  )}
+                </span>
+              </div>
+
+              {cargandoEnVivo && jugadasEnVivo.length === 0 ? (
+                <div className="p-6 text-center text-[11px] text-slate-500">Cargando apuestas…</div>
+              ) : jugadasEnVivo.length === 0 ? (
+                <div className="p-6 text-center text-[11px] text-slate-500">
+                  Aún no hay apuestas concretadas para esta carrera.
+                </div>
+              ) : (
+                <div className="max-h-56 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-slate-800/90 text-[10px] font-black uppercase text-slate-400">
+                      <tr>
+                        <th className="px-3 py-2">Jugador</th>
+                        <th className="px-3 py-2">Contraparte</th>
+                        <th className="px-3 py-2">Jugada</th>
+                        <th className="px-3 py-2 text-center">Ejemplar</th>
+                        <th className="px-3 py-2 text-right">Monto</th>
+                        <th className="px-3 py-2">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {jugadasEnVivo.map((j) => (
+                        <tr key={String(j.id)} className="hover:bg-slate-900/60 transition">
+                          <td className="px-3 py-2 font-bold text-slate-100">
+                            {j.cliente_juega_nombre || "—"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-300">{j.cliente_consigue_nombre || "—"}</td>
+                          <td className="px-3 py-2 text-slate-300">{j.nombre_jugada || "—"}</td>
+                          <td className="px-3 py-2 text-center font-black text-amber-400 font-mono">
+                            {j.caballo ?? j.ejemplar_numero ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-emerald-400">
+                            {formatearMontoRegional(j.monto_jugado)}
+                          </td>
+                          <td className="px-3 py-2 text-[10px] font-bold uppercase text-slate-400">
+                            {j.estado || "Pendiente"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            </>
           )}
 
           {/* PESTAÑA 2: CONFIGURACION DE INCENTIVOS Y RANGOS DE PRECIOS */}

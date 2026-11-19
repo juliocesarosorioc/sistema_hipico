@@ -69,6 +69,7 @@ import { guardarCarreraCentral, numerosEjemplares } from "@/features/carreras/li
 import { alternarRetiroCarrera, aplicarRetirosCarrera, parsearRetirados, jugadaInvolucraRetirado } from "@/features/carreras/lib/retiros";
 import { claveHipodromo, numerosDeCarrera } from "@/features/carreras/lib/claves";
 import { useRegistroCentral, useRegistroCentralOpts } from "@/shared/store/useRegistroCentral";
+import { useRealtimeApuestasCarrera } from "@/shared/hooks/useRealtimeApuestasCarrera";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { revisarCaballo, maximoDeLaCarrera, type RevisionCaballo } from "@/features/taquilla/lib/caballos";
 import { mensajeResultadoDeCarrera, mensajePreliminarDeCarrera } from "@/features/taquilla/lib/mensajeResultado";
@@ -1743,25 +1744,39 @@ const hipodromosDelDia = useMemo(() => {
    * la sesión). Es la fuente que mantiene el panel visible después de recargar
    * o liquidar; el store local solo completa la proyección de las Pendientes.
    */
-  const recargarJugadasGuardadas = useCallback(async () => {
+  const recargarJugadasGuardadas = useCallback(async (silencioso = false) => {
     if (!listoParaCargar) {
       setJugadasGuardadas([]);
       return;
     }
-    setCargandoGuardadas(true);
+    if (!silencioso) setCargandoGuardadas(true);
     try {
       const r = await listarJugadasDeCarrera(hipodromo, carrera, fecha);
       setJugadasGuardadas(r.ok ? r.jugadas : []);
     } catch {
       setJugadasGuardadas([]);
     } finally {
-      setCargandoGuardadas(false);
+      if (!silencioso) setCargandoGuardadas(false);
     }
   }, [listoParaCargar, hipodromo, carrera, fecha, grupoSesion]);
 
   useEffect(() => {
     void recargarJugadasGuardadas();
   }, [recargarJugadasGuardadas]);
+
+  /** Concreciones del bot y tickets de Taquilla: el tablero y el plano se
+   *  reflejan solos en cuanto se escriben, sin esperar a recargar la página. */
+  useRealtimeApuestasCarrera({
+    activo: listoParaCargar,
+    fecha,
+    hipodromo,
+    carrera,
+    grupoId: veTodosLosGrupos ? null : grupoSesion,
+    onCambio: () => {
+      void recargarJugadasGuardadas(true);
+      void recargarClientes();
+    },
+  });
 
   /** Pizarra Oficial y Orden de Llegada (Raya) vigentes para la carrera actual. */
   const pizarraPuestosActual = useMemo<string[]>(() => {
@@ -4221,7 +4236,9 @@ const hipodromosDelDia = useMemo(() => {
           grupoId={grupoSesion}
           nombreGrupo={grupoCabecera}
           hipodromo={nombreHipodromo}
+          hipodromoClave={hipodromo}
           carrera={carrera}
+          fecha={fecha}
           gruposDisponibles={gruposVenta.map((g) => ({ id: g.id, nombre: g.nombre }))}
           onCargarApuestas={(apuestas: ApuestaWpsParseada[]) => {
             const nuevasFilas: FilaCarga[] = apuestas.map((ap) => ({
@@ -6516,6 +6533,7 @@ const hipodromosDelDia = useMemo(() => {
           fecha={fecha}
           tasaComision={comisionNum}
           carreraLiquidada={carreraLiquidada}
+          grupoId={veTodosLosGrupos ? null : grupoSesion}
           onCerrar={() => {
             setModalEditarJugadas(false);
             void recargarJugadasGuardadas();

@@ -33,6 +33,7 @@ import { nombreOficialDeCaballoSuelto } from "@/features/liquidacion/lib/resolve
 import { registrarAuditoria } from "@/features/grupos/lib/grupos";
 import { usuarioVigente } from "@/features/seguridad/lib/vigente";
 import { listarClientes, type Cliente } from "@/features/clientes/lib/clientes";
+import { useRealtimeApuestasCarrera } from "@/shared/hooks/useRealtimeApuestasCarrera";
 
 type Props = {
   hipodromo: string;
@@ -43,6 +44,7 @@ type Props = {
    *  recalcular para que la comisión neta por cruces cuadre con la original. */
   tasaComision?: number | null;
   carreraLiquidada?: boolean;
+  grupoId?: string | number | null;
   onCerrar: () => void;
 };
 
@@ -113,6 +115,7 @@ export default function ModalEditarJugadasCarrera({
   fecha,
   tasaComision,
   carreraLiquidada,
+  grupoId,
   onCerrar,
 }: Props) {
   const [jugadas, setJugadas] = useState<JugadaAdmin[]>([]);
@@ -129,9 +132,11 @@ export default function ModalEditarJugadasCarrera({
 
   const usuario = usuarioVigente();
 
-  const cargar = useCallback(async () => {
-    setCargando(true);
-    setError("");
+  const cargar = useCallback(async (silencioso = false) => {
+    if (!silencioso) {
+      setCargando(true);
+      setError("");
+    }
     const [r, cli] = await Promise.all([
       listarJugadasDeCarrera(hipodromo, carrera, fecha),
       listarClientes().catch(() => [] as Cliente[]),
@@ -143,12 +148,20 @@ export default function ModalEditarJugadasCarrera({
     } else {
       setJugadas(r.jugadas);
     }
-    setCargando(false);
+    if (!silencioso) setCargando(false);
   }, [hipodromo, carrera, fecha]);
 
   useEffect(() => {
     void cargar();
   }, [cargar]);
+
+  useRealtimeApuestasCarrera({
+    fecha,
+    hipodromo,
+    carrera,
+    grupoId,
+    onCambio: () => cargar(true),
+  });
 
   const visibles = soloVigentes ? jugadas.filter((j) => !j.anulada) : jugadas;
   const totalVigente = visibles.reduce((a, j) => a + Number(j.monto_jugado ?? 0), 0);
