@@ -25,6 +25,8 @@
  */
 
 import {
+  esComandoCerrarJugada,
+  esComandoJugueConTodos,
   parsearMensajeJugada,
   type DatosJugada,
   type RolJugada,
@@ -85,6 +87,20 @@ export interface MensajeSalaWhatsApp {
   };
 }
 
+export interface PendienteAmpliacionSala {
+  propuestaId: string;
+  proponente: string;
+  aceptante: string;
+  jugada: string;
+  caballos: string;
+  montoSolicitado: number;
+  montoConcretado: number;
+  montoPendiente: number;
+  mensajeConcrecionId: string;
+  textoConcrecion: string;
+  cerrada: boolean;
+}
+
 export interface EstadoSalaJugadas {
   hipodromo: string;
   carrera: number;
@@ -101,6 +117,7 @@ export interface EstadoSalaJugadas {
     monto: number;
     fecha: string;
   }>;
+  pendientesAmpliacion?: PendienteAmpliacionSala[];
 }
 
 const fmt = (n: number): string =>
@@ -239,9 +256,9 @@ export function evaluarPropuestaJugada(
  */
 export function evaluarConcrecionRespuesta(
   textoRespuesta: string,
-  propuesta: { rol: RolJugada; jugada: string; caballos: string; montoAbierto: number }
+  propuesta: { rol: RolJugada; jugada: string; caballos: string; montoAbierto: number; montoOriginal?: number }
 ):
-  | { ok: true; montoAceptado: number }
+  | { ok: true; montoAceptado: number; montoSolicitado: number }
   | { ok: false; error: string } {
   const t = String(textoRespuesta ?? "")
     .trim()
@@ -253,6 +270,8 @@ export function evaluarConcrecionRespuesta(
     "juego",
     "jugue",
     "jugué",
+    "jugo",
+    "jugó",
     "te doy",
     "doy",
     "consigo",
@@ -264,6 +283,7 @@ export function evaluarConcrecionRespuesta(
     "ponte",
     "pago",
     "anota",
+    "j",
   ];
   const tienePalabraClave = palabrasAceptacion.some((p) => new RegExp(`\\b${p}\\b`, "i").test(t));
   const montoMencionadoMatch = /\b(\d+(?:[.,]\d+)?)\b/.exec(t);
@@ -278,7 +298,7 @@ export function evaluarConcrecionRespuesta(
   // Incompatibilidad de roles:
   // Propuesta JUEGA: El autor juega a favor. El aceptante DEBE ser DA (dar, conseguir, bancar, jugaste).
   if (propuesta.rol === "JUEGA") {
-    if (/\b(jugue|jugué|juego|voy|apuesto)\b/i.test(t) && !/\b(te doy|doy|banco|jugaste)\b/i.test(t)) {
+    if (/\b(jugue|jugué|juego|voy|apuesto)\b/i.test(t) && !/\b(te doy|doy|banco|jugaste|consigo)\b/i.test(t)) {
       return {
         ok: false,
         error: "Favor aclarar: Una persona juega y la otra debe dar o aceptar la contraria.",
@@ -297,11 +317,13 @@ export function evaluarConcrecionRespuesta(
     }
   }
 
-  // Determinar monto aceptado: si especificó un monto numérico, ese monto; si no, el monto abierto total
+  // Determinar monto solicitado y monto aceptado
+  let montoSolicitado = propuesta.montoAbierto > 0 ? propuesta.montoAbierto : Number(propuesta.montoOriginal || 0);
   let montoAceptado = propuesta.montoAbierto;
   if (montoMencionadoMatch) {
     const val = parseFloat(montoMencionadoMatch[1].replace(",", "."));
     if (val > 0) {
+      montoSolicitado = val;
       montoAceptado = Math.min(val, propuesta.montoAbierto);
     }
   }
@@ -309,6 +331,7 @@ export function evaluarConcrecionRespuesta(
   return {
     ok: true,
     montoAceptado,
+    montoSolicitado,
   };
 }
 
@@ -348,12 +371,162 @@ export function procesarMensajeSalaJugadas(
 
   const mensajesGenerados: MensajeSalaWhatsApp[] = [mensajeUsuario];
   let concreciones = [...estado.concrecionesConfirmadas];
+  let pendientes = (estado.pendientesAmpliacion ?? []).map((p) => ({ ...p }));
+
+  // =========================================================================
+  // CASO 0: COMANDO DE CIERRE ("Se Fue", "sf", "cf", "c fue", "ce fue")
+  // =========================================================================
+  if (esComandoCerrarJugada(texto)) {
+    const propTargetId = respuestaA?.propuesta?.id;
+    for (const item of pendientes) {
+      if (
+        !item.cerrada &&
+        item.montoPendiente > 0 &&
+        normalizarNombre(item.aceptante) === normalizarNombre(autor) &&
+        (!propTargetId || item.propuestaId === propTargetId)
+      ) {
+        item.cerrada = true;
+        item.montoPendiente = 0;
+      }
+    }
+    for (const m of estado.mensajes) {
+      if (
+        m.propuesta &&
+        normalizarNombre(m.autor) === normalizarNombre(autor) &&
+        (!propTargetId || m.propuesta.id === propTargetId)
+      ) {
+        m.propuesta.montoAbierto = 0;
+        for (const item of pendientes) {
+          if (item.propuestaId === m.propuesta.id && !item.cerrada) {
+            item.cerrada = true;
+            item.montoPendiente = 0;
+          }
+        }
+      }
+    }
+    return {
+      nuevoEstado: {
+        ...estado,
+        saldos,
+        concrecionesConfirmadas: concreciones,
+        pendientesAmpliacion: pendientes,
+        mensajes: [...estado.mensajes, ...mensajesGenerados],
+      },
+      mensajesGenerados,
+    };
+  }
+
+  // =========================================================================
+  // CASO 0.B: "Jugue con Todos" / "Todos" POR PARTE DEL PROPONENTE
+  // =========================================================================
+  if (esComandoJugueConTodos(texto)) {
+    const propTargetId = respuestaA?.propuesta?.id;
+    const msgProp = propTargetId
+      ? estado.mensajes.find(
+          (m) => m.propuesta?.id === propTargetId && normalizarNombre(m.autor) === normalizarNombre(autor)
+        )
+      : [...estado.mensajes]
+          .reverse()
+          .find(
+            (m) =>
+              m.propuesta &&
+              normalizarNombre(m.autor) === normalizarNombre(autor) &&
+              pendientes.some((p) => p.propuestaId === m.propuesta!.id && !p.cerrada && p.montoPendiente > 0)
+          );
+
+    if (msgProp?.propuesta) {
+      const prop = msgProp.propuesta;
+      const saldoProponente = asegurarSaldoJugador(saldos, msgProp.autor);
+
+      for (const item of pendientes) {
+        if (item.propuestaId !== prop.id || item.cerrada || item.montoPendiente <= 0) continue;
+        const saldoAceptante = asegurarSaldoJugador(saldos, item.aceptante);
+        const adicional = Math.min(item.montoPendiente, saldoProponente.disponible, saldoAceptante.disponible);
+        if (adicional <= 0) continue;
+
+        comprometerSaldo(saldos, msgProp.autor, adicional);
+        comprometerSaldo(saldos, item.aceptante, adicional);
+
+        const eraParcial = item.montoConcretado > 0;
+        const nuevoTotal = Math.round((item.montoConcretado + adicional) * 100) / 100;
+        item.montoConcretado = nuevoTotal;
+        item.montoPendiente = Math.max(0, Math.round((item.montoPendiente - adicional) * 100) / 100);
+
+        if (eraParcial) {
+          const concExistente = [...concreciones]
+            .reverse()
+            .find(
+              (c) =>
+                c.propuestaId === prop.id &&
+                normalizarNombre(c.aceptante) === normalizarNombre(item.aceptante)
+            );
+          if (concExistente) {
+            concExistente.monto = nuevoTotal;
+          } else {
+            concreciones.push({
+              id: `conc-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+              propuestaId: prop.id,
+              proponente: msgProp.autor,
+              aceptante: item.aceptante,
+              jugada: prop.jugada,
+              caballos: prop.caballos,
+              monto: nuevoTotal,
+              fecha: ahoraFmt,
+            });
+          }
+        } else {
+          concreciones.push({
+            id: `conc-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            propuestaId: prop.id,
+            proponente: msgProp.autor,
+            aceptante: item.aceptante,
+            jugada: prop.jugada,
+            caballos: prop.caballos,
+            monto: nuevoTotal,
+            fecha: ahoraFmt,
+          });
+        }
+
+        const textoIa =
+          eraParcial && item.montoPendiente === 0
+            ? `Jugó Completo ${fmt(nuevoTotal)}`
+            : `Jugo ${fmt(nuevoTotal)}`;
+
+        mensajesGenerados.push({
+          id: `ia-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          autor: "🤖 Agente IA",
+          texto: textoIa,
+          fecha: ahoraFmt,
+          esIa: true,
+          sombrear: true,
+          respuestaA: {
+            id: item.mensajeConcrecionId,
+            autor: item.aceptante,
+            texto: item.textoConcrecion,
+          },
+        });
+      }
+
+      return {
+        nuevoEstado: {
+          ...estado,
+          saldos,
+          concrecionesConfirmadas: concreciones,
+          pendientesAmpliacion: pendientes,
+          mensajes: [...estado.mensajes, ...mensajesGenerados],
+        },
+        mensajesGenerados,
+      };
+    }
+  }
 
   // =========================================================================
   // CASO A: RESPUESTA A UN MENSAJE PREVIO CON PROPUESTA (CONCRECIÓN P2P)
   // =========================================================================
   if (respuestaA?.propuesta) {
-    const prop = respuestaA.propuesta;
+    // Usar el estado más reciente de la propuesta en estado.mensajes por si ya tuvo concreciones previas
+    const msgPropOriginal = estado.mensajes.find((m) => m.id === respuestaA.propuesta!.id);
+    const prop = msgPropOriginal?.propuesta ?? respuestaA.propuesta;
 
     // Verificar si la carrera está cerrada
     const enMem = obtenerEstadoCarreraEnMemoria({
@@ -376,6 +549,7 @@ export function procesarMensajeSalaJugadas(
         nuevoEstado: {
           ...estado,
           saldos,
+          pendientesAmpliacion: pendientes,
           mensajes: [...estado.mensajes, ...mensajesGenerados],
         },
         mensajesGenerados,
@@ -397,6 +571,7 @@ export function procesarMensajeSalaJugadas(
         nuevoEstado: {
           ...estado,
           saldos,
+          pendientesAmpliacion: pendientes,
           mensajes: [...estado.mensajes, ...mensajesGenerados],
         },
         mensajesGenerados,
@@ -420,6 +595,7 @@ export function procesarMensajeSalaJugadas(
         nuevoEstado: {
           ...estado,
           saldos,
+          pendientesAmpliacion: pendientes,
           mensajes: [...estado.mensajes, ...mensajesGenerados],
         },
         mensajesGenerados,
@@ -430,6 +606,7 @@ export function procesarMensajeSalaJugadas(
     const saldoAceptante = saldoAutor;
     const saldoProponente = asegurarSaldoJugador(saldos, respuestaA.autor);
 
+    const montoSolicitado = evaluacionConcrecion.montoSolicitado;
     const montoDeseado = evaluacionConcrecion.montoAceptado;
 
     // ¿El aceptante dispone de menos saldo que el monto deseado?
@@ -447,6 +624,36 @@ export function procesarMensajeSalaJugadas(
         nuevoEstado: {
           ...estado,
           saldos,
+          pendientesAmpliacion: pendientes,
+          mensajes: [...estado.mensajes, ...mensajesGenerados],
+        },
+        mensajesGenerados,
+      };
+    }
+
+    // Si la propuesta ya agotó su montoAbierto (0) pero el jugador tiene saldo y pide un monto válido (ej. el 4to con 30),
+    // queda en cola FIFO a la espera de que el proponente diga "Jugue con Todos" / "Todos".
+    if (prop.montoAbierto <= 0 && montoSolicitado > 0) {
+      const topeJugador = Math.min(montoSolicitado, saldoAceptante.disponible);
+      pendientes.push({
+        propuestaId: prop.id,
+        proponente: respuestaA.autor,
+        aceptante: autor,
+        jugada: prop.jugada,
+        caballos: prop.caballos,
+        montoSolicitado: topeJugador,
+        montoConcretado: 0,
+        montoPendiente: topeJugador,
+        mensajeConcrecionId: idMsg,
+        textoConcrecion: texto,
+        cerrada: false,
+      });
+      return {
+        nuevoEstado: {
+          ...estado,
+          saldos,
+          concrecionesConfirmadas: concreciones,
+          pendientesAmpliacion: pendientes,
           mensajes: [...estado.mensajes, ...mensajesGenerados],
         },
         mensajesGenerados,
@@ -471,11 +678,17 @@ export function procesarMensajeSalaJugadas(
         nuevoEstado: {
           ...estado,
           saldos,
+          pendientesAmpliacion: pendientes,
           mensajes: [...estado.mensajes, ...mensajesGenerados],
         },
         mensajesGenerados,
       };
     }
+
+    const fueRecortadoPorRemanente =
+      montoSolicitado > prop.montoAbierto &&
+      montoEfectivo === prop.montoAbierto &&
+      !porEncimaDeSaldo;
 
     // Bloquear saldo comprometido para ambos hasta la liquidación de la carrera
     comprometerSaldo(saldos, autor, montoEfectivo);
@@ -507,12 +720,37 @@ export function procesarMensajeSalaJugadas(
       fecha: ahoraFmt,
     });
 
+    if (fueRecortadoPorRemanente) {
+      const topeSolicitado = Math.min(montoSolicitado, saldoAceptante.disponible);
+      const faltante = Math.max(0, Math.round((topeSolicitado - montoEfectivo) * 100) / 100);
+      if (faltante > 0) {
+        pendientes.push({
+          propuestaId: prop.id,
+          proponente: respuestaA.autor,
+          aceptante: autor,
+          jugada: prop.jugada,
+          caballos: prop.caballos,
+          montoSolicitado: topeSolicitado,
+          montoConcretado: montoEfectivo,
+          montoPendiente: faltante,
+          mensajeConcrecionId: idMsg,
+          textoConcrecion: texto,
+          cerrada: false,
+        });
+      }
+    }
+
     // Actualizar monto abierto de la propuesta original en el historial
-    const msgPropuestaOriginal = estado.mensajes.find((m) => m.id === prop.id);
-    if (msgPropuestaOriginal?.propuesta) {
-      msgPropuestaOriginal.propuesta.montoAbierto = Math.max(
+    if (msgPropOriginal?.propuesta) {
+      msgPropOriginal.propuesta.montoAbierto = Math.max(
         0,
-        Math.round((msgPropuestaOriginal.propuesta.montoAbierto - montoEfectivo) * 100) / 100
+        Math.round((msgPropOriginal.propuesta.montoAbierto - montoEfectivo) * 100) / 100
+      );
+    }
+    if (respuestaA.propuesta && respuestaA.propuesta !== msgPropOriginal?.propuesta) {
+      respuestaA.propuesta.montoAbierto = Math.max(
+        0,
+        Math.round((respuestaA.propuesta.montoAbierto - montoEfectivo) * 100) / 100
       );
     }
 
@@ -521,6 +759,9 @@ export function procesarMensajeSalaJugadas(
     if (porEncimaDeSaldo) {
       // Regla exacta: Si concreta por encima de su saldo: "*Jugaron X monto*"
       textoIa = `*Jugaron ${formatearMonto(montoEfectivo)}*`;
+    } else if (fueRecortadoPorRemanente) {
+      // Regla exacta: Si pidieron más de lo que quedaba en la propuesta: "Jugo X, Es lo que queda"
+      textoIa = `Jugo ${fmt(montoEfectivo)}, Es lo que queda`;
     } else {
       // Regla exacta: Si ambos disponen de saldo: "*Aquí Jugaron*" en negritas
       textoIa = `*Aquí Jugaron* (${prop.jugada} #${prop.caballos} por ${formatearMonto(
@@ -544,6 +785,7 @@ export function procesarMensajeSalaJugadas(
         ...estado,
         saldos,
         concrecionesConfirmadas: concreciones,
+        pendientesAmpliacion: pendientes,
         mensajes: [...estado.mensajes, ...mensajesGenerados],
       },
       mensajesGenerados,

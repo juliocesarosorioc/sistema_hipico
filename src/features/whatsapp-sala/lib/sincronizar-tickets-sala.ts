@@ -42,7 +42,7 @@ function normalizarCaballoTicket(t: TicketFifoBasico): string {
   const bandoA = Array.isArray(t.caballos_bando_a) ? t.caballos_bando_a.filter(Boolean) : [];
   const bandoB = Array.isArray(t.caballos_bando_b) ? t.caballos_bando_b.filter(Boolean) : [];
   if (t.es_match || (bandoA.length > 0 && bandoB.length > 0)) {
-    return `${bandoA.join(".") || t.ejemplar_numero || "1"}X${bandoB.join(".")}`;
+    return `${bandoA.join("-") || t.ejemplar_numero || "1"}X${bandoB.join("-")}`;
   }
   return String(t.ejemplar_numero || bandoA[0] || "1").trim();
 }
@@ -78,13 +78,17 @@ export async function sincronizarTicketsPropuestaATaquilla(
     if (!tickets || tickets.length === 0) return;
 
     let comisionPct = Number(params.comisionPct);
+    let monedaGrupo = "USD";
+    const { data: grp } = await supabase
+      .from("grupos_venta")
+      .select("comision_default, moneda")
+      .eq("id", params.grupoId)
+      .maybeSingle();
     if (!Number.isFinite(comisionPct)) {
-      const { data: grp } = await supabase
-        .from("grupos_venta")
-        .select("comision_default")
-        .eq("id", params.grupoId)
-        .maybeSingle();
       comisionPct = Number(grp?.comision_default ?? 5);
+    }
+    if (grp?.moneda) {
+      monedaGrupo = String(grp.moneda).trim().toUpperCase() || "USD";
     }
 
     const fechaCarrera =
@@ -95,18 +99,29 @@ export async function sincronizarTicketsPropuestaATaquilla(
     const carrera = Number(params.sala.numero_carrera_activa || 1) || 1;
 
     for (const raw of tickets) {
-      const t = raw as TicketFifoBasico;
+      const t = raw as TicketFifoBasico & { estado?: string };
       if (!t.codigo_ticket) continue;
+      const monto = Number(t.monto_concretado || 0);
+      const estadoTk = String(t.estado || "").toUpperCase();
+      if (estadoTk === "EN_COLA" || estadoTk === "ANULADO" || monto <= 0) continue;
       const marcador = `SALA_P2P:${t.codigo_ticket}`;
 
       const { data: existente } = await supabase
         .from("tickets_apuestas")
-        .select("id")
+        .select("id, monto_jugado")
         .eq("nota_auditoria", marcador)
         .limit(1)
         .maybeSingle();
 
-      if (existente?.id) continue;
+      if (existente?.id) {
+        if (Number(existente.monto_jugado || 0) !== monto) {
+          await supabase
+            .from("tickets_apuestas")
+            .update({ monto_jugado: monto })
+            .eq("id", existente.id);
+        }
+        continue;
+      }
 
       const esJuegaProponente = proponenteEsQuienJuega(t.accion_proponente || params.condicionProponente);
       const clienteJuegaId = esJuegaProponente ? t.proponente_id : t.aceptante_id;
@@ -120,20 +135,18 @@ export async function sincronizarTicketsPropuestaATaquilla(
 
       const esMatch = Boolean(t.es_match || (Array.isArray(t.caballos_bando_b) && t.caballos_bando_b.length > 0));
       const propRaw = String(t.proporcion_premio || "").trim();
-      const tieneProp10 = /^10\s*[\/aAª@]\s*\d+(?:[.,]\d+)?$/i.test(propRaw) && !/^10\s*[\/aAª@]\s*10$/i.test(propRaw);
-      const propCanon = tieneProp10 ? propRaw.toUpperCase().replace(/[aAª@]/g, "/").replace(",", ".") : "";
+      const tieneProp10 = /^10\s*[\/aAª@\-]\s*\d+(?:[.,]\d+)?$/i.test(propRaw) && !/^10\s*[\/aAª@\-]\s*10$/i.test(propRaw);
+      const propCanon = tieneProp10 ? propRaw.toUpperCase().replace(/\s+/g, "").replace(/[aAª@\-]/g, "/").replace(",", ".") : "";
       const modBase = String(t.modalidad || "1P").trim().toUpperCase();
+      // En transcripción a Taquilla: un enfrentamiento sin proporción es siempre "PP" (nunca "MATCH")
       const nombreJugada = esMatch
-        ? propCanon
-          ? `MATCH ${propCanon}`
-          : "MATCH"
-        : modBase === "A_PREMIO" || (modBase === "1P" && propCanon)
-          ? propCanon || "1P"
+        ? propCanon || "PP"
+        : modBase === "A_PREMIO" || modBase === "MATCH" || (modBase === "1P" && propCanon)
+          ? propCanon || (esMatch ? "PP" : "1P")
           : propCanon && !modBase.includes(propCanon)
-            ? `${modBase} ${propCanon}`
+            ? propCanon
             : modBase;
       const caballo = normalizarCaballoTicket(t);
-      const monto = Number(t.monto_concretado || 0);
 
       await supabase.from("tickets_apuestas").insert([
         {
@@ -158,8 +171,8 @@ export async function sincronizarTicketsPropuestaATaquilla(
           estado: "Pendiente",
           anulada: false,
           es_adelantada: false,
-          modalidad: esMatch ? "A Premio" : "Puestos",
-          moneda: "USD",
+          modalidad: propCanon ? "Jugadas a Premio" : "Jugadas de Puestos",
+          moneda: monedaGrupo,
           nota_auditoria: marcador,
         },
       ]);
@@ -182,26 +195,43 @@ export async function actualizarTicketEspejoLiquidado(
     porcentajeComision: number;
     netoClienteJuega?: number;
     comisionTotal?: number;
-    estadoTicket?: string;
+    estadoTicket?: "Ganador" | "Perdedor" | "Empate";
   }
 ): Promise<void> {
   if (!params.codigoTicket) return;
   try {
     const marcador = `SALA_P2P:${params.codigoTicket}`;
     const esJuegaProponente = proponenteEsQuienJuega(params.accionProponente);
-    // `factor > 0` indica que ganó el proponente; `factor < 0` indica que ganó el aceptante.
-    const ganoClienteJuega = esJuegaProponente ? params.factor > 0 : params.factor < 0;
-    const esEmpate = params.factor === 0;
+    const factorClienteJuega = esJuegaProponente ? params.factor : -params.factor;
+    const ganoClienteJuega =
+      params.netoClienteJuega !== undefined ? params.netoClienteJuega > 0 : factorClienteJuega > 0;
+    const esEmpate =
+      params.netoClienteJuega !== undefined ? params.netoClienteJuega === 0 : factorClienteJuega === 0;
 
-    const comision = Number((params.monto * params.porcentajeComision).toFixed(2));
-    const estado = esEmpate ? "Empate" : ganoClienteJuega ? "Ganador" : "Perdedor";
-    const premioPagar = esEmpate
-      ? params.monto
+    const absF = Math.min(1, Math.abs(factorClienteJuega) || 0);
+    const comision =
+      params.comisionTotal !== undefined
+        ? Number(params.comisionTotal.toFixed(2))
+        : Number((params.monto * absF * params.porcentajeComision).toFixed(2));
+    const estado = params.estadoTicket || (esEmpate ? "Empate" : ganoClienteJuega ? "Ganador" : "Perdedor");
+    const premioPagar =
+      params.netoClienteJuega !== undefined
+        ? esEmpate
+          ? params.monto
+          : ganoClienteJuega
+          ? Number((params.monto + params.netoClienteJuega).toFixed(2))
+          : Number(Math.max(0, params.monto + params.netoClienteJuega).toFixed(2))
+        : esEmpate
+        ? params.monto
+        : ganoClienteJuega
+        ? Number((params.monto * (1 + absF) - comision).toFixed(2))
+        : Number(Math.max(0, params.monto * (1 - absF)).toFixed(2));
+    const montoDecidido = esEmpate
+      ? 0
       : ganoClienteJuega
-      ? Number((params.monto * 2 - comision).toFixed(2))
-      : 0;
-    const montoDecidido = esEmpate ? 0 : ganoClienteJuega ? Number((params.monto * 2).toFixed(2)) : params.monto;
-    const comisionPagada = esEmpate ? 0 : ganoClienteJuega ? comision : 0;
+      ? Number((params.monto * (1 + absF)).toFixed(2))
+      : Number((params.monto * absF).toFixed(2));
+    const comisionPagada = esEmpate ? 0 : comision;
 
     await supabase
       .from("tickets_apuestas")

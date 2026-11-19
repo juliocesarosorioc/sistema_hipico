@@ -24,6 +24,8 @@
  * registrar el ticket real.
  */
 import {
+  esComandoCerrarJugada,
+  esComandoJugueConTodos,
   parsearConcrecion,
   parsearMensajeJugada,
   type DatosJugada,
@@ -47,6 +49,8 @@ export type PropuestaPuesto = {
   montoOriginal: number;
   /** Lo que todavía no ha concretado nadie. */
   montoAbierto: number;
+  /** true si el autor cerró la propuesta con "Se Fue" o equivalente. */
+  cerradaPorAutor?: boolean;
 };
 
 /** Una jugada ya amarrada entre el autor de la propuesta y quien concretó. */
@@ -62,11 +66,28 @@ export type ConcrecionPuesto = {
   monto: number;
 };
 
+/**
+ * Cola FIFO de aceptantes con saldo pendiente cuando una propuesta se llena
+ * parcialmente (ej. pidió 30 y quedaban 10 -> "Jugo 10, Es lo que queda", quedan 20 pendientes)
+ * o entra un siguiente jugador (ej. cuarto jugador con 30) a la espera de "Jugue con Todos" / "Todos".
+ */
+export type PendienteConcrecionPuesto = {
+  propuestaId: number;
+  jugador: string;
+  montoSolicitado: number;
+  montoConcretado: number;
+  montoPendiente: number;
+  /** true si el jugador dijo "Se Fue" o cualquiera de los códigos para cerrar la jugada. */
+  cerrada: boolean;
+};
+
 export type EstadoMesa = {
   /** Disponible actual por jugador (ya descontado lo propuesto y lo concretado). */
   disponibles: Record<string, number>;
   propuestas: PropuestaPuesto[];
   concreciones: ConcrecionPuesto[];
+  /** Cola FIFO de concreciones parciales o en espera de "Jugue con Todos" / "Todos". */
+  pendientes?: PendienteConcrecionPuesto[];
   /** Avisos de límite ("Juan hasta 300") para las observaciones del reporte. */
   limites: string[];
   siguienteId: number;
@@ -102,6 +123,9 @@ export const frases = {
   hasta: (nombre: string, disponible: number) => `${nombre} hasta ${fmt(disponible)}`,
   sinSaldo: (nombre: string) => `${nombre} sin saldo disponible`,
   sinSaldoConIcono: (nombre: string) => `⛔ ${nombre} sin saldo disponible.`,
+  esLoQueQueda: (monto: number) => `Jugo ${fmt(monto)}, Es lo que queda`,
+  jugoCompleto: (monto: number) => `Jugó Completo ${fmt(monto)}`,
+  jugo: (monto: number) => `Jugo ${fmt(monto)}`,
   carreraCerrada: () => MENSAJE_CARRERA_CERRADA,
 } as const;
 
@@ -122,6 +146,7 @@ export function crearMesa(
     disponibles: { ...disponibles },
     propuestas: [],
     concreciones: [],
+    pendientes: [],
     limites: [],
     siguienteId: 1,
     estadoCarrera: opciones?.estadoCarrera ?? "ABIERTA",
@@ -216,7 +241,8 @@ const copiar = (e: EstadoMesa): EstadoMesa => ({
   ...e,
   disponibles: { ...e.disponibles },
   propuestas: e.propuestas.map((p) => ({ ...p })),
-  concreciones: [...e.concreciones],
+  concreciones: e.concreciones.map((c) => ({ ...c })),
+  pendientes: (e.pendientes ?? []).map((p) => ({ ...p })),
   limites: [...e.limites],
 });
 
@@ -330,11 +356,21 @@ export function concretar(
   }
   const clave = claveDe(estado, c.jugador);
   const nombre = clave;
-  const propuesta =
+  const propuestaAbierta =
     c.propuestaId !== undefined
       ? estado.propuestas.find((p) => p.id === c.propuestaId)
-      : [...estado.propuestas].reverse().find((p) => p.montoAbierto > 0);
-  if (!propuesta || propuesta.montoAbierto <= 0) {
+      : [...estado.propuestas].reverse().find((p) => p.montoAbierto > 0 && !p.cerradaPorAutor);
+
+  const propuestaParaCola =
+    !propuestaAbierta && c.monto !== undefined && c.monto > 0
+      ? c.propuestaId !== undefined
+        ? estado.propuestas.find((p) => p.id === c.propuestaId && !p.cerradaPorAutor)
+        : [...estado.propuestas].reverse().find((p) => !p.cerradaPorAutor)
+      : undefined;
+
+  const propuesta = propuestaAbierta ?? propuestaParaCola;
+
+  if (!propuesta || (propuesta.montoAbierto <= 0 && !propuestaParaCola)) {
     return { estado, ok: false, bloqueado: false, mensajes: ["No hay ninguna propuesta abierta para concretar."] };
   }
   if (propuesta.autor.trim().toLowerCase() === clave.trim().toLowerCase()) {
@@ -348,7 +384,31 @@ export function concretar(
     );
   }
 
-  const pedido = Math.min(c.monto !== undefined && c.monto > 0 ? redondear(c.monto) : propuesta.montoAbierto, propuesta.montoAbierto);
+  // Si la propuesta ya agotó su montoAbierto (0) pero el jugador entra con un monto válido (ej. el 4to jugador con 30),
+  // queda en cola FIFO a la espera de que el proponente diga "Jugue con Todos" o "Todos" (salvo que diga "Se Fue").
+  if (propuesta.montoAbierto <= 0) {
+    const montoDeseado = redondear(c.monto!);
+    const topeJugador = Math.min(montoDeseado, disponible);
+    const nuevo = copiar(estado);
+    nuevo.pendientes = nuevo.pendientes ?? [];
+    nuevo.pendientes.push({
+      propuestaId: propuesta.id,
+      jugador: nombre,
+      montoSolicitado: topeJugador,
+      montoConcretado: 0,
+      montoPendiente: topeJugador,
+      cerrada: false,
+    });
+    const prop = nuevo.propuestas.find((p) => p.id === propuesta.id)!;
+    return { estado: nuevo, ok: true, bloqueado: false, mensajes: [], propuesta: prop, monto: 0 };
+  }
+
+  const montoSolicitadoExplicito =
+    c.monto !== undefined && c.monto > 0 ? redondear(c.monto) : undefined;
+  const pedido = Math.min(
+    montoSolicitadoExplicito !== undefined ? montoSolicitadoExplicito : propuesta.montoAbierto,
+    propuesta.montoAbierto
+  );
   const amarrado = Math.min(pedido, disponible);
   const mensajes: string[] = [];
   const limites: string[] = [];
@@ -356,6 +416,15 @@ export function concretar(
     const aviso = frases.hasta(nombre, disponible);
     mensajes.push(aviso);
     limites.push(aviso);
+  }
+
+  const fueRecortadoPorRemanente =
+    montoSolicitadoExplicito !== undefined &&
+    montoSolicitadoExplicito > propuesta.montoAbierto &&
+    amarrado === propuesta.montoAbierto;
+
+  if (fueRecortadoPorRemanente) {
+    mensajes.push(frases.esLoQueQueda(amarrado));
   }
 
   const nuevo = copiar(estado);
@@ -373,20 +442,234 @@ export function concretar(
     monto: amarrado,
   };
   nuevo.concreciones.push(concrecion);
+
+  if (fueRecortadoPorRemanente && montoSolicitadoExplicito !== undefined) {
+    const topeSolicitado = Math.min(montoSolicitadoExplicito, disponible);
+    const pendiente = redondear(Math.max(0, topeSolicitado - amarrado));
+    if (pendiente > 0) {
+      nuevo.pendientes = nuevo.pendientes ?? [];
+      nuevo.pendientes.push({
+        propuestaId: prop.id,
+        jugador: nombre,
+        montoSolicitado: topeSolicitado,
+        montoConcretado: amarrado,
+        montoPendiente: pendiente,
+        cerrada: false,
+      });
+    }
+  }
+
   nuevo.limites.push(...limites);
   return { estado: nuevo, ok: true, bloqueado: false, mensajes, propuesta: prop, concrecion, monto: amarrado };
 }
 
 /**
+ * CERRAR JUGADA ("Se Fue", "sf", "cf", "c fue", "ce fue").
+ * - Si lo dice un jugador que tenía un remanente o turno pendiente en cola (ej. el 3ro o 4to),
+ *   cierra su remanente pendiente para que no entre cuando el proponente diga "Jugue con Todos" / "Todos".
+ * - Si lo dice el proponente, retira el montoAbierto restante de su propuesta (restituyendo su disponible)
+ *   y cierra la cola pendiente de esa propuesta.
+ */
+export function cerrarJugada(
+  estado: EstadoMesa,
+  params: {
+    jugador: string;
+    propuestaId?: number;
+  }
+): ResultadoMesa {
+  const clave = claveDe(estado, params.jugador);
+  const nuevo = copiar(estado);
+  nuevo.pendientes = nuevo.pendientes ?? [];
+  let hizoAlgo = false;
+
+  for (const item of nuevo.pendientes) {
+    if (
+      !item.cerrada &&
+      item.montoPendiente > 0 &&
+      item.jugador.trim().toLowerCase() === clave.trim().toLowerCase() &&
+      (params.propuestaId === undefined || item.propuestaId === params.propuestaId)
+    ) {
+      item.cerrada = true;
+      item.montoPendiente = 0;
+      hizoAlgo = true;
+    }
+  }
+
+  for (const prop of nuevo.propuestas) {
+    if (
+      !prop.cerradaPorAutor &&
+      prop.autor.trim().toLowerCase() === clave.trim().toLowerCase() &&
+      (params.propuestaId === undefined || prop.id === params.propuestaId)
+    ) {
+      if (prop.montoAbierto > 0) {
+        nuevo.disponibles[clave] = redondear(disponibleDe(nuevo, clave) + prop.montoAbierto);
+        prop.montoAbierto = 0;
+      }
+      prop.cerradaPorAutor = true;
+      for (const item of nuevo.pendientes) {
+        if (item.propuestaId === prop.id && !item.cerrada) {
+          item.cerrada = true;
+          item.montoPendiente = 0;
+        }
+      }
+      hizoAlgo = true;
+    }
+  }
+
+  return {
+    estado: nuevo,
+    ok: hizoAlgo,
+    bloqueado: false,
+    mensajes: [],
+  };
+}
+
+/**
+ * CONCRETAR CON TODOS ("Jugue con Todos" / "Todos").
+ * El proponente acepta cubrir a todos los jugadores que quedaron parciales (ej. el 3ro que jugó 10 de 30)
+ * o en cola (ej. el 4to con 30) y que NO hayan dicho "Se Fue" ni códigos de cierre:
+ * - Al 3ro (que tenía parte jugada y completa su jugada): "Jugó Completo 30"
+ * - Al 4to (que estaba en cola sin monto jugado): "Jugo 30"
+ * Descontando el saldo correspondiente a todos (proponente y aceptantes).
+ */
+export function concretarConTodos(
+  estado: EstadoMesa,
+  params: {
+    autor: string;
+    propuestaId?: number;
+    estadoCarrera?: EstadoOperativoCarrera | null;
+    cerrada?: boolean | null;
+    horaPartida?: string | Date | number | null;
+    ahora?: Date | number | null;
+  }
+): ResultadoMesa {
+  if (verificarMesaCerrada(estado, params)) {
+    return bloqueo(estado, MENSAJE_CARRERA_CERRADA);
+  }
+  const claveAutor = claveDe(estado, params.autor);
+  const pendientesActivos = (estado.pendientes ?? []).filter((p) => !p.cerrada && p.montoPendiente > 0);
+  const propuesta =
+    params.propuestaId !== undefined
+      ? estado.propuestas.find(
+          (p) =>
+            p.id === params.propuestaId &&
+            p.autor.trim().toLowerCase() === claveAutor.trim().toLowerCase() &&
+            !p.cerradaPorAutor
+        )
+      : [...estado.propuestas]
+          .reverse()
+          .find(
+            (p) =>
+              p.autor.trim().toLowerCase() === claveAutor.trim().toLowerCase() &&
+              !p.cerradaPorAutor &&
+              pendientesActivos.some((item) => item.propuestaId === p.id)
+          );
+
+  if (!propuesta) {
+    return {
+      estado,
+      ok: false,
+      bloqueado: false,
+      mensajes: ["No hay jugadas pendientes para concretar con todos."],
+    };
+  }
+
+  const nuevo = copiar(estado);
+  nuevo.pendientes = nuevo.pendientes ?? [];
+  const prop = nuevo.propuestas.find((p) => p.id === propuesta.id)!;
+  const mensajes: string[] = [];
+  let totalAdicional = 0;
+
+  for (const item of nuevo.pendientes) {
+    if (item.propuestaId !== prop.id || item.cerrada || item.montoPendiente <= 0) continue;
+
+    const claveJugador = claveDe(nuevo, item.jugador);
+    const dispAutor = disponibleDe(nuevo, claveAutor);
+    const dispJugador = disponibleDe(nuevo, claveJugador);
+    const cupoAbiertoPreviamenteDescontado = prop.montoAbierto;
+    const maxPosibleAutor = redondear(cupoAbiertoPreviamenteDescontado + dispAutor);
+
+    const adicional = Math.min(item.montoPendiente, maxPosibleAutor, dispJugador);
+    if (adicional <= 0) continue;
+
+    const consumeDeAbierto = Math.min(cupoAbiertoPreviamenteDescontado, adicional);
+    const consumeDeDisponibleAutor = redondear(adicional - consumeDeAbierto);
+
+    prop.montoAbierto = redondear(prop.montoAbierto - consumeDeAbierto);
+    if (consumeDeDisponibleAutor > 0) {
+      nuevo.disponibles[claveAutor] = redondear(dispAutor - consumeDeDisponibleAutor);
+    }
+    nuevo.disponibles[claveJugador] = redondear(dispJugador - adicional);
+
+    const eraParcial = item.montoConcretado > 0;
+    const nuevoTotalJugador = redondear(item.montoConcretado + adicional);
+    item.montoConcretado = nuevoTotalJugador;
+    item.montoPendiente = redondear(item.montoPendiente - adicional);
+    totalAdicional = redondear(totalAdicional + adicional);
+
+    if (eraParcial) {
+      const concExistente = [...nuevo.concreciones]
+        .reverse()
+        .find(
+          (c) =>
+            c.propuestaId === prop.id &&
+            c.jugador.trim().toLowerCase() === claveJugador.trim().toLowerCase()
+        );
+      if (concExistente) {
+        concExistente.monto = nuevoTotalJugador;
+      } else {
+        nuevo.concreciones.push({
+          propuestaId: prop.id,
+          autor: prop.autor,
+          rolAutor: prop.rol,
+          jugador: claveJugador,
+          rolJugador: prop.rol === "DA" ? "JUEGA" : "DA",
+          jugada: prop.jugada,
+          caballos: prop.caballos,
+          monto: nuevoTotalJugador,
+        });
+      }
+      mensajes.push(
+        item.montoPendiente === 0
+          ? frases.jugoCompleto(nuevoTotalJugador)
+          : frases.jugo(nuevoTotalJugador)
+      );
+    } else {
+      nuevo.concreciones.push({
+        propuestaId: prop.id,
+        autor: prop.autor,
+        rolAutor: prop.rol,
+        jugador: claveJugador,
+        rolJugador: prop.rol === "DA" ? "JUEGA" : "DA",
+        jugada: prop.jugada,
+        caballos: prop.caballos,
+        monto: nuevoTotalJugador,
+      });
+      mensajes.push(frases.jugo(nuevoTotalJugador));
+    }
+  }
+
+  return {
+    estado: nuevo,
+    ok: totalAdicional > 0,
+    bloqueado: false,
+    mensajes,
+    propuesta: prop,
+    monto: totalAdicional,
+  };
+}
+
+/**
  * Fachada del AGENTE: recibe lo que escribió un jugador y decide si es una
- * concreción ("J", "Ponte"…) o una propuesta ("consigo 1p 2-5 300"). Si el texto
- * no se entiende, responde con la aclaratoria y NO toca el estado.
+ * concreción ("J", "Ponte"…), un cierre ("Se Fue"), una ampliación ("Jugue con Todos" / "Todos")
+ * o una propuesta ("consigo 1p 2-5 300"). Si el texto no se entiende, responde con la aclaratoria y NO toca el estado.
  */
 export function procesarMensajeMesa(
   estado: EstadoMesa,
   entrada: {
     jugador: string;
     texto: string;
+    propuestaId?: number;
     estadoCarrera?: EstadoOperativoCarrera | null;
     cerrada?: boolean | null;
     horaPartida?: string | Date | number | null;
@@ -397,10 +680,27 @@ export function procesarMensajeMesa(
   if (verificarMesaCerrada(estado, entrada)) {
     return bloqueo(estado, MENSAJE_CARRERA_CERRADA);
   }
+  if (esComandoCerrarJugada(entrada.texto)) {
+    return cerrarJugada(estado, {
+      jugador: entrada.jugador,
+      propuestaId: entrada.propuestaId,
+    });
+  }
+  if (esComandoJugueConTodos(entrada.texto)) {
+    return concretarConTodos(estado, {
+      autor: entrada.jugador,
+      propuestaId: entrada.propuestaId,
+      estadoCarrera: entrada.estadoCarrera,
+      cerrada: entrada.cerrada,
+      horaPartida: entrada.horaPartida,
+      ahora: entrada.ahora,
+    });
+  }
   const conc = parsearConcrecion(entrada.texto);
   if (conc.ok) {
     return concretar(estado, {
       jugador: entrada.jugador,
+      propuestaId: entrada.propuestaId,
       monto: conc.monto,
       formatoConIcono: entrada.formatoConIcono,
     });

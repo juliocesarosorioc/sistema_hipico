@@ -25,4 +25,10 @@ export function getSupabaseAdmin(): SupabaseClient {
   return _adminClient;
 }
 
-export const supabaseAdmin = getSupabaseAdmin();
+export const supabaseAdmin: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop, receiver) {
+    const client = getSupabaseAdmin();
+    const val = Reflect.get(client as object, prop, receiver);
+    return typeof val === "function" ? val.bind(client) : val;
+  },
+});

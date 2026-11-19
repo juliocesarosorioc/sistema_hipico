@@ -253,9 +253,27 @@ export type ResultadoConcrecion = { ok: true; monto?: number } | { ok: false };
  */
 export function parsearConcrecion(texto: string): ResultadoConcrecion {
   const t = sinTildes(texto).replace(/[!¡.,;:]/g, " ").replace(/\s+/g, " ").trim();
-  const m = /^(?:j|jugue|jugado|jugaste|ponte|tomado|hecho)(?:\s+(\d+(?:[.]\d+)?))?$/.exec(t);
+  const m = /^(?:j|jugue|jugo|jugado|jugaste|ponte|tomado|hecho|consigo|doy|voy)(?:\s+(?:con\s+)?(\d+(?:[.]\d+)?))?$/.exec(t);
   if (!m) return { ok: false };
   if (m[1] === undefined) return { ok: true };
   const monto = Number(m[1]);
   return Number.isFinite(monto) && monto > 0 ? { ok: true, monto } : { ok: false };
+}
+
+/**
+ * ¿El mensaje es un código para cerrar/retirar la jugada ("Se Fue", "sf", "cf", "c fue", "ce fue")?
+ */
+export function esComandoCerrarJugada(texto: string): boolean {
+  const t = sinTildes(texto).replace(/[!¡?¿.,;:]/g, " ").replace(/\s+/g, " ").trim();
+  return /^(?:se\s*fue|sf|s\s*fue|sfue|sefue|cf|cfue|c\s*fue|ce\s*fue|cefue)$/.test(t);
+}
+
+/**
+ * ¿El mensaje del proponente ordena concretar con todos ("Jugue con Todos", "Jugué con Todos", "Todos")?
+ */
+export function esComandoJugueConTodos(texto: string): boolean {
+  const t = sinTildes(texto).replace(/[!¡?¿.,;:]/g, " ").replace(/\s+/g, " ").trim();
+  return /^(?:todos|con\s+todos|a\s+todos|(?:jugue|juego|jugo|jugaron|juegan|jugamos|voy|van|entran|doy|consigo)(?:\s+(?:con|a))?\s+todos)$/.test(
+    t
+  );
 }
