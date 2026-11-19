@@ -259,6 +259,82 @@ async function resolverHipodromoEnTabla(
   };
 }
 
+function esUuidCarreraValido(v: unknown): v is string {
+  return (
+    typeof v === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim())
+  );
+}
+
+/**
+ * Garantiza que una sala con carrera abierta tenga `carrera_activa_id`.
+ * Si es null, busca la carrera (fecha de hoy + hipódromo + número) en `public.carreras`;
+ * si no existe, la crea como "Abierta", y vincula el id a `salas_juego`.
+ * Muta `sala.carrera_activa_id` y devuelve el id resuelto (o null si falló).
+ */
+async function asegurarCarreraActivaSala(sala: any): Promise<string | null> {
+  if (esUuidCarreraValido(sala?.carrera_activa_id)) return String(sala.carrera_activa_id);
+
+  try {
+    const hipodromo = normalizarNombreHipodromo(sala?.hipodromo_activo) || "LA RINCONADA";
+    const numero = Number(sala?.numero_carrera_activa) || 1;
+    const fecha = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Caracas",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    const buscar = async (): Promise<string | null> => {
+      const { data, error } = await supabaseAdmin
+        .from("carreras")
+        .select("id")
+        .eq("fecha", fecha)
+        .ilike("hipodromo", hipodromo)
+        .eq("carrera", numero)
+        .limit(1)
+        .maybeSingle();
+      if (error) console.error("[CONCRETAR_ERROR] buscar carrera activa:", error);
+      return data && esUuidCarreraValido((data as any).id) ? String((data as any).id) : null;
+    };
+
+    let carreraId = await buscar();
+    if (!carreraId) {
+      const { data: creada, error: errCrear } = await supabaseAdmin
+        .from("carreras")
+        .insert({
+          fecha,
+          hipodromo,
+          carrera: numero,
+          estado: "Abierta",
+          origen: "manual",
+          registrado_por: "WHATSAPP_SALA",
+        })
+        .select("id")
+        .maybeSingle();
+      if (errCrear) {
+        console.error("[CONCRETAR_ERROR] crear carrera activa:", errCrear);
+        carreraId = await buscar(); // posible carrera concurrente (unique fecha/hipodromo/carrera)
+      } else if (creada && esUuidCarreraValido((creada as any).id)) {
+        carreraId = String((creada as any).id);
+      }
+    }
+
+    if (carreraId) {
+      const { error: errSala } = await supabaseAdmin
+        .from("salas_juego")
+        .update({ carrera_activa_id: carreraId, updated_at: new Date().toISOString() })
+        .eq("id", sala.id);
+      if (errSala) console.error("[CONCRETAR_ERROR] vincular carrera_activa_id a sala:", errSala);
+      sala.carrera_activa_id = carreraId;
+      return carreraId;
+    }
+  } catch (e) {
+    console.error("[CONCRETAR_ERROR] asegurarCarreraActivaSala:", e);
+  }
+  return null;
+}
+
 const AVISO_REDACCION_GRUPO = "⚠️¡Por favor, verificar redacción! ¡Gracias!";
 
 function detallePublicoPropuesta(prop: any): string {
@@ -2221,7 +2297,24 @@ export async function POST(req: Request) {
     const updatesCl: Record<string, any> = {};
     if (participantJid) {
       if (participantJid.endsWith("@lid") && cliente.whatsapp_lid !== participantJid) {
-        updatesCl.whatsapp_lid = participantJid;
+        // Auto-guardado de @lid en segundo plano: las próximas jugadas hacen match instantáneo.
+        const lidNuevo = participantJid;
+        const clienteIdLid = cliente.id;
+        const grupoIdLid = cliente.grupo_id;
+        cliente.whatsapp_lid = lidNuevo;
+        void (async () => {
+          try {
+            let qLid = supabaseAdmin
+              .from("clientes")
+              .update({ whatsapp_lid: lidNuevo, updated_at: new Date().toISOString() })
+              .eq("id", clienteIdLid);
+            if (grupoIdLid) qLid = qLid.eq("grupo_id", grupoIdLid);
+            const { error: errLid } = await qLid;
+            if (errLid) console.error("[LID_AUTOGUARDADO_ERROR]", errLid);
+          } catch (e) {
+            console.error("[LID_AUTOGUARDADO_ERROR]", e);
+          }
+        })();
       } else if (participantJid.endsWith("@s.whatsapp.net") && cliente.whatsapp_jid !== participantJid) {
         updatesCl.whatsapp_jid = participantJid;
         updatesCl.whatsapp_vinculado = true;
@@ -3547,6 +3640,16 @@ export async function POST(req: Request) {
         // Ejecutar RPC oficial `concretar_jugada_fifo_atomica`
         let rpcExitoso = false;
         let resRpcData: any = null;
+        let errorConcretar: any = null;
+
+        // Si la carrera está abierta pero la sala no tiene carrera_activa_id, resolverla/crearla antes del RPC.
+        if (
+          String(sala.estado_carrera || "").toLowerCase() === "abierta" &&
+          !sala.carrera_activa_id
+        ) {
+          await asegurarCarreraActivaSala(sala);
+        }
+
         try {
           const { data: resRpc, error: errRpc } = await supabaseAdmin.rpc(
             "concretar_jugada_fifo_atomica",
@@ -3559,6 +3662,10 @@ export async function POST(req: Request) {
             }
           );
           resRpcData = resRpc;
+          if (errRpc) errorConcretar = errRpc;
+          if (!errRpc && resRpc && (resRpc as any).ok === false && (resRpc as any).nada_aqui !== true) {
+            errorConcretar = resRpc;
+          }
           if (!errRpc && resRpc && (resRpc as any).nada_aqui === true) {
             const msgPublicoNadaAqui =
               (resRpc as any).msg_publico ||
@@ -3601,12 +3708,15 @@ export async function POST(req: Request) {
           if (!errRpc && resRpc && (resRpc as any).ok !== false) {
             rpcExitoso = true;
           }
-        } catch {
+        } catch (error) {
+          errorConcretar = error;
           rpcExitoso = false;
         }
 
         // Fallback atómico si el RPC no fue exitoso
         if (!rpcExitoso) {
+          const error = errorConcretar ?? "RPC concretar_jugada_fifo_atomica sin ok=true";
+          console.error("[CONCRETAR_ERROR]", error);
           const msgErrPub = (resRpcData as any)?.msg_publico || (resRpcData as any)?.msg_publico_bot || (resRpcData as any)?.respuestaPublica || "🚫 *Error al concretar jugada* — Intente nuevamente.";
           const msgErrPriv =
             (resRpcData as any)?.msg_privado_aceptante ||

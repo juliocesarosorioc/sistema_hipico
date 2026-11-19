@@ -345,7 +345,7 @@ export async function POST(req: NextRequest) {
               motivo_estado: "Reconectado",
               updated_at: new Date().toISOString(),
             },
-            { onConflict: "sala_id,whatsapp_group_jid" }
+            { onConflict: "whatsapp_group_jid" }
           );
       }
 

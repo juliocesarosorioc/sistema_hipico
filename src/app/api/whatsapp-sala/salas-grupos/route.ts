@@ -312,7 +312,7 @@ export async function POST(req: NextRequest) {
             motivo_estado: "Vinculado desde Sala de Juegos",
             updated_at: ahora,
           },
-          { onConflict: "sala_id,whatsapp_group_jid" }
+          { onConflict: "whatsapp_group_jid" }
         );
       } catch {
         /* la fuente de verdad para la Sala es `salas_juego` */
@@ -436,7 +436,7 @@ export async function POST(req: NextRequest) {
                 motivo_estado: "Conectado y verificado",
                 updated_at: new Date().toISOString(),
               },
-              { onConflict: "sala_id,whatsapp_group_jid" }
+              { onConflict: "whatsapp_group_jid" }
             );
 
           try {
