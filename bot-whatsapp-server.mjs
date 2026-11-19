@@ -5,6 +5,7 @@
 // ============================================================================
 
 import http from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import WebSocket from "ws";
 
 if (typeof globalThis.WebSocket === "undefined") {
@@ -57,7 +58,20 @@ cargarVariablesEntorno();
 
 const PORT = Number(process.env.WHATSAPP_BOT_PORT || 3005);
 const NEXT_API_BASE = process.env.NEXT_INTERNAL_URL || "http://127.0.0.1:3000";
-const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
+const INTERNAL_BOT_SECRET = String(process.env.INTERNAL_BOT_SECRET ?? "").trim();
+if (!INTERNAL_BOT_SECRET) {
+  throw new Error("INTERNAL_BOT_SECRET no configurado: el demonio aborta (fail-closed).");
+}
+
+/** Comparación en tiempo constante del secreto interno recibido por HTTP. */
+function esSecretoInternoValido(valor) {
+  if (typeof valor !== "string" || !valor) return false;
+  const recibido = Buffer.from(valor);
+  const configurado = Buffer.from(INTERNAL_BOT_SECRET);
+  if (recibido.length !== configurado.length) return false;
+  return timingSafeEqual(recibido, configurado);
+}
+
 const AUTH_DIR =
   process.env.WHATSAPP_AUTH_DIR ||
   (process.platform === "linux"
@@ -2197,7 +2211,7 @@ const server = http.createServer(async (req, res) => {
 
   if (!esRutaPublicaLocal) {
     const authHeader = req.headers["x-internal-bot-secret"];
-    if (authHeader !== INTERNAL_BOT_SECRET) {
+    if (!esSecretoInternoValido(authHeader)) {
       return responderJson(res, 401, {
         ok: false,
         error: "401 Unauthorized: Header x-internal-bot-secret inválido o ausente",
@@ -3133,10 +3147,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const HOST = process.env.WHATSAPP_BOT_HOST || "0.0.0.0";
+const HOST = "127.0.0.1";
 server.listen(PORT, HOST, () => {
   console.log(
-    `[Bot WhatsApp] 🚀 Demonio HTTP escuchando en http://${HOST}:${PORT} (Sesión: ${AUTH_DIR})`
+    `[Bot WhatsApp] 🚀 Demonio HTTP escuchando SOLO en http://${HOST}:${PORT} (Sesión: ${AUTH_DIR})`
   );
   iniciarConexionBaileys();
 });

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { obtenerSecretoInternoBot } from "@/features/whatsapp-sala/lib/bot-secret";
 
 export const dynamic = "force-dynamic";
 
 const BOT_DAEMON_URL = process.env.BOT_DAEMON_URL || process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
-const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+        "x-internal-bot-secret": obtenerSecretoInternoBot(),
       },
       body: JSON.stringify(body),
       cache: "no-store",

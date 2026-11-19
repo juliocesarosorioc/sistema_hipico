@@ -24,18 +24,71 @@ function credencialesPorDefecto(c: any) {
   };
 }
 
+/** Rate limiter en memoria: 5 fallos por IP + identificador en 15 minutos. */
+const LIMITE_INTENTOS = 5;
+const VENTANA_MS = 15 * 60 * 1000;
+const intentosFallidos = new Map<string, { cantidad: number; expira: number }>();
+
+function ipDeLaPeticion(req: NextRequest): string {
+  const reenviado = req.headers.get("x-forwarded-for");
+  if (reenviado) return reenviado.split(",")[0].trim();
+  return req.headers.get("x-real-ip")?.trim() || "ip-desconocida";
+}
+
+function claveDeIntento(req: NextRequest, usuario: string, grupoId: string): string {
+  return `${ipDeLaPeticion(req)}|${grupoId || "sin-grupo"}|${normalizarTexto(usuario)}`;
+}
+
+function estaBloqueado(clave: string): boolean {
+  const registro = intentosFallidos.get(clave);
+  if (!registro) return false;
+  if (Date.now() >= registro.expira) {
+    intentosFallidos.delete(clave);
+    return false;
+  }
+  return registro.cantidad >= LIMITE_INTENTOS;
+}
+
+function registrarFallo(clave: string): void {
+  const ahora = Date.now();
+  const registro = intentosFallidos.get(clave);
+  if (!registro || ahora >= registro.expira) {
+    intentosFallidos.set(clave, { cantidad: 1, expira: ahora + VENTANA_MS });
+    return;
+  }
+  registro.cantidad += 1;
+}
+
+function limpiarIntentos(clave: string): void {
+  intentosFallidos.delete(clave);
+}
+
+function respuestaFallida(clave: string, mensaje: string, status: number) {
+  if (status === 401 || status === 400) registrarFallo(clave);
+  return NextResponse.json({ ok: false, error: mensaje }, { status });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const usuarioRaw = typeof body?.usuario === "string" ? body.usuario.trim() : "";
     const claveRaw = typeof body?.clave === "string" ? body.clave.trim() : "";
     const grupoId = typeof body?.grupoId === "string" ? body.grupoId.trim() : "";
+    const claveIntento = claveDeIntento(req, usuarioRaw, grupoId);
+
+    if (estaBloqueado(claveIntento)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Demasiados intentos fallidos. Espera 15 minutos antes de volver a intentar.",
+        },
+        { status: 429 }
+      );
+    }
 
     if (!usuarioRaw || !claveRaw) {
-      return NextResponse.json(
-        { ok: false, error: "Ingresa tu usuario y contraseña." },
-        { status: 400 }
-      );
+      return respuestaFallida(claveIntento, "Ingresa tu usuario y contraseña.", 400);
     }
 
     // Traer candidatos activos del grupo o sistema
@@ -52,10 +105,7 @@ export async function POST(req: NextRequest) {
     const { data: rows, error: errQuery } = await query.limit(5000);
     if (errQuery || !Array.isArray(rows)) {
       console.error("[PORTAL_LOGIN_ERR] Error consultando clientes:", errQuery);
-      return NextResponse.json(
-        { ok: false, error: "Usuario o contraseña incorrectos." },
-        { status: 401 }
-      );
+      return respuestaFallida(claveIntento, "Usuario o contraseña incorrectos.", 401);
     }
 
     const uNorm = normalizarTexto(usuarioRaw);
@@ -104,10 +154,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (candidatos.length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "Usuario o contraseña incorrectos." },
-        { status: 401 }
-      );
+      return respuestaFallida(claveIntento, "Usuario o contraseña incorrectos.", 401);
     }
 
     // 2. Validación de clave contra los candidatos:
@@ -136,10 +183,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!clienteValido) {
-      return NextResponse.json(
-        { ok: false, error: "Usuario o contraseña incorrectos." },
-        { status: 401 }
-      );
+      return respuestaFallida(claveIntento, "Usuario o contraseña incorrectos.", 401);
     }
 
     // Sincronizar credenciales por defecto si faltaban en la BD
@@ -158,6 +202,7 @@ export async function POST(req: NextRequest) {
       console.warn("[PORTAL_LOGIN_ERR] Sync credenciales warning:", errSync);
     }
 
+    limpiarIntentos(claveIntento);
     const respuesta = NextResponse.json({ ok: true, cliente: clienteValido });
 
     // Emite la cookie/sesión del portal con path: "/" y sameSite: "lax"

@@ -76,6 +76,9 @@ const EXITO: Record<ModoAccionJugada, string> = {
   restaurar: "Jugada restaurada.",
 };
 
+/** Motivo por defecto de una corrección: nunca bloquea el guardado por falta de nota. */
+const MOTIVO_CORRECCION_DEFAULT = "Corrección desde el reporte";
+
 function Campo({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
@@ -125,7 +128,7 @@ export function ModalAccionJugadaReporte({
     venta.adelantada ? "ADELANTADA" : "EN_VIVO"
   );
   const [grupos, setGrupos] = useState<Array<{ id: string; nombre: string }>>([]);
-  const [nota, setNota] = useState<string>("");
+  const [nota, setNota] = useState<string>(modo === "editar" ? MOTIVO_CORRECCION_DEFAULT : "");
   const [detalle, setDetalle] = useState("");
   const [motivoLibre, setMotivoLibre] = useState(modo === "anular" ? MOTIVOS_ANULACION[0] : "");
   const [error, setError] = useState("");
@@ -327,11 +330,7 @@ export function ModalAccionJugadaReporte({
 
   const confirmar = async () => {
     setError("");
-    const motivoEdicion = componerNota(nota, detalle) || motivoLibre;
-    if (modo === "editar" && !motivoEdicion.trim()) {
-      setError("Indicá el motivo/nota de la corrección.");
-      return;
-    }
+    const motivoEdicion = componerNota(nota, detalle) || motivoLibre.trim() || MOTIVO_CORRECCION_DEFAULT;
     if (modo === "anular" && !motivoLibre.trim()) {
       setError("Indicá el motivo de la anulación.");
       return;
@@ -584,6 +583,7 @@ export function ModalAccionJugadaReporte({
               <Campo label="Nota predefinida">
                 <select value={nota} onChange={(e) => setNota(e.target.value)} className={inputCls}>
                   <option value="">— Sin nota predefinida —</option>
+                  <option value={MOTIVO_CORRECCION_DEFAULT}>{MOTIVO_CORRECCION_DEFAULT}</option>
                   {NOTAS_PREDEFINIDAS_EDICION.map((n) => (
                     <option key={n} value={n}>
                       {n}
@@ -643,12 +643,16 @@ export function ModalAccionJugadaReporte({
             recalcula completa (premios, comisión del grupo y balance).
           </p>
 
-          {error && (
-            <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-600">
-              ⚠️ {error}
-            </p>
-          )}
         </div>
+
+        {error && (
+          <div
+            role="alert"
+            className="border-t border-red-200 bg-red-50 px-4 py-2 text-[11px] font-semibold text-red-600"
+          >
+            ⚠️ {error}
+          </div>
+        )}
 
         <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
           <Button variant="outline" size="sm" onClick={onCancelar}>

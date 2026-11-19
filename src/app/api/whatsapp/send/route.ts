@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { obtenerSecretoInternoBot } from "@/features/whatsapp-sala/lib/bot-secret";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
  * `image` con caption). Si no, se publica un mensaje de texto normal.
  */
 const BOT_DAEMON_URL = process.env.BOT_DAEMON_URL || "http://127.0.0.1:3005";
-const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
+
 
 const MIME_POR_EXTENSION: Record<string, string> = {
   jpg: "image/jpeg",
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+          "x-internal-bot-secret": obtenerSecretoInternoBot(),
         },
         body: JSON.stringify({
           groupJids: [toJid],
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+        "x-internal-bot-secret": obtenerSecretoInternoBot(),
       },
       body: JSON.stringify({
         groupJid: toJid,

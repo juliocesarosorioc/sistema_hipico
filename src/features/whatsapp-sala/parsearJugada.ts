@@ -163,16 +163,24 @@ export async function manejarIntencionComando(params: {
   const saldoDisponible = cliente.saldo_disponible;
   const quotedMsgId = body.quotedMsgId || null;
 
-  const verificarOperador = async (): Promise<boolean> =>
-    Boolean(body.esMensajePropioTelefono) ||
-    Boolean(body.esOperador) ||
-    Boolean(cliente.esOperadorRemitente) ||
-    (await verificarEsOperador(cliente?.id, cliente.telefono || participantJid, grupoId, {
-      participantJid,
-      participantAlt: body.participantAlt || body.participant_alt || null,
-      telefonoReal: body.telefonoReal || body.participant_phone || null,
-      salaId,
-    }));
+  const verificarOperador = async (): Promise<boolean> => {
+    const verificadoBackend = await verificarEsOperador(
+      cliente?.id,
+      cliente.telefono || participantJid,
+      grupoId,
+      {
+        participantJid,
+        participantAlt: body.participantAlt || body.participant_alt || null,
+        telefonoReal: body.telefonoReal || body.participant_phone || null,
+        salaId,
+      }
+    );
+    return (
+      Boolean(body.esMensajePropioTelefono) ||
+      Boolean(body.esFromMe) ||
+      verificadoBackend
+    );
+  };
 
   // 1. REGLAS ENTRENADAS DE LA SALA DE JUEGOS
   if (!texto.trim().startsWith("!") && !cliente.esOperadorRemitente) {

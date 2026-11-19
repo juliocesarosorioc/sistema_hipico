@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { obtenerSecretoInternoBot } from "@/features/whatsapp-sala/lib/bot-secret";
 
 export const dynamic = "force-dynamic";
 
-const BOT_DAEMON_URL = process.env.BOT_DAEMON_URL || process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3005";
-const INTERNAL_BOT_SECRET = process.env.INTERNAL_BOT_SECRET || "SH-BOT-SECRET-2026";
+const BOT_DAEMON_URL = "http://127.0.0.1:3005";
 const FALLBACK = { ok: false, conectado: false };
 
 /** Misma señal de sesión que acepta el middleware para el resto de la plataforma. */
@@ -26,6 +26,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ...FALLBACK, error: "No autorizado" }, { status: 401 });
   }
 
+  let secretoInterno: string;
+  try {
+    secretoInterno = obtenerSecretoInternoBot();
+  } catch {
+    return NextResponse.json(
+      { ...FALLBACK, error: "INTERNAL_BOT_SECRET no configurado." },
+      { status: 500 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const sessionId = searchParams.get("session_id") || "";
@@ -35,7 +45,7 @@ export async function GET(req: NextRequest) {
     const res = await fetch(url.toString(), {
       cache: "no-store",
       headers: {
-        "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+        "x-internal-bot-secret": secretoInterno,
       },
       signal: AbortSignal.timeout(4000),
     });

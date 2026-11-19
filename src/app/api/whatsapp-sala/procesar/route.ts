@@ -106,15 +106,23 @@ export async function POST(req: Request) {
     // Inmunidad del operador: su texto libre se ignora en silencio.
     // Los comandos operativos se aceptan con o sin «!» y se evalúan ANTES de
     // exigir que el remitente figure en la nómina de `clientes`.
-    const esOperadorRemitente =
-      Boolean(body.esMensajePropioTelefono) ||
-      Boolean(body.esOperador) ||
-      (await verificarEsOperador(null, participantJid, grupoId, {
+    // El flag `esOperador` del demonio NO basta: además se revalida en backend
+    // por teléfono (últimos 10 dígitos) / whatsapp_lid contra la nómina de
+    // administradores y operadores del grupo o la sala.
+    const esMensajePropioBot = Boolean(body.esMensajePropioTelefono) || Boolean(body.esFromMe);
+    const operadorVerificadoBackend = await verificarEsOperador(
+      null,
+      participantJid,
+      grupoId,
+      {
         participantJid,
         participantAlt: body.participantAlt || body.participant_alt || null,
         telefonoReal: body.telefonoReal || body.participant_phone || null,
         salaId,
-      }));
+      }
+    );
+    const esOperadorRemitente =
+      esMensajePropioBot || (Boolean(body.esOperador) && operadorVerificadoBackend);
 
     const esComandoOperador = esOperadorRemitente && COMANDO_OPERADOR_EXACTO.test(texto);
     if (esOperadorRemitente && !esComandoOperador) {
