@@ -215,18 +215,9 @@ BEGIN
     );
   END IF;
 
-  -- Topar al saldo disponible si excede
+  -- Topar al saldo disponible si excede (0 retención al proponer: la retención ocurre únicamente al concretar)
   IF v_monto_publicar > v_saldo_disp THEN
     v_monto_publicar := v_saldo_disp;
-  END IF;
-
-  -- Retener riesgo al proponente
-  IF v_cliente.libre IS NOT TRUE THEN
-    v_nuevo_ret := COALESCE(v_cliente.saldo_retenido, 0) + v_monto_publicar;
-    UPDATE public.clientes
-    SET saldo_retenido = v_nuevo_ret,
-        saldo_disponible = GREATEST(0, COALESCE(saldo_actual, 0) + COALESCE(aval, 0) - v_nuevo_ret)
-    WHERE id = p_jugador_id;
   END IF;
 
   -- Insertar en chat_mensajes

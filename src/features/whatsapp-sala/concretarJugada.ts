@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { supabaseAdmin } from "@/core/supabase-admin";
 import {
+  analizarYEstandarizarJugada,
   calcularRiesgoReal,
   evaluarConcrecionEstricta,
   analizarComandoRetiro,
@@ -20,10 +21,27 @@ import {
 import { variablesEncabezadoGrupo } from "@/features/whatsapp/lib/plantillas-grupo";
 import { mensajeJugaronPorSaldoParcial } from "@/features/whatsapp/lib/mensajes-concrecion";
 import { asegurarCarreraActivaSala } from "./resolverSala";
-import { resolverTelefonoWhatsappCliente } from "./resolverCliente";
+import { resolverCliente, resolverTelefonoWhatsappCliente } from "./resolverCliente";
 import { calcularMaximosBilateral, detallePublicoPropuesta } from "./validarSaldo";
 import { emitirBroadcastSala, enviarNotificacionesPrivadasDaemon } from "./notificador";
 import type { ContextoSala, ClienteResuelto, ResultadoConcrecion, RespuestaGrupoItem } from "./types";
+
+async function obtenerSiguienteOrdenFifo(propuestaMsgId: string): Promise<number> {
+  if (!propuestaMsgId) return 1;
+  try {
+    const { data } = await supabaseAdmin
+      .from("chat_tickets_fifo")
+      .select("orden_fifo")
+      .eq("propuesta_msg_id", propuestaMsgId)
+      .order("orden_fifo", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const maxOrden = Number(data?.orden_fifo || 0);
+    return Number.isFinite(maxOrden) && maxOrden >= 0 ? maxOrden + 1 : 1;
+  } catch {
+    return 1;
+  }
+}
 
 // Mutex FIFO en memoria por propuesta para garantizar ejecución secuencial (1 a la vez: Caso 90 + 10 = 100)
 export const colasConcrecionFifo = new Map<string, Promise<any>>();
@@ -1004,6 +1022,99 @@ export async function concretarJugada(params: {
     if (propPadre) propMsg = propPadre;
   }
 
+  // Si la propuesta citada no estaba en chat_mensajes por su whatsapp_msg_id,
+  // intentar recuperarla del texto/autor citado de WhatsApp (contextInfo)
+  if (
+    (!propMsg ||
+      (propMsg.tipo_mensaje !== "propuesta_jugada" && propMsg.tipo_mensaje !== "PROPUESTA")) &&
+    params.body
+  ) {
+    const quotedTextRaw = String(
+      params.body.quotedText || params.body.quoted_text || ""
+    ).trim();
+    const quotedAuthorJid = String(
+      params.body.quotedParticipantJid || params.body.quoted_participant_jid || ""
+    ).trim();
+
+    if (quotedTextRaw && quotedAuthorJid) {
+      try {
+        const autorCita = await resolverCliente({
+          grupoId: contextoSala.grupoId,
+          participantJid: quotedAuthorJid,
+        });
+        if (autorCita && autorCita.id) {
+          const anCita = analizarYEstandarizarJugada(
+            quotedTextRaw,
+            autorCita.saldo_disponible,
+            [],
+            16,
+            autorCita.nombreJugador
+          );
+          if (anCita.esIntencionDeJugada && anCita.valido) {
+            const { data: propExistente } = await supabaseAdmin
+              .from("chat_mensajes")
+              .select("*")
+              .eq("sala_id", contextoSala.salaId)
+              .eq("remitente_id", autorCita.id)
+              .eq("jugada_estandarizada", anCita.jugadaEstandarizada)
+              .in("tipo_mensaje", ["propuesta_jugada", "PROPUESTA"])
+              .in("estado_propuesta", ["abierta", "parcial"])
+              .gt("monto_disponible", 0)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (propExistente) {
+              propMsg = propExistente;
+            } else if (autorCita.libre || autorCita.saldo_disponible > 0) {
+              const montoPubCita = Number(anCita.montoDisponibleValido ?? anCita.monto ?? 0);
+              if (montoPubCita > 0) {
+                const rawFirmaCita = `PROPUESTA_REC:${contextoSala.salaId}:${autorCita.id}:${quotedMsgId}:${Date.now()}`;
+                const firmaCita = crypto.createHash("sha256").update(rawFirmaCita).digest("hex");
+                const { data: propRecuperada } = await supabaseAdmin
+                  .from("chat_mensajes")
+                  .insert({
+                    grupo_id: contextoSala.grupoId,
+                    sala_id: contextoSala.salaId,
+                    remitente_id: autorCita.id,
+                    remitente_nombre: autorCita.nombreJugador,
+                    es_operador: false,
+                    tipo_mensaje: "propuesta_jugada",
+                    contenido: anCita.jugadaEstandarizada,
+                    carrera_id:
+                      contextoSala.sala?.carrera_activa_id || contextoSala.carreraActivaId || null,
+                    accion_proponente: anCita.accionProponente || "JUEGA",
+                    es_match: Boolean(anCita.esMatch),
+                    modalidad_jugada: anCita.modalidad,
+                    ejemplar_numero: anCita.ejemplarTexto,
+                    caballos_bando_a:
+                      anCita.caballosBandoA ||
+                      (anCita.ejemplarTexto ? [anCita.ejemplarTexto] : []),
+                    caballos_bando_b: anCita.caballosBandoB || [],
+                    jugada_estandarizada: anCita.jugadaEstandarizada,
+                    monto_original: montoPubCita,
+                    monto_disponible: montoPubCita,
+                    estado_propuesta: "abierta",
+                    proporcion_premio: anCita.proporcion || "1x1",
+                    firma_sha256: firmaCita,
+                    whatsapp_msg_id: quotedMsgId || null,
+                    whatsapp_group_jid: groupJid || null,
+                    whatsapp_group_nombre: whatsappGroupNombre || null,
+                    origen_canal: "WHATSAPP",
+                  })
+                  .select("*")
+                  .maybeSingle();
+                if (propRecuperada) {
+                  propMsg = propRecuperada;
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
   if (
     !propMsg ||
     (propMsg.tipo_mensaje !== "propuesta_jugada" && propMsg.tipo_mensaje !== "PROPUESTA")
@@ -1294,6 +1405,47 @@ export async function concretarJugada(params: {
       .eq("id", propFresca.remitente_id)
       .maybeSingle();
 
+    // Asegurar que saldo_retenido refleje únicamente jugadas concretadas activas (nunca propuestas no concretadas)
+    if (proponenteRow && !proponenteRow.libre && Number(proponenteRow.saldo_retenido || 0) > 0) {
+      const retCasadasProp = await calcularRiesgoTicketsCasadosActivos(
+        String(proponenteRow.id),
+        contextoSala.grupoId
+      );
+      if (retCasadasProp < Number(proponenteRow.saldo_retenido || 0)) {
+        proponenteRow.saldo_retenido = retCasadasProp;
+        proponenteRow.saldo_disponible = Math.max(
+          0,
+          Number(
+            (
+              Number(proponenteRow.saldo_actual || 0) +
+              Number(proponenteRow.aval || 0) -
+              retCasadasProp
+            ).toFixed(2)
+          )
+        );
+      }
+    }
+
+    if (aceptanteFresco && !aceptanteFresco.libre && Number(aceptanteFresco.saldo_retenido || 0) > 0) {
+      const retCasadasAcep = await calcularRiesgoTicketsCasadosActivos(
+        String(aceptanteFresco.id),
+        contextoSala.grupoId
+      );
+      if (retCasadasAcep < Number(aceptanteFresco.saldo_retenido || 0)) {
+        aceptanteFresco.saldo_retenido = retCasadasAcep;
+        aceptanteFresco.saldo_disponible = Math.max(
+          0,
+          Number(
+            (
+              Number(aceptanteFresco.saldo_actual || 0) +
+              Number(aceptanteFresco.aval || 0) -
+              retCasadasAcep
+            ).toFixed(2)
+          )
+        );
+      }
+    }
+
     const accionProp: "JUEGA" | "CONSIGUE" =
       String(propFresca.accion_proponente || "").toUpperCase() === "CONSIGUE" ||
       /^(consigo|doy)\b/i.test(String(propFresca.contenido || ""))
@@ -1410,9 +1562,11 @@ export async function concretarJugada(params: {
 
       const montoEnCola = Math.min(evalCola.montoSolicitado, maxBaseAceptante);
       const codigoTicketCola = `TK-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+      const ordenFifoCola = await obtenerSiguienteOrdenFifo(propFresca.id);
 
       await supabaseAdmin.from("chat_tickets_fifo").insert({
         codigo_ticket: codigoTicketCola,
+        orden_fifo: ordenFifoCola,
         grupo_id: contextoSala.grupoId,
         sala_id: contextoSala.salaId,
         carrera_id:
@@ -1677,7 +1831,97 @@ export async function concretarJugada(params: {
       rpcExitoso = false;
     }
 
-    // Fallback si el RPC no fue exitoso
+    const montoSolicitadoReal = Number(evalConcrecion.montoSolicitado || montoEfectivo);
+    const topeSolicitadoAceptante = Math.min(montoSolicitadoReal, maxBaseAceptante);
+    const fueRecortadoPorRemanente =
+      montoSolicitadoReal > remanenteDisponible &&
+      montoEfectivo === remanenteDisponible &&
+      Math.min(maxBaseAceptante, maxBaseProponente) >= remanenteDisponible;
+    const montoPendienteAmpliacion = fueRecortadoPorRemanente
+      ? Math.max(0, Number((topeSolicitadoAceptante - montoEfectivo).toFixed(2)))
+      : 0;
+
+    // Fallback determinístico si el RPC no fue exitoso (ej. sqlstate 23502 por orden_fifo en chat_tickets_fifo)
+    if (!rpcExitoso) {
+      try {
+        const ordenFifoFallback = await obtenerSiguienteOrdenFifo(propFresca.id);
+        const codigoTicketFallback = `TK-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+        const propRawFb = String(propFresca.proporcion_premio || propFresca.proporcion || "1x1").trim();
+        const riesgoPropFb = calcularRiesgoReal(montoEfectivo, propRawFb, accionProp, "PROPONENTE");
+        const riesgoAcepFb = calcularRiesgoReal(montoEfectivo, propRawFb, accionProp, "ACEPTANTE");
+
+        await supabaseAdmin
+          .from("chat_mensajes")
+          .update({
+            monto_disponible: nuevoRemanente,
+            estado_propuesta: nuevoRemanente <= 0 ? "concretada" : "parcial",
+          })
+          .eq("id", propFresca.id);
+
+        const { data: tkInsertado, error: errInsertTk } = await supabaseAdmin
+          .from("chat_tickets_fifo")
+          .insert({
+            codigo_ticket: codigoTicketFallback,
+            orden_fifo: ordenFifoFallback,
+            grupo_id: contextoSala.grupoId,
+            sala_id: contextoSala.salaId,
+            carrera_id:
+              propFresca.carrera_id ||
+              contextoSala.sala?.carrera_activa_id ||
+              contextoSala.carreraActivaId ||
+              null,
+            propuesta_msg_id: propFresca.id,
+            proponente_id: propFresca.remitente_id,
+            proponente_nombre:
+              proponenteRow?.seudonimo ||
+              proponenteRow?.nombre ||
+              propFresca.remitente_nombre ||
+              "Proponente",
+            aceptante_id: cliente.id,
+            aceptante_nombre: cliente.nombreJugador,
+            accion_proponente: accionProp,
+            es_match: Boolean(propFresca.es_match),
+            modalidad:
+              propFresca.modalidad_jugada ||
+              propFresca.modalidad_propuesta ||
+              propFresca.modalidad ||
+              "1P",
+            ejemplar_numero:
+              propFresca.ejemplar_numero ||
+              propFresca.ejemplar_texto ||
+              (Array.isArray(propFresca.caballos_bando_a) ? propFresca.caballos_bando_a[0] : "1"),
+            caballos_bando_a: propFresca.caballos_bando_a || [],
+            caballos_bando_b: propFresca.caballos_bando_b || [],
+            proporcion_premio: propRawFb,
+            monto_solicitado: topeSolicitadoAceptante,
+            monto_concretado: montoEfectivo,
+            monto_pendiente_ampliacion: montoPendienteAmpliacion,
+            fue_ajuste_parcial: montoPendienteAmpliacion > 0 || montoEfectivo < montoSolicitadoReal,
+            riesgo_proponente: riesgoPropFb,
+            riesgo_aceptante: riesgoAcepFb,
+            estado: "ACTIVO",
+            whatsapp_concrecion_msg_id: whatsappMsgId || null,
+          })
+          .select("id")
+          .maybeSingle();
+
+        if (!errInsertTk && tkInsertado?.id) {
+          rpcExitoso = true;
+          resRpcData = {
+            ok: true,
+            ticket_id: tkInsertado.id,
+            codigo_ticket: codigoTicketFallback,
+            monto_concretado: montoEfectivo,
+            remanente_propuesta: nuevoRemanente,
+          };
+        } else if (errInsertTk) {
+          console.error("[CONCRETAR_FALLBACK_ERR]", errInsertTk);
+        }
+      } catch (errFbConcretar) {
+        console.error("[CONCRETAR_FALLBACK_CATCH]", errFbConcretar);
+      }
+    }
+
     if (!rpcExitoso) {
       const error = errorConcretar ?? "RPC concretar_jugada_fifo_atomica sin ok=true";
       console.error("[CONCRETAR_ERROR]", error);
@@ -1707,16 +1951,6 @@ export async function concretarJugada(params: {
         senderJid: participantJid,
       };
     }
-
-    const montoSolicitadoReal = Number(evalConcrecion.montoSolicitado || montoEfectivo);
-    const topeSolicitadoAceptante = Math.min(montoSolicitadoReal, maxBaseAceptante);
-    const fueRecortadoPorRemanente =
-      montoSolicitadoReal > remanenteDisponible &&
-      montoEfectivo === remanenteDisponible &&
-      Math.min(maxBaseAceptante, maxBaseProponente) >= remanenteDisponible;
-    const montoPendienteAmpliacion = fueRecortadoPorRemanente
-      ? Math.max(0, Number((topeSolicitadoAceptante - montoEfectivo).toFixed(2)))
-      : 0;
 
     // Registrar monto_solicitado real, monto_pendiente_ampliacion y whatsapp_concrecion_msg_id en el ticket recién creado
     try {
@@ -1859,12 +2093,17 @@ export async function concretarJugada(params: {
           );
 
     const esConcrecionSaldoParcial =
-      llenoRemanenteParcial && montoEfectivo > 0 && montoEfectivo < montoSolicitadoReal;
+      !fueRecortadoPorRemanente &&
+      llenoRemanenteParcial &&
+      montoEfectivo > 0 &&
+      montoEfectivo < montoSolicitadoReal;
     const nombreLimitador =
       pozoLimitadorBilateral ||
       (maxBaseAceptante <= maxBaseProponente ? nombreDa : nombreJuega);
 
-    const msgPublicoFinal = esConcrecionSaldoParcial
+    const msgPublicoFinal = fueRecortadoPorRemanente
+      ? `Jugo ${formatearMontoRegional(montoEfectivo)}, Es lo que queda`
+      : esConcrecionSaldoParcial
       ? await construirMensajeSaldoParcial({
           sala: contextoSala.sala,
           juega: nombreJuega,
@@ -1933,6 +2172,7 @@ export async function concretarJugada(params: {
         montoConcretado: montoEfectivo,
         remanenteDisponible: nuevoRemanente,
         excedioSaldo: evalConcrecion.excedioSaldo,
+        montoPendienteAmpliacion,
       },
     };
   });

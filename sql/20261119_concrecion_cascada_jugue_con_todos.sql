@@ -3,11 +3,15 @@
 -- ============================================================================
 
 ALTER TABLE IF EXISTS public.chat_tickets_fifo
+  ADD COLUMN IF NOT EXISTS orden_fifo INT DEFAULT 1,
   ADD COLUMN IF NOT EXISTS monto_solicitado NUMERIC(14,2) DEFAULT 0,
   ADD COLUMN IF NOT EXISTS monto_concretado NUMERIC(14,2) DEFAULT 0,
   ADD COLUMN IF NOT EXISTS fue_ajuste_parcial BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS monto_pendiente_ampliacion NUMERIC(14,2) DEFAULT 0,
   ADD COLUMN IF NOT EXISTS whatsapp_concrecion_msg_id TEXT;
+
+ALTER TABLE IF EXISTS public.chat_tickets_fifo
+  ALTER COLUMN orden_fifo SET DEFAULT 1;
 
 -- 1. RPC: concretar_jugada_fifo_atomica (Soporta recorte "Jugo X, Es lo que queda" y cola FIFO "EN_COLA")
 CREATE OR REPLACE FUNCTION public.concretar_jugada_fifo_atomica(

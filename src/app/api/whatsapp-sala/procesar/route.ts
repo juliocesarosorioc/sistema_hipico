@@ -125,24 +125,25 @@ export async function POST(req: Request) {
       esMensajePropioBot || (Boolean(body.esOperador) && operadorVerificadoBackend);
 
     const esComandoOperador = esOperadorRemitente && COMANDO_OPERADOR_EXACTO.test(texto);
-    if (esOperadorRemitente && !esComandoOperador) {
-      return respuestaSala({
-        ok: true,
-        tipo: "IGNORADO_OPERADOR",
-        respuestaGrupo: null,
-        mensajePrivadoAutor: null,
-        msg_publico: null,
-        msg_publico_bot: null,
-        respuestaPublica: null,
-        msg_privado_bot: null,
-      });
-    }
 
     // Detección rápida de intención
     const deteccion = detectarIntencionRapida(texto, quotedMsgId, codigoSala);
 
-    // Si no es comando, ni acción, ni intención de jugada, registrar texto y salir
+    // Si no es comando, ni acción, ni intención de jugada
     if (!deteccion.esAccionOJugada && !esComandoOperador) {
+      if (esOperadorRemitente) {
+        return respuestaSala({
+          ok: true,
+          tipo: "IGNORADO_OPERADOR",
+          respuestaGrupo: null,
+          mensajePrivadoAutor: null,
+          msg_publico: null,
+          msg_publico_bot: null,
+          respuestaPublica: null,
+          msg_privado_bot: null,
+        });
+      }
+
       const nombreRemitente = String(body.senderNombre || body.pushName || "Usuario").trim();
       await registrarMensajeChat({
         salaId,
@@ -163,28 +164,42 @@ export async function POST(req: Request) {
       });
     }
 
-    // 3. Servicio 2: resolverCliente (omitido para comandos de operador)
+    // 3. Servicio 2: resolverCliente
     let cliente: NonNullable<Awaited<ReturnType<typeof resolverCliente>>>;
-    if (esComandoOperador) {
-      cliente = crearClienteOperadorSimbolico({
-        grupoId,
-        participantJid,
-        nombre: body.pushName || body.push_name || body.senderNombre,
-        telefono: body.telefonoReal || body.participant_phone || null,
-        whatsappLid: participantJid.endsWith("@lid") ? participantJid : null,
-      });
-    } else {
-      const clienteResuelto = await resolverCliente({
-        grupoId,
-        participantJid,
-        participantAlt: body.participantAlt,
-        telefonoReal: body.telefonoReal || body.participant_phone,
-        pushName: body.push_name || body.pushName || body.senderNombre,
-        clientePreviamenteIdentificado: body.clientePreviamenteIdentificado,
-        esOperadorRemitente,
-      });
+    const clienteResuelto = await resolverCliente({
+      grupoId,
+      participantJid,
+      participantAlt: body.participantAlt,
+      telefonoReal: body.telefonoReal || body.participant_phone,
+      pushName: body.push_name || body.pushName || body.senderNombre,
+      clientePreviamenteIdentificado: body.clientePreviamenteIdentificado,
+      esOperadorRemitente,
+    });
 
+    if (esComandoOperador) {
+      cliente =
+        clienteResuelto ||
+        crearClienteOperadorSimbolico({
+          grupoId,
+          participantJid,
+          nombre: body.pushName || body.push_name || body.senderNombre,
+          telefono: body.telefonoReal || body.participant_phone || null,
+          whatsappLid: participantJid.endsWith("@lid") ? participantJid : null,
+        });
+    } else {
       if (!clienteResuelto) {
+        if (esOperadorRemitente) {
+          return respuestaSala({
+            ok: true,
+            tipo: "IGNORADO_OPERADOR",
+            respuestaGrupo: null,
+            mensajePrivadoAutor: null,
+            msg_publico: null,
+            msg_publico_bot: null,
+            respuestaPublica: null,
+            msg_privado_bot: null,
+          });
+        }
         return respuestaSala({
           ok: false,
           tipo: "SIN_REGISTRO",
@@ -192,6 +207,32 @@ export async function POST(req: Request) {
           mensajePrivadoAutor: null,
         });
       }
+
+      // Si es operador pero el mensaje no es una propuesta válida, ni cita una propuesta, ni es retiro/ampliación/comando, ignorar en silencio
+      const esJugadaOAccionValidaJugador =
+        Boolean(quotedMsgId) ||
+        Boolean(deteccion.cmdRetiroPre.esComandoRetiro) ||
+        Boolean(deteccion.esAmpliacionPre) ||
+        Boolean(deteccion.esConsultaSaldo) ||
+        Boolean(deteccion.esConsultaCuenta) ||
+        Boolean(deteccion.esComandoPlano) ||
+        Boolean(deteccion.esSolicitudCajero) ||
+        Boolean(texto.includes("\n") && deteccion.preAnalisis.esIntencionDeJugada) ||
+        Boolean(deteccion.preAnalisis.esIntencionDeJugada && deteccion.preAnalisis.valido);
+
+      if (esOperadorRemitente && !esJugadaOAccionValidaJugador) {
+        return respuestaSala({
+          ok: true,
+          tipo: "IGNORADO_OPERADOR",
+          respuestaGrupo: null,
+          mensajePrivadoAutor: null,
+          msg_publico: null,
+          msg_publico_bot: null,
+          respuestaPublica: null,
+          msg_privado_bot: null,
+        });
+      }
+
       cliente = clienteResuelto;
 
       // Auto-guardado de @lid en clientes en segundo plano (sin bloquear la respuesta)

@@ -15,10 +15,12 @@ import {
   analizarYEstandarizarJugada,
   analizarComandoRetiro,
   calcularRiesgoReal,
+  evaluarAmpliacionPropuesta,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
 import {
   cerrarParadasAbiertasDeSala,
   ejecutarRetiroPropuestasSeFue,
+  ejecutarAmpliacionCupo,
 } from "@/features/whatsapp-sala/concretarJugada";
 import { logicaGanancias } from "@/features/motores/lib/puestos";
 import {
@@ -1508,7 +1510,84 @@ export async function POST(req: Request) {
           return NextResponse.json({ ok: false, error: "Propuesta no encontrada" }, { status: 404 });
         }
 
+        const cmdRetiroCitaSala = texto ? analizarComandoRetiro(texto) : { esComandoRetiro: false, esValido: false };
+        if (cmdRetiroCitaSala.esComandoRetiro && cmdRetiroCitaSala.esValido) {
+          const resRetiroCita = await ejecutarRetiroPropuestasSeFue({
+            grupoId,
+            salaId,
+            jugadorId: identidad.usuarioId,
+            propuestaId,
+          });
+          if (!resRetiroCita.ok) {
+            return NextResponse.json({ ok: false, error: resRetiroCita.error || "No se pudo cerrar la jugada" }, { status: 400 });
+          }
+          await emitirBroadcast(salaId, "nuevo_mensaje", { salaId, idsCerrados: resRetiroCita.canceladasIds });
+          return NextResponse.json({
+            ok: true,
+            comandoRetiro: true,
+            canceladas: resRetiroCita.canceladasIds.length,
+            montoLiberado: resRetiroCita.montoLiberado,
+            idsCerrados: resRetiroCita.canceladasIds,
+            totalLiberado: resRetiroCita.montoLiberado,
+          });
+        }
+
         if (propMsg.remitente_id === identidad.usuarioId) {
+          const evalAmpCita = texto ? evaluarAmpliacionPropuesta(texto) : { esAmpliacion: false, nuevoTope: null };
+          if (evalAmpCita.esAmpliacion) {
+            const { data: clProp } = await supabaseAdmin
+              .from("clientes")
+              .select("*")
+              .eq("id", identidad.usuarioId)
+              .maybeSingle();
+            const resAmpCita = await ejecutarAmpliacionCupo({
+              contextoSala: {
+                sala,
+                salaId,
+                grupoId,
+                codigoSala: sala.codigo_sala || "",
+                carreraAbierta: sala.estado_carrera === "abierta",
+                carreraActivaId: sala.carrera_activa_id || null,
+                apuestaMinima: Number(sala.apuesta_minima ?? 10),
+                tiempoVencimientoMin: Number(sala.tiempo_vencimiento_min ?? sala.tiempo_vencimiento_propuesta_min ?? 5),
+                retirados: Array.isArray((sala as any).retirados) ? (sala as any).retirados : [],
+                topeMarcas: 5,
+              },
+              cliente: {
+                id: identidad.usuarioId,
+                nombre: clProp?.nombre || identidad.nombre,
+                nombreJugador: clProp?.seudonimo || clProp?.nombre || identidad.nombre,
+                saldo_actual: Number(clProp?.saldo_actual || 0),
+                saldo_retenido: Number(clProp?.saldo_retenido || 0),
+                saldo_disponible: calcularDisponibleCliente(clProp),
+                aval: Number(clProp?.aval || 0),
+                libre: Boolean(clProp?.libre),
+                esOperadorRemitente: false,
+                rawCliente: clProp || { id: identidad.usuarioId, nombre: identidad.nombre },
+              },
+              quotedPropuestaId: propuestaId,
+              nuevoTope: evalAmpCita.nuevoTope,
+            });
+            if (!resAmpCita.ok) {
+              return NextResponse.json({
+                ok: false,
+                error: resAmpCita.mensajePrivadoAutor || resAmpCita.error || "No se pudo ampliar la propuesta",
+                msg_publico_bot: resAmpCita.msg_publico_bot || null,
+                msg_privado_bot: resAmpCita.msg_privado_bot || null,
+              }, { status: 400 });
+            }
+            if (Array.isArray(resAmpCita.respuestas_grupo)) {
+              for (const item of resAmpCita.respuestas_grupo) {
+                if (item?.texto) {
+                  void publicarEnWhatsAppSala(salaId, item.texto, item.quotedMsgId || propMsg.whatsapp_msg_id);
+                }
+              }
+            } else if (resAmpCita.msg_publico_bot) {
+              void publicarEnWhatsAppSala(salaId, resAmpCita.msg_publico_bot, propMsg.whatsapp_msg_id);
+            }
+            await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+            return NextResponse.json(resAmpCita);
+          }
           return NextResponse.json({ ok: false, error: "No puedes aceptar tu propia propuesta" }, { status: 400 });
         }
 
@@ -1538,9 +1617,13 @@ export async function POST(req: Request) {
         }
 
         const estadoAceptaTomas =
-          propMsg.estado_propuesta === "abierta" || propMsg.estado_propuesta === "parcial";
+          estadoPropLower === "abierta" || estadoPropLower === "parcial";
+        const estadoAgotadaVigente =
+          remanenteDisponible <= 0 &&
+          (estadoPropLower === "cerrada" || estadoPropLower === "concretada" || estadoPropLower === "parcial" || estadoPropLower === "abierta") &&
+          edadMinutos <= tiempoVencimientoMin;
 
-        if (edadMinutos > tiempoVencimientoMin || !estadoAceptaTomas || remanenteDisponible <= 0) {
+        if (edadMinutos > tiempoVencimientoMin || (!estadoAceptaTomas && !estadoAgotadaVigente)) {
           if (estadoAceptaTomas) {
             const retenidoRemanente = Number(propMsg.riesgo_retenido ?? remanenteDisponible);
             if (retenidoRemanente > 0 && propMsg.remitente_id) {
@@ -1599,7 +1682,8 @@ export async function POST(req: Request) {
         const prefijo = prefijoMonedaGrupo(gMoneda?.moneda);
 
         // Extraer monto solicitado de body.monto o del texto de respuesta (ej. "Juego 20", "Consigo 5k", "Ponte 10.000")
-        let montoPedido = body.monto ? Number(body.monto) : remanenteDisponible;
+        const baseFallbackPedido = remanenteDisponible > 0 ? remanenteDisponible : Number(propMsg.monto_original || 0);
+        let montoPedido = body.monto ? Number(body.monto) : baseFallbackPedido;
         if (texto && typeof texto === "string") {
           const matchNum = texto.match(/(\d+(?:[\.,]\d+)?\s*(?:k|mil)?)/i);
           if (matchNum) {
@@ -1614,8 +1698,10 @@ export async function POST(req: Request) {
         }
 
         if (!montoPedido || isNaN(montoPedido) || montoPedido <= 0) {
-          montoPedido = remanenteDisponible;
+          montoPedido = baseFallbackPedido;
         }
+
+        const montoSolicitadoOriginal = montoPedido;
 
         let excedioSaldoAceptante = false;
         if (!aceptante?.libre && montoPedido > saldoDispAceptante) {
@@ -1629,12 +1715,60 @@ export async function POST(req: Request) {
           montoPedido = Math.min(montoPedido, saldoDispAceptante);
         }
 
+        const topeSolicitadoAceptante = montoPedido;
+
+        // Si el remanente ya llegó a 0 (ej. 4to jugador), encolar en chat_tickets_fifo en espera de "Jugue con Todos" / "Todos"
+        if (remanenteDisponible <= 0) {
+          const idCola = crypto.randomUUID();
+          const codigoCola = `TK-${idCola.slice(0, 8).toUpperCase()}`;
+          await supabaseAdmin.from("chat_tickets_fifo").insert({
+            id: idCola,
+            codigo_ticket: codigoCola,
+            grupo_id: grupoId,
+            sala_id: salaId,
+            carrera_id: propMsg.carrera_id || sala.carrera_activa_id || null,
+            propuesta_msg_id: propuestaId,
+            proponente_id: propMsg.remitente_id,
+            proponente_nombre: propMsg.remitente_nombre || proponente?.nombre || "Proponente",
+            aceptante_id: identidad.usuarioId,
+            aceptante_nombre: identidad.nombre,
+            accion_proponente: propMsg.accion_proponente || "JUEGA",
+            es_match: Boolean(propMsg.es_match),
+            modalidad: propMsg.modalidad_propuesta || propMsg.modalidad_jugada || propMsg.modalidad || "1P",
+            ejemplar_numero: propMsg.ejemplar_texto || propMsg.ejemplar_numero || "",
+            caballos_bando_a: propMsg.caballos_bando_a || [],
+            caballos_bando_b: propMsg.caballos_bando_b || [],
+            proporcion_premio: propMsg.proporcion_premio || propMsg.proporcion || "1x1",
+            monto_solicitado: topeSolicitadoAceptante,
+            monto_concretado: 0,
+            fue_ajuste_parcial: true,
+            monto_pendiente_ampliacion: topeSolicitadoAceptante,
+            riesgo_proponente: 0,
+            riesgo_aceptante: 0,
+            estado: "EN_COLA",
+          });
+          return NextResponse.json({
+            ok: true,
+            enCola: true,
+            montoConcretado: 0,
+            montoPendienteAmpliacion: topeSolicitadoAceptante,
+            msg_publico_bot: null,
+          });
+        }
+
         // Topar también al saldo disponible del proponente si no es libre
         if (!proponente?.libre && montoPedido > saldoDispProponente) {
           montoPedido = Math.min(montoPedido, saldoDispProponente);
         }
 
+        const fueRecortadoPorRemanente =
+          topeSolicitadoAceptante > remanenteDisponible &&
+          (proponente?.libre || saldoDispProponente >= remanenteDisponible);
+
         montoPedido = Math.min(montoPedido, remanenteDisponible);
+        const montoPendienteAmpliacion = fueRecortadoPorRemanente
+          ? Math.max(0, Number((topeSolicitadoAceptante - montoPedido).toFixed(2)))
+          : 0;
 
         const apuestaMinima = Number(sala.apuesta_minima ?? 10.00);
         if (montoPedido < apuestaMinima && remanenteDisponible >= apuestaMinima) {
@@ -1676,7 +1810,7 @@ export async function POST(req: Request) {
         if (!fifoExitoso) {
           return NextResponse.json({ ok: false, error: "Identificadores inválidos para concretar jugada" }, { status: 400 });
         } else {
-          // Firmar ticket server-side y asociar sala_id
+          // Firmar ticket server-side y asociar sala_id + monto_pendiente_ampliacion
           const { data: ticketsCreados } = await supabaseAdmin
             .from("chat_tickets_fifo")
             .select("*")
@@ -1686,9 +1820,20 @@ export async function POST(req: Request) {
           for (const t of ticketsCreados || []) {
             const rawFirma = `${t.codigo_ticket}:${t.proponente_id}:${t.aceptante_id}:${t.monto_concretado}:${t.created_at}`;
             const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
+            const esEsteAceptante = String(t.aceptante_id) === String(identidad.usuarioId);
             await supabaseAdmin
               .from("chat_tickets_fifo")
-              .update({ firma_sha256: firma, sala_id: salaId })
+              .update({
+                firma_sha256: firma,
+                sala_id: salaId,
+                ...(esEsteAceptante
+                  ? {
+                      monto_solicitado: topeSolicitadoAceptante,
+                      monto_pendiente_ampliacion: montoPendienteAmpliacion,
+                      fue_ajuste_parcial: montoPendienteAmpliacion > 0 || montoPedido < montoSolicitadoOriginal,
+                    }
+                  : {}),
+              })
               .eq("id", t.id);
           }
 
@@ -1702,9 +1847,10 @@ export async function POST(req: Request) {
           // Consultar todos los tickets de la propuesta para mostrar "Van jugando por X" y el desglose ("Eddie jugó 43,50")
           const { data: ticketsAcumulados } = await supabaseAdmin
             .from("chat_tickets_fifo")
-            .select("aceptante_nombre, monto_concretado")
+            .select("aceptante_nombre, monto_concretado, estado")
             .eq("propuesta_msg_id", propuestaId)
             .neq("estado", "ANULADO")
+            .neq("estado", "EN_COLA")
             .order("created_at", { ascending: true });
 
           const { data: propActualizada } = await supabaseAdmin
@@ -1727,10 +1873,11 @@ export async function POST(req: Request) {
             .map((d) => `• ${d.jugador} jugó ${prefijo}${formatearMontoRegional(d.monto)}`)
             .join("\n");
 
-          const textoVanJugando =
-            `🤝 *Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}* (${propActualizada?.jugada_estandarizada || propActualizada?.contenido || propMsg.contenido})\n` +
-            `${lineasDesglose}` +
-            (remRestante > 0 ? `\nDisponible: ${prefijo}${formatearMontoRegional(remRestante)}` : "");
+          const textoVanJugando = fueRecortadoPorRemanente
+            ? `Jugo ${formatearMontoRegional(montoPedido)}, Es lo que queda`
+            : `🤝 *Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}* (${propActualizada?.jugada_estandarizada || propActualizada?.contenido || propMsg.contenido})\n` +
+              `${lineasDesglose}` +
+              (remRestante > 0 ? `\nDisponible: ${prefijo}${formatearMontoRegional(remRestante)}` : "");
 
           // Actualizar cualquier mensaje derivado en chat_mensajes con el formato "Van jugando por X" + desglose
           const { data: msgsDerivados } = await supabaseAdmin
@@ -1740,7 +1887,7 @@ export async function POST(req: Request) {
             .order("created_at", { ascending: false })
             .limit(1);
 
-          if (msgsDerivados && msgsDerivados.length > 0) {
+          if (!fueRecortadoPorRemanente && msgsDerivados && msgsDerivados.length > 0) {
             await supabaseAdmin
               .from("chat_mensajes")
               .update({ sala_id: salaId, tipo_mensaje: "CONCRECION", contenido: textoVanJugando })
@@ -1800,7 +1947,13 @@ export async function POST(req: Request) {
         }
 
         await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
-        return NextResponse.json({ ok: true, resultadoFifo: resFifo });
+        return NextResponse.json({
+          ok: true,
+          resultadoFifo: resFifo,
+          montoConcretado: montoPedido,
+          montoPendienteAmpliacion,
+          msg_publico_bot: fueRecortadoPorRemanente ? `Jugo ${formatearMontoRegional(montoPedido)}, Es lo que queda` : null,
+        });
       }
 
       // CASO B: Mensaje normal o nueva propuesta de jugador
@@ -1870,6 +2023,61 @@ export async function POST(req: Request) {
             msg_publico_bot: null,
             msg_privado_bot: msgPrivadoSeFue,
           });
+        }
+
+        // 1.b Detección de ampliación en cascada ("Jugue con Todos", "Todos", etc.)
+        const evalAmpLibre = evaluarAmpliacionPropuesta(texto);
+        if (evalAmpLibre.esAmpliacion) {
+          const resAmp = await ejecutarAmpliacionCupo({
+            contextoSala: {
+              sala,
+              salaId,
+              grupoId,
+              codigoSala: sala.codigo_sala || "",
+              carreraAbierta: sala.estado_carrera === "abierta",
+              carreraActivaId: sala.carrera_activa_id || null,
+              apuestaMinima: Number(sala.apuesta_minima ?? 10),
+              tiempoVencimientoMin: Number(sala.tiempo_vencimiento_min ?? sala.tiempo_vencimiento_propuesta_min ?? 5),
+              retirados: Array.isArray((sala as any).retirados) ? (sala as any).retirados : [],
+              topeMarcas: 5,
+            },
+            cliente: {
+              id: identidad.usuarioId,
+              nombre: identidad.nombre,
+              nombreJugador: identidad.nombre,
+              saldo_actual: Number(cl?.saldo_actual || 0),
+              saldo_retenido: Number(cl?.saldo_retenido || 0),
+              saldo_disponible: disponible,
+              aval: Number(cl?.aval || 0),
+              libre: Boolean(cl?.libre),
+              esOperadorRemitente: false,
+              rawCliente: cl || { id: identidad.usuarioId, nombre: identidad.nombre },
+            },
+            quotedPropuestaId: replyToMsgId || null,
+            nuevoTope: evalAmpLibre.nuevoTope,
+          });
+
+          if (!resAmp.ok) {
+            return NextResponse.json({
+              ok: false,
+              error: resAmp.mensajePrivadoAutor || resAmp.error || "No se pudo ampliar la propuesta",
+              msg_publico_bot: resAmp.msg_publico_bot || null,
+              msg_privado_bot: resAmp.msg_privado_bot || null,
+            }, { status: 400 });
+          }
+
+          if (Array.isArray(resAmp.respuestas_grupo)) {
+            for (const item of resAmp.respuestas_grupo) {
+              if (item?.texto) {
+                void publicarEnWhatsAppSala(salaId, item.texto, item.quotedMsgId || null);
+              }
+            }
+          } else if (resAmp.msg_publico_bot) {
+            void publicarEnWhatsAppSala(salaId, resAmp.msg_publico_bot);
+          }
+
+          await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
+          return NextResponse.json(resAmp);
         }
 
         // Análisis mediante Parser Pedagógico Determinístico
@@ -2420,15 +2628,7 @@ export async function POST(req: Request) {
           .select("*")
           .eq("sala_id", salaId)
           .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"])
-          .order("created_at", { ascending: true });
-
-        const { data: propsAbiertas } = await supabaseAdmin
-          .from("chat_mensajes")
-          .select("remitente_nombre, jugada_estandarizada, contenido, monto_disponible, modalidad_propuesta, proporcion_premio, es_match")
-          .eq("sala_id", salaId)
-          .in("tipo_mensaje", ["propuesta_jugada", "PROPUESTA"])
-          .in("estado_propuesta", ["abierta", "parcial"])
-          .gt("monto_disponible", 0)
+          .gt("monto_concretado", 0)
           .order("created_at", { ascending: true });
 
         let retirados: string[] = [];
@@ -2486,25 +2686,12 @@ export async function POST(req: Request) {
                 .join("\n")
             : "_No hay jugadas pactadas aún en esta carrera._";
 
-        const propsOrdenadas = [...(propsAbiertas || [])].sort((a, b) => ordenTicket(a) - ordenTicket(b));
-        const bloqueAbiertas =
-          propsOrdenadas.length > 0
-            ? `\n\n📌 *Propuestas abiertas en cola (${propsOrdenadas.length}):*\n` +
-              propsOrdenadas
-                .map((p: any) => {
-                  const det = limpiarEtiquetasProhibidas(String(p.jugada_estandarizada || p.contenido || "Propuesta"));
-                  return `• ${p.remitente_nombre}: ${det} (Disp: ${pref}${formatearMontoRegional(Number(p.monto_disponible || 0))})`;
-                })
-                .join("\n")
-            : "";
-
         const totalPactado = ticketsOrdenados.reduce((acc, t) => acc + Number(t.monto_concretado || 0), 0);
         const textoReporte =
           `📋 *PREJUGADAS OFICIALES — ${hipo} C${carrera}*\n` +
           `🏛️ ${grupoRow?.nombre || "Sala Hípica"} | 📅 ${fecha} | 🚫 Retirados: ${retStr}\n` +
           `━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `${lineasCasadas}` +
-          `${bloqueAbiertas}\n` +
+          `${lineasCasadas}\n` +
           `━━━━━━━━━━━━━━━━━━━━━━\n` +
           `💰 *Total Pactado:* ${pref}${formatearMontoRegional(totalPactado)} (${ticketsOrdenados.length} tickets)`;
 

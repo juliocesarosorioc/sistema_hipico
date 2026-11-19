@@ -205,57 +205,50 @@ export async function validarYPublicarPropuesta(params: {
     let propIdsBloque: string[] = [];
     const excedioSaldoBloque = analisis.bloques.some((b) => Boolean(b.excedioSaldo));
 
-    try {
-      const { data: rpcBlk, error: errBlk } = await supabaseAdmin.rpc(
-        "publicar_bloque_propuestas_atomica",
-        {
-          p_grupo_id: grupoId,
-          p_sala_id: salaId,
-          p_carrera_id: sala.carrera_activa_id || "00000000-0000-0000-2026-111400000001",
-          p_jugador_id: cliente.id,
-          p_propuestas: pPropuestas,
-          p_whatsapp_msg_id: whatsappMsgId || null,
+    // Publicar cada propuesta del bloque en chat_mensajes sin retener saldo (la retención ocurre únicamente al concretar)
+    for (const p of pPropuestas) {
+      const montoBloque = Number(p.monto_solicitado || 0);
+      if (montoBloque <= 0) continue;
+      try {
+        const rawFirmaBlk = `PROPUESTA_BLK:${salaId}:${cliente.id}:${p.texto_estandarizado}:${Date.now()}:${Math.random()}`;
+        const firmaBlk = crypto.createHash("sha256").update(rawFirmaBlk).digest("hex");
+        const { data: rowBlk } = await supabaseAdmin
+          .from("chat_mensajes")
+          .insert({
+            grupo_id: grupoId,
+            sala_id: salaId,
+            remitente_id: cliente.id,
+            remitente_nombre: nombreJugador,
+            es_operador: false,
+            tipo_mensaje: "propuesta_jugada",
+            contenido: p.texto_estandarizado,
+            carrera_id: sala.carrera_activa_id || contextoSala.carreraActivaId || null,
+            accion_proponente: p.accion || "JUEGA",
+            es_match: Boolean(p.es_match),
+            modalidad_jugada: p.modalidad,
+            ejemplar_numero: p.ejemplar_texto,
+            caballos_bando_a: p.caballos_a || (p.ejemplar_texto ? [p.ejemplar_texto] : []),
+            caballos_bando_b: p.caballos_b || [],
+            jugada_estandarizada: p.texto_estandarizado,
+            monto_original: montoBloque,
+            monto_disponible: montoBloque,
+            estado_propuesta: "abierta",
+            proporcion_premio: p.proporcion || "1x1",
+            firma_sha256: firmaBlk,
+            whatsapp_msg_id: whatsappMsgId || null,
+            whatsapp_group_jid: groupJid || null,
+            whatsapp_group_nombre: whatsappGroupNombre || null,
+            origen_canal: "WHATSAPP",
+          })
+          .select("id")
+          .maybeSingle();
+        if (rowBlk?.id) {
+          propIdsBloque.push(rowBlk.id);
         }
-      );
-      if (!errBlk && rpcBlk && Array.isArray((rpcBlk as any).propuestas_ids)) {
-        propIdsBloque = (rpcBlk as any).propuestas_ids;
-      }
-    } catch {}
-
-    if (propIdsBloque.length === 0) {
-      for (const p of pPropuestas) {
-        if ((p.monto_solicitado || 0) <= 0) continue;
-        const { data: rpcInd } = await supabaseAdmin.rpc("publicar_propuesta_atomica", {
-          p_grupo_id: grupoId,
-          p_sala_id: salaId,
-          p_carrera_id: sala.carrera_activa_id || "00000000-0000-0000-2026-111400000001",
-          p_jugador_id: cliente.id,
-          p_accion: p.accion,
-          p_es_match: p.es_match,
-          p_modalidad: p.modalidad,
-          p_caballos_a: p.caballos_a,
-          p_caballos_b: p.caballos_b,
-          p_ejemplar_texto: p.ejemplar_texto,
-          p_proporcion: p.proporcion,
-          p_monto_solicitado: p.monto_solicitado,
-          p_texto_estandarizado: p.texto_estandarizado,
-        });
-        if ((rpcInd as any)?.propuesta_id) {
-          propIdsBloque.push((rpcInd as any).propuesta_id);
-        }
-      }
+      } catch {}
     }
 
     if (propIdsBloque.length > 0) {
-      await supabaseAdmin
-        .from("chat_mensajes")
-        .update({
-          whatsapp_msg_id: whatsappMsgId,
-          whatsapp_group_jid: groupJid,
-          whatsapp_group_nombre: whatsappGroupNombre,
-          origen_canal: "WHATSAPP",
-        })
-        .in("id", propIdsBloque);
       await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
     }
 
@@ -378,110 +371,50 @@ export async function validarYPublicarPropuesta(params: {
   let rpcPublicado = false;
   let rpcResFinal: any = null;
 
+  // Inserción directa en chat_mensajes (0 RETENCIÓN al proponer; la retención de saldo ocurre únicamente al concretar la jugada)
   try {
-    let rpcRes: any = null;
-    let rpcErr: any = null;
+    const rawFirma = `PROPUESTA_WA:${salaId}:${cliente.id}:${montoAPublicar}:${Date.now()}`;
+    const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
 
-    // 1. Intentar con p_whatsapp_msg_id
-    try {
-      const intentoConWa = await supabaseAdmin.rpc("publicar_propuesta_atomica", {
-        p_grupo_id: grupoId,
-        p_sala_id: salaId,
-        p_carrera_id: sala.carrera_activa_id || "00000000-0000-0000-2026-111400000001",
-        p_jugador_id: cliente.id,
-        p_accion: analisis.accionProponente,
-        p_es_match: analisis.esMatch,
-        p_modalidad: analisis.modalidad,
-        p_caballos_a: analisis.caballosBandoA,
-        p_caballos_b: analisis.caballosBandoB,
-        p_ejemplar_texto: analisis.ejemplarTexto,
-        p_proporcion: analisis.proporcion || "1x1",
-        p_monto_solicitado: montoAPublicar,
-        p_texto_estandarizado: analisis.jugadaEstandarizada,
-        p_whatsapp_msg_id: whatsappMsgId || null,
-      });
-      rpcRes = intentoConWa.data;
-      rpcErr = intentoConWa.error;
-    } catch (errConWa) {
-      rpcErr = errConWa;
-    }
+    const { data: nuevaPropuesta, error: errInsert } = await supabaseAdmin
+      .from("chat_mensajes")
+      .insert({
+        grupo_id: grupoId,
+        sala_id: salaId,
+        remitente_id: cliente.id,
+        remitente_nombre: nombreJugador,
+        es_operador: false,
+        tipo_mensaje: "propuesta_jugada",
+        contenido: analisis.jugadaEstandarizada,
+        carrera_id: sala.carrera_activa_id || contextoSala.carreraActivaId || null,
+        accion_proponente: analisis.accionProponente || "JUEGA",
+        es_match: Boolean(analisis.esMatch),
+        modalidad_jugada: analisis.modalidad,
+        ejemplar_numero: analisis.ejemplarTexto,
+        caballos_bando_a: analisis.caballosBandoA || (analisis.ejemplarTexto ? [analisis.ejemplarTexto] : []),
+        caballos_bando_b: analisis.caballosBandoB || [],
+        jugada_estandarizada: analisis.jugadaEstandarizada,
+        monto_original: montoAPublicar,
+        monto_disponible: montoAPublicar,
+        estado_propuesta: "abierta",
+        proporcion_premio: analisis.proporcion || "1x1",
+        firma_sha256: firma,
+        whatsapp_msg_id: whatsappMsgId || null,
+        whatsapp_group_jid: groupJid || null,
+        whatsapp_group_nombre: whatsappGroupNombre || null,
+        origen_canal: "WHATSAPP",
+      })
+      .select()
+      .single();
 
-    // 2. Si falla por schema cache (función sin p_whatsapp_msg_id en BD), invocar sin el parámetro
-    if (rpcErr && (rpcErr.message?.includes("schema cache") || rpcErr.message?.includes("Could not find"))) {
-      const intentoSinWa = await supabaseAdmin.rpc("publicar_propuesta_atomica", {
-        p_grupo_id: grupoId,
-        p_sala_id: salaId,
-        p_carrera_id: sala.carrera_activa_id || "00000000-0000-0000-2026-111400000001",
-        p_jugador_id: cliente.id,
-        p_accion: analisis.accionProponente,
-        p_es_match: analisis.esMatch,
-        p_modalidad: analisis.modalidad,
-        p_caballos_a: analisis.caballosBandoA,
-        p_caballos_b: analisis.caballosBandoB,
-        p_ejemplar_texto: analisis.ejemplarTexto,
-        p_proporcion: analisis.proporcion || "1x1",
-        p_monto_solicitado: montoAPublicar,
-        p_texto_estandarizado: analisis.jugadaEstandarizada,
-      });
-      rpcRes = intentoSinWa.data;
-      rpcErr = intentoSinWa.error;
-    }
-
-    rpcResFinal = rpcRes;
-    if (!rpcErr && rpcRes && (rpcRes as any).propuesta_id) {
-      propId = (rpcRes as any).propuesta_id;
+    if (!errInsert && nuevaPropuesta?.id) {
+      propId = nuevaPropuesta.id;
       rpcPublicado = true;
+    } else if (errInsert) {
+      console.error("[validarSaldo] Inserción directa de propuesta error:", errInsert);
     }
-  } catch {
-    rpcPublicado = false;
-  }
-
-  // Fallback resiliente: inserción directa en chat_mensajes si el RPC falla (0 RETENCIÓN al proponer)
-  if (!rpcPublicado || !propId) {
-    try {
-      const rawFirma = `PROPUESTA_WA:${salaId}:${cliente.id}:${montoAPublicar}:${Date.now()}`;
-      const firma = crypto.createHash("sha256").update(rawFirma).digest("hex");
-
-      const { data: nuevaPropuesta, error: errInsert } = await supabaseAdmin
-        .from("chat_mensajes")
-        .insert({
-          grupo_id: grupoId,
-          sala_id: salaId,
-          remitente_id: cliente.id,
-          remitente_nombre: nombreJugador,
-          es_operador: false,
-          tipo_mensaje: "propuesta_jugada",
-          contenido: analisis.jugadaEstandarizada,
-          carrera_id: sala.carrera_activa_id || contextoSala.carreraActivaId || null,
-          accion_proponente: analisis.accionProponente || "JUEGA",
-          es_match: Boolean(analisis.esMatch),
-          modalidad_jugada: analisis.modalidad,
-          ejemplar_numero: analisis.ejemplarTexto,
-          caballos_bando_a: analisis.caballosBandoA || (analisis.ejemplarTexto ? [analisis.ejemplarTexto] : []),
-          caballos_bando_b: analisis.caballosBandoB || [],
-          jugada_estandarizada: analisis.jugadaEstandarizada,
-          monto_original: montoAPublicar,
-          monto_disponible: montoAPublicar,
-          estado_propuesta: "abierta",
-          proporcion_premio: analisis.proporcion || "1x1",
-          firma_sha256: firma,
-          whatsapp_msg_id: whatsappMsgId || null,
-          whatsapp_group_jid: groupJid || null,
-          whatsapp_group_nombre: whatsappGroupNombre || null,
-          origen_canal: "WHATSAPP",
-        })
-        .select()
-        .single();
-
-      if (!errInsert && nuevaPropuesta?.id) {
-        propId = nuevaPropuesta.id;
-        rpcPublicado = true;
-      } else if (errInsert) {
-        console.error("[validarSaldo] Fallback inserción directa error:", errInsert);
-      }
-    } catch (errFb) {
-      console.error("[validarSaldo] Error en bloque fallback propuesta:", errFb);
-    }
+  } catch (errFb) {
+    console.error("[validarSaldo] Error publicando propuesta:", errFb);
   }
 
   if (!rpcPublicado || !propId) {
@@ -503,20 +436,6 @@ export async function validarYPublicarPropuesta(params: {
       senderJid: participantJid,
     };
   }
-
-  await supabaseAdmin
-    .from("chat_mensajes")
-    .update({
-      whatsapp_msg_id: whatsappMsgId,
-      whatsapp_group_jid: groupJid,
-      whatsapp_group_nombre: whatsappGroupNombre,
-      origen_canal: "WHATSAPP",
-      monto_original: montoAPublicar,
-      monto_disponible: montoAPublicar,
-      contenido: analisis.jugadaEstandarizada,
-      jugada_estandarizada: analisis.jugadaEstandarizada,
-    })
-    .eq("id", propId);
 
   await emitirBroadcastSala(salaId, "nuevo_mensaje", { salaId });
 

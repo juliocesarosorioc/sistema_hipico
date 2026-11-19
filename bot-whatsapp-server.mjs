@@ -1026,6 +1026,7 @@ export async function construirYPublicarPlano(sala, groupJid) {
     .select("*")
     .eq("sala_id", sala.id)
     .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"])
+    .gt("monto_concretado", 0)
     .order("created_at", { ascending: true });
 
   if (carreraId) {
@@ -1035,7 +1036,7 @@ export async function construirYPublicarPlano(sala, groupJid) {
   const { data: tickets, error } = await query;
   if (error) throw new Error(error.message);
 
-  const lista = tickets || [];
+  const lista = (tickets || []).filter((t) => Number(t?.monto_concretado || 0) > 0);
   const totalPactado = lista.reduce((acc, t) => acc + Number(t.monto_concretado || 0), 0);
 
   let retiradosStr = "";
@@ -1052,37 +1053,31 @@ export async function construirYPublicarPlano(sala, groupJid) {
     lista.length > 0
       ? lista
           .map((t, idx) => {
-            const detalleJugada = t.es_match
-              ? `A Premio ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`
-              : `${t.modalidad || "1P"} del ${t.ejemplar_numero || (t.caballos_bando_a || []).join("-")}`;
-            return `${idx + 1}) ${t.proponente_nombre} juega ${detalleJugada} con ${t.aceptante_nombre} $${formatearMonto(t.monto_concretado)}`;
+            const proponente = t.proponente_nombre || "Jugador A";
+            const aceptante = t.aceptante_nombre || "Jugador B";
+            const accProp = String(t.accion_proponente || "JUEGA").trim().toUpperCase();
+            const esConsigueProp = accProp === "CONSIGUE" || accProp === "CONSIGO" || accProp === "DA" || accProp === "DOY";
+            const jugadorJuega = esConsigueProp ? aceptante : proponente;
+            const jugadorDa = esConsigueProp ? proponente : aceptante;
+            const prop = String(t.proporcion_premio || t.proporcion || "").trim();
+            const tieneProp10 = /^10\s*[\/aAª@\-]\s*\d+(?:[.,]\d+)?$/i.test(prop) && !/^10\s*[\/aAª@\-]\s*10$/i.test(prop);
+            const propCanon = tieneProp10 ? prop.toUpperCase().replace(/\s+/g, "").replace(/[aAª@\-]/g, "/").replace(",", ".") : "";
+            let jugadaToken = "";
+            let caballoToken = "";
+            if (t.es_match || (Array.isArray(t.caballos_bando_b) && t.caballos_bando_b.length > 0)) {
+              const bA = (t.caballos_bando_a || []).join("-") || t.ejemplar_numero || "1";
+              const bB = (t.caballos_bando_b || []).join("-");
+              caballoToken = `${bA}x${bB}`;
+              jugadaToken = propCanon;
+            } else {
+              const mod = String(t.modalidad || "1P").trim().toUpperCase();
+              caballoToken = String(t.ejemplar_numero || (t.caballos_bando_a || []).join("-") || "1").trim();
+              jugadaToken = propCanon || (mod === "MATCH" ? "PP" : mod);
+            }
+            return `${idx + 1}) Juega ${jugadorJuega} ${jugadaToken ? `${jugadaToken} ` : ""}(${caballoToken}) con ${formatearMonto(t.monto_concretado)} da ${jugadorDa}`;
           })
           .join("\n")
       : "_No hay jugadas concretadas en esta carrera._";
-
-  let qProps = supabase
-    .from("chat_mensajes")
-    .select("remitente_nombre, jugada_estandarizada, contenido, monto_disponible, modalidad_propuesta, ejemplar_texto, es_match, caballos_bando_a, caballos_bando_b")
-    .eq("sala_id", sala.id)
-    .in("tipo_mensaje", ["propuesta_jugada", "PROPUESTA"])
-    .in("estado_propuesta", ["abierta", "parcial"])
-    .gt("monto_disponible", 0)
-    .order("created_at", { ascending: true });
-
-  if (carreraId) {
-    qProps = qProps.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
-  }
-  const { data: propsAbiertas } = await qProps;
-  const listaProps = propsAbiertas || [];
-  const lineasProps =
-    listaProps.length > 0
-      ? listaProps
-          .map((p) => {
-            const detalle = p.jugada_estandarizada || p.contenido || "Propuesta";
-            return `• *${p.remitente_nombre}*: ${detalle} (Disp: *$${formatearMonto(p.monto_disponible)}*)`;
-          })
-          .join("\n")
-      : "_No hay propuestas abiertas en cola._";
 
   const mapaPlano = await cargarPlantillasGrupo(sala?.grupo_id);
   const encabezadoPlano = obtenerPlantillaGrupo(
@@ -1103,21 +1098,19 @@ export async function construirYPublicarPlano(sala, groupJid) {
 
   let textoPlano =
     `${encabezadoPlano}\n\n` +
-    `[Listado de jugadas y propuestas concretadas]\n` +
+    `[Listado de jugadas concretadas]\n` +
     `${lineas}`;
 
-  if (listaProps.length > 0) {
-    textoPlano += `\n\n[Propuestas abiertas en cola]\n${lineasProps}`;
+  if (lista.length > 0) {
+    textoPlano += `\n\n💰 Total Casado: $${formatearMonto(totalPactado)} (${lista.length} tickets)`;
   }
-
-  textoPlano += `\n\n💰 Total Jugado Casado: $${formatearMonto(totalPactado)} (${lista.length} tickets)`;
 
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoPlano);
   }
   await registrarMensajeEnChatWeb(sala, groupJid, textoPlano, "sistema");
 
-  return { ok: true, textoPlano, totalTickets: lista.length, totalPactado, totalPropuestas: listaProps.length };
+  return { ok: true, textoPlano, totalTickets: lista.length, totalPactado, totalPropuestas: 0 };
 }
 
 export async function ejecutarAnulacionORetiro(sala, groupJid, comando, argumento) {
@@ -1791,10 +1784,21 @@ async function manejarMensajeEntrante(msg) {
       ? (msg.key.participant || msg.participant || (esFromMe && myPhone ? `${myPhone}@s.whatsapp.net` : ""))
       : remoteJid;
     const participantAlt = msg.key.participantAlt || msg.participantAlt || "";
-    const quotedMsgId =
-      msg.message?.extendedTextMessage?.contextInfo?.stanzaId ||
-      msg.message?.contextInfo?.stanzaId ||
+    const ctxInfo =
+      msg.message?.extendedTextMessage?.contextInfo ||
+      msg.message?.imageMessage?.contextInfo ||
+      msg.message?.videoMessage?.contextInfo ||
+      msg.message?.contextInfo ||
       null;
+    const quotedMsgId = ctxInfo?.stanzaId || null;
+    const quotedParticipantJid = ctxInfo?.participant || null;
+    const quotedTextRaw =
+      ctxInfo?.quotedMessage?.conversation ||
+      ctxInfo?.quotedMessage?.extendedTextMessage?.text ||
+      ctxInfo?.quotedMessage?.imageMessage?.caption ||
+      ctxInfo?.quotedMessage?.videoMessage?.caption ||
+      "";
+    const quotedText = quotedTextRaw ? sanitizarTexto(String(quotedTextRaw)) : null;
 
     const senderNombre = sanitizarTexto(msg.pushName) || (esFromMe ? "Operador" : "Usuario");
     const esLid = participantJid.endsWith("@lid");
@@ -1940,6 +1944,10 @@ async function manejarMensajeEntrante(msg) {
           whatsapp_msg_id: whatsappMsgId,
           quotedMsgId,
           quoted_msg_id: quotedMsgId,
+          quotedText,
+          quoted_text: quotedText,
+          quotedParticipantJid,
+          quoted_participant_jid: quotedParticipantJid,
         };
 
         try {
@@ -1965,6 +1973,7 @@ async function manejarMensajeEntrante(msg) {
     const envios = [];
 
     // 1. Despacho reply_public (al grupo)
+    const respuestasGrupo = Array.isArray(data.respuestas_grupo) ? data.respuestas_grupo : [];
     const replyPublic =
       data.reply_public ||
       data.respuestaGrupo ||
@@ -1972,7 +1981,18 @@ async function manejarMensajeEntrante(msg) {
       data.msg_publico ||
       data.respuestaPublica;
 
-    if (replyPublic && esGrupo && sock) {
+    if (respuestasGrupo.length > 0 && esGrupo && sock) {
+      envios.push(
+        (async () => {
+          for (const item of respuestasGrupo) {
+            if (!item || !item.texto) continue;
+            await enviarMensajeGrupo(remoteJid, item.texto, item.quotedMsgId || whatsappMsgId).catch((errG) =>
+              console.warn("[Bot WhatsApp] Aviso enviando respuesta múltiple de grupo:", errG?.message || errG)
+            );
+          }
+        })()
+      );
+    } else if (replyPublic && esGrupo && sock) {
       envios.push(
         enviarMensajeGrupo(remoteJid, replyPublic, whatsappMsgId).catch((errG) =>
           console.warn("[Bot WhatsApp] Aviso enviando respuesta de grupo:", errG?.message || errG)

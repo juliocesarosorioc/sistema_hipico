@@ -459,24 +459,22 @@ export async function manejarIntencionComando(params: {
     }
   }
 
-  // 6. PLANO OFICIAL
+  // 6. PLANO OFICIAL (Relaciona únicamente las jugadas concretadas)
   const esComandoPlano = /^(?:!?(?:plano|prejugadas))$/i.test(textoUsuarioLimpio);
   if (esComandoPlano) {
-    const { data: ticketsPlano } = await supabaseAdmin
+    let qPlano = supabaseAdmin
       .from("chat_tickets_fifo")
       .select("*")
       .eq("sala_id", salaId)
       .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"])
+      .gt("monto_concretado", 0)
       .order("created_at", { ascending: true });
 
-    const { data: propsPlano } = await supabaseAdmin
-      .from("chat_mensajes")
-      .select("remitente_nombre, jugada_estandarizada, contenido, monto_disponible")
-      .eq("sala_id", salaId)
-      .in("tipo_mensaje", ["propuesta_jugada", "PROPUESTA"])
-      .in("estado_propuesta", ["abierta", "parcial"])
-      .gt("monto_disponible", 0)
-      .order("created_at", { ascending: true });
+    if (sala.carrera_activa_id) {
+      qPlano = qPlano.or(`carrera_id.eq.${sala.carrera_activa_id},carrera_id.is.null`);
+    }
+
+    const { data: ticketsPlano } = await qPlano;
 
     let retiradosLista: string[] = [];
     if (sala.carrera_activa_id) {
@@ -492,7 +490,7 @@ export async function manejarIntencionComando(params: {
       } catch {}
     }
 
-    const planoTexto = await generarTextoPlanoOficial(sala, ticketsPlano || [], propsPlano || [], retiradosLista);
+    const planoTexto = await generarTextoPlanoOficial(sala, ticketsPlano || [], [], retiradosLista);
 
     await supabaseAdmin.from("chat_mensajes").insert({
       grupo_id: grupoId,

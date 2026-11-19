@@ -44,6 +44,9 @@ export function calcularSaldoDisponible(cliente: any): number {
   const aval = Number(cliente.aval ?? cliente.limite_credito ?? 0);
   const retenido = Number(cliente.saldo_retenido ?? 0);
   const dispCalculado = Math.max(0, Number((saldo + aval - retenido).toFixed(2)));
+  if (saldo > 0 || aval > 0 || retenido > 0) {
+    return dispCalculado;
+  }
   const dispDb = Number(cliente.saldo_disponible ?? 0);
   return Math.max(dispCalculado, dispDb);
 }

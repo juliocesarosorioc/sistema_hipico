@@ -61,7 +61,7 @@ export function escribirRespaldoDesconectadas(
 export async function generarTextoPlanoOficial(
   sala: any,
   tickets: any[],
-  propsAbiertas: any[] = [],
+  _propsAbiertas: any[] = [],
   retirados: string[] = []
 ): Promise<string> {
   const diasSemana = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -81,7 +81,11 @@ export async function generarTextoPlanoOficial(
       ? retirados.map((r) => `#${String(r).replace(/^#/, "")}`).join(", ")
       : "";
 
-  const listaCasadas = (tickets || [])
+  const ticketsConcretados = (tickets || []).filter(
+    (t) => Number(t?.monto_concretado || 0) > 0 && String(t?.estado || "").toUpperCase() !== "EN_COLA"
+  );
+
+  const listaCasadas = ticketsConcretados
     .map((t, idx) => {
       const proponente = t.proponente_nombre || "Jugador A";
       const aceptante = t.aceptante_nombre || "Jugador B";
@@ -132,26 +136,15 @@ export async function generarTextoPlanoOficial(
 
   let textoFinal =
     `${encabezadoPlano}\n\n` +
-    `[Listado de jugadas y propuestas concretadas]\n` +
+    `[Listado de jugadas concretadas]\n` +
     `${lineasCasadas}`;
 
-  if (propsAbiertas && propsAbiertas.length > 0) {
-    const lineasProps = propsAbiertas
-      .map((p) => {
-        const det = p.jugada_estandarizada || p.contenido || "Propuesta";
-        const disp = formatearMontoRegional(Number(p.monto_disponible || 0));
-        return `• ${p.remitente_nombre}: ${det} (Disp: $${disp})`;
-      })
-      .join("\n");
-    textoFinal += `\n\n[Propuestas abiertas en cola]\n${lineasProps}`;
-  }
-
-  const totalPactado = (tickets || []).reduce(
+  const totalPactado = ticketsConcretados.reduce(
     (acc, t) => acc + Number(t.monto_concretado || 0),
     0
   );
-  if (tickets && tickets.length > 0) {
-    textoFinal += `\n\n💰 Total Casado: $${formatearMontoRegional(totalPactado)} (${tickets.length} tickets)`;
+  if (ticketsConcretados.length > 0) {
+    textoFinal += `\n\n💰 Total Casado: $${formatearMontoRegional(totalPactado)} (${ticketsConcretados.length} tickets)`;
   }
 
   return textoFinal;
@@ -1363,6 +1356,7 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
       .select("*")
       .eq("sala_id", sala.id)
       .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"])
+      .gt("monto_concretado", 0)
       .order("created_at", { ascending: true });
 
     if (carreraId) {
@@ -1372,23 +1366,7 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
     const { data: tickets } = await query;
     const lista = tickets || [];
     const totalPactado = lista.reduce((acc, t) => acc + Number(t.monto_concretado || 0), 0);
-
-    let qProps = supabaseAdmin
-      .from("chat_mensajes")
-      .select(
-        "remitente_nombre, jugada_estandarizada, contenido, monto_disponible, modalidad_propuesta, ejemplar_texto, es_match, caballos_bando_a, caballos_bando_b"
-      )
-      .eq("sala_id", sala.id)
-      .in("tipo_mensaje", ["propuesta_jugada", "PROPUESTA"])
-      .in("estado_propuesta", ["abierta", "parcial"])
-      .gt("monto_disponible", 0)
-      .order("created_at", { ascending: true });
-
-    if (carreraId) {
-      qProps = qProps.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
-    }
-    const { data: propsAbiertas } = await qProps;
-    const listaProps = propsAbiertas || [];
+    const listaProps: any[] = [];
 
     let retiradosLista: string[] = [];
     if (carreraId) {
