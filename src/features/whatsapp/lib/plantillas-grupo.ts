@@ -98,11 +98,11 @@ export const PLANTILLAS_GRUPO_DEFAULT: PlantillaGrupoItem[] = [
     titulo: "Resultado y Liquidación Oficial",
     descripcion: "Publicado en el grupo al sentenciar o rectificar una carrera.",
     contenido:
-      "{encabezado}\n{fecha}\n{hipodromo}, {carrera} Carrera\nRetirado: {retirados}\n" +
+      "{encabezado}\n{fecha}\n*{hipodromo}, {carrera} Carrera*\nRetirado: {retirados}\n" +
       "📊 Pizarra Oficial: *{pizarra}*\n\n" +
       "📑 RESUMEN DE LIQUIDACIÓN ({total_jugadas} JUGADAS):\n{resumen}\n\n" +
-      "🔄BALANCE TOTAL (Compensando Ganancias vs. Pérdidas antes de con cruces el monto total):\n" +
-      "POSITIVOS\n{positivos}\nNEGATIVOS\n{negativos}",
+      "🔄BALANCE TOTAL:\n\n" +
+      "*POSITIVOS* (Signo + en verde)\n{positivos}\n*NEGATIVOS* (Signo menos en rojo) \n{negativos}",
     variables: [
       ...VARS_ENCABEZADO,
       "{fecha}",

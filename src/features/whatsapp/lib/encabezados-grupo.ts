@@ -49,6 +49,14 @@ export function conectorGrupo(contexto: ContextoEncabezadoGrupo): string {
 
 /** `Administración Hípica` + `TU Grupo "X" te ...:` listo para anteponer al mensaje. */
 export function encabezadoGrupo(sala: any, contexto: ContextoEncabezadoGrupo): string {
+  if (contexto === "resultado") {
+    return (
+      `*🏆 RESULTADO Y LIQUIDACIÓN OFICIAL🏆*\n` +
+      `*${ENCABEZADO_INSTITUCIONAL}*\n` +
+      `Grupo "${nombreGrupoMensaje(sala)}" :`
+    );
+  }
+
   return (
     `${ENCABEZADO_INSTITUCIONAL}\n` +
     `TU Grupo "${nombreGrupoMensaje(sala)}" te ${conectorGrupo(contexto)}:`
