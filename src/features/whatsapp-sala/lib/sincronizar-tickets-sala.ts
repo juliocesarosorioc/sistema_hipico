@@ -270,25 +270,9 @@ export async function sincronizarTicketsPropuestaATaquilla(
       nombreGrupo = String(grp.nombre).trim().toUpperCase() || "PRINCIPAL";
     }
 
-    const fechaCarrera =
-      params.sala.fecha_activa && /^\d{4}-\d{2}-\d{2}/.test(String(params.sala.fecha_activa))
-        ? String(params.sala.fecha_activa).slice(0, 10)
-        : hoyCaracas();
     const hipodromo = String(params.sala.hipodromo_activo || "HIPODROMO").trim().toUpperCase();
     const carrera = Number(params.sala.numero_carrera_activa || 1) || 1;
     const fechaCarrera = await resolverFechaCarreraSala(supabase, params.sala, hipodromo, carrera);
-
-    const ctx = await cargarContextoEstructuraSala(supabase, {
-      grupoId: params.grupoId,
-      sala: params.sala as unknown as Record<string, unknown>,
-      fecha: fechaCarrera,
-      hipodromo,
-      carrera,
-      comisionPct: params.comisionPct,
-      moneda: null,
-    });
-
-    const { venderJugada } = await import("@/features/taquilla/lib/venta");
 
     for (const raw of tickets) {
       const t = raw as TicketFifoBasico & { estado?: string };
@@ -296,6 +280,24 @@ export async function sincronizarTicketsPropuestaATaquilla(
       const montoTicket = Number(t.monto_concretado || 0);
       const estadoTk = String(t.estado || "").toUpperCase();
       if (estadoTk === "EN_COLA" || estadoTk === "ANULADO" || montoTicket <= 0) continue;
+      const marcador = `SALA_P2P:${t.codigo_ticket}`;
+
+      const { data: existente } = await supabase
+        .from("tickets_apuestas")
+        .select("id, monto_jugado")
+        .eq("nota_auditoria", marcador)
+        .limit(1)
+        .maybeSingle();
+
+      if (existente?.id) {
+        if (Number(existente.monto_jugado || 0) !== montoTicket) {
+          await supabase
+            .from("tickets_apuestas")
+            .update({ monto_jugado: montoTicket })
+            .eq("id", existente.id);
+        }
+        continue;
+      }
 
       const esJuegaProponente = proponenteEsQuienJuega(t.accion_proponente || params.condicionProponente);
       const clienteJuegaId = esJuegaProponente ? t.proponente_id : t.aceptante_id;
@@ -333,13 +335,13 @@ export async function sincronizarTicketsPropuestaATaquilla(
           caballo,
           ejemplar_numero: ejNumParsed,
           cantidad_tablas: 1,
-          monto_jugado: monto,
+          monto_jugado: montoTicket,
           monto_decidido: 0,
           premio_pagar: 0,
           cliente_juega_id: clienteJuegaId,
           cliente_juega_nombre: clienteJuegaNombre,
-          cliente_consigue_id: clienteConsigueId,
-          cliente_consigue_nombre: clienteConsigueNombre,
+          cliente_consigue_id: clienteDaId,
+          cliente_consigue_nombre: clienteDaNombre,
           grupo: nombreGrupo,
           grupo_cobro_id: params.grupoId,
           grupo_cobro_nombre: nombreGrupo,
