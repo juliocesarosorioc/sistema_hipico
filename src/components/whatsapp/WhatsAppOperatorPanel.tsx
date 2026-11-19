@@ -320,11 +320,11 @@ export default function WhatsAppOperatorPanel({ grupo_id, className = "" }: What
     setAccionEnCurso(accion);
     setErrorMsg(null);
     try {
-      const res = await fetch("/api/whatsapp-sala/procesar", {
+      // Proxy con sesión de staff: el servidor inyecta el secreto interno (nunca viaja desde el navegador).
+      const res = await fetch("/api/whatsapp-sala/operar", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-internal-bot-secret": "SH-BOT-SECRET-2026",
         },
         body: JSON.stringify({
           accion,

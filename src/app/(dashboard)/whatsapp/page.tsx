@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 import { esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
 import WhatsAppOperatorPanel from "@/components/whatsapp/WhatsAppOperatorPanel";
+import CentroConexionesWhatsApp from "@/components/whatsapp/CentroConexionesWhatsApp";
 import { emitirToast } from "@/shared/lib/mensajeria";
 
 // ============================================================================
@@ -1355,6 +1356,9 @@ export default function WhatsappPage() {
           />
         </div>
       </header>
+
+      {/* ==================== CENTRO DE CONEXIONES 1-A-1 ==================== */}
+      <CentroConexionesWhatsApp />
 
       {/* ==================== CUERPO ==================== */}
       <section className="grid grid-cols-1 gap-5 lg:grid-cols-3">
