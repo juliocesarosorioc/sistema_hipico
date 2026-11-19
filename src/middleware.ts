@@ -157,5 +157,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|verificacion|_next|favicon.ico|.*\\..*).*)", "/:path*\\.(sql|mjs|cjs)"],
+  matcher: ["/((?!_next|favicon.ico|.*\\..*).*)", "/:path*\\.(sql|mjs|cjs)"],
 };
