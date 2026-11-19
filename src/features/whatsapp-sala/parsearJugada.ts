@@ -18,7 +18,12 @@ import {
 import { variablesEncabezadoGrupo } from "@/features/whatsapp/lib/plantillas-grupo";
 import { encabezadoGrupo } from "@/features/whatsapp/lib/encabezados-grupo";
 import { resolverHipodromoEnTabla } from "./resolverSala";
-import { resolverTelefonoWhatsappCliente, verificarEsOperador, CAMPOS_CLIENTE_SALA } from "./resolverCliente";
+import { extraerCarreraYHipodromo } from "./lib/hipodromos-fuzzy";
+import {
+  resolverTelefonoWhatsappCliente,
+  verificarEsOperador,
+  CAMPOS_CLIENTE_SALA,
+} from "./resolverCliente";
 import { emitirBroadcastSala, respuestaSala, registrarMensajeChat } from "./notificador";
 import {
   generarTextoPlanoOficial,
@@ -29,6 +34,8 @@ import type { ContextoSala, ClienteResuelto, JugadaParseada } from "./types";
 
 export const AVISO_REDACCION_GRUPO = "⚠️¡Por favor, verificar redacción! ¡Gracias!";
 export const RE_MONTO_INPUT = "(?:\\d+(?:[\\.,]\\d+)?\\s*(?:k|mil)?)";
+export const COMANDO_OPERADOR_EXACTO =
+  /^!?(?:abrir|abierta|cerrar|cerrad[ao]|pizarra|rectificar|plano|hip[óo]dromo|retirar|recargar|aval)(?:\s|$)/i;
 
 export function sanitizarTexto(str: unknown): string {
   if (typeof str !== "string") return "";
@@ -49,7 +56,7 @@ export function sanitizarTexto(str: unknown): string {
  */
 export function detectarIntencionRapida(texto: string, quotedMsgId?: string | null, codigoSala?: string) {
   const textoUsuarioLimpio = String(texto || "").trim();
-  const esComandoOp = textoUsuarioLimpio.startsWith("!");
+  const esComandoOp = COMANDO_OPERADOR_EXACTO.test(textoUsuarioLimpio) || textoUsuarioLimpio.startsWith("!");
   const cmdRetiroPre = analizarComandoRetiro(textoUsuarioLimpio);
   const esAmpliacionPre = evaluarAmpliacionPropuesta(textoUsuarioLimpio).esAmpliacion;
   const esConsultaSaldo = /^(?:!?(?:saldo|mi\s+saldo|ver\s+saldo))$/i.test(textoUsuarioLimpio);
@@ -59,9 +66,9 @@ export function detectarIntencionRapida(texto: string, quotedMsgId?: string | nu
   const esComandoCerrar = /^(?:!?(?:cerrar(?:\s+carrera)?|cerrada|cerrado|trancar|no\s+va\s+m[aá]s))$/i.test(textoUsuarioLimpio);
   const matchAbrirComando = textoUsuarioLimpio.match(/^(?:!)?(?:abrir|abierta)(?:\s+carrera)?(?:\s+(.+?))?(?:\s+(?:c(?:arrera)?\s*|#\s*)?(\d{1,2}))?$/i);
   const matchHipodromoComando = textoUsuarioLimpio.match(/^!?hip[óo]dromo\s+(.+)$/i);
-  const matchRetirarCarreraComando = textoUsuarioLimpio.match(/^!retirar\s+(.+)$/i);
+  const matchRetirarCarreraComando = textoUsuarioLimpio.match(/^!?retirar\s+(.+)$/i);
   const matchCreditoOperador = textoUsuarioLimpio.match(
-    new RegExp(`^!(recargar|aval)\\s+(.+?)\\s+(${RE_MONTO_INPUT})$`, "i")
+    new RegExp(`^!?(recargar|aval)\\s+(.+?)\\s+(${RE_MONTO_INPUT})$`, "i")
   );
   const matchPizarraComando = textoUsuarioLimpio.match(/^(?:!)?(?:llegada|sentenciar|pizarra)\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
   const matchRectificarComando = textoUsuarioLimpio.match(/^(?:!)?rectificar(?:\s+pizarra)?\s*[:=\-]?\s*([0-9\s,./·\-_]+)$/i);
@@ -91,6 +98,9 @@ export function detectarIntencionRapida(texto: string, quotedMsgId?: string | nu
     esComandoPlano ||
     esComandoCerrar ||
     Boolean(matchAbrirComando) ||
+    Boolean(matchHipodromoComando) ||
+    Boolean(matchRetirarCarreraComando) ||
+    Boolean(matchCreditoOperador) ||
     Boolean(matchPizarraComando) ||
     Boolean(matchRectificarComando) ||
     esSolicitudCajero ||
@@ -153,8 +163,19 @@ export async function manejarIntencionComando(params: {
   const saldoDisponible = cliente.saldo_disponible;
   const quotedMsgId = body.quotedMsgId || null;
 
+  const verificarOperador = async (): Promise<boolean> =>
+    Boolean(body.esMensajePropioTelefono) ||
+    Boolean(body.esOperador) ||
+    Boolean(cliente.esOperadorRemitente) ||
+    (await verificarEsOperador(cliente?.id, cliente.telefono || participantJid, grupoId, {
+      participantJid,
+      participantAlt: body.participantAlt || body.participant_alt || null,
+      telefonoReal: body.telefonoReal || body.participant_phone || null,
+      salaId,
+    }));
+
   // 1. REGLAS ENTRENADAS DE LA SALA DE JUEGOS
-  if (!texto.trim().startsWith("!")) {
+  if (!texto.trim().startsWith("!") && !cliente.esOperadorRemitente) {
     try {
       const { data: dataEntrenada } = await supabaseAdmin.rpc(
         "evaluar_respuesta_entrenada_sala",
@@ -217,9 +238,7 @@ export async function manejarIntencionComando(params: {
   );
   if (matchAjusteOperador) {
     const esOp =
-      Boolean(body.esMensajePropioTelefono) ||
-      Boolean(body.esOperador) ||
-      (await verificarEsOperador(cliente?.id, cliente.telefono || participantJid, grupoId));
+      await verificarOperador();
     if (esOp) {
       const targetNombre = matchAjusteOperador[1].trim();
       const signo = matchAjusteOperador[2];
@@ -376,9 +395,7 @@ export async function manejarIntencionComando(params: {
   const esComandoSaldosAdmin = /^(?:!?(?:saldos|ver\s+saldos|lista\s+saldos|todos\s+los\s+saldos))$/i.test(textoUsuarioLimpio);
   if (esComandoSaldosAdmin) {
     const esOp =
-      Boolean(body.esMensajePropioTelefono) ||
-      Boolean(body.esOperador) ||
-      (await verificarEsOperador(cliente?.id, cliente.telefono || participantJid, grupoId));
+      await verificarOperador();
     if (esOp) {
       const { data: listaCl } = await supabaseAdmin
         .from("clientes")
@@ -489,9 +506,7 @@ export async function manejarIntencionComando(params: {
   const esComandoCerrar = /^(?:!?(?:cerrar(?:\s+carrera)?|cerrada|cerrado|trancar|no\s+va\s+m[aá]s))$/i.test(textoUsuarioLimpio);
   if (esComandoCerrar) {
     const esOp =
-      Boolean(body.esMensajePropioTelefono) ||
-      Boolean(body.esOperador) ||
-      (await verificarEsOperador(cliente?.id, cliente.telefono || participantJid, grupoId));
+      await verificarOperador();
     if (esOp) {
       await supabaseAdmin
         .from("salas_juego")
@@ -549,9 +564,7 @@ export async function manejarIntencionComando(params: {
   );
   if (matchAbrirComando && (/^(?:!)?abrir/i.test(textoUsuarioLimpio) || /^(?:!)?abierta/i.test(textoUsuarioLimpio))) {
     const esOp =
-      Boolean(body.esMensajePropioTelefono) ||
-      Boolean(body.esOperador) ||
-      (await verificarEsOperador(cliente?.id, cliente.telefono || participantJid, grupoId));
+      await verificarOperador();
     if (esOp) {
       const parteArgumentos = textoUsuarioLimpio.replace(/^!?(?:abrir|abierta)(?:\s+carrera)?\s*/i, "").trim();
       const matchRetApertura = parteArgumentos.match(/(?:^|\s)ret(?:irados?)?\s*[:=]?\s*([0-9\s,./·#-]+)$/i);
@@ -564,14 +577,17 @@ export async function manejarIntencionComando(params: {
       const argumentosSinRet = matchRetApertura
         ? parteArgumentos.slice(0, matchRetApertura.index).trim()
         : parteArgumentos;
+      const fuzzyApertura = extraerCarreraYHipodromo(`abrir ${argumentosSinRet}`);
       const matchAbrirBase = argumentosSinRet
         ? `!abrir ${argumentosSinRet}`.match(
             /^(?:!)?(?:abrir|abierta)(?:\s+carrera)?(?:\s+(.+?))?(?:\s+(?:c(?:arrera)?\s*|#\s*)?(\d{1,2}))?$/i
           )
         : matchAbrirComando;
 
-      let posibleHipo = ((matchAbrirBase as RegExpMatchArray | null)?.[1] || "").trim();
-      let posibleCarrera = ((matchAbrirBase as RegExpMatchArray | null)?.[2] || "").trim();
+      let posibleHipo = fuzzyApertura.hipodromoTexto || ((matchAbrirBase as RegExpMatchArray | null)?.[1] || "").trim();
+      let posibleCarrera = fuzzyApertura.carrera
+        ? String(fuzzyApertura.carrera)
+        : ((matchAbrirBase as RegExpMatchArray | null)?.[2] || "").trim();
       if (!posibleCarrera && /^\d{1,2}$/.test(posibleHipo)) {
         posibleCarrera = posibleHipo;
         posibleHipo = "";
@@ -630,7 +646,7 @@ export async function manejarIntencionComando(params: {
                 : "",
           },
           `${encabezadoGrupo(sala, "apertura")}\n` +
-            `🟢 *${hipoLimpio} CARRERA ${numCarrera} ABIERTA* — Hagan sus jugadas.` +
+            `✅ Carrera ${numCarrera} abierta — ${hipoLimpio}\nHagan sus jugadas.` +
             (retiradosApertura.length > 0
               ? `\n🚫 Retirados: ${retiradosApertura.map((r) => `#${r}`).join(", ")}`
               : "")
@@ -668,9 +684,7 @@ export async function manejarIntencionComando(params: {
   const matchHipodromoComando = textoUsuarioLimpio.match(/^!?hip[óo]dromo\s+(.+)$/i);
   if (matchHipodromoComando) {
     const esOp =
-      Boolean(body.esMensajePropioTelefono) ||
-      Boolean(body.esOperador) ||
-      (await verificarEsOperador(cliente?.id, cliente.telefono || participantJid, grupoId));
+      await verificarOperador();
     if (!esOp) {
       return respuestaSala({
         ok: false,
@@ -735,12 +749,10 @@ export async function manejarIntencionComando(params: {
   }
 
   // 10. RETIRAR EJEMPLAR
-  const matchRetirarCarreraComando = textoUsuarioLimpio.match(/^!retirar\s+(.+)$/i);
+  const matchRetirarCarreraComando = textoUsuarioLimpio.match(/^!?retirar\s+(.+)$/i);
   if (matchRetirarCarreraComando) {
     const esOp =
-      Boolean(body.esMensajePropioTelefono) ||
-      Boolean(body.esOperador) ||
-      (await verificarEsOperador(cliente?.id, cliente.telefono || participantJid, grupoId));
+      await verificarOperador();
     if (!esOp) {
       return respuestaSala({
         ok: false,
@@ -755,7 +767,7 @@ export async function manejarIntencionComando(params: {
       return respuestaSala({
         ok: false,
         tipo: "RETIRO_ARGUMENTOS",
-        respuestaGrupo: limpiarEtiquetasProhibidas("⚠️ Uso correcto: !retirar [ejemplar]"),
+        respuestaGrupo: limpiarEtiquetasProhibidas("⚠️ Uso correcto: retirar [ejemplar]"),
         mensajePrivadoAutor: null,
         senderJid: participantJid,
       });
@@ -821,15 +833,13 @@ export async function manejarIntencionComando(params: {
     });
   }
 
-  // 11. CREDITO / AVAL OPERADOR: !recargar [jugador] [monto] / !aval [jugador] [monto]
+  // 11. CREDITO / AVAL OPERADOR: recargar [jugador] [monto] / aval [jugador] [monto]
   const matchCreditoOperador = textoUsuarioLimpio.match(
-    new RegExp(`^!(recargar|aval)\\s+(.+?)\\s+(${RE_MONTO_INPUT})$`, "i")
+    new RegExp(`^!?(recargar|aval)\\s+(.+?)\\s+(${RE_MONTO_INPUT})$`, "i")
   );
   if (matchCreditoOperador) {
     const esOp =
-      Boolean(body.esMensajePropioTelefono) ||
-      Boolean(body.esOperador) ||
-      (await verificarEsOperador(cliente?.id, cliente.telefono || participantJid, grupoId));
+      await verificarOperador();
     if (!esOp) {
       return respuestaSala({
         ok: false,
@@ -844,7 +854,7 @@ export async function manejarIntencionComando(params: {
     const { monto } = extraerMontoNumerico(String(matchCreditoOperador[3] || ""));
     if (!targetNombre || !(monto > 0)) {
       const msgErrCredito = limpiarEtiquetasProhibidas(
-        `⚠️ Uso correcto: !${esAval ? "aval" : "recargar"} [Jugador] [Monto]`
+        `⚠️ Uso correcto: ${esAval ? "aval" : "recargar"} [Jugador] [Monto]`
       );
       return respuestaSala({
         ok: false,
@@ -968,9 +978,7 @@ export async function manejarIntencionComando(params: {
   );
   if (matchPizarraComando || matchRectificarComando) {
     const esOp =
-      Boolean(body.esMensajePropioTelefono) ||
-      Boolean(body.esOperador) ||
-      (await verificarEsOperador(cliente?.id, cliente.telefono || participantJid, grupoId));
+      await verificarOperador();
     if (!esOp) {
       return respuestaSala({
         ok: false,

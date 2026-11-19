@@ -187,8 +187,14 @@ const sanitizarTexto = (str) => {
     .join("\n");
 };
 
-async function verificarEsOperadorAutorizado(sala, remoteJid, participantJid, telNormalizado) {
-  const cacheKey = `${remoteJid}_${participantJid}`;
+async function verificarEsOperadorAutorizado(
+  sala,
+  remoteJid,
+  participantJid,
+  telNormalizado,
+  participantAlt = null
+) {
+  const cacheKey = `${remoteJid}_${participantJid}_${participantAlt || ""}`;
   const enCache = cacheOperadores.get(cacheKey);
   if (enCache && Date.now() < enCache.exp) {
     return enCache.esOp;
@@ -248,6 +254,34 @@ async function verificarEsOperadorAutorizado(sala, remoteJid, participantJid, te
       }
     } catch {
       // Ignorar fallback
+    }
+  }
+
+  // 4. Chequeo por whatsapp_lid / whatsapp_jid del operador registrado
+  if (!esAutorizado && supabase && (participantJid || participantAlt)) {
+    try {
+      const jids = [participantJid, participantAlt].filter(Boolean);
+      const filtros = jids.flatMap((jid) => [
+        `whatsapp_lid.eq.${jid}`,
+        `whatsapp_jid.eq.${jid}`,
+      ]);
+      if (filtros.length > 0) {
+        const { data: usuarioPorJid } = await supabase
+          .from("usuario_sistema")
+          .select("id, nombre, activo, es_principal, grupo_id")
+          .or(filtros.join(","))
+          .limit(1)
+          .maybeSingle();
+        if (usuarioPorJid && usuarioPorJid.activo !== false) {
+          if (usuarioPorJid.es_principal) {
+            esAutorizado = true;
+          } else if (sala?.grupo_id && usuarioPorJid.grupo_id === sala.grupo_id) {
+            esAutorizado = true;
+          }
+        }
+      }
+    } catch {
+      // Columnas opcionales ausentes: se ignora este fallback
     }
   }
 
@@ -1785,7 +1819,7 @@ async function manejarMensajeEntrante(msg) {
     // reenvía a /procesar-unificado). Solo comandos exactos de control pasan.
     // ───────────────────────────────────────────────────────────────────────
     const COMANDOS_OPERADOR_EXACTOS =
-      /^!(?:abrir|abierta|cerrar|cerrad[ao]|pizarra|rectificar|plano|hip[óo]dromo|retirar|recargar|aval)(?:\s|$)/i;
+      /^!?(?:abrir|abierta|cerrar|cerrad[ao]|pizarra|rectificar|plano|hip[óo]dromo|retirar|recargar|aval)(?:\s|$)/i;
     let esOperadorMensaje = esFromMe;
     if (!esOperadorMensaje && telReal) {
       try {
@@ -1793,7 +1827,8 @@ async function manejarMensajeEntrante(msg) {
           salasDestino[0] || null,
           remoteJid,
           participantJid,
-          telReal
+          telReal,
+          participantAlt || null
         );
       } catch {
         esOperadorMensaje = false;
@@ -1828,7 +1863,7 @@ async function manejarMensajeEntrante(msg) {
           push_name: msg.pushName || senderNombre,
           senderNombre,
           esMensajePropioTelefono: esFromMe,
-          esOperador: esOperadorMensaje,
+          esOperador: Boolean(esOperadorMensaje),
           texto: textoLimpio,
           text: textoLimpio,
           whatsappMsgId,

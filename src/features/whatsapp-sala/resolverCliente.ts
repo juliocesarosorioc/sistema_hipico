@@ -51,26 +51,98 @@ export function calcularSaldoDisponible(cliente: any): number {
 export async function verificarEsOperador(
   clienteId?: string | null,
   telefono?: string | null,
-  grupoId?: string | null
+  grupoId?: string | null,
+  opciones?: {
+    participantJid?: string | null;
+    participantAlt?: string | null;
+    telefonoReal?: string | null;
+    salaId?: string | null;
+  }
 ): Promise<boolean> {
-  if (!telefono && !clienteId) return false;
+  const telefonos = [
+    telefono,
+    opciones?.telefonoReal,
+    opciones?.participantJid,
+    opciones?.participantAlt,
+  ]
+    .map((v) => extraerUltimos10Digitos(v))
+    .filter(Boolean);
+  const unicosTelefonos = Array.from(new Set(telefonos));
+  const jids = [opciones?.participantJid, opciones?.participantAlt]
+    .map((v) => String(v || "").trim())
+    .filter(Boolean);
+
+  if (!clienteId && unicosTelefonos.length === 0 && jids.length === 0) return false;
+
+  const esAutorizado = (usuario: any): boolean => {
+    if (!usuario || usuario.activo === false) return false;
+    if (usuario.es_principal) return true;
+    if (grupoId && String(usuario.grupo_id || "") === String(grupoId)) return true;
+    if (opciones?.salaId && String(usuario.sala_id || "") === String(opciones.salaId)) return true;
+    return false;
+  };
+
   try {
-    if (telefono) {
-      const telClean = String(telefono).replace(/\D/g, "");
-      const sufijo8 = telClean.slice(-8);
-      const { data: usuario } = await supabaseAdmin
+    for (const tel10 of unicosTelefonos) {
+      const { data } = await supabaseAdmin
         .from("usuario_sistema")
-        .select("id, activo, es_principal, grupo_id")
-        .ilike("telefono", `%${sufijo8}%`)
+        .select("id, activo, es_principal, grupo_id, sala_id")
+        .ilike("telefono", `%${tel10}%`)
         .limit(1)
         .maybeSingle();
-      if (usuario && usuario.activo !== false) {
-        if (usuario.es_principal) return true;
-        if (grupoId && String(usuario.grupo_id) === String(grupoId)) return true;
-      }
+      if (esAutorizado(data)) return true;
     }
   } catch {}
+
+  if (jids.length > 0) {
+    try {
+      const filtros = jids.flatMap((jid) => [
+        `whatsapp_lid.eq.${jid}`,
+        `whatsapp_jid.eq.${jid}`,
+      ]);
+      const { data } = await supabaseAdmin
+        .from("usuario_sistema")
+        .select("id, activo, es_principal, grupo_id, sala_id, whatsapp_lid, whatsapp_jid")
+        .or(filtros.join(","))
+        .limit(1)
+        .maybeSingle();
+      if (esAutorizado(data)) return true;
+    } catch {}
+  }
+
   return false;
+}
+
+/** Identidad simbólica para operadores que no están en la nómina de `clientes`. */
+export function crearClienteOperadorSimbolico(params: {
+  grupoId: string;
+  participantJid: string;
+  nombre?: string | null;
+  telefono?: string | null;
+  whatsappLid?: string | null;
+}): ClienteResuelto {
+  const nombre = String(params.nombre || "OPERADOR").trim().toUpperCase() || "OPERADOR";
+  const telefono = String(params.telefono || "").trim() || null;
+  return {
+    id: "",
+    grupo_id: params.grupoId,
+    nombre,
+    seudonimo: null,
+    saldo_actual: 0,
+    saldo_retenido: 0,
+    saldo_disponible: 0,
+    libre: true,
+    aval: 0,
+    whatsapp_jid: params.participantJid.endsWith("@s.whatsapp.net") ? params.participantJid : null,
+    whatsapp_lid: params.whatsappLid || params.participantJid,
+    codigo_pais: null,
+    telefono,
+    telefono_normalizado: telefono ? normalizarTelefono(telefono) : null,
+    telefonoClienteCompleto: telefono ? resolverTelefonoWhatsappCliente({ telefono_normalizado: telefono }) : null,
+    nombreJugador: nombre,
+    esOperadorRemitente: true,
+    rawCliente: { esOperadorSimbolico: true },
+  };
 }
 
 export const CAMPOS_CLIENTE_SALA =

@@ -1,5 +1,9 @@
 import { supabaseAdmin } from "@/core/supabase-admin";
 import { resolverCodigoSalaGrupo } from "@/features/grupos/lib/codigo-sala";
+import {
+  resolverHipodromoMasCercano,
+  type HipodromoCatalogo,
+} from "./lib/hipodromos-fuzzy";
 import type { ContextoSala } from "./types";
 
 export const codigoSalaPorSalaId = new Map<string, string>();
@@ -60,53 +64,67 @@ export function normalizarNombreHipodromo(raw?: string | null): string {
     .trim();
 }
 
-/** Resuelve un hipódromo contra la tabla oficial `public.hipodromos`. */
+const CATALOGO_FALLBACK_HIPODROMOS: HipodromoCatalogo[] = [
+  { nombre: "La Rinconada" },
+  { nombre: "Parx Racing" },
+  { nombre: "Gulfstream Park" },
+  { nombre: "Santa Anita Park" },
+  { nombre: "Churchill Downs" },
+  { nombre: "Belmont Park" },
+  { nombre: "Keeneland" },
+  { nombre: "Del Mar" },
+  { nombre: "Aqueduct" },
+  { nombre: "Monmouth Park" },
+];
+
+/** Catálogo activo de `public.hipodromos`, con fallback local ante fallos de BD. */
+export async function listarHipodromosActivos(): Promise<HipodromoCatalogo[]> {
+  try {
+    const respuestaConActivo = await supabaseAdmin
+      .from("hipodromos")
+      .select("id, nombre, activo")
+      .order("nombre", { ascending: true });
+
+    const datosCrudos: any[] = respuestaConActivo.error
+      ? (
+          await supabaseAdmin
+            .from("hipodromos")
+            .select("id, nombre")
+            .order("nombre", { ascending: true })
+        ).data || []
+      : respuestaConActivo.data || [];
+
+    const filas: HipodromoCatalogo[] = Array.isArray(datosCrudos)
+      ? datosCrudos
+          .filter((h) => h?.activo !== false && Boolean(String(h?.nombre || "").trim()))
+          .map((h) => ({
+            id: h.id ? String(h.id) : undefined,
+            nombre: String(h.nombre).trim(),
+            activo: h.activo,
+          }))
+      : [];
+
+    if (filas.length > 0) return filas;
+  } catch {
+    // Catálogo local de contingencia
+  }
+  return CATALOGO_FALLBACK_HIPODROMOS;
+}
+
+/** Resuelve un hipódromo contra el catálogo oficial con coincidencia fuzzy. */
 export async function resolverHipodromoEnTabla(
   nombre?: string | null
 ): Promise<{ id?: string; nombre: string } | null> {
-  const buscado = normalizarNombreHipodromo(nombre);
-  if (!buscado) return null;
+  const entrada = String(nombre ?? "").trim();
+  if (!entrada) return null;
 
-  const { data, error } = await supabaseAdmin
-    .from("hipodromos")
-    .select("id, nombre")
-    .order("nombre", { ascending: true });
+  const catalogo = await listarHipodromosActivos();
+  const coincidencia = resolverHipodromoMasCercano(entrada, catalogo);
+  if (!coincidencia) return null;
 
-  const filas: any[] = Array.isArray(data) ? (data as any[]) : [];
-
-  if (error || filas.length === 0) {
-    const { data: exacta } = await supabaseAdmin
-      .from("hipodromos")
-      .select("id, nombre")
-      .ilike("nombre", String(nombre).trim())
-      .limit(1)
-      .maybeSingle();
-    if (!exacta) return null;
-    return {
-      id: (exacta as any).id ? String((exacta as any).id) : undefined,
-      nombre: String((exacta as any).nombre || nombre).trim().toUpperCase(),
-    };
-  }
-
-  const exacta = filas.find(
-    (h) => normalizarNombreHipodromo(h?.nombre) === buscado
-  );
-  if (exacta) {
-    return {
-      id: exacta.id ? String(exacta.id) : undefined,
-      nombre: String(exacta.nombre || nombre).trim().toUpperCase(),
-    };
-  }
-
-  const coincidencias = filas.filter((h) => {
-    const norm = normalizarNombreHipodromo(h?.nombre);
-    return Boolean(norm) && (norm.includes(buscado) || buscado.includes(norm));
-  });
-  if (coincidencias.length !== 1) return null;
-  const unica = coincidencias[0];
   return {
-    id: unica.id ? String(unica.id) : undefined,
-    nombre: String(unica.nombre || nombre).trim().toUpperCase(),
+    id: coincidencia.id ? String(coincidencia.id) : undefined,
+    nombre: normalizarNombreHipodromo(coincidencia.nombre) || coincidencia.nombre.toUpperCase(),
   };
 }
 
