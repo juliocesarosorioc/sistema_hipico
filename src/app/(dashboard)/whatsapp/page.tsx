@@ -1555,8 +1555,8 @@ export default function WhatsappPage() {
                       <span
                         className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${
                           abierta
-                            ? "border-emerald-600/50 bg-emerald-50 text-emerald-700"
-                            : "border-amber-600/50 bg-amber-50 text-amber-800"
+                            ? "border-emerald-700 bg-emerald-100 text-emerald-950 shadow-sm"
+                            : "border-amber-700 bg-amber-100 text-amber-950 shadow-sm"
                         }`}
                       >
                         ● {abierta ? "Carrera abierta" : "Carrera cerrada"}

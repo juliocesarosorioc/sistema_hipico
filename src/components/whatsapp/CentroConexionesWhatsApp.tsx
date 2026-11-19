@@ -100,10 +100,10 @@ function etiquetaSala(orden: number | null | undefined): string {
 type Tono = "ok" | "warn" | "bad" | "idle";
 
 const TONOS: Record<Tono, string> = {
-  ok: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  warn: "border-amber-200 bg-amber-50 text-amber-700",
-  bad: "border-rose-200 bg-rose-50 text-rose-700",
-  idle: "border-slate-200 bg-slate-50 text-slate-600",
+  ok: "border-emerald-600 bg-emerald-100 text-emerald-950 font-black",
+  warn: "border-amber-600 bg-amber-100 text-amber-950 font-black",
+  bad: "border-rose-600 bg-rose-100 text-rose-950 font-black",
+  idle: "border-slate-400 bg-slate-200 text-slate-900 font-bold",
 };
 
 function Insignia({ tono, children, titulo }: { tono: Tono; children: React.ReactNode; titulo?: string }) {

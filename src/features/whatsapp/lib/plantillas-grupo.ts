@@ -51,16 +51,16 @@ export const PLANTILLAS_GRUPO_DEFAULT: PlantillaGrupoItem[] = [
     clave: "tope_saldo_publico",
     titulo: "Aviso Público de Tope de Saldo",
     descripcion: "Mensaje en grupo cuando un jugador intenta apostar por encima de su saldo disponible.",
-    contenido: "{encabezado}\n⚠️ *{jugador}* dispone de {saldo} para jugar",
+    contenido: "{encabezado}\n⚠️{jugador} solo dispone de {saldo} - Proponga solo su disponible.",
     variables: [...VARS_ENCABEZADO, "{jugador}", "{saldo}"],
   },
   {
     clave: "pedagogia_exceso_dm",
     titulo: "Pedagogía DM por Exceso de Saldo",
-    descripcion: "Mensaje Privado al jugador indicándole el recorte y su saldo actual.",
+    descripcion: "Mensaje Privado al jugador indicándole su disponible.",
     contenido:
-      "⚠️ Hola {jugador}, tu jugada se procesó por {monto_procesado} ya que es lo que dispones para realizarla. Tu saldo actual es {saldo_actual}.\n\nTe invitamos a jugar hasta el tope exacto de tu saldo disponible ({saldo_disponible}).",
-    variables: ["{jugador}", "{monto_procesado}", "{saldo_actual}", "{saldo_disponible}"],
+      "⚠️Hola {jugador}, por favor, solo juega tu disponible que actualmente es {saldo_disponible}. ¡Gracias!",
+    variables: ["{jugador}", "{saldo_disponible}"],
   },
   {
     clave: "sin_saldo_dm",

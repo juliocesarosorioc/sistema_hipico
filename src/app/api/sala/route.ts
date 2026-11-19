@@ -14,7 +14,13 @@ import {
 import {
   analizarYEstandarizarJugada,
   analizarComandoRetiro,
+  calcularRiesgoReal,
 } from "@/features/sala-juegos/lib/parser-pedagogico";
+import {
+  cerrarParadasAbiertasDeSala,
+  ejecutarRetiroPropuestasSeFue,
+} from "@/features/whatsapp-sala/concretarJugada";
+import { logicaGanancias } from "@/features/motores/lib/puestos";
 import {
   indiceModalidadProgresiva,
   limpiarEtiquetasProhibidas,
@@ -203,12 +209,17 @@ async function insertarMensajeChatResiliente(payload: Record<string, any>) {
 function calcularDisponibleCliente(cliente: any): number {
   if (!cliente) return 0;
   if (cliente.libre) return 999999;
+  const tieneCamposBase =
+    cliente.saldo_actual !== undefined ||
+    cliente.aval !== undefined ||
+    cliente.limite_credito !== undefined;
+  if (!tieneCamposBase && cliente.saldo_disponible !== undefined) {
+    return Math.max(0, Number(Number(cliente.saldo_disponible ?? 0).toFixed(2)));
+  }
   const saldo = Number(cliente.saldo_actual || 0);
   const aval = Number(cliente.aval ?? cliente.limite_credito ?? 0);
   const retenido = Number(cliente.saldo_retenido || 0);
-  const dispCalculado = Math.max(0, Number((saldo + aval - retenido).toFixed(2)));
-  const dispDb = Number(cliente.saldo_disponible ?? 0);
-  return Math.max(dispCalculado, dispDb);
+  return Math.max(0, Number((saldo + aval - retenido).toFixed(2)));
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -771,6 +782,8 @@ async function liquidarCarreraFallback(
       })
       .eq("id", salaId);
 
+    await cerrarParadasAbiertasDeSala(salaId, grupoId);
+
     const textoCierre = construirMensajeCarreraCerrada(
       sala.hipodromo_activo || "HIPÓDROMO",
       sala.numero_carrera_activa || 1
@@ -890,45 +903,83 @@ async function liquidarCarreraFallback(
 
   const listaJugadas: string[] = [];
 
-  // 3. Evaluar cada ticket con evaluar_jugada_universal
+  // 3. Evaluar cada ticket con logicaGanancias (SSOT para Puestos, Tercios, PP y Proporciones 10/X)
+  const pizarraNums = [
+    ganadoresArray[0] || pizarra.primero,
+    ganadoresArray[1] || pizarra.segundo || null,
+    ganadoresArray[2] || pizarra.tercero || null,
+    ganadoresArray[3] || pizarra.cuarto || null,
+    ganadoresArray[4] || pizarra.quinto || null,
+  ].filter(Boolean) as string[];
+
   for (const t of tickets || []) {
     registrarJugador(t.proponente_id, t.proponente_nombre);
     registrarJugador(t.aceptante_id, t.aceptante_nombre);
 
+    const monto = Number(t.monto_concretado || 0);
+    const accProp = String(t.accion_proponente || "JUEGA").trim().toUpperCase();
+    const esJuegaProponente = accProp !== "CONSIGUE" && accProp !== "CONSIGO" && accProp !== "DA" && accProp !== "DOY";
+    const accionCanon: "JUEGA" | "CONSIGUE" = esJuegaProponente ? "JUEGA" : "CONSIGUE";
+    const propRaw = String(t.proporcion_premio || t.proporcion || "1x1").trim();
+
     balancePorJugador[t.proponente_id].ticketsCount++;
     balancePorJugador[t.aceptante_id].ticketsCount++;
-    balancePorJugador[t.proponente_id].stakeTotal += Number(t.monto_concretado);
-    balancePorJugador[t.aceptante_id].stakeTotal += Number(t.monto_concretado);
+    balancePorJugador[t.proponente_id].stakeTotal += calcularRiesgoReal(monto, propRaw, accionCanon, "PROPONENTE");
+    balancePorJugador[t.aceptante_id].stakeTotal += calcularRiesgoReal(monto, propRaw, accionCanon, "ACEPTANTE");
 
-    const { data: evalRes, error: evalErr } = await supabaseAdmin.rpc("evaluar_jugada_universal", {
-      p_es_match: Boolean(t.es_match),
-      p_accion_proponente: t.accion_proponente || "JUEGA",
-      p_modalidad: t.modalidad || "1P",
-      p_caballos_a: t.caballos_bando_a || (t.ejemplar_numero ? [t.ejemplar_numero] : []),
-      p_caballos_b: t.caballos_bando_b || [],
-      p_p1: ganadoresArray[0] || pizarra.primero,
-      p_p2: ganadoresArray[1] || pizarra.segundo || null,
-      p_p3: ganadoresArray[2] || pizarra.tercero || null,
-      p_p4: ganadoresArray[3] || pizarra.cuarto || null,
-      p_p5: ganadoresArray[4] || pizarra.quinto || null,
+    const bandoA =
+      Array.isArray(t.caballos_bando_a) && t.caballos_bando_a.length > 0
+        ? t.caballos_bando_a.filter(Boolean)
+        : t.ejemplar_numero
+        ? [String(t.ejemplar_numero)]
+        : [];
+    const bandoB = Array.isArray(t.caballos_bando_b) ? t.caballos_bando_b.filter(Boolean) : [];
+    const esMatch = Boolean(t.es_match || (bandoA.length > 0 && bandoB.length > 0));
+    const tieneProp10 = /^10\s*[\/aAª@\-]\s*\d+(?:[.,]\d+)?$/i.test(propRaw) && !/^10\s*[\/aAª@\-]\s*10$/i.test(propRaw);
+    const propCanon = tieneProp10 ? propRaw.toUpperCase().replace(/\s+/g, "").replace(/[aAª@\-]/g, "/").replace(",", ".") : "";
+
+    const caballoMotor = esMatch
+      ? `${bandoA.join("-") || t.ejemplar_numero || "1"}X${bandoB.join("-")}`
+      : String(t.ejemplar_numero || bandoA[0] || "1").trim();
+    const modBase = String(t.modalidad || "1P").trim().toUpperCase();
+    const jugadaMotor = esMatch
+      ? propCanon || "PP"
+      : propCanon || (modBase === "MATCH" ? "PP" : modBase);
+
+    const resLg = logicaGanancias({
+      jugada: jugadaMotor,
+      caballo: caballoMotor,
+      monto,
+      pizarra: pizarraNums,
+      comisionPct: porcentajeComision * 100,
     });
 
-    const factor = evalErr ? 0 : Number(evalRes);
-    const monto = Number(t.monto_concretado);
+    const n1 = Number(resLg.netoJugador1 || 0);
+    const n2 = Number(resLg.netoJugador2 || 0);
+    const brutoJuega = n1 > 0 ? Math.abs(n2) : n1;
+    const brutoDa = n2 > 0 ? Math.abs(n1) : n2;
+    const comisionJuega = n1 > 0 ? Number((Math.abs(n2) - n1).toFixed(2)) : 0;
+    const comisionDa = n2 > 0 ? Number((Math.abs(n1) - n2).toFixed(2)) : 0;
+    const comisionTotal = Number((comisionJuega + comisionDa).toFixed(2));
+
+    const brutoProp = esJuegaProponente ? brutoJuega : brutoDa;
+    const brutoAcep = esJuegaProponente ? brutoDa : brutoJuega;
+    const comisionProp = esJuegaProponente ? comisionJuega : comisionDa;
+    const comisionAcep = esJuegaProponente ? comisionDa : comisionJuega;
 
     let nuevoEstadoTicket = "EMPATE";
-    if (factor > 0) {
+    if (brutoProp > 0) {
       // Proponente gana
       nuevoEstadoTicket = "GANADOR_PROPONENTE";
-      balancePorJugador[t.proponente_id].gananciasBrutas += monto;
-      balancePorJugador[t.aceptante_id].perdidasBrutas += monto;
-      balancePorJugador[t.proponente_id].comisionIndividual += monto * porcentajeComision;
-    } else if (factor < 0) {
+      balancePorJugador[t.proponente_id].gananciasBrutas += brutoProp;
+      balancePorJugador[t.aceptante_id].perdidasBrutas += Math.abs(brutoAcep);
+      balancePorJugador[t.proponente_id].comisionIndividual += comisionProp;
+    } else if (brutoProp < 0) {
       // Aceptante gana
       nuevoEstadoTicket = "GANADOR_ACEPTANTE";
-      balancePorJugador[t.aceptante_id].gananciasBrutas += monto;
-      balancePorJugador[t.proponente_id].perdidasBrutas += monto;
-      balancePorJugador[t.aceptante_id].comisionIndividual += monto * porcentajeComision;
+      balancePorJugador[t.aceptante_id].gananciasBrutas += brutoAcep;
+      balancePorJugador[t.proponente_id].perdidasBrutas += Math.abs(brutoProp);
+      balancePorJugador[t.aceptante_id].comisionIndividual += comisionAcep;
     }
 
     await supabaseAdmin
@@ -936,9 +987,9 @@ async function liquidarCarreraFallback(
       .update({ estado: nuevoEstadoTicket })
       .eq("id", t.id);
 
-    const descJugada = t.es_match
-      ? `A Premio ${(t.caballos_bando_a || []).join(",")} vs ${(t.caballos_bando_b || []).join(",")}`
-      : `${t.accion_proponente || "JUEGA"} #${t.ejemplar_numero || (t.caballos_bando_a || [])[0] || "?"} (${t.modalidad || "1P"})`;
+    const descJugada = esMatch
+      ? `${propCanon || "PP"} (${bandoA.join("-")}x${bandoB.join("-")})`
+      : `${t.accion_proponente || "JUEGA"} #${t.ejemplar_numero || bandoA[0] || "?"} (${jugadaMotor})`;
     const ganadorTag =
       nuevoEstadoTicket === "GANADOR_PROPONENTE"
         ? ` 🏆 ${t.proponente_nombre}`
@@ -952,9 +1003,12 @@ async function liquidarCarreraFallback(
     await actualizarTicketEspejoLiquidado(supabaseAdmin, {
       codigoTicket: t.codigo_ticket,
       accionProponente: t.accion_proponente,
-      factor,
+      factor: monto > 0 ? brutoProp / monto : 0,
       monto,
       porcentajeComision,
+      netoClienteJuega: n1,
+      comisionTotal,
+      estadoTicket: brutoJuega > 0 ? "Ganador" : brutoJuega < 0 ? "Perdedor" : "Empate",
     });
   }
 
@@ -984,7 +1038,7 @@ async function liquidarCarreraFallback(
     // Obtener cliente para actualizar
     const { data: cl } = await supabaseAdmin
       .from("clientes")
-      .select("saldo_actual, saldo_retenido, libre")
+      .select("saldo_actual, saldo_retenido, libre, aval")
       .eq("id", jugadorId)
       .maybeSingle();
 
@@ -997,7 +1051,7 @@ async function liquidarCarreraFallback(
         .update({
           saldo_actual: nuevoSaldo,
           saldo_retenido: nuevoRetenido,
-          saldo_disponible: cl.libre ? 999999 : Math.max(0, nuevoSaldo - nuevoRetenido),
+          saldo_disponible: cl.libre ? 999999 : Math.max(0, Number((nuevoSaldo + Number(cl.aval || 0) - nuevoRetenido).toFixed(2))),
         })
         .eq("id", jugadorId);
 
@@ -1464,8 +1518,8 @@ export async function POST(req: Request) {
 
         // 1. Control estricto de vigencia de la jugada (tiempo configurable en minutos, default 5 min)
         const tiempoVencimientoMin = Number(
-          sala.tiempo_vencimiento_propuesta_min ??
           sala.tiempo_vencimiento_min ??
+          sala.tiempo_vencimiento_propuesta_min ??
           Math.max(1, Math.round(Number(sala.tiempo_vigencia_segundos || 300) / 60))
         );
         const edadMinutos = (Date.now() - new Date(propMsg.created_at).getTime()) / 60000;
@@ -1474,6 +1528,15 @@ export async function POST(req: Request) {
         // Una propuesta con tomas parciales queda en estado "parcial" y debe
         // seguir aceptando el remanente (cascada 100 -> 10 + 90) hasta que la
         // vigencia expire o el saldo llegue a cero.
+        const estadoPropLower = String(propMsg.estado_propuesta || "").toLowerCase();
+        if (estadoPropLower === "cancelada" || estadoPropLower === "se_fue") {
+          return NextResponse.json({
+            ok: false,
+            error: "🚫Nada aquí, Se fue.",
+            msg_publico_bot: "🚫Nada aquí, Se fue.",
+          }, { status: 400 });
+        }
+
         const estadoAceptaTomas =
           propMsg.estado_propuesta === "abierta" || propMsg.estado_propuesta === "parcial";
 
@@ -1756,80 +1819,56 @@ export async function POST(req: Request) {
         // Se cierran directamente cada una de las jugadas abiertas individualmente SIN enviar mensaje al chat para no saturar.
         const analisisRetiro = analizarComandoRetiro(texto);
         if (analisisRetiro.esComandoRetiro || body.cerrarPropuestaId) {
+          if (String((sala as any)?.estado_carrera || "").toLowerCase() !== "abierta") {
+            return NextResponse.json({
+              ok: true,
+              comandoRetiro: true,
+              idsCerrados: [],
+              totalLiberado: 0,
+              msg_publico_bot: null,
+              msg_privado_bot: null,
+            });
+          }
+
           if (analisisRetiro.esComandoRetiro && !analisisRetiro.esValido && !body.cerrarPropuestaId) {
             // Aclaratoria pedagógica obligatoria si fue similar
             return NextResponse.json({
               ok: true,
               esCorreccionPedagogica: true,
-              mensajePedagogico: analisisRetiro.mensajeAclaratoria || "Por favor aclara si deseas retirar tus jugadas con: 'Se fue' o 'sf'",
+              mensajePedagogico: analisisRetiro.mensajeAclaratoria || "Por favor aclara si deseas retirar tus jugadas con: 'Se fue', 'sf' o 'cf'",
               sugerencias: ["Se fue", "sf"],
             });
           }
 
-          if (body.cerrarPropuestaId && esUuidValido(body.cerrarPropuestaId) && esUuidValido(identidad.usuarioId)) {
-            try {
-              const { data: resCanc, error: errCanc } = await supabaseAdmin.rpc("cancelar_propuesta_proponente_atomica", {
-                p_propuesta_msg_id: body.cerrarPropuestaId,
-                p_jugador_id: identidad.usuarioId,
-              });
-              if (!errCanc && resCanc && (resCanc as any).ok) {
-                await emitirBroadcast(salaId, "nuevo_mensaje", { salaId, idsCerrados: [body.cerrarPropuestaId] });
-                return NextResponse.json({
-                  ok: true,
-                  canceladas: 1,
-                  montoLiberado: (resCanc as any).liberado || 0,
-                  idsCerrados: [body.cerrarPropuestaId],
-                  nuevoSaldoDisponible: (resCanc as any).nuevo_saldo_disponible,
-                });
-              }
-            } catch {}
-          } else if (esUuidValido(salaId) && esUuidValido(identidad.usuarioId)) {
-            try {
-              const { data: resCancTot, error: errCancTot } = await supabaseAdmin.rpc("cancelar_todas_propuestas_proponente_atomica", {
-                p_sala_id: salaId,
-                p_carrera_id: (sala as any).carrera_activa_id || null,
-                p_jugador_id: identidad.usuarioId,
-              });
-              if (!errCancTot && resCancTot && (resCancTot as any).ok) {
-                await emitirBroadcast(salaId, "nuevo_mensaje", { salaId, idsCerrados: (resCancTot as any).canceladas_ids || [] });
-                return NextResponse.json({
-                  ok: true,
-                  canceladas: (resCancTot as any).canceladas || 0,
-                  montoLiberado: (resCancTot as any).total_liberado || 0,
-                  idsCerrados: (resCancTot as any).canceladas_ids || [],
-                  nuevoSaldoDisponible: (resCancTot as any).nuevo_saldo_disponible,
-                });
-              }
-            } catch {}
-          }
+          const resSeFue = await ejecutarRetiroPropuestasSeFue({
+            grupoId,
+            salaId,
+            jugadorId: identidad.usuarioId,
+            propuestaId: body.cerrarPropuestaId || null,
+          });
 
-          const { data: resSeFue, error: errSeFue } = await supabaseAdmin.rpc(
-            "cerrar_propuestas_se_fue_atomica",
-            {
-              p_grupo_id: grupoId,
-              p_sala_id: salaId,
-              p_jugador_id: identidad.usuarioId,
-              p_propuesta_id: body.cerrarPropuestaId || null,
-            }
-          );
-
-          if (errSeFue || resSeFue?.ok === false) {
+          if (!resSeFue.ok) {
             return NextResponse.json({
               ok: false,
-              error: errSeFue?.message || resSeFue?.error || "No se pudo cerrar la propuesta",
-              msg_publico_bot: resSeFue?.msg_publico_bot || null,
-              msg_privado_bot: resSeFue?.msg_privado_bot || null,
+              error: resSeFue.error || "No se pudo cerrar la propuesta",
+              msg_publico_bot: null,
+              msg_privado_bot: null,
             }, { status: 400 });
           }
 
-          await emitirBroadcast(salaId, "nuevo_mensaje", { salaId, idsCerrados: resSeFue?.canceladas_ids || [] });
+          const esIndividual = Boolean(body.cerrarPropuestaId);
+          const msgPrivadoSeFue = esIndividual ? null : "✅ Todas tus propuestas abiertas fueron retiradas.";
+
+          await emitirBroadcast(salaId, "nuevo_mensaje", { salaId, idsCerrados: resSeFue.canceladasIds });
           return NextResponse.json({
             ok: true,
             comandoRetiro: true,
-            idsCerrados: resSeFue?.canceladas_ids || [],
-            totalLiberado: resSeFue?.monto_liberado || 0,
-            msg_publico_bot: resSeFue?.msg_publico_bot || null,
-            msg_privado_bot: resSeFue?.msg_privado_bot || null,
+            canceladas: resSeFue.canceladasIds.length,
+            montoLiberado: resSeFue.montoLiberado,
+            idsCerrados: resSeFue.canceladasIds,
+            totalLiberado: resSeFue.montoLiberado,
+            msg_publico_bot: null,
+            msg_privado_bot: msgPrivadoSeFue,
           });
         }
 
@@ -1945,7 +1984,7 @@ export async function POST(req: Request) {
           let advertenciaSaldo: string | null = null;
           if (analisis.excedioSaldo) {
             const prefijoAdv = prefijoMonedaGrupo(monedaGrupo);
-            advertenciaSaldo = `⚠️ *${identidad.nombre}* está jugando por encima de su saldo disponible (${prefijoAdv}${formatearMontoRegional(Math.max(0, disponible))}). Propuesta ajustada a ${prefijoAdv}${formatearMontoRegional(montoPropFinal)}.`;
+            advertenciaSaldo = `⚠️${identidad.nombre} solo dispone de ${prefijoAdv}${formatearMontoRegional(Math.max(0, disponible))} - Proponga solo su disponible.`;
             await insertarMensajeChatResiliente({
               grupo_id: grupoId,
               sala_id: salaId,
@@ -2168,6 +2207,7 @@ export async function POST(req: Request) {
           })
           .eq("id", salaId);
 
+        await cerrarParadasAbiertasDeSala(salaId, grupoId);
         await sincronizarEstadoGrupo(grupoId);
 
         const textoCierre = construirMensajeCarreraCerrada(

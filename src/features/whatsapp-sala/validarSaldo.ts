@@ -20,8 +20,8 @@ export function detallePublicoPropuesta(prop: any): string {
     const bB = Array.isArray(prop.caballos_bando_b) ? prop.caballos_bando_b.join("-") : String(prop.caballos_bando_b || "");
     const propRaw = String(prop.proporcion_premio || prop.proporcion || "1x1").trim();
     const canon = limpiarEtiquetasProhibidas(propRaw);
-    const sufijo = canon && canon !== "pp" && !/^1x1$/i.test(canon) ? ` ${canon}` : "";
-    return `A Premio (${bA}x${bB})${sufijo}`.trim();
+    const etiqueta = canon && canon.toLowerCase() !== "pp" && !/^1x1$/i.test(canon) ? canon : "PP";
+    return `${etiqueta} (${bA}x${bB})`.trim();
   }
   const mod = String(prop?.modalidad_propuesta || prop?.modalidad || "1P").trim();
   const ej = String(prop?.ejemplar_texto || (Array.isArray(prop?.caballos_bando_a) ? prop.caballos_bando_a[0] : "") || "").trim();
@@ -52,11 +52,11 @@ export function calcularMaximosBilateral(params: {
   const saldoDispProponente = proponenteRow ? calcularSaldoDisponible(proponenteRow) : remanenteDisponible;
 
   const maxBaseAceptante = aceptanteRow?.libre
-    ? remanenteDisponible
+    ? Math.max(999999, remanenteDisponible)
     : Math.floor((saldoDispAceptante / factorAcepBilat) * 100) / 100;
   const maxBaseProponente =
     !proponenteRow || proponenteRow.libre
-      ? remanenteDisponible
+      ? Math.max(999999, remanenteDisponible)
       : Math.floor((saldoDispProponente / factorPropBilat) * 100) / 100;
 
   return {
@@ -86,7 +86,8 @@ export function validarSaldo(params: {
   const saldoDisponible = esLibre ? 999999 : calcularSaldoDisponible(cliente);
 
   const riesgoReal = calcularRiesgoReal(montoRequerido, proporcion, accion);
-  const excedioSaldo = !esLibre && (riesgoReal > saldoDisponible || montoRequerido > saldoDisponible);
+  const excedioSaldo = !esLibre && riesgoReal > saldoDisponible;
+  const factorRiesgo = riesgoReal > 0 ? montoRequerido / riesgoReal : 1;
 
   let montoEfectivo = montoRequerido;
   let alertaExceso = null;
@@ -101,13 +102,13 @@ export function validarSaldo(params: {
       msgPrivado: `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Muchas gracias.`,
     };
   } else if (excedioSaldo) {
-    montoEfectivo = Math.max(0, Number(saldoDisponible.toFixed(2)));
+    montoEfectivo = Math.max(0, Number((saldoDisponible * factorRiesgo).toFixed(2)));
     const saldoFmt = formatearMontoRegional(saldoDisponible);
     const montoAjustadoFmt = formatearMontoRegional(montoEfectivo);
     const nombre = cliente.nombreJugador || cliente.nombre || "Jugador";
     alertaExceso = {
-      msgPublico: `⚠️ *${nombre}* está jugando por encima de su saldo disponible ($${saldoFmt}). Propuesta ajustada a $${montoAjustadoFmt}.`,
-      msgPrivado: `⚠️ Hola *${nombre}*, estás jugando por encima de tu saldo disponible ($${saldoFmt}). Tu propuesta fue ajustada a $${montoAjustadoFmt}. ⚠️¡Por favor, verificar redacción! ¡Gracias!`,
+      msgPublico: `⚠️${nombre} solo dispone de $${saldoFmt} - Proponga solo su disponible.`,
+      msgPrivado: `⚠️Hola ${nombre}, por favor, solo juega tu disponible que actualmente es $${saldoFmt}. ¡Gracias!`,
     };
   }
 
@@ -260,10 +261,10 @@ export async function validarYPublicarPropuesta(params: {
 
     const saldoBlkFmt = formatearMontoRegional(Math.max(0, saldoDisponible));
     const msgPubBlk = excedioSaldoBloque
-      ? `⚠️ *${nombreJugador}* está jugando por encima de su saldo disponible ($${saldoBlkFmt}). Algunas jugadas fueron ajustadas.`
+      ? `⚠️${nombreJugador} solo dispone de $${saldoBlkFmt} - Proponga solo su disponible.`
       : null;
     const msgPrivBlk = excedioSaldoBloque
-      ? `⚠️ Hola *${nombreJugador}*, estás jugando por encima de tu saldo disponible ($${saldoBlkFmt}). Por favor ajusta el monto de tus jugadas o recarga saldo.`
+      ? `⚠️Hola ${nombreJugador}, por favor, solo juega tu disponible que actualmente es $${saldoBlkFmt}. ¡Gracias!`
       : null;
 
     return {
@@ -451,7 +452,7 @@ export async function validarYPublicarPropuesta(params: {
           es_operador: false,
           tipo_mensaje: "propuesta_jugada",
           contenido: analisis.jugadaEstandarizada,
-          carrera_id: sala.carrera_activa_id || null,
+          carrera_id: sala.carrera_activa_id || contextoSala.carreraActivaId || null,
           accion_proponente: analisis.accionProponente || "JUEGA",
           es_match: Boolean(analisis.esMatch),
           modalidad_jugada: analisis.modalidad,
@@ -510,6 +511,10 @@ export async function validarYPublicarPropuesta(params: {
       whatsapp_group_jid: groupJid,
       whatsapp_group_nombre: whatsappGroupNombre,
       origen_canal: "WHATSAPP",
+      monto_original: montoAPublicar,
+      monto_disponible: montoAPublicar,
+      contenido: analisis.jugadaEstandarizada,
+      jugada_estandarizada: analisis.jugadaEstandarizada,
     })
     .eq("id", propId);
 
@@ -527,8 +532,8 @@ export async function validarYPublicarPropuesta(params: {
       ejemplar_texto: analisis.ejemplarTexto,
       proporcion_premio: analisis.proporcion,
     };
-    const msgPubRecorte = `⚠️ *${nombreJugador}* está jugando por encima de su saldo disponible ($${saldoFmt}). Propuesta ajustada a $${montoAjustadoFmt}.`;
-    const msgPrivRecorte = `⚠️ Hola *${nombreJugador}*, estás jugando por encima de tu saldo disponible ($${saldoFmt}). Tu propuesta en ${detallePublicoPropuesta(propPublica)} fue ajustada a $${montoAjustadoFmt}. ⚠️¡Por favor, verificar redacción! ¡Gracias!`;
+    const msgPubRecorte = `⚠️${nombreJugador} solo dispone de $${saldoFmt} - Proponga solo su disponible.`;
+    const msgPrivRecorte = `⚠️Hola ${nombreJugador}, por favor, solo juega tu disponible que actualmente es $${saldoFmt}. ¡Gracias!`;
 
     await supabaseAdmin.from("chat_mensajes").insert({
       grupo_id: grupoId,
