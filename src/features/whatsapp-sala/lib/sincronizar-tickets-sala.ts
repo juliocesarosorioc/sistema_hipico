@@ -280,21 +280,18 @@ export async function sincronizarTicketsPropuestaATaquilla(
       const montoTicket = Number(t.monto_concretado || 0);
       const estadoTk = String(t.estado || "").toUpperCase();
       if (estadoTk === "EN_COLA" || estadoTk === "ANULADO" || montoTicket <= 0) continue;
-      const marcador = `SALA_P2P:${t.codigo_ticket}`;
-
-      const { data: existente } = await supabase
-        .from("tickets_apuestas")
-        .select("id, monto_jugado")
-        .eq("nota_auditoria", marcador)
-        .limit(1)
-        .maybeSingle();
-
-      if (existente?.id) {
-        if (Number(existente.monto_jugado || 0) !== montoTicket) {
+      const idsExistentes = await idsTicketsSala(supabase, new Set([t.codigo_ticket]));
+      if (idsExistentes.length > 0) {
+        const { data: exRow } = await supabase
+          .from("tickets_apuestas")
+          .select("id, monto_jugado")
+          .eq("id", idsExistentes[0])
+          .maybeSingle();
+        if (exRow?.id && Number(exRow.monto_jugado || 0) !== montoTicket) {
           await supabase
             .from("tickets_apuestas")
             .update({ monto_jugado: montoTicket })
-            .eq("id", existente.id);
+            .eq("id", exRow.id);
         }
         continue;
       }
@@ -353,7 +350,11 @@ export async function sincronizarTicketsPropuestaATaquilla(
           anulada: false,
           es_adelantada: false,
           moneda: monedaGrupo,
-          nota_auditoria: marcador,
+          nota_auditoria: {
+            ...notaAuditoriaSala(t.codigo_ticket),
+            sala_id: params.sala?.id || null,
+            fecha_carrera: fechaCarrera,
+          },
         },
       ]);
       if (errInsTaq) {

@@ -1758,79 +1758,104 @@ export async function concretarJugada(params: {
       propFresca.carrera_id = carreraEfectivaId;
     }
 
-    try {
-      const { data: resRpc, error: errRpc } = await supabaseAdmin.rpc(
-        "concretar_jugada_fifo_atomica",
-        {
-          p_grupo_id: contextoSala.grupoId,
-          p_sala_id: contextoSala.salaId,
-          p_propuesta_msg_id: propFresca.id,
-          p_aceptante_id: cliente.id,
-          p_monto_pedido: montoEfectivo,
+    const paramsRpcConcretar = {
+      p_grupo_id: String(contextoSala.grupoId || "").trim(),
+      p_sala_id: String(contextoSala.salaId || "").trim(),
+      p_propuesta_msg_id: String(propFresca?.id || "").trim(),
+      p_aceptante_id: String(cliente?.id || "").trim(),
+      p_monto_pedido: Number(montoEfectivo || 0),
+    };
+
+    const parametrosRpcValidos =
+      Boolean(paramsRpcConcretar.p_grupo_id) &&
+      Boolean(paramsRpcConcretar.p_sala_id) &&
+      Boolean(paramsRpcConcretar.p_propuesta_msg_id) &&
+      Boolean(paramsRpcConcretar.p_aceptante_id) &&
+      Number.isFinite(paramsRpcConcretar.p_monto_pedido) &&
+      paramsRpcConcretar.p_monto_pedido > 0;
+
+    if (!parametrosRpcValidos) {
+      console.error("[RPC_CONCRETAR_INVALID_PARAMS]", paramsRpcConcretar);
+      errorConcretar = {
+        code: "23502",
+        message: "Parámetros requeridos nulos o inválidos antes de invocar concretar_jugada_fifo_atomica",
+        details: JSON.stringify(paramsRpcConcretar),
+        hint: "Verifique grupoId, salaId, propuesta_msg_id, aceptante_id y montoEfectivo > 0",
+      };
+    } else {
+      try {
+        const { data: resRpc, error: errRpc } = await supabaseAdmin.rpc(
+          "concretar_jugada_fifo_atomica",
+          paramsRpcConcretar
+        );
+        resRpcData = resRpc;
+        if (errRpc || (resRpc as any)?.ok === false) {
+          console.error("[RPC_CONCRETAR_ERR]", {
+            code: (errRpc as any)?.code || (resRpc as any)?.sqlstate || null,
+            message: (errRpc as any)?.message || (resRpc as any)?.error || null,
+            details: (errRpc as any)?.details || null,
+            hint: (errRpc as any)?.hint || null,
+            errRpc,
+            resRpc,
+            ...paramsRpcConcretar,
+          });
         }
-      );
-      resRpcData = resRpc;
-      if (errRpc || (resRpc as any)?.ok === false) {
-        console.error("[RPC_CONCRETAR_ERR]", {
-          errRpc,
-          resRpc,
-          p_grupo_id: contextoSala.grupoId,
-          p_sala_id: contextoSala.salaId,
-          p_propuesta_msg_id: propFresca.id,
-          p_aceptante_id: cliente.id,
-          p_monto_pedido: montoEfectivo,
+        if (errRpc) errorConcretar = errRpc;
+        if (!errRpc && resRpc && (resRpc as any).ok === false && (resRpc as any).nada_aqui !== true) {
+          errorConcretar = resRpc;
+        }
+        if (!errRpc && resRpc && (resRpc as any).nada_aqui === true) {
+          const msgPublicoNadaAqui =
+            (resRpc as any).msg_publico ||
+            (resRpc as any).msg_publico_bot ||
+            (resRpc as any).respuestaPublica ||
+            "*Nada Aquí*";
+          await supabaseAdmin.from("chat_mensajes").insert({
+            grupo_id: contextoSala.grupoId,
+            sala_id: contextoSala.salaId,
+            remitente_nombre: "🤖 ASISTENTE DE SALA",
+            es_operador: true,
+            tipo_mensaje: "concrecion_fifo",
+            contenido: msgPublicoNadaAqui,
+            whatsapp_msg_id: whatsappMsgId || null,
+            whatsapp_group_jid: groupJid || null,
+            whatsapp_group_nombre: whatsappGroupNombre || null,
+            origen_canal: "WHATSAPP",
+          });
+          await emitirBroadcastSala(contextoSala.salaId, "nuevo_mensaje", { salaId: contextoSala.salaId });
+          return {
+            ok: false,
+            tipo: "NADA_AQUI",
+            nada_aqui: true,
+            respuestaGrupo: msgPublicoNadaAqui,
+            msg_publico: msgPublicoNadaAqui,
+            msg_publico_bot: (resRpc as any).msg_publico_bot || msgPublicoNadaAqui,
+            respuestaPublica: (resRpc as any).respuestaPublica || msgPublicoNadaAqui,
+            mensajePrivadoAutor:
+              (resRpc as any).msg_privado_aceptante ||
+              (resRpc as any).msg_privado_bot ||
+              (resRpc as any).alertaPrivada ||
+              null,
+            msg_privado_bot: (resRpc as any).msg_privado_bot || null,
+            msg_privado_aceptante: (resRpc as any).msg_privado_aceptante || null,
+            alertaPrivada: (resRpc as any).alertaPrivada || null,
+            notificaciones_privadas: (resRpc as any).notificaciones_privadas || [],
+            senderJid: participantJid,
+          };
+        }
+        if (!errRpc && resRpc && (resRpc as any).ok !== false) {
+          rpcExitoso = true;
+        }
+      } catch (exRpc: any) {
+        console.error("[RPC_CONCRETAR_CATCH]", {
+          code: exRpc?.code || null,
+          message: exRpc?.message || String(exRpc),
+          details: exRpc?.details || null,
+          hint: exRpc?.hint || null,
         });
+        errorConcretar = exRpc;
+        rpcExitoso = false;
       }
-      if (errRpc) errorConcretar = errRpc;
-      if (!errRpc && resRpc && (resRpc as any).ok === false && (resRpc as any).nada_aqui !== true) {
-        errorConcretar = resRpc;
-      }
-      if (!errRpc && resRpc && (resRpc as any).nada_aqui === true) {
-        const msgPublicoNadaAqui =
-          (resRpc as any).msg_publico ||
-          (resRpc as any).msg_publico_bot ||
-          (resRpc as any).respuestaPublica ||
-          "*Nada Aquí*";
-        await supabaseAdmin.from("chat_mensajes").insert({
-          grupo_id: contextoSala.grupoId,
-          sala_id: contextoSala.salaId,
-          remitente_nombre: "🤖 ASISTENTE DE SALA",
-          es_operador: true,
-          tipo_mensaje: "concrecion_fifo",
-          contenido: msgPublicoNadaAqui,
-          whatsapp_msg_id: whatsappMsgId || null,
-          whatsapp_group_jid: groupJid || null,
-          whatsapp_group_nombre: whatsappGroupNombre || null,
-          origen_canal: "WHATSAPP",
-        });
-        await emitirBroadcastSala(contextoSala.salaId, "nuevo_mensaje", { salaId: contextoSala.salaId });
-        return {
-          ok: false,
-          tipo: "NADA_AQUI",
-          nada_aqui: true,
-          respuestaGrupo: msgPublicoNadaAqui,
-          msg_publico: msgPublicoNadaAqui,
-          msg_publico_bot: (resRpc as any).msg_publico_bot || msgPublicoNadaAqui,
-          respuestaPublica: (resRpc as any).respuestaPublica || msgPublicoNadaAqui,
-          mensajePrivadoAutor:
-            (resRpc as any).msg_privado_aceptante ||
-            (resRpc as any).msg_privado_bot ||
-            (resRpc as any).alertaPrivada ||
-            null,
-          msg_privado_bot: (resRpc as any).msg_privado_bot || null,
-          msg_privado_aceptante: (resRpc as any).msg_privado_aceptante || null,
-          alertaPrivada: (resRpc as any).alertaPrivada || null,
-          notificaciones_privadas: (resRpc as any).notificaciones_privadas || [],
-          senderJid: participantJid,
-        };
-      }
-      if (!errRpc && resRpc && (resRpc as any).ok !== false) {
-        rpcExitoso = true;
-      }
-    } catch (exRpc) {
-      console.error("[RPC_CONCRETAR_CATCH]", exRpc);
-      errorConcretar = exRpc;
-      rpcExitoso = false;
     }
 
     const montoSolicitadoReal = Number(evalConcrecion.montoSolicitado || montoEfectivo);

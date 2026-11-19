@@ -575,31 +575,50 @@ export async function procesarMensajeEntranteWhatsApp(
 
         // Intentar ejecutar el RPC atómico oficial
         let rpcExitoso = false;
-        try {
-          const { data: resRpc, error: errRpc } = await supabaseAdmin.rpc("concretar_jugada_fifo_atomica", {
-            p_grupo_id: grupoId,
-            p_sala_id: salaId,
-            p_propuesta_msg_id: propFresca.id,
-            p_aceptante_id: cliente.id,
-            p_monto_pedido: montoConcretado,
-          });
-          if (errRpc || (resRpc as any)?.ok === false) {
-            console.error("[RPC_CONCRETAR_ERR]", {
-              errRpc,
-              resRpc,
-              p_grupo_id: grupoId,
-              p_sala_id: salaId,
-              p_propuesta_msg_id: propFresca.id,
-              p_aceptante_id: cliente.id,
-              p_monto_pedido: montoConcretado,
+        const paramsPuenteRpc = {
+          p_grupo_id: String(grupoId || "").trim(),
+          p_sala_id: String(salaId || "").trim(),
+          p_propuesta_msg_id: String(propFresca?.id || "").trim(),
+          p_aceptante_id: String(cliente?.id || "").trim(),
+          p_monto_pedido: Number(montoConcretado || 0),
+        };
+        if (
+          paramsPuenteRpc.p_grupo_id &&
+          paramsPuenteRpc.p_sala_id &&
+          paramsPuenteRpc.p_propuesta_msg_id &&
+          paramsPuenteRpc.p_aceptante_id &&
+          paramsPuenteRpc.p_monto_pedido > 0
+        ) {
+          try {
+            const { data: resRpc, error: errRpc } = await supabaseAdmin.rpc(
+              "concretar_jugada_fifo_atomica",
+              paramsPuenteRpc
+            );
+            if (errRpc || (resRpc as any)?.ok === false) {
+              console.error("[RPC_CONCRETAR_ERR]", {
+                code: (errRpc as any)?.code || (resRpc as any)?.sqlstate || null,
+                message: (errRpc as any)?.message || (resRpc as any)?.error || null,
+                details: (errRpc as any)?.details || null,
+                hint: (errRpc as any)?.hint || null,
+                errRpc,
+                resRpc,
+                ...paramsPuenteRpc,
+              });
+            }
+            if (!errRpc && resRpc && (resRpc as any).ok !== false) {
+              rpcExitoso = true;
+            }
+          } catch (exRpc: any) {
+            console.error("[RPC_CONCRETAR_CATCH]", {
+              code: exRpc?.code || null,
+              message: exRpc?.message || String(exRpc),
+              details: exRpc?.details || null,
+              hint: exRpc?.hint || null,
             });
+            rpcExitoso = false;
           }
-          if (!errRpc && resRpc && (resRpc as any).ok !== false) {
-            rpcExitoso = true;
-          }
-        } catch (exRpc) {
-          console.error("[RPC_CONCRETAR_CATCH]", exRpc);
-          rpcExitoso = false;
+        } else {
+          console.error("[RPC_CONCRETAR_INVALID_PARAMS]", paramsPuenteRpc);
         }
 
         // Si el RPC no procesó, ejecutar fallback seguro
