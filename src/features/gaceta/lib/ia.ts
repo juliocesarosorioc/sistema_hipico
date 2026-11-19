@@ -24,6 +24,7 @@ import {
   parsearPaginaRetrospectosNativo,
   parsearGacetaRetrospectosNativo,
   esNombreJockeyPersona,
+  esEjemplarFantasmaCabecera,
 } from "@/features/gaceta/lib/segmentar";
 import type { CarreraRegistro } from "@/features/gaceta/lib/ui";
 import { INSTRUCCION_LECTURA_VISUAL_FILAS } from "@/features/gaceta/lib/prompts/prompt-americanas";
@@ -595,7 +596,9 @@ function limpiarNombreEjemplar(
 /** Normaliza y verifica minuciosamente una carrera extraída (números 1..N, nombres limpios,
  *  nacionalidad y deduplicación) antes de fusionarla. */
 function normalizarExtraida(c: CarreraExtraida): void {
-  const crudos = Array.isArray(c.ejemplares) ? c.ejemplares : [];
+  const crudos = (Array.isArray(c.ejemplares) ? c.ejemplares : []).filter(
+    (ej) => !esEjemplarFantasmaCabecera(ej?.nombre, c.hipodromo)
+  );
   const procesados: EjemplarExtraido[] = [];
 
   for (const ej of crudos) {

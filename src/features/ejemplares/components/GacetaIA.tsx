@@ -24,6 +24,7 @@ import {
 import {
   parsearGacetaVenezuelaNativo,
   parsearGacetaRetrospectosNativo,
+  esEjemplarFantasmaCabecera,
 } from "@/features/gaceta/lib/segmentar";
 import { guardarHistorialGaceta, registrarEjemplares, registrarGacetaEHistorial } from "@/features/gaceta/lib/padron";
 import { PROMPT_RINCONADA } from "@/features/gaceta/lib/prompts/prompt-rinconada";
@@ -1154,26 +1155,28 @@ export function GacetaIA() {
               raza: c.raza,
               premio: c.premio,
               archivoOrigen: doc.nombre,
-              ejemplares: c.ejemplares.map((e) => ({
-                numero: e.numero,
-                nombre: e.nombre,
-                nacionalidad: esVzla ? "VEN" : "USA",
-                pp: e.pp,
-                jockey: e.jinete,
-                entrenador: e.entrenador,
-                peso: e.pesoKg ?? e.peso,
-                ml: e.morningLine ?? e.ml,
-                morningLine: e.morningLine ?? e.ml,
-                campana: e.campana,
-                diasSinCorrer: e.diasSinCorrer,
-                esDebutante: e.esDebutante,
-                esAe: e.esAe,
-                esMto: e.esMto,
-                stud: e.stud,
-                pedigri: e.pedigri,
-                retirado: e.retirado ?? false,
-                condicionElegibilidad: e.condicionElegibilidad,
-              })),
+              ejemplares: c.ejemplares
+                .filter((e) => !esEjemplarFantasmaCabecera(e.nombre, c.hipodromo))
+                .map((e) => ({
+                  numero: e.numero,
+                  nombre: e.nombre,
+                  nacionalidad: esVzla ? "VEN" : "USA",
+                  pp: e.pp,
+                  jockey: e.jinete,
+                  entrenador: e.entrenador,
+                  peso: e.pesoKg ?? e.peso,
+                  ml: e.morningLine ?? e.ml,
+                  morningLine: e.morningLine ?? e.ml,
+                  campana: e.campana,
+                  diasSinCorrer: e.diasSinCorrer,
+                  esDebutante: e.esDebutante,
+                  esAe: e.esAe,
+                  esMto: e.esMto,
+                  stud: e.stud,
+                  pedigri: e.pedigri,
+                  retirado: e.retirado ?? false,
+                  condicionElegibilidad: e.condicionElegibilidad,
+                })),
             }));
             carrerasAcumuladas.push(...carrerasNativas);
             archivosTextoExitosos.add(doc.nombre);

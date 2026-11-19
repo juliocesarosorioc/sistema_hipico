@@ -21,6 +21,7 @@ import {
   parsearGacetaRetrospectosNativo,
   parsearGacetaVenezuelaNativo,
   esNombreJockeyPersona,
+  esEjemplarFantasmaCabecera,
   type CarreraParseadaNativa,
 } from "@/features/gaceta/lib/segmentar";
 import { validarCarrerasAntesDeGuardar } from "@/features/gaceta/lib/validador";
@@ -393,26 +394,28 @@ async function importarYExtraerGacetaPdfInterno(
       raza: c.raza,
       premio: c.premio,
       archivoOrigen: file.name,
-      ejemplares: c.ejemplares.map((e) => ({
-        numero: e.numero,
-        nombre: e.nombre,
-        nacionalidad: nacDefault,
-        pp: e.pp,
-        jockey: e.jinete,
-        entrenador: e.entrenador,
-        peso: e.pesoKg ?? e.peso,
-        ml: e.morningLine ?? e.ml,
-        morningLine: e.morningLine ?? e.ml,
-        campana: e.campana,
-        diasSinCorrer: e.diasSinCorrer,
-        esDebutante: e.esDebutante,
-        esAe: e.esAe,
-        esMto: e.esMto,
-        stud: e.stud,
-        pedigri: e.pedigri,
-        retirado: e.retirado ?? false,
-        condicionElegibilidad: e.condicionElegibilidad,
-      })),
+      ejemplares: c.ejemplares
+        .filter((e) => !esEjemplarFantasmaCabecera(e.nombre, c.hipodromo))
+        .map((e) => ({
+          numero: e.numero,
+          nombre: e.nombre,
+          nacionalidad: nacDefault,
+          pp: e.pp,
+          jockey: e.jinete,
+          entrenador: e.entrenador,
+          peso: e.pesoKg ?? e.peso,
+          ml: e.morningLine ?? e.ml,
+          morningLine: e.morningLine ?? e.ml,
+          campana: e.campana,
+          diasSinCorrer: e.diasSinCorrer,
+          esDebutante: e.esDebutante,
+          esAe: e.esAe,
+          esMto: e.esMto,
+          stud: e.stud,
+          pedigri: e.pedigri,
+          retirado: e.retirado ?? false,
+          condicionElegibilidad: e.condicionElegibilidad,
+        })),
     }));
 
     // Si el parser determinístico extrajo carreras de forma limpia o no hay clave Gemini, usarlo directamente:

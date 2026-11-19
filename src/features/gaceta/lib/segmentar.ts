@@ -411,6 +411,44 @@ export function esNombreJockeyPersona(str: string | null | undefined): boolean {
   return false;
 }
 
+function normalizarTextoCabeceraGaceta(valor: unknown): string {
+  return String(valor ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim();
+}
+
+const TOKENS_CABECERA_FUERTE_GACETA =
+  /\b(?:ENTRIES|PURSE|FURLONGS?|METROS|METERS|POST\s*TIME|COPYRIGHT|EQUICLOUD|DAILY\s+RACING\s+FORM)\b/;
+const TOKENS_CABECERA_INICIO_GACETA =
+  /^(?:RACE|CARRERA|TRACK|CLAIMING|MAIDEN|ALLOWANCE|STAKES|HANDICAP|PAGE)\b/;
+
+/**
+ * Detecta filas que NO son ejemplares: la cabecera de la carrera suele caer
+ * con el número de programa (ej. "1  PENN NATIONAL ...") y el extractor la
+ * convertía en un caballo fantasma con el nombre del hipódromo.
+ */
+export function esEjemplarFantasmaCabecera(
+  nombre: unknown,
+  hipodromo?: string | null
+): boolean {
+  const norm = normalizarTextoCabeceraGaceta(nombre);
+  if (!norm) return false;
+
+  const hipo = normalizarTextoCabeceraGaceta(hipodromo);
+  if (hipo) {
+    if (norm === hipo) return true;
+    if (norm.length >= 5 && hipo.includes(norm)) return true;
+    if (hipo.length >= 5 && norm.includes(hipo)) return true;
+    const palabrasHipo = hipo.split(" ").filter((p) => p.length >= 5);
+    if (palabrasHipo.length >= 2 && palabrasHipo.every((p) => norm.includes(p))) return true;
+  }
+
+  return TOKENS_CABECERA_FUERTE_GACETA.test(norm) || TOKENS_CABECERA_INICIO_GACETA.test(norm);
+}
+
 export function resolverHipodromoTexto(texto: string, trackCodeDetectado?: string | null): string {
   if (trackCodeDetectado) {
     const cod = trackCodeDetectado.toUpperCase().trim();
@@ -699,6 +737,7 @@ export function parsearPaginaRetrospectosNativo(
   const reEjemplarLinea = /^(\d{1,2}[A-Za-z]?)\s+([A-Z0-9\s'.\-]{3,35}?)(?:\s*\((?:L|FTG|L1|L[0-9]+)\))?(?:\s*\((AE|MTO)\))?(?:\s+([A-Z][a-zA-Z'.\-]+(?:\s+[A-Z][a-zA-Z'.\-]+){1,3}))?\s+(\d{2,3}(?:[.,]\d)?|\d{2,3})\s+(?:.*?\s+)?(\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}|EVEN|[0-9]+(?:\.[0-9]+)?-?[0-9]*)?$/im;
 
   const pushEjemplar = (fila: FilaEjemplarRetrospecto): void => {
+    if (esEjemplarFantasmaCabecera(fila.nombre, hipodromo)) return;
     const clave = `N:${fila.numero.toUpperCase()}`;
     if (nombresVistos.has(clave)) return;
     nombresVistos.add(clave);
