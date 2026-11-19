@@ -2,12 +2,13 @@ export interface ContextoSala {
   sala: any;
   salaId: string;
   grupoId: string;
-  codigoSala: string;
+  codigoSala?: string;
   carreraAbierta: boolean;
   carreraActivaId: string | null;
   tiempoVencimientoMin: number;
   apuestaMinima: number;
   retirados: string[];
+  topeMarcas?: number;
 }
 
 export interface ClienteResuelto {
@@ -27,7 +28,7 @@ export interface ClienteResuelto {
   telefono_normalizado?: string | null;
   telefonoClienteCompleto?: string | null;
   nombreJugador: string;
-  esOperadorRemitente: boolean;
+  esOperadorRemitente?: boolean;
   rawCliente: any;
 }
 
