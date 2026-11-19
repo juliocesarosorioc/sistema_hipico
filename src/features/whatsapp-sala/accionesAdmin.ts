@@ -9,7 +9,7 @@ import {
 import { variablesEncabezadoGrupo } from "@/features/whatsapp/lib/plantillas-grupo";
 import { encabezadoGrupo } from "@/features/whatsapp/lib/encabezados-grupo";
 import { emitirBroadcastSala, respuestaSala } from "./notificador";
-import { obtenerSalasUnicas, recordarCodigoSala } from "./resolverSala";
+import { obtenerSalasUnicas, recordarCodigoSala, resolverOCrearCarreraExacta } from "./resolverSala";
 import { logicaGanancias } from "@/features/motores/lib/puestos";
 import { calcularRiesgoReal } from "@/features/sala-juegos/lib/parser-pedagogico";
 import {
@@ -429,6 +429,43 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
     }
   }
 
+  // Sincronizar llegada oficial en resultados_carreras para Reporte Final y Semáforo de la plataforma
+  try {
+    const fechaCaracas = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Caracas",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const hipoRes = hipodromo.trim().toUpperCase();
+    const { data: resExistente } = await supabaseAdmin
+      .from("resultados_carreras")
+      .select("id")
+      .eq("fecha", fechaCaracas)
+      .ilike("hipodromo", `%${hipoRes}%`)
+      .eq("carrera", numCarrera)
+      .limit(1)
+      .maybeSingle();
+
+    const payloadResultados = {
+      fecha: fechaCaracas,
+      hipodromo: hipoRes,
+      carrera: numCarrera,
+      ganadores: numeros,
+      orden_llegada: numeros.map((n, idx) => ({ numero: n, puesto: idx + 1 })),
+      cargado_por: operadorNombre || "OPERADOR-SALA",
+      updated_at: new Date().toISOString(),
+    };
+
+    if (resExistente?.id) {
+      await supabaseAdmin.from("resultados_carreras").update(payloadResultados).eq("id", resExistente.id);
+    } else {
+      await supabaseAdmin.from("resultados_carreras").insert(payloadResultados);
+    }
+  } catch (errRes) {
+    console.warn("[accionesAdmin] Aviso sincronizando resultados_carreras:", errRes);
+  }
+
   let queryTickets = supabaseAdmin
     .from("chat_tickets_fifo")
     .select("*")
@@ -436,7 +473,7 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
     .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO", "GANADOR_PROPONENTE", "GANADOR_ACEPTANTE", "EMPATE"]);
 
   if (carreraId) {
-    queryTickets = queryTickets.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+    queryTickets = queryTickets.eq("carrera_id", carreraId);
   }
 
   const { data: tickets } = await queryTickets;
@@ -912,12 +949,14 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
     const hipoLimpio = String(hipodromo || "LA RINCONADA").toUpperCase().trim();
     const numCarrera = parseInt(carrera, 10) || 1;
     const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;
+    const nuevaCarreraId = await resolverOCrearCarreraExacta(hipoLimpio, numCarrera);
 
     const { data: salaActualizada, error } = await supabaseAdmin
       .from("salas_juego")
       .update({
         hipodromo_activo: hipoLimpio,
         numero_carrera_activa: numCarrera,
+        ...(nuevaCarreraId ? { carrera_activa_id: nuevaCarreraId } : {}),
         estado_carrera: "abierta",
         updated_at: new Date().toISOString(),
       })
@@ -1365,7 +1404,7 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
       .order("created_at", { ascending: true });
 
     if (carreraId) {
-      query = query.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+      query = query.eq("carrera_id", carreraId);
     }
 
     const { data: tickets } = await query;

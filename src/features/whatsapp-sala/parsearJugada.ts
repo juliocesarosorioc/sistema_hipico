@@ -17,7 +17,7 @@ import {
 } from "@/features/whatsapp/lib/plantillas-grupo-server";
 import { variablesEncabezadoGrupo } from "@/features/whatsapp/lib/plantillas-grupo";
 import { encabezadoGrupo } from "@/features/whatsapp/lib/encabezados-grupo";
-import { resolverHipodromoEnTabla } from "./resolverSala";
+import { resolverHipodromoEnTabla, resolverOCrearCarreraExacta } from "./resolverSala";
 import { extraerCarreraYHipodromo } from "./lib/hipodromos-fuzzy";
 import {
   resolverTelefonoWhatsappCliente,
@@ -471,7 +471,7 @@ export async function manejarIntencionComando(params: {
       .order("created_at", { ascending: true });
 
     if (sala.carrera_activa_id) {
-      qPlano = qPlano.or(`carrera_id.eq.${sala.carrera_activa_id},carrera_id.is.null`);
+      qPlano = qPlano.eq("carrera_id", sala.carrera_activa_id);
     }
 
     const { data: ticketsPlano } = await qPlano;
@@ -630,16 +630,22 @@ export async function manejarIntencionComando(params: {
       }
       const hipoLimpio = hipoTab?.nombre || hipoSolicitado.toUpperCase();
       const numCarrera = parseInt(posibleCarrera, 10) || parseInt(sala.numero_carrera_activa, 10) || 1;
+      const nuevaCarreraId = await resolverOCrearCarreraExacta(hipoLimpio, numCarrera);
 
       await supabaseAdmin
         .from("salas_juego")
         .update({
           hipodromo_activo: hipoLimpio,
           numero_carrera_activa: numCarrera,
+          ...(nuevaCarreraId ? { carrera_activa_id: nuevaCarreraId } : {}),
           estado_carrera: "abierta",
           updated_at: new Date().toISOString(),
         })
         .eq("id", salaId);
+
+      if (nuevaCarreraId) {
+        sala.carrera_activa_id = nuevaCarreraId;
+      }
 
       if (retiradosApertura.length > 0 && sala.carrera_activa_id) {
         try {

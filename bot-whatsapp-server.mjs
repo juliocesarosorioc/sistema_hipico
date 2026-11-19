@@ -1030,7 +1030,7 @@ export async function construirYPublicarPlano(sala, groupJid) {
     .order("created_at", { ascending: true });
 
   if (carreraId) {
-    query = query.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+    query = query.eq("carrera_id", carreraId);
   }
 
   const { data: tickets, error } = await query;
@@ -1311,7 +1311,7 @@ export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw, esRec
       .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO"]);
 
     if (carreraId) {
-      queryTickets = queryTickets.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+      queryTickets = queryTickets.eq("carrera_id", carreraId);
     }
 
     const { data: tickets } = await queryTickets;
@@ -1463,7 +1463,7 @@ export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw, esRec
     .in("estado", ["PENDIENTE", "ACTIVO", "ABIERTO", "GANADOR_PROPONENTE", "GANADOR_ACEPTANTE", "EMPATE"])
     .order("created_at", { ascending: true });
   if (carreraId) {
-    qJugadas = qJugadas.or(`carrera_id.eq.${carreraId},carrera_id.is.null`);
+    qJugadas = qJugadas.eq("carrera_id", carreraId);
   }
   const { data: jugadasCarrera } = await qJugadas;
   const listaJugadas = jugadasCarrera || [];

@@ -79,9 +79,10 @@ export async function sincronizarTicketsPropuestaATaquilla(
 
     let comisionPct = Number(params.comisionPct);
     let monedaGrupo = "USD";
+    let nombreGrupo = "PRINCIPAL";
     const { data: grp } = await supabase
       .from("grupos_venta")
-      .select("comision_default, moneda")
+      .select("nombre, comision_default, moneda")
       .eq("id", params.grupoId)
       .maybeSingle();
     if (!Number.isFinite(comisionPct)) {
@@ -89,6 +90,9 @@ export async function sincronizarTicketsPropuestaATaquilla(
     }
     if (grp?.moneda) {
       monedaGrupo = String(grp.moneda).trim().toUpperCase() || "USD";
+    }
+    if (grp?.nombre) {
+      nombreGrupo = String(grp.nombre).trim().toUpperCase() || "PRINCIPAL";
     }
 
     const fechaCarrera =
@@ -147,8 +151,9 @@ export async function sincronizarTicketsPropuestaATaquilla(
             ? propCanon
             : modBase;
       const caballo = normalizarCaballoTicket(t);
+      const ejNumParsed = !esMatch && /^\d+$/.test(caballo) ? parseInt(caballo, 10) : null;
 
-      await supabase.from("tickets_apuestas").insert([
+      const { error: errInsTaq } = await supabase.from("tickets_apuestas").insert([
         {
           fecha_registro: new Date().toISOString(),
           fecha_carrera: fechaCarrera,
@@ -156,6 +161,7 @@ export async function sincronizarTicketsPropuestaATaquilla(
           carrera,
           nombre_jugada: nombreJugada,
           caballo,
+          ejemplar_numero: ejNumParsed,
           cantidad_tablas: 1,
           monto_jugado: monto,
           monto_decidido: 0,
@@ -164,18 +170,23 @@ export async function sincronizarTicketsPropuestaATaquilla(
           cliente_juega_nombre: clienteJuegaNombre,
           cliente_consigue_id: clienteConsigueId,
           cliente_consigue_nombre: clienteConsigueNombre,
+          grupo: nombreGrupo,
           grupo_cobro_id: params.grupoId,
+          grupo_cobro_nombre: nombreGrupo,
           grupo_comision_id: params.grupoId,
+          grupo_comision_nombre: nombreGrupo,
           comision_porcentaje: comisionPct,
           comision_pagada: 0,
           estado: "Pendiente",
           anulada: false,
           es_adelantada: false,
-          modalidad: propCanon ? "Jugadas a Premio" : "Jugadas de Puestos",
           moneda: monedaGrupo,
           nota_auditoria: marcador,
         },
       ]);
+      if (errInsTaq) {
+        console.error("[sincronizar-tickets-sala] Error insertando en tickets_apuestas:", errInsTaq);
+      }
     }
   } catch (err) {
     console.warn("[sincronizar-tickets-sala] Error insertando espejo en tickets_apuestas:", err);

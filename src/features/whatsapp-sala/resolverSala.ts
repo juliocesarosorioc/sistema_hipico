@@ -135,6 +135,71 @@ export function esUuidCarreraValido(v: unknown): v is string {
   );
 }
 
+export async function resolverOCrearCarreraExacta(
+  hipodromoRaw: string,
+  numeroCarrera: number
+): Promise<string | null> {
+  try {
+    const hipodromo =
+      normalizarNombreHipodromo(hipodromoRaw) ||
+      String(hipodromoRaw || "LA RINCONADA").trim().toUpperCase();
+    const numero = Number(numeroCarrera) || 1;
+    const fecha = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Caracas",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    const { data: existente } = await supabaseAdmin
+      .from("carreras")
+      .select("id")
+      .eq("fecha", fecha)
+      .ilike("hipodromo", hipodromo)
+      .eq("carrera", numero)
+      .limit(1)
+      .maybeSingle();
+
+    if (existente && esUuidCarreraValido((existente as any).id)) {
+      return String((existente as any).id);
+    }
+
+    const { data: creada, error: errCrear } = await supabaseAdmin
+      .from("carreras")
+      .insert({
+        fecha,
+        hipodromo,
+        carrera: numero,
+        estado: "Abierta",
+        origen: "manual",
+        registrado_por: "WHATSAPP_SALA",
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (creada && esUuidCarreraValido((creada as any).id)) {
+      return String((creada as any).id);
+    }
+
+    if (errCrear) {
+      const { data: reintento } = await supabaseAdmin
+        .from("carreras")
+        .select("id")
+        .eq("fecha", fecha)
+        .ilike("hipodromo", hipodromo)
+        .eq("carrera", numero)
+        .limit(1)
+        .maybeSingle();
+      if (reintento && esUuidCarreraValido((reintento as any).id)) {
+        return String((reintento as any).id);
+      }
+    }
+  } catch (e) {
+    console.error("[resolverOCrearCarreraExacta] Error:", e);
+  }
+  return null;
+}
+
 /**
  * Garantiza que una sala con carrera abierta tenga `carrera_activa_id`.
  * Si es null, busca la carrera (fecha de hoy + hipódromo + número) en `public.carreras`;
