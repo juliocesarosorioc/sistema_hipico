@@ -10,6 +10,7 @@
 import { supabase } from "@/core/supabase";
 import { hoyLocal } from "@/core/utils/fechas";
 import { generarAsientoPartidaDoble } from "@/features/contabilidad/lib/plan-cuentas";
+import { esSinTope } from "@/features/taquilla/lib/reparto";
 import { sumarDinero, restarDinero } from "@/shared/lib/dinero";
 
 export type EstadoApuestaEspecial = "PENDIENTE" | "GANADOR" | "PERDEDOR" | "ANULADA";
@@ -196,10 +197,11 @@ export async function registrarApuestaEventoEspecial(datos: {
     try {
       const { data: cli } = await supabase
         .from("clientes")
-        .select("id, nombre, saldo_actual, aval")
+        .select("id, nombre, saldo_actual, aval, libre, modo_juego")
         .eq("id", datos.cliente_id as never)
         .maybeSingle();
-      if (cli) {
+      // Modo libre: sin tope de saldo ni aval; puede jugar cualquier monto.
+      if (cli && !esSinTope(cli)) {
         const disponible = (Number(cli.saldo_actual) || 0) + (Number(cli.aval) || 0);
         if (datos.monto > disponible) {
           return {

@@ -13,6 +13,7 @@ import {
 } from "@/features/apuestas/lib/eventos-especiales";
 import { hoyLocal } from "@/core/utils/fechas";
 import { emitirToast } from "@/shared/lib/mensajeria";
+import { esSinTope } from "@/features/taquilla/lib/reparto";
 
 interface ClienteSimple {
   id?: string | number;
@@ -20,6 +21,8 @@ interface ClienteSimple {
   seudonimo?: string | null;
   saldo_actual?: number | null;
   aval?: number | null;
+  libre?: boolean | null;
+  modo_juego?: string | null;
 }
 
 interface ModalApuestaEventoEspecialProps {
@@ -124,7 +127,8 @@ export function ModalApuestaEventoEspecial({
 
     if (clienteId) {
       const cli = clientes.find((item) => String(item.id) === clienteId);
-      if (cli) {
+      // Modo libre: puede jugar cualquier monto, sin saldo ni aval.
+      if (cli && !esSinTope(cli)) {
         const disp = (cli.saldo_actual ?? 0) + (cli.aval ?? 0);
         if (mNum > disp) {
           emitirToast(

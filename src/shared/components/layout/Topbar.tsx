@@ -15,7 +15,13 @@ import {
 } from "@/features/auth/lib/sesion";
 import { conCacheBust } from "@/shared/lib/logos";
 import { useVersionLogos } from "@/shared/store/useHipodromosStore";
-import { listarGruposVenta } from "@/features/grupos/lib/grupos";
+import {
+  comisionJugadasDeGrupo,
+  listarClientesVenta,
+  listarGruposVenta,
+  type ClienteVenta,
+} from "@/features/grupos/lib/grupos";
+import { ModalEventoLibre } from "@/features/eventos-libres/components/ModalEventoLibre";
 import { esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
 
 /**
@@ -71,6 +77,9 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const [abierto, setAbierto] = useState(false);
   const [novedades, setNovedades] = useState<Novedad[]>([]);
   const [cargando, setCargando] = useState(false);
+  const [modalEventoLibre, setModalEventoLibre] = useState(false);
+  const [clientesEventoLibre, setClientesEventoLibre] = useState<ClienteVenta[]>([]);
+  const [comisionEventoLibre, setComisionEventoLibre] = useState(5);
 
   const cargarNovedades = useCallback(async () => {
     if (!supabase) {
@@ -118,6 +127,33 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const grupoNombre = useAuthStore((s) => s.grupoNombre);
   const versionLogos = useVersionLogos();
   const esOperador = esRolOperadorExclusivo(perfiles, modoOperador);
+
+  /**
+   * Evento Libre es global: se abre desde la barra superior SIN necesidad de
+   * entrar a una carrera. Se cargan los clientes del grupo activo y su comisión
+   * en el momento de abrir para no depender del módulo de jugadas.
+   */
+  const abrirEventoLibre = useCallback(() => {
+    setAbierto(false);
+    setModalEventoLibre(true);
+    const gid = grupoId || grupoActivo || null;
+    void Promise.all([listarClientesVenta(true, gid), listarGruposVenta()])
+      .then(([clientes, grupos]) => {
+        const grupo = gid
+          ? grupos.find(
+              (g) =>
+                String(g.id) === String(gid) ||
+                String(g.nombre ?? "").toUpperCase() === String(gid).toUpperCase()
+            )
+          : null;
+        setClientesEventoLibre(clientes);
+        setComisionEventoLibre(comisionJugadasDeGrupo(grupos, grupo?.id ?? gid) ?? 5);
+      })
+      .catch(() => {
+        setClientesEventoLibre([]);
+        setComisionEventoLibre(5);
+      });
+  }, [grupoId, grupoActivo]);
 
   const [logoGrupo, setLogoGrupo] = useState<string | null>(null);
   const [nombreGrupo, setNombreGrupo] = useState<string>("");
@@ -191,6 +227,7 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
   const total = novedades.length;
 
   return (
+    <>
     <header className="sticky top-0 z-50 flex h-[50px] shrink-0 items-center justify-between gap-2 border-b border-line bg-surface/90 px-3 sm:px-4 backdrop-blur transition-colors duration-200 overflow-x-clip">
       {/* ESPACIO SUPERIOR IZQUIERDO: Menú + LOGO DEL GRUPO */}
       <div className="flex items-center gap-2 min-w-0 shrink-0">
@@ -305,6 +342,17 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
         )}
       </div>
 
+      {/* Evento Libre / P2P: disponible desde cualquier ruta, sin elegir carrera. */}
+      <button
+        type="button"
+        onClick={abrirEventoLibre}
+        title="🎯 Evento Libre / P2P: registre apuestas deportivas/libres sin saldo ni aval, sin necesidad de entrar a una carrera"
+        className="inline-flex h-9 items-center gap-1.5 rounded-full border border-purple-300 bg-purple-700 px-2.5 text-xs font-black text-white transition-colors hover:bg-purple-600 shrink-0"
+      >
+        <span className="text-base leading-none">🎯</span>
+        <span className="hidden 2xl:inline">Evento Libre</span>
+      </button>
+
       {puedeCambiarVista && (
         <button
           type="button"
@@ -370,6 +418,16 @@ export function Topbar({ alAlternarMenu, menuVisible = true }: TopbarProps = {})
       </button>
       </div>
     </header>
+
+    {/* Modal global 🎯 Evento Libre P2P (no depende de hipódromo/carrera). */}
+    {modalEventoLibre && (
+      <ModalEventoLibre
+        clientes={clientesEventoLibre}
+        comisionGrupoDefault={comisionEventoLibre}
+        onClose={() => setModalEventoLibre(false)}
+      />
+    )}
+    </>
   );
 }
 
