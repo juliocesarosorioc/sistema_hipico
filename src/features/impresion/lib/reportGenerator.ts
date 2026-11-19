@@ -482,8 +482,12 @@ function balanceDesdePizarra(
 /** Proporción ("10/6") de una jugada a premio; null si no trae (igual que
  *  `reportes.ts::proporcionDe`: el motor re-parsea el tipo de todos modos). */
 function proporcionDe(tipo: string): string | null {
-  const m = /(\d+)\s*\/\s*(\d+)/.exec(String(tipo ?? ""));
-  return m ? `${m[1]}/${m[2]}` : null;
+  const s = String(tipo ?? "");
+  const m10 = /\b(10)\s*[\/aAª@]\s*(\d+(?:[.,]\d+)?)(?![nNpP])\b/.exec(s);
+  if (m10) return `${m10[1]}/${m10[2].replace(",", ".")}`;
+  const m = /\b(\d+)\s*\/\s*(\d+(?:[.,]\d+)?)(?![nNpP])\b/.exec(s);
+  if (m && Number(m[1]) >= 10) return `${m[1]}/${m[2].replace(",", ".")}`;
+  return null;
 }
 
 /** Premio por tabla de una "TABLA N" (bruto = monto × N); null si no es tabla. */

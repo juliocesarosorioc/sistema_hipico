@@ -480,6 +480,37 @@ export async function reversarLiquidacionCarrera(opts: ReversarInput): Promise<R
         .update({ estado: "Pendiente", premio_pagar: 0, monto_decidido: 0, comision_pagada: 0 })
         .in("id", idsReset as never[]);
     }
+
+    // Sincronizar también Sala de Juegos / WhatsApp (salas_juego y chat_tickets_fifo)
+    let qSalas = supabase
+      .from("salas_juego")
+      .select("id, hipodromo_activo, numero_carrera_activa, carrera_activa_id, carrera_recien_cerrada_id")
+      .eq("numero_carrera_activa", carrera);
+    if (grupoFiltro) {
+      qSalas = qSalas.eq("grupo_id", grupoFiltro);
+    }
+    const { data: salasMatch } = await qSalas;
+    const salasFiltradas = ((salasMatch ?? []) as Array<Record<string, unknown>>).filter(
+      (s) => claveHipodromo(String(s.hipodromo_activo ?? "")) === clave
+    );
+    for (const s of salasFiltradas) {
+      const sid = String(s.id ?? "");
+      if (!sid) continue;
+      await supabase
+        .from("salas_juego")
+        .update({ estado_carrera: "abierta", updated_at: new Date().toISOString() })
+        .eq("id", sid as never);
+      let qFifo = supabase
+        .from("chat_tickets_fifo")
+        .update({ estado: "ACTIVO", updated_at: new Date().toISOString() })
+        .eq("sala_id", sid as never)
+        .in("estado", ["GANADOR_PROPONENTE", "GANADOR_ACEPTANTE", "EMPATE"] as never[]);
+      const cid = s.carrera_activa_id || s.carrera_recien_cerrada_id;
+      if (cid) {
+        qFifo = qFifo.eq("carrera_id", cid as never);
+      }
+      await qFifo;
+    }
   } catch {
     // best-effort
   }

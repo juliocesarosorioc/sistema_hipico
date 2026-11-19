@@ -180,6 +180,9 @@ export async function actualizarTicketEspejoLiquidado(
     factor: number;
     monto: number;
     porcentajeComision: number;
+    netoClienteJuega?: number;
+    comisionTotal?: number;
+    estadoTicket?: string;
   }
 ): Promise<void> {
   if (!params.codigoTicket) return;

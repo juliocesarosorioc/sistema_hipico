@@ -284,19 +284,31 @@ export function expandirLineaHablada(linea: string): LineaExpandida {
     marca();
     return "pp";
   });
-  // A Premio compactado con "A": "10A2.5", "10a2,5", "10A6", "10A2" → "10/2.5",
-  // "10/6", "10/2" (se interpreta directo como exacto sin pedir corrección).
-  texto = texto.replace(/\b(\d+(?:[.,]\d+)?)[aA](\d+(?:[.,]\d+)?)\b/g, (_m, p, q) => {
+  // A Premio compactado con "A": conserva la "A" ("10A4", "10A3.5") y normaliza coma decimal ("10a9,99" → "10a9.99").
+  texto = texto.replace(/\b(\d+(?:[.,]\d+)?)([aA])(\d+,\d+)\b/g, (_m, p, sep, q) => {
+    return `${String(p).replace(",", ".")}${sep}${String(q).replace(",", ".")}`;
+  });
+  // A Premio hablado o con espacios asimétricos: "diez a ocho" → "10 a 8" → "10/8", "10a 5" → "10/5", "10 a5" → "10/5".
+  texto = texto.replace(/\b(\d+(?:[.,]\d+)?)\s+[aA]\s*(\d+(?:[.,]\d+)?)\b/gi, (_m, p, q) => {
+    marca();
     return `${String(p).replace(",", ".")}/${String(q).replace(",", ".")}`;
   });
-  // A Premio hablado con espacios: "diez a ocho" → "10 a 8" → "10/8".
-  texto = texto.replace(/\b(\d+(?:[.,]\d+)?)\s+[aA]\s+(\d+(?:[.,]\d+)?)\b/gi, (_m, p, q) => {
+  texto = texto.replace(/\b(\d+(?:[.,]\d+)?)[aA]\s+(\d+(?:[.,]\d+)?)\b/gi, (_m, p, q) => {
     marca();
     return `${String(p).replace(",", ".")}/${String(q).replace(",", ".")}`;
   });
   // Normaliza coma decimal en proporciones con barra ("10/2,5" → "10/2.5").
   texto = texto.replace(/\b(\d+(?:[.,]\d+)?)\/(\d+,\d+)\b/g, (_m, p, q) => {
     return `${String(p).replace(",", ".")}/${String(q).replace(",", ".")}`;
+  });
+  // Compacta barras con espacios en modalidades ("2/ 2n", "2 /2 n", "1 / 2n" → "2/2n", "1/2n").
+  texto = texto.replace(/(?<![\d/])([1-5])\s*\/\s*([1-5])\s*([nNpP])\b/g, (_m, a, b, s) => {
+    marca();
+    return `${a}/${b}${s.toLowerCase()}`;
+  });
+  texto = texto.replace(/(?<![\d/])([1-5])\s*\/\s*([1-5])\b(?!\s*[.,]\d)/g, (_m, a, b) => {
+    marca();
+    return `${a}/${b}`;
   });
 
   return { texto, huboNumeroPalabra, huboNomenclatura };

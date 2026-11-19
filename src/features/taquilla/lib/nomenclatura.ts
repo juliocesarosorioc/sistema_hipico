@@ -94,6 +94,13 @@ function norm(entrada: unknown): string {
     .replace(/\s+/g, " ");
   // "1p de 2-3", "1p del 2 y 3" -> quitar "de/del"
   s = s.replace(/\bdel\b/g, " ").replace(/\bde\b/g, " ").replace(/\s+/g, " ").trim();
+  // Compactar espacios dentro de átomos de puesto/nini: "1 p" -> "1p", "2/ 2n" / "2 /2 n" -> "2/2n", "2 y 2 n" -> "2/2n"
+  s = s
+    .replace(/(?<![\d/])([1-9]|10)\s+([pn])\b/g, "$1$2")
+    .replace(/(?<![\d/])([1-8])\s*\/\s*([1-8])\s*([np])\b/g, "$1/$2$3")
+    .replace(/(?<![\d/])([1-8])\s*\/\s*([1-8])\b(?!\s*[.,]\d)/g, "$1/$2")
+    .replace(/(?<![\d/])([1-8])\s+y\s+([1-8])([np])\b/g, "$1/$2$3")
+    .replace(/(?<![\d/])([1-8])y([1-8])\s+([np])\b/g, "$1y$2$3");
   // Expandir formas compactas de bloque pegadas sin espacios o con guion: ej. "1py1y2n" -> "1p y 1y2n", "2p-2/3n" -> "2p y 2/3n"
   s = s.replace(/^([1-8][pn])\s*(?:y|-)\s*([1-8][pn]?[y/][1-8][pn]?)$/i, "$1 y $2");
   s = s.replace(/^([1-8][pn]?[y/][1-8][pn]?)\s*(?:y|-)\s*([1-8][pn])$/i, "$1 y $2");

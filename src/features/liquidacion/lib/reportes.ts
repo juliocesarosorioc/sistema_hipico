@@ -328,10 +328,10 @@ function puestoFinalDe(caballo: string, puestos: string[]): TicketMotor["puesto_
 }
 
 function proporcionDe(tipo: string): string | null {
-  const m10 = /\b(10)\s*[\/aAª@]\s*(\d+(?:[.,]\d+)?)\b/.exec(tipo);
+  const m10 = /\b(10)\s*[\/aAª@]\s*(\d+(?:[.,]\d+)?)(?![nNpP])\b/.exec(tipo);
   if (m10) return `${m10[1]}/${m10[2].replace(",", ".")}`;
-  const m = /(\d+)\s*\/\s*(\d+)/.exec(tipo);
-  if (m && Number(m[1]) >= 5) return `${m[1]}/${m[2]}`;
+  const m = /\b(\d+)\s*\/\s*(\d+(?:[.,]\d+)?)(?![nNpP])\b/.exec(tipo);
+  if (m && Number(m[1]) >= 10) return `${m[1]}/${m[2].replace(",", ".")}`;
   return null;
 }
 

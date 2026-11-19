@@ -1858,7 +1858,6 @@ export async function concretarJugada(params: {
             cliente.nombreJugador
           );
 
-    const montoSolicitadoReal = Number(evalConcrecion.montoSolicitado || montoEfectivo);
     const esConcrecionSaldoParcial =
       llenoRemanenteParcial && montoEfectivo > 0 && montoEfectivo < montoSolicitadoReal;
     const nombreLimitador =

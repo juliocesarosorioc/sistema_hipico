@@ -5,7 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { calcularRiesgoCliente2, proyectarFila } from "@/features/taquilla/lib/validar";
 import { clienteConSaldoDescontado, proyectarFilasEnOrden } from "@/features/taquilla/lib/saldosEnCurso";
 import { normalizarLineaRapida, type ConfianzaCampo } from "@/features/taquilla/lib/normalizar";
-import { etiquetaJugada, ladosDePareo, rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
+import { rotuloPareo } from "@/features/taquilla/lib/nomenclatura";
+import { etiquetaJugada, ladosDePareo } from "@/features/taquilla/lib/nomenclatura";
+import { parsearMontoConK } from "@/shared/lib/dinero";
 import { HorseBadge } from "@/shared/components/ui/HorseChips";
 import {
   esMarca,
@@ -2416,7 +2418,7 @@ const hipodromosDelDia = useMemo(() => {
       const v = pFila?.proyeccion ?? valida(f, descontado);
       const c1 = saldoCliente(f.cliente1);
       const c2 = saldoCliente(f.cliente2);
-      const montoPedidoFila = parseFloat(String(f.monto).replace(",", ".")) || 0;
+      const montoPedidoFila = parsearMontoConK(String(f.monto))?.monto || parseFloat(String(f.monto).replace(",", ".")) || 0;
       if (!v.ok) {
         if ((c1 || c2) && montoPedidoFila > 0 && /S\/S|saldo/i.test(v.motivo)) {
           const tel1 = c1 ? telefonoMencionCliente(c1) : null;

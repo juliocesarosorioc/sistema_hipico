@@ -225,7 +225,7 @@ export function parsearMontoConK(rawInput: string): MontoParseado | null {
   };
 
   // 1. Abreviaturas de miles: 30k · 30 K · 30mil · 30 mil · 2,5k · 2.5k
-  const matchK = /^(\d+(?:[\.,]\d+)?)\s*(?:k|mil)$/i.exec(original);
+  const matchK = /^(\d+(?:[\.,]\d+)*)\s*(?:k|mil)$/i.exec(original);
   if (matchK) {
     const base = aNumero(matchK[1]);
     if (Number.isFinite(base) && base > 0) {
@@ -239,6 +239,7 @@ export function parsearMontoConK(rawInput: string): MontoParseado | null {
   }
 
   // 2. Resto de formatos: 10.424,50 · 10.000 · 43,50 · 100 · 20.5
+  if (!/^\d+(?:[.,]\d+)*$/.test(original)) return null;
   const monto = aNumero(original);
   if (Number.isFinite(monto) && monto > 0) {
     const redondeado = Math.round(monto * 100) / 100;

@@ -21,6 +21,7 @@ import {
   extraerEjemplaresMultiples,
   calcularRiesgoCliente2,
 } from "@/features/liquidacion/lib/puestos";
+import { parsearMontoConK } from "@/shared/lib/dinero";
 
 export {
   normalizarJugadaPremio,
@@ -366,7 +367,8 @@ export function proyectarFila(opts: {
   cliente2?: ClienteRiesgo | null;
 }): FilaProyeccion {
   const jugada = String(opts.jugada ?? "").trim().toUpperCase();
-  const montoPedido = parseFloat(String(opts.monto ?? "").replace(",", "."));
+  const montoRawStr = String(opts.monto ?? "").trim();
+  const montoPedido = parsearMontoConK(montoRawStr)?.monto ?? parseFloat(montoRawStr.replace(",", "."));
   if (!jugada) return { ok: false, motivo: "Ingresá la nomenclatura de la jugada (ej. 2x3 10/8, 2n, 1p)." };
   if (!isFinite(montoPedido) || montoPedido <= 0) return { ok: false, motivo: "Ingresá el monto numérico de la jugada." };
 
@@ -571,8 +573,8 @@ const STOP_WORDS = new Set([
 
 const RE_PURGADO = /[^\p{L}\p{N}.,/x-]/gu;
 
-/** Token puramente numérico (admite separadores de miles/decimales . y ,). */
-const RE_NUMERICO = /^\d+(?:[.,]\d+)*$/;
+/** Token puramente numérico o abreviado con k/mil (admite separadores de miles/decimales . y ,). */
+const RE_NUMERICO = /^\d+(?:[.,]\d+)*(?:k|mil)?$/i;
 /** Pareo de caballos: "6x7". */
 const RE_PAREO = /^\d+[x]\d+$/;
 /** Pareo con proporción: "2x3" seguido de "10/8" (formato legacy). */
@@ -593,13 +595,11 @@ function limpiarToken(tok: string): string {
 function tokenNumerico(tok: string): number | null {
   const t = String(tok ?? "").trim();
   if (!RE_NUMERICO.test(t)) return null;
-  let n: number;
-  if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(t)) {
-    // Miles con punto y decimal con coma: 1.200,50
-    n = parseFloat(t.replace(/\./g, "").replace(",", "."));
-  } else {
-    n = parseFloat(t.replace(",", "."));
+  if (/(?:k|mil)$/i.test(t) || /^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(t)) {
+    const parsed = parsearMontoConK(t);
+    if (parsed && Number.isFinite(parsed.monto)) return parsed.monto;
   }
+  const n = parseFloat(t.replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
 
@@ -636,7 +636,15 @@ export function clasificarLineaRapida(linea: string): ClasificacionLinea | null 
   const bruto = String(linea ?? "").trim();
   if (!bruto || bruto.startsWith("#")) return null;
   // Quita numeración de lista "1) ", "3) " al inicio si viene de WhatsApp
-  const t = bruto.replace(/^\s*\d+\s*\)\s*/, "");
+  const t = bruto
+    .replace(/^\s*\d+\s*\)\s*/, "")
+    .replace(/\b(10)\s+[aA\/]\s*(\d+(?:[.,]\d+)?)\b/g, "$1/$2")
+    .replace(/\b(10)[aA\/]\s+(\d+(?:[.,]\d+)?)\b/g, "$1/$2")
+    .replace(/(?<![\d/])([1-5])\s*\/\s*([1-5])\s*([nNpP])\b/g, "$1/$2$3")
+    .replace(/(?<![\d/])([1-5])\s*\/\s*([1-5])\b(?!\s*[.,]\d)/g, "$1/$2")
+    .replace(/(?<![\d/])([1-5])\s+[yY]\s+([1-5])\s*([nNpP])\b/g, "$1y$2$3")
+    .replace(/(?<![\d/])([1-5])[yY]([1-5])\s+([nNpP])\b/g, "$1y$2$3")
+    .replace(/(?<![\d/])([1-9]|10)\s+([pPnN])\b/g, "$1$2");
 
   /* -1) Cruce legacy "2x3 10/8" (pareo + proporción). El extractor de
      expresiones divididas usa el MISMO divisor "x" y se comería el pareo
@@ -739,7 +747,10 @@ export function clasificarLineaRapida(linea: string): ClasificacionLinea | null 
   if (!montoSel) {
     return { ok: false, motivo: `No se detectó el MONTO numérico en "${t}".` };
   }
-  monto = /^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(montoSel.k.raw) ? String(montoSel.n).replace(".", ",") : montoSel.k.raw;
+  const esK = /(?:k|mil)$/i.test(montoSel.k.limpio);
+  monto = (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(montoSel.k.raw) || esK)
+    ? String(montoSel.n).replace(".", ",")
+    : montoSel.k.raw;
   usados.add(montoSel.i);
 
   // 5) CABALLO — el que iba entre paréntesis, un número pequeño restante,
@@ -760,9 +771,6 @@ export function clasificarLineaRapida(linea: string): ClasificacionLinea | null 
       usados.add(cabIdx);
     }
   }
-  if (!caballo && RE_PAREO_A.test(jugada.split(/\s+/)[0] ?? "")) {
-    caballo = jugada.split(/\s+/)[0];
-  }
 
   // 6) SOBRANTES — lo que no entró en JUGADA/CABALLO/MONTO. NO se asignan
   //    clientes acá: eso lo decide el caller (legacy o normalizador difuso).
@@ -770,13 +778,7 @@ export function clasificarLineaRapida(linea: string): ClasificacionLinea | null 
     .filter((_, i) => !usados.has(i))
     .map((k) => k.raw.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""));
 
-  // Normaliza cualquier proporción A Premio "10A2.5" / "10a2,5" / "10/2,5" a "10/2.5"
-  const jugadaCanon = jugada
-    .toUpperCase()
-    .replace(
-      /\b(\d+(?:[.,]\d+)?)\s*[AA/]\s*(\d+(?:[.,]\d+)?)\b/gi,
-      (_m, p, q) => `${String(p).replace(",", ".")}/${String(q).replace(",", ".")}`
-    );
+  const jugadaCanon = jugada.toUpperCase();
 
   // Regla 1: Prohibición absoluta de 1N (Primer Nini)
   if (/(?:^|[^0-9])1\s*N(?![A-Z])/i.test(jugadaCanon)) {
@@ -804,7 +806,11 @@ export function parsearLineaRapida(linea: string): LineaRapida | null {
   const c = clasificarLineaRapida(linea);
   if (!c) return null;
   if (!c.ok) return c;
-  if (!c.caballo || !/\d/.test(c.caballo)) {
+  let caballo = c.caballo;
+  if (!caballo && RE_PAREO_A.test(c.jugada.split(/\s+/)[0]?.toLowerCase() ?? "")) {
+    caballo = c.jugada.split(/\s+/)[0].toUpperCase();
+  }
+  if (!caballo || !/\d/.test(caballo)) {
     return {
       ok: false,
       motivo: `Falta el ejemplar (caballo) en "${linea}": no puede cargarse jugada sin ejemplar (condición sine qua non).`,
@@ -812,7 +818,7 @@ export function parsearLineaRapida(linea: string): LineaRapida | null {
   }
   const cliente1 = c.restantes[0] ?? "";
   const cliente2 = c.restantes.slice(1).join(" ");
-  return { ok: true, jugada: c.jugada, caballo: c.caballo, monto: c.monto, cliente1, cliente2 };
+  return { ok: true, jugada: c.jugada, caballo, monto: c.monto, cliente1, cliente2 };
 }
 
 function round2(n: number): number {
