@@ -504,6 +504,10 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
 
     const n1 = Number(resLg.netoJugador1 || 0);
     const n2 = Number(resLg.netoJugador2 || 0);
+    t._jugador1 = esJuegaProponente ? (t.proponente_nombre || "Jugador 1") : (t.aceptante_nombre || "Jugador 1");
+    t._jugador2 = esJuegaProponente ? (t.aceptante_nombre || "Jugador 2") : (t.proponente_nombre || "Jugador 2");
+    t._netoJugador1 = n1;
+    t._netoJugador2 = n2;
     const brutoJuega = n1 > 0 ? Math.abs(n2) : n1;
     const brutoDa = n2 > 0 ? Math.abs(n1) : n2;
     const comisionJuega = n1 > 0 ? Number((Math.abs(n2) - n1).toFixed(2)) : 0;
@@ -630,6 +634,9 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
     })
     .eq("id", sala.id);
 
+  const fmtNeto = (v: number) =>
+    v > 0 ? `+$${formatearMontoRegional(v)}` : v < 0 ? `-$${formatearMontoRegional(Math.abs(v))}` : "$0";
+
   const bloqueResumenJugadas =
     listaTickets.length > 0
       ? listaTickets
@@ -650,18 +657,16 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
               detalle = `${mod} ${ej}`;
             }
             const montoStr = `$${formatearMontoRegional(Number(t.monto_concretado || 0))}`;
-            const ganador =
-              t.estado === "GANADOR_PROPONENTE"
-                ? `✅ Gana ${t.proponente_nombre}`
-                : t.estado === "GANADOR_ACEPTANTE"
-                ? `✅ Gana ${t.aceptante_nombre}`
-                : "🤝 Empate";
-            return `${idx + 1}) *${t.proponente_nombre}* vs *${t.aceptante_nombre}* · ${detalle} · *${montoStr}* (${ganador})`;
+            const j1 = t._jugador1 || t.proponente_nombre || "Jugador 1";
+            const j2 = t._jugador2 || t.aceptante_nombre || "Jugador 2";
+            const n1 = Number(t._netoJugador1 || 0);
+            const n2 = Number(t._netoJugador2 || 0);
+            return `${idx + 1}) *${j1}* ${detalle} *${j2}* *${montoStr}*\nTotal ${j1}: ${fmtNeto(n1)} / Total ${j2}: ${fmtNeto(n2)}`;
           })
           .join("\n")
       : "_Sin jugadas concretadas en esta carrera._";
 
-  const pizarraFormateada = numeros.map((n, i) => `${i + 1}º: #${n}`).join(" · ");
+  const pizarraFormateada = numeros.join(" · ");
   const prefijoRectificado = esRectificacion ? "🔄 *PIZARRA RECTIFICADA OFICIALMENTE*\n\n" : "";
 
   const lineasPositivos = positivos.length > 0 ? positivos.join("\n") : "_Sin saldos positivos en esta carrera_";
@@ -676,7 +681,7 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
       fecha: fechaStr,
       hipodromo,
       carrera: ordCarrera,
-      retirados: retiradosStr || "—",
+      retirados: retiradosStr || "Sin retiros",
       pizarra: pizarraFormateada,
       total_jugadas: listaTickets.length,
       resumen: bloqueResumenJugadas,
@@ -686,9 +691,9 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
     `${encabezadoGrupo(sala, "resultado")}\n` +
       `${fechaStr}\n` +
       `${hipodromo}, ${ordCarrera} Carrera\n` +
-      `Retirado: ${retiradosStr}\n` +
+      `Retirado: ${retiradosStr || "Sin retiros"}\n` +
       `📊 Pizarra Oficial: *${pizarraFormateada}*\n\n` +
-      `📑 RESUMEN DE LIQUIDACIÓN (${listaTickets.length} JUGADAS):\n` +
+      `*📑 Resumen de Liquidación (${listaTickets.length} Jugadas):*\n` +
       `${bloqueResumenJugadas}\n\n` +
       `🔄BALANCE TOTAL:\n\n` +
       `🟢 *POSITIVOS (+)*\n` +
@@ -696,7 +701,7 @@ export async function liquidarYSentenciarCarreraPlataforma(params: {
       `🔴 *NEGATIVOS (-)*\n` +
       `${lineasNegativos}`
   );
-  const textoResultado = `${prefijoRectificado}🏆 RESULTADO Y LIQUIDACIÓN OFICIAL\n${cuerpoResultado}`;
+  const textoResultado = `${prefijoRectificado}${cuerpoResultado}`;
 
   await supabaseAdmin.from("chat_mensajes").insert({
     grupo_id: sala.grupo_id,

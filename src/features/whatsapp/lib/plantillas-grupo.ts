@@ -100,7 +100,7 @@ export const PLANTILLAS_GRUPO_DEFAULT: PlantillaGrupoItem[] = [
     contenido:
       "{encabezado}\n{fecha}\n*{hipodromo}, {carrera} Carrera*\nRetirado: {retirados}\n" +
       "📊 Pizarra Oficial: *{pizarra}*\n\n" +
-      "📑 RESUMEN DE LIQUIDACIÓN ({total_jugadas} JUGADAS):\n{resumen}\n\n" +
+      "*📑 Resumen de Liquidación ({total_jugadas} Jugadas):*\n{resumen}\n\n" +
       "🔄BALANCE TOTAL:\n\n" +
       "🟢 *POSITIVOS (+)*\n{positivos}\n🔴 *NEGATIVOS (-)*\n{negativos}",
     variables: [
