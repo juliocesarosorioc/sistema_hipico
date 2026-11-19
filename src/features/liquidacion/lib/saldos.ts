@@ -88,8 +88,17 @@ function codigoTicketSalaP2P(nota: unknown): string {
   }
   if (!valor || typeof valor !== "object") return "";
   const obj = valor as Record<string, unknown>;
-  if (String(obj.origen ?? "").toUpperCase() !== "SALA_P2P") return "";
-  return String(obj.codigo_ticket ?? "").trim();
+  const origen = String(obj.origen ?? "").toUpperCase();
+  if (origen === "SALA_P2P") return String(obj.codigo_ticket ?? "").trim();
+  // Registro nuevo: la Sala concreta con las condiciones de Taquilla. El código
+  // viaja en `codigo_ticket` (y en `idempotencia` mientras se parchea la nota).
+  if (origen === "TAQUILLA") {
+    const codigo = String(obj.codigo_ticket ?? "").trim();
+    if (codigo) return codigo;
+    const idem = String(obj.idempotencia ?? "").trim();
+    return /^(?:TK-|SALA:)/i.test(idem) ? idem.replace(/^SALA:/i, "") : "";
+  }
+  return "";
 }
 
 export type LiquidarSaldosInput = {

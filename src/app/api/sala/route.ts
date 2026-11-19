@@ -1842,6 +1842,8 @@ export async function POST(req: Request) {
             sala,
             grupoId,
             condicionProponente: propMsg.condicion_proponente,
+            carreraAbierta: String((sala as any)?.estado_carrera || "").toLowerCase() === "abierta",
+            montoAConcretar: montoPedido,
           });
 
           // Consultar todos los tickets de la propuesta para mostrar "Van jugando por X" y el desglose ("Eddie jugó 43,50")
