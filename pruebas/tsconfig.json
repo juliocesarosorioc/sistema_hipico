@@ -69,6 +69,7 @@
     "./aval-limite.test.ts",
     "./orden-fifo-ticket.test.ts",
     "./segmentar-nombres-ejemplares.test.ts",
+    "./sincronizar-tickets-sala.test.ts",
     "./caballos-carga.test.ts",
     "./claves-carreras.test.ts",
     "./carreras-maestro.test.ts",

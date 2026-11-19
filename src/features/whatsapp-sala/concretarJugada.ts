@@ -95,7 +95,7 @@ export function mensajeJugaronCompleto(
   monto: number
 ): string {
   return limpiarEtiquetasProhibidas(
-    `✅ Jugaron: *${nombreJuega} Juega ${detalle} da ${nombreDa} $${formatearMontoRegional(monto)}*`
+    `✅ Jugaron: *${nombreJuega} Juega ${detalle} con $${formatearMontoRegional(monto)} da ${nombreDa}*`
   );
 }
 
@@ -842,6 +842,8 @@ export async function ejecutarAmpliacionCupo(params: {
       sala: contextoSala.sala,
       grupoId: contextoSala.grupoId,
       condicionProponente: propMsg.condicion_proponente,
+      carreraAbierta: contextoSala.carreraAbierta,
+      montoAConcretar: jugadoresAmpliados.reduce((acc, j) => acc + j.montoAdicional, 0),
     });
 
     await emitirBroadcastSala(contextoSala.salaId, "nuevo_mensaje", { salaId: contextoSala.salaId });
@@ -1981,11 +1983,13 @@ export async function concretarJugada(params: {
       }
     } catch {}
 
-    await sincronizarTicketsPropuestaATaquilla(supabaseAdmin, {
+    const registroTaquilla = await sincronizarTicketsPropuestaATaquilla(supabaseAdmin, {
       propuestaMsgId: propFresca.id,
       sala: contextoSala.sala,
       grupoId: contextoSala.grupoId,
       condicionProponente: propFresca.condicion_proponente,
+      carreraAbierta: contextoSala.carreraAbierta,
+      montoAConcretar: montoEfectivo,
     });
 
     const esConsigueProp =
@@ -2033,7 +2037,7 @@ export async function concretarJugada(params: {
     const riesgoDa = esConsigueProp ? riesgoProponente : riesgoAceptante;
 
     // Garantizar saldo_retenido y saldo_disponible exactos para proponente y aceptante y recortar propuestas abiertas restantes
-    if (proponenteRow && !proponenteRow.libre) {
+    if (proponenteRow && !proponenteRow.libre && !registroTaquilla.clientesJuegaCompensados.has(String(proponenteRow.id))) {
       const nuevoRetProp = Math.max(0, Number((Number(proponenteRow.saldo_retenido || 0) + riesgoProponente).toFixed(2)));
       const nuevoDispProp = Math.max(
         0,
@@ -2052,7 +2056,7 @@ export async function concretarJugada(params: {
     }
 
     const rowAcep = aceptanteFresco || cliente.rawCliente;
-    if (rowAcep && !rowAcep.libre) {
+    if (rowAcep && !rowAcep.libre && !registroTaquilla.clientesJuegaCompensados.has(String(cliente.id))) {
       const nuevoRetAcep = Math.max(0, Number((Number(rowAcep.saldo_retenido || 0) + riesgoAceptante).toFixed(2)));
       const nuevoDispAcep = Math.max(
         0,

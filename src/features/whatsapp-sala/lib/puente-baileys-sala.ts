@@ -652,6 +652,8 @@ export async function procesarMensajeEntranteWhatsApp(
           sala,
           grupoId,
           condicionProponente: propFresca.condicion_proponente,
+          carreraAbierta: String((sala as any)?.estado_carrera || "").toLowerCase() === "abierta",
+          montoAConcretar: montoConcretado,
         });
 
         // Consultar desglose completo de quienes van jugando esta propuesta

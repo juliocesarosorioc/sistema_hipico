@@ -12,6 +12,7 @@
  * activo e idempotencia por clave.
  */
 import { supabase } from "@/core/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverContraparteModalidad, USUARIOS_SISTEMA_MODALIDADES } from "@/features/liquidacion/lib/etiquetas-reporte";
 import { grupoDeVentaVigente, limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
 import { limpiarCacheClientes } from "@/features/clientes/lib/clientes";
@@ -61,6 +62,8 @@ export type VentaJugada = {
   clienteDadorRow?: { id: string | number; nombre: string; seudonimo?: string | null; grupo_id?: string | number | null } | null;
   /** Omitir disparo de eventos de ventana si se despachan al final del lote */
   omitirEventos?: boolean;
+  /** Cliente Supabase inyectado (service role) cuando la venta la dispara el bot. */
+  cliente?: SupabaseClient;
 };
 
 export type ResultadoVentaJugada = {
@@ -94,7 +97,8 @@ export function claveIdempotenciaJugada(): string {
 
 /** Emite el ticket y descuenta el saldo (todo o nada). */
 export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada> {
-  if (!supabase) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
+  const db = v.cliente ?? supabase;
+  if (!db) return { ok: false, error: "Sin credenciales Supabase (.env.local)." };
   const caballoLimpio = String(v.caballo ?? "").trim();
   if (!caballoLimpio || !/\d/.test(caballoLimpio)) {
     return {
@@ -136,7 +140,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
         }
       : null;
     if (!cRow) {
-      const { data } = await supabase
+      const { data } = await db
         .from("clientes")
         .select("id, nombre, seudonimo, grupo_id")
         .eq("id", v.clienteId)
@@ -145,7 +149,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
       if (data) {
         cRow = data;
       } else {
-        const { data: dataCualquiera } = await supabase
+        const { data: dataCualquiera } = await db
           .from("clientes")
           .select("id, nombre, seudonimo, grupo_id")
           .eq("id", v.clienteId)
@@ -159,7 +163,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
         // Si el cliente tiene otra fila independiente con el mismo nombre/seudónimo en `grupoEfectivo`, resolver esa fila
         const nomUpper = String(cRow.nombre || "").trim().toUpperCase();
         const seuUpper = String(cRow.seudonimo || "").trim().toUpperCase();
-        const { data: homonimosGrupo } = await supabase
+        const { data: homonimosGrupo } = await db
           .from("clientes")
           .select("id, nombre, seudonimo, grupo_id")
           .eq("grupo_id", grupoEfectivo);
@@ -175,7 +179,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
         } else {
           // Fallback a clientes_grupos donde grupo_id = grupoEfectivo
           try {
-            const { data: mem } = await supabase
+            const { data: mem } = await db
               .from("clientes_grupos")
               .select("cliente_id")
               .eq("grupo_id", grupoEfectivo)
@@ -210,7 +214,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
       : null;
   if (grupoEfectivo && dadorTexto && !["CASA", "BANCA", "SISTEMA"].includes(dadorTexto.toUpperCase())) {
     if (!dadorCliData) {
-      const { data: dadorRows } = await supabase
+      const { data: dadorRows } = await db
         .from("clientes")
         .select("id, nombre, seudonimo, grupo_id")
         .eq("grupo_id", grupoEfectivo)
@@ -220,7 +224,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
         dadorCliData = dadorRows[0];
       } else {
         const dUpper = dadorTexto.toUpperCase();
-        const { data: todosGrupo } = await supabase
+        const { data: todosGrupo } = await db
           .from("clientes")
           .select("id, nombre, seudonimo, grupo_id")
           .eq("grupo_id", grupoEfectivo);
@@ -246,7 +250,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
   let saldoAntesVenta: number | null = null;
   if (clienteIdEfectivo) {
     try {
-      let qPre = supabase
+      let qPre = db
         .from("clientes")
         .select("saldo_actual")
         .eq("id", clienteIdEfectivo);
@@ -260,7 +264,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     }
   }
 
-  const { data, error } = await supabase.rpc("club_vender_jugada", {
+  const { data, error } = await db.rpc("club_vender_jugada", {
     p_hipodromo: String(v.hipodromo ?? "").trim().toUpperCase(),
     p_fecha: v.fecha,
     p_carrera: Number(v.carrera) || 0,
@@ -299,7 +303,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     }
     if (Object.keys(patchTicket).length > 0) {
       try {
-        await supabase
+        await db
           .from("tickets_apuestas")
           .update(patchTicket as never)
           .eq("id", r.ticket_id as never);
@@ -332,7 +336,7 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
         saldoRpc != null &&
         Math.abs(saldoRpc - (saldoAntesVenta - montoNum)) < 0.02;
       if (rpcDesconto && saldoAntesVenta != null) {
-        let qUpdCli = supabase
+        let qUpdCli = db
           .from("clientes")
           .update({ saldo_actual: saldoAntesVenta })
           .eq("id", clienteIdEfectivo);
