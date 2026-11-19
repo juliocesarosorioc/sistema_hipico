@@ -74,6 +74,24 @@ import { limpiarCacheClientesVenta } from "@/features/grupos/lib/grupos";
 
 export { calcularEstadoCuentaCliente, calcularResumenContableCliente, calcularIncentivoCarreraCliente };
 
+/** Extrae el código de ticket de la Sala desde `nota_auditoria` (JSON o legado `SALA_P2P:`). */
+function codigoTicketSalaP2P(nota: unknown): string {
+  let valor: unknown = nota;
+  if (typeof valor === "string") {
+    const raw = valor.trim();
+    if (raw.startsWith("SALA_P2P:")) return raw.slice("SALA_P2P:".length).trim();
+    try {
+      valor = JSON.parse(raw);
+    } catch {
+      return "";
+    }
+  }
+  if (!valor || typeof valor !== "object") return "";
+  const obj = valor as Record<string, unknown>;
+  if (String(obj.origen ?? "").toUpperCase() !== "SALA_P2P") return "";
+  return String(obj.codigo_ticket ?? "").trim();
+}
+
 export type LiquidarSaldosInput = {
   hipodromo: string;
   carrera: number | string;
@@ -885,16 +903,14 @@ export async function aplicarLiquidacionSaldos(
 
   await Promise.all(updatesTickets);
 
-  // Sincronización con Sala P2P: si alguno de los tickets decididos provino de la Sala (`SALA_P2P:<codigo>`),
+  // Sincronización con Sala P2P: si alguno de los tickets decididos provino de la Sala,
   // liberar su `saldo_retenido` en `clientes` y marcar su estado en `chat_tickets_fifo` para evitar doble liquidación.
-  const ticketsSalaP2P = decidibles.filter((d) =>
-    String(d.fila.nota_auditoria ?? "").startsWith("SALA_P2P:")
-  );
+  const ticketsSalaP2P = decidibles.filter((d) => Boolean(codigoTicketSalaP2P(d.fila.nota_auditoria)));
   if (ticketsSalaP2P.length > 0) {
     try {
       const liberacionPorCliente = new Map<string, number>();
       for (const { fila, res } of ticketsSalaP2P) {
-        const codigoTicket = String(fila.nota_auditoria ?? "").slice("SALA_P2P:".length).trim();
+        const codigoTicket = codigoTicketSalaP2P(fila.nota_auditoria);
         const montoF = NUM(fila.monto_jugado);
         const jId = String(fila.cliente_juega_id ?? "").trim();
         const cId = String(fila.cliente_consigue_id ?? "").trim();

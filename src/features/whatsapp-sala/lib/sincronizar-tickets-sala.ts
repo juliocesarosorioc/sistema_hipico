@@ -52,6 +52,47 @@ function proponenteEsQuienJuega(accionProponente?: string | null): boolean {
   return acc !== "CONSIGO" && acc !== "CONSIGUE" && acc !== "DA" && acc !== "DOY" && acc !== "PIDE";
 }
 
+/** `nota_auditoria` es JSON en `tickets_apuestas`: el marcador vive como objeto. */
+function notaAuditoriaSala(codigoTicket: string): Record<string, string> {
+  return {
+    origen: "SALA_P2P",
+    codigo_ticket: String(codigoTicket || ""),
+  };
+}
+
+/** PostgREST devuelve `json` como texto: se lee con tolerancia a objeto/string. */
+function leerNotaSala(nota: unknown): { origen?: string; codigo_ticket?: string } {
+  let valor: unknown = nota;
+  if (typeof valor === "string") {
+    try {
+      valor = JSON.parse(valor);
+    } catch {
+      return {};
+    }
+  }
+  if (!valor || typeof valor !== "object") return {};
+  const obj = valor as Record<string, unknown>;
+  return {
+    origen: String(obj.origen ?? "").toUpperCase(),
+    codigo_ticket: String(obj.codigo_ticket ?? "").trim(),
+  };
+}
+
+async function idsTicketsSala(supabase: SupabaseClient, codigos: Set<string>): Promise<string[]> {
+  const { data } = await supabase
+    .from("tickets_apuestas")
+    .select("id, nota_auditoria")
+    .ilike("nota_auditoria", "%SALA_P2P%")
+    .limit(500);
+  return (data ?? [])
+    .filter((c: any) => {
+      const nota = leerNotaSala(c?.nota_auditoria);
+      return nota.origen === "SALA_P2P" && codigos.has(String(nota.codigo_ticket ?? ""));
+    })
+    .map((c: any) => c.id)
+    .filter(Boolean);
+}
+
 /**
  * Inserta de forma idempotente el ticket espejo en `tickets_apuestas` para cada
  * concreción de la Sala (`chat_tickets_fifo`), permitiendo que todos los reportes
@@ -104,14 +145,16 @@ export async function sincronizarTicketsPropuestaATaquilla(
       const monto = Number(t.monto_concretado || 0);
       const estadoTk = String(t.estado || "").toUpperCase();
       if (estadoTk === "EN_COLA" || estadoTk === "ANULADO" || monto <= 0) continue;
-      const marcador = `SALA_P2P:${t.codigo_ticket}`;
+      const marcador = notaAuditoriaSala(t.codigo_ticket);
 
-      const { data: existente } = await supabase
+      const { data: candidatos } = await supabase
         .from("tickets_apuestas")
-        .select("id, monto_jugado")
-        .eq("nota_auditoria", marcador)
-        .limit(1)
-        .maybeSingle();
+        .select("id, monto_jugado, nota_auditoria")
+        .ilike("nota_auditoria", `%${marcador.codigo_ticket}%`)
+        .limit(20);
+      const existente = (candidatos ?? []).find(
+        (c: any) => leerNotaSala(c?.nota_auditoria).codigo_ticket === marcador.codigo_ticket
+      );
 
       if (existente?.id) {
         if (Number(existente.monto_jugado || 0) !== monto) {
@@ -148,34 +191,40 @@ export async function sincronizarTicketsPropuestaATaquilla(
             : modBase;
       const caballo = normalizarCaballoTicket(t);
 
-      await supabase.from("tickets_apuestas").insert([
-        {
-          fecha_registro: new Date().toISOString(),
-          fecha_carrera: fechaCarrera,
-          hipodromo,
-          carrera,
-          nombre_jugada: nombreJugada,
-          caballo,
-          cantidad_tablas: 1,
-          monto_jugado: monto,
-          monto_decidido: 0,
-          premio_pagar: 0,
-          cliente_juega_id: clienteJuegaId,
-          cliente_juega_nombre: clienteJuegaNombre,
-          cliente_consigue_id: clienteConsigueId,
-          cliente_consigue_nombre: clienteConsigueNombre,
-          grupo_cobro_id: params.grupoId,
-          grupo_comision_id: params.grupoId,
-          comision_porcentaje: comisionPct,
-          comision_pagada: 0,
-          estado: "Pendiente",
-          anulada: false,
-          es_adelantada: false,
-          modalidad: propCanon ? "Jugadas a Premio" : "Jugadas de Puestos",
-          moneda: monedaGrupo,
-          nota_auditoria: marcador,
-        },
-      ]);
+      const { error: errorInsert } = await supabase
+        .from("tickets_apuestas")
+        .insert([
+          {
+            fecha_registro: new Date().toISOString(),
+            fecha_carrera: fechaCarrera,
+            hipodromo,
+            carrera,
+            nombre_jugada: nombreJugada,
+            caballo,
+            cantidad_tablas: 1,
+            monto_jugado: monto,
+            monto_decidido: 0,
+            premio_pagar: 0,
+            cliente_juega_id: clienteJuegaId,
+            cliente_juega_nombre: clienteJuegaNombre,
+            cliente_consigue_id: clienteConsigueId,
+            cliente_consigue_nombre: clienteConsigueNombre,
+            grupo_cobro_id: params.grupoId,
+            grupo_comision_id: params.grupoId,
+            comision_porcentaje: comisionPct,
+            comision_pagada: 0,
+            estado: "Pendiente",
+            anulada: false,
+            es_adelantada: false,
+            moneda: monedaGrupo,
+            nota_auditoria: marcador,
+          },
+        ])
+        .select("id");
+
+      if (errorInsert) {
+        console.warn("[sincronizar-tickets-sala] Error insertando espejo en tickets_apuestas:", errorInsert);
+      }
     }
   } catch (err) {
     console.warn("[sincronizar-tickets-sala] Error insertando espejo en tickets_apuestas:", err);
@@ -200,7 +249,7 @@ export async function actualizarTicketEspejoLiquidado(
 ): Promise<void> {
   if (!params.codigoTicket) return;
   try {
-    const marcador = `SALA_P2P:${params.codigoTicket}`;
+    const marcador = notaAuditoriaSala(params.codigoTicket);
     const esJuegaProponente = proponenteEsQuienJuega(params.accionProponente);
     const factorClienteJuega = esJuegaProponente ? params.factor : -params.factor;
     const ganoClienteJuega =
@@ -233,6 +282,20 @@ export async function actualizarTicketEspejoLiquidado(
       : Number((params.monto * absF).toFixed(2));
     const comisionPagada = esEmpate ? 0 : comision;
 
+    const { data: candidatos } = await supabase
+      .from("tickets_apuestas")
+      .select("id, nota_auditoria")
+      .ilike("nota_auditoria", `%${marcador.codigo_ticket}%`)
+      .limit(20);
+    const ids = (candidatos ?? [])
+      .filter((c: any) => {
+        const nota = leerNotaSala(c?.nota_auditoria);
+        return nota.origen === "SALA_P2P" && nota.codigo_ticket === marcador.codigo_ticket;
+      })
+      .map((c: any) => c.id)
+      .filter(Boolean);
+    if (!ids.length) return;
+
     await supabase
       .from("tickets_apuestas")
       .update({
@@ -241,7 +304,7 @@ export async function actualizarTicketEspejoLiquidado(
         monto_decidido: montoDecidido,
         comision_pagada: comisionPagada,
       })
-      .eq("nota_auditoria", marcador);
+      .in("id", ids);
   } catch (err) {
     console.warn("[sincronizar-tickets-sala] Error actualizando ticket liquidado:", err);
   }
@@ -254,9 +317,11 @@ export async function revertirTicketsEspejoSala(
   supabase: SupabaseClient,
   codigosTicket: string[]
 ): Promise<void> {
-  const marcadores = codigosTicket.filter(Boolean).map((c) => `SALA_P2P:${c}`);
-  if (marcadores.length === 0) return;
+  const codigos = new Set(codigosTicket.filter(Boolean).map((c) => String(c)));
+  if (codigos.size === 0) return;
   try {
+    const ids = await idsTicketsSala(supabase, codigos);
+    if (!ids.length) return;
     await supabase
       .from("tickets_apuestas")
       .update({
@@ -266,7 +331,7 @@ export async function revertirTicketsEspejoSala(
         comision_pagada: 0,
         anulada: false,
       })
-      .in("nota_auditoria", marcadores);
+      .in("id", ids);
   } catch (err) {
     console.warn("[sincronizar-tickets-sala] Error revirtiendo tickets espejo:", err);
   }
@@ -279,9 +344,11 @@ export async function anularTicketsEspejoSala(
   supabase: SupabaseClient,
   codigosTicket: string[]
 ): Promise<void> {
-  const marcadores = codigosTicket.filter(Boolean).map((c) => `SALA_P2P:${c}`);
-  if (marcadores.length === 0) return;
+  const codigos = new Set(codigosTicket.filter(Boolean).map((c) => String(c)));
+  if (codigos.size === 0) return;
   try {
+    const ids = await idsTicketsSala(supabase, codigos);
+    if (!ids.length) return;
     await supabase
       .from("tickets_apuestas")
       .update({
@@ -291,7 +358,7 @@ export async function anularTicketsEspejoSala(
         monto_decidido: 0,
         comision_pagada: 0,
       })
-      .in("nota_auditoria", marcadores);
+      .in("id", ids);
   } catch (err) {
     console.warn("[sincronizar-tickets-sala] Error anulando tickets espejo:", err);
   }
