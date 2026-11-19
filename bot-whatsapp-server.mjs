@@ -1576,6 +1576,77 @@ export async function ejecutarAjusteOperador(sala, groupJid, targetNombre, signo
 }
 
 // ============================================================================
+// CLIENTE HTTP CON COLA DE REINTENTOS Y BACKOFF PROGRESIVO
+// Reintenta únicamente ante errores de red (fetch failed, ECONNREFUSED, ETIMEDOUT)
+// o códigos de servidor 502/503/504 (típicos durante reinicios de PM2).
+// ============================================================================
+const CODIGOS_RED_REINTENTABLES = new Set(["ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND", "ECONNRESET", "EAI_AGAIN"]);
+const STATUS_HTTP_REINTENTABLES = new Set([502, 503, 504]);
+
+function esErrorRedReintentable(error) {
+  if (!error) return false;
+  const msg = String(error.message || error).toLowerCase();
+  if (
+    msg.includes("fetch failed") ||
+    msg.includes("network") ||
+    msg.includes("econnrefused") ||
+    msg.includes("etimedout") ||
+    msg.includes("terminated")
+  ) {
+    return true;
+  }
+  if (error.code && CODIGOS_RED_REINTENTABLES.has(String(error.code).toUpperCase())) {
+    return true;
+  }
+  if (error.cause) {
+    return esErrorRedReintentable(error.cause);
+  }
+  return false;
+}
+
+async function fetchConReintento(url, options = {}, maxIntentos = 3) {
+  const delays = [1000, 2500];
+  let ultimoError = null;
+
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    try {
+      const res = await fetch(url, options);
+      if (STATUS_HTTP_REINTENTABLES.has(res.status)) {
+        if (intento < maxIntentos) {
+          const delay = delays[intento - 1] || 2500;
+          console.warn(
+            `[Bot WhatsApp] ⚠️ HTTP ${res.status} al llamar ${url}. Reintentando (${intento}/${maxIntentos}) en ${delay}ms...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+        console.warn(`[Bot WhatsApp] ❌ HTTP ${res.status} persistente en ${url} tras ${maxIntentos} intentos.`);
+      }
+      return res;
+    } catch (err) {
+      ultimoError = err;
+      const reintentable = esErrorRedReintentable(err);
+      if (reintentable && intento < maxIntentos) {
+        const delay = delays[intento - 1] || 2500;
+        console.warn(
+          `[Bot WhatsApp] ⚠️ Error de red (${err?.message || err}) al llamar ${url}. Reintentando (${intento}/${maxIntentos}) en ${delay}ms...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      if (intento >= maxIntentos) {
+        console.warn(
+          `[Bot WhatsApp] ❌ Fallo definitivo tras ${maxIntentos} intentos al llamar ${url}:`,
+          err?.message || err
+        );
+      }
+      throw err;
+    }
+  }
+  throw ultimoError;
+}
+
+// ============================================================================
 // PROCESAMIENTO EN VIVO DE MENSAJES ENTRANTES DE WHATSAPP
 // ============================================================================
 
@@ -1766,15 +1837,20 @@ async function manejarMensajeEntrante(msg) {
           quoted_msg_id: quotedMsgId,
         };
 
-        const r = await fetch(`${NEXT_API_BASE}/api/whatsapp-sala/procesar-unificado`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-internal-bot-secret": INTERNAL_BOT_SECRET,
-          },
-          body: JSON.stringify(payload),
-        });
-        return r.json().catch(() => null);
+        try {
+          const r = await fetchConReintento(`${NEXT_API_BASE}/api/whatsapp-sala/procesar-unificado`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-bot-secret": INTERNAL_BOT_SECRET,
+            },
+            body: JSON.stringify(payload),
+          });
+          return r ? await r.json().catch(() => null) : null;
+        } catch (err) {
+          console.warn("[Bot WhatsApp] Error al procesar mensaje en API:", err?.message || err);
+          return null;
+        }
       })
     );
 

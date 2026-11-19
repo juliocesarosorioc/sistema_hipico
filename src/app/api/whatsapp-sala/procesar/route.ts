@@ -302,7 +302,35 @@ async function asegurarCarreraActivaSala(sala: any): Promise<string | null> {
         .limit(1)
         .maybeSingle();
       if (error) console.error("[CONCRETAR_ERROR] buscar carrera activa:", error);
-      return data && esUuidCarreraValido((data as any).id) ? String((data as any).id) : null;
+      if (data && esUuidCarreraValido((data as any).id)) return String((data as any).id);
+
+      // Buscar última carrera abierta para este hipódromo
+      const { data: dataAbierta, error: errAbierta } = await supabaseAdmin
+        .from("carreras")
+        .select("id")
+        .ilike("hipodromo", hipodromo)
+        .ilike("estado", "abierta")
+        .order("fecha", { ascending: false })
+        .order("carrera", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!errAbierta && dataAbierta && esUuidCarreraValido((dataAbierta as any).id)) {
+        return String((dataAbierta as any).id);
+      }
+
+      // Buscar cualquier última carrera abierta en el sistema
+      const { data: anyAbierta, error: errAny } = await supabaseAdmin
+        .from("carreras")
+        .select("id")
+        .ilike("estado", "abierta")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!errAny && anyAbierta && esUuidCarreraValido((anyAbierta as any).id)) {
+        return String((anyAbierta as any).id);
+      }
+
+      return null;
     };
 
     let carreraId = await buscar();
@@ -2400,17 +2428,21 @@ export async function POST(req: Request) {
         const clienteIdLid = cliente.id;
         const grupoIdLid = cliente.grupo_id;
         cliente.whatsapp_lid = lidNuevo;
+        cliente.whatsapp_vinculado = true;
         void (async () => {
           try {
             let qLid = supabaseAdmin
               .from("clientes")
-              .update({ whatsapp_lid: lidNuevo, updated_at: new Date().toISOString() })
+              .update({
+                whatsapp_lid: lidNuevo,
+                whatsapp_vinculado: true,
+                updated_at: new Date().toISOString(),
+              })
               .eq("id", clienteIdLid);
             if (grupoIdLid) qLid = qLid.eq("grupo_id", grupoIdLid);
-            const { error: errLid } = await qLid;
-            if (errLid) console.error("[LID_AUTOGUARDADO_ERROR]", errLid);
-          } catch (e) {
-            console.error("[LID_AUTOGUARDADO_ERROR]", e);
+            await qLid;
+          } catch {
+            // Silencioso para que un eventual conflicto no interrumpa el procesamiento de la jugada
           }
         })();
       } else if (participantJid.endsWith("@s.whatsapp.net") && cliente.whatsapp_jid !== participantJid) {
@@ -3788,6 +3820,17 @@ export async function POST(req: Request) {
             }
           );
           resRpcData = resRpc;
+          if (errRpc || (resRpc as any)?.ok === false) {
+            console.error("[RPC_CONCRETAR_ERR]", {
+              errRpc,
+              resRpc,
+              p_grupo_id: grupoId,
+              p_sala_id: salaId,
+              p_propuesta_msg_id: propFresca.id,
+              p_aceptante_id: cliente.id,
+              p_monto_pedido: montoEfectivo,
+            });
+          }
           if (errRpc) errorConcretar = errRpc;
           if (!errRpc && resRpc && (resRpc as any).ok === false && (resRpc as any).nada_aqui !== true) {
             errorConcretar = resRpc;
@@ -3834,8 +3877,9 @@ export async function POST(req: Request) {
           if (!errRpc && resRpc && (resRpc as any).ok !== false) {
             rpcExitoso = true;
           }
-        } catch (error) {
-          errorConcretar = error;
+        } catch (exRpc) {
+          console.error("[RPC_CONCRETAR_CATCH]", exRpc);
+          errorConcretar = exRpc;
           rpcExitoso = false;
         }
 
