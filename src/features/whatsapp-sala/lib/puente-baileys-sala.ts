@@ -480,10 +480,22 @@ export async function procesarMensajeEntranteWhatsApp(
             p_aceptante_id: cliente.id,
             p_monto_pedido: montoConcretado,
           });
+          if (errRpc || (resRpc as any)?.ok === false) {
+            console.error("[RPC_CONCRETAR_ERR]", {
+              errRpc,
+              resRpc,
+              p_grupo_id: grupoId,
+              p_sala_id: salaId,
+              p_propuesta_msg_id: propFresca.id,
+              p_aceptante_id: cliente.id,
+              p_monto_pedido: montoConcretado,
+            });
+          }
           if (!errRpc && resRpc && (resRpc as any).ok !== false) {
             rpcExitoso = true;
           }
-        } catch {
+        } catch (exRpc) {
+          console.error("[RPC_CONCRETAR_CATCH]", exRpc);
           rpcExitoso = false;
         }
 
