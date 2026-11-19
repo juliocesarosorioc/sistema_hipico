@@ -21,6 +21,9 @@ export type PantallaLoginProps = {
   modoPortal?: boolean;
   avisoExterno?: string | null;
   onLoginPortalExitoso?: (sesion: SesionPortal) => void;
+  /** Muestra el formulario como modal incrustado (portada) con botón de cierre. */
+  incrustado?: boolean;
+  onCerrar?: () => void;
 };
 
 /**
@@ -33,7 +36,13 @@ export type PantallaLoginProps = {
  *  - El bloqueo vale para TODOS los usuarios, sin atajos por rol.
  */
 export default function PantallaLogin(props: PantallaLoginProps = {}) {
-  const { modoPortal = false, avisoExterno = null, onLoginPortalExitoso } = props;
+  const {
+    modoPortal = false,
+    avisoExterno = null,
+    onLoginPortalExitoso,
+    incrustado = false,
+    onCerrar,
+  } = props;
   const router = useRouter();
   const iniciarSesion = useAuthStore((s) => s.iniciarSesion);
   const modoOperador = useAuthStore((s) => s.modoOperador);
@@ -316,12 +325,31 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
 
   return (
     <main
-      className="flex min-h-screen w-full items-center justify-center overflow-x-hidden bg-slate-900 px-3 py-6 font-sans sm:px-4 sm:py-10"
-      style={{
-        backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')",
-      }}
+      className={
+        incrustado
+          ? "flex w-full items-center justify-center px-1 py-2 font-sans sm:px-2"
+          : "flex min-h-screen w-full items-center justify-center overflow-x-hidden bg-slate-900 px-3 py-6 font-sans sm:px-4 sm:py-10"
+      }
+      style={
+        incrustado
+          ? undefined
+          : {
+              backgroundImage:
+                "url('https://www.transparenttextures.com/patterns/cubes.png')",
+            }
+      }
     >
-      <div className="w-full max-w-md min-w-0 rounded-2xl border border-slate-800 bg-white p-4 shadow-2xl sm:p-8">
+      <div className="relative w-full max-w-md min-w-0 rounded-2xl border border-slate-800 bg-white p-4 shadow-2xl sm:p-8">
+        {incrustado && onCerrar ? (
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="absolute right-3 top-3 z-10 rounded-full bg-slate-100 px-2.5 py-1 text-sm font-bold text-slate-600 hover:bg-slate-200"
+            aria-label="Cerrar"
+          >
+            ✕
+          </button>
+        ) : null}
         <div className="mb-6 text-center">
           <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-600 text-2xl text-white shadow-lg">
             🐎
@@ -505,7 +533,7 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
             </p>
           ) : null}
 
-          
+
           {/* Verificación de seguridad Anti-Bot reCAPTCHA Oficial con Imágenes */}
           <div className="my-3 flex w-full flex-col items-center justify-center space-y-1.5">
             <RecaptchaWidget
@@ -571,13 +599,15 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
                 <span>¿No tienes cuenta? Solicitar Registro</span>
               </button>
 
-              <Link
-                href="/comercial"
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
-              >
-                <span>🌐</span>
-                <span>Ver Portal Comercial & Parámetros</span>
-              </Link>
+              {!incrustado ? (
+                <Link
+                  href="/"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
+                >
+                  <span>🌐</span>
+                  <span>Volver a la página principal</span>
+                </Link>
+              ) : null}
           </div>
         </form>
 

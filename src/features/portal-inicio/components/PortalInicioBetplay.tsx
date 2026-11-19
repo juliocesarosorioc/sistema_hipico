@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTema } from "@/shared/hooks/useTema";
 import { SelectorTemas } from "@/shared/components/ui/SelectorTemas";
-import { ModalLoginRapido } from "@/features/auth/components/ModalLoginRapido";
+import PantallaLogin from "@/features/auth/components/PantallaLogin";
 import { ModalRegistroUsuario } from "@/features/auth/components/ModalRegistroUsuario";
 import { useAuthStore } from "@/shared/store/useAuthStore";
 
@@ -153,6 +153,7 @@ export function PortalInicioBetplay() {
   const [modalRegistroAbierto, setModalRegistroAbierto] = useState(false);
   const [faqAbierto, setFaqAbierto] = useState<number | null>(0);
   const [terminosAbiertos, setTerminosAbiertos] = useState(false);
+  const [avisoLogin, setAvisoLogin] = useState<string | null>(null);
 
   // Auto-play del carrusel de banners
   useEffect(() => {
@@ -160,6 +161,23 @@ export function PortalInicioBetplay() {
       setSlideActivo((prev) => (prev + 1) % BANNERS.length);
     }, 5500);
     return () => clearInterval(timer);
+  }, []);
+
+  // Entrada unificada: si llega desde /login o con motivo/sala, abrir acceso aquí.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const motivo = params.get("motivo");
+    const sala = params.get("sala");
+    const acceder = params.get("acceder");
+    if (motivo === "sin-accesos") {
+      setAvisoLogin(
+        "Tu usuario ingresó, pero no tiene accesos asignados en esta sala. Contacta al administrador."
+      );
+      setModalLoginAbierto(true);
+    } else if (sala || acceder === "1") {
+      setModalLoginAbierto(true);
+    }
   }, []);
 
   const slide = BANNERS[slideActivo];
@@ -1071,13 +1089,39 @@ export function PortalInicioBetplay() {
       </footer>
 
       {/* =========================================================================
-          12. MODALES INTEGRADOS (LOGIN RÁPIDO & REGISTRO CON PRUEBA DE 2 SEMANAS)
+          12. MODALES INTEGRADOS (ACCESO & REGISTRO CON PRUEBA DE 2 SEMANAS)
           ========================================================================= */}
-      <ModalLoginRapido
-        abierto={modalLoginAbierto}
-        onCerrar={() => setModalLoginAbierto(false)}
-        onAbrirRegistro={() => setModalRegistroAbierto(true)}
-      />
+      {modalLoginAbierto && (
+        <div
+          className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/75 p-3 backdrop-blur-md sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setModalLoginAbierto(false);
+          }}
+        >
+          <div className="w-full max-w-xl py-2 sm:py-4">
+            <PantallaLogin
+              incrustado
+              avisoExterno={avisoLogin}
+              onCerrar={() => setModalLoginAbierto(false)}
+            />
+            <div className="mt-3 rounded-xl border border-slate-700/70 bg-slate-900/80 px-4 py-3 text-center text-xs text-slate-300">
+              ¿No tienes una cuenta aún?{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setModalLoginAbierto(false);
+                  setModalRegistroAbierto(true);
+                }}
+                className="font-bold text-amber-400 hover:underline"
+              >
+                Regístrate con prueba de 2 semanas →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ModalRegistroUsuario
         abierto={modalRegistroAbierto}

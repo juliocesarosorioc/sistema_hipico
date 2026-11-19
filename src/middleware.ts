@@ -10,14 +10,15 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 
 /**
  * Middleware de protección de rutas:
- * - NINGUNA ruta se sirve sin sesión, excepto /login.
+ * - Entrada pública única recomendada: `/` (bienvenida/publicidad + acceso).
+ * - `/login` y `/comercial` redirigen a `/` para evitar accesos duplicados.
  * - Todas las respuestas protegidas llevan cabeceras anti-caché para anular
  *   el BFCache (botón "Atrás" del navegador).
  * - La lista de rutas y capacidades sale del REGISTRO MAESTRO.
  */
 
 const ES_PUBLICA = (p: string) =>
-  p === "/login" ||
+  p === "/" ||
   p === "/verificacion" ||
   p === "/reset-password" ||
   p === "/api/ip" ||
@@ -98,6 +99,13 @@ export function middleware(req: NextRequest) {
     return sinCache(new NextResponse("Not Found", { status: 404 }));
   }
 
+  // Entrada única: `/login` y `/comercial` apuntan siempre a la portada.
+  if (pathname === "/login" || pathname === "/comercial") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/";
+    return sinCache(NextResponse.redirect(url));
+  }
+
   if (ES_PUBLICA(pathname)) return sinCache(NextResponse.next());
 
   const usuario = req.cookies.get("hipico_usuario")?.value ?? "";
@@ -114,16 +122,16 @@ export function middleware(req: NextRequest) {
   );
 
   if (!tieneSesion && !ES_SERVICIO_INTERNO(pathname)) {
-    return irA("/login");
+    return irA("/");
   }
 
-  if (acceso === "sin") return irA("/login", "sin-accesos");
+  if (acceso === "sin") return irA("/", "sin-accesos");
 
   if (ES_SERVICIO_INTERNO(pathname)) return sinCache(NextResponse.next());
 
   if (esUsuarioPrincipal(usuario)) return sinCache(NextResponse.next());
 
-  if (!perfil || !crudo || !usuario) return irA("/login");
+  if (!perfil || !crudo || !usuario) return irA("/");
 
   let permisos: Set<string>;
   try {
@@ -149,7 +157,7 @@ export function middleware(req: NextRequest) {
 
   if (!rutaPermitida(pathname, permisos)) {
     const destino = primeraRutaPermitida(permisos);
-    if (!destino) return irA("/login", "sin-accesos");
+    if (!destino) return irA("/", "sin-accesos");
     return irA(destino);
   }
 

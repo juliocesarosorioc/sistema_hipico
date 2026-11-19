@@ -1,13 +1,14 @@
 {
-  "name": "Sala de Juegos · Sistema Hípico",
-  "short_name": "Sala de Juegos",
-  "description": "Sala de juegos oficial hípica P2P en tiempo real con Agente IA Autónomo.",
-  "start_url": "/sala",
+  "id": "/",
+  "name": "Sistema Hípico",
+  "short_name": "Sistema Hípico",
+  "description": "Portal oficial y acceso al Sistema Hípico: carreras, tablas, marcas, remates y gestión en tiempo real.",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0b141a",
-  "theme_color": "#008069",
+  "background_color": "#090d16",
+  "theme_color": "#00a884",
   "icons": [
     {
       "src": "/icon-192x192.png",
