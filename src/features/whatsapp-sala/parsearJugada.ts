@@ -36,7 +36,7 @@ import type { ContextoSala, ClienteResuelto, JugadaParseada } from "./types";
 export const AVISO_REDACCION_GRUPO = "⚠️¡Por favor, verificar redacción! ¡Gracias!";
 export const RE_MONTO_INPUT = "(?:\\d+(?:[\\.,]\\d+)*\\s*(?:k|mil)?)";
 export const COMANDO_OPERADOR_EXACTO =
-  /^!?(?:abrir|abierta|cerrar|cerrad[ao]|pizarra|rectificar|plano|hip[óo]dromo|retirar|recargar|aval)(?:\s|$)/i;
+  /^!?(?:abrir|abierta|cerrar|cerrad[ao]|partida|corriendo|pizarra|rectificar|plano|hip[óo]dromo|retirar|recargar|aval)(?:\s|$)/i;
 
 export function sanitizarTexto(str: unknown): string {
   if (typeof str !== "string") return "";
@@ -64,7 +64,7 @@ export function detectarIntencionRapida(texto: string, quotedMsgId?: string | nu
   const esConsultaCuenta = /^(?:!?(?:cuenta|mi\s+cuenta|resumen|mi\s+resumen|estado\s+de\s+cuenta))$/i.test(textoUsuarioLimpio);
   const esComandoSaldosAdmin = /^(?:!?(?:saldos|ver\s+saldos|lista\s+saldos|todos\s+los\s+saldos))$/i.test(textoUsuarioLimpio);
   const esComandoPlano = /^(?:!?(?:plano|prejugadas))$/i.test(textoUsuarioLimpio);
-  const esComandoCerrar = /^(?:!?(?:cerrar(?:\s+carrera)?|cerrada|cerrado|trancar|no\s+va\s+m[aá]s))$/i.test(textoUsuarioLimpio);
+  const esComandoCerrar = /^(?:!?(?:cerrar(?:\s+carrera)?|cerrad[ao]|trancar|no\s+va\s+m[aá]s|partida|corriendo))$/i.test(textoUsuarioLimpio);
   const matchAbrirComando = textoUsuarioLimpio.match(/^(?:!)?(?:abrir|abierta)(?:\s+carrera)?(?:\s+(.+?))?(?:\s+(?:c(?:arrera)?\s*|#\s*)?(\d{1,2}))?$/i);
   const matchHipodromoComando = textoUsuarioLimpio.match(/^!?hip[óo]dromo\s+(.+)$/i);
   const matchRetirarCarreraComando = textoUsuarioLimpio.match(/^!?retirar\s+(.+)$/i);
@@ -519,7 +519,7 @@ export async function manejarIntencionComando(params: {
   }
 
   // 7. CIERRE DE CARRERA
-  const esComandoCerrar = /^(?:!?(?:cerrar(?:\s+carrera)?|cerrada|cerrado|trancar|no\s+va\s+m[aá]s))$/i.test(textoUsuarioLimpio);
+  const esComandoCerrar = /^(?:!?(?:cerrar(?:\s+carrera)?|cerrad[ao]|trancar|no\s+va\s+m[aá]s|partida|corriendo))$/i.test(textoUsuarioLimpio);
   if (esComandoCerrar) {
     const esOp =
       await verificarOperador();

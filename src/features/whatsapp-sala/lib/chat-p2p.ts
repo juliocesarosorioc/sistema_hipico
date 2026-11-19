@@ -324,7 +324,7 @@ export function detectarComandoOperador(texto: string): ComandoOperadorDetectado
   }
 
   // 2. Cerrada
-  if (/^cerrada$|^cierra\s+carrera$|^cerrar\s+carrera$/i.test(t)) {
+  if (/^(?:cerrad[ao]|cerrar(?:\s+carrera)?|cierra\s+carrera|partida|corriendo)$/i.test(t)) {
     return { tipo: "CERRAR_CARRERA" };
   }
 
