@@ -21,6 +21,8 @@ export type PantallaLoginProps = {
   modoPortal?: boolean;
   avisoExterno?: string | null;
   onLoginPortalExitoso?: (sesion: SesionPortal) => void;
+  incrustado?: boolean;
+  onCerrar?: () => void;
 };
 
 /**
@@ -33,7 +35,7 @@ export type PantallaLoginProps = {
  *  - El bloqueo vale para TODOS los usuarios, sin atajos por rol.
  */
 export default function PantallaLogin(props: PantallaLoginProps = {}) {
-  const { modoPortal = false, avisoExterno = null, onLoginPortalExitoso } = props;
+  const { modoPortal = false, avisoExterno = null, onLoginPortalExitoso, incrustado = false, onCerrar } = props;
   const router = useRouter();
   const iniciarSesion = useAuthStore((s) => s.iniciarSesion);
   const modoOperador = useAuthStore((s) => s.modoOperador);
@@ -314,14 +316,18 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
     }
   };
 
-  return (
-    <main
-      className="flex min-h-screen w-full items-center justify-center overflow-x-hidden bg-slate-900 px-3 py-4 font-sans sm:px-4 sm:py-6"
-      style={{
-        backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')",
-      }}
-    >
-      <div className="w-full max-w-md min-w-0 rounded-2xl border border-slate-800 bg-white p-4 shadow-2xl sm:p-6">
+  const tarjeta = (
+      <div className="relative mx-auto w-full max-w-md min-w-0 rounded-2xl border border-slate-800 bg-white p-4 shadow-2xl sm:p-6">
+        {incrustado && onCerrar ? (
+          <button
+            type="button"
+            onClick={onCerrar}
+            aria-label="Cerrar acceso al sistema"
+            className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+          >
+            ✕
+          </button>
+        ) : null}
         <div className="mb-4 text-center">
           <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-600 text-xl text-white shadow-lg">
             🐎
@@ -592,7 +598,22 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
           </p>
         </div>
       </div>
+  );
 
+  return (
+    <>
+      {incrustado ? (
+        tarjeta
+      ) : (
+        <main
+          className="flex min-h-screen w-full items-center justify-center overflow-x-hidden bg-slate-900 px-3 py-4 font-sans sm:px-4 sm:py-6"
+          style={{
+            backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')",
+          }}
+        >
+          {tarjeta}
+        </main>
+      )}
       <ModalRegistroUsuario
         abierto={modalRegistroAbierto}
         onCerrar={() => setModalRegistroAbierto(false)}
@@ -600,6 +621,6 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
           setUsuario(usr);
         }}
       />
-    </main>
+    </>
   );
 }
