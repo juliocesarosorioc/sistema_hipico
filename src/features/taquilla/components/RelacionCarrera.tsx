@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CLUB_NOMBRE, waLink } from "@/features/whatsapp/lib/whatsapp";
 import { nombreHipodromoParaMostrar } from "@/features/hipodromos/lib/nombre";
 import {
@@ -8,123 +8,146 @@ import {
   relacionJugadas,
   type MetaCarrera,
 } from "@/features/impresion/lib/reportGenerator";
+import type { ContextoCarreraTaquilla } from "@/features/taquilla/components/BetSlip";
+import type { TicketCarreraRow } from "@/features/taquilla/lib/tickets-carrera";
 
 const toast = (msg: string, tipo: "success" | "warning" | "error" | "info" = "info") =>
   window.dispatchEvent(new CustomEvent("toast", { detail: { msg, tipo } }));
+
+type Props = {
+  /** Contexto activo de la carrera (se sincroniza con la barra de carga). */
+  contexto?: ContextoCarreraTaquilla;
+  /** Tickets vivos de la carrera (para conteo/preview de disponibilidad). */
+  ticketsBD?: TicketCarreraRow[];
+};
 
 /**
  * "Copiar Relación": arma la Relación de Jugadas (pre-carrera) de la carrera
  * registrada en tickets_apuestas con su modelo Juega/Consigue, y la copia al
  * portapapeles o la abre en WhatsApp con el pie estricto.
  */
-export function RelacionCarrera() {
+export function RelacionCarrera({ contexto, ticketsBD }: Props) {
   const [hipodromo, setHipodromo] = useState("");
   const [carrera, setCarrera] = useState("");
   const [retirados, setRetirados] = useState("");
   const [trabajando, setTrabajando] = useState(false);
 
+  // Sincroniza con la carrera activa para reflejar las jugadas (incluidas las de Sala).
+  useEffect(() => {
+    if (!contexto) return;
+    if (contexto.hipodromo) setHipodromo(String(contexto.hipodromo).toUpperCase());
+    if (contexto.carrera) setCarrera(String(contexto.carrera));
+  }, [contexto?.hipodromo, contexto?.carrera]);
+
+  const registrados = useMemo(() => (ticketsBD ?? []).filter(Boolean).length, [ticketsBD]);
+
   const armar = async (): Promise<string> => {
     const hip = hipodromo.trim().toUpperCase();
-    const car = carrera.trim();
-    if (!hip || !car) {
-      toast("Indica Hipódromo y N° de Carrera.", "warning");
-      return "";
+    const car = carrera.trim() || "1";
+    if (!hip) {
+      toast("Indicá el hipódromo de la carrera.", "warning");
+      throw new Error("hipódromo vacío");
     }
+    const jugadas = await cargarJugadasDeCarrera({
+      hipodromo: hip,
+      carrera: car,
+      soloPendientes: true,
+    });
+    if (jugadas.length === 0) {
+      toast("No hay jugadas pendientes registradas para esa carrera.", "info");
+    }
+    const meta: MetaCarrera = {
+      grupo: CLUB_NOMBRE,
+      fecha: contexto?.fecha ? new Date(`${contexto.fecha}T12:00:00`) : new Date(),
+      hipodromo: nombreHipodromoParaMostrar(hip),
+      carrera: car,
+      retirados: retirados.trim() || undefined,
+    };
+    return relacionJugadas(meta, jugadas);
+  };
+
+  const copiar = async () => {
     setTrabajando(true);
     try {
-      const jugadas = await cargarJugadasDeCarrera({
-        hipodromo: hip,
-        carrera: car,
-        soloPendientes: true,
-      });
-      if (jugadas.length === 0) {
-        toast("No hay jugadas pendientes para esta carrera.", "warning");
-        return "";
-      }
-      const meta: MetaCarrera = {
-        grupo: CLUB_NOMBRE,
-        hipodromo: nombreHipodromoParaMostrar(hip),
-        carrera: car,
-        retirados: retirados.trim(),
-      };
-      return relacionJugadas(meta, jugadas);
+      const txt = await armar();
+      await navigator.clipboard.writeText(txt);
+      toast("Relación de Jugadas copiada.", "success");
+    } catch {
+      /* toast ya mostrado si aplica */
     } finally {
       setTrabajando(false);
     }
   };
 
-  const copiar = async () => {
-    const texto = await armar();
-    if (!texto) return;
+  const abrirWhatsApp = async () => {
+    setTrabajando(true);
     try {
-      await navigator.clipboard.writeText(texto);
-      toast("Relación de jugadas copiada al portapapeles.", "success");
+      const txt = await armar();
+      window.open(waLink("", txt), "_blank", "noopener,noreferrer");
     } catch {
-      toast("No se pudo copiar la relación.", "error");
+      /* toast ya mostrado si aplica */
+    } finally {
+      setTrabajando(false);
     }
-  };
-
-  const abrir = async () => {
-    const texto = await armar();
-    if (!texto) return;
-    window.open(waLink("", texto), "_blank");
-    toast("WhatsApp abierto con la relación.", "success");
   };
 
   return (
     <div className="rounded-2xl border border-line bg-surface p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-600">
-          🧾 Copiar Relación (jugadas de la carrera)
-        </h3>
-      </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
-          Hipódromo
+      <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-600">
+        📋 Relación de Jugadas (pre-carrera)
+      </h3>
+      <p className="mb-3 text-[11px] text-slate-500">
+        Genera la relación a partir de las jugadas registradas en la carrera (manuales y
+        concretadas en Sala).{" "}
+        {registrados > 0 ? (
+          <span className="font-semibold text-slate-700">Registradas en esta carrera: {registrados}.</span>
+        ) : null}
+      </p>
+
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold text-slate-500">Hipódromo</span>
           <input
             value={hipodromo}
             onChange={(e) => setHipodromo(e.target.value)}
-            placeholder="La Rinconada"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-bold normal-case text-slate-900 placeholder:font-normal"
+            placeholder="LA RINCONADA"
+            className="h-8 w-44 rounded-lg border border-line bg-white px-2 text-xs text-slate-700"
           />
         </label>
-        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
-          Carrera N°
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold text-slate-500">Carrera</span>
           <input
             value={carrera}
             onChange={(e) => setCarrera(e.target.value)}
-            type="number"
-            min={1}
-            placeholder="4"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-right text-xs font-bold text-slate-900"
+            placeholder="1"
+            className="h-8 w-16 rounded-lg border border-line bg-white px-2 text-xs text-slate-700"
           />
         </label>
-        <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">
-          Retirados
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold text-slate-500">Retirados</span>
           <input
             value={retirados}
             onChange={(e) => setRetirados(e.target.value)}
-            placeholder="2, 5 → NO HUBO si vacío"
-            className="rounded-lg border border-line bg-surface px-2.5 py-2 text-[11px] font-semibold text-slate-900"
+            placeholder="NINGUNO"
+            className="h-8 w-36 rounded-lg border border-line bg-white px-2 text-xs text-slate-700"
           />
         </label>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
+
         <button
           type="button"
-          onClick={copiar}
+          onClick={() => void copiar()}
           disabled={trabajando}
-          className="rounded-lg bg-primary-600 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-white transition-colors hover:bg-primary-700 disabled:opacity-50"
+          className="h-8 rounded-lg border border-primary-500/30 bg-primary-50 px-3 text-[11px] font-bold text-primary-700 hover:bg-primary-100 disabled:opacity-60"
         >
-          {trabajando ? "Generando…" : "📋 Copiar Relación"}
+          Copiar relación
         </button>
         <button
           type="button"
-          onClick={abrir}
+          onClick={() => void abrirWhatsApp()}
           disabled={trabajando}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+          className="h-8 rounded-lg bg-emerald-600 px-3 text-[11px] font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
         >
-          💬 Abrir WhatsApp
+          WhatsApp
         </button>
       </div>
     </div>

@@ -215,6 +215,8 @@ const clientes = [
     codigo_ticket: "TK-E23B4EA9",
     idempotencia: "TK-E23B4EA9",
     fecha_carrera: "2026-11-23",
+    sala_id: "6cafa9e9-d6d4-4ff2-9b31-36ad176cdd7b",
+    origen_sala: "SALA_P2P",
   });
   eq("monto", fila.monto_jugado, 1000);
   eq("jugador", fila.cliente_juega_nombre, "SHAFLAN");

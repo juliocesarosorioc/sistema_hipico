@@ -31,6 +31,10 @@ import {
   liquidarYSentenciarCarreraPlataforma,
 } from "./accionesAdmin";
 import { cerrarParadasAbiertasDeSala } from "./concretarJugada";
+import {
+  cargarContextoEstructuraSala,
+  estructurarLineasSala,
+} from "@/features/whatsapp-sala/lib/estructurar-carga-sala";
 import type { ContextoSala, ClienteResuelto, JugadaParseada } from "./types";
 
 export const AVISO_REDACCION_GRUPO = "⚠️¡Por favor, verificar redacción! ¡Gracias!";
@@ -1177,6 +1181,78 @@ export async function parsearJugada(params: {
     16,
     nombreJugador
   );
+
+  // Fallback alineado a Carga Rápida: si el parser pedagógico detecta intención
+  // pero no logra estructurar por formato/orden, intentar con el normalizador de
+  // Taquilla (mismo pipeline de reconocimiento) preservando dirección JUEGA/CONSIGUE.
+  if (analisis.esIntencionDeJugada && !analisis.valido && !analisis.excedioSaldo) {
+    try {
+      const matchDir = String(texto || "").trim().match(/^(juego|jugo|jugó|jugue|jugué|consigo|doy|voy|j)\b\s*/i);
+      if (matchDir) {
+        const verbo = matchDir[1].toLowerCase();
+        const accion: "JUEGA" | "CONSIGUE" = /^(consigo|doy)$/i.test(verbo) ? "CONSIGUE" : "JUEGA";
+        const resto = String(texto || "").trim().slice(matchDir[0].length).trim();
+        if (resto) {
+          const salaCtx = (contextoSala as any)?.sala || {};
+          const fecha = String((contextoSala as any)?.fecha_activa || salaCtx?.fecha_activa || "").slice(0, 10);
+          const hipodromo = String((contextoSala as any)?.hipodromo_activo || salaCtx?.hipodromo_activo || "HIPODROMO");
+          const carrera = Number((contextoSala as any)?.numero_carrera_activa || salaCtx?.numero_carrera_activa || 1);
+          const ctxE = await cargarContextoEstructuraSala(supabaseAdmin as any, {
+            grupoId,
+            sala: salaCtx as any,
+            fecha: fecha || new Date().toISOString().slice(0, 10),
+            hipodromo,
+            carrera,
+          });
+          // Interpretar como línea de Taquilla con el proponente como CLIENTE 1.
+          const lineaTaquilla = `${nombreJugador} ${resto}`.replace(/\s+/g, " ").trim();
+          const estructuradas = estructurarLineasSala([lineaTaquilla], ctxE);
+          const e = estructuradas[0];
+          if (e?.fila) {
+            const jugada = String(e.fila.jugada || "").trim().toUpperCase();
+            const caballo = String(e.fila.caballo || "").trim();
+            const monto = parseFloat(String(e.fila.monto || "").replace(",", ".")) || 0;
+            if (jugada && caballo && monto > 0) {
+              const esMatch = /x/i.test(caballo) || /x/i.test(jugada) || /^\d+\/\d+/.test(jugada) || /^PP$/i.test(jugada);
+              const caballosBandoA = caballo.split(/[xX*]/)[0]?.split(/[-,\s]+/).map((s) => s.trim()).filter(Boolean) || [caballo];
+              const caballosBandoB = caballo.includes("x") || caballo.includes("X") || caballo.includes("*")
+                ? (caballo.split(/[xX*]/)[1]?.split(/[-,\s]+/).map((s) => s.trim()).filter(Boolean) || [])
+                : [];
+              const proporcion = /^\d+\/\d+(?:\.\d+)?$/i.test(jugada) ? jugada : "1x1";
+              const modalidad = proporcion !== "1x1" && !esMatch ? proporcion : (/^PP$/i.test(jugada) ? "PP" : jugada);
+              const verboEstandar = accion === "CONSIGUE" ? (/^doy\b/i.test(texto.trim()) ? "Doy" : "Consigo") : "Juego";
+              const ejemplarTexto = caballo;
+              const montoTexto = String(e.fila.monto);
+              const jugadaEstandarizada = esMatch
+                ? `${verboEstandar} ${caballo.replace(/\s+/g, "")}${proporcion !== "1x1" ? ` ${proporcion}` : ""} ${montoTexto}`
+                : `${verboEstandar} ${modalidad} ${caballo} ${montoTexto}`;
+              analisis = {
+                ...analisis,
+                esIntencionDeJugada: true,
+                valido: true,
+                accionProponente: accion,
+                esMatch,
+                modalidad,
+                caballosBandoA,
+                caballosBandoB,
+                ejemplarTexto,
+                monto,
+                montoTexto,
+                proporcion,
+                jugadaEstandarizada: jugadaEstandarizada.replace(/\s+/g, " ").trim(),
+                confianza: 0.92,
+                requiereOperador: false,
+                msgPrivadoBot: undefined,
+                mensajePedagogicoPrivado: undefined,
+              } as any;
+            }
+          }
+        }
+      }
+    } catch {
+      // Si el fallback falla, se conserva el resultado pedagógico original.
+    }
+  }
 
   if (!analisis.valido && jugadaAprendidaSugerida) {
     const intentoAprendido = evaluarMensajePedagogico(
