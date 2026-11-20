@@ -226,6 +226,75 @@ async function main() {
   const rAclara = procesarMensajeMesa(crearMesa({ Pedro: 500 }), { jugador: "Pedro", texto: "juego 1p 300" });
   ok("un dictado ambiguo devuelve la aclaratoria y NO publica", !rAclara.ok && rAclara.estado.propuestas.length === 0 && rAclara.mensajes[0].includes("300"));
 
+  // 2.6 Cascada 60 + 30 + 30 ("Jugo 10, Es lo que queda") + 30 + "Jugue con Todos" / "Todos"
+  {
+    let mesaCascada = crearMesa({
+      Proponente: 500,
+      Primero: 200,
+      Segundo: 200,
+      Tercero: 200,
+      Cuarto: 200,
+    });
+    const rProp = procesarMensajeMesa(mesaCascada, { jugador: "Proponente", texto: "Juego 1p 5 con 100" });
+    mesaCascada = rProp.estado;
+    igual("Proponente bloquea 100 al publicar", disponibleDe(mesaCascada, "Proponente"), 400);
+
+    const r1 = procesarMensajeMesa(mesaCascada, { jugador: "Primero", texto: "Ponte 60" });
+    mesaCascada = r1.estado;
+    igual("1ro concreta 60 completo", r1.monto, 60);
+    igual("1ro descuenta 60", disponibleDe(mesaCascada, "Primero"), 140);
+
+    const r2 = procesarMensajeMesa(mesaCascada, { jugador: "Segundo", texto: "Ponte 30" });
+    mesaCascada = r2.estado;
+    igual("2do concreta 30 completo", r2.monto, 30);
+    igual("2do descuenta 30", disponibleDe(mesaCascada, "Segundo"), 170);
+
+    const r3 = procesarMensajeMesa(mesaCascada, { jugador: "Tercero", texto: "Ponte 30" });
+    mesaCascada = r3.estado;
+    igual("3ro concreta los 10 restantes", r3.monto, 10);
+    igual("al 3ro el bot le dice: Jugo 10, Es lo que queda", r3.mensajes, ["Jugo 10, Es lo que queda"]);
+    igual("3ro descuenta 10 inicialmente", disponibleDe(mesaCascada, "Tercero"), 190);
+
+    const r4 = procesarMensajeMesa(mesaCascada, { jugador: "Cuarto", texto: "Ponte 30" });
+    mesaCascada = r4.estado;
+    igual("4to queda en cola con 0 concretado inicialmente", r4.monto, 0);
+    igual("4to aún no descuenta saldo hasta Jugue con Todos", disponibleDe(mesaCascada, "Cuarto"), 200);
+
+    // Si ninguno dice "Se Fue" y el que propone dice "Jugue con Todos"
+    const rTodos = procesarMensajeMesa(mesaCascada, { jugador: "Proponente", texto: "Jugue con Todos" });
+    mesaCascada = rTodos.estado;
+    igual("al 3ro le dice «Jugó Completo 30» y al 4to «Jugo 30»", rTodos.mensajes, [
+      "Jugó Completo 30",
+      "Jugo 30",
+    ]);
+    igual("Proponente descuenta 150 en total (500 - 150 = 350)", disponibleDe(mesaCascada, "Proponente"), 350);
+    igual("1ro descuenta 60 (200 - 60 = 140)", disponibleDe(mesaCascada, "Primero"), 140);
+    igual("2do descuenta 30 (200 - 30 = 170)", disponibleDe(mesaCascada, "Segundo"), 170);
+    igual("3ro descuenta 30 (200 - 30 = 170)", disponibleDe(mesaCascada, "Tercero"), 170);
+    igual("4to descuenta 30 (200 - 30 = 170)", disponibleDe(mesaCascada, "Cuarto"), 170);
+
+    // Si el 3ro dice "Se Fue" antes de "Todos", su excedente de 20 se cierra y solo entra el 4to
+    let mesaSeFue = crearMesa({
+      Proponente: 500,
+      Primero: 200,
+      Segundo: 200,
+      Tercero: 200,
+      Cuarto: 200,
+    });
+    mesaSeFue = procesarMensajeMesa(mesaSeFue, { jugador: "Proponente", texto: "Juego 1p 5 con 100" }).estado;
+    mesaSeFue = procesarMensajeMesa(mesaSeFue, { jugador: "Primero", texto: "Ponte 60" }).estado;
+    mesaSeFue = procesarMensajeMesa(mesaSeFue, { jugador: "Segundo", texto: "Ponte 30" }).estado;
+    mesaSeFue = procesarMensajeMesa(mesaSeFue, { jugador: "Tercero", texto: "Ponte 30" }).estado;
+    mesaSeFue = procesarMensajeMesa(mesaSeFue, { jugador: "Cuarto", texto: "Ponte 30" }).estado;
+    mesaSeFue = procesarMensajeMesa(mesaSeFue, { jugador: "Tercero", texto: "Se Fue" }).estado;
+    const rTodosSeFue = procesarMensajeMesa(mesaSeFue, { jugador: "Proponente", texto: "Todos" });
+    mesaSeFue = rTodosSeFue.estado;
+    igual("si el 3ro dijo Se Fue, al decir Todos solo entra el 4to con «Jugo 30»", rTodosSeFue.mensajes, ["Jugo 30"]);
+    igual("3ro solo descontó los 10 iniciales (200 - 10 = 190)", disponibleDe(mesaSeFue, "Tercero"), 190);
+    igual("4to descuenta 30 (200 - 30 = 170)", disponibleDe(mesaSeFue, "Cuarto"), 170);
+    igual("Proponente descuenta 130 (500 - 130 = 370)", disponibleDe(mesaSeFue, "Proponente"), 370);
+  }
+
   // ==========================================================================
   console.log("\n[3] Ciclo de pizarra → anulación por variación → nueva pizarra");
   // ==========================================================================

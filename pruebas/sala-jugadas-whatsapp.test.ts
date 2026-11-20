@@ -223,4 +223,100 @@ marcarEstadoCarreraEnMemoria({ hipodromo: "LA RINCONADA", carrera: 2, estado: "L
 assert(esCarreraCerradaOEnPartida("LIQUIDADA"), "LIQUIDADA debe considerarse cerrada");
 console.log("  OK: apertura/cierre global validado.");
 
+// 8. Cascada 60 + 30 + 30 ("Jugo 10, Es lo que queda") + 30 + "Jugue con Todos" / "Todos"
+console.log("8. Cascada FIFO 60 + 30 + 30 + 30 y «Jugue con Todos» / «Todos»...");
+{
+  limpiarEstadosCarreraEnMemoria();
+  let est = estadoBase({
+    PROPONENTE: 500,
+    JUG1: 200,
+    JUG2: 200,
+    JUG3: 200,
+    JUG4: 200,
+  });
+
+  // Proponente: Juego 1p 5 con 100
+  est = procesarMensajeSalaJugadas(est, {
+    autor: "PROPONENTE",
+    texto: "Juego 1p 5 con 100",
+  }).nuevoEstado;
+  const refProp = refDePropuesta(est, "PROPONENTE");
+
+  // 1ro concreta 60
+  est = procesarMensajeSalaJugadas(est, {
+    autor: "JUG1",
+    texto: "ponte 60",
+    respuestaA: refProp,
+  }).nuevoEstado;
+  assertIgual(est.saldos.JUG1.bloqueado, 60, "JUG1 descuenta 60");
+
+  // 2do concreta 30
+  est = procesarMensajeSalaJugadas(est, {
+    autor: "JUG2",
+    texto: "ponte 30",
+    respuestaA: refProp,
+  }).nuevoEstado;
+  assertIgual(est.saldos.JUG2.bloqueado, 30, "JUG2 descuenta 30");
+
+  // 3ro concreta 30 -> solo quedan 10 -> "Jugo 10, Es lo que queda"
+  est = procesarMensajeSalaJugadas(est, {
+    autor: "JUG3",
+    texto: "ponte 30",
+    respuestaA: refProp,
+  }).nuevoEstado;
+  const msg3ro = ultimoMensajeIa(est);
+  assertIgual(msg3ro?.texto, "Jugo 10, Es lo que queda", "Al 3ro el bot debe decirle: Jugo 10, Es lo que queda");
+  assertIgual(est.saldos.JUG3.bloqueado, 10, "JUG3 inicialmente descuenta los 10 que quedan");
+
+  // 4to concreta 30 -> queda en cola esperando "Jugue con Todos"
+  est = procesarMensajeSalaJugadas(est, {
+    autor: "JUG4",
+    texto: "ponte 30",
+    respuestaA: refProp,
+  }).nuevoEstado;
+  assertIgual(est.saldos.JUG4.bloqueado, 0, "JUG4 queda en cola con 0 descontado antes de Jugue con Todos");
+
+  // Proponente dice: "Jugue con Todos"
+  est = procesarMensajeSalaJugadas(est, {
+    autor: "PROPONENTE",
+    texto: "Jugue con Todos",
+  }).nuevoEstado;
+
+  const mensajesIaRecientes = est.mensajes.filter((m) => m.esIa).slice(-2);
+  assertIgual(mensajesIaRecientes[0]?.texto, "Jugó Completo 30", "Al 3ro el bot le dice: Jugó Completo 30");
+  assertIgual(mensajesIaRecientes[1]?.texto, "Jugo 30", "Al 4to el bot le dice: Jugo 30");
+
+  // Verificar saldos descontados a todos: Proponente 60+30+30+30 = 150
+  assertIgual(est.saldos.PROPONENTE.bloqueado, 150, "Proponente descuenta 150 en total (60+30+30+30)");
+  assertIgual(est.saldos.JUG1.bloqueado, 60, "JUG1 mantiene 60 descontados");
+  assertIgual(est.saldos.JUG2.bloqueado, 30, "JUG2 mantiene 30 descontados");
+  assertIgual(est.saldos.JUG3.bloqueado, 30, "JUG3 completa 30 descontados");
+  assertIgual(est.saldos.JUG4.bloqueado, 30, "JUG4 descuenta 30");
+
+  // Caso B: si el 3ro dice "Se Fue" antes de "Todos", solo se concreta el 4to
+  let estB = estadoBase({
+    PROPONENTE: 500,
+    JUG1: 200,
+    JUG2: 200,
+    JUG3: 200,
+    JUG4: 200,
+  });
+  estB = procesarMensajeSalaJugadas(estB, { autor: "PROPONENTE", texto: "Juego 1p 5 con 100" }).nuevoEstado;
+  const refB = refDePropuesta(estB, "PROPONENTE");
+  estB = procesarMensajeSalaJugadas(estB, { autor: "JUG1", texto: "ponte 60", respuestaA: refB }).nuevoEstado;
+  estB = procesarMensajeSalaJugadas(estB, { autor: "JUG2", texto: "ponte 30", respuestaA: refB }).nuevoEstado;
+  estB = procesarMensajeSalaJugadas(estB, { autor: "JUG3", texto: "ponte 30", respuestaA: refB }).nuevoEstado;
+  estB = procesarMensajeSalaJugadas(estB, { autor: "JUG4", texto: "ponte 30", respuestaA: refB }).nuevoEstado;
+  // El 3ro dice "Se Fue"
+  estB = procesarMensajeSalaJugadas(estB, { autor: "JUG3", texto: "Se Fue" }).nuevoEstado;
+  // El proponente dice "Todos"
+  estB = procesarMensajeSalaJugadas(estB, { autor: "PROPONENTE", texto: "Todos" }).nuevoEstado;
+  const ultimoIaB = ultimoMensajeIa(estB);
+  assertIgual(ultimoIaB?.texto, "Jugo 30", "Solo el 4to entra con Jugo 30 porque el 3ro dijo Se Fue");
+  assertIgual(estB.saldos.JUG3.bloqueado, 10, "JUG3 queda únicamente con los 10 iniciales");
+  assertIgual(estB.saldos.JUG4.bloqueado, 30, "JUG4 descuenta 30");
+  assertIgual(estB.saldos.PROPONENTE.bloqueado, 130, "Proponente descuenta 130 (60+30+10+30)");
+}
+console.log("  OK: cascada 60+30+30+30 y «Jugue con Todos» / «Todos» validada.");
+
 console.log("=== TODAS LAS PRUEBAS DE LA SALA DE JUGADAS PASARON EXITOSAMENTE ===");

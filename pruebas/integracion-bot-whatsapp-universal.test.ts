@@ -17,6 +17,7 @@ import {
   analizarComandoRetiro,
   calcularRiesgoReal,
   esIntentoConcrecionOMontoParcial,
+  evaluarAmpliacionPropuesta,
   evaluarConcrecionEstricta,
   extraerMontoNumerico,
 } from "../src/features/sala-juegos/lib/parser-pedagogico";
@@ -292,6 +293,35 @@ console.log("\n=== 7. REGLAS DE 'SE FUE' Y RESPUESTAS A PROPUESTA RETIRADA ===")
     );
   }
   si(!esIntentoConcrecionOMontoParcial("hola amigos"), `Charla casual "hola amigos" no se trata como intento de concreción`);
+}
+
+console.log("\n=== 8. AMPLIACIÓN EN CASCADA FIFO: 'JUGUE CON TODOS' / 'TODOS' ===");
+{
+  for (const fraseTodos of [
+    "Todos",
+    "todos",
+    "Jugue con Todos",
+    "Jugué con Todos",
+    "Juego con Todos",
+    "Jugo con Todos",
+    "Jugó con Todos",
+    "Con todos",
+    "Jugaron todos",
+    "Van todos",
+  ]) {
+    const rAmp = evaluarAmpliacionPropuesta(fraseTodos);
+    si(
+      rAmp.esAmpliacion && rAmp.modo === "TODOS",
+      `evaluarAmpliacionPropuesta("${fraseTodos}") -> esAmpliacion=true, modo="TODOS"`,
+      JSON.stringify(rAmp)
+    );
+    const rAn = analizarYEstandarizarJugada(fraseTodos, 500);
+    si(
+      !rAn.esIntencionDeJugada && rAn.valido,
+      `analizarYEstandarizarJugada("${fraseTodos}") no arroja error de sintaxis DUDA_FORMATO`,
+      JSON.stringify(rAn)
+    );
+  }
 }
 
 console.log(`\n${pasan} pasaron, ${fallan} fallaron`);
