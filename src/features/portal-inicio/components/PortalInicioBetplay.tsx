@@ -1093,32 +1093,19 @@ export function PortalInicioBetplay() {
           ========================================================================= */}
       {modalLoginAbierto && (
         <div
-          className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/75 p-3 backdrop-blur-md sm:items-center sm:p-4"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-2 backdrop-blur-md sm:p-4"
           role="dialog"
           aria-modal="true"
           onClick={(e) => {
             if (e.target === e.currentTarget) setModalLoginAbierto(false);
           }}
         >
-          <div className="w-full max-w-xl py-2 sm:py-4">
+          <div className="w-full max-w-md max-h-[94dvh] overflow-y-auto rounded-2xl">
             <PantallaLogin
               incrustado
               avisoExterno={avisoLogin}
               onCerrar={() => setModalLoginAbierto(false)}
             />
-            <div className="mt-3 rounded-xl border border-slate-700/70 bg-slate-900/80 px-4 py-3 text-center text-xs text-slate-300">
-              ¿No tienes una cuenta aún?{" "}
-              <button
-                type="button"
-                onClick={() => {
-                  setModalLoginAbierto(false);
-                  setModalRegistroAbierto(true);
-                }}
-                className="font-bold text-amber-400 hover:underline"
-              >
-                Regístrate con prueba de 2 semanas →
-              </button>
-            </div>
           </div>
         </div>
       )}

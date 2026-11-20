@@ -317,7 +317,11 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
   };
 
   const tarjeta = (
-      <div className="relative mx-auto w-full max-w-md min-w-0 rounded-2xl border border-slate-800 bg-white p-4 shadow-2xl sm:p-6">
+      <div
+        className={`relative mx-auto w-full max-w-md min-w-0 rounded-2xl border border-slate-800 bg-white shadow-2xl ${
+          incrustado ? "p-3.5 sm:p-5" : "p-4 sm:p-6"
+        }`}
+      >
         {incrustado && onCerrar ? (
           <button
             type="button"
@@ -328,19 +332,27 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
             ✕
           </button>
         ) : null}
-        <div className="mb-4 text-center">
-          <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-600 text-xl text-white shadow-lg">
+        <div className={incrustado ? "mb-2.5 text-center" : "mb-4 text-center"}>
+          <div
+            className={`mx-auto flex items-center justify-center rounded-xl bg-emerald-600 text-white shadow-lg ${
+              incrustado ? "mb-1.5 h-9 w-9 text-lg" : "mb-2 h-11 w-11 text-xl"
+            }`}
+          >
             🐎
           </div>
-          <h1 className="text-xl font-black uppercase tracking-wide text-slate-800">Acceso al Sistema</h1>
-          <p className="mt-0.5 text-xs font-bold text-slate-500">Portal Unificado · Clientes y Administración</p>
-          <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-0.5 text-[11px] font-semibold text-emerald-800">
-            <span>✨</span>
-            <span>Accede con tu usuario, seudónimo o teléfono</span>
-          </div>
+          <h1 className={incrustado ? "text-lg font-black uppercase tracking-wide text-slate-800" : "text-xl font-black uppercase tracking-wide text-slate-800"}>
+            Acceso al Sistema
+          </h1>
+          <p className="mt-0.5 text-[11px] font-bold text-slate-500">Portal Unificado · Clientes y Administración</p>
+          {!incrustado ? (
+            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-0.5 text-[11px] font-semibold text-emerald-800">
+              <span>✨</span>
+              <span>Accede con tu usuario, seudónimo o teléfono</span>
+            </div>
+          ) : null}
         </div>
 
-        <form onSubmit={enviar} className="space-y-3" noValidate autoComplete="off">
+        <form onSubmit={enviar} className={incrustado ? "space-y-2.5" : "space-y-3"} noValidate autoComplete="off">
           {/* Honeypot anti-bot */}
           <input
             ref={honeypotRef}
@@ -513,8 +525,8 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
 
           
           {/* Verificación de seguridad Anti-Bot reCAPTCHA Oficial con Imágenes */}
-          <div className="my-1.5 flex w-full flex-col items-center justify-center space-y-1">
-            <div className="scale-[0.94] origin-center">
+          <div className={incrustado ? "my-1 flex w-full flex-col items-center justify-center space-y-0.5" : "my-1.5 flex w-full flex-col items-center justify-center space-y-1"}>
+            <div className={incrustado ? "scale-[0.88] origin-center" : "scale-[0.94] origin-center"}>
               <RecaptchaWidget
                 onVerificado={(t) => {
                   setRecaptchaToken(t);
