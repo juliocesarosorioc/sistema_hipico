@@ -1574,6 +1574,13 @@ const hipodromosDelDia = useMemo(() => {
       }
       const jugador2Raw = edicionPreview.jugador2.trim().toUpperCase();
       const cli2 = jugador2Raw && jugador2Raw !== "TAQUILLA" ? buscarCliente(jugador2Raw) : undefined;
+      if (
+        (cli && cli2 && String(cli.id) === String(cli2.id)) ||
+        (jugador2Raw && jugador2Raw !== "TAQUILLA" && jugador1.trim().toUpperCase() === jugador2Raw)
+      ) {
+        mostrarErrorPreview("⛔ El jugador y el banquero deben ser usuarios diferentes, nunca el mismo.");
+        return;
+      }
       const mCabNum = caballo.match(/\b(\d{1,2})\b/);
       const numEj = /^[0-9]+$/.test(caballo) ? Number(caballo) : mCabNum ? Number(mCabNum[1]) : undefined;
       campos = {
@@ -2554,6 +2561,11 @@ const hipodromosDelDia = useMemo(() => {
       }
       /* Venta transaccional: si falla (saldo, grupo, red), nada se descuenta y
          la fila queda en rojo; si gana, el ticket ya está en `tickets_apuestas`. */
+      if (c1 && c2 && String(c1.id) === String(c2.id)) {
+        errores.push(`Fila ${filas.indexOf(f) + 1}: El jugador y el banquero deben ser usuarios diferentes, nunca el mismo.`);
+        indicesError.push(filas.indexOf(f));
+        continue;
+      }
       const venta = await venderJugada({
         hipodromo,
         fecha,

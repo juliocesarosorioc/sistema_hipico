@@ -94,6 +94,16 @@ export async function POST(req: NextRequest) {
     }
 
     const copia = { ...body.payload };
+    if (
+      copia.cliente_juega_id &&
+      copia.cliente_consigue_id &&
+      String(copia.cliente_juega_id) === String(copia.cliente_consigue_id)
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "⛔ El jugador y el banquero deben ser usuarios diferentes, nunca el mismo." },
+        { status: 400 }
+      );
+    }
     let errorMsg: string | null = null;
     let updatedCount = 0;
 

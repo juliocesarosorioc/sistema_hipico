@@ -343,6 +343,7 @@ export function BetSlip({ contexto, onContextoChange }: BetSlipProps = {}) {
     if (!c1 || !clientePerteneceAGrupo(c1, grupoSesion, grupos)) return false;
     if (c1EnOtroGrupo || c2EnOtroGrupo) return false;
     if (c2 && !clientePerteneceAGrupo(c2, grupoSesion, grupos)) return false;
+    if (c1 && c2 && String(c1.id) === String(c2.id)) return false;
     if (c1 && c2 && !clientesPertenecenAlMismoGrupo(c1, c2, grupos)) return false;
     return true;
   }, [grupoSesion, c1, c2, c1EnOtroGrupo, c2EnOtroGrupo, grupos]);
@@ -391,6 +392,10 @@ export function BetSlip({ contexto, onContextoChange }: BetSlipProps = {}) {
     }
     if (c2 && !clientePerteneceAGrupo(c2, grupoSesion, grupos)) {
       setError(`⛔ El cliente 2 «${c2.nombre}» no pertenece al grupo ${nombreGrupoSesion || "activo"}. No se permite interacción entre jugadores de distintos grupos.`);
+      return;
+    }
+    if (c1 && c2 && String(c1.id) === String(c2.id)) {
+      setError("⛔ El jugador y el banquero deben ser usuarios diferentes, nunca el mismo.");
       return;
     }
     if (c1 && c2 && !clientesPertenecenAlMismoGrupo(c1, c2, grupos)) {

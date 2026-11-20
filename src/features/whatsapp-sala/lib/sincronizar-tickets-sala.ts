@@ -306,6 +306,11 @@ export async function sincronizarTicketsPropuestaATaquilla(
         ? t.aceptante_nombre || "CASA"
         : t.proponente_nombre || "CASA";
 
+      if (clienteJuegaId && clienteDaId && String(clienteJuegaId) === String(clienteDaId)) {
+        console.warn("[sincronizar-tickets-sala] Jugador y banquero iguales bloqueado:", t.codigo_ticket);
+        continue;
+      }
+
       const esMatch = Boolean(t.es_match || (Array.isArray(t.caballos_bando_b) && t.caballos_bando_b.length > 0));
       const propRaw = String(t.proporcion_premio || "").trim();
       const tieneProp10 = /^10\s*[\/aAª@\-]\s*\d+(?:[.,]\d+)?$/i.test(propRaw) && !/^10\s*[\/aAª@\-]\s*10$/i.test(propRaw);

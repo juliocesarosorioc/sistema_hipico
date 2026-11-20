@@ -247,6 +247,17 @@ export async function venderJugada(v: VentaJugada): Promise<ResultadoVentaJugada
     }
   }
 
+  // Norma: Jugador y banquero deben ser diferentes usuarios, nunca el mismo
+  if (
+    (v.clienteDadorId && String(v.clienteDadorId) === String(clienteIdEfectivo)) ||
+    (dadorCliData?.id && String(dadorCliData.id) === String(clienteIdEfectivo))
+  ) {
+    return {
+      ok: false,
+      error: "⛔ El jugador y el banquero deben ser usuarios diferentes, nunca el mismo.",
+    };
+  }
+
   let saldoAntesVenta: number | null = null;
   if (clienteIdEfectivo) {
     try {
