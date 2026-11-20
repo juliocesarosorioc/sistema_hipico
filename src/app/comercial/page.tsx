@@ -1,4 +1,4 @@
-import { PortalInicioBetplay } from "@/features/portal-inicio/components/PortalInicioBetplay";
+import { redirect } from "next/navigation";
 
 export const metadata = {
   title: "Sistema Hípico · Portal Oficial",
@@ -7,5 +7,5 @@ export const metadata = {
 };
 
 export default function PaginaComercial() {
-  return <PortalInicioBetplay />;
+  redirect("/");
 }
