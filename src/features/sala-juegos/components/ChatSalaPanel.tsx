@@ -284,6 +284,16 @@ export function ChatSalaPanel({
             },
             () => cargarMensajes()
           )
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "chat_tickets_fifo",
+              filter: `sala_id=eq.${sala.id}`,
+            },
+            () => cargarMensajes()
+          )
           .subscribe();
       } catch {
         // Realtime fallback
