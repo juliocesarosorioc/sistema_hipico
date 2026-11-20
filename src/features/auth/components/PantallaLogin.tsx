@@ -316,25 +316,25 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
 
   return (
     <main
-      className="flex min-h-screen w-full items-center justify-center overflow-x-hidden bg-slate-900 px-3 py-6 font-sans sm:px-4 sm:py-10"
+      className="flex min-h-screen w-full items-center justify-center overflow-x-hidden bg-slate-900 px-3 py-4 font-sans sm:px-4 sm:py-6"
       style={{
         backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')",
       }}
     >
-      <div className="w-full max-w-md min-w-0 rounded-2xl border border-slate-800 bg-white p-4 shadow-2xl sm:p-8">
-        <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-600 text-2xl text-white shadow-lg">
+      <div className="w-full max-w-md min-w-0 rounded-2xl border border-slate-800 bg-white p-4 shadow-2xl sm:p-6">
+        <div className="mb-4 text-center">
+          <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-600 text-xl text-white shadow-lg">
             🐎
           </div>
-          <h1 className="text-2xl font-black uppercase tracking-wide text-slate-800">Acceso al Sistema</h1>
-          <p className="mt-1 text-xs font-bold text-slate-500">Portal Unificado · Clientes y Administración</p>
-          <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-[11px] font-semibold text-emerald-800">
+          <h1 className="text-xl font-black uppercase tracking-wide text-slate-800">Acceso al Sistema</h1>
+          <p className="mt-0.5 text-xs font-bold text-slate-500">Portal Unificado · Clientes y Administración</p>
+          <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-0.5 text-[11px] font-semibold text-emerald-800">
             <span>✨</span>
             <span>Accede con tu usuario, seudónimo o teléfono</span>
           </div>
         </div>
 
-        <form onSubmit={enviar} className="space-y-5" noValidate autoComplete="off">
+        <form onSubmit={enviar} className="space-y-3" noValidate autoComplete="off">
           {/* Honeypot anti-bot */}
           <input
             ref={honeypotRef}
@@ -368,7 +368,7 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
                 value={codigoSala}
                 onChange={(e) => setCodigoSala(e.target.value)}
                 placeholder="Código de tu sala"
-                className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-3 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-emerald-500"
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2 pl-9 pr-3 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-emerald-500"
               />
             </div>
             {codigoSalaDelEnlace ? (
@@ -402,7 +402,7 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
                 value={usuario}
                 onChange={(e) => setUsuario(e.target.value)}
                 placeholder="Ingresa tu usuario, seudónimo o teléfono"
-                className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-3 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-emerald-500"
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2 pl-9 pr-3 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-emerald-500"
               />
             </div>
           </div>
@@ -430,7 +430,7 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
                 value={clave}
                 onChange={(e) => setClave(e.target.value)}
                 placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;"
-                className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-10 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-emerald-500"
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2 pl-9 pr-10 text-sm font-medium text-slate-700 outline-none transition-colors focus:border-emerald-500"
               />
               <button
                 type="button"
@@ -507,14 +507,16 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
 
           
           {/* Verificación de seguridad Anti-Bot reCAPTCHA Oficial con Imágenes */}
-          <div className="my-3 flex w-full flex-col items-center justify-center space-y-1.5">
-            <RecaptchaWidget
-              onVerificado={(t) => {
-                setRecaptchaToken(t);
-                useAuthStore.setState({ errorLogin: null });
-              }}
-              onExpirado={() => setRecaptchaToken(null)}
-            />
+          <div className="my-1.5 flex w-full flex-col items-center justify-center space-y-1">
+            <div className="scale-[0.94] origin-center">
+              <RecaptchaWidget
+                onVerificado={(t) => {
+                  setRecaptchaToken(t);
+                  useAuthStore.setState({ errorLogin: null });
+                }}
+                onExpirado={() => setRecaptchaToken(null)}
+              />
+            </div>
             <div className="flex w-full max-w-[320px] flex-wrap items-center justify-center gap-x-2 gap-y-1 px-1 text-center text-[10px] text-slate-400 sm:justify-between sm:text-left">
               <span className="flex items-center gap-1 font-medium">
                 <span>🛡️</span> Verificación reCAPTCHA con imágenes
@@ -531,7 +533,7 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
           <button
             type="submit"
             disabled={cargando || ingresando || bloqueadoSegundos > 0 || !recaptchaToken}
-            className="w-full rounded-lg bg-slate-800 py-3 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-lg bg-slate-800 py-2.5 text-sm font-bold uppercase tracking-wider text-white shadow-lg transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
           >
             {cargando || ingresando ? (
               <>
@@ -552,8 +554,8 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
             )}
           </button>
 
-          <div className="space-y-2 pt-2">
-            <div className="relative my-3 flex items-center justify-center">
+          <div className="space-y-1.5 pt-1">
+            <div className="relative my-2 flex items-center justify-center">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-slate-200" />
                 </div>
@@ -581,7 +583,7 @@ export default function PantallaLogin(props: PantallaLoginProps = {}) {
           </div>
         </form>
 
-        <div className="mt-6 border-t border-slate-200 pt-4 text-center text-[10px] leading-relaxed text-slate-500">
+        <div className="mt-4 border-t border-slate-200 pt-3 text-center text-[10px] leading-relaxed text-slate-500">
           <p className="font-black text-slate-700">
             © {new Date().getFullYear()} Inversiones Club Sensación, C.A.
           </p>

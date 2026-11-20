@@ -152,45 +152,45 @@ export function ModalLoginRapido({
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-black/75 p-3 backdrop-blur-md animate-fadeIn"
       role="dialog"
       aria-modal="true"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCerrar();
       }}
     >
-      <div className={`relative w-full max-w-md overflow-hidden rounded-3xl border transition-colors ${modalBg}`}>
+      <div className={`relative w-full max-w-md max-h-[94vh] overflow-y-auto rounded-2xl border transition-colors ${modalBg}`}>
         {/* Cabecera Sistema Hípico */}
-        <div className={`relative p-6 border-b transition-colors ${cabeceraBg}`}>
+        <div className={`relative px-5 py-3.5 border-b transition-colors ${cabeceraBg}`}>
           <button
             type="button"
             onClick={onCerrar}
-            className={`absolute top-4 right-4 h-8 w-8 rounded-full flex items-center justify-center transition ${
+            className={`absolute top-3 right-3 h-7 w-7 rounded-full flex items-center justify-center text-xs transition ${
               esClaro ? "bg-slate-200 text-slate-600 hover:bg-slate-300" : "bg-white/10 text-slate-400 hover:text-white"
             }`}
           >
             ✕
           </button>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-2xl">🏇</span>
-            <span className={`text-xs font-black uppercase tracking-widest ${
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🏇</span>
+            <span className={`text-[11px] font-black uppercase tracking-widest ${
               esClaro ? "text-blue-600" : esAstigmatismo ? "text-[#d4a373]" : "text-amber-400"
             }`}>
               Sistema Hípico · Acceso
             </span>
           </div>
-          <h2 className="text-xl font-black tracking-tight">
+          <h2 className="text-lg font-black tracking-tight mt-0.5">
             Iniciar Sesión
           </h2>
-          <p className={`text-xs mt-1 ${esClaro ? "text-slate-500" : "text-slate-400"}`}>
+          <p className={`text-[11px] mt-0.5 ${esClaro ? "text-slate-500" : "text-slate-400"}`}>
             Portal unificado: ingresa a tu cuenta de cliente o administración.
           </p>
         </div>
 
         {/* Formulario */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-2.5">
           {errorLogin && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-600 font-bold">
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-600 font-bold">
               ⚠️ {errorLogin}
             </div>
           )}
@@ -208,7 +208,7 @@ export function ModalLoginRapido({
               value={usuario}
               onChange={(e) => setUsuario(e.target.value)}
               placeholder="Ej: admin, operador, o tu seudónimo"
-              className={`w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition ${inputClase}`}
+              className={`w-full rounded-xl border px-3.5 py-2 text-sm outline-none transition ${inputClase}`}
             />
           </div>
 
@@ -234,7 +234,7 @@ export function ModalLoginRapido({
                 value={clave}
                 onChange={(e) => setClave(e.target.value)}
                 placeholder="••••••••"
-                className={`w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition pr-10 ${inputClase}`}
+                className={`w-full rounded-xl border px-3.5 py-2 text-sm outline-none transition pr-10 ${inputClase}`}
               />
               <button
                 type="button"
@@ -247,12 +247,14 @@ export function ModalLoginRapido({
           </div>
 
           {/* Verificación reCAPTCHA con imágenes */}
-          <div className="flex flex-col items-center justify-center my-3">
-            <RecaptchaWidget
-              onVerificado={(t) => setRecaptchaToken(t)}
-              onExpirado={() => setRecaptchaToken(null)}
-            />
-            <span className={`text-[10px] mt-1 flex items-center gap-1 font-medium ${esClaro ? "text-slate-500" : "text-slate-400"}`}>
+          <div className="flex flex-col items-center justify-center py-1">
+            <div className="scale-[0.94] origin-center">
+              <RecaptchaWidget
+                onVerificado={(t) => setRecaptchaToken(t)}
+                onExpirado={() => setRecaptchaToken(null)}
+              />
+            </div>
+            <span className={`text-[10px] mt-0.5 flex items-center gap-1 font-medium ${esClaro ? "text-slate-500" : "text-slate-400"}`}>
               <span>🛡️</span> Verificación de seguridad reCAPTCHA con imágenes
             </span>
           </div>
@@ -260,13 +262,13 @@ export function ModalLoginRapido({
           <button
             type="submit"
             disabled={procesando || cargando || !recaptchaToken}
-            className={`w-full mt-2 rounded-xl py-3 text-xs font-black uppercase tracking-wider active:scale-95 transition disabled:opacity-50 ${botonPrincipal}`}
+            className={`w-full rounded-xl py-2.5 text-xs font-black uppercase tracking-wider active:scale-95 transition disabled:opacity-50 ${botonPrincipal}`}
           >
             {procesando ? "Verificando credenciales..." : "🚀 Entrar al Sistema"}
           </button>
 
           {onAbrirRegistro && (
-            <div className={`pt-2 text-center border-t text-xs ${
+            <div className={`pt-2 text-center border-t text-[11px] ${
               esClaro ? "border-slate-200 text-slate-500" : "border-slate-800 text-slate-400"
             }`}>
               ¿No tienes una cuenta aún?{" "}
