@@ -171,25 +171,38 @@ function evaluarConcrecionEstrictaBase(
 
   // Un monto suelto al citar una propuesta equivale a "J <monto>".
   const MONTO_ABREVIADO = "(?:\\d+(?:[\\.,]\\d+)*\\s*(?:k|mil)?|todo)";
+  // Variantes comunes al responder/citar (alineadas a escritura rápida): "50 al 6", "acepto 50", "tomo 100".
+  const textoNormalizadoConcrecion = (() => {
+    if (!permitirMontoSuelto) return texto;
+    const t = texto.trim();
+    // "50 al 6" / "50 en el 6" / "50 para el 6" => monto suelto (el ejemplar ya lo define la propuesta citada)
+    if (new RegExp(`^(?:con\\s+|por\\s+|\\$|bs\\.?\\s*)?${MONTO_ABREVIADO}(?:\\s+(?:al?|en|para|del?)\\s+(?:el\\s+|la\\s+)?\\d{1,2}[A-Z]?)?$`, "i").test(t)) {
+      return t.replace(/^(?:con|por)\s+/i, "").replace(/\s+(?:al?|en|para|del?)\s+(?:el\s+|la\s+)?\d{1,2}[A-Z]?$/i, "").trim();
+    }
+    // Aceptaciones explícitas con monto opcional: "acepto 50", "tomo", "va 30", "le doy 20", "de una", "dale"
+    const mAcepta = t.match(new RegExp(`^(acepto|aceptado|tomo|va|vamos|listo|ok|de\\s+una|dale|le\\s+doy|le\\s+voy|me\\s+voy|me\\s+la\\s+llevo)(?:\\s+(?:con\\s+|por\\s+|\\$|bs\\.?\\s*)?(${MONTO_ABREVIADO}))?$`, "i"));
+    if (mAcepta) return `J ${mAcepta[2] || ""}`.trim();
+    return t;
+  })();
   const textoConVerbo =
-    permitirMontoSuelto && new RegExp(`^(?:con\\s+|por\\s+|\\$|bs\\.?\\s*)?${MONTO_ABREVIADO}$`, "i").test(texto)
-      ? `J ${texto.replace(/^(?:con|por)\s+/i, "")}`
-      : texto;
+    permitirMontoSuelto && new RegExp(`^(?:con\\s+|por\\s+|\\$|bs\\.?\\s*)?${MONTO_ABREVIADO}$`, "i").test(textoNormalizadoConcrecion)
+      ? `J ${textoNormalizadoConcrecion.replace(/^(?:con|por)\s+/i, "")}`
+      : textoNormalizadoConcrecion;
 
   // Validar verbos autorizados según el rol de la propuesta citada:
   // - Si el proponente "CONSIGUE / DA" (accion_proponente = consigo/doy): Solo concretan: Juego, Jugue, Jugué, Jugo, Jugó, Jugaron, Ponte, Jugamos, Voy, J
   // - Si el proponente "JUEGA / VOY" (accion_proponente = juego): Solo concretan: Jugaste, Jugo, Jugó, Jugaron, Ponte, Consigo, Doy, J
   const esPropuestaJuego = accionPropuesta === 'JUEGA';
 
-  const regexJuego = new RegExp(`^(jugaste|jugaron|jugo|jugó|ponte|consigo|doy|j)(?:\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?(${MONTO_ABREVIADO}))?$`, "i");
-  const regexConsigo = new RegExp(`^(juego|jugue|jugué|jugo|jugó|jugaron|ponte|jugamos|voy|j)(?:\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?(${MONTO_ABREVIADO}))?$`, "i");
+  const regexJuego = new RegExp(`^(jugaste|jugaron|jugo|jugó|jugue|jugué|ponte|consigo|doy|acepto|tomo|va|vamos|listo|ok|j)(?:\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?(${MONTO_ABREVIADO}))?$`, "i");
+  const regexConsigo = new RegExp(`^(juego|jugue|jugué|jugo|jugó|jugaron|ponte|jugamos|voy|acepto|tomo|va|vamos|listo|ok|j)(?:\\s+(?:con\\s+|por\\s+|\\$|bs\\.?|bs\\s+)?(${MONTO_ABREVIADO}))?$`, "i");
 
   const match = esPropuestaJuego ? textoConVerbo.match(regexJuego) : textoConVerbo.match(regexConsigo);
 
   if (!match) {
     const permitidas = esPropuestaJuego
-      ? 'Jugaste, Jugo, Ponte, Consigo, Doy, J'
-      : 'Juego, Jugue, Jugué, Jugo, Ponte, Jugamos, Voy, J';
+      ? 'Jugaste, Jugo, Ponte, Consigo, Doy, J (o Acepto/Tomo/Va)'
+      : 'Juego, Jugue, Jugué, Jugo, Ponte, Jugamos, Voy, J (o Acepto/Tomo/Va)';
     return {
       valido: false,
       motivoRechazo: `Palabra no autorizada para concretar. Palabras válidas: ${permitidas}`,
@@ -977,19 +990,20 @@ export function analizarComandoRetiro(textoInput: string): ResultadoComandoRetir
 
 /**
  * Detecta si un mensaje de respuesta (cita) a una propuesta tiene intención de concretarla
- * ("jugaron", "j", "voy", "jugaste", "ponte", "doy", "consigo", etc., o un monto parcial).
+ * ("jugaron", "j", "voy", "jugaste", "ponte", "doy", "consigo", "acepto", etc., o un monto parcial).
  */
 export function esIntentoConcrecionOMontoParcial(textoInput: string): boolean {
   const texto = normalizarParadaPremio(String(textoInput || "").trim());
   if (!texto || texto.length > 180) return false;
   const MONTO = "(?:\\d+(?:[\\.,]\\d+)*\\s*(?:k|mil)?|todo)";
   const regexVerboConcrecion = new RegExp(
-    `^(?:j|voy|juego|jugue|jugué|jugo|jugó|jugaste|jugaron|jugamos|ponte|consigo|doy|te\\s+doy|te\\s+juego|copiado|pago|entro|tomo|la\\s+tomo|agarro|dame|solo)(?:\\s+(?:con\\s+|por\\s+|a\\s+|de\\s+|hasta\\s+|\\$|bs\\.?\\s*)*(${MONTO}))?$`,
+    `^(?:j|voy|juego|jugue|jugué|jugo|jugó|jugaste|jugaron|jugamos|ponte|consigo|doy|te\\s+doy|te\\s+juego|copiado|pago|entro|tomo|la\\s+tomo|agarro|dame|solo|acepto|aceptado|va|vamos|listo|ok|de\\s+una|dale|le\\s+doy|le\\s+voy|me\\s+voy|me\\s+la\\s+llevo)(?:\\s+(?:con\\s+|por\\s+|a\\s+|de\\s+|hasta\\s+|\\$|bs\\.?\\s*)*(${MONTO}))?$`,
     "i"
   );
   if (regexVerboConcrecion.test(texto)) return true;
+  // Monto suelto, opcionalmente referido al ejemplar de la propuesta citada: "50", "50 al 6", "50 en el 6".
   const regexMontoParcial = new RegExp(
-    `^(?:con\\s+|por\\s+|solo\\s+|hasta\\s+|\\$|bs\\.?\\s*)*(${MONTO})$`,
+    `^(?:con\\s+|por\\s+|solo\\s+|hasta\\s+|\\$|bs\\.?\\s*)*(${MONTO})(?:\\s+(?:al?|en|para|del?)\\s+(?:el\\s+|la\\s+)?\\d{1,2}[A-Z]?)?$`,
     "i"
   );
   return regexMontoParcial.test(texto);

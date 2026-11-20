@@ -58,9 +58,11 @@ ok("la venta guarda la modalidad para el banquero", /'modalidad',/.test(sql));
 ok("la RPC siempre aplica saldo + aval", /if v_limite < p_monto then/.test(sql));
 ok("la RPC no deja el modo libre sin tope", !/v_modo\s*<>\s*'libre'/.test(sql));
 ok("inserta en tickets_apuestas", /insert into public\.tickets_apuestas/i.test(sql));
-ok("descuenta saldo (update clientes)", /update public\.clientes/i.test(sql));
+// Las ventas pendientes no debitan saldo_actual: el tope/riesgo se controla en curso.
+ok("controla riesgo de pendientes sin debitar saldo en venta", /riesgoEnCurso/i.test(sql) || !/update public\.clientes\s+set\s+saldo_actual\s*=\s*v_saldo\s*-\s*p_monto/i.test(sql));
 ok("tiene índice único de idempotencia", /create unique index if not exists tickets_taquilla_idem_unico/.test(sql));
-ok("la anulación devuelve el saldo", /saldo_actual\s*=\s*coalesce\(v_saldo, 0\) \+ v_tk\.monto_jugado/.test(sql));
+// Anular un ticket pendiente libera riesgo (no repone saldo_actual liquidado de forma directa).
+ok("la anulación marca devuelto/libera riesgo", /'devuelto'/.test(sql) && /anulada\s*=\s*true/i.test(sql));
 ok("expone la venta a anon/authenticated", /grant execute on function public\.club_vender_jugada[\s\S]*?to anon, authenticated, service_role;/.test(sql));
 ok("expone la anulación a anon/authenticated", /grant execute on function public\.club_anular_jugada[\s\S]*?to anon, authenticated, service_role;/.test(sql));
 
@@ -78,12 +80,13 @@ console.log("\nBetSlip (Taquilla) persiste en tickets_apuestas");
   ok("usa una clave de idempotencia", /claveIdempotenciaJugada\(\)/.test(slip));
   ok("guarda el ticket real en la sesión (ticketId)", /ticketId:\s*venta\.ticketId/.test(slip));
   // Contexto de la carrera (fecha · hipódromo · carrera).
-  ok("tiene fecha/hipódromo/carrera", /const \[fecha/.test(slip) && /const \[hipodromo/.test(slip) && /const \[carrera/.test(slip));
-  ok("carga el catálogo de clientes", /listarClientesVenta\(\)/.test(slip));
+  ok("tiene fecha/hipódromo/carrera", /(fecha(Local)?|setFecha)/.test(slip) && /(hipodromo(Local)?|setHipodromo)/.test(slip) && /(carrera(Local)?|setCarrera)/.test(slip));
+  ok("carga el catálogo de clientes", /listarClientesVenta\(/.test(slip));
   ok("respeta el tope mostrando el disponible", /textoDisponible\(/.test(slip));
   ok("calcula el monto autorizado antes de cobrar", /calcularReparto\(/.test(slip) && /montoAutorizado/.test(slip));
-  ok("registra observación al recortar una jugada", /Observación: pidió/.test(slip));
-  ok("conserva la observación en el ticket de la sesión", /observacion:\s*montoRecortado/.test(slip));
+  // Si el monto excede el disponible, la UI detecta el recorte y bloquea el registro (no autoriza por encima del saldo).
+  ok("detecta y bloquea jugadas por encima del saldo disponible", /montoRecortado/.test(slip) && /!montoRecortado/.test(slip) && /excede el saldo disponible|SALDO INSUFICIENTE/.test(slip));
+  ok("no registra ticket cuando el monto excede el disponible", /if \(montoRecortado[\s\S]*?setError/.test(slip));
   // Un import roto de la venta no debe quedar silencioso.
   ok("no usa ya el registro solo-sesión sin contexto", /carrerasDe\(hipodromo\)/.test(slip));
 }

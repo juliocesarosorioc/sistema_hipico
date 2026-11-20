@@ -52,25 +52,46 @@ function caballoValido(v: string): string | null {
 
 const clave = (s: unknown) => String(s ?? "").trim().toUpperCase();
 
+export type ContextoCarreraTaquilla = {
+  fecha: string;
+  hipodromo: string;
+  carrera: string;
+};
+
+type BetSlipProps = {
+  /** Contexto de carrera activo (elevado para compartir con lista/relación/realtime). */
+  contexto?: ContextoCarreraTaquilla;
+  onContextoChange?: (ctx: ContextoCarreraTaquilla) => void;
+};
+
 /**
  * Boleto de Apuestas PERSISTENTE — Taquilla.
  *
- * Antes la Taquilla vivía SOLO en memoria (zustand/localStorage): el operador
- * cargaba la jugada, se quedaba en su sesión y nadie más la veía; al liquidar no
- * aparecía en `tickets_apuestas`. Ahora el BetSlip pide el CONTEXTO de la carrera
- * (fecha · hipódromo · carrera), el CLIENTE 1 (a quien se le cobra) y el dador
- * opcional, y llama a `club_vender_jugada` (RPC transaccional: valida tope
- * `saldo+aval`, cobra y crea el ticket 'Pendiente' en un solo viaje), espejo de
- * la Carga Individual de Gestión de Jugadas.
- *
- * El ticket real queda también en la sesión (`ticketId`), así que quitarlo desde
- * `ListaTickets` ANULA la venta y devuelve el saldo.
+ * La venta se registra en `tickets_apuestas` (RPC transaccional `club_vender_jugada`)
+ * y descuenta el saldo del CLIENTE 1. El contexto de carrera (fecha · hipódromo ·
+ * carrera) se comparte con la vista para reflejar en vivo las jugadas registradas
+ * (incluidas las sincronizadas desde Sala).
  */
-export function BetSlip() {
+export function BetSlip({ contexto, onContextoChange }: BetSlipProps = {}) {
   // ── Contexto de la jugada (carrera) ─────────────────────────────────────
-  const [fecha, setFecha] = useState(() => hoyLocal());
-  const [hipodromo, setHipodromo] = useState("LA RINCONADA");
-  const [carrera, setCarrera] = useState("1");
+  const [fechaLocal, setFechaLocal] = useState(() => hoyLocal());
+  const [hipodromoLocal, setHipodromoLocal] = useState("LA RINCONADA");
+  const [carreraLocal, setCarreraLocal] = useState("1");
+  const fecha = contexto?.fecha ?? fechaLocal;
+  const hipodromo = contexto?.hipodromo ?? hipodromoLocal;
+  const carrera = contexto?.carrera ?? carreraLocal;
+  const setFecha = (v: string) => {
+    if (onContextoChange) onContextoChange({ fecha: v, hipodromo, carrera });
+    else setFechaLocal(v);
+  };
+  const setHipodromo = (v: string) => {
+    if (onContextoChange) onContextoChange({ fecha, hipodromo: v, carrera });
+    else setHipodromoLocal(v);
+  };
+  const setCarrera = (v: string) => {
+    if (onContextoChange) onContextoChange({ fecha, hipodromo, carrera: v });
+    else setCarreraLocal(v);
+  };
   const [comision, setComision] = useState("5");
 
   // ── Partes ──────────────────────────────────────────────────────────────

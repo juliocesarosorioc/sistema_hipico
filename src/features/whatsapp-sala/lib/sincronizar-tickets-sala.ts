@@ -351,9 +351,9 @@ export async function sincronizarTicketsPropuestaATaquilla(
           es_adelantada: false,
           moneda: monedaGrupo,
           nota_auditoria: {
-            ...notaAuditoriaSala(t.codigo_ticket),
+            ...notaAuditoriaTaquilla(t.codigo_ticket, fechaCarrera),
             sala_id: params.sala?.id || null,
-            fecha_carrera: fechaCarrera,
+            origen_sala: "SALA_P2P",
           },
         },
       ]);
