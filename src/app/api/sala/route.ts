@@ -2305,7 +2305,7 @@ export async function POST(req: Request) {
         // - En sala AMERICANAS: solo hipódromos americanos (no venezolanos)
         const { data: salaActual } = await supabaseAdmin
           .from("salas_juego")
-          .select("id, nombre_sala, orden_sala")
+          .select("id, nombre_sala, orden_sala, estado_carrera, numero_carrera_activa, hipodromo_activo")
           .eq("id", salaId)
           .maybeSingle();
 
@@ -2333,6 +2333,19 @@ export async function POST(req: Request) {
         if (esChatAmericanas && esHipoVenezuela) {
           return NextResponse.json(
             { ok: false, error: "En el chat de AMERICANAS solo pueden abrirse hipódromos americanos." },
+            { status: 400 }
+          );
+        }
+
+        const estadoCarreraActual = String(salaActual?.estado_carrera || "").toLowerCase().trim();
+        if (estadoCarreraActual === "abierta") {
+          const hipoActual = String(salaActual?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
+          const carreraActual = salaActual?.numero_carrera_activa ?? "?";
+          return NextResponse.json(
+            {
+              ok: false,
+              error: `No se puede abrir otra carrera: ${hipoActual} Carrera ${carreraActual} sigue abierta. Debes cerrarla antes de abrir la siguiente.`,
+            },
             { status: 400 }
           );
         }

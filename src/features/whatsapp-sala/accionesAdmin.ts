@@ -931,6 +931,24 @@ export async function ejecutarAccionAdmin(body: any): Promise<any | null> {
       return respuestaSala({ ok: false, error: "salaId es requerido" }, { status: 400 });
     }
 
+    const { data: salaPreviaAbrir } = await supabaseAdmin
+      .from("salas_juego")
+      .select("id, estado_carrera, numero_carrera_activa, hipodromo_activo")
+      .eq("id", salaId)
+      .maybeSingle();
+
+    if (String(salaPreviaAbrir?.estado_carrera || "").toLowerCase().trim() === "abierta") {
+      const hipoActual = String(salaPreviaAbrir?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
+      const carreraActual = salaPreviaAbrir?.numero_carrera_activa ?? "?";
+      return respuestaSala(
+        {
+          ok: false,
+          error: `No se puede abrir otra carrera: ${hipoActual} Carrera ${carreraActual} sigue abierta. Debes cerrarla antes de abrir la siguiente.`,
+        },
+        { status: 400 }
+      );
+    }
+
     const hipoLimpio = String(hipodromo || "LA RINCONADA").toUpperCase().trim();
     const numCarrera = parseInt(carrera, 10) || 1;
     const ord = numCarrera === 1 ? "1ra" : numCarrera === 2 ? "2da" : numCarrera === 3 ? "3ra" : `${numCarrera}ta`;

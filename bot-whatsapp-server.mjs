@@ -855,6 +855,16 @@ export function normalizarHipodromo(str) {
 export async function ejecutarAperturaCarrera(sala, groupJid, hipodromoArg, carreraArg) {
   if (!supabase) throw new Error("Supabase no configurado");
 
+  const estadoActual = String(sala?.estado_carrera || "").toLowerCase().trim();
+  if (estadoActual === "abierta") {
+    const hipoActual = String(sala?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
+    const carreraActual = sala?.numero_carrera_activa ?? "?";
+    return {
+      ok: false,
+      error: `No se puede abrir otra carrera: ${hipoActual} Carrera ${carreraActual} sigue abierta. Debes cerrarla antes de abrir la siguiente.`,
+    };
+  }
+
   const hipoLimpio = normalizarHipodromo(hipodromoArg || sala.hipodromo_activo || "LA RINCONADA");
   const numCarrera = parseInt(carreraArg, 10) || 1;
 

@@ -634,6 +634,25 @@ export async function manejarIntencionComando(params: {
       }
       const hipoLimpio = hipoTab?.nombre || hipoSolicitado.toUpperCase();
       const numCarrera = parseInt(posibleCarrera, 10) || parseInt(sala.numero_carrera_activa, 10) || 1;
+
+      if (String(sala?.estado_carrera || "").toLowerCase().trim() === "abierta") {
+        const hipoActual = String(sala?.hipodromo_activo || "HIPÓDROMO").toUpperCase();
+        const carreraActual = sala?.numero_carrera_activa ?? "?";
+        const msgCarreraAbierta = limpiarEtiquetasProhibidas(
+          `No se puede abrir otra carrera: ${hipoActual} Carrera ${carreraActual} sigue abierta. Debes cerrarla antes de abrir la siguiente.`
+        );
+        return respuestaSala({
+          ok: false,
+          tipo: "CARRERA_AUN_ABIERTA",
+          respuestaGrupo: msgCarreraAbierta,
+          msg_publico: msgCarreraAbierta,
+          msg_publico_bot: msgCarreraAbierta,
+          respuestaPublica: msgCarreraAbierta,
+          mensajePrivadoAutor: msgCarreraAbierta,
+          senderJid: participantJid,
+        });
+      }
+
       const nuevaCarreraId = await resolverOCrearCarreraExacta(hipoLimpio, numCarrera);
 
       await supabaseAdmin
