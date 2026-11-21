@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useAuthStore } from "@/shared/store/useAuthStore";
 import type { StoredTablaFija } from "@/shared/store/useTablasFijasStore";
 import { colorDeNumero, textoDeNumero, fmtMoney, sumaBase, parseNum, SUPERFICIES, type EjemplarTabla } from "@/features/tablas/lib/tipos";
 import { pagoPotencialEjemplar } from "@/features/tablas/lib/tablas-fijas";
-import { alternarCaballoInvalidadoTablaFija } from "@/features/tablas/lib/rpc";
+import { actualizarTabla, alternarCaballoInvalidadoTablaFija } from "@/features/tablas/lib/rpc";
 import { hoyLocal } from "@/features/gaceta/lib/programa";
 import { Flag, normalizarNacionalidad } from "@/shared/components/ui/BanderaPais";
 import { Button } from "@/shared/components/ui/Button";
@@ -53,6 +54,8 @@ export type VentaTablaItem = {
   cantidad?: number;
   comision_porcentaje?: number | null;
   adminAutorizado?: string | null;
+  /** Tasa Bs/USD para ventas en VES (parámetro p_tasa de la RPC). */
+  tasa?: number | null;
   grupo?: { id: string | number; nombre: string } | null;
   jugador?: {
     id: string | number;
@@ -150,11 +153,22 @@ export function MonitorTablas({
   onEjeFecha,
   onImprimirTablas,
 }: Props) {
+  const rol = useAuthStore((s) => s.rol);
+  const esPrincipal = useAuthStore((s) => s.esPrincipal);
+  const puedeGestionarTasa = rol === "superadmin" || rol === "admin_grupo" || esPrincipal;
+
+  const esMonedaVes = (m?: string | null) => {
+    const x = String(m ?? "").trim().toUpperCase();
+    return x === "VES" || x === "BS" || x === "BSF" || x === "BOLIVAR" || x === "BOLIVARES" || x === "BOLÍVAR" || x === "BOLÍVARES";
+  };
+
   const [vendiendo, setVendiendo] = useState<StoredTablaFija | null>(null);
   const [ejemplarVenta, setEjemplarVenta] = useState("");
   const [montoVenta, setMontoVenta] = useState("");
   const [clienteVenta, setClienteVenta] = useState("");
   const [grupoVenta, setGrupoVenta] = useState("");
+  const [tasaVenta, setTasaVenta] = useState("");
+  const [tasaTablaGuardando, setTasaTablaGuardando] = useState(false);
   const [vendiendoCargando, setVendiendoCargando] = useState(false);
   const [previewVenta, setPreviewVenta] = useState<{ item: VentaTablaItem; ticket: TicketVentaModel } | null>(null);
   const [previewConfirmando, setPreviewConfirmando] = useState(false);
@@ -279,6 +293,7 @@ export function MonitorTablas({
     setMontoVenta("");
     setClienteVenta("");
     setGrupoVenta(grupoSesion);
+    setTasaVenta(t.tasa_cambio != null && Number(t.tasa_cambio) > 0 ? String(t.tasa_cambio) : "");
     setVendiendoCargando(true);
     const [grupos, clientes] = await Promise.all([
       listarGruposVenta().catch(() => [] as GrupoVenta[]),
@@ -568,6 +583,40 @@ export function MonitorTablas({
     }
   };
 
+
+  const guardarTasaTabla = async () => {
+    if (!vendiendo) return;
+    const tasaNum = parseNum(tasaVenta);
+    if (!(tasaNum > 0)) {
+      setAviso("Indique una tasa v?lida (Bs/USD) mayor a cero para guardarla.");
+      return;
+    }
+    setTasaTablaGuardando(true);
+    const r = await actualizarTabla(vendiendo.id, { tasa_cambio: tasaNum });
+    setTasaTablaGuardando(false);
+    if (!r.ok) {
+      setAviso(r.error ?? "No se pudo guardar la tasa en la tabla.");
+      return;
+    }
+    setVendiendo({ ...vendiendo, tasa_cambio: tasaNum });
+    setTasaVenta(String(tasaNum));
+    setAviso("Tasa de la tabla actualizada.");
+  };
+
+  const eliminarTasaTabla = async () => {
+    if (!vendiendo) return;
+    setTasaTablaGuardando(true);
+    const r = await actualizarTabla(vendiendo.id, { tasa_cambio: null });
+    setTasaTablaGuardando(false);
+    if (!r.ok) {
+      setAviso(r.error ?? "No se pudo eliminar la tasa de la tabla.");
+      return;
+    }
+    setVendiendo({ ...vendiendo, tasa_cambio: null as any });
+    setTasaVenta("");
+    setAviso("Tasa de la tabla eliminada.");
+  };
+
   const lanzarVenta = async () => {
     if (!vendiendo || !ejemplarVenta.trim() || !montoVenta.trim()) {
       return setAviso("Selecciona un ejemplar e indica el monto jugado.");
@@ -583,11 +632,17 @@ export function MonitorTablas({
     }
     const monto = parseNum(montoVenta);
     if (!(monto > 0)) {
-      return setAviso("El monto debe ser un número mayor a cero.");
+      return setAviso("El monto debe ser un n?mero mayor a cero.");
     }
     const cliente = opcionesVenta.clientes.find((x) => String(x.id) === clienteVenta);
     const grupo = opcionesVenta.grupos.find((x) => String(x.id) === grupoEfectivo);
-    const cObj = (vendiendo.caballos ?? []).find((c) => String(c.numero) === ejemplarVenta);
+    const monedaEfectivaLanzar = grupo?.moneda ?? vendiendo.moneda ?? "USD";
+    const tasaNumLanzar = parseNum(tasaVenta);
+    const tasaTablaNum = Number(vendiendo.tasa_cambio ?? 0);
+    if (esMonedaVes(monedaEfectivaLanzar) && !(tasaNumLanzar > 0) && !(tasaTablaNum > 0)) {
+      return setAviso("Indique la tasa (Bs/USD): la venta es en bol?vares. Un administrador puede registrarla o modificarla.");
+    }
+        const cObj = (vendiendo.caballos ?? []).find((c) => String(c.numero) === ejemplarVenta);
     const nombreCab = cObj?.nombre ?? "TABLA COMPLETA";
     const valorUnitario = parseNum(cObj?.valor_ejemplar);
     const cantidadCalculada =
@@ -599,6 +654,10 @@ export function MonitorTablas({
     const comisionPorcentaje = grupo?.comision_tablas ?? grupo?.comision_default ?? 2.5;
 
     const armarPreview = async (adminAut?: string) => {
+      const monedaEfectiva = grupo?.moneda ?? vendiendo.moneda ?? "USD";
+      const requiereTasa = esMonedaVes(monedaEfectiva);
+      const tasaNum = parseNum(tasaVenta);
+      const tasaAplicar = requiereTasa && tasaNum > 0 ? tasaNum : (requiereTasa && tasaTablaNum > 0 ? tasaTablaNum : null);
       const item: VentaTablaItem = {
         tablaId: vendiendo.id,
         numero: ejemplarVenta,
@@ -607,6 +666,7 @@ export function MonitorTablas({
         cantidad: cantidadCalculada,
         comision_porcentaje: comisionPorcentaje,
         adminAutorizado: adminAut ?? null,
+        tasa: tasaAplicar,
         grupo: grupo
           ? { id: grupo.id, nombre: grupo.nombre }
           : grupoEfectivo
@@ -635,12 +695,12 @@ export function MonitorTablas({
           hipodromo: vendiendo.hipodromo ?? "",
           fecha: diaDeLaTabla(vendiendo),
           carrera: vendiendo.carrera ?? "",
-          titulo: `TABLA ${nombreHipodromoParaMostrar(vendiendo.hipodromo)} C${vendiendo.carrera} · ${ejemplarVenta === "TABLA" ? "COMPLETA" : `Nº ${ejemplarVenta}`}`,
-          detalle: `${nombreCab}${cantidadCalculada > 1 ? ` × ${cantidadCalculada} tablas` : ""}`,
+          titulo: `TABLA ${nombreHipodromoParaMostrar(vendiendo.hipodromo)} C${vendiendo.carrera} - ${ejemplarVenta === "TABLA" ? "COMPLETA" : `N? ${ejemplarVenta}`}}`,
+          detalle: `${nombreCab}${cantidadCalculada > 1 ? ` x ${cantidadCalculada} tablas` : ""}${requiereTasa && tasaAplicar ? ` ? Tasa ${tasaAplicar.toLocaleString("es-VE", { maximumFractionDigits: 4 })} Bs/USD` : ""}`,
           jugador: cliente?.nombre ?? "",
           grupo: grupo?.nombre ?? (grupoEfectivo ? nombreGrupoSesion || null : null),
           monto,
-          moneda: grupo?.moneda ?? vendiendo.moneda,
+          moneda: monedaEfectiva,
           pago: pagoPotencialNumerico(vendiendo, ejemplarVenta, monto, cantidadCalculada),
           saldoAntes: saldo,
           saldoDespues: saldo - monto,
@@ -712,7 +772,8 @@ export function MonitorTablas({
     setMontoVenta("");
     setClienteVenta("");
     setGrupoVenta("");
-    setAviso("🛒 Venta registrada: se descontó del saldo y se creó el ticket.");
+    setTasaVenta("");
+    setAviso("Venta registrada: se descont? del saldo y se cre? el ticket.");
   };
 
   /**
@@ -1657,6 +1718,54 @@ export function MonitorTablas({
                 <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Monto jugado</label>
                 <input value={montoVenta} onChange={(e) => setMontoVenta(e.target.value)} inputMode="decimal" placeholder="0,00" className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-black text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500" />
               </div>
+              {(() => {
+                const grupoSel = opcionesVenta.grupos.find((g) => String(g.id) === (grupoSesion || grupoVenta));
+                const monedaEfectivaModal = grupoSel?.moneda ?? vendiendo.moneda ?? "USD";
+                const requiereTasaModal = esMonedaVes(monedaEfectivaModal);
+                if (!requiereTasaModal) return null;
+                return (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-2">
+                    <label className="mb-1 block text-[10px] font-bold uppercase text-amber-900">Tasa Bs/USD (venta en bol?vares)</label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        value={tasaVenta}
+                        onChange={(e) => setTasaVenta(e.target.value)}
+                        inputMode="decimal"
+                        placeholder={vendiendo.tasa_cambio != null ? String(vendiendo.tasa_cambio) : "Ej. 36,50"}
+                        className="min-w-[120px] flex-1 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-black text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                      />
+                      {puedeGestionarTasa && (
+                        <>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void guardarTasaTabla()}
+                            disabled={tasaTablaGuardando || vendiendoCargando}
+                            title="Guardar o modificar la tasa en la tabla"
+                          >
+                            {tasaTablaGuardando ? "..." : "Guardar tasa"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="danger"
+                            size="sm"
+                            onClick={() => void eliminarTasaTabla()}
+                            disabled={tasaTablaGuardando || vendiendoCargando || vendiendo.tasa_cambio == null}
+                            title="Eliminar la tasa registrada en la tabla"
+                          >
+                            Eliminar
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[10px] leading-tight text-amber-900">
+                      La venta en Bs requiere tasa. {puedeGestionarTasa ? "Como administrador puedes guardar/modificar o eliminar la tasa de esta tabla." : "Solicita a un administrador registrar o modificar la tasa si falta."}
+                      {vendiendo.tasa_cambio != null ? ` Tasa actual en tabla: ${Number(vendiendo.tasa_cambio).toLocaleString("es-VE", { maximumFractionDigits: 4 })} Bs/USD.` : ""}
+                    </p>
+                  </div>
+                );
+              })()}
               <div className="flex items-center justify-between rounded-lg bg-success-500/10 px-3 py-2 text-xs font-semibold text-slate-700">
                 <span>Pago potencial +{PremioVenta(vendiendo, ejemplarVenta, montoVenta)}</span>
               </div>

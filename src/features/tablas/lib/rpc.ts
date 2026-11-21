@@ -428,6 +428,7 @@ const COLUMNAS_EDITABLES = [
   "superficie",
   "retirados_oficiales",
   "moneda",
+  "tasa_cambio",
   "grupo_venta",
   "monto_tabla",
   "comision_grupo",

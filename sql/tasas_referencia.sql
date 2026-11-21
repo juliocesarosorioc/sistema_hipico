@@ -24,5 +24,24 @@ create index if not exists idx_tasas_ref_tipo_fecha
 comment on table public.tasas_referencia is
     'Historial de tasas de referencia: BCV, Binance y EURO con su fecha de aplicacion. Inmutable: cada carga nueva agrega un registro.';
 
+-- Acceso: esta tabla la escribe/lee la app (cliente anon) desde Contabilidad.
+-- En entornos con RLS activo, sin politicas el INSERT falla con
+-- "new row violates row-level security policy for table \"tasas_referencia\"".
+alter table public.tasas_referencia enable row level security;
+
+drop policy if exists "tasas_referencia_select" on public.tasas_referencia;
+create policy "tasas_referencia_select"
+    on public.tasas_referencia
+    for select
+    using (true);
+
+drop policy if exists "tasas_referencia_insert" on public.tasas_referencia;
+create policy "tasas_referencia_insert"
+    on public.tasas_referencia
+    for insert
+    with check (true);
+
+grant select, insert on table public.tasas_referencia to anon, authenticated;
+
 -- VERIFICACION -------------------------------------------------
 -- select tipo, tasa, fecha_aplicar from public.tasas_referencia order by tipo, fecha_aplicar desc;

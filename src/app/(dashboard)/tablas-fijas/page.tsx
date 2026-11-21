@@ -46,6 +46,7 @@ export default function TablasFijasPage() {
             // "TABLA" es la opcion de tabla completa; la RPC espera null.
             ejemplarNumero: v.numero === "TABLA" ? null : v.numero,
             comisionPorcentaje: v.comision_porcentaje ?? null,
+            tasa: v.tasa ?? null,
           });
           return { ok: r.ok, error: r.error };
         }}
