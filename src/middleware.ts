@@ -53,6 +53,8 @@ async function leerSesion(req: NextRequest): Promise<SesionVerificada | null> {
 
 const ES_PUBLICA = (p: string) =>
   p === "/" ||
+  p === "/sala" ||
+  p.startsWith("/sala/") ||
   // El SW precachea esta ruta al instalarla: si el middleware la redirigiera a
   // "/", la página de respaldo offline se guardaría con el HTML de portada.
   p === "/_offline" ||
