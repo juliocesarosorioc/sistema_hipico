@@ -91,7 +91,10 @@ const enGitHubActions = process.env.GITHUB_ACTIONS === "true";
  *
  * Cambios respecto a la versión anterior:
  *  - X-Frame-Options: cambiado de SAMEORIGIN a DENY (Anti-Clickjacking total).
- *  - Permissions-Policy: eliminado `unload=*` que no es una directiva estándar.
+ *  - Permissions-Policy: eliminado `unload=*` (no estándar). Chrome usa un
+ *    allowlist vacío por defecto, así que los listeners de `unload` que puedan
+ *    registrar scripts de terceros se bloquean y DevTools avisa; el código
+ *    propio no registra ninguno.
  *  - CSP: script-src y script-src-elem ya no permiten `https:` abierto; solo
  *    dominios explícitamente declarados (Supabase, Gemini, Cloudflare Turnstile,
  *    jsDelivr para el worker de pdfjs-dist que se carga en el cliente).
@@ -171,6 +174,16 @@ const withPWA = withPWAInit({
   dest: "public",
   disable: process.env.NODE_ENV === "development",
   register: true,
+  /**
+   * Sin este fallback, las rutas `NetworkFirst` del SW (en particular
+   * `cacheName: "pages"`) rechazan la promesa cuando fallan red y caché y
+   * Chrome lo reporta como `no-response` / "network error response".
+   * next-pwa precachea `/_offline` (src/pages/_offline.tsx) y lo sirve en ese
+   * caso. El middleware lo deja pasar para que el precache no guarde "/".
+   */
+  fallbacks: {
+    document: "/_offline",
+  },
 });
 
 export default withPWA(nextConfig);

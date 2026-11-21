@@ -25,10 +25,10 @@ export const PLANTILLAS_GRUPO_DEFAULT: PlantillaGrupoItem[] = [
     clave: "confirmacion_jugada",
     titulo: "Confirmación de Jugada Concretada",
     descripcion: "Emitido en el grupo cuando dos jugadores casan una jugada 100%.",
-    contenido:
-      "{encabezado}\n✅ Aquí jugaron: *{juega} Juega {modalidad} {proporcion} da {da} {monto}*\n🔹 Juega: {juega} (Riesgo {riesgo_juega})\n🔸 Da: {da} (Riesgo {riesgo_da})",
+    contenido: "{numero_jugada}✅ Aquí Jugaron",
     variables: [
       ...VARS_ENCABEZADO,
+      "{numero_jugada}",
       "{juega}",
       "{da}",
       "{modalidad}",
@@ -43,9 +43,8 @@ export const PLANTILLAS_GRUPO_DEFAULT: PlantillaGrupoItem[] = [
     titulo: "Concreción por Saldo Parcial",
     descripcion:
       "Bot de concreción cuando dos jugadores pactan por el saldo disponible de uno o ambos.",
-    contenido:
-      "{encabezado}\n(Check) Aquí Jugaron \"{juega}\" y \"{da}\" \"{monto}\" por saldo de \"{saldo_de}\"",
-    variables: [...VARS_ENCABEZADO, "{juega}", "{da}", "{monto}", "{saldo_de}"],
+    contenido: "{numero_jugada}✅ Aquí Jugaron ⚠️Solo {monto} por pozo de \"{saldo_de}\"",
+    variables: [...VARS_ENCABEZADO, "{numero_jugada}", "{juega}", "{da}", "{monto}", "{saldo_de}"],
   },
   {
     clave: "tope_saldo_publico",
@@ -123,6 +122,52 @@ export const PLANTILLAS_GRUPO_DEFAULT: PlantillaGrupoItem[] = [
     contenido:
       "🤖 Corrección Pedagógica: No pude procesar tu jugada \"{texto}\".\n\n✅ *Ejemplos correctos:*\n• Puesto: \"Juego 1P 5 20.000\"\n• A Premio: \"Juego 3x5 10a8 100\"\n• Llave: \"Juego 1P 2-5 500\"",
     variables: ["{texto}"],
+  },
+  {
+    clave: "bienvenida_individual",
+    titulo: "Bienvenida Individual del Jugador",
+    descripcion:
+      "Se envía por DM la primera vez que el jugador escribe al grupo. Presenta la sala y su saldo disponible.",
+    contenido:
+      "👋 ¡Hola {jugador}! Te damos la bienvenida a {grupo} (Sala {codigo_sala}). Tu saldo disponible es {saldo_disponible}.\n\n" +
+      "🤖 Este grupo es manejado con un bot. Para jugar, escribí siempre:Qué haces (Juego/Consigo), Qué juegas, Ejemplar(es) y Monto.\n\n" +
+      "✅ Ejemplos válidos (también en cualquier orden o en líneas separadas):\n" +
+      "• Juego 1P del 5 con 100\n" +
+      "• Juego a5 el 4 con 100  (= Juego 10/5 el 4 con 100)\n" +
+      "• Juego 1/2n del 5 con 100  (= 1&2n · 1 y 2 n · 1 /2n)\n" +
+      "• Juego 1/2n y 2n del 5 con 100  (= Juego 1/2-2n del 5 con 100)\n" +
+      "• Juego 3x5 10a8 con 100\n\n" +
+      "⚠️ Respetá el orden de llegada: 10/2, 10/3, 10/3.5, 10a4, 10/5, 10@5.5, 1p, 1/2n, 2n, 2/3n… Si no indicás proporción en un mano a mano, se sobreentiende pp=10/10.",
+    variables: ["{nombre}", "{jugador}", "{codigo_sala}", "{grupo}", "{saldo_disponible}"],
+  },
+  {
+    clave: "cierre_sin_pizarra",
+    titulo: "Cierre de Carrera sin Pizarra",
+    descripcion: "Aviso de cierre cuando la carrera no tiene pizarra oficial sentenciada.",
+    contenido: "🔒 *{hipodromo} CARRERA {carrera} CERRADA* — Sin pizarra oficial. ¡Suerte a todos!",
+    variables: ["{hipodromo}", "{carrera}"],
+  },
+  {
+    clave: "recarga_instrucciones",
+    titulo: "Instrucciones de Recarga",
+    descripcion: "DM con los pasos para recargar saldo, enviado cuando el jugador lo solicita.",
+    contenido:
+      "💳 Hola {nombre}, para recargar tu saldo escribí *RECARGA* y te enviaremos los datos de la transferencia. ¡Gracias!",
+    variables: ["{nombre}"],
+  },
+  {
+    clave: "mensaje_grupo",
+    titulo: "Mensaje Libre al Grupo",
+    descripcion: "Redacción libre para enviar al grupo de WhatsApp desde el panel.",
+    contenido: "",
+    variables: [],
+  },
+  {
+    clave: "mensaje_individual",
+    titulo: "Mensaje Libre Individual (DM)",
+    descripcion: "Redacción libre para enviar por mensaje privado desde el panel.",
+    contenido: "",
+    variables: [],
   },
 ];
 

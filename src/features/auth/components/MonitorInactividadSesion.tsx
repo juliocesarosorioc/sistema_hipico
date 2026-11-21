@@ -20,7 +20,7 @@ const CLAVE_STORAGE_ACTIVIDAD = "club_ultima_actividad";
 
 export function MonitorInactividadSesion() {
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const usuario = useAuthStore((s) => s.usuario);
   const salirStore = useAuthStore((s) => s.salir);
 

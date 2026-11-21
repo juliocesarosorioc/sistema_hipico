@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { cerrarParadasAbiertasDeSala } from "@/features/whatsapp-sala/concretarJugada";
 import { obtenerSecretoInternoBot } from "@/features/whatsapp-sala/lib/bot-secret";
+import { requireSession } from "@/features/seguridad/lib/require-session";
 
 export const dynamic = "force-dynamic";
 
@@ -61,7 +62,15 @@ async function registrarEstadoCarreraEnChatAdmin(salaActualizada: any, texto: st
   } catch {}
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const autorizacion = await requireSession(req, ["superadmin", "admin_grupo"]);
+  if (!autorizacion.ok) {
+    return NextResponse.json(
+      { ok: false, error: autorizacion.error },
+      { status: autorizacion.status }
+    );
+  }
+
   try {
     const res = await fetch(`${BOT_DAEMON_URL}/status`, {
       method: "GET",
@@ -98,6 +107,13 @@ export async function POST(req: NextRequest) {
   const _host = req.headers.get("host");
   if (_origin && !_origin.includes(_host || "")) {
     return NextResponse.json({ error: "CSRF bloqueado" }, { status: 403 });
+  }
+  const autorizacion = await requireSession(req, ["superadmin", "admin_grupo"]);
+  if (!autorizacion.ok) {
+    return NextResponse.json(
+      { ok: false, error: autorizacion.error },
+      { status: autorizacion.status }
+    );
   }
   try {
     const body = await req.json().catch(() => ({}));

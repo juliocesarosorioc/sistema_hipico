@@ -420,14 +420,14 @@ export async function cerrarSesion(): Promise<void> {
 }
 
 /**
- * Sesión válida en el navegador. Es la misma señal que acepta el middleware:
- * cookie de usuario, token HMAC de la Sala o sesión de Supabase en storage.
+ * Sesión válida en el navegador. La cookie `hipico_session` es httpOnly, así
+ * que acá solo se ven las señales locales; la autoridad la tiene el middleware
+ * al verificar el JWT.
  */
 export function hasValidSession(): boolean {
   if (typeof window === "undefined") return false;
   try {
     const cookies = String(document.cookie || "");
-    if (/(?:^|;\s*)hipico_usuario=/.test(cookies)) return true;
     if (/(?:^|;\s*)sala_staff_token=/.test(cookies)) return true;
     const llavesLocales = Object.keys(window.localStorage);
     if (

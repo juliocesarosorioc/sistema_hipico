@@ -756,17 +756,11 @@ export function procesarMensajeSalaJugadas(
 
     // Respuesta de la IA
     let textoIa = "";
-    if (porEncimaDeSaldo) {
-      // Regla exacta: Si concreta por encima de su saldo: "*Jugaron X monto*"
-      textoIa = `*Jugaron ${formatearMonto(montoEfectivo)}*`;
-    } else if (fueRecortadoPorRemanente) {
-      // Regla exacta: Si pidieron más de lo que quedaba en la propuesta: "Jugo X, Es lo que queda"
-      textoIa = `Jugo ${fmt(montoEfectivo)}, Es lo que queda`;
+    if (porEncimaDeSaldo || fueRecortadoPorRemanente) {
+      const jugadorLimitador = porEncimaDeSaldo ? autor : respuestaA.autor;
+      textoIa = `✅ Aquí Jugaron ⚠️Solo ${formatearMonto(montoEfectivo)} por pozo de "${jugadorLimitador}"`;
     } else {
-      // Regla exacta: Si ambos disponen de saldo: "*Aquí Jugaron*" en negritas
-      textoIa = `*Aquí Jugaron* (${prop.jugada} #${prop.caballos} por ${formatearMonto(
-        montoEfectivo
-      )} entre ${respuestaA.autor} y ${autor})`;
+      textoIa = "✅ Aquí Jugaron";
     }
 
     const msgIa: MensajeSalaWhatsApp = {

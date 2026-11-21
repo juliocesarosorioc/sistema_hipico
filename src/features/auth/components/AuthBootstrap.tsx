@@ -40,7 +40,7 @@ export function AuthBootstrap() {
   const perfiles = useAuthStore((s) => s.perfiles);
   const miGrupoId = useAuthStore((s) => s.grupoId);
   const router = useRouter();
-  const ruta = usePathname();
+  const ruta = usePathname() ?? "";
   const rutaRef = useRef(ruta);
   rutaRef.current = ruta;
 

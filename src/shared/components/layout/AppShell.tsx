@@ -75,7 +75,7 @@ function PantallaDeEspera() {
  * redirige ahí (equivale al redirect del middleware para el estático).
  */
 export function AppShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const router = useRouter();
   const perfiles = useAuthStore((s) => s.perfiles);
   const permisos = useAuthStore((s) => s.permisos);

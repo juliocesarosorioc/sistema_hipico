@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/core/supabase-admin";
+import { requireSession } from "@/features/seguridad/lib/require-session";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const autorizacion = await requireSession(req, ["superadmin"]);
+  if (!autorizacion.ok) {
+    return NextResponse.json(
+      { ok: false, error: autorizacion.error },
+      { status: autorizacion.status }
+    );
+  }
+
   try {
     const { data: rows, error } = await supabaseAdmin
       .from("grupos_venta")
@@ -36,6 +45,14 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const autorizacion = await requireSession(req, ["superadmin"]);
+  if (!autorizacion.ok) {
+    return NextResponse.json(
+      { ok: false, error: autorizacion.error },
+      { status: autorizacion.status }
+    );
+  }
+
   try {
     const body = await req.json();
     const { grupoId, accion, estatus, suspender } = body;

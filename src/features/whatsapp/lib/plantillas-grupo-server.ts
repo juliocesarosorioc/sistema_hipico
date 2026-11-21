@@ -1,8 +1,8 @@
 /**
- * Loader SERVER-ONLY de plantillas guardadas por grupo.
- * Las plantillas persistidas en `whatsapp_plantillas_grupo` sustituyen a los
- * defaults en planos, resultados, apertura y cierre. Si la tabla no existe o
- * falla, se degradan a los defaults sin romper el bot.
+ * Loader SERVER-ONLY de plantillas guardadas globalmente y por grupo.
+ * Las plantillas globales (grupo_id IS NULL) aplican a todos los inquilinos;
+ * las del grupo específico tienen precedencia. Si la tabla no existe o falla,
+ * se degradan a los defaults sin romper el bot.
  */
 import { supabaseAdmin } from "@/core/supabase-admin";
 import {
@@ -12,6 +12,16 @@ import {
 
 export type MapaPlantillasGrupo = Map<string, string>;
 
+function aplicarFilas(mapa: MapaPlantillasGrupo, filas: any[] | null | undefined): void {
+  for (const fila of filas || []) {
+    const clave = String(fila?.clave ?? "").trim();
+    const contenido = typeof fila?.contenido === "string" ? fila.contenido : "";
+    if (!clave || !contenido.trim()) continue;
+    if (fila?.activo === false) continue;
+    mapa.set(clave, contenido);
+  }
+}
+
 export async function cargarPlantillasGrupo(
   grupoId?: string | number | null
 ): Promise<MapaPlantillasGrupo> {
@@ -20,22 +30,21 @@ export async function cargarPlantillasGrupo(
     mapa.set(def.clave, def.contenido);
   }
 
-  if (!grupoId) return mapa;
-
   try {
-    const { data, error } = await supabaseAdmin
+    // 1) Globales: base compartida por todos los inquilinos.
+    const { data: globales, error: errGlobal } = await supabaseAdmin
       .from("whatsapp_plantillas_grupo")
       .select("clave, contenido, activo")
-      .eq("grupo_id", String(grupoId));
+      .is("grupo_id", null);
+    if (!errGlobal) aplicarFilas(mapa, globales);
 
-    if (!error && Array.isArray(data)) {
-      for (const fila of data) {
-        const clave = String(fila?.clave ?? "").trim();
-        const contenido = typeof fila?.contenido === "string" ? fila.contenido : "";
-        if (!clave || !contenido.trim()) continue;
-        if (fila?.activo === false) continue;
-        mapa.set(clave, contenido);
-      }
+    // 2) Grupo: sobrescribe a las globales (y a los defaults).
+    if (grupoId) {
+      const { data: delGrupo, error: errGrupo } = await supabaseAdmin
+        .from("whatsapp_plantillas_grupo")
+        .select("clave, contenido, activo")
+        .eq("grupo_id", String(grupoId));
+      if (!errGrupo) aplicarFilas(mapa, delGrupo);
     }
   } catch {
     // Tabla opcional: los defaults siguen operativos.

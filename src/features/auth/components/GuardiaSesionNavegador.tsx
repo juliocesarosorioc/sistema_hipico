@@ -9,7 +9,7 @@ import { hasValidSession } from "@/features/auth/lib/sesion";
  * sesión (o viene de la caché), sustituye la entrada por /login.
  */
 export function GuardiaSesionNavegador() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
 
   useEffect(() => {
     if (pathname === "/login" || pathname === "/verificacion") return;

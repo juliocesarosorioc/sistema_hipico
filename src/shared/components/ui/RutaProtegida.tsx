@@ -42,7 +42,7 @@ const aLista = (v: string | string[] | undefined): string[] =>
  */
 export function RutaProtegida({ permiso, algunaDe, children }: Props) {
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const inicializada = useAuthStore((s) => s.inicializada);
   const permisos = useAuthStore((s) => s.permisos);
   const esPrincipal = useAuthStore((s) => s.esPrincipal);

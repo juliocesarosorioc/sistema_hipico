@@ -804,7 +804,14 @@ async function enviarMensajeGrupo(groupJid, texto, quotedMsgId = null) {
     }
   }
 
-  const res = await sock.sendMessage(groupJid, { text: texto }, opciones);
+  const contenido = { text: texto };
+  const mencionados = Array.from(
+    new Set(
+      (String(texto).match(/@\d{7,15}/g) || []).map((m) => `${m.slice(1)}@s.whatsapp.net`)
+    )
+  );
+  if (mencionados.length > 0) contenido.mentionedJid = mencionados;
+  const res = await sock.sendMessage(groupJid, contenido, opciones);
   registrarMensajeEnviadoPorBot(res);
   return res;
 }
@@ -963,7 +970,9 @@ export async function ejecutarCierreCarrera(sala, groupJid) {
   const numCarrera = sala.numero_carrera_activa || 1;
 
   const mapaCierre = await cargarPlantillasGrupo(sala?.grupo_id);
-  const textoCierre = obtenerPlantillaGrupo(
+  const avisoCierre =
+    "⚠️ Si la carrera se anula, se devuelve el dinero a los jugadores; si no, escriba la pizarra: LLEGADA: 1RO.2DO.3RO...";
+  const textoCierreBase = obtenerPlantillaGrupo(
     mapaCierre,
     "cierre_carrera",
     {
@@ -971,8 +980,12 @@ export async function ejecutarCierreCarrera(sala, groupJid) {
       hipodromo: hipo,
       carrera: numCarrera,
     },
-    `${encabezadoGrupo(sala, "cierre")}\n🔒 *${hipo} CARRERA ${numCarrera} CERRADA* — No más jugadas. Suerte a todos.`
+    `${encabezadoGrupo(sala, "cierre")}\n🔒 *${hipo} CARRERA ${numCarrera} CERRADA* — No más jugadas. Suerte a todos.\n${avisoCierre}`
   );
+  // Conserva comandos existentes y agrega el aviso aunque haya plantilla propia.
+  const textoCierre = textoCierreBase.includes("se devuelve el dinero")
+    ? textoCierreBase
+    : `${textoCierreBase}\n${avisoCierre}`;
 
   if (groupJid && conectado) {
     await enviarMensajeGrupo(groupJid, textoCierre);
@@ -1026,35 +1039,79 @@ export async function construirYPublicarPlano(sala, groupJid) {
     } catch {}
   }
 
-  const lineas =
-    lista.length > 0
-      ? lista
-          .map((t, idx) => {
-            const proponente = t.proponente_nombre || "Jugador A";
-            const aceptante = t.aceptante_nombre || "Jugador B";
-            const accProp = String(t.accion_proponente || "JUEGA").trim().toUpperCase();
-            const esConsigueProp = accProp === "CONSIGUE" || accProp === "CONSIGO" || accProp === "DA" || accProp === "DOY";
-            const jugadorJuega = esConsigueProp ? aceptante : proponente;
-            const jugadorDa = esConsigueProp ? proponente : aceptante;
-            const prop = String(t.proporcion_premio || t.proporcion || "").trim();
-            const tieneProp10 = /^10\s*[\/aAª@\-]\s*\d+(?:[.,]\d+)?$/i.test(prop) && !/^10\s*[\/aAª@\-]\s*10$/i.test(prop);
-            const propCanon = tieneProp10 ? prop.toUpperCase().replace(/\s+/g, "").replace(/[aAª@\-]/g, "/").replace(",", ".") : "";
-            let jugadaToken = "";
-            let caballoToken = "";
-            if (t.es_match || (Array.isArray(t.caballos_bando_b) && t.caballos_bando_b.length > 0)) {
-              const bA = (t.caballos_bando_a || []).join("-") || t.ejemplar_numero || "1";
-              const bB = (t.caballos_bando_b || []).join("-");
-              caballoToken = `${bA}x${bB}`;
-              jugadaToken = propCanon;
-            } else {
-              const mod = String(t.modalidad || "1P").trim().toUpperCase();
-              caballoToken = String(t.ejemplar_numero || (t.caballos_bando_a || []).join("-") || "1").trim();
-              jugadaToken = propCanon || (mod === "MATCH" ? "PP" : mod);
-            }
-            return `${idx + 1}) Juega ${jugadorJuega} ${jugadaToken ? `${jugadaToken} ` : ""}(${caballoToken}) con ${formatearMonto(t.monto_concretado)} da ${jugadorDa}`;
-          })
-          .join("\n")
-      : "_No hay jugadas concretadas en esta carrera._";
+  // Réplica del plano oficial: agrupación EXCLUSIVA por Día.Hipódromo.Carrera.
+  const carrerasMeta = new Map();
+  if (carreraId) {
+    try {
+      const { data: rowsCarreras } = await supabase
+        .from("carreras")
+        .select("id, fecha, hipodromo, carrera")
+        .eq("id", carreraId);
+      for (const c of rowsCarreras || []) carrerasMeta.set(String(c.id), c);
+    } catch {}
+  }
+  const fechaDeTicket = (t) => {
+    const crudo = String(t?.created_at || t?.fecha_carrera || t?.fecha || "").slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(crudo) ? crudo : new Date().toISOString().slice(0, 10);
+  };
+  const metaDeTicket = (t) => {
+    const c = carrerasMeta.get(String(t?.carrera_id));
+    return {
+      fecha: String(c?.fecha || t?.fecha_carrera || t?.fecha || fechaDeTicket(t)).slice(0, 10),
+      hipodromo: String(c?.hipodromo || t?.hipodromo || hipodromo).trim().toUpperCase(),
+      carrera: String(c?.carrera ?? t?.numero_carrera ?? numCarrera).trim(),
+    };
+  };
+  const formatearJugadaPlano = (t, idx) => {
+    const proponente = t.proponente_nombre || "Jugador A";
+    const aceptante = t.aceptante_nombre || "Jugador B";
+    const accProp = String(t.accion_proponente || "JUEGA").trim().toUpperCase();
+    const esConsigueProp = accProp === "CONSIGUE" || accProp === "CONSIGO" || accProp === "DA" || accProp === "DOY";
+    const jugadorJuega = esConsigueProp ? aceptante : proponente;
+    const jugadorDa = esConsigueProp ? proponente : aceptante;
+    const bandoA = Array.isArray(t.caballos_bando_a) ? t.caballos_bando_a.filter(Boolean) : [];
+    const bandoB = Array.isArray(t.caballos_bando_b) ? t.caballos_bando_b.filter(Boolean) : [];
+    const prop = String(t.proporcion_premio || t.proporcion || "").trim();
+    const tieneProp10 = /^10\s*[\/aAª@\-]\s*\d+(?:[.,]\d+)?$/i.test(prop) && !/^10\s*[\/aAª@\-]\s*10$/i.test(prop);
+    const propCanon = tieneProp10 ? prop.toUpperCase().replace(/\s+/g, "").replace(/[aAª@\-]/g, "/").replace(",", ".") : "";
+    const montoNum = Number(t.monto_concretado || 0);
+    const montoToken = montoNum > 0 ? ` ${formatearMonto(montoNum)}` : "";
+    const daToken = jugadorDa ? ` da ${jugadorDa}` : "";
+    if (t.es_match || bandoB.length > 0) {
+      const caballos = `${bandoA.join("-") || t.ejemplar_numero || "1"}x${bandoB.join("-") || "1"}`;
+      const detalle = [propCanon || (t.es_match ? "PP" : ""), caballos].filter(Boolean).join(" ");
+      return `*${idx}.-* ${jugadorJuega}${detalle ? ` ${detalle}` : ""}${montoToken}${daToken}`;
+    }
+    const mod = String(t.modalidad || "1P").trim().toLowerCase();
+    const ejemplar = String(t.ejemplar_numero || bandoA.join("-") || "1").trim();
+    return `*${idx}.-* ${jugadorJuega} Juega ${mod} #${ejemplar}${montoToken}${daToken}`;
+  };
+  const gruposPlano = new Map();
+  for (const t of lista) {
+    const meta = metaDeTicket(t);
+    const key = `${meta.fecha}|${meta.hipodromo}|${meta.carrera}`;
+    if (!gruposPlano.has(key)) gruposPlano.set(key, { ...meta, tickets: [] });
+    gruposPlano.get(key).tickets.push(t);
+  }
+  const gruposOrdenados = Array.from(gruposPlano.values()).sort((a, b) => {
+    if (a.fecha !== b.fecha) return a.fecha.localeCompare(b.fecha);
+    if (a.hipodromo !== b.hipodromo) return a.hipodromo.localeCompare(b.hipodromo);
+    return Number(a.carrera) - Number(b.carrera) || a.carrera.localeCompare(b.carrera);
+  });
+  const lineas = gruposOrdenados.length
+    ? gruposOrdenados
+        .map((g) => {
+          const jugadas = [...g.tickets].sort((a, b) => {
+            const f = String(a?.created_at || "").localeCompare(String(b?.created_at || ""));
+            return f !== 0 ? f : Number(a?.orden_fifo || 0) - Number(b?.orden_fifo || 0);
+          });
+          return (
+            `📅 ${g.fecha} · 🏇 ${g.hipodromo} · Carrera ${g.carrera}\n` +
+            jugadas.map((t, idx) => formatearJugadaPlano(t, idx + 1)).join("\n")
+          );
+        })
+        .join("\n\n")
+    : "_No hay jugadas concretadas en esta carrera._";
 
   const mapaPlano = await cargarPlantillasGrupo(sala?.grupo_id);
   const encabezadoPlano = obtenerPlantillaGrupo(
@@ -1444,26 +1501,67 @@ export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw, esRec
   }
   const { data: jugadasCarrera } = await qJugadas;
   const listaJugadas = jugadasCarrera || [];
+
+  // Formato público por jugada: *1) SAM + CLUB* / *1) SAM - CLUB* (el signo
+  // corresponde a quien JUEGA, según el resumen de positivos/negativos).
+  const nombresPositivos = new Set(
+    positivos.map((l) => (String(l).match(/\*([^*]+)\*/) || [])[1]?.trim().toUpperCase()).filter(Boolean)
+  );
+  const nombresNegativos = new Set(
+    negativos.map((l) => (String(l).match(/\*([^*]+)\*/) || [])[1]?.trim().toUpperCase()).filter(Boolean)
+  );
   const bloqueJugadas =
     listaJugadas.length > 0
       ? listaJugadas
           .map((t, idx) => {
-            const detalle = t.es_match
-              ? `A Premio ${(t.caballos_bando_a || []).join("-")} x ${(t.caballos_bando_b || []).join("-")}`
-              : `${t.modalidad || "1P"} #${t.ejemplar_numero || (t.caballos_bando_a || []).join("-")}`;
-            const montoStr = `$${formatearMonto(t.monto_concretado || 0)}`;
-            const estadoEmoji =
-              t.estado === "GANADOR_PROPONENTE"
-                ? `✅ Gana ${t.proponente_nombre}`
-                : t.estado === "GANADOR_ACEPTANTE"
-                ? `✅ Gana ${t.aceptante_nombre}`
-                : t.estado === "EMPATE"
-                ? "🤝 Empate"
-                : "";
-            return `${idx + 1}) *${t.proponente_nombre}* vs *${t.aceptante_nombre}* · ${detalle} · *${montoStr}*${estadoEmoji ? ` (${estadoEmoji})` : ""}`;
+            const accProp = String(t.accion_proponente || "JUEGA").trim().toUpperCase();
+            const esConsigueProp = ["CONSIGUE", "CONSIGO", "DA", "DOY"].includes(accProp);
+            const juega = String((esConsigueProp ? t.aceptante_nombre : t.proponente_nombre) || "Jugador A").trim();
+            const da = String((esConsigueProp ? t.proponente_nombre : t.aceptante_nombre) || "Jugador B").trim();
+            const ganaJuega = nombresPositivos.has(juega.toUpperCase());
+            const pierdeJuega = nombresNegativos.has(juega.toUpperCase());
+            let signo = ganaJuega ? "+" : pierdeJuega ? "-" : null;
+            if (!signo) {
+              if (t.estado === "GANADOR_PROPONENTE") signo = esConsigueProp ? "-" : "+";
+              else if (t.estado === "GANADOR_ACEPTANTE") signo = esConsigueProp ? "+" : "-";
+              else signo = "+";
+            }
+            return `*${idx + 1}) ${juega} ${signo} ${da}*`;
           })
           .join("\n")
       : "_Sin jugadas concretadas en esta carrera._";
+
+  // DM posterior a la liquidación: SOLO jugadores que jugaron (stake > 0).
+  // Umbral de recarga = 10% de la apuesta mínima de la sala (10 por defecto).
+  const idsJugadoresDM = new Set();
+  for (const t of listaJugadas) {
+    if (t.proponente_id) idsJugadoresDM.add(String(t.proponente_id));
+    if (t.aceptante_id) idsJugadoresDM.add(String(t.aceptante_id));
+  }
+  const dmsLiquidacion = [];
+  if (idsJugadoresDM.size > 0) {
+    const { data: clientesDM } = await supabase
+      .from("clientes")
+      .select("id, nombre, seudonimo, saldo_actual, whatsapp_jid, telefono")
+      .in("id", Array.from(idsJugadoresDM));
+    for (const cl of clientesDM || []) {
+      const stake = listaJugadas.reduce((acc, t) => {
+        const participa = String(t.proponente_id) === String(cl.id) || String(t.aceptante_id) === String(cl.id);
+        return acc + (participa ? Number(t.monto_concretado || 0) : 0);
+      }, 0);
+      if (stake <= 0) continue;
+      const saldoNuevo = Number(cl.saldo_actual || 0);
+      const apuestaMinima = Number(sala.apuesta_minima ?? 10);
+      const umbralRecarga = Math.max(0, Number.isFinite(apuestaMinima) ? apuestaMinima * 0.1 : 1);
+      let mensajeDM = `Su nuevo saldo es: ${saldoNuevo.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      if (saldoNuevo <= umbralRecarga) {
+        mensajeDM +=
+          "\n\nDesea realizar una recarga. Envíe: La Palabra: *Recarga*, Banco, Número de Referencia, Monto, y gustosamente lo procesaremos.";
+      }
+      const destino = cl.whatsapp_jid || cl.telefono;
+      if (destino) dmsLiquidacion.push({ destino, mensajeDM });
+    }
+  }
 
   const pizarraFormateada = numeros.map((n, i) => `${i + 1}º: #${n}`).join(" · ");
   const prefijoTitulo = esRectificacion ? "🔄 *PIZARRA RECTIFICADA OFICIALMENTE*\n\n" : "";
@@ -1484,6 +1582,14 @@ export async function ejecutarSentenciaPizarra(sala, groupJid, pizarraRaw, esRec
     await enviarMensajeGrupo(groupJid, textoResultado);
   }
   await registrarMensajeEnChatWeb(sala, groupJid, textoResultado, "llegada");
+
+  for (const dm of dmsLiquidacion) {
+    try {
+      await enviarMensajePrivado(dm.destino, dm.mensajeDM);
+    } catch (errDM) {
+      console.warn("[Bot WhatsApp] No se pudo enviar DM de liquidación:", errDM?.message || errDM);
+    }
+  }
 
   return {
     ok: true,

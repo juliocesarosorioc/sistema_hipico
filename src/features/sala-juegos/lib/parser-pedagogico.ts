@@ -8,6 +8,7 @@ import {
 import {
   normalizarModalidadProgresiva,
   parsearBloqueEnfrentamiento,
+  validarOrdenEscalera,
 } from "./modalidades-progresivas";
 import { mensajeConCodigoSala } from "@/features/grupos/lib/codigo-sala";
 
@@ -297,6 +298,44 @@ function normalizarEspaciosModalidadesEnTexto(t: string): string {
     .replace(/(?<![\d/])([1-9]|10)\s+([pPnN])\b/g, "$1$2");
 }
 
+/**
+ * Redacción libre admitida por Carga Manual / WhatsApp (alias pedagógicos).
+ * Convierte `a5`, `&`, `1 /2n`, `1/ 2n`, `1 y 2 n`, bloques `1/2-2n` y el orden
+ * `ejemplar modalidad monto` a la forma canónica que ya entiende el parser.
+ */
+export function normalizarRedaccionLibreJugada(texto: string): string {
+  let t = String(texto ?? "").trim();
+  if (!t) return t;
+
+  // "a5" / "@5" suelto equivale a 10/5 (no tocar "10a5", ya normalizado aguas arriba).
+  t = t.replace(
+    /(?:^|(?<=[\s,([]))[aA@]\s*(\d+(?:[.,]\d+)?)(?=$|[\s,)\]])/g,
+    (_m, num) => `10/${String(num).replace(",", ".")}`
+  );
+
+  // Combinadas con "&": 1&2n, 2&3n → 1y2n, 2y3n. '#' se reserva para el ejemplar.
+  t = t.replace(/\b([1-5])\s*&\s*([1-5])([nNpP]?)\b/gi, "$1y$2$3");
+  // Espacios alrededor de la barra: "1 /2n", "1/ 2n" → "1/2n".
+  t = t.replace(/\b([1-5])\s*\/\s*([1-5])([nNpP]?)\b/g, "$1/$2$3");
+  // Bloque "1/2-2n" → "1/2n y 2n" (y variantes sin sufijo en el primer término).
+  t = t.replace(
+    /\b([1-5])\/([1-5])\s*-\s*([2-5])([nNpP])\b/gi,
+    (_m, a, b, c, s) => `${a}/${b}${s} y ${c}${s}`
+  );
+
+  t = normalizarEspaciosModalidadesEnTexto(t);
+
+  // Cualquier orden: "El 4 10a5 100" / "4 10/5 100" → "10/5 4 100".
+  const m = t.match(
+    /^(?:(juego|jugo|jugó|jugue|jugué|consigo|doy|voy|j)\s+)?(?:el\s+|la\s+|del\s+|#)?(\d{1,2}[A-Z]?)\s+((?:10\/\d+(?:[.,]\d+)?|[1-5][\/yY][1-5][nNpP]?|[1-9]|10)[pPnN]?(?:\s+y\s+[^\s]+)?)\s+(?:con\s+|por\s+|\$)?(\d+(?:[.,]\d+)*\s*(?:k|mil)?|todo)$/i
+  );
+  if (m) {
+    t = `${m[1] ? `${m[1]} ` : ""}${m[3]} ${m[2]} ${m[4]}`;
+  }
+
+  return t;
+}
+
 function analizarYEstandarizarJugadaBase(
   textoUsuario: string,
   saldoDisponible: number,
@@ -323,7 +362,7 @@ function analizarYEstandarizarJugadaBase(
     };
   }
 
-  const textoSinEspaciosMod = normalizarEspaciosModalidadesEnTexto(
+  const textoSinEspaciosMod = normalizarRedaccionLibreJugada(
     normalizarParadaPremio(textoUsuario.trim())
   );
   const bloqueDetectado = parsearBloqueEnfrentamiento(textoSinEspaciosMod);
@@ -365,6 +404,31 @@ function analizarYEstandarizarJugadaBase(
     };
   }
 
+  // Orden de llegada obligatorio: nunca se puede jugar de manera desescalonada.
+  const ordenEscalera = validarOrdenEscalera(texto);
+  if (!ordenEscalera.valido) {
+    return {
+      esIntencionDeJugada: true,
+      valido: false,
+      accionProponente: 'JUEGA',
+      esMatch: false,
+      modalidad: 'DUDA_FORMATO',
+      caballosBandoA: [],
+      caballosBandoB: [],
+      ejemplarTexto: '',
+      monto: 0,
+      jugadaEstandarizada: '',
+      confianza: 0.8,
+      requiereOperador: false,
+      msgPublicoBot: "⚠️Mejorar redacción.",
+      mensajePedagogicoPrivado:
+        `⚠️ ${ordenEscalera.motivo} Sigue el orden: 10/2, 10/3, 10/3.5, 10a4, 10/5, 10@5.5, 1p, 1/2n, 2n, 2/3n. Ejemplo: Juego 1/2n del 5 con 100.`,
+      msgPrivadoBot:
+        `⚠️ ${ordenEscalera.motivo} Sigue el orden: 10/2, 10/3, 10/3.5, 10a4, 10/5, 10@5.5, 1p, 1/2n, 2n, 2/3n. Ejemplo: Juego 1/2n del 5 con 100.`,
+      sugerenciasUnClic: ["Juego 1/2n del 5 con 100"],
+    };
+  }
+
   // Prohibición explícita de la palabra "pido" o "match"
   if (/^pido\b/i.test(texto)) {
     return {
@@ -380,7 +444,7 @@ function analizarYEstandarizarJugadaBase(
       jugadaEstandarizada: '',
       confianza: 1.0,
       requiereOperador: false,
-      msgPublicoBot: "⚠️¡Por favor, verificar redacción! ¡Gracias!",
+      msgPublicoBot: "⚠️Mejorar redacción.",
       mensajePedagogicoPrivado:
         "🚫 No se usa 'Pido'. Debes indicar obligatoriamente si juegas ('Juego') o si das/consigues ('Consigo' o 'Doy'). Ejemplo: 'Juego 3x5 con 100' o 'Consigo 3x5 10a8 con 100'.",
       msgPrivadoBot:
@@ -402,7 +466,7 @@ function analizarYEstandarizarJugadaBase(
       jugadaEstandarizada: '',
       confianza: 1.0,
       requiereOperador: false,
-      msgPublicoBot: "⚠️¡Por favor, verificar redacción! ¡Gracias!",
+      msgPublicoBot: "⚠️Mejorar redacción.",
       mensajePedagogicoPrivado:
         "🚫 No escribas la palabra 'match'. Escribe directamente los ejemplares con 'Juego', 'Consigo' o 'Doy'. Ejemplo: 'Juego 3x5 con 100' o 'Consigo 3x5 10a8 con 100'.",
       msgPrivadoBot:
@@ -443,7 +507,7 @@ function analizarYEstandarizarJugadaBase(
         jugadaEstandarizada: '',
         confianza: 1.0,
         requiereOperador: false,
-        msgPublicoBot: "⚠️¡Por favor, verificar redacción! ¡Gracias!",
+        msgPublicoBot: "⚠️Mejorar redacción.",
         mensajePedagogicoPrivado:
           "⚠️ Debes indicar obligatoriamente si juegas ('Juego') o si das/consigues ('Consigo' o 'Doy'). Ejemplo: 'Juego 3x5 con 100' o 'Consigo 3x5 10a8 con 100'.",
         msgPrivadoBot:
@@ -713,7 +777,7 @@ function analizarYEstandarizarJugadaBase(
           jugadaEstandarizada: "",
           confianza: 1.0,
           requiereOperador: false,
-          msgPublicoBot: "⚠️¡Por favor, verificar redacción! ¡Gracias!",
+          msgPublicoBot: "⚠️Mejorar redacción.",
           mensajePedagogicoPrivado: `⚠️ Hola ${nombreUsuario || "Jugador"}, los puestos y ninis son jugadas a paridad. No se les puede colocar proporción o gabela (ej. 10a8). ✅ Ejemplo correcto: "Juego ${modLimpia} ${ejemplarTexto || "5"} ${montoTexto || "100"}".`,
           msgPrivadoBot: `⚠️ Hola ${nombreUsuario || "Jugador"}, los puestos y ninis son jugadas a paridad. No se les puede colocar proporción o gabela (ej. 10a8). ✅ Ejemplo correcto: "Juego ${modLimpia} ${ejemplarTexto || "5"} ${montoTexto || "100"}".`,
         };
@@ -910,6 +974,12 @@ function analizarYEstandarizarJugadaBase(
   const ej2 = numerosDetectados[1] || '4';
   const montoEj = numerosDetectados[numerosDetectados.length - 1] || '100';
 
+  const sugerenciaRedaccion = `Juego 1/2n del ${ej1} con ${montoEj}`;
+  const msjPedagogicoPrivado =
+    `⚠️ Hola ${nombreUsuario || "Jugador"}, no entendí tu redacción. Puedes copiar y pegar este ejemplo en el grupo:\n\n` +
+    `👉 ${sugerenciaRedaccion}\n\n` +
+    `También puedes escribir: Juego a5 el ${ej1} con ${montoEj}, en cualquier orden o en líneas separadas.`;
+
   return {
     esIntencionDeJugada: true,
     valido: false,
@@ -923,25 +993,13 @@ function analizarYEstandarizarJugadaBase(
     jugadaEstandarizada: '',
     confianza: 0.45,
     requiereOperador: true,
-    msgPublicoBot: "⚠️¡Por favor, verificar redacción! ¡Gracias!",
-    mensajePedagogicoPrivado:
-      `⚠️ Hola ${nombreUsuario || "Jugador"}, tu mensaje "${texto}" no pudo procesarse por error de redacción o sintaxis.\n\n` +
-      `✅ Ejemplos correctos según las reglas de la sala:\n` +
-      `• Puesto (Ganador): "Juego 1P ${ej1} ${montoEj}" (o "Consigo 1P ${ej1} ${montoEj}")\n` +
-      `• Nini / Puestos Múltiples: "Juego 2N ${ej1} ${montoEj}" o "Juego 1y2N ${ej1} ${montoEj}"\n` +
-      `• Mano a Mano: "Juego ${ej1}x${ej2} 10a8 ${montoEj}" o "Juego ${ej1}x${ej2} ${montoEj}"\n\n` +
-      `Los puestos y ninis no admiten gabela o proporción.`,
-    msgPrivadoBot:
-      `⚠️ Hola ${nombreUsuario || "Jugador"}, tu mensaje "${texto}" no pudo procesarse por error de redacción o sintaxis.\n\n` +
-      `✅ Ejemplos correctos según las reglas de la sala:\n` +
-      `• Puesto (Ganador): "Juego 1P ${ej1} ${montoEj}" (o "Consigo 1P ${ej1} ${montoEj}")\n` +
-      `• Nini / Puestos Múltiples: "Juego 2N ${ej1} ${montoEj}" o "Juego 1y2N ${ej1} ${montoEj}"\n` +
-      `• Mano a Mano: "Juego ${ej1}x${ej2} 10a8 ${montoEj}" o "Juego ${ej1}x${ej2} ${montoEj}"\n\n` +
-      `Los puestos y ninis no admiten gabela o proporción.`,
+    msgPublicoBot: "⚠️Mejorar redacción.",
+    mensajePedagogicoPrivado: msjPedagogicoPrivado,
+    msgPrivadoBot: msjPedagogicoPrivado,
     sugerenciasUnClic: [
-      `Juego 1P ${ej1} ${montoEj}`,
-      `Consigo 1P ${ej1} ${montoEj}`,
-      `Juego ${ej1} x ${ej2} ${montoEj}`,
+      sugerenciaRedaccion,
+      `Juego 1P del ${ej1} con ${montoEj}`,
+      `Juego ${ej1}x${ej2} 10a8 ${montoEj}`,
     ],
   };
 }

@@ -50,10 +50,56 @@ export const ORDEN_MODALIDADES_PROGRESIVO: string[] = [
   ...ORDEN_4_A_5,
 ];
 
+/**
+ * Escalera oficial de llegada (SSOT de "nunca desescalonada").
+ * El orden es el que el usuario debe respetar al Combinar modalidades en un
+ * mismo mensaje; las combinaciones válidas son sólo entre términos contiguos.
+ */
+export const ORDEN_ESCALERA_OFICIAL: string[] = [
+  "10/2",
+  "10/3",
+  "10/3.5",
+  "10/4",
+  "10/5",
+  "10/5.5",
+  "1P",
+  "1P y 1/2N",
+  "1/2N",
+  "1/2N y 2N",
+  "2N",
+  "2N y 2/2N",
+  "2/2N",
+  "2/2N y 2P",
+  "2P",
+  "2P y 2/3N",
+  "2/3N",
+  "2/3N y 3N",
+  "3N",
+  "3N y 3P",
+  "3P",
+];
+
 const ALIASES: Record<string, string> = {
+  "A5": "10/5",
+  "@5": "10/5",
+  "10A2": "10/2",
+  "10/2": "10/2",
+  "10@2": "10/2",
+  "10A3": "10/3",
+  "10/3": "10/3",
+  "10@3": "10/3",
+  "10A3.5": "10/3.5",
+  "10/3.5": "10/3.5",
+  "10@3.5": "10/3.5",
+  "10A4": "10/4",
+  "10/4": "10/4",
+  "10@4": "10/4",
   "10A5": "10/5",
   "10@5": "10/5",
   "10-5": "10/5",
+  "10A5.5": "10/5.5",
+  "10/5.5": "10/5.5",
+  "10@5.5": "10/5.5",
   "10A6": "10/6",
   "10@6": "10/6",
   "10-6": "10/6",
@@ -120,6 +166,78 @@ export function normalizarModalidadProgresiva(texto: string): string | null {
 
 export function esModalidadProgresiva(texto: string): boolean {
   return normalizarModalidadProgresiva(texto) !== null;
+}
+
+/** Peldaños simples de la escalera (sin combinaciones), usados para validar orden. */
+export const PASOS_ESCALERA: string[] = [
+  "10/2",
+  "10/3",
+  "10/3.5",
+  "10/4",
+  "10/5",
+  "10/5.5",
+  "1P",
+  "1/2N",
+  "2N",
+  "2/2N",
+  "2P",
+  "2/3N",
+  "3N",
+  "3P",
+];
+
+/** Índice en la escalera oficial, o -1 si la modalidad no pertenece a ella. */
+export function indiceEscaleraOficial(texto: string): number {
+  const base = limpiar(texto)
+    .replace(/^A(\d+(?:[.,]\d+)?)$/, "10/$1")
+    .replace(/^@(\d+(?:[.,]\d+)?)$/, "10/$1")
+    .replace(/^(\d{1,2})A(\d+(?:[.,]\d+)?)$/, "$1/$2")
+    .replace(/^(\d{1,2})@(\d+(?:[.,]\d+)?)$/, "$1/$2")
+    .replace(/^(\d)Y(\d)N$/i, "$1/$2N");
+  return PASOS_ESCALERA.findIndex((m) => m.toUpperCase() === base.toUpperCase());
+}
+
+/**
+ * Valida que las modalidades progresivas de un texto respeten el orden de
+ * llegada: dentro de una combinación "y" deben ser contiguas y, si el texto
+ * trae varias, sus índices no pueden retroceder (nunca desescalonada).
+ */
+export function validarOrdenEscalera(texto: string): { valido: boolean; motivo?: string } {
+  const limpio = limpiar(texto)
+    .replace(/\bDEL\s+\d+\b/gi, "")
+    .replace(/[#]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const combinadas = limpio.match(/\b(?:10\/\d+(?:[.,]\d+)?|[1-5][\/Y][1-5][PN]?|[1-5][PN])\s+Y\s+(?:10\/\d+(?:[.,]\d+)?|[1-5][\/Y][1-5][PN]?|[1-5][PN])\b/gi) || [];
+  const vistas: number[] = [];
+
+  for (const combo of combinadas) {
+    const partes = combo.split(/\s+Y\s+/i);
+    const idx = partes.map((p) => indiceEscaleraOficial(p));
+    if (idx.some((i) => i < 0)) continue;
+    if (idx[1] !== idx[0] + 1) {
+      return {
+        valido: false,
+        motivo: `La combinación "${combo}" no respeta el orden de llegada de la escalera.`,
+      };
+    }
+    vistas.push(...idx);
+  }
+
+  const sueltas = limpio
+    .replace(/\b(?:10\/\d+(?:[.,]\d+)?|[1-5][\/Y][1-5][PN]?|[1-5][PN])\s+Y\s+(?:10\/\d+(?:[.,]\d+)?|[1-5][\/Y][1-5][PN]?|[1-5][PN])\b/gi, "")
+    .match(/\b(?:10\/\d+(?:[.,]\d+)?|[1-5][\/Y][1-5][PN]?|[1-5][PN])\b/gi) || [];
+  for (const s of sueltas) {
+    const i = indiceEscaleraOficial(s);
+    if (i >= 0 && !vistas.includes(i)) vistas.push(i);
+  }
+
+  for (let k = 1; k < vistas.length; k++) {
+    if (vistas[k] < vistas[k - 1]) {
+      return { valido: false, motivo: "No se puede jugar de manera desescalonada." };
+    }
+  }
+  return { valido: true };
 }
 
 export function indiceModalidadProgresiva(texto: string): number {

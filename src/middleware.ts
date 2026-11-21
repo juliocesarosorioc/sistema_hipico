@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { jwtVerify } from "jose";
 import {
   esRolCliente,
   esRolOperadorExclusivo,
@@ -6,7 +7,40 @@ import {
   primeraRutaPermitida,
   rutaPermitida,
 } from "@/features/seguridad/lib/capacidades";
-import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
+
+const SESSION_SECRET = process.env.SESSION_SECRET;
+
+type SesionVerificada = {
+  usuario: string;
+  perfil: string;
+  rol: string;
+  permisos: string[];
+  acceso: string;
+};
+
+async function leerSesion(req: NextRequest): Promise<SesionVerificada | null> {
+  const token = req.cookies.get("hipico_session")?.value;
+  if (!token || !SESSION_SECRET) return null;
+
+  try {
+    const { payload } = await jwtVerify(
+      token,
+      new TextEncoder().encode(SESSION_SECRET),
+      { algorithms: ["HS256"] }
+    );
+    const usuario = typeof payload.usuario === "string" ? payload.usuario : "";
+    const perfil = typeof payload.perfil === "string" ? payload.perfil : "";
+    const rol = typeof payload.rol === "string" ? payload.rol : "";
+    const acceso = typeof payload.acceso === "string" ? payload.acceso : "";
+    const permisos = Array.isArray(payload.permisos)
+      ? payload.permisos.filter((p): p is string => typeof p === "string")
+      : [];
+    if (!usuario || !perfil || !rol) return null;
+    return { usuario, perfil, rol, permisos, acceso };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Middleware de protección de rutas:
@@ -19,6 +53,9 @@ import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 
 const ES_PUBLICA = (p: string) =>
   p === "/" ||
+  // El SW precachea esta ruta al instalarla: si el middleware la redirigiera a
+  // "/", la página de respaldo offline se guardaría con el HTML de portada.
+  p === "/_offline" ||
   p === "/verificacion" ||
   p === "/reset-password" ||
   p === "/api/ip" ||
@@ -69,7 +106,7 @@ function sinCache<T extends NextResponse>(respuesta: T): T {
   return respuesta;
 }
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const irA = (destino: string, motivo?: string) => {
@@ -108,48 +145,28 @@ export function middleware(req: NextRequest) {
 
   if (ES_PUBLICA(pathname)) return sinCache(NextResponse.next());
 
-  const usuario = req.cookies.get("hipico_usuario")?.value ?? "";
-  const perfil = req.cookies.get("hipico_perfil")?.value;
-  const crudo = req.cookies.get("hipico_permisos")?.value;
-  const acceso = req.cookies.get("hipico_acceso")?.value;
-  const tokenSala = req.cookies.get("sala_staff_token")?.value ?? "";
-  const tokenSupabase = req.cookies
-    .getAll()
-    .some((c) => c.name.startsWith("sb-") && c.name.endsWith("-auth-token") && Boolean(c.value));
+  const sesion = await leerSesion(req);
 
-  const tieneSesion = Boolean(
-    usuario || tokenSala || tokenSupabase || (perfil && crudo)
-  );
-
-  if (!tieneSesion && !ES_SERVICIO_INTERNO(pathname)) {
+  if (!sesion && !ES_SERVICIO_INTERNO(pathname)) {
     return irA("/");
   }
 
-  if (acceso === "sin") return irA("/", "sin-accesos");
+  if (sesion?.acceso === "sin") return irA("/", "sin-accesos");
 
   if (ES_SERVICIO_INTERNO(pathname)) return sinCache(NextResponse.next());
 
-  if (esUsuarioPrincipal(usuario)) return sinCache(NextResponse.next());
+  if (!sesion) return irA("/");
 
-  if (!perfil || !crudo || !usuario) return irA("/");
+  const permisos = new Set(sesion.permisos);
 
-  let permisos: Set<string>;
-  try {
-    permisos = new Set(crudo.split(",").filter(Boolean));
-  } catch {
-    permisos = new Set();
-  }
-
-  if (esUsuarioPrincipal(usuario)) return sinCache(NextResponse.next());
-
-  if (esRolCliente(perfil, permisos)) {
+  if (esRolCliente(sesion.perfil, permisos)) {
     if (pathname === "/portal" || pathname.startsWith("/portal/")) {
       return sinCache(NextResponse.next());
     }
     return irA("/portal");
   }
 
-  if (esRolOperadorExclusivo(perfil)) {
+  if (esRolOperadorExclusivo(sesion.perfil)) {
     if (!esRutaPermitidaOperador(pathname)) {
       return irA("/apuestas");
     }

@@ -20,7 +20,10 @@ import {
   obtenerPlantillaGrupo,
 } from "@/features/whatsapp/lib/plantillas-grupo-server";
 import { variablesEncabezadoGrupo } from "@/features/whatsapp/lib/plantillas-grupo";
-import { mensajeJugaronPorSaldoParcial } from "@/features/whatsapp/lib/mensajes-concrecion";
+import {
+  mensajeJugaronPorSaldoParcial,
+  prefijoNumeroJugada,
+} from "@/features/whatsapp/lib/mensajes-concrecion";
 
 export interface MensajeEntranteWhatsApp {
   groupJid: string;
@@ -577,6 +580,17 @@ export async function procesarMensajeEntranteWhatsApp(
             : [{ jugador: nombreJugador, monto: montoConcretado }];
 
         const totalVanJugando = listaJugaron.reduce((acc, x) => acc + x.monto, 0);
+        const { data: ordenTicket } = await supabaseAdmin
+          .from("chat_tickets_fifo")
+          .select("orden_fifo")
+          .eq("propuesta_msg_id", propFresca.id)
+          .order("orden_fifo", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const numeroJugada = Number(ordenTicket?.orden_fifo || 0) > 0
+          ? Number(ordenTicket?.orden_fifo)
+          : 1;
+        const prefijoNumero = prefijoNumeroJugada(numeroJugada);
         const lineasDesglose = listaJugaron
           .map((x) => `â¢ ${x.jugador} jugÃ³ ${prefijo}${formatearMontoRegional(x.monto)}`)
           .join("\n");
@@ -635,7 +649,7 @@ export async function procesarMensajeEntranteWhatsApp(
               ? nombreJuega
               : nombreDa;
           const mapaParcial = await cargarPlantillasGrupo(sala?.grupo_id || grupoId);
-          mensajeSaldoParcial = obtenerPlantillaGrupo(
+          const parcialResuelto = obtenerPlantillaGrupo(
             mapaParcial,
             "concrecion_saldo_parcial",
             {
@@ -644,14 +658,19 @@ export async function procesarMensajeEntranteWhatsApp(
               da: nombreDa,
               monto: formatearMontoRegional(montoConcretado),
               saldo_de: nombreSaldo,
+              numero_jugada: prefijoNumero.trim(),
             },
             mensajeJugaronPorSaldoParcial({
               juega: nombreJuega,
               da: nombreDa,
               monto: montoConcretado,
               saldoDe: nombreSaldo,
+              numeroJugada,
             })
           );
+          mensajeSaldoParcial = prefijoNumero && !parcialResuelto.startsWith("*")
+            ? `${prefijoNumero}${parcialResuelto}`
+            : parcialResuelto;
         }
 
         const msgGrupoFinal = [mensajeSaldoParcial, msgPublicoBot, contenidoVanJugando]
@@ -758,7 +777,8 @@ export async function procesarMensajeEntranteWhatsApp(
         grupo_id: grupoId,
         termino_original: textoLimpio,
         jugada_corregida: analisis.jugadaEstandarizada || analisis.mensajePedagogicoPrivado,
-        usuario_id: cliente.id,      });
+        usuario_id: cliente.id,
+      });
     } catch {
       // Resiliente
     }

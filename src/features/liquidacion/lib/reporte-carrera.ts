@@ -54,27 +54,26 @@ export type CategoriaJugadaAdelantada =
   | "tercios"
   | "marcas"
   | "tablas"
+  | "dupletas"
   | "remates"
-  | "dupletas";
+  | "polla";
 
 export const SECCIONES_JUGADAS_ADELANTADAS: ReadonlyArray<{
   id: CategoriaJugadaAdelantada;
   titulo: string;
 }> = [
   { id: "tercios", titulo: "Jugadas entre tercios" },
-  { id: "marcas", titulo: "Marcas Adelantadas" },
-  { id: "tablas", titulo: "Tablas Adelantadas" },
-  { id: "remates", titulo: "Remates Adelantados" },
-  { id: "dupletas", titulo: "Dupletas Adelantadas" },
+  { id: "marcas", titulo: "Marcas" },
+  { id: "tablas", titulo: "Tablas" },
+  { id: "dupletas", titulo: "Dupleta" },
+  { id: "remates", titulo: "Remate" },
+  { id: "polla", titulo: "Polla" },
 ];
 
 /**
- * Clasifica una jugada adelantada en una de las 5 secciones oficiales:
- *   1. Jugadas entre tercios (`tercios`)
- *   2. Marcas Adelantadas (`marcas`)
- *   3. Tablas Adelantadas (`tablas`)
- *   4. Remates Adelantados (`remates`)
- *   5. Dupletas Adelantadas (`dupletas`)
+ * Clasifica una jugada adelantada en una de las 6 secciones oficiales, en este
+ * orden: Jugadas entre tercios, Marcas, Tablas, Dupleta, Remate y Polla.
+ * POLLA se separa de REMATE (antes ambas caían en `remates`).
  */
 export function categoriaJugadaAdelantada(entrada: unknown): CategoriaJugadaAdelantada {
   const raw =
@@ -84,15 +83,17 @@ export function categoriaJugadaAdelantada(entrada: unknown): CategoriaJugadaAdel
           "")
       : entrada;
   const t = String(raw ?? "").trim().toUpperCase();
+  // La POLLA se evalúa ANTES que el REMATE: una "Polla de remate" es Polla.
+  if (/^POLLA\b/.test(t) || t.includes("POLLA")) return "polla";
   if (/^MARCA\b/.test(t) || t.includes("MARCA")) return "marcas";
   if (/^TABLA\b|^TF\b/.test(t) || t.includes("TABLA")) return "tablas";
-  if (/^(REMATE|POLLA)\b/.test(t) || t.includes("REMATE")) return "remates";
   if (/^DUPLETA\b/.test(t) || t.includes("DUPLETA")) return "dupletas";
+  if (/^REMATE\b/.test(t) || t.includes("REMATE")) return "remates";
   return "tercios";
 }
 
 /**
- * Agrupa las jugadas adelantadas en las 5 secciones oficiales (devolviendo
+ * Agrupa las jugadas adelantadas en las secciones oficiales (devolviendo
  * únicamente las secciones que tienen al menos 1 jugada: "Si las hay").
  */
 export function agruparAdelantadasPorSeccion<T extends { jugo?: string; jugada?: string }>(

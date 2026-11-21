@@ -301,7 +301,7 @@ export function mensajePlanoDeCarrera(opts: OpcionesMensajePlano): string {
     })
   );
 
-  const lineasAdel: string[] = ["", "⏳ JUGADAS ADELANTADAS (PRE-JUGADAS)"];
+  const lineasAdel: string[] = ["", "⏳ *JUGADAS ADELANTADAS*"];
   for (const sec of secciones) {
     lineasAdel.push(`▪ ${sec.titulo.toUpperCase()} (${sec.filas.length}):`);
     sec.filas.forEach((j, idx) => {

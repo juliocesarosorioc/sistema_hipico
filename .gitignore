@@ -21,6 +21,15 @@ respaldos/
 _backup_*
 
 # Respaldos locales (datos de negocio; NO se versionan)
+sql/crear_usuario_*.sql
+sql/cargar_mvp_clientes.sql
+sql/restaurar_clientes_argentina.sql
+sql/actualizar_saldos_argentina.sql
+sql/seed_jornada_*.sql
+sql/purga_*.sql
+sql/reset_*.sql
+sql/limpiar*.sql
+scratch/
 
 # Residuos de desarrollo (salida de comandos, borradores scratch)
 .DS_Store

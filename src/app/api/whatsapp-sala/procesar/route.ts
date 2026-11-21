@@ -27,6 +27,7 @@ import {
 import { supabaseAdmin } from "@/core/supabase-admin";
 import { formatearMontoRegional } from "@/shared/lib/dinero";
 import { limpiarEtiquetasProhibidas } from "@/features/sala-juegos/lib/modalidades-progresivas";
+import { enviarBienvenidaSiEsPrimeraVez } from "@/features/whatsapp-sala/lib/bienvenida-grupo";
 
 export const dynamic = "force-dynamic";
 
@@ -250,6 +251,16 @@ export async function POST(req: Request) {
         cliente.whatsapp_lid = participantJid;
       }
     }
+
+    // Bienvenida individual: sólo la primera vez que escribe al grupo (DM).
+    void enviarBienvenidaSiEsPrimeraVez({
+      cliente: cliente.rawCliente || cliente,
+      grupoId,
+      sala,
+      codigoSala,
+      participantJid,
+      esOperador: esOperadorRemitente || esMensajePropioBot,
+    });
 
     // 4. Procesar intenciones de comandos y entrenadas
     const resComando = await manejarIntencionComando({

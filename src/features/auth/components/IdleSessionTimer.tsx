@@ -26,7 +26,7 @@ export function IdleSessionTimer({
   timeoutMs = 300000,
   warningMs = 60000,
 }: PropsIdleSessionTimer) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const [restanteMs, setRestanteMs] = useState(timeoutMs);
   const [mostrarAviso, setMostrarAviso] = useState(false);
   const [cerrando, setCerrando] = useState(false);

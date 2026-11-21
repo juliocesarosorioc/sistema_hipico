@@ -36,8 +36,14 @@ import {
   estructurarLineasSala,
 } from "@/features/whatsapp-sala/lib/estructurar-carga-sala";
 import type { ContextoSala, ClienteResuelto, JugadaParseada } from "./types";
+import {
+  detectarIntencionCuenta,
+  construirRespuestaCuenta,
+  detectarComandoRecarga,
+  procesarComandoRecarga,
+} from "./lib/respuestas-automaticas";
 
-export const AVISO_REDACCION_GRUPO = "⚠️¡Por favor, verificar redacción! ¡Gracias!";
+export const AVISO_REDACCION_GRUPO = "⚠️Mejorar redacción.";
 export const RE_MONTO_INPUT = "(?:\\d+(?:[\\.,]\\d+)*\\s*(?:k|mil)?)";
 export const COMANDO_OPERADOR_EXACTO =
   /^!?(?:abrir|abierta|cerrar|cerrad[ao]|partida|corriendo|pizarra|rectificar|plano|hip[óo]dromo|retirar|recargar|aval)(?:\s|$)/i;
@@ -90,6 +96,8 @@ export function detectarIntencionRapida(texto: string, quotedMsgId?: string | nu
       "i"
     )
   );
+  const deteccionCuenta = detectarIntencionCuenta(textoUsuarioLimpio);
+  const cmdRecarga = detectarComandoRecarga(textoUsuarioLimpio);
   const preAnalisis = analizarYEstandarizarJugada(textoUsuarioLimpio, 999999, [], 16, undefined, undefined, codigoSala);
 
   const esAccionOJugada =
@@ -111,6 +119,8 @@ export function detectarIntencionRapida(texto: string, quotedMsgId?: string | nu
     esSolicitudCajero ||
     esAceptacionSinCita ||
     Boolean(matchAjusteOperador) ||
+    Boolean(deteccionCuenta) ||
+    Boolean(cmdRecarga) ||
     preAnalisis.esIntencionDeJugada;
 
   return {
@@ -132,6 +142,8 @@ export function detectarIntencionRapida(texto: string, quotedMsgId?: string | nu
     esSolicitudCajero,
     esAceptacionSinCita,
     matchAjusteOperador,
+    deteccionCuenta,
+    cmdRecarga,
     preAnalisis,
     esAccionOJugada,
   };
@@ -1116,6 +1128,66 @@ export async function manejarIntencionComando(params: {
       respuestaPublica: null,
       mensajePrivadoAutor: resumenDm,
       msg_privado_bot: resumenDm,
+      alertaPrivada: null,
+      notificaciones_privadas: [],
+      senderJid: participantJid,
+    });
+  }
+
+  // 15. RESPUESTAS AUTOMÁTICAS POR DM: corte, hoy, semana, fecha y devoluciones.
+  const intencionCuenta = detectarIntencionCuenta(textoUsuarioLimpio);
+  if (intencionCuenta) {
+    const mensajeCuenta = await construirRespuestaCuenta({
+      cliente: cliente.rawCliente,
+      grupoId,
+      intencion: intencionCuenta.intencion,
+      fecha: intencionCuenta.fecha,
+      respuesta: intencionCuenta.respuesta,
+      participantJid,
+    });
+
+    if (mensajeCuenta) {
+      return respuestaSala({
+        ok: true,
+        tipo: "RESPUESTA_CUENTA",
+        respuestaGrupo: null,
+        msg_publico: null,
+        msg_publico_bot: null,
+        respuestaPublica: null,
+        mensajePrivadoAutor: mensajeCuenta,
+        msg_privado_bot: mensajeCuenta,
+        alertaPrivada: null,
+        notificaciones_privadas: [],
+        senderJid: participantJid,
+      });
+    }
+  }
+
+  // 16. FLUJO DE RECARGA: solicitud por el jugador y aprobación desde el bot.
+  const comandoRecarga = detectarComandoRecarga(textoUsuarioLimpio);
+  if (comandoRecarga) {
+    const resultadoRecarga = await procesarComandoRecarga({
+      texto: textoUsuarioLimpio,
+      comando: comandoRecarga,
+      grupoId,
+      cliente: cliente.rawCliente,
+      clienteId: cliente.id,
+      participantJid,
+      aprobadorJid: participantJid,
+      aprobadorNombre: body.pushName || body.senderNombre || nombreJugador,
+      esOperador: Boolean(cliente.esOperadorRemitente || body.esMensajePropioTelefono || body.esFromMe),
+      esAdministrador: Boolean(body.esAdmin),
+    });
+
+    return respuestaSala({
+      ok: resultadoRecarga.ok,
+      tipo: "RECARGA",
+      respuestaGrupo: null,
+      msg_publico: null,
+      msg_publico_bot: null,
+      respuestaPublica: null,
+      mensajePrivadoAutor: resultadoRecarga.mensaje,
+      msg_privado_bot: resultadoRecarga.mensaje,
       alertaPrivada: null,
       notificaciones_privadas: [],
       senderJid: participantJid,

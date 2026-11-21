@@ -17,6 +17,7 @@ import {
   crearMoneda,
   eliminarBanco,
   esVes,
+  fechaLocalISO,
   filtrarBalanceNIIF,
   guardarBanco,
   guardarTasaReferencia,
@@ -1463,7 +1464,7 @@ export function TabMonedas({
   const [nuevaMoneda, setNuevaMoneda] = useState({ nombre: "", codigo: "", simbolo: "", tasa: "" });
   const [refTipo, setRefTipo] = useState<"BCV" | "BINANCE" | "EURO">("BCV");
   const [refTasa, setRefTasa] = useState("");
-  const [refFecha, setRefFecha] = useState(() => new Date().toISOString().slice(0, 10));
+  const [refFecha, setRefFecha] = useState(() => fechaLocalISO());
   const [filtro, setFiltro] = useState("");
 
   /**
@@ -1608,7 +1609,7 @@ export function TabMonedas({
               </div>
               <div>
                 <label className={lbl}>A partir de *</label>
-                <DateInput value={refFecha} onFechaChange={(val) => setRefFecha(val || new Date().toISOString().slice(0, 10))} className={inp} />
+                <DateInput value={refFecha} onFechaChange={(val) => setRefFecha(val || fechaLocalISO())} className={inp} />
               </div>
             </div>
             <Button variant="default" size="sm" className="w-full" onClick={guardarReferencia}>

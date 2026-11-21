@@ -58,6 +58,23 @@ const CLAVE_SESION_OPERADOR_LOCAL = "hipico_sesion_operador_local";
 const CLAVE_SESION_ADMIN_LOCAL = "hipico_sesion_admin_local";
 const CLAVE_OPERADOR_ACTUAL = "hipico_operador_actual";
 
+/** Señales locales de sesión (la cookie firmada es httpOnly y no es legible desde JS). */
+function tieneSesionLocalDetectable(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (sessionStorage.getItem("hipico_sesion_activa")) return true;
+    if (leerSesionOperadorLocal()) return true;
+    if (sessionStorage.getItem("sala_staff_token") || localStorage.getItem("sala_staff_token")) {
+      return true;
+    }
+    return Object.keys(localStorage).some(
+      (k) => k.startsWith("sb-") && k.endsWith("-auth-token") && Boolean(localStorage.getItem(k))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function leerModoOperadorGuardado(): boolean {
   try {
     return typeof window !== "undefined" && localStorage.getItem(CLAVE_MODO_OPERADOR) === "1";
@@ -187,48 +204,61 @@ async function postLoginSesionUnica(
 }
 
 /**
- * Deja los permisos en cookies para que src/middleware.ts pueda bloquear rutas.
- * Se publica también el identificador del usuario: el perfil del principal es
- * "admin" (su tipo), y el middleware necesitaba poder distinguir a josorioc de
- * un admin más sin depender de la lista de permisos.
- *
- * `hipico_acceso` es el sello que separa "entró pero no tiene nada" de "entró y
- * tiene permisos". Sin ese sello el middleware no podía distinguir un perfil
- * vacío de una cookie ausente: era indistinguible de no haber iniciado sesión,
- * y un usuario sin tipo asignado quedaba rebotando entre /login y /dashboard
- * para siempre, sin ver un solo mensaje de error.
+ * Pide al servidor que emita `hipico_session` (JWT firmado con `jose`).
+ * El cliente NO firma: solo aporta la prueba de sesión que ya tiene —token de
+ * Supabase Auth o token HMAC de la Sala— y el endpoint vuelve a resolver los
+ * permisos desde la base antes de meterlos en el payload.
  */
-export function publicarPermisosEnCookies(
+export async function publicarPermisosEnCookies(
   perfiles: string[],
   permisos: string[],
-  usuario = ""
-): string {
+  usuario = "",
+  rol: RolSesion = "admin_grupo",
+  grupoId = "",
+  usarStaffToken = false
+): Promise<string> {
   const estado: "ok" | "sin" = perfiles.length > 0 || permisos.length > 0 ? "ok" : "sin";
   if (typeof document === "undefined") return estado;
-  const exp = "; path=/; SameSite=Lax";
-  // El middleware SOLO decide por ruta (`rutaPermitida`) y por el perfil de
-  // cliente puro (`esRolCliente`), y para lo primero consulta una capacidad de
-  // tipo "ruta" por pantalla. Publicar las 150+ capacidades del maestro
-  // desbordaba el límite de ~4 KB por cookie del navegador: el login se caía
-  // con un 431 y no se podía entrar. Se publican SOLO las capacidades de tipo
-  // "ruta"; el gate por botón/celda vive en el cliente, que lee el set completo
-  // del store (en memoria), no de la cookie.
+
+  // El middleware solo decide por capacidades de tipo "ruta". El gate por
+  // botón/celda vive en el cliente, que lee el set completo del store.
   const capsRuta = [...new Set(permisos)].filter(
     (p) => CAPACIDADES_POR_CLAVE.get(p)?.tipo === "ruta"
   );
+
   try {
-    document.cookie = `${CLAVE_PERFIL}=${encodeURIComponent(perfiles.join(","))}${exp}`;
-    document.cookie = `${CLAVE_PERMISOS}=${encodeURIComponent(capsRuta.join(","))}${exp}`;
-    document.cookie = `${CLAVE_USUARIO}=${encodeURIComponent(usuario)}${exp}`;
-    document.cookie = `${CLAVE_ACCESO}=${estado}${exp}`;
+    const { data } = supabase ? await supabase.auth.getSession() : { data: null };
+    const accessToken = usarStaffToken ? "" : (data?.session?.access_token ?? "");
+    const staffToken = usarStaffToken
+      ? sessionStorage.getItem("sala_staff_token") ||
+        localStorage.getItem("sala_staff_token") ||
+        ""
+      : "";
+
+    if (!accessToken && !staffToken) return estado;
+
+    await fetch("/api/auth/sesion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accessToken,
+        staffToken,
+        usuario,
+        perfiles,
+        permisos: capsRuta,
+        rol,
+        acceso: estado,
+        grupoId,
+      }),
+    });
   } catch {
     /* sinop */
   }
   return estado;
 }
 
-/** Borra todas las cookies de acceso que dejó el store. */
-function borrarCookiesDeAcceso(): void {
+/** Borra la sesión firmada y las cookies legacy que aún puedan quedar. */
+async function borrarCookiesDeAcceso(): Promise<void> {
   if (typeof document === "undefined") return;
   const exp = "; path=/; max-age=0; SameSite=Lax";
   try {
@@ -236,6 +266,7 @@ function borrarCookiesDeAcceso(): void {
     document.cookie = `${CLAVE_PERMISOS}=${exp}`;
     document.cookie = `${CLAVE_USUARIO}=${exp}`;
     document.cookie = `${CLAVE_ACCESO}=${exp}`;
+    await fetch("/api/auth/sesion", { method: "DELETE" });
   } catch {
     /* sinop */
   }
@@ -489,14 +520,13 @@ async function aplicarAccesos(
   if (!contextoGrupoValido(rol, resolucion.total ? "" : (miGrupo?.grupoId ?? ""), contexto)) {
     throw new Error(ERROR_TENANT);
   }
-  publicarPermisosEnCookies(perfiles, permisos, id);
-
   // El código de sala lo resolvió la base antes del login. El grupo del usuario
   // sale del maestro (`club_mi_grupo`); con contexto, el superadmin puede
   // "mirar como" cualquier tenant pero un administrador de grupo queda atado
   // al suyo. Sin contexto se conserva el comportamiento anterior.
   const grupoMaestro = resolucion.total ? "" : (miGrupo?.grupoId ?? "");
   const grupoId = String(contexto?.grupoId ?? "").trim() || grupoMaestro;
+  void publicarPermisosEnCookies(perfiles, permisos, id, rol, grupoId);
   const grupoNombre =
     String(contexto?.grupoNombre ?? "").trim() ||
     (resolucion.total ? "Todos los grupos" : (miGrupo?.grupoNombre ?? ""));
@@ -585,7 +615,7 @@ if (typeof window !== "undefined" && "BroadcastChannel" in window) {
 
 async function verificarOtraPestanaActiva(): Promise<boolean> {
   if (typeof window === "undefined" || !("BroadcastChannel" in window)) return false;
-  if (!document.cookie.includes("hipico_usuario=")) return false;
+  if (!tieneSesionLocalDetectable()) return false;
   return new Promise<boolean>((resolve) => {
     let resuelto = false;
     try {
@@ -616,18 +646,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
   if (typeof window !== "undefined") {
     let sesionActiva = sessionStorage.getItem("hipico_sesion_activa");
     if (!sesionActiva) {
-      const hayCookie = document.cookie.includes("hipico_usuario=");
-      const tieneSupabaseStorage = (() => {
-        try {
-          return Object.keys(localStorage).some(
-            (k) => k.startsWith("sb-") && k.endsWith("-auth-token") && Boolean(localStorage.getItem(k))
-          );
-        } catch {
-          return false;
-        }
-      })();
-      const tieneSesionLocal =
-        hayCookie || leerSesionOperadorLocal() || tieneSupabaseStorage;
+      const tieneSesionLocal = tieneSesionLocalDetectable();
 
       if (tieneSesionLocal) {
         const uidHint =
@@ -657,7 +676,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
       } catch {
         /* sinop */
       }
-      borrarCookiesDeAcceso();
+      await borrarCookiesDeAcceso();
       limpiarAccesosVigentes();
       set({
         inicializada: true,
@@ -753,7 +772,7 @@ async function cargarSesion(set: (parcial: Partial<EstadoAuth>) => void): Promis
   // ilegible): para la interfaz es lo mismo que no tener sesión. Se deja la
   // identidad sin sembrar para que el `AuthBootstrap` no la mande al escritorio
   // y el operador se quede en el login leyendo el motivo, en vez de quedar
-  // rebotando entre /login y /dashboard. El sello `hipico_acceso=sin` sigue
+  // rebotando entre /login y /dashboard. El JWT firmado con acceso "sin" sigue
   // cerrando las rutas por URL directa.
   if (!a.perfiles.length && !a.permisos.length && !a.esPrincipal) {
     set({
@@ -882,7 +901,16 @@ export const useAuthStore = create<EstadoAuth>()(
         };
         const grupoActivo = leerGrupoActivoGuardado();
         setGrupoActivoVigente(grupoActivo);
-        publicarPermisosEnCookies(["OPERADOR"], capsOperador, "operador");
+        if (!esRestauracion) {
+          void publicarPermisosEnCookies(
+            ["OPERADOR"],
+            capsOperador,
+            "operador",
+            "admin_grupo",
+            grupoActivo ?? "",
+            true
+          );
+        }
         setAccesosVigentes({
           permisos: capsOperador,
           esPrincipal: false,
@@ -940,7 +968,16 @@ export const useAuthStore = create<EstadoAuth>()(
         };
         const grupoEfectivo = (op.grupoId && String(op.grupoId).trim() !== "") ? String(op.grupoId).trim() : null;
         setGrupoActivoVigente(grupoEfectivo);
-        publicarPermisosEnCookies(["OPERADOR"], capsOperador, op.id);
+        if (!esRestauracion) {
+          void publicarPermisosEnCookies(
+            ["OPERADOR"],
+            capsOperador,
+            op.id,
+            "admin_grupo",
+            grupoEfectivo ?? "",
+            true
+          );
+        }
         setAccesosVigentes({
           permisos: capsOperador,
           esPrincipal: false,
@@ -1007,7 +1044,7 @@ export const useAuthStore = create<EstadoAuth>()(
          */
         const rechazarTenant = async (): Promise<false> => {
           limpiarAccesosVigentes();
-          borrarCookiesDeAcceso();
+          await borrarCookiesDeAcceso();
           try {
             await cerrarSesionSupabase();
           } catch {
@@ -1226,7 +1263,7 @@ export const useAuthStore = create<EstadoAuth>()(
         _sesionHeartbeatRegistrada = null;
         detenerHeartbeatSesion();
         desactivarProteccionAntiClonacion();
-        borrarCookiesDeAcceso();
+        await borrarCookiesDeAcceso();
         limpiarSesionStaffSala();
         limpiarAccesosVigentes();
         guardarGrupoActivo(null);

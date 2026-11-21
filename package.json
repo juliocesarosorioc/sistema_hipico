@@ -40,6 +40,7 @@
     "@ducanh2912/next-pwa": "^10.2.9",
     "@supabase/supabase-js": "^2.117.0",
     "html2canvas": "^1.4.1",
+    "jose": "^5.10.0",
     "jspdf": "^4.2.1",
     "next": "14.2.32",
     "pdfjs-dist": "^4.10.38",

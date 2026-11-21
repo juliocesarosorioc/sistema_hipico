@@ -21,6 +21,7 @@ import { ControlRiesgoTablasModal } from "@/features/tablas/components/ControlRi
 import { ModalAutorizacionAdmin } from "@/features/seguridad/components/ModalAutorizacionAdmin";
 import { listarCuposTabla, guardarCuposTabla, listarGruposVenta, listarClientesVenta, esClienteLibre, grupoDeVentaVigente, type CupoTablaGrupo, type GrupoVenta, type ClienteVenta } from "@/features/grupos/lib/grupos";
 import { listarBanquerosGrupo } from "@/features/liquidacion/lib/banqueros";
+import { tasaVesVigente } from "@/features/contabilidad/lib/contabilidad";
 import { useCarrerasCentrales } from "@/features/carreras/lib/useCarrerasCentrales";
 import { aplicarRetirosCarrera } from "@/features/carreras/lib/retiros";
 import { guardarCarreraCentral } from "@/features/carreras/lib/central";
@@ -168,6 +169,7 @@ export function MonitorTablas({
   const [clienteVenta, setClienteVenta] = useState("");
   const [grupoVenta, setGrupoVenta] = useState("");
   const [tasaVenta, setTasaVenta] = useState("");
+  const [tasaGlobalSugerida, setTasaGlobalSugerida] = useState<number | null>(null);
   const [tasaTablaGuardando, setTasaTablaGuardando] = useState(false);
   const [vendiendoCargando, setVendiendoCargando] = useState(false);
   const [previewVenta, setPreviewVenta] = useState<{ item: VentaTablaItem; ticket: TicketVentaModel } | null>(null);
@@ -293,13 +295,25 @@ export function MonitorTablas({
     setMontoVenta("");
     setClienteVenta("");
     setGrupoVenta(grupoSesion);
-    setTasaVenta(t.tasa_cambio != null && Number(t.tasa_cambio) > 0 ? String(t.tasa_cambio) : "");
+    setTasaVenta("");
+    setTasaGlobalSugerida(null);
     setVendiendoCargando(true);
     const [grupos, clientes] = await Promise.all([
       listarGruposVenta().catch(() => [] as GrupoVenta[]),
       listarClientesVenta().catch(() => [] as ClienteVenta[]),
     ]);
     setOpcionesVenta({ grupos, clientes });
+    const gSel = grupos.find((g) => String(g.id) === (grupoSesion || grupoVenta));
+    const monedaAbrir = gSel?.moneda ?? t.moneda ?? "USD";
+    const global = esMonedaVes(monedaAbrir) ? await tasaVesVigente() : null;
+    setTasaGlobalSugerida(global);
+    setTasaVenta(
+      t.tasa_cambio != null && Number(t.tasa_cambio) > 0
+        ? String(t.tasa_cambio)
+        : global != null
+          ? String(global)
+          : ""
+    );
     setVendiendoCargando(false);
   };
 
@@ -639,7 +653,8 @@ export function MonitorTablas({
     const monedaEfectivaLanzar = grupo?.moneda ?? vendiendo.moneda ?? "USD";
     const tasaNumLanzar = parseNum(tasaVenta);
     const tasaTablaNum = Number(vendiendo.tasa_cambio ?? 0);
-    if (esMonedaVes(monedaEfectivaLanzar) && !(tasaNumLanzar > 0) && !(tasaTablaNum > 0)) {
+    const tasaGlobalNum = Number(tasaGlobalSugerida ?? 0);
+    if (esMonedaVes(monedaEfectivaLanzar) && !(tasaNumLanzar > 0) && !(tasaTablaNum > 0) && !(tasaGlobalNum > 0)) {
       return setAviso("Indique la tasa (Bs/USD): la venta es en bol?vares. Un administrador puede registrarla o modificarla.");
     }
         const cObj = (vendiendo.caballos ?? []).find((c) => String(c.numero) === ejemplarVenta);
@@ -657,7 +672,15 @@ export function MonitorTablas({
       const monedaEfectiva = grupo?.moneda ?? vendiendo.moneda ?? "USD";
       const requiereTasa = esMonedaVes(monedaEfectiva);
       const tasaNum = parseNum(tasaVenta);
-      const tasaAplicar = requiereTasa && tasaNum > 0 ? tasaNum : (requiereTasa && tasaTablaNum > 0 ? tasaTablaNum : null);
+      const tasaAplicar = !requiereTasa
+        ? null
+        : tasaNum > 0
+          ? tasaNum
+          : tasaTablaNum > 0
+            ? tasaTablaNum
+            : tasaGlobalNum > 0
+              ? tasaGlobalNum
+              : null;
       const item: VentaTablaItem = {
         tablaId: vendiendo.id,
         numero: ejemplarVenta,
@@ -1762,6 +1785,7 @@ export function MonitorTablas({
                     <p className="mt-1 text-[10px] leading-tight text-amber-900">
                       La venta en Bs requiere tasa. {puedeGestionarTasa ? "Como administrador puedes guardar/modificar o eliminar la tasa de esta tabla." : "Solicita a un administrador registrar o modificar la tasa si falta."}
                       {vendiendo.tasa_cambio != null ? ` Tasa actual en tabla: ${Number(vendiendo.tasa_cambio).toLocaleString("es-VE", { maximumFractionDigits: 4 })} Bs/USD.` : ""}
+                      {tasaGlobalSugerida != null && tasaGlobalSugerida > 0 ? ` Tasa BCV vigente: ${tasaGlobalSugerida.toLocaleString("es-VE", { maximumFractionDigits: 4 })} Bs/USD (se aplica automáticamente).` : ""}
                     </p>
                   </div>
                 );

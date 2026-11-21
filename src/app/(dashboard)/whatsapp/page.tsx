@@ -6,6 +6,7 @@ import { esRolOperadorExclusivo } from "@/features/seguridad/lib/capacidades";
 import WhatsAppOperatorPanel from "@/components/whatsapp/WhatsAppOperatorPanel";
 import CentroConexionesWhatsApp from "@/components/whatsapp/CentroConexionesWhatsApp";
 import ModalLenguajeNoComprendido from "@/components/whatsapp/ModalLenguajeNoComprendido";
+import ModalPlantillasGlobales from "@/components/whatsapp/ModalPlantillasGlobales";
 import { emitirToast } from "@/shared/lib/mensajeria";
 
 // ============================================================================
@@ -176,6 +177,7 @@ export default function WhatsappPage() {
   const [gruposSistema, setGruposSistema] = useState<GrupoSistemaItem[]>([]);
   const [gruposFiltroIds, setGruposFiltroIds] = useState<string[]>([]);
   const [modalLenguajeAbierto, setModalLenguajeAbierto] = useState(false);
+  const [modalPlantillasAbierto, setModalPlantillasAbierto] = useState(false);
 
   const toggleGrupoFiltro = (id: string) => {
     if (esOperador && grupoUsuarioId && id !== grupoUsuarioId) return;
@@ -1331,6 +1333,14 @@ export default function WhatsappPage() {
               className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-[11px] font-black text-emerald-700 transition hover:bg-emerald-100"
             >
               🧠 Lenguaje no comprendido
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setModalPlantillasAbierto(true)}
+              className="rounded-xl border border-cyan-200 bg-cyan-50 px-3.5 py-2 text-[11px] font-black text-cyan-700 transition hover:bg-cyan-100"
+            >
+              🧩 Plantillas / Mensajes
             </button>
 
             <button
@@ -2571,6 +2581,15 @@ export default function WhatsappPage() {
       <ModalLenguajeNoComprendido
         open={modalLenguajeAbierto}
         onClose={() => setModalLenguajeAbierto(false)}
+        grupoId={
+          grupoUsuarioId ||
+          gruposFiltroIds[0] ||
+          (gruposSistema[0]?.id ? String(gruposSistema[0].id) : "")
+        }
+      />
+      <ModalPlantillasGlobales
+        open={modalPlantillasAbierto}
+        onClose={() => setModalPlantillasAbierto(false)}
         grupoId={
           grupoUsuarioId ||
           gruposFiltroIds[0] ||

@@ -19,10 +19,13 @@ import {
   obtenerPlantillaGrupo,
 } from "@/features/whatsapp/lib/plantillas-grupo-server";
 import { variablesEncabezadoGrupo } from "@/features/whatsapp/lib/plantillas-grupo";
-import { mensajeJugaronPorSaldoParcial } from "@/features/whatsapp/lib/mensajes-concrecion";
+import {
+  mensajeJugaronPorSaldoParcial,
+  prefijoNumeroJugada,
+} from "@/features/whatsapp/lib/mensajes-concrecion";
 import { asegurarCarreraActivaSala } from "./resolverSala";
 import { resolverCliente, resolverTelefonoWhatsappCliente } from "./resolverCliente";
-import { calcularMaximosBilateral, detallePublicoPropuesta } from "./validarSaldo";
+import { calcularMaximosBilateral } from "./validarSaldo";
 import { emitirBroadcastSala, enviarNotificacionesPrivadasDaemon } from "./notificador";
 import type { ContextoSala, ClienteResuelto, ResultadoConcrecion, RespuestaGrupoItem } from "./types";
 
@@ -38,6 +41,24 @@ async function obtenerSiguienteOrdenFifo(propuestaMsgId: string): Promise<number
       .maybeSingle();
     const maxOrden = Number(data?.orden_fifo || 0);
     return Number.isFinite(maxOrden) && maxOrden >= 0 ? maxOrden + 1 : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** Orden del ticket recién insertado; se usa como número de jugada visible. */
+async function obtenerUltimoOrdenFifo(propuestaMsgId: string): Promise<number> {
+  if (!propuestaMsgId) return 1;
+  try {
+    const { data } = await supabaseAdmin
+      .from("chat_tickets_fifo")
+      .select("orden_fifo")
+      .eq("propuesta_msg_id", propuestaMsgId)
+      .order("orden_fifo", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const orden = Number(data?.orden_fifo || 0);
+    return Number.isFinite(orden) && orden > 0 ? orden : 1;
   } catch {
     return 1;
   }
@@ -59,8 +80,21 @@ export function encolarConcrecionSecuencial<T>(propuestaId: string, tarea: () =>
   return actual;
 }
 
-export function mensajeJugaronPorPozo(prop: any, monto: number, limitador: string): string {
-  return `✅ Jugaron ${detallePublicoPropuesta(prop)} con ${formatearMontoRegional(monto)} por Pozo de ${limitador}`;
+export function mensajeJugaronPorPozo(
+  prop: any,
+  monto: number,
+  limitador: string,
+  telefonoLimitador?: string | null,
+  numeroJugada?: number | string | null
+): string {
+  return mensajeJugaronPorSaldoParcial({
+    juega: "",
+    da: "",
+    monto,
+    saldoDe: limitador,
+    telefonoLimitador,
+    numeroJugada,
+  });
 }
 
 export async function construirMensajeSaldoParcial(params: {
@@ -70,10 +104,15 @@ export async function construirMensajeSaldoParcial(params: {
   monto: number;
   saldoDe: string;
   detalle?: string;
+  telefonoLimitador?: string | null;
+  numeroJugada?: number | string | null;
 }): Promise<string> {
-  const { sala, juega, da, monto, saldoDe, detalle } = params;
+  const { sala, juega, da, monto, saldoDe, detalle, telefonoLimitador, numeroJugada } = params;
   const mapa = await cargarPlantillasGrupo(sala?.grupo_id);
-  return obtenerPlantillaGrupo(
+  const telefono = String(telefonoLimitador || "").replace(/\D/g, "");
+  const saldoDeFinal = telefono ? `${saldoDe} @${telefono}` : saldoDe;
+  const numero = prefijoNumeroJugada(numeroJugada);
+  const resuelto = obtenerPlantillaGrupo(
     mapa,
     "concrecion_saldo_parcial",
     {
@@ -81,22 +120,50 @@ export async function construirMensajeSaldoParcial(params: {
       juega,
       da,
       monto: formatearMontoRegional(monto),
-      saldo_de: saldoDe,
+      saldo_de: saldoDeFinal,
       detalle: detalle || "",
+      numero_jugada: numero.trim(),
     },
-    mensajeJugaronPorSaldoParcial({ juega, da, monto, saldoDe, detalle })
+    mensajeJugaronPorSaldoParcial({ juega, da, monto, saldoDe, telefonoLimitador, numeroJugada })
   );
+  return numero && !resuelto.startsWith("*") ? `${numero}${resuelto}` : resuelto;
+}
+
+export async function construirMensajeConfirmacion(params: {
+  sala: any;
+  juega: string;
+  da: string;
+  monto: number;
+  detalle?: string;
+  numeroJugada?: number | string | null;
+}): Promise<string> {
+  const { sala, juega, da, monto, detalle, numeroJugada } = params;
+  const mapa = await cargarPlantillasGrupo(sala?.grupo_id);
+  const numero = prefijoNumeroJugada(numeroJugada);
+  const resuelto = obtenerPlantillaGrupo(
+    mapa,
+    "confirmacion_jugada",
+    {
+      ...variablesEncabezadoGrupo(sala, "concrecion"),
+      juega,
+      da,
+      monto: formatearMontoRegional(monto),
+      detalle: detalle || "",
+      numero_jugada: numero.trim(),
+    },
+    mensajeJugaronCompleto(juega, detalle || "", da, monto, numeroJugada)
+  );
+  return numero && !resuelto.startsWith("*") ? `${numero}${resuelto}` : resuelto;
 }
 
 export function mensajeJugaronCompleto(
   nombreJuega: string,
   detalle: string,
   nombreDa: string,
-  monto: number
+  monto: number,
+  numeroJugada?: number | string | null
 ): string {
-  return limpiarEtiquetasProhibidas(
-    `✅ Jugaron: *${nombreJuega} Juega ${detalle} con $${formatearMontoRegional(monto)} da ${nombreDa}*`
-  );
+  return limpiarEtiquetasProhibidas(`${prefijoNumeroJugada(numeroJugada)}✅ Aquí Jugaron`);
 }
 
 export function limitadorPorPozo(
@@ -2129,20 +2196,47 @@ export async function concretarJugada(params: {
     const nombreLimitador =
       pozoLimitadorBilateral ||
       (maxBaseAceptante <= maxBaseProponente ? nombreDa : nombreJuega);
+    const nombreProponente =
+      proponenteRow?.seudonimo || proponenteRow?.nombre || propFresca.remitente_nombre || "";
+    const limitadorEsProponente =
+      String(nombreLimitador).trim().toUpperCase() ===
+        String(nombreProponente).trim().toUpperCase() ||
+      (pozoLimitadorBilateral
+        ? maxBaseProponente <= maxBaseAceptante
+        : maxBaseAceptante > maxBaseProponente);
+    const telefonoLimitador =
+      (limitadorEsProponente
+        ? resolverTelefonoWhatsappCliente(proponenteRow)
+        : resolverTelefonoWhatsappCliente(cliente)) || "";
 
-    const msgPublicoFinal = fueRecortadoPorRemanente
-      ? `Jugo ${formatearMontoRegional(montoEfectivo)}, Es lo que queda`
-      : esConcrecionSaldoParcial
-      ? await construirMensajeSaldoParcial({
-          sala: contextoSala.sala,
-          juega: nombreJuega,
-          da: nombreDa,
-          monto: montoEfectivo,
-          saldoDe: nombreLimitador,
-        })
-      : pozoLimitadorBilateral
-      ? mensajeJugaronPorPozo(propFresca, montoEfectivo, pozoLimitadorBilateral)
-      : mensajeJugaronCompleto(nombreJuega, detalleJugada, nombreDa, montoEfectivo);
+    const numeroJugada = await obtenerUltimoOrdenFifo(propFresca.id);
+    const msgPublicoFinal =
+      fueRecortadoPorRemanente || esConcrecionSaldoParcial
+        ? await construirMensajeSaldoParcial({
+            sala: contextoSala.sala,
+            juega: nombreJuega,
+            da: nombreDa,
+            monto: montoEfectivo,
+            saldoDe: nombreLimitador,
+            telefonoLimitador,
+            numeroJugada,
+          })
+        : pozoLimitadorBilateral
+        ? mensajeJugaronPorPozo(
+            propFresca,
+            montoEfectivo,
+            pozoLimitadorBilateral,
+            telefonoLimitador,
+            numeroJugada
+          )
+        : await construirMensajeConfirmacion({
+            sala: contextoSala.sala,
+            juega: nombreJuega,
+            da: nombreDa,
+            monto: montoEfectivo,
+            detalle: detalleJugada,
+            numeroJugada,
+          });
 
     const msgPrivAceptante = evalConcrecion.excedioSaldo
       ? `⚠️ Nos agrada tenerlo en el grupo, por favor no exceda su saldo, ajuste el monto de sus jugadas. Usted dispone de $${formatearMontoRegional(evalConcrecion.montoEfectivo)}. Muchas gracias.`

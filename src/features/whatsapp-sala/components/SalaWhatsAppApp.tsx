@@ -1780,7 +1780,7 @@ export function SalaWhatsAppApp({ embebido = false }: { embebido?: boolean } = {
           autor_id: null,
           autor_nombre: "Agente IA Oficial",
           autor_rol: "BOT",
-          texto: `✅ *¡Aquí jugaron!*\n\n🏇 **${prop.jugada}** al ejemplar **#${prop.caballo}** por **$${formatearMontoRegional(montoReal)}**\n👤 Juega: **@${juegaNombre}**\n🛡️ Da: **@${daNombre}**\n🎫 Ticket Oficial: \`#${ticketNum}\`\n\nRegistrado y asentado en tiempo real.`,
+          texto: "✅ Aquí Jugaron",
           tipo: "CONCRECION",
           created_at: nowIso,
           esMio: false,

@@ -721,7 +721,7 @@ export async function reversarOAnularEventoLibre(params: {
   const estabaLiquidado = ganoJ1 || ganoJ2;
   const estabaDecidido =
     estadoPrevio === "GANO_JUGADOR_1" || estadoPrevio === "GANO_JUGADOR_2" || estadoPrevio === "EMPATE";
-  const reabrir = Boolean(params.reabrirAPendiente && estabaDecidido && estadoPrevio !== "ANULADA");
+  const reabrir = Boolean(params.reabrirAPendiente && estabaDecidido);
 
   // 1. Restaurar saldos de clientes si estaba liquidado (con ganador/perdedor)
   if (supabase && estabaLiquidado && montoGanancia > 0) {

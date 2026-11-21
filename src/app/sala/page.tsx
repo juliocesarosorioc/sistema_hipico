@@ -53,10 +53,10 @@ class SalaErrorBoundary extends React.Component<
 function SalaContenido() {
   const params = useSearchParams();
   const grupoStore = useAuthStore((s) => s.grupoId || s.grupoActivo);
-  const grupoId = params.get("grupo") || params.get("grupoId") || grupoStore || undefined;
-  const clienteId = params.get("clienteId") || params.get("cliente_id") || undefined;
-  const portalToken = params.get("token") || params.get("portalToken") || params.get("portal_token") || undefined;
-  const staffTokenParam = params.get("staffToken") || params.get("staff_token") || undefined;
+  const grupoId = params?.get("grupo") || params?.get("grupoId") || grupoStore || undefined;
+  const clienteId = params?.get("clienteId") || params?.get("cliente_id") || undefined;
+  const portalToken = params?.get("token") || params?.get("portalToken") || params?.get("portal_token") || undefined;
+  const staffTokenParam = params?.get("staffToken") || params?.get("staff_token") || undefined;
   const staffTokenStored =
     typeof window !== "undefined"
       ? sessionStorage.getItem("sala_staff_token") || localStorage.getItem("sala_staff_token") || undefined

@@ -221,10 +221,17 @@ export async function guardarTasaReferencia(
   return { ok: true };
 }
 
+/** Fecha LOCAL del usuario en ISO (evita desfaces de UTC en tasas con fecha de aplicación). */
+export function fechaLocalISO(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /** Tasa vigente a una fecha: la última cuyo `fecha_aplicar` ya pasó. */
 export async function tasaVigente(tipo: string, fecha?: string): Promise<number | null> {
   if (!supabase) return null;
-  const f = fecha || new Date().toISOString().slice(0, 10);
+  const f = fecha || fechaLocalISO();
   const { data } = await supabase
     .from("tasas_referencia")
     .select("tasa")
@@ -235,14 +242,24 @@ export async function tasaVigente(tipo: string, fecha?: string): Promise<number 
   return data && data.length ? num(data[0].tasa) : null;
 }
 
-/** Tasa global de bolívares: BCV vigente, o la del catálogo como respaldo. */
-export async function tasaGlobalVes(): Promise<number> {
+/** Tasa Bs/USD vigente para ventas en bolívares: BCV, o la del catálogo. Null si no hay ninguna. */
+export async function tasaVesVigente(): Promise<number | null> {
   const bcv = await tasaVigente("BCV");
   if (bcv && bcv > 0) return bcv;
-  if (!supabase) return 1;
-  const { data } = await supabase.from("monedas").select("tasa_cambio").limit(1);
+  if (!supabase) return null;
+  const { data } = await supabase
+    .from("monedas")
+    .select("tasa_cambio")
+    .gt("tasa_cambio", 0)
+    .limit(1);
   const t = data && data.length ? num(data[0].tasa_cambio) : 0;
-  return t > 0 ? t : 1;
+  return t > 0 ? t : null;
+}
+
+/** Tasa global de bolívares: BCV vigente, o la del catálogo como respaldo. */
+export async function tasaGlobalVes(): Promise<number> {
+  const t = await tasaVesVigente();
+  return t && t > 0 ? t : 1;
 }
 
 // ---------------------------------------------------------------------------

@@ -205,7 +205,7 @@ export function Sidebar({
   oculto = false,
   onNavegar,
 }: SidebarProps) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const router = useRouter();
   const usuario = useAuthStore((s) => s.usuario);
   const perfiles = useAuthStore((s) => s.perfiles);
