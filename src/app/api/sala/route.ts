@@ -349,6 +349,19 @@ export async function GET(req: Request) {
       }
 
       let grupoEfectivoId = grupoId || gruposDisponibles[0]?.id;
+      if (!grupoId && gruposDisponibles.length > 1) {
+        const { data: salaConWa } = await supabaseAdmin
+          .from("salas_juego")
+          .select("grupo_id")
+          .in("grupo_id", gruposDisponibles.map((g: any) => g.id))
+          .eq("activa", true)
+          .not("whatsapp_group_jid", "is", null)
+          .limit(1)
+          .maybeSingle();
+        if (salaConWa?.grupo_id) {
+          grupoEfectivoId = salaConWa.grupo_id;
+        }
+      }
       if (!grupoEfectivoId) {
         const { data: nuevoGrupo } = await supabaseAdmin
           .from("grupos_venta")

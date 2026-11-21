@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { jwtVerify } from "jose";
 import { supabaseAdmin } from "@/core/supabase-admin";
 import { esUsuarioPrincipal } from "@/features/seguridad/lib/resolver";
 
@@ -546,6 +547,84 @@ export async function autenticarPeticionSala(
       }
     } catch {
       // noop
+    }
+  }
+
+  // 3. Chequeo de sesión firmada hipico_session (JWT HS256 emitido por /api/auth/sesion o /api/auth/portal-entrar)
+  const hipicoSession = leerCookie("hipico_session");
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (hipicoSession && sessionSecret) {
+    try {
+      const { payload } = await jwtVerify(
+        hipicoSession,
+        new TextEncoder().encode(sessionSecret),
+        { algorithms: ["HS256"] }
+      );
+      const usuario = typeof payload.usuario === "string" ? payload.usuario : "";
+      const rol = typeof payload.rol === "string" ? payload.rol : "";
+      const perfil = typeof payload.perfil === "string" ? payload.perfil : "";
+      const grupoIdPayload = typeof payload.grupoId === "string" && payload.grupoId ? payload.grupoId : null;
+
+      if (usuario && rol === "cliente") {
+        const cId = typeof payload.clienteId === "string" ? payload.clienteId : "";
+        if (cId) {
+          const { data: cl } = await supabaseAdmin.from("clientes").select("*").eq("id", cId).maybeSingle();
+          if (cl && cl.activo !== false) {
+            const saldoActual = Number(cl.saldo_actual ?? 0) || 0;
+            const saldoRetenido = Number(cl.saldo_retenido ?? 0) || 0;
+            const aval = Number(cl.aval ?? 0) || 0;
+            const saldoDisp =
+              cl.saldo_disponible != null
+                ? Number(cl.saldo_disponible) || 0
+                : cl.disponible != null
+                  ? Number(cl.disponible) || 0
+                  : Math.max(0, saldoActual + aval - saldoRetenido);
+            return {
+              ok: true,
+              identidad: {
+                tipo: "JUGADOR",
+                usuarioId: String(cl.id),
+                nombre: String(cl.seudonimo || cl.nombre || usuario),
+                grupoId: String(cl.grupo_id ?? grupoIdPayload ?? ""),
+                esAdmin: false,
+                esOperador: false,
+                permisos: ["jugar"],
+                clienteRow: {
+                  id: String(cl.id),
+                  nombre: String(cl.nombre ?? "Jugador"),
+                  seudonimo: cl.seudonimo ? String(cl.seudonimo) : undefined,
+                  telefono: cl.telefono ? String(cl.telefono) : undefined,
+                  saldo_actual: saldoActual,
+                  saldo_retenido: saldoRetenido,
+                  saldo_disponible: saldoDisp,
+                  libre: Boolean(cl.libre || String(cl.modo_juego ?? "").toLowerCase() === "libre"),
+                  modo_juego: String(cl.modo_juego ?? "aval"),
+                  grupo_id: String(cl.grupo_id ?? grupoIdPayload ?? ""),
+                  activo: true,
+                },
+              },
+            };
+          }
+        }
+      } else if (usuario && rol) {
+        const esSuper = rol === "superadmin" || esUsuarioPrincipal(usuario);
+        const esAdminGrupo = rol === "admin_grupo" || /admin/i.test(perfil);
+        const esAdmin = esSuper || esAdminGrupo;
+        return {
+          ok: true,
+          identidad: {
+            tipo: "STAFF",
+            usuarioId: usuario,
+            nombre: usuario,
+            grupoId: esSuper ? null : grupoIdPayload,
+            esAdmin: esSuper,
+            esOperador: true,
+            permisos: esAdmin ? ["*"] : ["operar_sala", "liquidar_sala", "retirar_ejemplar"],
+          },
+        };
+      }
+    } catch {
+      // Token inválido o expirado
     }
   }
 

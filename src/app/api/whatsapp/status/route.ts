@@ -10,6 +10,7 @@ const FALLBACK = { ok: false, conectado: false };
 function tieneSesion(req: NextRequest): boolean {
   if (req.cookies.get("hipico_acceso")?.value === "sin") return false;
 
+  const hipicoSession = req.cookies.get("hipico_session")?.value ?? "";
   const usuario = req.cookies.get("hipico_usuario")?.value ?? "";
   const perfil = req.cookies.get("hipico_perfil")?.value;
   const permisos = req.cookies.get("hipico_permisos")?.value;
@@ -18,7 +19,7 @@ function tieneSesion(req: NextRequest): boolean {
     .getAll()
     .some((c) => c.name.startsWith("sb-") && c.name.endsWith("-auth-token") && Boolean(c.value));
 
-  return Boolean(usuario || tokenSala || tokenSupabase || (perfil && permisos));
+  return Boolean(hipicoSession || usuario || tokenSala || tokenSupabase || (perfil && permisos));
 }
 
 export async function GET(req: NextRequest) {
