@@ -211,10 +211,13 @@ export async function POST(req: NextRequest) {
       .setExpirationTime("7d")
       .sign(new TextEncoder().encode(sessionSecret));
 
+    const esHttps =
+      req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() === "https" ||
+      req.nextUrl.protocol === "https:";
     respuesta.cookies.set("hipico_session", sessionToken, {
       path: "/",
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: Boolean(esHttps),
       sameSite: "lax",
       maxAge: 604800,
     });

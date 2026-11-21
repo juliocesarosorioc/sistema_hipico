@@ -47,11 +47,14 @@ function perfilesPorRol(rol: string, tipoNombre: string): string[] {
   return [tipoNombre || "admin_grupo"];
 }
 
-function opcionesCookie() {
+function opcionesCookie(req?: NextRequest) {
+  const esHttps =
+    req?.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() === "https" ||
+    req?.nextUrl.protocol === "https:";
   return {
     path: "/",
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: Boolean(esHttps),
     sameSite: "lax" as const,
     maxAge: MAX_AGE,
   };
@@ -204,7 +207,7 @@ export async function POST(req: NextRequest) {
       .sign(new TextEncoder().encode(sessionSecret));
 
     const respuesta = NextResponse.json({ ok: true });
-    respuesta.cookies.set("hipico_session", token, opcionesCookie());
+    respuesta.cookies.set("hipico_session", token, opcionesCookie(req));
     return respuesta;
   } catch (err) {
     console.error("[SESSION_ERR]", err);

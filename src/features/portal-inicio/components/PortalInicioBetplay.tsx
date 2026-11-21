@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTema } from "@/shared/hooks/useTema";
 import { SelectorTemas } from "@/shared/components/ui/SelectorTemas";
+import { BotonInstalarPWA } from "@/shared/components/ui/BotonInstalarPWA";
 import PantallaLogin from "@/features/auth/components/PantallaLogin";
 import { ModalRegistroUsuario } from "@/features/auth/components/ModalRegistroUsuario";
 import { useAuthStore } from "@/shared/store/useAuthStore";
@@ -274,6 +275,9 @@ export function PortalInicioBetplay() {
 
           {/* Selector de Temas + Acciones de Autenticación */}
           <div className="flex items-center gap-2.5">
+            {/* Instalar App en Celular / PWA */}
+            <BotonInstalarPWA variante="compacto" />
+
             {/* Selector de Tema */}
             <SelectorTemas />
 
@@ -307,6 +311,8 @@ export function PortalInicioBetplay() {
           </div>
         </div>
       </header>
+
+      <BotonInstalarPWA variante="banner-movil" />
 
       {/* =========================================================================
           2. HERO SECTION / CARRUSEL DE BANNERS ESTILO BETPLAY
