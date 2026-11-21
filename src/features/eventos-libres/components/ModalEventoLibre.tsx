@@ -129,7 +129,7 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
     if (!cli2) return setMensaje("Seleccione quiAcn da (Jugador 2).");
     if (cli1.id === cli2.id) return setMensaje("Jugador 1 y Jugador 2 deben ser distintos.");
     if (!clientesPertenecenAlMismoGrupo(cli1, cli2)) {
-      return setMensaje("�>" Los jugadores pertenecen a grupos distintos. No se permite interacciA3n entre jugadores de distintos grupos.");
+      return setMensaje("Los jugadores pertenecen a grupos distintos. No se permite interacci?n entre jugadores de distintos grupos.");
     }
     const riesgoJ1 = Number(riesgoJuega);
     const riesgoJ2 = Number(riesgoDa);
