@@ -43,7 +43,7 @@ export interface RespuestaPuenteWhatsApp {
   data?: any;
 }
 
-// Mutex en memoria por ID de propuesta para garantizar ejecución estrictamente FIFO
+// Mutex en memoria por ID de propuesta para garantizar ejecuciÃ³n estrictamente FIFO
 const colasConcrecionPorPropuesta = new Map<string, Promise<any>>();
 
 function encolarConcrecion<T>(propuestaId: string, fn: () => Promise<T>): Promise<T> {
@@ -54,7 +54,7 @@ function encolarConcrecion<T>(propuestaId: string, fn: () => Promise<T>): Promis
 }
 
 /**
- * Normaliza números de teléfono para coincidencia flexible (elimina @s.whatsapp.net, +, guiones, etc.)
+ * Normaliza nÃºmeros de telÃ©fono para coincidencia flexible (elimina @s.whatsapp.net, +, guiones, etc.)
  */
 function normalizarTelefono(tel?: string | null): string {
   if (!tel) return "";
@@ -111,7 +111,7 @@ async function emitirBroadcast(salaId: string, evento: string, payload: any) {
 
 /**
  * Procesa en tiempo real un mensaje recibido desde WhatsApp (Baileys)
- * Maneja tanto propuestas nuevas como concreciones por citación en cascada (ej. 90 + 10 = 100).
+ * Maneja tanto propuestas nuevas como concreciones por citaciÃ³n en cascada (ej. 90 + 10 = 100).
  */
 export async function procesarMensajeEntranteWhatsApp(
   msg: MensajeEntranteWhatsApp
@@ -119,7 +119,7 @@ export async function procesarMensajeEntranteWhatsApp(
   const { groupJid, senderJid, senderNombre, texto, quotedMsgId, whatsappMsgId } = msg;
 
   if (!groupJid || !senderJid || !texto || !texto.trim()) {
-    return { ok: false, tipo: "IGNORADO", mensaje: "Mensaje vacío o sin datos de emisor/grupo" };
+    return { ok: false, tipo: "IGNORADO", mensaje: "Mensaje vacÃ­o o sin datos de emisor/grupo" };
   }
 
   const textoLimpio = texto.trim();
@@ -146,7 +146,7 @@ export async function procesarMensajeEntranteWhatsApp(
   const esCarreraAbierta = sala.estado_carrera === "abierta";
 
   // Moneda del grupo: todos los mensajes/reportes del bot deben usar el mismo
-  // símbolo que el grupo (USD -> $, VES -> Bs.).
+  // sÃ­mbolo que el grupo (USD -> $, VES -> Bs.).
   const { data: grupoMoneda } = await supabaseAdmin
     .from("grupos_venta")
     .select("moneda")
@@ -161,7 +161,7 @@ export async function procesarMensajeEntranteWhatsApp(
   const dm = (texto?: string | null) => mensajeConCodigoSala(texto, codigoSala);
 
   // 2. Identificar al cliente en la base de datos estrictamente dentro de `grupoId = sala.grupo_id`
-  // Resoluci�n centralizada y robusta (normaliza +58/0058/0, espacios/guiones, �ltimos 10 d�gitos, JID/LID, variantes).
+  // Resolución centralizada y robusta (normaliza +58/0058/0, espacios/guiones, últimos 10 dígitos, JID/LID, variantes).
   const clienteResuelto = await resolverCliente({
     grupoId,
     participantJid: senderJid,
@@ -199,7 +199,7 @@ export async function procesarMensajeEntranteWhatsApp(
       tipo: "ERROR",
       mensaje: "Cliente no registrado",
       acciones: {
-        responderEnGrupo: `Hola ${nombreJugador}, para participar en las jugadas debes vincular tu número en la plataforma o contactar a la administración.`,
+        responderEnGrupo: `Hola ${nombreJugador}, para participar en las jugadas debes vincular tu nÃºmero en la plataforma o contactar a la administraciÃ³n.`,
       },
     };
   }
@@ -207,7 +207,7 @@ export async function procesarMensajeEntranteWhatsApp(
   const saldoDisponible = calcularDisponibleCliente(cliente);
 
   // =========================================================================
-  // CASO 1: CONCRECIÓN POR RESPUESTA CITADA (QUOTED MESSAGE)
+  // CASO 1: CONCRECIÃN POR RESPUESTA CITADA (QUOTED MESSAGE)
   // =========================================================================
   if (quotedMsgId) {
     // Buscar la propuesta citada por whatsapp_msg_id o por ID interno
@@ -253,7 +253,7 @@ export async function procesarMensajeEntranteWhatsApp(
             tipo: "PEDAGOGICO",
             acciones: {
               responderEnGrupo: null,
-              enviarPrivadoJugador: dm("⚠️ Solo el autor de la propuesta puede retirarla con 'Se fue'."),
+              enviarPrivadoJugador: dm("â ï¸ Solo el autor de la propuesta puede retirarla con 'Se fue'."),
             },
           };
         }
@@ -281,7 +281,7 @@ export async function procesarMensajeEntranteWhatsApp(
           ok: false,
           tipo: "PEDAGOGICO",
           acciones: {
-            responderEnGrupo: `⛔ La carrera se encuentra ${sala.estado_carrera.toUpperCase()}. No se admiten nuevas concreciones.`,
+            responderEnGrupo: `â La carrera se encuentra ${sala.estado_carrera.toUpperCase()}. No se admiten nuevas concreciones.`,
           },
         };
       }
@@ -291,7 +291,7 @@ export async function procesarMensajeEntranteWhatsApp(
           ok: false,
           tipo: "PEDAGOGICO",
           acciones: {
-            responderEnGrupo: `⚠️ No puedes concretar tu propia propuesta de jugada.`,
+            responderEnGrupo: `â ï¸ No puedes concretar tu propia propuesta de jugada.`,
           },
         };
       }
@@ -303,7 +303,7 @@ export async function procesarMensajeEntranteWhatsApp(
             ok: false,
             tipo: "PEDAGOGICO",
             acciones: {
-              responderEnGrupo: "🚫Nada aquí, Se fue.",
+              responderEnGrupo: "ð«Nada aquÃ­, Se fue.",
               enviarPrivadoJugador: null,
             },
           };
@@ -339,7 +339,7 @@ export async function procesarMensajeEntranteWhatsApp(
         };
       }
 
-      // Encolar en el Mutex de la propuesta para garantizar ejecución atómica FIFO
+      // Encolar en el Mutex de la propuesta para garantizar ejecuciÃ³n atÃ³mica FIFO
       return await encolarConcrecion(propMsg.id, async () => {
         // Reconsultar propuesta fresca con bloqueo
         const { data: propFresca } = await supabaseAdmin
@@ -355,7 +355,7 @@ export async function procesarMensajeEntranteWhatsApp(
               ok: false,
               tipo: "PEDAGOGICO",
               acciones: {
-                responderEnGrupo: "🚫Nada aquí, Se fue.",
+                responderEnGrupo: "ð«Nada aquÃ­, Se fue.",
                 enviarPrivadoJugador: null,
               },
             };
@@ -389,7 +389,7 @@ export async function procesarMensajeEntranteWhatsApp(
           };
         }
 
-        // Control dinámico de saldo concurrente del proponente
+        // Control dinÃ¡mico de saldo concurrente del proponente
         const { data: proponente } = await supabaseAdmin
           .from("clientes")
           .select("id, nombre, saldo_actual, saldo_retenido, libre, aval")
@@ -431,7 +431,7 @@ export async function procesarMensajeEntranteWhatsApp(
         );
 
         if (!evaluacion.valido) {
-          // Registrar en auditoría
+          // Registrar en auditorÃ­a
           await supabaseAdmin.from("registro_revision_llm").insert({
             grupo_id: grupoId,
             sala_id: salaId,
@@ -459,7 +459,7 @@ export async function procesarMensajeEntranteWhatsApp(
         }
         const nuevoRemanente = Math.max(0, Number((remanenteActual - montoConcretado).toFixed(2)));
 
-        // Intentar ejecutar el RPC atómico oficial
+        // Intentar ejecutar el RPC atÃ³mico oficial
         let rpcExitoso = false;
         const paramsPuenteRpc = {
           p_grupo_id: String(grupoId || "").trim(),
@@ -507,7 +507,7 @@ export async function procesarMensajeEntranteWhatsApp(
           console.error("[RPC_CONCRETAR_INVALID_PARAMS]", paramsPuenteRpc);
         }
 
-        // Si el RPC no procesó, ejecutar fallback seguro
+        // Si el RPC no procesÃ³, ejecutar fallback seguro
         if (!rpcExitoso) {
           if (!cliente.libre) {
             const nuevoRetenido = Number((Number(cliente.saldo_retenido || 0) + montoConcretado).toFixed(2));
@@ -578,15 +578,15 @@ export async function procesarMensajeEntranteWhatsApp(
 
         const totalVanJugando = listaJugaron.reduce((acc, x) => acc + x.monto, 0);
         const lineasDesglose = listaJugaron
-          .map((x) => `• ${x.jugador} jugó ${prefijo}${formatearMontoRegional(x.monto)}`)
+          .map((x) => `â¢ ${x.jugador} jugÃ³ ${prefijo}${formatearMontoRegional(x.monto)}`)
           .join("\n");
 
         const contenidoVanJugando =
-          `🤝 *Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}* (${propFresca.jugada_estandarizada || propFresca.contenido})\n` +
+          `ð¤ *Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}* (${propFresca.jugada_estandarizada || propFresca.contenido})\n` +
           `${lineasDesglose}\n` +
-          `${nuevoRemanente > 0 ? `Remanente disponible: ${prefijo}${formatearMontoRegional(nuevoRemanente)}` : "✅ ¡Jugada completada!"}`;
+          `${nuevoRemanente > 0 ? `Remanente disponible: ${prefijo}${formatearMontoRegional(nuevoRemanente)}` : "â Â¡Jugada completada!"}`;
 
-        // Registrar mensaje de concreción en chat_mensajes ("Van jugando por X", nunca "CRUCE")
+        // Registrar mensaje de concreciÃ³n en chat_mensajes ("Van jugando por X", nunca "CRUCE")
         await supabaseAdmin.from("chat_mensajes").insert({
           grupo_id: grupoId,
           sala_id: salaId,
@@ -604,7 +604,7 @@ export async function procesarMensajeEntranteWhatsApp(
 
         await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
 
-        // Mensajes del Bot según especificación exacta ("Van jugando por X", nunca "CRUCE")
+        // Mensajes del Bot segÃºn especificaciÃ³n exacta ("Van jugando por X", nunca "CRUCE")
         let msgPublicoBot: string | null = null;
         let msgPrivadoBot: string | null = null;
 
@@ -658,8 +658,8 @@ export async function procesarMensajeEntranteWhatsApp(
           .filter(Boolean)
           .join("\n");
 
-        const msgPrivadoAceptante = msgPrivadoBot || `✅ Has tomado la jugada de ${propFresca.remitente_nombre} por ${prefijo}${formatearMontoRegional(montoConcretado)}. Retención aplicada: ${prefijo}${formatearMontoRegional(montoConcretado)}.`;
-        const msgPrivadoProponente = `🔔 ${nombreJugador} jugó ${prefijo}${formatearMontoRegional(montoConcretado)} en tu jugada (${propFresca.jugada_estandarizada || propFresca.contenido}). Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}. ${nuevoRemanente > 0 ? `Remanente activo: ${prefijo}${formatearMontoRegional(nuevoRemanente)}` : "Tu jugada está 100% pactada."}`;
+        const msgPrivadoAceptante = msgPrivadoBot || `â Has tomado la jugada de ${propFresca.remitente_nombre} por ${prefijo}${formatearMontoRegional(montoConcretado)}. RetenciÃ³n aplicada: ${prefijo}${formatearMontoRegional(montoConcretado)}.`;
+        const msgPrivadoProponente = `ð ${nombreJugador} jugÃ³ ${prefijo}${formatearMontoRegional(montoConcretado)} en tu jugada (${propFresca.jugada_estandarizada || propFresca.contenido}). Van jugando por ${prefijo}${formatearMontoRegional(totalVanJugando)}. ${nuevoRemanente > 0 ? `Remanente activo: ${prefijo}${formatearMontoRegional(nuevoRemanente)}` : "Tu jugada estÃ¡ 100% pactada."}`;
 
         return {
           ok: true,
@@ -683,7 +683,7 @@ export async function procesarMensajeEntranteWhatsApp(
   // CASO 2: MENSAJE SIN CITA -> ANALIZAR SI ES COMANDO RETIRO, PROPUESTA O TEXTO
   // =========================================================================
 
-  // 1. Detección de orden de cierre/retiro de jugadas abiertas ("Se fue", "sf", etc.)
+  // 1. DetecciÃ³n de orden de cierre/retiro de jugadas abiertas ("Se fue", "sf", etc.)
   const analisisRetiro = analizarComandoRetiro(textoLimpio);
   if (analisisRetiro.esComandoRetiro) {
     if (!esCarreraAbierta) {
@@ -725,7 +725,7 @@ export async function procesarMensajeEntranteWhatsApp(
       tipo: "TEXTO",
       acciones: {
         responderEnGrupo: null,
-        enviarPrivadoJugador: dm("✅ Todas tus propuestas abiertas fueron retiradas."),
+        enviarPrivadoJugador: dm("â Todas tus propuestas abiertas fueron retiradas."),
       },
     };
   }
@@ -741,7 +741,7 @@ export async function procesarMensajeEntranteWhatsApp(
     codigoSala
   );
 
-  // Si tuvo intención de jugar pero no fue válida (error sintaxis, ejemplar retirado, etc.)
+  // Si tuvo intenciÃ³n de jugar pero no fue vÃ¡lida (error sintaxis, ejemplar retirado, etc.)
   if (analisis.esIntencionDeJugada && !analisis.valido) {
     await supabaseAdmin.from("registro_revision_llm").insert({
       grupo_id: grupoId,
@@ -775,14 +775,14 @@ export async function procesarMensajeEntranteWhatsApp(
     };
   }
 
-  // Si es una propuesta válida
+  // Si es una propuesta vÃ¡lida
   if (analisis.esIntencionDeJugada && analisis.valido) {
     if (!esCarreraAbierta) {
       return {
         ok: false,
         tipo: "PEDAGOGICO",
         acciones: {
-          responderEnGrupo: `⛔ La carrera se encuentra ${sala.estado_carrera.toUpperCase()}. No se reciben nuevas jugadas.`,
+          responderEnGrupo: `â La carrera se encuentra ${sala.estado_carrera.toUpperCase()}. No se reciben nuevas jugadas.`,
         },
       };
     }
@@ -820,7 +820,7 @@ export async function procesarMensajeEntranteWhatsApp(
       rpcExitoso = false;
     }
 
-    // Si el RPC creó la propuesta, asociar el whatsapp_msg_id y canal
+    // Si el RPC creÃ³ la propuesta, asociar el whatsapp_msg_id y canal
     if (rpcExitoso && propId) {
       await supabaseAdmin
         .from("chat_mensajes")
@@ -830,7 +830,7 @@ export async function procesarMensajeEntranteWhatsApp(
         })
         .eq("id", propId);
     } else {
-      // Fallback directo si el RPC no estaba desplegado o falló por concurrencia
+      // Fallback directo si el RPC no estaba desplegado o fallÃ³ por concurrencia
       if (!cliente.libre) {
         const saldoRetenidoActual = Number(cliente.saldo_retenido || 0);
         const nuevoRetenido = Number((saldoRetenidoActual + montoEfectivo).toFixed(2));
@@ -878,7 +878,7 @@ export async function procesarMensajeEntranteWhatsApp(
 
     await emitirBroadcast(salaId, "nuevo_mensaje", { salaId });
 
-    // Mensajes exactos del bot si excedió saldo
+    // Mensajes exactos del bot si excediÃ³ saldo
     let msgPublicoBot: string | null = null;
     let msgPrivadoBot: string | null = null;
 
@@ -888,8 +888,8 @@ export async function procesarMensajeEntranteWhatsApp(
     }
 
     const msgGrupo = msgPublicoBot
-      ? `${msgPublicoBot}\n🏇 *Propuesta Registrada*: ${analisis.jugadaEstandarizada} por ${prefijo}${formatearMontoRegional(montoEfectivo)}`
-      : `🏇 *Nueva Propuesta*: ${analisis.jugadaEstandarizada} (${prefijo}${formatearMontoRegional(montoEfectivo)})\n↩️ Responde a este mensaje con *Consigo*, *J* o *Ponte* para tomarla.`;
+      ? `${msgPublicoBot}\nð *Propuesta Registrada*: ${analisis.jugadaEstandarizada} por ${prefijo}${formatearMontoRegional(montoEfectivo)}`
+      : `ð *Nueva Propuesta*: ${analisis.jugadaEstandarizada} (${prefijo}${formatearMontoRegional(montoEfectivo)})\nâ©ï¸ Responde a este mensaje con *Consigo*, *J* o *Ponte* para tomarla.`;
 
     return {
       ok: true,
@@ -906,7 +906,7 @@ export async function procesarMensajeEntranteWhatsApp(
   }
 
   // =========================================================================
-  // CASO 3: MENSAJE DE TEXTO ESTÁNDAR
+  // CASO 3: MENSAJE DE TEXTO ESTÃNDAR
   // =========================================================================
   await supabaseAdmin.from("chat_mensajes").insert({
     grupo_id: grupoId,

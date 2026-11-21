@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   cargarEventosLibres,
   crearEventoLibre,
+  actualizarEventoLibre,
   liquidarEventoLibre,
   reversarOAnularEventoLibre,
   leerEventosLibresMemoria,
@@ -28,6 +29,7 @@ interface Props {
 
 export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }: Props) {
   const [eventos, setEventos] = useState<EventoLibreRow[]>(() => leerEventosLibresMemoria());
+  const [editandoId, setEditandoId] = useState<string | null>(null);
   const [categoria, setCategoria] = useState<CategoriaDeporte>("LIBRE");
   const [fechaEvento, setFechaEvento] = useState(hoyLocal());
   const [concepto, setConcepto] = useState("");
@@ -42,6 +44,42 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
   const [eventoEnLiquidacion, setEventoEnLiquidacion] = useState("");
   const [ganadorSeleccionado, setGanadorSeleccionado] = useState<"JUGADOR_1" | "JUGADOR_2" | "EMPATE">("JUGADOR_1");
   const [montoGanancia, setMontoGanancia] = useState("");
+
+  const limpiarFormulario = () => {
+    setEditandoId(null);
+    setCategoria("LIBRE");
+    setFechaEvento(hoyLocal());
+    setConcepto("");
+    setLogro("");
+    setJ1Id("");
+    setJ2Id("");
+    setRiesgoJuega("");
+    setRiesgoDa("");
+    setComisionGrupo("");
+  };
+
+  const iniciarEdicion = (ev: EventoLibreRow) => {
+    if (ev.estado !== "PENDIENTE") {
+      setMensaje("Solo se pueden editar jugadas de eventos libres pendientes.");
+      return;
+    }
+    setEditandoId(ev.id);
+    setCategoria(ev.categoria);
+    setFechaEvento(ev.fecha || hoyLocal());
+    setConcepto(ev.concepto || "");
+    setLogro(String(ev.mercado || ""));
+    setJ1Id(String(ev.jugador1Id ?? ""));
+    setJ2Id(String(ev.jugador2Id ?? ""));
+    setRiesgoJuega(String(ev.riesgoJugador1 ?? ""));
+    setRiesgoDa(String(ev.riesgoJugador2 ?? ""));
+    setComisionGrupo(
+      ev.comisionGrupoPct != null && Number.isFinite(Number(ev.comisionGrupoPct))
+        ? String(ev.comisionGrupoPct)
+        : ""
+    );
+    setEventoEnLiquidacion("");
+    setMensaje("✏️ Editando jugada pendiente. Ajuste los datos y guarde los cambios.");
+  };
 
   const cli1 = clientes.find((c) => String(c.id) === String(j1Id));
   const cli2 = clientes.find((c) => String(c.id) === String(j2Id));
@@ -87,25 +125,25 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
     if (!fechaEvento) return setMensaje("Seleccione la fecha del evento.");
     if (!concepto.trim()) return setMensaje("Escriba el concepto de la apuesta.");
     if (!logro.trim()) return setMensaje("Escriba el logro o mercado manualmente.");
-    if (!cli1) return setMensaje("Seleccione quién juega (Jugador 1).");
-    if (!cli2) return setMensaje("Seleccione quién da (Jugador 2).");
+    if (!cli1) return setMensaje("Seleccione quiAcn juega (Jugador 1).");
+    if (!cli2) return setMensaje("Seleccione quiAcn da (Jugador 2).");
     if (cli1.id === cli2.id) return setMensaje("Jugador 1 y Jugador 2 deben ser distintos.");
     if (!clientesPertenecenAlMismoGrupo(cli1, cli2)) {
-      return setMensaje("⛔ Los jugadores pertenecen a grupos distintos. No se permite interacción entre jugadores de distintos grupos.");
+      return setMensaje("�>" Los jugadores pertenecen a grupos distintos. No se permite interacciA3n entre jugadores de distintos grupos.");
     }
     const riesgoJ1 = Number(riesgoJuega);
     const riesgoJ2 = Number(riesgoDa);
-    if (!comisionGrupo.trim()) return setMensaje("Escriba manualmente la comisión del grupo para esta apuesta.");
+    if (!comisionGrupo.trim()) return setMensaje("Escriba manualmente la comisiA3n del grupo para esta apuesta.");
     const comision = Number(comisionGrupo);
     if (!Number.isFinite(riesgoJ1) || riesgoJ1 <= 0 || !Number.isFinite(riesgoJ2) || riesgoJ2 <= 0) {
       return setMensaje("Indique manualmente un monto de riesgo mayor a 0 para cada jugador.");
     }
     if (!Number.isFinite(comision) || comision < 0 || comision > 100) {
-      return setMensaje("La comisión del grupo debe estar entre 0% y 100%.");
+      return setMensaje("La comisiA3n del grupo debe estar entre 0% y 100%.");
     }
 
     setGuardando(true);
-    const r = await crearEventoLibre({
+    const payload = {
       fecha: fechaEvento,
       categoria,
       concepto,
@@ -115,23 +153,27 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
       riesgo1: riesgoJ1,
       riesgo2: riesgoJ2,
       comisionGrupoPct: comision,
-    });
+    };
+    const r = editandoId
+      ? await actualizarEventoLibre({ eventoId: editandoId, ...payload })
+      : await crearEventoLibre(payload);
     setGuardando(false);
 
     if (!r.ok) {
-      setMensaje(r.error || "Error al registrar evento libre.");
+      setMensaje(r.error || (editandoId ? "Error al editar evento libre." : "Error al registrar evento libre."));
       return;
     }
 
     setEventos(leerEventosLibresMemoria());
-    setFechaEvento(hoyLocal());
-    setConcepto("");
-    setLogro("");
-    setRiesgoJuega("");
-    setRiesgoDa("");
-    setMensaje(r.warning ? `✅ Evento guardado. ${r.warning}` : "✅ Evento libre registrado con éxito.");
+    limpiarFormulario();
+    setMensaje(
+      r.warning
+        ? `�o. ${editandoId ? "Jugada actualizada" : "Evento guardado"}. ${r.warning}`
+        : editandoId
+        ? "�o. Jugada del evento libre actualizada con Acxito."
+        : "�o. Evento libre registrado con Acxito."
+    );
   };
-
   const decidir = async (
     ev: EventoLibreRow,
     ganador: "JUGADOR_1" | "JUGADOR_2" | "EMPATE",
@@ -172,28 +214,40 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
     }
   };
 
-  const handleReversar = async (ev: EventoLibreRow) => {
+  const handleReversar = async (ev: EventoLibreRow, opts?: { reabrirAPendiente?: boolean }) => {
+    const reabrir = Boolean(opts?.reabrirAPendiente);
     const esLiquidado = ev.estado === "GANO_JUGADOR_1" || ev.estado === "GANO_JUGADOR_2";
-    const accion = esLiquidado ? "reversar la liquidación y restaurar los saldos y asientos contables" : "anular este evento";
-    if (!confirm(`¿Está seguro de que desea ${accion} del evento "${ev.concepto}"?`)) {
+    const accion = reabrir
+      ? "reversar la liquidaci?n y reabrir la jugada a pendiente para poder editarla"
+      : esLiquidado
+      ? "reversar la liquidaci?n y anular este evento"
+      : "anular este evento";
+    if (!confirm(`?Est? seguro de que desea ${accion} del evento "${ev.concepto}"?`)) {
       return;
     }
     setGuardando(true);
     const r = await reversarOAnularEventoLibre({
       eventoId: ev.id,
-      motivo: "Anulación / Reversión manual desde taquilla",
+      motivo: reabrir
+        ? "Reversi?n de liquidaci?n para edici?n desde taquilla"
+        : "Anulaci?n / Reversi?n manual desde taquilla",
+      reabrirAPendiente: reabrir,
     });
     setGuardando(false);
 
     if (r.ok) {
       setEventos(leerEventosLibresMemoria());
-      setMensaje(`✅ Evento "${ev.concepto}" anulado/reversado con éxito.`);
+      setMensaje(
+        reabrir
+          ? `? Liquidaci?n revertida. La jugada "${ev.concepto}" qued? pendiente y puede editarse.`
+          : `? Evento "${ev.concepto}" anulado/reversado con ?xito.`
+      );
       setEventoEnLiquidacion("");
+      setMontoGanancia("");
     } else {
       setMensaje(r.error || "Error al anular/reversar el evento.");
     }
   };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -217,10 +271,25 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
             </div>
           )}
 
-          {/* Formulario de Registro */}
+          {/* Formulario de Registro / Edición */}
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
-            <div className="text-xs font-black uppercase text-slate-700 flex items-center gap-1.5">
-              <span>✍️</span> Registrar Nueva Apuesta Deportiva / Evento Libre
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-black uppercase text-slate-700 flex items-center gap-1.5">
+                <span>{editandoId ? "✏️" : "�o?�,?"}</span>{" "} 
+                {editandoId ? "Editar Jugada de Evento Libre / P2P" : "Registrar Nueva Apuesta Deportiva / Evento Libre"}
+              </div>
+              {editandoId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    limpiarFormulario();
+                    setMensaje("EdiciA3n cancelada.");
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-100"
+                >
+                  Cancelar ediciA3n
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
@@ -352,7 +421,13 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
                 disabled={guardando}
                 className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-black uppercase text-white shadow-md hover:bg-indigo-700 disabled:opacity-50"
               >
-                {guardando ? "Registrando..." : "➕ Registrar Evento Libre"}
+                                {guardando
+                  ? editandoId
+                    ? "Guardando..."
+                    : "Registrando..."
+                  : editandoId
+                  ? "�o. Guardar cambios"
+                  : "�z Registrar Evento Libre"}
               </button>
             </div>
           </div>
@@ -467,7 +542,15 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
                             >
                               🤝 Empate / Nulo
                             </button>
-                            <button
+                                                        <button
+                              type="button"
+                              onClick={() => iniciarEdicion(ev)}
+                              disabled={guardando}
+                              className="rounded-lg bg-sky-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-sky-700 disabled:opacity-50"
+                            >
+                              ✏️ Editar
+                            </button>
+<button
                               type="button"
                               onClick={() => void handleReversar(ev)}
                               disabled={guardando}
@@ -538,14 +621,24 @@ export function ModalEventoLibre({ clientes, onClose, comisionGrupoDefault = 5 }
                             Ganancia bruta: ${ev.montoLiquidadoGanador?.toFixed(2)} · Comisión Casa: ${ev.comisionCobrada?.toFixed(2)} · Incentivo: ${ev.incentivoAcreditado?.toFixed(2)} · Socio: ${ev.comisionSocioAcreditada?.toFixed(2)}
                           </div>
                           {ev.estado !== "ANULADA" && (
-                            <button
-                              type="button"
-                              onClick={() => void handleReversar(ev)}
-                              disabled={guardando}
-                              className="rounded-lg bg-rose-600 px-2.5 py-1 text-[10px] font-black uppercase text-white shadow hover:bg-rose-700 disabled:opacity-50"
-                            >
-                              🔄 Reversar / Anular
-                            </button>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => void handleReversar(ev, { reabrirAPendiente: true })}
+                                disabled={guardando}
+                                className="rounded-lg bg-amber-600 px-2.5 py-1 text-[10px] font-black uppercase text-white shadow hover:bg-amber-700 disabled:opacity-50"
+                              >
+                                ?? Reversar liquidaci?n
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleReversar(ev)}
+                                disabled={guardando}
+                                className="rounded-lg bg-rose-600 px-2.5 py-1 text-[10px] font-black uppercase text-white shadow hover:bg-rose-700 disabled:opacity-50"
+                              >
+                                ?? Anular
+                              </button>
+                            </div>
                           )}
                         </div>
                       )}

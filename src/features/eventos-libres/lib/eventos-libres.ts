@@ -557,13 +557,156 @@ export async function liquidarEventoLibre(params: {
 
 
 /**
- * [Módulo 3 - Reversión / Anulación Atómica de Eventos Libres]
- * Restaura los saldos de los clientes, revierte asientos contables NIIF y marca el evento como ANULADA.
+ * Edita un evento libre PENDIENTE (jugada P2P/sportsbook) antes de su liquidaciA3n.
+ * Actualiza memoria/localStorage, `apuestas_eventos_especiales` y el ticket
+ * sincronizado en `tickets_apuestas` (misma referencia por id en nota).
+ */
+export async function actualizarEventoLibre(params: {
+  eventoId: string;
+  fecha?: string;
+  categoria: CategoriaDeporte;
+  concepto: string;
+  mercado: TipoMercadoLogro;
+  jugador1: { id: string | number; nombre: string; disponible: number };
+  jugador2: { id: string | number; nombre: string; disponible: number };
+  riesgo1: number;
+  riesgo2: number;
+  comisionGrupoPct?: number;
+  editadoPor?: string | null;
+}): Promise<{ ok: boolean; evento?: EventoLibreRow; error?: string; warning?: string }> {
+  const lista = leerEventosLibresMemoria();
+  const idx = lista.findIndex((e) => e.id === params.eventoId);
+  if (idx < 0) return { ok: false, error: "Evento libre no encontrado." };
+
+  const previo = lista[idx];
+  if (previo.estado !== "PENDIENTE") {
+    return {
+      ok: false,
+      error: "Solo se pueden editar jugadas de eventos libres que estAcn pendientes.",
+    };
+  }
+
+  const r1 = redondearCentavos(params.riesgo1);
+  const r2 = redondearCentavos(params.riesgo2);
+
+  if (r1 <= 0 || r2 <= 0) {
+    return { ok: false, error: "Los montos de riesgo deben ser mayores a 0." };
+  }
+
+  const comisionGrupoPct = Number(params.comisionGrupoPct ?? previo.comisionGrupoPct ?? 5);
+  if (!Number.isFinite(comisionGrupoPct) || comisionGrupoPct < 0 || comisionGrupoPct > 100) {
+    return { ok: false, error: "La comisiA3n del grupo debe estar entre 0% y 100%." };
+  }
+
+  const disponible1 = Number.isFinite(params.jugador1.disponible)
+    ? Math.max(0, redondearCentavos(params.jugador1.disponible))
+    : Number.POSITIVE_INFINITY;
+  const disponible2 = Number.isFinite(params.jugador2.disponible)
+    ? Math.max(0, redondearCentavos(params.jugador2.disponible))
+    : Number.POSITIVE_INFINITY;
+  if (Number.isFinite(disponible1) && r1 > disponible1) {
+    return { ok: false, error: `El jugador ${params.jugador1.nombre} no tiene saldo disponible suficiente.` };
+  }
+  if (Number.isFinite(disponible2) && r2 > disponible2) {
+    return { ok: false, error: `El jugador ${params.jugador2.nombre} no tiene saldo disponible suficiente.` };
+  }
+
+  const fecha = params.fecha || previo.fecha || new Date().toISOString().slice(0, 10);
+  const actualizado: EventoLibreRow = {
+    ...previo,
+    fecha,
+    categoria: params.categoria,
+    concepto: params.concepto.trim() || "Evento Deportivo Libre",
+    mercado: params.mercado,
+    jugador1Id: params.jugador1.id,
+    jugador1Nombre: params.jugador1.nombre,
+    riesgoJugador1: r1,
+    jugador2Id: params.jugador2.id,
+    jugador2Nombre: params.jugador2.nombre,
+    riesgoJugador2: r2,
+    comisionGrupoPct,
+    actualizadoEn: new Date().toISOString(),
+  };
+
+  lista[idx] = actualizado;
+  guardarEventosLibresMemoria([...lista]);
+
+  if (supabase) {
+    try {
+      const { error } = await supabase
+        .from("apuestas_eventos_especiales")
+        .update({
+          fecha,
+          evento: `[${params.categoria}] ${actualizado.concepto} (${actualizado.jugador1Nombre} vs ${actualizado.jugador2Nombre})`,
+          cliente_id: String(actualizado.jugador1Id),
+          cliente_nombre: actualizado.jugador1Nombre,
+          monto: actualizado.riesgoJugador1,
+          pago_potencial: sumarDinero(actualizado.riesgoJugador1, actualizado.riesgoJugador2),
+          logro_cuota: String(params.mercado),
+          estado: "PENDIENTE",
+          ganador_seleccionado: false,
+          nota: `EVENTO_LIBRE_P2P:${JSON.stringify(actualizado)}`,
+          creado_por: actualizado.creadoPor ?? params.editadoPor ?? "OPERADOR",
+        })
+        .eq("id", actualizado.id);
+      if (error) {
+        return {
+          ok: true,
+          evento: actualizado,
+          warning: `Se guardA3 localmente, pero no en la base: ${error.message}`,
+        };
+      }
+
+      try {
+        await supabase
+          .from("tickets_apuestas")
+          .update({
+            hipodromo: "EVENTOS LIBRES",
+            carrera: 1,
+            fecha_carrera: fecha,
+            nombre_jugada: "LIBRE",
+            caballo: `[${params.categoria}] ${actualizado.concepto} (${params.mercado || "10/6"})`,
+            monto_jugado: actualizado.riesgoJugador1,
+            monto_decidido: actualizado.riesgoJugador2,
+            premio_pagar: 0,
+            comision_porcentaje: actualizado.comisionGrupoPct,
+            comision_pagada: 0,
+            cliente_juega_id: String(actualizado.jugador1Id),
+            cliente_juega_nombre: actualizado.jugador1Nombre,
+            cliente_consigue_id: String(actualizado.jugador2Id),
+            cliente_consigue_nombre: actualizado.jugador2Nombre,
+            estado: "Pendiente",
+            anulada: false,
+            nota_auditoria: `EVENTO_LIBRE_P2P:${JSON.stringify(actualizado)}`,
+          })
+          .ilike("nota_auditoria", `%"id":"${actualizado.id}"%`);
+      } catch (errTk) {
+        console.warn("No se pudo actualizar ticket libre en tickets_apuestas:", errTk);
+      }
+    } catch (error) {
+      const detalle = error instanceof Error ? error.message : String(error);
+      return {
+        ok: true,
+        evento: actualizado,
+        warning: `Se guardA3 localmente, pero no en la base: ${detalle}`,
+      };
+    }
+  }
+
+  return { ok: true, evento: actualizado };
+}
+/**
+ * [M?dulo 3 - Reversi?n / Anulaci?n / Reapertura de Eventos Libres]
+ * Restaura saldos/asientos de jugadas liquidadas y permite:
+ * - Anular el evento (estado ANULADA), o
+ * - Reversar liquidaci?n y reabrir a PENDIENTE para poder editar/re-liquidar.
  */
 export async function reversarOAnularEventoLibre(params: {
   eventoId: string;
   motivo?: string;
   usuario?: string;
+  /** Si es true y el evento estaba liquidado/decidido, revierte efectos y lo reabre a PENDIENTE. */
+  reabrirAPendiente?: boolean;
 }): Promise<{ ok: boolean; error?: string }> {
   const lista = leerEventosLibresMemoria();
   const ev = lista.find((e) => e.id === params.eventoId);
@@ -576,8 +719,11 @@ export async function reversarOAnularEventoLibre(params: {
   const ganoJ1 = estadoPrevio === "GANO_JUGADOR_1";
   const ganoJ2 = estadoPrevio === "GANO_JUGADOR_2";
   const estabaLiquidado = ganoJ1 || ganoJ2;
+  const estabaDecidido =
+    estadoPrevio === "GANO_JUGADOR_1" || estadoPrevio === "GANO_JUGADOR_2" || estadoPrevio === "EMPATE";
+  const reabrir = Boolean(params.reabrirAPendiente && estabaDecidido && estadoPrevio !== "ANULADA");
 
-  // 1. Restaurar saldos de clientes si estaba liquidado
+  // 1. Restaurar saldos de clientes si estaba liquidado (con ganador/perdedor)
   if (supabase && estabaLiquidado && montoGanancia > 0) {
     try {
       const ganadorId = ganoJ1 ? ev.jugador1Id : ev.jugador2Id;
@@ -591,51 +737,63 @@ export async function reversarOAnularEventoLibre(params: {
         await supabase.from("clientes").update({ saldo_actual: restarDinero(actGan, gananciaNeta) }).eq("id", ganadorId as never);
       }
 
-      // Devolver pérdida al perdedor
+      // Devolver p?rdida al perdedor
       const { data: cPer } = await supabase.from("clientes").select("saldo_actual").eq("id", perdedorId as never).maybeSingle();
       if (cPer) {
         const actPer = Number(cPer.saldo_actual || 0);
         await supabase.from("clientes").update({ saldo_actual: sumarDinero(actPer, montoGanancia) }).eq("id", perdedorId as never);
       }
 
-      // Revertir asiento contable NIIF si se había registrado
+      // Revertir asiento contable NIIF si se hab?a registrado
       await generarAsientoPartidaDoble({
         fecha_contable: ev.fecha,
         tipo_evento: "REVERSION_EVENTO_LIBRE",
         referencia_id: `REV:${ev.id}`,
-        clave_idempotencia: `EVLIBRE:REV:${ev.id}`,
-        descripcion: `Reversión / Anulación Evento Libre: ${ev.concepto} (${params.motivo || "Anulación manual"})`,
+        clave_idempotencia: reabrir ? `EVLIBRE:REV:${ev.id}:${Date.now()}` : `EVLIBRE:REV:${ev.id}`,
+        descripcion: `Reversi?n ${reabrir ? "de liquidaci?n" : "/ anulaci?n"} Evento Libre: ${ev.concepto} (${params.motivo || "Acci?n manual"})`,
         lineas: [
           {
             cuenta_codigo: "2.1.01.001",
             cliente_id: String(ganadorId),
             debe: gananciaNeta,
             haber: 0,
-            concepto: `Reversión premio ganado - ${ganoJ1 ? ev.jugador1Nombre : ev.jugador2Nombre}`,
+            concepto: `Reversi?n premio ganado - ${ganoJ1 ? ev.jugador1Nombre : ev.jugador2Nombre}`,
           },
           {
             cuenta_codigo: "2.1.01.001",
             cliente_id: String(perdedorId),
             debe: 0,
             haber: montoGanancia,
-            concepto: `Restauración saldo por anulación - ${ganoJ1 ? ev.jugador2Nombre : ev.jugador1Nombre}`,
+            concepto: `Restauraci?n saldo por reversi?n - ${ganoJ1 ? ev.jugador2Nombre : ev.jugador1Nombre}`,
           },
           {
             cuenta_codigo: "4.1.01.001",
             debe: ev.comisionCobrada ?? 0,
             haber: 0,
-            concepto: `Reversión comisión casa Evento Libre - ${ev.concepto}`,
+            concepto: `Reversi?n comisi?n casa Evento Libre - ${ev.concepto}`,
           },
         ],
       });
     } catch (e) {
-      console.warn("Fallo en reversión contable/saldos de Evento Libre:", e);
+      console.warn("Fallo en reversi?n contable/saldos de Evento Libre:", e);
     }
   }
 
-  // 2. Actualizar estado a ANULADA
-  ev.estado = "ANULADA";
-  ev.ganadorSeleccionado = null;
+  // 2. Actualizar estado (ANULADA o reabrir a PENDIENTE)
+  if (reabrir) {
+    ev.estado = "PENDIENTE";
+    ev.ganadorSeleccionado = null;
+    ev.montoLiquidadoGanador = undefined;
+    ev.fechaLiquidacion = null;
+    ev.gananciaBrutaGanador = undefined;
+    ev.comisionCobrada = undefined;
+    ev.gananciaNetaGanador = undefined;
+    ev.incentivoAcreditado = undefined;
+    ev.comisionSocioAcreditada = undefined;
+  } else {
+    ev.estado = "ANULADA";
+    ev.ganadorSeleccionado = null;
+  }
   ev.actualizadoEn = new Date().toISOString();
   guardarEventosLibresMemoria(lista);
 
@@ -644,25 +802,38 @@ export async function reversarOAnularEventoLibre(params: {
       await supabase
         .from("apuestas_eventos_especiales")
         .update({
-          estado: "ANULADA",
+          estado: reabrir ? "PENDIENTE" : "ANULADA",
           ganador_seleccionado: false,
           fecha_liquidacion: null,
           nota: `EVENTO_LIBRE_P2P:${JSON.stringify(ev)}`,
         })
         .eq("id", ev.id);
 
-      await supabase
-        .from("tickets_apuestas")
-        .update({
-          estado: "Anulada",
-          anulada: true,
-          monto_decidido: 0,
-          premio_pagar: 0,
-          comision_pagada: 0,
-        })
-        .ilike("nota_auditoria", `%"id":"${ev.id}"%`);
+      if (reabrir) {
+        await supabase
+          .from("tickets_apuestas")
+          .update({
+            estado: "Pendiente",
+            anulada: false,
+            monto_decidido: ev.riesgoJugador2,
+            premio_pagar: 0,
+            comision_pagada: 0,
+          })
+          .ilike("nota_auditoria", `%"id":"${ev.id}"%`);
+      } else {
+        await supabase
+          .from("tickets_apuestas")
+          .update({
+            estado: "Anulada",
+            anulada: true,
+            monto_decidido: 0,
+            premio_pagar: 0,
+            comision_pagada: 0,
+          })
+          .ilike("nota_auditoria", `%"id":"${ev.id}"%`);
+      }
     } catch (eDb) {
-      console.warn("Fallo actualizando BD para reversión:", eDb);
+      console.warn("Fallo actualizando BD para reversi?n:", eDb);
     }
   }
 
